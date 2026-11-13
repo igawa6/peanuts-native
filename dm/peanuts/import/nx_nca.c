@@ -144,7 +144,11 @@ int nx_container_open(NxContainer *c, const char *path) {
     c->fd = open(path, O_RDONLY | O_CLOEXEC);
     if (c->fd < 0) { nx_err("cannot open %s: %s", path, strerror(errno)); return -1; }
     struct stat st; if (fstat(c->fd, &st) || !S_ISREG(st.st_mode)) { nx_err("%s is not a file", path); goto fail; }
+#ifdef POSIX_FADV_SEQUENTIAL
     (void)posix_fadvise(c->fd, 0, 0, POSIX_FADV_SEQUENTIAL);   // the importer streams: a larger readahead window
+#elif defined(F_RDAHEAD)
+    (void)fcntl(c->fd, F_RDAHEAD, 1);   // macOS has no posix_fadvise: its readahead switch (on by default; asked for all the same)
+#endif
     uint8_t h[0x400]; if ((uint64_t)st.st_size < 0x400) { nx_err("%s: too small", path); goto fail; }
     if (nx_pread_all(c->fd, h, sizeof h, 0)) goto fail;
     if (!memcmp(h, "PFS0", 4)) { c->kind = 0; if (read_fs0(c, 0, 0, NULL)) goto fail; }
