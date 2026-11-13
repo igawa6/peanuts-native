@@ -299,7 +299,8 @@ def swap_in(out, m, key):
     before the rewrite started, so a pack stopped at any point has either the old module with no key, a mix with no key, or the new module with its key:
     a module without its key is one the launcher refuses (PackCheck) and the next run rewrites"""
     st = staging(out, m)
-    for f in sorted(st.iterdir()): os.replace(f, out / f.name)
+    for f in sorted(st.iterdir()):
+        if f.exists() or f.is_symlink(): os.replace(f, out / f.name)   # PEANUTS(upstream-candidate): an AppleDouble ._<name> on an exFAT/FAT drive goes with its file (split_shaders)
     st.rmdir()
     tmp = out / f'{m}.android.key.tmp'; write_lf(tmp, key + '\n'); os.replace(tmp, out / f'{m}.android.key')
 
@@ -498,7 +499,8 @@ def split_shaders(a, g, vdir, pkg, parts=None):   # parts: the version's (romfs,
     if absent:
         (pkg / '_absent.tsv').write_text(''.join(k + '\n' for k in absent))
         print(f'shaders: {len(absent)} of the profile\'s {len(want)} shaders are not in this dump (they belong to another registered build of the game, shader_optional.tsv): listed in {pkg.name}/_absent.tsv')
-    for f in tmp.iterdir(): f.replace(pkg.with_name(f.name))
+    for f in list(tmp.iterdir()):
+        if f.exists() or f.is_symlink(): f.replace(pkg.with_name(f.name))   # PEANUTS(upstream-candidate): macOS on an exFAT/FAT drive moves a file's AppleDouble ._<name> with it, so the listing's ._ entry is gone by its turn
     tmp.rmdir()
 
 
