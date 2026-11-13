@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "nx_crypto.h"
+#include "nx_compat.h"
 
 #define NX_CHUNK (1u << 20)   // 1 MiB: the progress callback's step and the extract buffer (the writer's pipeline chunks are PIPE_CHUNK in nximport.c)
 #define NX_FS_ROMFS 0         // NCA fs header FsType
