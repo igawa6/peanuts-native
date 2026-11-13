@@ -1,5 +1,5 @@
 name: Android bug report
-description: Banana Native on Android crashes, hangs, draws wrong, runs slowly or will not prepare a game
+description: Peanuts Native on Android crashes, hangs, draws wrong, runs slowly or will not prepare a game
 labels: [android]
 body:
   - type: markdown
@@ -62,7 +62,7 @@ body:
   - type: input
     id: release
     attributes:
-      label: Banana Native release
+      label: Peanuts Native release
       description: Settings › About shows the build tag.
       placeholder: "v0.1.0"
     validations:
