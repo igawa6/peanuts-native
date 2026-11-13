@@ -246,7 +246,7 @@ JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_start(JNIEnv *env, jclas
     }
     for (jsize i = 0, n = (*env)->GetArrayLength(env, envs); i < n; i++) {
         char *kv = jstr(env, (jstring)(*env)->GetObjectArrayElement(env, envs, i)); char *eq = strchr(kv, '=');
-        if (eq) { *eq = 0; setenv(kv, eq + 1, 1); fprintf(stderr, "[nxlaunch] env %s=%s\n", kv, eq + 1); }
+        if (eq) { *eq = 0; setenv(kv, eq + 1, 1); fprintf(stderr, "[nxlaunch] env %s=%s\n", kv, !strcmp(kv, "PN_NEXTENDO_PID") || !strcmp(kv, "PN_NEXTENDO_TOKEN") ? "(hidden)" : eq + 1); }   // PEANUTS: the Nextendo account stays out of the log (dm/peanuts/net)
         free(kv);
     }
     pthread_mutex_lock(&g_win_mu);

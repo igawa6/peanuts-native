@@ -36,6 +36,12 @@ def signStore = System.getenv('NX_SIGN_STORE'), signAlias = System.getenv('NX_SI
 if ((nxLive || nxRelease) && !(signStore && signAlias && signPass && new File(signStore).isFile()))   // PEANUTS: nxRelease too
     throw new GradleException('nxLive and nxRelease need the release key: NX_SIGN_STORE (an existing keystore), NX_SIGN_ALIAS and NX_SIGN_PASS')   // PEANUTS: nxRelease too
 def nxLabel = providers.gradleProperty('nxLabel').getOrElse(nxApp ? "Banana Native $nxApp" : '')
+def nxAppId = providers.gradleProperty('nxAppId').getOrElse(nxApp)   // PEANUTS: -PnxAppId=<suffix> (with -PnxApp=peanuts) installs a development build beside the Peanuts Native app, with its own data
+if (nxAppId && !(nxAppId ==~ /[a-z][a-z0-9]*/)) throw new GradleException("nxAppId must be lower-case letters and digits, not $nxAppId")   // PEANUTS
+// PEANUTS: Settings › Online's Nextendo Network sign-in (dm/peanuts/net/README.md): your own application's public client ID and redirect port, from nextendo.network/developers
+def nxNextendoClientId = providers.gradleProperty('nxNextendoClientId').getOrElse('')   // PEANUTS: -PnxNextendoClientId=nxc_...; none: the sign-in says so
+def nxNextendoPort = providers.gradleProperty('nxNextendoRedirectPort').getOrElse('0')   // PEANUTS: -PnxNextendoRedirectPort=<port> of http://127.0.0.1:<port>/callback
+if (!(nxNextendoClientId ==~ /[A-Za-z0-9_-]*/) || !(nxNextendoPort ==~ /[0-9]{1,5}/)) throw new GradleException('nxNextendoClientId: letters, digits, _ and -; nxNextendoRedirectPort: a port number')   // PEANUTS
 // The build tag the launcher shows over the game and in its main screen, and writes as the first line of each game log: branch@commit[+dirty] (no build time: the commit and the signer identify a build)
 def gitOut = { List<String> a -> try { providers.exec { commandLine(['git'] + a); ignoreExitValue = true }.standardOutput.asText.get().trim() } catch (Exception e) { '' } }
 def commit = gitOut(['rev-parse', '--short=12', 'HEAD'])
@@ -209,7 +215,7 @@ android {
     ndkVersion '28.2.13676358'
 
     defaultConfig {
-        applicationId nxLive ? 'dev.bananative.android' : nxPlay ? 'dev.nxnative.android.play' : nxApp ? "dev.nxnative.android.$nxApp" : 'dev.nxnative.android'
+        applicationId nxLive ? 'dev.bananative.android' : nxPlay ? 'dev.nxnative.android.play' : nxApp ? "dev.nxnative.android.$nxAppId" : 'dev.nxnative.android'   // PEANUTS: nxAppId
         resValue 'string', 'app_name', nxPlay || nxLive ? 'Banana Native' : nxApp ? nxLabel : 'Banana Native test'
         minSdk 33
         targetSdk 35
@@ -222,6 +228,8 @@ android {
         buildConfigField 'String', 'NX_BRANCH', "\"${branch ?: 'unknown'}\""
         buildConfigField 'String', 'NX_DIRTY', "\"${commit ? dirty : ''}\""
         buildConfigField 'boolean', 'NX_LSFG', "$nxLsfg"
+        buildConfigField 'String', 'NEXTENDO_CLIENT_ID', "\"$nxNextendoClientId\""   // PEANUTS: Settings › Online
+        buildConfigField 'int', 'NEXTENDO_REDIRECT_PORT', "$nxNextendoPort"   // PEANUTS: Settings › Online
         // The play app and the release behave alike (saves/<id>, the user's build tag, no test switches); every other app is a test app
         buildConfigField 'boolean', 'NX_PLAY', "${nxPlay || nxLive}"
         // The public release (dev.bananative.android) alone checks GitHub for a newer release at start (Updater; a test app only through its update.txt)

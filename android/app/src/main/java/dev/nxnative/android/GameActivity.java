@@ -650,6 +650,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     "HOME=" + files, "TMPDIR=" + getCacheDir(), "DM_BUILD_COMMIT=" + BuildConfig.NX_COMMIT,
                     "DM_CTL=" + new File(files, "ctl.txt"), "NX_EXIT_RECORD=" + ExitWatch.record(this)));   // live control lines (android/TESTING.md "Live control", android/tools/nxctl.sh); DM_CTL= in env.txt turns it off
             env.addAll(dev.peanuts.build.GenericProfile.envLines(this, id));   // PEANUTS: -PnxGenericHost=true DM_PROFILE_PATH/DM_PROFILE_SEED; empty list otherwise
+            env.addAll(dev.peanuts.online.Nextendo.envLines(this));   // PEANUTS: Settings › Online: PN_ONLINE and the Nextendo account for this run (dm/peanuts/net)
             env.add(0, "NX_BUILD_TAG=" + Prefs.buildTag(this) + " \u00b7 signer " + Prefs.signerId(this));   // nxlaunch.c writes it as the log's first line; the signer says which key signed the APK (Signer)
             String gpuNote = settingsEnv(id, env);
             // The 3D scene (Game settings › Resolution, ResPresets; Advanced › 3D scene, SceneRes): the chosen RomFS overlay in the pack, made by the pack step from the player's files;

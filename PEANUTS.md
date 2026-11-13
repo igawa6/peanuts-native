@@ -11,11 +11,12 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
    - `peanuts/` — companion packages, docs, tests, `scripts/`.
 2. **Hooks into upstream files are one-liners, each tagged `PEANUTS`.** A hook is a call-out to Peanuts code, never logic.
    Allowed hook sites (keep this list current):
-   - `android/app/src/main/java/dev/nxnative/android/GameActivity.java` — create/destroy the companion `Presentation`.
+   - `android/app/src/main/java/dev/nxnative/android/GameActivity.java` — create/destroy the companion `Presentation`; the run's env lines (`GenericProfile`, `Nextendo.envLines`: Settings › Online).
    - `android/app/src/main/cpp/nxlaunch.c` — JNI entry points forwarded to `dm/peanuts`.
    - `android/host/CMakeLists.txt`, `android/app/src/main/cpp/CMakeLists.txt` — add the `dm/peanuts` sources.
    - `dm/gfx/vk_android/vka_present.c` — one call per presented frame (`peanuts_tick()`), beside `ovl_draw`.
-   - `android/app/build.gradle` — applicationId / label.
+   - `android/app/build.gradle` — applicationId / label (`-PnxAppId=<suffix>`: a development build beside the app, with its own data); the Nextendo application (`-PnxNextendoClientId`, `-PnxNextendoRedirectPort`: `dm/peanuts/net/README.md`).
+   - `dm/host/loader.c` — `force_lookup` asks `dm/peanuts/net` first (`pn_force_lookup`, Android only), so its online hooks win while `PN_ONLINE=1`.
 3. **Settings go through upstream's own mechanisms**: `env.txt` keys named `PN_*`, `settings.tsv` rows, `DM_CTL` lines. No new settings UI inside upstream classes.
 4. **Never reformat or "fix" upstream files.** A general fix belongs upstream as a PR to Banana Native (its AGENTS.md prefers general changes), then it arrives by rebase.
 5. **Branches:** `upstream/android` is Banana Native; `peanuts` is this overlay, always a linear set of commits on top of a Banana Native tag. History is rewritten on every update (rebase, never merge).

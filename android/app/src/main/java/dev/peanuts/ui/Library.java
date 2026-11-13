@@ -182,6 +182,7 @@ public final class Library {
     @SuppressWarnings("unchecked")
     public static <G> void fill(Activity a, LinearLayout box, List<G> games, View ondeviceCard, Predicate<G> shows, Function<G, View> card, Consumer<G> manage, Runnable refresh) {
         if (current == null || current.a != a) current = new Library(a);
+        dev.peanuts.online.Nextendo.refreshIfDue(a);   // a new Nextendo game token in the background once the kept one has under 12 hours left
         Library l = current;
         l.box = box; l.games = new ArrayList<>(games); l.ondeviceCard = ondeviceCard;
         l.shows = (Predicate<Object>) shows; l.card = (Function<Object, View>) card; l.manage = (Consumer<Object>) manage; l.refresh = refresh;
