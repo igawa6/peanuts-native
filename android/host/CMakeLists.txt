@@ -50,6 +50,11 @@ file(GLOB HOST_ANDROID_C CONFIGURE_DEPENDS ${HOST}/android/*.c)
 list(APPEND HOST_C ${HOST_ANDROID_C})
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts.c)   # PEANUTS: the companion's reader (PEANUTS.md)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_nup.c)   # PEANUTS: the companion runtime's RomFS provider over a .nup (peanuts_nup.h)
+file(GLOB PN_NET_C CONFIGURE_DEPENDS ${ROOT}/dm/peanuts/net/*.c)   # PEANUTS: online play on Nextendo Network (PN_ONLINE=1, dm/peanuts/net), with Mbed TLS (dm/peanuts/third_party/mbedtls)
+file(GLOB PN_MBEDTLS_C CONFIGURE_DEPENDS ${ROOT}/dm/peanuts/third_party/mbedtls/library/*.c)   # PEANUTS: see above
+set_source_files_properties(${PN_MBEDTLS_C} PROPERTIES COMPILE_OPTIONS "-O2;-w")   # PEANUTS: third-party code, as the others here
+set_source_files_properties(${PN_NET_C} ${PN_MBEDTLS_C} PROPERTIES INCLUDE_DIRECTORIES "${ROOT}/dm/peanuts/third_party/mbedtls/include;${ROOT}/dm/peanuts/net" COMPILE_DEFINITIONS "MBEDTLS_USER_CONFIG_FILE=\"pn_mbedtls_config.h\"")   # PEANUTS: one configuration for the library and its users
+list(APPEND HOST_C ${PN_NET_C} ${PN_MBEDTLS_C})   # PEANUTS: see above
 add_subdirectory(${ROOT}/dm/peanuts/rt ${CMAKE_CURRENT_BINARY_DIR}/peanuts_rt)   # PEANUTS: the companion runtime (C++), linked into every host below
 # dm/gfx without Metal: the NVN front (hle_nvn.c and its C helpers), nn::vi, nvdrv, the CPU texture code; android_stub.c answers for nvn_mtl.m, hle_vk.m, hle_gl.m and the other .m files
 file(GLOB GFX_C CONFIGURE_DEPENDS ${GFX}/*.c ${GFX}/nvn/*.c ${GFX}/tex/*.c ${GFX}/vk_android/*.c)   # vk_android: the NVN → Vulkan replay

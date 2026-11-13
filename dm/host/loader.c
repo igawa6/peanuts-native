@@ -209,6 +209,9 @@ static void force_init(void) {
         }
 }
 static void *force_lookup(const char *name) {
+#if PLAT_ANDROID   // PEANUTS: the online hooks (dm/peanuts/net, Android's host only) win while PN_ONLINE=1
+    { void *pn_force_lookup(const char *); void *pn = pn_force_lookup(name); if (pn) return pn; }
+#endif
     if (!g_fmask) return NULL;
     for (unsigned j = sym_hash(name) & g_fmask; g_fidx[j]; j = (j + 1) & g_fmask) {
         unsigned i = g_fidx[j] - 1;
