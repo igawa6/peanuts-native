@@ -96,6 +96,8 @@ not edited (see table above).
 | `dm/host/loader.c` | **fixed this pass** (module arena, 1 header + 3 call sites) | **yes** — fixes a real OOB read on Android's top-down mmap layout (Link's Awakening), general to any Android host |
 | `dm/host/plat/plat_android.c` | **fixed this pass** | **yes** — excludes the guard page from the reported stack range, general Bionic-vs-glibc/Darwin correctness fix |
 | `docs/env_switches.tsv` | fixed (drift + new rows, see IMPL-C.md) | n/a (docs) |
+| `docs/guides/pc-mac-packing.md` | marked (`<!-- PEANUTS begin/end -->` section: send the pack to the Thor) | no (Peanuts-specific) |
+| `scripts/pack_android.py` | marked | partly: the AppleDouble skip in `split_shaders`/`swap_in` yes (summary 11); `peanuts_env` no |
 
 ## Generic host runtime-profile sites (design/platform/IMPL-GENERIC.md, CRITIQUE-generic.md §4)
 
