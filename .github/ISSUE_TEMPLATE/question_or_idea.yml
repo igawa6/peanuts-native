@@ -28,7 +28,7 @@ body:
     id: context
     attributes:
       label: Phone, app version and game, if they matter
-      description: "For example: AYN Thor, 16 GB, Peanuts Native 0.2.2, Mario Kart 8."
+      description: "For example: AYN Thor, 16 GB, Peanuts Native 0.1.0, Mario Kart 8."
   - type: checkboxes
     id: rules
     attributes:
