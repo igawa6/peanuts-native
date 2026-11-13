@@ -1,0 +1,2 @@
+# The importer build (peanuts_build.py makes it with cmake: objects and the nximport_cli binary, not committed)
+/.build/
