@@ -13,6 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#include <pthread_time.h>   // winpthreads' clock_gettime
+#endif
 
 static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec / 1e9; }
 static int die(const char *what) { fprintf(stderr, "%s: %s\n", what, nximport_last_error()); return 1; }
@@ -29,7 +32,11 @@ static int list_cb(void *u, const char *path, unsigned long long size, unsigned 
 
 int main(int argc, char **argv) {
     const char *keys = getenv("NX_KEYS"); char defkeys[1024];
-    if (!keys) { const char *h = getenv("HOME"); snprintf(defkeys, sizeof defkeys, "%s/.switch/prod.keys", h ? h : ""); keys = defkeys; }
+    if (!keys) { const char *h = getenv("HOME");
+#ifdef _WIN32
+        if (!h || !*h) h = getenv("USERPROFILE");   // Windows sets no HOME by default
+#endif
+        snprintf(defkeys, sizeof defkeys, "%s/.switch/prod.keys", h ? h : ""); keys = defkeys; }
     int a = 1;
     if (a + 1 < argc && !strcmp(argv[a], "--keys")) { keys = argv[a + 1]; a += 2; }
     if (a >= argc) { fprintf(stderr, "usage: nximport_cli [--keys prod.keys] probe|icon|nup|fonts|verify|cat ...\n"); return 2; }

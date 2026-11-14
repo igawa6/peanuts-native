@@ -56,3 +56,22 @@ The app also offers **Use an existing pack…** in the same question: it uses a 
 - The window's log and its tool check say what is missing. `scripts/bananative.command check` (or
   `scripts\bananative.bat check`) checks the tools again.
 - Open an issue as described in [Troubleshooting](troubleshooting.md), with the packer's log.
+
+<!-- PEANUTS begin -->
+## Peanuts: send the pack to the Thor
+
+A pack made here now takes the phone packer's settings that change what a pack holds: the targeted split with its direct scan
+(`DM_SPLIT_DIRECT=1`) and the shader library at zstd 6 (`DMSH_VK_ZSTD_LEVEL=6`). A value already set in the environment wins.
+
+Copy the pack to the device over adb with `peanuts/scripts/push-pack.py`:
+
+```sh
+peanuts/scripts/push-pack.py <work>/android-pack                                       # the pack only
+peanuts/scripts/push-pack.py <work>/android-pack --game "<dump>/DonkeyKongBananza"     # and the game parts the phone needs
+```
+
+`<work>` is the `<title ID>-work` folder next to the game folder. The script writes the pack to `/sdcard/SW2/<title ID>-work/android-pack`
+(`--dest` changes the `/sdcard/SW2` part), and with `--game` also `base/exefs`, the update (`--version`, default the highest) and `dlc/`
+into `/sdcard/SW2/<game folder>/`. `--serial` picks the device when more than one is connected; `--dry-run` prints the adb commands only.
+The app finds the pack there by itself, beside the game folder, so no import is needed.
+<!-- PEANUTS end -->

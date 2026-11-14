@@ -83,6 +83,16 @@ def child_env(**kw):
     return dict(env, **kw)
 
 
+# PEANUTS begin: the phone's packer settings (android/app PackService) that change what a pack holds, so a pack made here is the one the Thor makes; a value
+# already in the environment wins (as the phone's ondevice/env.txt does). The phone's worker settings (DM_SPLIT_WORKER, DMSH_VK_WORKER) are left out: they stand in
+# for the process pools a computer's Python already has
+def peanuts_env(step):
+    """step 'split': DM_SPLIT_DIRECT=1 (the targeted split reads a file's recorded containers only); 'shaders': DMSH_VK_ZSTD_LEVEL=6 (the phone's level)"""
+    kw = dict(DM_SPLIT_DIRECT='1') if step == 'split' else dict(DMSH_VK_ZSTD_LEVEL='6')
+    return {k: v for k, v in kw.items() if k not in os.environ}
+# PEANUTS end
+
+
 def windows_job():
     """Windows: this process and every process it starts from here on (the rewriter, the split, the shader build with its translator and spirv-val) in one job that
     the system ends as a whole when this process ends, however it ends. A GUI's stop is then Popen.terminate() on this process alone (TerminateProcess, which runs
@@ -299,7 +309,8 @@ def swap_in(out, m, key):
     before the rewrite started, so a pack stopped at any point has either the old module with no key, a mix with no key, or the new module with its key:
     a module without its key is one the launcher refuses (PackCheck) and the next run rewrites"""
     st = staging(out, m)
-    for f in sorted(st.iterdir()): os.replace(f, out / f.name)
+    for f in sorted(st.iterdir()):
+        if f.exists() or f.is_symlink(): os.replace(f, out / f.name)   # PEANUTS(upstream-candidate): an AppleDouble ._<name> on an exFAT/FAT drive goes with its file (split_shaders)
     st.rmdir()
     tmp = out / f'{m}.android.key.tmp'; write_lf(tmp, key + '\n'); os.replace(tmp, out / f'{m}.android.key')
 
@@ -481,6 +492,7 @@ def split_shaders(a, g, vdir, pkg, parts=None):   # parts: the version's (romfs,
     tmp = pkg.with_name(pkg.name + '.tmp'); shutil.rmtree(tmp, ignore_errors=True); tmp.mkdir(parents=True)
     print(f'shaders: splitting the shaders out of {rd} into {pkg} with {py} (a few minutes)', flush=True)
     env = child_env(DM_GAME=g.id, DM_SPLIT_TARGETED='1')   # as the phone: only the files the profile's map names, when the build is the profile's and the tables come out the same
+    env.update(peanuts_env('split'))   # PEANUTS: as the phone's split (PackService): the direct scan
     r = subprocess.run([py, str(SPLIT), str(rd), str(ed / 'main'), str(tmp / 'pkg'),
                         *[str(tmp / f) for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv', 'pso_pairs.tsv')]], env=env)
     if r.returncode: raise Error(f'shader_split.py exit code {r.returncode}')
@@ -498,7 +510,8 @@ def split_shaders(a, g, vdir, pkg, parts=None):   # parts: the version's (romfs,
     if absent:
         (pkg / '_absent.tsv').write_text(''.join(k + '\n' for k in absent))
         print(f'shaders: {len(absent)} of the profile\'s {len(want)} shaders are not in this dump (they belong to another registered build of the game, shader_optional.tsv): listed in {pkg.name}/_absent.tsv')
-    for f in tmp.iterdir(): f.replace(pkg.with_name(f.name))
+    for f in list(tmp.iterdir()):
+        if f.exists() or f.is_symlink(): f.replace(pkg.with_name(f.name))   # PEANUTS(upstream-candidate): macOS on an exFAT/FAT drive moves a file's AppleDouble ._<name> with it, so the listing's ._ entry is gone by its turn
     tmp.rmdir()
 
 
@@ -517,6 +530,7 @@ def pack_shaders(a, g, work, out, vdir, parts=None):
         print(f'shaders: building the Vulkan library {lib} from {pkg} with {py} (J={a.J}; about 10 minutes on DKB)', flush=True)
         (work / 'android-shaders' / 'work').mkdir(parents=True, exist_ok=True)
         env = child_env(DM_GAME=g.id, J=str(a.J), WORK=str(work / 'android-shaders' / 'work'))
+        env.update(peanuts_env('shaders'))   # PEANUTS: as the phone's shaders step (PackService): zstd 6
         keys = selected_keys(g.dir)   # a profile with a selected set (shader_seen.tsv): only its shaders, as the phone builds them (PackService, ShaderLibs.selection)
         if keys is not None:
             if not keys: raise Error(f'the profile\'s shader_seen.tsv names none of the shaders of its shader_map.tsv')

@@ -96,6 +96,8 @@ not edited (see table above).
 | `dm/host/loader.c` | **fixed this pass** (module arena, 1 header + 3 call sites) | **yes** — fixes a real OOB read on Android's top-down mmap layout (Link's Awakening), general to any Android host |
 | `dm/host/plat/plat_android.c` | **fixed this pass** | **yes** — excludes the guard page from the reported stack range, general Bionic-vs-glibc/Darwin correctness fix |
 | `docs/env_switches.tsv` | fixed (drift + new rows, see IMPL-C.md) | n/a (docs) |
+| `docs/guides/pc-mac-packing.md` | marked (`<!-- PEANUTS begin/end -->` section: send the pack to the Thor) | no (Peanuts-specific) |
+| `scripts/pack_android.py` | marked | partly: the AppleDouble skip in `split_shaders`/`swap_in` yes (summary 11); `peanuts_env` no |
 
 ## Generic host runtime-profile sites (design/platform/IMPL-GENERIC.md, CRITIQUE-generic.md §4)
 
@@ -142,6 +144,11 @@ Also gated, but not `#ifdef`-paired with upstream code (new Peanuts-owned files/
 9. `dm/gfx/tools/uepak.py` — off-Mac AES path (`_nxaes`) for the packer
 10. `dm/gfx/tools/vk_android_build.py` (exception, not edited directly, but referenced wiring in
     `PackService.java`) — worker-pool/zstd-level changes, per CRITIQUE-phase1.md
+11. `scripts/pack_android.py` — `split_shaders` and `swap_in` move a listing's files by rename; on an exFAT/FAT drive
+    macOS moves each file's AppleDouble `._<name>` with it, so the listing's `._` entry is gone by its turn and the pack
+    stops with FileNotFoundError (found packing Link's Awakening from a .nup on an exFAT drive). Both skip an entry that is
+    gone. The same file's `peanuts_env` (the phone packer's DM_SPLIT_DIRECT=1 and DMSH_VK_ZSTD_LEVEL=6 for a computer's
+    pack) is Peanuts-specific and stays local
 
 `dm/host/hle_fpslock.c`'s new `EXTRA_VSYNCS_U8` lock kind is also upstream-worthy infra; its two
 per-game rows (Link's Awakening, Echoes of Wisdom) should instead move to a Peanuts-owned

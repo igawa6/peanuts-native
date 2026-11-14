@@ -174,7 +174,7 @@ void nximport_set_threads(int n) { nx_threads_setting = n; }
 static int thread_count(void) {
     int n = nx_threads_setting;
     if (n <= 0) { const char *e = getenv("NXIMPORT_THREADS"); if (e && *e) n = atoi(e); }
-    if (n <= 0) { long c = sysconf(_SC_NPROCESSORS_ONLN); n = c > 0 ? (int)c : 2; if (n > 6) n = 6; }
+    if (n <= 0) { int c = nx_cpu_count(); n = c > 0 ? c : 2; if (n > 6) n = 6; }
     return n > 64 ? 64 : n;
 }
 
@@ -509,7 +509,7 @@ int nximport_firmware_fonts(const char *firmware_dir, const char *out_dir) {
     if (!nx_keys.loaded) { nx_err("keys not loaded (nximport_keys)"); return -1; }
     FontJob fj = { 0, 0, out_dir, 0 };
     struct stat st; if (stat(firmware_dir, &st) || !S_ISDIR(st.st_mode)) { nx_err("%s is not a folder", firmware_dir); return -1; }
-    if (mkdir(out_dir, 0755) && errno != EEXIST) { nx_err("cannot create %s: %s", out_dir, strerror(errno)); return -1; }
+    if (nx_mkdir(out_dir, 0755) && errno != EEXIST) { nx_err("cannot create %s: %s", out_dir, strerror(errno)); return -1; }
     if (font_scan(&fj, firmware_dir, 0)) return -1;
     if (!fj.got_std || !fj.got_ext) {
         nx_err("%s: %s not found among %d NCAs (FontStandard 0100000000000811%s, FontNintendoExtended 0100000000000810%s)", firmware_dir,
