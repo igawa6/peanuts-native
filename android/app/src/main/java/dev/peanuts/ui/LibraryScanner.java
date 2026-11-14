@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -344,11 +345,21 @@ final class LibraryScanner {
     static File icon(Context c, Title t) {
         File out = new File(PeanutsPrefs.iconsDir(c), t.titleId + ".png");
         if (out.isFile() && out.length() > 0) return out;
-        ImporterPort imp = ImporterPort.get();
-        if (!imp.available() || !ImporterPort.ensureKeys(c)) return null;
         List<Source> all = new ArrayList<>();
         if (t.base != null) all.add(t.base);
         all.addAll(t.updates);
+        // a .nup holds no icon: the one the PC builder wrote beside it, "<name without .nup>.png"
+        for (Source s : all) {
+            if (!s.isNup()) continue;
+            String n = s.file.getName();
+            File png = new File(s.file.getParentFile(), n.substring(0, n.length() - 4) + ".png");
+            if (!png.isFile() || png.length() == 0) continue;
+            out.getParentFile().mkdirs();
+            try { Files.copy(png.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING); } catch (Exception e) { out.delete(); continue; }
+            if (out.length() > 0) return out;
+        }
+        ImporterPort imp = ImporterPort.get();
+        if (!imp.available() || !ImporterPort.ensureKeys(c)) return null;
         for (Source s : all) {
             if (!s.needsImport()) continue;
             out.getParentFile().mkdirs();

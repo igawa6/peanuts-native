@@ -12,6 +12,7 @@
 # Keys: --keys, else NX_KEYS, else ~/.switch/prod.keys: the importer needs your own prod.keys (the import only; packs need none).
 # Importer: --importer, else NX_IMPORTER, else built into peanuts/.build/nximport (needs cmake and a C compiler).
 # --any-version packs an update the game's profile (dm/games/<titleID>/game.tsv) has no build row for. --force-nup rebuilds a .nup that is already there.
+# The icon: for .nsp/.xci inputs the title's icon is written beside the .nup as "<the .nup's name without .nup>.png" (the app and push-pack.py use it; a failure only warns).
 # Output: the .nup (beside the first input unless --nup) and the pack (<titleID>-work/android-pack beside the .nup, as pack_android.py writes it).
 # --dry-run prints each command instead of importing, packing or pushing; probing and the importer build still run. Errors print [RED] and exit 1.
 import argparse, os, re, shlex, shutil, subprocess, sys, time
@@ -291,6 +292,33 @@ def import_nup(importer, keys, nup, plan, dry, force):
     say(last)
 
 
+def icon_path(nup):
+    """The title's icon beside the .nup: the .nup's path with .png in place of .nup (the app and push-pack.py look there)"""
+    return nup.with_suffix('.png')
+
+
+def write_icon(importer, keys, nup, plan, dry, force):
+    """nximport_cli icon: the base file, else the update file -> <nup minus .nup>.png. A failure is a warning: the game runs without an icon."""
+    png = icon_path(nup)
+    inputs = [plan.base_file] + ([plan.update_file] if plan.update_file else [])
+    if png.is_file() and png.stat().st_size > 0 and not force and png.stat().st_mtime > max(f.stat().st_mtime for f in inputs):
+        say(f'reusing {png} (newer than its inputs)')
+        return
+    tries = [(plan.base_file, plan.app)] + ([(plan.update_file, '-')] if plan.update_file else [])
+    tmp = Path(str(png) + '.tmp')
+    for src, tid in tries:
+        try:
+            rc, _ = run([str(importer), '--keys', str(keys), 'icon', str(src), tid, str(tmp)], dry, 'icon')
+        except (OSError, SystemExit): rc = 1
+        if dry: return
+        if rc == 0 and tmp.is_file() and tmp.stat().st_size > 0:
+            os.replace(tmp, png)
+            say(f'icon: {png}')
+            return
+    tmp.unlink(missing_ok=True)
+    say(f'[RED] no icon for {plan.app} (the game goes on without one)')
+
+
 def fallback_pack(folder, app, extra):
     """The pack folder pack_android.py writes when it prints no done: line (the same rule as its main())"""
     for i, a in enumerate(extra):
@@ -357,6 +385,7 @@ def main():
         app = plan.app
         nup = nup_path(args, plan, files[0])
         import_nup(importer, keys, nup, plan, args.dry_run, args.force_nup)
+        write_icon(importer, keys, nup, plan, args.dry_run, args.force_nup)
         timings['import'] = time.monotonic() - t
         target = nup
         pack_extra = list(extra)

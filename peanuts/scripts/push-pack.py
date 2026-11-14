@@ -87,6 +87,10 @@ def main():
         adb(serial, ['push', str(nup), remote + '.tmp'], a.dry_run)
         adb(serial, ['shell', shlex.join(['mv', '-f', remote + '.tmp', remote])], a.dry_run)
         print(f'pushed the game to {remote}')
+        png = nup.with_suffix('.png')   # the icon peanuts_build.py wrote beside the .nup: the app shows it from beside the .nup on the device
+        if png.is_file() and png.stat().st_size > 0:
+            adb(serial, ['push', str(png), remote[:-4] + '.png'], a.dry_run)
+            print(f'pushed the icon to {remote[:-4]}.png')
     elif a.game:
         game = Path(a.game).expanduser().resolve()
         if not (game / 'base' / 'exefs').is_dir(): die(f'{game} has no base/exefs: give the game folder the dump made')

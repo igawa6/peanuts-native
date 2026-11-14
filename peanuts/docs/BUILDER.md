@@ -54,6 +54,7 @@ The shader translator needs .NET. The builder points the tools it starts at the 
 ## Where things go
 
 - The `.nup` goes beside the first input file, named `<Name> [<TITLE ID>][v<version>].nup`. Characters Windows does not allow in the name become `-`.
+- The title's icon goes beside the `.nup` as `<the .nup's name without .nup>.png` (`nximport_cli icon`, from the base file, else the update). It is written for `.nsp` / `.xci` inputs, also when the `.nup` is reused and only the PNG is missing (`--force-nup` writes it again). A failure is a warning, not an error. `--push` copies it beside the `.nup` on the phone, where the Peanuts library shows it as the game's icon (a `.nup` holds none).
 - The pack goes to `<folder of the .nup>/<TITLE ID>-work/android-pack`.
 - The importer is built into `peanuts/.build/nximport` (git-ignored).
 
