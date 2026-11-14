@@ -28,6 +28,28 @@ GAME_EXTS = ('.nsp', '.xci')
 DEVICE_ROOT = '/sdcard/Peanut Roms'
 ENV = dict(os.environ, PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1')   # the children print UTF-8, unbuffered, on every OS
 
+
+def env_dotnet(prefix=None):
+    """The folder of the Python environment's own .NET (conda keeps it in <prefix>/lib/dotnet, on Windows in <prefix>/dotnet or <prefix>/Library/dotnet), or None.
+    Its activate script sets DOTNET_ROOT and PATH; run with the environment's python alone, the shader translator would not find .NET"""
+    prefix = prefix or sys.prefix
+    exe = 'dotnet.exe' if WINDOWS else 'dotnet'
+    for sub in (('lib', 'dotnet'), ('dotnet',), ('Library', 'dotnet')):
+        d = os.path.join(prefix, *sub)
+        if os.path.isfile(os.path.join(d, exe)): return d
+    return None
+
+
+def with_dotnet(env, prefix=None):
+    """env with the environment's .NET found by the tools started from here: unless DOTNET_ROOT is set (it wins), DOTNET_ROOT and PATH point at it
+    and DOTNET_MULTILEVEL_LOOKUP=0 (as conda's activate script does)"""
+    d = None if env.get('DOTNET_ROOT') else env_dotnet(prefix)
+    if d is None: return env
+    return dict(env, DOTNET_ROOT=d, DOTNET_MULTILEVEL_LOOKUP='0', PATH=d + os.pathsep + env.get('PATH', ''))
+
+
+ENV = with_dotnet(ENV)
+
 PROBE_FILE = re.compile(r'^(?P<path>.+)  \((?P<n>\d+) titles?, [0-9.]+s\)$')
 PROBE_TITLE = re.compile(r'^\s+title (?P<title>[0-9A-Fa-f]{16})\s+app (?P<app>[0-9A-Fa-f]{16})\s+kind (?P<kind>\S+)\s+version (?P<version>\d+)\s+name "(?P<name>.*)"\s+publisher ".*"\s*$')
 PACK_DONE = re.compile(r'^done: (?:the modules in )?(?P<path>.*?) \((?:[0-9.]+ MiB|--code-only)')
@@ -196,6 +218,27 @@ def choose(titles, args):
     return Plan(app, name, base_file, chosen, update_file, dlc)
 
 
+STEP_MARKERS = (
+    ('/glslc_capture/', 'GLSLC capture', 'DM_GLSLC_CAPTURE', 'glslc_capture', '*.glslc', 'the game compiles its shaders with GLSLC at run time, and the pack needs the outputs'),
+    ('/ue_shaders/', 'Unreal shader archive decoding', 'DM_UE_SHADERS', 'ue_shaders', '*.ushaderbytecode', 'the game keeps its shaders in Unreal archives, which the phone decodes with the game\'s own code'),
+)
+
+
+def check_device_steps(app, name=None):
+    """Refuse, before any import, a game whose shaders need a step that runs the game or the phone's decoder (GLSLC capture, Unreal Oodle archives), which
+    a computer cannot do here: the profile's shader_map.tsv has /glslc_capture/ or /ue_shaders/ rows. Not refused when the folder of those files is
+    given (DM_GLSLC_CAPTURE / DM_UE_SHADERS)"""
+    tsv = REPO / 'dm' / 'games' / app / 'shader_map.tsv'
+    if not tsv.is_file(): return
+    text = tsv.read_text(encoding='utf-8', errors='replace')
+    for marker, step, var, folder, pat, why in STEP_MARKERS:
+        if marker not in text: continue
+        given = os.environ.get(var)
+        if given and Path(given).expanduser().is_dir() and any(Path(given).expanduser().glob(pat)): continue
+        die(f'{name or app} ({app}) needs a step this computer cannot run: {step} ({why}). Use Build in the Peanuts app on the device: '
+            f'it runs that step there. (To make the pack here anyway, set {var} to a folder that holds the {pat} files.)')
+
+
 def check_profile(app, version, any_version):
     tsv = REPO / 'dm' / 'games' / app / 'game.tsv'
     if not tsv.is_file(): die(f'no profile for {app} in dm/games: the pack cannot be made')
@@ -213,10 +256,11 @@ def check_profile(app, version, any_version):
 
 
 def nup_path(args, plan, first_input):
-    if args.nup: return Path(args.nup).expanduser().resolve()
+    given = Path(args.nup).expanduser().resolve() if args.nup else None
+    if given and not given.is_dir(): return given
     # 'Zelda: Link's Awakening' → 'Zelda - Link's Awakening', as dumps name it; any other character Windows refuses in a name → '-'
     clean = NAME_BAD.sub('-', plan.name.replace(': ', ' - ')).strip().rstrip('.').strip() or plan.app
-    return (first_input.resolve().parent / f'{clean} [{plan.app}][v{plan.version or 0}].nup')
+    return ((given or first_input.resolve().parent) / f'{clean} [{plan.app}][v{plan.version or 0}].nup')
 
 
 def import_nup(importer, keys, nup, plan, dry, force):
@@ -285,7 +329,7 @@ def main():
     ap.add_argument('inputs', nargs='+', help='a .nup; a dump folder (base/exefs); a folder of .nsp/.xci files; or .nsp/.xci files')
     ap.add_argument('--keys', help='prod.keys for the importer (default: NX_KEYS, else ~/.switch/prod.keys)')
     ap.add_argument('--update', help='the update version to use (default the highest); for a dump, passed to pack_android.py as --version')
-    ap.add_argument('--nup', help='the .nup to write or reuse (default: beside the first input, "<name> [<titleID>][v<version>].nup")')
+    ap.add_argument('--nup', help='the .nup to write or reuse; an existing folder: the .nup goes there, named by default (default: beside the first input, "<name> [<titleID>][v<version>].nup")')
     ap.add_argument('--importer', help='nximport_cli to use (default: NX_IMPORTER, else built into peanuts/.build/nximport)')
     ap.add_argument('--force-nup', action='store_true', help='make the .nup again even if it is newer than its inputs')
     ap.add_argument('--any-version', action='store_true', help='pack even when the profile has no build row for the update')
@@ -308,6 +352,7 @@ def main():
         say('probing the inputs')
         titles = probe(importer, keys, files)
         plan = choose(titles, args)
+        check_device_steps(plan.app, plan.name)
         check_profile(plan.app, plan.version, args.any_version)
         app = plan.app
         nup = nup_path(args, plan, files[0])
@@ -320,6 +365,7 @@ def main():
         target = nup
         m = TITLE_IN_NAME.search(nup.name)
         app = m.group(1).upper() if m else None
+        if app: check_device_steps(app)
         pack_extra = list(extra)
         if args.update is not None: say('[RED] --update is ignored for a .nup: it holds the updates it was made with')
     else:
@@ -327,6 +373,7 @@ def main():
         target = dump
         m = TITLE_IN_NAME.search(dump.name)
         app = m.group(1).upper() if m else None
+        if app: check_device_steps(app)
         pack_extra = list(extra)
         if args.update is not None and '--version' not in pack_extra:
             pack_extra += ['--version', str(parse_version(args.update))]

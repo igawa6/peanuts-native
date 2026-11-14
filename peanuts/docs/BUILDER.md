@@ -36,12 +36,20 @@ Other inputs: a `.nup` (`... "Game [01006BB00C6F0000][v131072].nup" --push --des
 
 ## Flags
 
-- `--keys PATH`, `--importer PATH` (or `NX_IMPORTER`), `--nup PATH`: the keys, a prebuilt importer, the `.nup` to write or reuse.
+- `--keys PATH`, `--importer PATH` (or `NX_IMPORTER`), `--nup PATH`: the keys, a prebuilt importer, the `.nup` to write or reuse. If `--nup` is an existing folder, the `.nup` goes there under its default name (title, title ID, version), so a caller never has to invent the name; a file path works as before.
 - `--update V`: the update to use (default the highest). For a dump it becomes `pack_android.py --version`.
 - `--force-nup`: make the `.nup` again. Without it a `.nup` newer than its inputs is reused.
 - `--any-version`: pack an update the game's profile (`dm/games/<titleID>/game.tsv`) has no build row for. Without it that is an error that lists the supported versions.
 - `--push`, `--dest DIR` (default `/sdcard/Peanut Roms/<.nup name>`), `--serial S`.
 - `--dry-run`: print the commands. Probing and the importer build still run; nothing is written.
+
+## Games the builder refuses
+
+A game whose profile (`dm/games/<titleID>/shader_map.tsv`) has `/glslc_capture/` rows (shaders the game compiles with GLSLC at run time, for example Fire Emblem: Three Houses) or `/ue_shaders/` rows (Unreal shader archives, for example Octopath Traveler 0) needs a step that boots the game or runs the phone's decoder. The builder stops before the import with a `[RED]` message and a non-zero exit code; use Build in the Peanuts app on the device, which runs that step there. If you already have the files, set `DM_GLSLC_CAPTURE` or `DM_UE_SHADERS` to the folder that holds them and the check is skipped.
+
+## .NET
+
+The shader translator needs .NET. The builder points the tools it starts at the Python environment's own .NET (`<env>/lib/dotnet`, on Windows `<env>/dotnet` or `<env>/Library/dotnet`) when `DOTNET_ROOT` is not set, so the environment need not be activated. A `DOTNET_ROOT` you set is kept.
 
 ## Where things go
 
