@@ -85,7 +85,10 @@ public final class GameEnv {
             Object found = Upstream.call(Upstream.k("DumpLayout"), null, "find", new Class<?>[] {File.class, boolean.class}, dump, true);
             Object ids = Upstream.get(found, "buildIds");
             Object main = ids instanceof java.util.Map ? ((java.util.Map<?, ?>) ids).get("main") : null;
-            if (main == null || main.toString().length() < 16) return;
+            if (main == null || main.toString().length() < 16) {   // no PN_BUILD_ID: a companion module that lists whole build ids then refuses the game, so say why
+                Log.w(TAG, "env " + titleId + " build id: none from " + dump + ": " + Upstream.get(found, "error"));
+                return;
+            }
             String env = Upstream.gameEnv(c, titleId);
             String out = RuntimeShaders.withLine(env, "PN_BUILD_ID=" + main.toString().toUpperCase(java.util.Locale.ROOT));
             if (!out.equals(env == null ? "" : env)) Upstream.gameEnv(c, titleId, out);

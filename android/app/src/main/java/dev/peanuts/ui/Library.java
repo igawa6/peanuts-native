@@ -1078,6 +1078,9 @@ public final class Library {
 
     /** Play for a listed, ready game: Banana's own launch (the pack search, the checks, its dialogs); its Manage sheet if that cannot be reached */
     private void play(Row r) {
+        // PN_BUILD_ID as the scan sets it: a game added without a folder scan (picked, or by adb) has none, and a companion module that lists whole build ids refuses it
+        File dump = r.title != null && r.title.launch != null ? r.title.launch : r.entry != null && r.entry.gameDir != null && !r.entry.gameDir.isEmpty() ? new File(r.entry.gameDir) : null;
+        if (dump != null) dev.peanuts.build.GameEnv.ensureBuildId(a, r.id(), dump);
         FontGate.check(a, r.id(), r.name(), () -> {
             played = r.id(); playedAt = android.os.SystemClock.uptimeMillis();   // Home's next resume puts the focus on this cover (watch)
             if (Upstream.launch(a, r.game)) Motion.launched(a);
