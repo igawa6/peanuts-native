@@ -8,6 +8,8 @@
 
 The importer needs your own `prod.keys`. Nothing in the repository supplies keys.
 
+A game with no profile in `dm/games` (the builder stops with `no profile for <id>`) needs one first: [NEW-GAME.md](NEW-GAME.md) walks it from the dump to a pull request.
+
 ## Setup
 
 | | Packer environment | Importer (for `.nsp` / `.xci`) |

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """peanuts/scripts/peanuts_build.py and push-pack.py: the environment's .NET, the games refused up front, --nup as a folder, the icon beside the .nup, the one
-default folder on the device, the device paths push-pack.py refuses, and the two scripts' syntax (Python 3.9's)"""
+default folder on the device, the device paths push-pack.py refuses, and the scripts' syntax (Python 3.9's; nup-extract.py too)"""
 import contextlib, importlib.util, io, os, sys, tempfile, tokenize, unittest
 from collections import namedtuple
 from pathlib import Path
@@ -181,7 +181,7 @@ class Syntax(unittest.TestCase):
         """What Python 3.12 allows inside an f-string and 3.9 does not: a backslash in a replacement field, and a string in a field that reuses the f-string's quote.
         ast.parse(feature_version=(3, 9)) covers the grammar (match, parenthesised with items, except*)"""
         import ast
-        for name in ('peanuts_build.py', 'push-pack.py'):
+        for name in ('peanuts_build.py', 'push-pack.py', 'nup-extract.py'):
             src = (SCRIPTS / name).read_text(encoding='utf-8')
             ast.parse(src, name, feature_version=(3, 9))
             open_quotes = []

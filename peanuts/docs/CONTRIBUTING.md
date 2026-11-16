@@ -67,6 +67,8 @@ trusts it without re-checking.
 
 ## Adding a supported game
 
+For a game that has no profile yet, in Peanuts or in Banana Native, [NEW-GAME.md](NEW-GAME.md) has the steps, commands and pitfalls end to end.
+
 A "supported game" here means: this title boots and plays acceptably through Banana Native, and (usually) has a
 dual-screen companion installed and loading *for the specific pack build you're running* — a companion can support
 fewer builds than the pack profile does (Mario Kart 8 Deluxe's companion covering only 4.0.0 while the pack also
