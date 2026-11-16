@@ -778,3 +778,22 @@ the Mac's split of the same game found them.
 Run: `build.sh <work dir> python`, then on the AYN Thor with `dm_pack_cli`, `shader_split.unsized()` on linked and independent-block LZ4 frames: both
 open; with `lz4/frame` moved away, the same `[RED]` line as the failed Prepare. Not run: a whole Prepare of the game on the phone (it needs the full
 stage, `build.sh … tools`, and an APK built with it). No shader-chain file is changed. Upstream candidate: yes (upstream's `build.sh` has the same gap).
+
+### Round 14, half conversions exact for fp16 subnormals (2026-11-17)
+
+Adreno 6xx / 7xx report `shaderDenormPreserveFloat16` false on Turnip and on Qualcomm's driver, and the translator turns every half conversion into GLSL.std.450
+`PackHalf2x16` / `UnpackHalf2x16`, which such a device may make with a conversion that flushes values below 2^-14 to 0 (Maxwell keeps them). Seen in an Eden-based
+emulator with the same Maxwell → SPIR-V path: Fire Emblem Engage's engage attacks drew white shapes on black on the AYN Thor. Each module is rewritten when it is
+made, on such a device only (`DM_VK_FP16_EXACT` overrides): exact encode and decode of the subnormal range, other values as the hardware gives them.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_spvpatch.c`, `vka_spvpatch.h` | 1 each | `vka_spv_fp16_exact` | `// PEANUTS begin` / `end`; `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_shader.c` | 2 | `fp16_exact`, called from `prep_words` | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_dev.c`, `vka.h` | 2, 1 | `VkPhysicalDeviceVulkan12Properties` read; `V.fp16_exact` | `// PEANUTS:` |
+| `dm/host/tests/t_android_spvpatch.c` | 4 | both instructions rewritten, a module without them left alone, the arithmetic against `_Float16` | `PEANUTS` per hunk / span |
+| `docs/reference/shaders.md`, `docs/agents/symptoms.md` | 1 entry, generated | "Half conversions flushing fp16 subnormals on Adreno 6xx / 7xx" | `PEANUTS` in the Symptom text (the index copies it) |
+| `dm/games/0100A6301214E000/README.md` | 1 | the Found-on line | `<!-- PEANUTS -->` |
+
+Run: `t_android_spvpatch`; on the AYN Thor (Qualcomm 676.53 and Turnip, Mesa 27.0.0-devel) Pokémon Legends: Z-A logs 92 conversions made exact in its first frames.
+Not run: a picture compared with it off; Fire Emblem Engage's engage attacks on the phone. No shader-chain file is changed. Upstream candidate: yes.

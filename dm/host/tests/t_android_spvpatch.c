@@ -2,10 +2,12 @@
 // (a component read through an access chain at location 0, whole loads at location 1) retyped as uint / int, checked by structure and, when spirv-val is on the PATH,
 // by validation. DM_VK_SPV_DIR=<folder of .spv vertex modules> also rewrites each of those (every vec4 input as uint) and validates it. DM_VK_GS_SPV=<a geometry module
 // that writes memory> puts its writes under a per-primitive claim (vka_spv_gs_claim, after the one-invocation subgroup rewrite) and validates it. A small culling
-// geometry shader gets a degenerate primitive where a run emits nothing (vka_spv_gs_fill)
+// geometry shader gets a degenerate primitive where a run emits nothing (vka_spv_gs_fill). PEANUTS: a pixel shader's half conversions are made exact for fp16 subnormals
+// (vka_spv_fp16_exact), and the arithmetic they emit is checked on the CPU against the compiler's _Float16 conversions
 #include "../../gfx/vk_android/vka_spvpatch.h"
 #include "../../gfx/vk_android/vka_selftest_spv.h"
 #include <dirent.h>
+#include <math.h>   // PEANUTS: the half conversion check
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +55,29 @@ static const uint32_t GS_CULL_STREAM[223] = {
     0x00000009, 0x00000023, 0x00000022, 0x0003003e, 0x00000021, 0x00000023, 0x000200dc, 0x0000000e, 0x00060041, 0x00000014, 0x00000024, 0x00000003,
     0x00000013, 0x00000011, 0x0004003d, 0x00000009, 0x00000025, 0x00000024, 0x0003003e, 0x00000021, 0x00000025, 0x000200dc, 0x0000000e, 0x000200dd,
     0x0000000e, 0x000200f9, 0x0000001d, 0x000200f8, 0x0000001d, 0x000100fd, 0x00010038};
+// PEANUTS begin: glslangValidator -V --target-env vulkan1.3 of: flat in uint u (location 0); in vec2 v (location 1); out vec4 o;
+// o = vec4(unpackHalf2x16(u), uintBitsToFloat(packHalf2x16(v)), 0.0)   (no bool type: the rewrite adds one)
+static const uint32_t SPV_HALF_FRAG[177] = {
+    0x07230203, 0x00010600, 0x0008000b, 0x0000001c, 0x00000000, 0x00020011, 0x00000001, 0x0006000b, 0x00000001, 0x4c534c47, 0x6474732e, 0x3035342e,
+    0x00000000, 0x0003000e, 0x00000000, 0x00000001, 0x0008000f, 0x00000004, 0x00000004, 0x6e69616d, 0x00000000, 0x0000000c, 0x00000011, 0x00000014,
+    0x00030010, 0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001c2, 0x00040005, 0x00000004, 0x6e69616d, 0x00000000, 0x00030005, 0x00000009,
+    0x00000066, 0x00030005, 0x0000000c, 0x00000075, 0x00030005, 0x00000011, 0x0000006f, 0x00030005, 0x00000014, 0x00000076, 0x00030047, 0x0000000c,
+    0x0000000e, 0x00040047, 0x0000000c, 0x0000001e, 0x00000000, 0x00040047, 0x00000011, 0x0000001e, 0x00000000, 0x00040047, 0x00000014, 0x0000001e,
+    0x00000001, 0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020, 0x00040017, 0x00000007, 0x00000006,
+    0x00000002, 0x00040020, 0x00000008, 0x00000007, 0x00000007, 0x00040015, 0x0000000a, 0x00000020, 0x00000000, 0x00040020, 0x0000000b, 0x00000001,
+    0x0000000a, 0x0004003b, 0x0000000b, 0x0000000c, 0x00000001, 0x00040017, 0x0000000f, 0x00000006, 0x00000004, 0x00040020, 0x00000010, 0x00000003,
+    0x0000000f, 0x0004003b, 0x00000010, 0x00000011, 0x00000003, 0x00040020, 0x00000013, 0x00000001, 0x00000007, 0x0004003b, 0x00000013, 0x00000014,
+    0x00000001, 0x0004002b, 0x00000006, 0x00000018, 0x00000000, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 0x000200f8, 0x00000005,
+    0x0004003b, 0x00000008, 0x00000009, 0x00000007, 0x0004003d, 0x0000000a, 0x0000000d, 0x0000000c, 0x0006000c, 0x00000007, 0x0000000e, 0x00000001,
+    0x0000003e, 0x0000000d, 0x0003003e, 0x00000009, 0x0000000e, 0x0004003d, 0x00000007, 0x00000012, 0x00000009, 0x0004003d, 0x00000007, 0x00000015,
+    0x00000014, 0x0006000c, 0x0000000a, 0x00000016, 0x00000001, 0x0000003a, 0x00000015, 0x0004007c, 0x00000006, 0x00000017, 0x00000016, 0x00050051,
+    0x00000006, 0x00000019, 0x00000012, 0x00000000, 0x00050051, 0x00000006, 0x0000001a, 0x00000012, 0x00000001, 0x00070050, 0x0000000f, 0x0000001b,
+    0x00000019, 0x0000001a, 0x00000017, 0x00000018, 0x0003003e, 0x00000011, 0x0000001b, 0x000100fd, 0x00010038};
+// What vka_spv_fp16_exact emits for one component, on the CPU: a value below 2^-14 encoded as sign | round-to-even(|x| * 2^24), a half of exponent 0 decoded as
+// +-mantissa * 2^-24
+static uint32_t half_enc_sub(float x) { uint32_t b; memcpy(&b, &x, 4); return ((b >> 16) & 0x8000) | (uint32_t)rintf(fabsf(x) * 16777216.0f); }
+static float half_dec_sub(uint32_t h) { float m = (float)(h & 0x3ff) * 5.9604644775390625e-8f; return h & 0x8000 ? -m : m; }
+// PEANUTS end
 static int g_fail;
 #define CHECK(c, ...) do { if (!(c)) { g_fail++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 static int have_val(void) { return system("spirv-val --version >/dev/null 2>&1") == 0; }
@@ -360,6 +385,32 @@ int main(void) {
         }
         err[0] = 1;
         CHECK(!vka_spv_gs_fill(GS_CULL_STREAM, sizeof GS_CULL_STREAM / 4, &on, err, sizeof err) && !err[0], "a geometry shader that emits to a stream is left alone: %s", err);
+    }
+    {   // PEANUTS: half conversions exact for fp16 subnormals (vka_spv_fp16_exact): both instructions rewritten, a module without them left alone, and the arithmetic exact
+        size_t hn = sizeof SPV_HALF_FRAG / 4; int sites = 0;
+        uint32_t *h = vka_spv_fp16_exact(SPV_HALF_FRAG, hn, &on, &sites, err, sizeof err);
+        CHECK(h && sites == 2, "half conversions: %d rewritten (2 expected): %s", sites, err);
+        if (h) {
+            CHECK(count_op(h, on, 20) == 1, "a bool type added");
+            CHECK(count_op(h, on, 169) == 6, "two selects for a pack, four for an unpack (%d)", count_op(h, on, 169));
+            if (val) CHECK(validate(h, on, "half conversions"), "valid SPIR-V");
+            free(h);
+        }
+        err[0] = 1;
+        CHECK(!vka_spv_fp16_exact(GS_CULL, sizeof GS_CULL / 4, &on, &sites, err, sizeof err) && !err[0] && !sites, "a module without half conversions is left alone: %s", err);
+        int bad = 0;
+        for (uint32_t b = 0; b < 0x10000; b++) {   // every half of exponent 0 decodes to its value and encodes back to itself
+            if (b & 0x7c00) continue;
+            uint16_t hb = (uint16_t)b; _Float16 hf; memcpy(&hf, &hb, 2);
+            float d = half_dec_sub(b), r = (float)hf; uint32_t db, rb; memcpy(&db, &d, 4); memcpy(&rb, &r, 4);
+            if (db != rb || half_enc_sub(d) != b) bad++;
+        }
+        for (uint32_t i = 0; i < (1u << 20); i++)   // values below 2^-14 on a grid of 2^-34 (the halfway points included) round as the compiler's conversion does
+            for (int s = 0; s < 2; s++) {
+                float x = ldexpf((float)i, -34) * (s ? -1.f : 1.f); _Float16 hf = (_Float16)x; uint16_t hb; memcpy(&hb, &hf, 2);
+                if (half_enc_sub(x) != hb) bad++;
+            }
+        CHECK(!bad, "half conversion arithmetic: %d values differ from _Float16", bad);
     }
     {   // Texture pool reads (vka_spv_pool_fb): a bit set before each read of the pool, early depth tests where they give the same result
         size_t pn = sizeof SPV_PFB_FRAG / 4; int sites = 0, early = 0;
