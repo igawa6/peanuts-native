@@ -52,6 +52,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → `engine` | the output and render size written into every render configuration (DM_WINDOW_SIZE, DM_RENDER_PCT; hle_render.c) | rendering | gap | judgement | 1 | `render_cfg`: [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | the game's table of render configurations, at a fixed offset per main build (the build, the heap and the game's own sizes checked before each write); a fingerprint of the selector that reads it could find it in other builds |
 | `build` → `engine` | the render target pool sized at load for the starting render setting (at least the first larger size on a device of more than 12 GB), and render_cfg's max_render raised with it (DM_RT_POOL_MB; loader.c) | memory | gap | judgement | 1 | `rt_pool`: [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | the pool's size is one movz in the game's text, at a fixed offset per build (the build and the word checked before the write); a fingerprint of the pool's constructor call could find it in other builds |
 | `build` → `engine` | Unity QualitySettings.vSyncCount held at 1 | frame rate | gap | judgement | 1 | [Fire Emblem Engage](../../dm/games/0100A6301214E000/README.md) | an IL2CPP player registers the setter by its icall name, so the place can be found in any Unity game; holding it at 1 stays this profile's choice (its logic steps by the count) |
+| `build` → `game` | boot scene poll waits for the title menu callback | race | gap | checked: the IPS bytes against main 2.0.0 (v262144) text, disassembled: the same function plus the slot check | 1 | [Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md) | the game's own scene poll; a function-matched rule could carry it to 2.0.2 and the base game, whose builds have not been checked for the race |
 | `build` → `game` | dress-up slots: an empty slot skips the call that reads its handle | race | gap | judgement | 1 | [Pokémon Shield](../../dm/games/01008DB008C2C000/README.md) | the game's own dress-up function: its four call sites can be found by the function's fingerprint in another build |
 | `build` → `game` | frame buffer scale: the scene at the window's full size instead of 80 % | rendering | gap | judgement | 1 | [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md) | the game's own per-mode table entry, multiplied in at two fixed offsets; a function fingerprint of the scene setup (the two fmul after the table load) could carry it over the game's updates |
 | `build` → `game` | frame limiter 30 → 60 fps and the 1/60 update step | frame rate | gap | judgement | 1 | [DARK SOULS: REMASTERED](../../dm/games/01004AB00A260000/README.md) | the game's own limiter constant and fixed step |
@@ -126,6 +127,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Persona 5 Royal](#persona-5-royal) | 0 | 0 | 0 | 0 | 1 | `build` → `game` |
 | [Pokemon Pokopia](#pokemon-pokopia) | 0 | 3 | 0 | 0 | 1 | `build` → `game` |
 | [Pokémon Brilliant Diamond](#pokémon-brilliant-diamond) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
+| [Pokémon Legends: Z-A](#pokémon-legends-z-a) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Pokémon Shield](#pokémon-shield) | 4 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
 | [Pokémon Shining Pearl](#pokémon-shining-pearl) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Pokémon Sword](#pokémon-sword) | 0 | 0 | 0 | 0 | 1 | `build` → `game` |
@@ -561,6 +563,15 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 
 - **1.3.0 `main`** `94ceae32…`
   - host [hle_fpslock.c:106](../../dm/host/hle_fpslock.c#L106): engine frame limit set to fps_target: Unity targetFrameRate
+
+### Pokémon Legends: Z-A
+
+[Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md), `0100F43008C44000`, [patches.py](../../dm/games/0100F43008C44000/patches.py).
+
+- **`build` → `game`**, race, gap, checked: the IPS bytes against main 2.0.0 (v262144) text, disassembled: the same function plus the slot check: boot scene poll waits for the title menu callback. The game's own scene poll; a function-matched rule could carry it to 2.0.2 and the base game, whose builds have not been checked for the race
+
+- **2.0.0 `main`** `8a1c86c4…` ([patches.py:12](../../dm/games/0100F43008C44000/patches.py#L12))
+  - cut `+0x909970`: boot scene poll main+0x909970: also not ready while the title menu has not registered its callback (adrp x8, main+0x6109000; ldr x8, [x8, #0xda0]; cmp x8, #0; csel w0, w0, wzr, ne)
 
 ### Pokémon Shield
 
