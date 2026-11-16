@@ -738,3 +738,14 @@ address and exit paths read as the kernel's and held through twenty minutes of a
 Run on a Linux PC only (also under TSan). The Mac's tests of the scheduler (`t_preempt`, `t_system_event`, `t_notify_sched`) were not run and should be,
 since `thr_runnable` changed for threads held by a stop of all threads. No shader-chain file is changed. Upstream candidate: (3) yes; (4) the `wait:`
 and `history:` lines yes; (1) and (2) no (they are in code only this fork has).
+
+### Round 12, the release notes crashed the launcher on Android 13 (2026-11-16)
+
+The update popup for 0.1.2 closed the app on an AYN Thor (Android 13): `NoSuchMethodError` for `Matcher.appendTail(StringBuilder)` in
+`ReleaseNotes.htmlImages`. The `StringBuilder` forms of `appendReplacement`/`appendTail` arrived in API 34; the app's `minSdk` is 33.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/ReleaseNotes.java` | 1 | `htmlImages` collects into a `StringBuffer`, whose forms exist on every API level | `PEANUTS(upstream-candidate)` |
+
+Upstream candidate: yes (Banana Native's `ReleaseNotes.java` has the same call and the same `minSdk`).
