@@ -762,3 +762,18 @@ Android 13 and older; neither can be mended from outside.
 | `android/app/src/jvmtest/java/dev/nxnative/android/UpdateCheckJvmTest.java` | 1 | the suffix's cases | `PEANUTS` in each line |
 
 Upstream candidate: the catch in `popup`, yes. The tag suffix, no (it answers this fork's two releases).
+
+### Round 14, Mario Kart 8 Deluxe 4.0.1 dumps and 4.0.0's own effect shaders (2026-11-16)
+
+A pack of a 4.0.1 dump (base + update 4.0.1 from NSPs, on a Mac) stopped with `the dump's shaders lack 134 of the 29785`. All 134 are rows of 4.0.0's
+`Common/Effect/common.ptcl` (its BNSH at `0x7e2000`); 4.0.1 rebuilt the file (BNSH at `0x7e3000`, 135 rows tagged `/v1507328/`). As the first version's
+rows they carry no version tag, so `may_lack` could not tell they belong to 4.0.0 only: the case `pack_android.py`'s comment leaves to `shader_optional.tsv`.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/0100152000022000/shader_optional.tsv` (new) | whole file | the 134 keys, "4.0.0 (v1441792) only" | its header comment (a profile data file, no code) |
+| `dm/games/0100152000022000/README.md` | 1 | the finding under Files and shaders | `<!-- PEANUTS -->` |
+
+Run: the 4.0.1 dump packed (`shaders: 134 … shader_optional.tsv`, library `v-4d3a924dcd04` of 29,651 shaders) and played on an AYN Thor (Adreno 740,
+Turnip 27.0.0-R2) for about 4 minutes: 59.6-59.7 fps, every frame on screen for one refresh. Not run: the system driver, a 4.0.0 dump. `shader_optional.tsv`
+is not a shader-cache input, so no library version moves. Upstream candidate: yes (Banana Native's profile has the same gap).
