@@ -762,3 +762,19 @@ Android 13 and older; neither can be mended from outside.
 | `android/app/src/jvmtest/java/dev/nxnative/android/UpdateCheckJvmTest.java` | 1 | the suffix's cases | `PEANUTS` in each line |
 
 Upstream candidate: the catch in `popup`, yes. The tag suffix, no (it answers this fork's two releases).
+
+### Round 13, lz4.frame in the on-device packer's Python (2026-11-16)
+
+On the phone, Prepare of Kirby's Return to Dream Land Deluxe stopped at the shaders step ("9,693 of 47,099 are missing"): `shader_split.py`'s
+`unsized()` opens HAL's LZ4-framed `.cmp` containers (all of `ptcl/`) with `lz4.frame`, which `android/ondevice/build.sh` never built (only `lz4` and
+`lz4.block`), so each container stayed closed (`[RED] …: a size-prefixed frame that did not open (No module named 'lz4.frame')`). The dump was fine:
+the Mac's split of the same game found them.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/ondevice/build.sh` | 1 | builds `lz4/frame/_frame` (with `lz4frame.c`, `xxhash.c`) and copies `lz4/frame/*.py` into the stage | `# PEANUTS(upstream-candidate) begin`/`end` |
+| `peanuts/tests/test_ondevice_lz4.py` (new) | whole file | every `lz4.<sub>` the tools in `tools.zip` import is built by `build.sh`; fails on the old `build.sh` | Peanuts-owned |
+
+Run: `build.sh <work dir> python`, then on the AYN Thor with `dm_pack_cli`, `shader_split.unsized()` on linked and independent-block LZ4 frames: both
+open; with `lz4/frame` moved away, the same `[RED]` line as the failed Prepare. Not run: a whole Prepare of the game on the phone (it needs the full
+stage, `build.sh … tools`, and an APK built with it). No shader-chain file is changed. Upstream candidate: yes (upstream's `build.sh` has the same gap).

@@ -52,6 +52,11 @@ cp $L/lz4/block/__init__.py $SP/lz4/block/
 EXT=(-shared -fPIC -O2 -I$INC -I$L/lz4libs -L$P/lib -lpython3.14 -Wl,-z,max-page-size=16384)
 $=CC $EXT -o $SP/lz4/_version.$SFX $L/lz4/_version.c $L/lz4libs/lz4.c $L/lz4libs/lz4hc.c
 $=CC $EXT -o $SP/lz4/block/_block.$SFX $L/lz4/block/_block.c $L/lz4libs/lz4.c $L/lz4libs/lz4hc.c
+# PEANUTS(upstream-candidate) begin: lz4.frame too, which shader_split.py's unsized() opens LZ4-framed .cmp containers with (Kirby's Return to Dream Land
+# Deluxe's ptcl/: 9,693 shaders). Without it every such container stayed closed on the phone and the split's map lost those shaders
+mkdir -p $SP/lz4/frame; cp $L/lz4/frame/*.py $SP/lz4/frame/
+$=CC $EXT -o $SP/lz4/frame/_frame.$SFX $L/lz4/frame/_frame.c $L/lz4libs/lz4.c $L/lz4libs/lz4hc.c $L/lz4libs/lz4frame.c $L/lz4libs/xxhash.c
+# PEANUTS end
 # libnxpack.so (dm_pack.c: the C entry and the JNI one, class dev.nxnative.android.PackNative) and the test runner
 cp $P/lib/libpython3.14.so $S/lib/
 $=CC -shared -fPIC -O2 -Wall -I$INC -o $S/lib/libnxpack.so $HERE/dm_pack.c -L$P/lib -lpython3.14 -Wl,-z,max-page-size=16384
