@@ -39,7 +39,10 @@ Keep every game file and everything made from it outside the repository, beside 
 
 ```sh
 peanuts/.build/nximport/nximport_cli --keys <prod.keys> nup "<work dir>/<Name> [<TITLE ID>][v<version>].nup" <title id in lower case> <base .nsp> [<update .nsp> ...]
+peanuts/.build/nximport/nximport_cli --keys <prod.keys> icon <base .nsp> <title id in lower case> "<work dir>/<Name> [<TITLE ID>][v<version>].png"
 ```
+
+The second line writes the title's icon beside the `.nup`, under the same name with `.png`. A `.nup` holds no icon: the library shows the PNG beside it, and [step 7](#7-test-on-the-device)'s `push-pack.py` copies it to the device with the `.nup`. Without it the game's cover is its first letter. `peanuts_build.py` writes this PNG itself.
 
 `peanuts_build.py <files> --dry-run` builds `nximport_cli` first if it is missing, then stops at the profile check.
 
