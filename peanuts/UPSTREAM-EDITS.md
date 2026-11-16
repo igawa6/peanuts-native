@@ -797,3 +797,19 @@ made, on such a device only (`DM_VK_FP16_EXACT` overrides): exact encode and dec
 
 Run: `t_android_spvpatch`; on the AYN Thor (Qualcomm 676.53 and Turnip, Mesa 27.0.0-devel) Pokémon Legends: Z-A logs 92 conversions made exact in its first frames.
 Not run: a picture compared with it off; Fire Emblem Engage's engage attacks on the phone. No shader-chain file is changed. Upstream candidate: yes.
+
+### Round 15, Pokémon Legends: Z-A 2.0.0 on Android (2026-11-17)
+
+Z-A's profile (Banana Native's, brought up on the Mac and iPhone) on the AYN Thor: 2.0.0 gets a build row and a boot race cut, and the note says what the phone run
+showed. The boot race (the title scene starting before the title menu registered its callback, about half of the boots in Eden on PC) is the game's own order of
+threads; the cut is an IPS mod for that build, checked against its decompressed text.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/0100F43008C44000/patches.py` (new) | whole file | the 2.0.0 boot race cut and its `BINDING` | `# PEANUTS:` header (whole file this fork's) |
+| `dm/games/0100F43008C44000/game.tsv` | 1 | the 2.0.0 (v262144) `build` row | `# PEANUTS:` comment line |
+| `dm/games/0100F43008C44000/README.md` | 4 | the needs-table row, the Memory line on `patches.py`, the Boot, Duet Plus fixes and Android sections | `<!-- PEANUTS -->` per hunk |
+| `docs/agents/game-patches.md` | generated | the cut's row | allow-listed (generated) |
+
+Run: on the AYN Thor, Prepare of 2.0.0 on the phone, then the game on Qualcomm's driver 676.53 (aborts in the driver, see the note) and on Turnip (Mesa 27.0.0-devel:
+runs on into the game). Not run: repeated cold boots for the race, 2.0.2 and the base game. Upstream candidate: the cut and build row, yes; the Android section is this fork's.

@@ -71,7 +71,7 @@ Each item was found from a red line or a pass dump on the way through the langua
 
 <!-- PEANUTS: a section of this fork -->
 
-Duet Plus (an Eden-based emulator) needed these for this game on the AYN Thor (Adreno 740); what each means here (2026-11-17, by reading the replay, not yet run on a phone):
+Duet Plus (an Eden-based emulator) needed these for this game on the AYN Thor (Adreno 740); what each means here (2026-11-17, by reading the replay; the phone run is under [Android](#android-ayn-thor)):
 
 - **Occlusion queries ended at a submit:** Eden reset the game's sample counter at a submit, so a report after one read 0 and the object was culled for a frame. Not here: the samples-passed count runs across submissions (`oq_report` / `oq_done` in `vka_exec.c`: the queries since the last reset or report are one segment, summed when the report's fence is done; a query is closed at a pass end and the next draw opens another).
 - **Barriers before draws and dispatches that read GPU-written data (indirect arguments):** Eden lacked them. Here the game's own barriers become full Vulkan barriers (`MEMORY_WRITE` → `MEMORY_READ | MEMORY_WRITE`, which covers indirect-command reads) or the narrow compute barriers of `vka_gbar.c` (with indirect reads where an indirect dispatch or the game's `ORDER_INDIRECT_DATA` asks), and the barrier a dispatch leaves pending is recorded before any draw, copy or report (`vka_disp_settle`).
@@ -79,6 +79,17 @@ Duet Plus (an Eden-based emulator) needed these for this game on the AYN Thor (A
 - **The update's RomFS layered over the base's:** Eden's file system; the pack is made from the dump's update.
 - **fp16 subnormals in half conversions:** applies to every game: [Half conversions flushing fp16 subnormals on Adreno 6xx / 7xx](../../../docs/reference/shaders.md#half-conversions-flushing-fp16-subnormals-on-adreno-6xx--7xx) (this game rendered the same with it in Duet Plus).
 - **The boot race:** [Boot](#boot).
+
+## Android (AYN Thor)
+
+<!-- PEANUTS: a section of this fork -->
+
+2.0.0 (v262144) over the base game, prepared on the phone (AYN Thor, Snapdragon 8 Gen 2 / Adreno 740, 12 GB, Android 13), 2026-11-17:
+
+- **Prepare:** the targeted split read `arc/data.trpfs` through the game's own Oodle in the phone's worker, then fell back to the full scan (the profile's tables are 2.0.2's). Android ended the split's process three times at the Thor's low Normal-zone memory (file pages of the 4.4 GB archive go there); **Retry** resumed it from the kept scan results and the build finished.
+- **Current: Qualcomm's driver aborts two seconds in** (driver 676.53, `vulkan.adreno.so`): `SIGABRT` inside the driver under `vkResetCommandBuffer` (`vka_rp_sub_begin`, `vka_exec.c`), in the first frames after the first transform feedback captures (vertex shader `681cc42e48c0bbc0`, captures 1–4), on both runs. The kernel's GPU fault lines were lost to a reboot, so what the driver met is **open** (a fault in the previous submission is the likely reading).
+- **Current: Turnip runs it** (Mesa 27.0.0-devel, driver ID 18): past that point, 16,384 captures in the first minute, 30 fps on the loading screens, no crash, and on into the game (played by hand). `shader d533e80af4cc9d72: 86 half conversions made exact` and one other shader's 6 show the fp16 rewrite at work (Turnip reports `shaderDenormPreserveFloat16` false); the picture was not compared with it off.
+- **Not checked:** the boot race cut over repeated cold boots (one Turnip boot so far, which went on into the game), a long walk, the second screen.
 
 ## Pipeline bases made before the game runs
 
