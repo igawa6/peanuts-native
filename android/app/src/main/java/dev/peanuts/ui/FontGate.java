@@ -15,7 +15,7 @@ final class FontGate {
     private FontGate() {}
 
     /** Titles that crashed at boot with the fallback font (reports and README notes); other games run without firmware fonts and are never held back */
-    private static final String[] NEED_FONTS = {"01008CF01BAAC000"};
+    private static final String[] NEED_FONTS = {"01008CF01BAAC000", "01006B601380E000"};
 
     static boolean needs(String titleId) {
         if (titleId != null) for (String t : NEED_FONTS) if (t.equalsIgnoreCase(titleId)) return true;
