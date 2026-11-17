@@ -67,17 +67,17 @@ Each item was found from a red line or a pass dump on the way through the langua
 - **Current: the atomic max runs on texture 302 itself** (native texture atomics, [Image atomics](../../../docs/reference/shaders.md#image-atomics)), so its results reach the passes that read the image; before, they went to a scratch buffer that nothing read. Chain `0ce4b5e8aefb` builds all 28,603 shaders. Update 2.0.2 from a fresh save on the docs' route, headless on the Mac under Metal API validation (2026-10-27): `image atomics on image slot 1, texture ID 302 (target 4, block-linear, 2211840 bytes)`, then on to frame 12,000 with no validation error, GPU fault or new red line. The picture of that scene was not compared, and the iPhone freeze of GitHub issue #149 is not re-checked.
 - **Current validation (2026-10-25):** with the bounds fix and strict descriptor-format/bindless-handle checks, chain `467efdfd0b62` rebuilt all 28,603 shaders for Mac and iPhone with zero failures and no undecoded bindings. After rebuilding the host, update 2.0.2 ran for 240.1 seconds / 6,987 frames around the station from an isolated copy of the save, with movement and camera changes, shader validation disabled, and no observed freeze, GPU page fault, missing shader or atomic-binding rejection. The log confirmed the new chain and the 480x270, three-layer image using 3 MiB scratch. This is a Mac smoke test, not confirmation of the reported iPhone/version cases or the station-to-world transition. Artifacts are in the NSP folder's `0100F43008C44000-work/pr178/` (shader libraries and `gameplay/`).
 
-## Duet Plus fixes checked for Android
+## Emulator fixes checked for Android
 
 <!-- PEANUTS: a section of this fork -->
 
-Duet Plus (an Eden-based emulator) needed these for this game on the AYN Thor (Adreno 740); what each means here (2026-11-17, by reading the replay; the phone run is under [Android](#android-ayn-thor)):
+An Eden-based emulator needed these for this game on the AYN Thor (Adreno 740); what each means here (2026-11-17, by reading the replay; the phone run is under [Android](#android-ayn-thor)):
 
 - **Occlusion queries ended at a submit:** Eden reset the game's sample counter at a submit, so a report after one read 0 and the object was culled for a frame. Not here: the samples-passed count runs across submissions (`oq_report` / `oq_done` in `vka_exec.c`: the queries since the last reset or report are one segment, summed when the report's fence is done; a query is closed at a pass end and the next draw opens another).
 - **Barriers before draws and dispatches that read GPU-written data (indirect arguments):** Eden lacked them. Here the game's own barriers become full Vulkan barriers (`MEMORY_WRITE` → `MEMORY_READ | MEMORY_WRITE`, which covers indirect-command reads) or the narrow compute barriers of `vka_gbar.c` (with indirect reads where an indirect dispatch or the game's `ORDER_INDIRECT_DATA` asks), and the barrier a dispatch leaves pending is recorded before any draw, copy or report (`vka_disp_settle`).
 - **Stale or zeroed buffer data read back on the CPU:** Eden's buffer cache and staging downloads. Here the game's memory pools are the GPU's memory (placed, `HOST_COHERENT`; `vka_dev.c` asks for no other host-visible type) and each submission ends with a barrier to host reads: there is no copy to keep coherent.
 - **The update's RomFS layered over the base's:** Eden's file system; the pack is made from the dump's update.
-- **fp16 subnormals in half conversions:** applies to every game: [Half conversions flushing fp16 subnormals on Adreno 6xx / 7xx](../../../docs/reference/shaders.md#half-conversions-flushing-fp16-subnormals-on-adreno-6xx--7xx) (this game rendered the same with it in Duet Plus).
+- **fp16 subnormals in half conversions:** applies to every game: [Half conversions flushing fp16 subnormals on Adreno 6xx / 7xx](../../../docs/reference/shaders.md#half-conversions-flushing-fp16-subnormals-on-adreno-6xx--7xx) (this game rendered the same with it in that emulator).
 - **The boot race:** [Boot](#boot).
 
 ## Android (AYN Thor)
