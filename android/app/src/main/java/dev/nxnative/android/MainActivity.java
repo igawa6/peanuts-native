@@ -1370,6 +1370,7 @@ public final class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         Overlay.rows(this, box, null);
+        dev.peanuts.overlay.HudSettings.rows(this, box);   // PEANUTS: overlay style and preset
         Ui.sheet(this, "Overlay", box).setPositiveButton("Done", null).setOnDismissListener(d -> refreshSettings()).show();
     }
 

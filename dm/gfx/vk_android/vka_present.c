@@ -29,6 +29,7 @@
 
 __attribute__((weak)) void dm_guest_frame_tick(void) {}
 __attribute__((weak)) void peanuts_tick(void);   // PEANUTS: absent in a build without dm/peanuts
+__attribute__((weak)) int peanuts_ovl_corner(int slot, int dflt);   // PEANUTS: the stats block's corner chosen in the launcher (dm/peanuts/peanuts_graph.c); absent in a build without dm/peanuts
 
 // ---------- The window ----------
 static pthread_mutex_t g_pmu = PTHREAD_MUTEX_INITIALIZER;
@@ -530,7 +531,7 @@ static void ovl_draw(VkCommandBuffer cb, unsigned k, uint32_t idx) {
     int ew = (int)(rot_quarter(g_pre) ? g_ext.height : g_ext.width), eh = (int)(rot_quarter(g_pre) ? g_ext.width : g_ext.height);   // the display, as the user sees it
     vko_draw d[OVL_SLOTS]; int nd = 0, x0 = INT32_MAX, y0 = INT32_MAX, x1 = 0, y1 = 0;
     for (int s = 0; s < OVL_SLOTS; s++)
-        if (vko_place((int)g_pre, (int)g_ext.width, (int)g_ext.height, ew, eh, g_ocorner[s], g_ovl.w_[s], g_ovl.h_[s], (int)g_ovl.w, (int)g_ovl.h, g_ovl.y[s], &d[nd])) {
+        if (vko_place((int)g_pre, (int)g_ext.width, (int)g_ext.height, ew, eh, (peanuts_ovl_corner ? peanuts_ovl_corner(s, g_ocorner[s]) : g_ocorner[s]) /* PEANUTS: the launcher's corner for the stats block */, g_ovl.w_[s], g_ovl.h_[s], (int)g_ovl.w, (int)g_ovl.h, g_ovl.y[s], &d[nd])) {
             if (d[nd].x < x0) x0 = d[nd].x;
             if (d[nd].y < y0) y0 = d[nd].y;
             if (d[nd].x + d[nd].w > x1) x1 = d[nd].x + d[nd].w;

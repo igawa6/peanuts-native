@@ -52,6 +52,8 @@ void nxhost_env_changed(void);
 #pragma weak nxhost_fps
 #pragma weak nxhost_overlay_set
 #pragma weak nxhost_overlay_state
+#pragma weak peanuts_ovl_block   // PEANUTS: dm/peanuts/peanuts_graph.c, in libnxhost: the overlay graph's bars painted by the host every game frame
+void peanuts_ovl_block(int slot, void *px, int w, int h, int stride);   // PEANUTS: its prototype
 #pragma weak nxhost_framegen_set
 #pragma weak nxhost_framegen_status
 #pragma weak nxhost_picture_place
@@ -351,6 +353,7 @@ JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_overlaySet(JNIEnv *e
     (void)cls; if (!nxhost_overlay_set) return JNI_FALSE;
     const void *p = px ? (*env)->GetDirectBufferAddress(env, px) : NULL;
     if (p && (w <= 0 || h <= 0 || stride < w * 4 || (jlong)stride * h > (*env)->GetDirectBufferCapacity(env, px))) p = NULL;
+    if (peanuts_ovl_block) peanuts_ovl_block(slot, (void *)p, p ? w : 0, p ? h : 0, stride);   // PEANUTS: JNI entry points forwarded to dm/peanuts: the host keeps the block and paints the graph's bars into it
     return nxhost_overlay_set(slot, p, p ? w : 0, p ? h : 0, stride) ? JNI_TRUE : JNI_FALSE;
 }
 JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_overlayState(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_overlay_state ? nxhost_overlay_state() : -1; }

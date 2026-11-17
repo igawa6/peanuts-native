@@ -330,6 +330,7 @@ final class SidePanel extends FrameLayout {
         int size = Prefs.panelSize(act), w = PanelLook.widthPx(size, dp, getResources().getDisplayMetrics().widthPixels);
         if (sheet.getLayoutParams().width != w) { sheet.getLayoutParams().width = w; sheet.requestLayout(); }
         look(box, PanelLook.textScale(Prefs.panelText(act)), PanelLook.rowPx(size, dp));
+        dev.peanuts.ui.PanelPolish.apply(box);   // PEANUTS: the panel's segmented choices, headings, notes and buttons
     }
     private static void look(View v, float text, int row) {
         if (v instanceof TextView) {
@@ -490,6 +491,7 @@ final class SidePanel extends FrameLayout {
 
         head("Overlay");
         Overlay.rows(act, box, null);
+        dev.peanuts.overlay.HudSettings.rows(act, box);   // PEANUTS: overlay style and preset
     }
 
     /** Controls: Player 1, the on-screen controls, rumble and the Button mapping shortcut */
