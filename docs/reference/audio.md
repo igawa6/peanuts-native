@@ -337,6 +337,15 @@ For a replaced DSP renderer the size query keeps the service's work-buffer contr
 - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md) (imports only the older interface; v0.3.12 and v0.3.13, every driver).
 - **Check:** `make -C dm/host/tests GAME=<id> run` (`t_opus_hw`: Reset and Finalize of the older interface reach its software state and leave the work buffer alone); on a run log, the `not silent` count of the `audren: rendered` lines.
 
+### The sdk's Opus decoder read the game's libopus tables
+
+<!-- PEANUTS -->
+- **Symptom:** voices and music muffled and thin, at full frame rate with no underruns: the decoded Opus PCM (`DM_OPUS_DUMP`) is 15-20 dB below what libopus makes of the same packets and, per CELT band, three of every four bands are 25-38 dB down (coherence near 1 in the bands kept); the game's final mix carries the loss (dialogue 8-16 kHz 16 dB under an Eden-based emulator on the same line).
+- **Cause:** the `sdk`'s libopus (fixed point, functions renamed `nncodecLibopus_*`) keeps its tables under libopus's plain names (`eMeans`, `tf_select_table`, `silk_*`, ~70 symbols) with default visibility, and the loader binds a name to the first module that defines it. Hogwarts Legacy's `main` links its own libopus 1.1-beta (floating point), so the `sdk`'s CELT decoder read `main`'s tables (float `eMeans` read as fixed-point bytes): wrong band energies. The same `sdk` code run alone (unicorn, its own tables) decodes bit-exactly as libopus. On the console this code never runs: the hardware decoder (hwopus) does the work.
+- **Fix:** `hle_codec.c`: when a game module exports libopus's own decoder (`opus_decoder_get_size`, `_init`, `opus_decode`, `opus_decoder_ctl`), the hardware decoder's C interface decodes with it, one state per game decoder, Nintendo's 8-byte packet header stripped; `DM_OPUS_SDK=1` keeps the `sdk`'s. The multi-stream and manager forms still use the `sdk`'s decoders.
+- **Found on:** [Hogwarts Legacy](../../dm/games/0100F7E00C70E000/README.md) (1.0.5, SDK 17.5.4): every hwopus stream (dialogue at 24 kHz mono, music and ambience at 48 kHz stereo).
+- **Check:** `DM_OPUS_DUMP=<file>` (each packet with its PCM) decoded again with libopus on a PC (`ffmpeg -c:a libopus` on the packets as Ogg): the same PCM (correlation 1.000, at most a few LSB apart).
+
 ## Timing and catch-up
 
 ### At least one rendered frame between two updates

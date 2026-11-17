@@ -97,6 +97,7 @@ not edited (see table above).
 | `dm/games/0100F9F00C696000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Crash Team Racing Nitro-Fueled |
 | `dm/games/0100A0F00DA68000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Monster Sanctuary (provisional: packed on a PC, not run on a device) |
 | `dm/games/0100B63016916000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for My Time at Sandrock (provisional: packed on a PC, not run on a device) |
+| `dm/games/0100F7E00C70E000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be, once it plays: Banana Native has no profile for Hogwarts Legacy |
 | `dm/gfx/tools/shader_split.py` | **fixed this pass** (header note + 6 def-site tags covering DM_SPLIT_DIRECT/WORKER, DM_UE_DECODE) | **yes** — the on-device process-pool split and the comment-insensitive table comparison (`table_rows`) are general infra, not game-specific |
 | `dm/gfx/tools/uepak.py` | marked (`_nxaes` off-Mac AES path) | **yes** — lets the packer run without CommonCrypto/OpenSSL, general portability fix |
 | `dm/gfx/vk_android/vka_draw.c` | **fixed this pass** | **yes** — indirect quad/line-loop draws read on CPU instead of being skipped (Three Houses) |
@@ -1158,3 +1159,44 @@ version moves. Device state: see the game's note.
 |---|---|---|---|
 | `dm/gfx/tools/shader_split.py` | 3 | `iga_entries`, `iga_member`, `iga_shaders` and their branch in `scan_file_in`: Alchemy's igArchive version 13 (`IGA\x1a`), whose files are LZMA in 0x8000-byte blocks placed by the archive's small / medium / large block tables; every file is decoded and its whole GLSLC outputs taken. The game's split went from 12 shaders (those in `main`) to 1,945. Checked on all 74,311 files of its 401 archives; the large table (a file over 0x7FFF sectors) follows the same rule and was met on no file. nxnative has an open pull request with a reader of its own (#1077), not used here. Test: `test_split_iga.py`. Upstream candidate: yes | `PEANUTS(upstream-candidate)` |
 | `dm/host/hle_audren.c`, `dm/host/tests/t_audren_layout.c`, `dm/host/tests/t_audren_work.c`, `docs/reference/audio.md` | 71 | The host drives up to 4 audio renderers, each with its own state (`ar_t`), PCM blocks, render thread and output; it drove one, and a second `OpenAudioRenderer` logged `[RED] audren: a second renderer` and was never rendered. A hand port of nxnative 18b435ac38 and a334797d12 (MIT) onto this tree's clock pacing, catch-up queue and `DM_AUDREN_WAIT`, which stay, now per renderer. One renderer behaves as before; its log lines now name the renderer (`renderer 0 …`). Tests: the two host tests, built natively with ASan and UBSan, with a case of two renderers open at once. Not run on a device. Upstream candidate: yes (Banana Native 0.3.42 does not have it) | `PEANUTS(upstream-candidate)` on each file's first hunk, `PEANUTS` on the others |
+
+### Round 20, Hogwarts Legacy on the Odin 2 (2026-11-17, on the tree of Round 17 since 2026-11-18)
+
+The profile (`dm/games/0100F7E00C70E000/`, listed under "Per-game" above) and what the game needed to boot, draw and sound right on Android.
+
+**Boot:** `dm/host/hle_offline.c`, 1 hunk: `nn::nsd::GetApplicationServerEnvironmentType` answers retail `Lp`. `// PEANUTS`.
+
+**Vulkan shader library** (both change `DMSH_VK_CHAIN`, now 81e22fa6f8da on the tree of Round 17, 55a56b14bd50 on the tree before it: a pack's library is built again; the ABI is unchanged, `TEX_UBO` is the existing kind 14):
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/vk_android_build.py` | 2 | a texture handle in a game uniform buffer whose separate sampler is in c2 gets its uniform slot (TEX_UBO); the `nonuniform_arrays` call in `finish` | `# PEANUTS` each |
+| `dm/gfx/tools/vk_android_spv.py` | 1 | `nonuniform_arrays` and its constants (one span): a texture or sampler taken from a descriptor array at a computed index is decorated NonUniform | `# PEANUTS begin`/`end` |
+| `dm/gfx/nvn/dmsh_chain_vk.h` | 1 | `DMSH_VK_CHAIN` 81e22fa6f8da (generated) | generated header |
+| `dm/games/0400C3F00006E000/vk_delta.tsv` | 1 row | the version row follows `DMSH_VK_CHAIN` (the manifest only lists the one shader that does not build, and excuses it for the version it names: `test_android_shader_delta`) | allow-listed |
+| `dm/tools/tests/test_vk_android_ubo_tex.py`, `test_vk_android_nonuniform.py` (new) | whole files | each pass on a small module | Peanuts-owned |
+
+**Texel buffers in the Vulkan replay** ([rendering.md](../docs/reference/rendering.md)):
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_draw.c` | 8 | the view table starts again when 7/8 full; `tbc_ent` / `g_tbc`: a read-only texel buffer is copied once per submission and the copy reused in `tbuf_view`'s CPU path; `tbc_reset` forgets the copies at each submission's start (`vka_draw_sub_begin`); `vka_tbuf_stats`, `g_tbv_made` / `g_tbv_restarts` | `// PEANUTS` each |
+| `dm/gfx/vk_android/vka_tbuf.h`, `dm/host/tests/t_android_tbuf.c` | 1 each | `vka_tbuf_copy_live` (a kept copy is bound again only in the submission that made it) and its case | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_tex.c` | 1 | `vka_tex_gw_seq`, `vka_tex_gw_since` (inside the existing `PEANUTS begin`/`end` span) | `// PEANUTS begin`/`end` |
+| `dm/gfx/vk_android/vka.h`, `vka_exec.c` | 1 each | their declarations; the `texel buffers per frame:` line in the replay's statistics | `// PEANUTS:` |
+
+Beside Round 17's buffer textures: these hunks are all in the texel buffer binding's own path (`tbuf_view`, which Round 17 left as it was and asks first), not in the choice of
+the image a buffer texture is read through (`tbuf_img_gpu`, `vktb_memo`: one answer a draw). `vka_tbuf.h` and `t_android_tbuf` hold both rules. A binding `tbuf_view`
+gives no view now takes `vka_tbuf_view`'s, so a full view table would read as empty only where that has none either; the restart stays.
+
+**Hardware Opus decoder** ([audio.md](../docs/reference/audio.md)):
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/hle_codec.c` | 10 | the C interface decodes with the game's own libopus when a game module exports it (`DM_OPUS_SDK=1`: the sdk's); the log names the rate, channels, packet bandwidths and failure counts; `DM_OPUS_DUMP` writes each packet with its PCM | `// PEANUTS` |
+| `docs/env_switches.tsv` | 2 rows | `DM_OPUS_DUMP` (its new format), `DM_OPUS_SDK` (new) | `[PEANUTS]` |
+
+**Docs:** new sections in `docs/reference/rendering.md`, `shaders.md` and `audio.md` (`<!-- PEANUTS -->` each) and their lines in the generated `docs/agents/symptoms.md`.
+
+Checked on the Odin 2 (Turnip) and the AYN Thor with Hogwarts Legacy only, in a build that also carried other pending changes; `t_android_tbuf` and the two
+Python tests pass. Not run: Qualcomm's driver beyond a first look, other games.
