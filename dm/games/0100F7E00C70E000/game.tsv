@@ -1,0 +1,50 @@
+# Game profile of Hogwarts Legacy (Switch, update 1.0.5 = v327680 over the base game 1.0.0 = v0)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Avalanche Software / Warner Bros. Games, Unreal Engine 4.27.2 (EpicGames+UnrealEngine-4_27_2 in main; the desktop renderer, SF_GLSL_SWITCH shaders), SDK 17.5.4, NVN, Wwise sound, Bink movies.
+# Status: provisional profile (dm/games/profile_guess.py from the survey, peanuts/docs/NEW-GAME.md), not booted yet; the note (README.md) says what is a guess
+
+# ---- Identity ----
+title_id	0100F7E00C70E000
+program_id	0100F7E00C70E000
+
+# ---- App ----
+name	Hogwarts Legacy
+ipa	HogwartsLegacy.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+# The shader tables are the update's (v327680); a base game dump has other shader code archives (README.md)
+build	v327680	1.0.5	main=0c00fc37b0610fbdb2cf73aed0cc73e7	subsdk0=d0c48eef6dc2f1e7ac8b8dd5b5b03a60	sdk=1ea0b9fe6cd6867b18e374a5d53d7950
+build	v0	1.0.0	main=70658a5c238d69c24698fded6a34efa6	subsdk0=7c1a58cac01c4aa3935c6243f69cf0d3	sdk=835c229763ce5c1816a70f875bd70ccd
+package	v327680
+shader_versions	v327680
+
+# ---- Files ----
+# subsdk0 is NintendoSDK_movie (main imports from it)
+modules	main subsdk0 sdk
+romfs_marker	Phoenix/Content/Paks/pakchunk0-Switch.pak
+zip_store	.bk2:.pak:.ucas:.utoc:.metallib
+
+# ---- Memory ----
+# Unreal Engine 4.27.2: nninitStartup (main+0x19ecfc4) reserves one address region for the engine (62 GB by default); the rewriter's engine-wide gate on the store of its size
+# (dm/tools/ue_region.py, main+0x19ed298) gives it what the alias region has room for. Its FMallocBinned3 is not cut (dm/tools/ue_malloc.py finds no UTF-16 name: this build's TCHAR is 8-bit,
+# and with an 8-bit name its vtable has the name getter in slot 23, a layout hle_uemalloc.c does not know), so Unreal's own allocator runs and reserves its pools (37 GB of address
+# space) in that region: the survey's 64 GB alias region (address space only on Android, docs/reference/memory.md), 256 MB stacks, 128 MB heap. Not measured
+mem_reserve	0x1028000000
+mem_alias	0x1000000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+
+# ---- Input ----
+# A 3D game whose camera the right stick turns: the 3D pad layout
+pad_layout	full
+
+# ---- Shader split ----
+# The shader code archives of the paks (ShaderArchive-Global-SF_GLSL_SWITCH in pakchunk0, ShaderArchive-Phoenix_Chunk0 / _Chunk9 / _Chunk10 in pakchunk0, 9 and 10), stored in the pak, every shader in
+# them Oodle Kraken-compressed (block header 8C 06). Unreal combines vertex and pixel shaders per draw from its pipeline state, so every vertex shader is made to link with any pixel shader
+# (shader_split.py separable_pairs)
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	Hogwarts Legacy shaders
