@@ -432,6 +432,20 @@ def ubo_img(nm):
     return (bank - 3, (h & 0x3fff) * 4) if 3 <= bank <= 16 and h >> 28 == 0 else None
 
 
+# PEANUTS begin: a type-1 handle whose texture word is in the game's own uniform buffer and whose separate sampler word is in the driver table c2 (decode_ubo_tex takes a
+# type-1 sampler only from another game uniform buffer, and decode_tex places textures only in c2, so the texture half had no slot and read as unbound)
+def ubo_tex_c2_sampler(name):
+    """fp_t2d_cb196615_10568000: texture handles in c7 from byte 0 (an array: element k at byte 8k), sampler from c2 word 0x15A (separate sampler slot 0). Unreal Engine 4's
+    material textures in Hogwarts Legacy: 139,302 bindings. → ((uniform slot, byte offset), separate sampler slot) or None"""
+    m = re.match(r'[a-z]+_t\w*?_cb(\d+)_([0-9A-F]+)', name)
+    if not m: return None
+    slots, h = int(m.group(1)), int(m.group(2), 16)
+    if not (3 <= slots & 0xffff <= 16 and (slots >> 16) - 1 == 2 and h >> 28 == 1): return None
+    d = NS['decode_tex'](name)
+    return ((slots & 0xffff) - 3, (h & 0x3fff) * 4), d[1] if d and d[1] is not None else None
+# PEANUTS end
+
+
 def classify(stage, r, res, m):
     """A descriptor variable → its binding record (dict): the kind and slot from its name (dmsh_build.py reflect's rules, on the SPIR-V names the MSL members come from)"""
     nm, desc = r['name'], r['desc']
@@ -461,6 +475,9 @@ def classify(stage, r, res, m):
         e.update(kind=abi.KIND_SAMP_C2A if desc == spv.VK_SAMPLER else abi.KIND_TEX_C2A, off=off)
         if desc == spv.VK_COMBINED: e.update(skind=abi.KIND_SAMP_C2A, soff=soff if soff is not None else 0xFFFF, off=off)
         elif soff is not None: e['soff'] = soff
+    elif texlike and desc != spv.VK_UNIFORM_TEXEL and ubo_tex_c2_sampler(nm):   # PEANUTS: texture in a game uniform buffer, sampler in c2 (its sampler half: sampler_half, KIND_SAMP)
+        (treg, toff), s = ubo_tex_c2_sampler(nm)
+        e.update(kind=abi.KIND_SAMP, reg=s) if desc == spv.VK_SAMPLER else e.update(kind=abi.KIND_TEX_UBO, reg=treg, off=toff)
     elif texlike:
         d = NS['decode_tex'](nm)
         if not d: e['kind'] = abi.KIND_UNKNOWN
@@ -616,6 +633,7 @@ def finish(key, w, job, c1):
     if not hmma: spv.promote_locals(m)   # simplify GlobalToStorage helpers (binary search, CAS, branchless inPool) and promote single-store locals
     if not hmma: spv.loop_pool_search(m)   # the raw helpers' pool table search one loop of one step (vk_android_spv.py loop_pool_search)
     spv.buffer_textures_split(m)   # a buffer texture's combined image and sampler of Dim Buffer → a texel buffer (vk_android_spv.py)
+    spv.nonuniform_arrays(m)   # PEANUTS: a descriptor array read at a computed index marked NonUniform (vk_android_spv.py nonuniform_arrays)
     binds = [classify(stage, r, res, m) for r in m.resources()]
     storage_slots(stage, binds, res)
     try: place(stage, binds, m)
