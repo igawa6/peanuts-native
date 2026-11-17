@@ -176,6 +176,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [The Legend of Zelda: Ocarina of Time](0400486024DEC000/README.md) | `0400486024DEC000` | v0 (Switch 2) | 22.2.8 (Ounce) | Nintendo EPD (sead / agl / gsys) | NVN2 |
 | [The Legend of Zelda: Skyward Sword HD](01002DA013484000/README.md) | `01002DA013484000` | 1.0.1 | 11.4.0 | Nintendo's Wii-era engine, ported by Tantalus | NVN |
 | [The Legend of Zelda: Tears of the Kingdom](0100F2C0115B6000/README.md) | `0100F2C0115B6000` | 1.4.3 | 20.5.22 | Nintendo EPD (sead / agl / gsys) | NVN |
+| [Tomodachi Life: Living the Dream](010051F0207B2000/README.md) | `010051F0207B2000` | 1.0.4 | 20.5.3 | Nintendo's engine (sead / agl / gsys, NintendoWare) | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [TRIANGLE STRATEGY](0100CC80140F8000/README.md) | `0100CC80140F8000` | 1.1.1 | 12.3.2 | Unreal Engine 4.27 | NVN |
 | [Unicorn Overlord](010069401ADB8000/README.md) | `010069401ADB8000` | 1.05 | 16.2.4 | Vanillaware's engine | NVN |
 | [Unicorn Overlord, Asian release](010054B01AD92000/README.md) | `010054B01AD92000` | 1.05 | 16.2.4 | Vanillaware's engine | NVN |
