@@ -528,6 +528,14 @@ def glslc_shaders(d, label, need=True, skip=(), sink=None):
             if not sec or len(sec) != 1: continue
             (ctl, code), = sec; st = glslc_stage(ctl, code)
             if not st or check(label, st, ctl, code): continue
+        # PEANUTS(upstream-candidate) begin: the rule above can also pass with the wrong code area. SDK 3.4's GLSLC (FIFA 18's sh_irradiance_prefilter.cs, the compute shader
+        # that bakes the spherical-harmonic lighting) writes a compute control section 0x180 bytes longer than its +0x20 says (0x2408 by the section header, 0x2288 at +0x20): the
+        # bytes after +0x20's length are float constants (±1.0), which pass as headerless compute code. The game binds the section header's code (its key ad6448a83337e2ef
+        # was missing from the map; every player and the crowd drew black). When the output's section header names one GPU code section that passes the triple check and
+        # differs from the rule's, the header wins; on the outputs where both are valid they agree everywhere else (FIFA 18: 188 of its 189 outputs)
+        elif (sec := glslc_section(d, h, size)) and len(sec) == 1 and sec[0] != (ctl, code) and (sst := glslc_stage(*sec[0])) and not check(label, sst, *sec[0]):
+            (ctl, code), = sec; st = sst
+        # PEANUTS(upstream-candidate) end
         out.append((f'{label}#GLSLC@{h:#x}', st, ctl, code))
     if not out and need: red(f'{label}: no GLSLC output')
     return out
@@ -2797,6 +2805,45 @@ def heaps_shaders(d, label):
     if not found: red(f'{label}: no GLSLC output in //BIN= comments')
     return found
 
+# PEANUTS begin: EA BIG4 archives (eabig.py): FIFA 18's shaders are NXSHADER effects (.fxo, an 'NXSHADER' header and a whole GLSLC output) in a BIG4 archive that is
+# chunk-compressed and EASF-encrypted inside datax.big. Only members named .big or .fxo are read: the other 99% of the 13 GB (models, textures, sound) hold no shaders, and the
+# archive's table names them, so the scan reads the table and those members only. An EASF member's key comes from main's code (eabig.key_for); main's paths reach the pool's
+# workers through DM_SPLIT_MAINS, which main() sets. An EASF member with a key name main has no key for is left out without a red line: the game keys those from its database
+EA_MEMBERS = ('.big', '.fxo')
+_EA_IMG = []
+
+def ea_main_image():
+    if not _EA_IMG:
+        for p in filter(None, os.environ.get('DM_SPLIT_MAINS', '').split('\n')):
+            _EA_IMG.append(nso_image(p)); break
+        if not _EA_IMG: red('an EASF file needs main for its key, and DM_SPLIT_MAINS names none')
+    return _EA_IMG[0]
+
+def ea_blob(d, label, found, depth=0):
+    import eabig
+    if depth > NEST: red(f'{label}: archives nested more than {NEST} deep')
+    if d[:4] == eabig.EASF:
+        if (k := eabig.key_for(ea_main_image, d)) is None: return
+        d = eabig.easf_decrypt(k, d)
+    if d[:8] in eabig.CHUNK:
+        if d[:8] not in (b'chunkzip', b'chunzstd'): return   # EA's other codecs: no shader container has been seen in one
+        d = eabig.unchunk(d, label)
+    if d[:4] == eabig.BIG4:
+        for nm, off, n in eabig.big4_entries(d[:eabig.big4_header_len(d[:16])], len(d)):
+            if nm.lower().endswith(EA_MEMBERS): ea_blob(d[off:off + n], f'{label}/{nm}', found, depth + 1)
+        return
+    if d[:8] == b'NXSHADER': found += glslc_shaders(d, label, need=False)
+
+def ea_big_shaders(path, rel, found):
+    """The shaders of a BIG4 archive in the RomFS: its table, then each member named .big or .fxo (ea_blob)"""
+    import eabig
+    with open(path, 'rb') as f:
+        hl = eabig.big4_header_len(f.read(16)); f.seek(0)
+        for nm, off, n in eabig.big4_entries(f.read(hl), os.path.getsize(path)):
+            if nm.lower().endswith(EA_MEMBERS):
+                f.seek(off); ea_blob(f.read(n), f'/{rel}/{nm}', found, 1)
+# PEANUTS end
+
 UE_TAG ={'SV': 'vs', 'SH': 'hs', 'SD': 'ds', 'SG': 'gs', 'SP': 'ps', 'SC': 'cs'}
 def main_imports(img):   # the names main imports (its dynamic symbols)
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../tools')); import nso_syms
@@ -2983,6 +3030,9 @@ def scan_file_in(args):
                 # Compiled effects and loose GPU programs; texture and sound members carry no shader programs.
                 if '.fx' in entry[0] or '/shaders/' in entry[0] or entry[0].endswith(('.vs.bin', '.ps.bin', '.fs.bin')):
                     found += phyre_shaders(vbf.read(f, entry), f'/{rel}/{entry[0]}')
+        return rel, uniq_keys(found), var_pairs(found), trees
+    if head[:4] == b'BIG4':   # PEANUTS: an EA BIG4 archive (ea_big_shaders): its table and the members that can hold shaders, not the whole file
+        ea_big_shaders(path, rel, found)
         return rel, uniq_keys(found), var_pairs(found), trees
     d, kind = plain_blob(path, rel, head)   # PEANUTS: on-device split support — plain_blob factored out below for direct_file's reuse (see file header)
     if kind == 'monolith':
@@ -3376,6 +3426,7 @@ def main():
     romfs_v, main_v = [nup.default_romfs(r) for r in path_list(romfs_l)], path_list(main_l)   # PEANUTS: path_list (was split(',')): a path may hold a comma
     dlc_v = [nup.default_romfs(r) for r in dlc_v]
     if len(romfs_v) != len(main_v): red(f'{len(romfs_v)} RomFS and {len(main_v)} main: they must pair one to one')
+    os.environ['DM_SPLIT_MAINS'] = '\n'.join(main_v[::-1])   # PEANUTS: the newest main first, for the readers that need main in the pool's workers (ea_main_image)
     files, results, common, dumps = [], [], None, []
     for i, (romfs, mainnso) in enumerate(zip(romfs_v, main_v)):
         tag = os.path.basename(os.path.dirname(os.path.abspath(romfs))) if i else ''
