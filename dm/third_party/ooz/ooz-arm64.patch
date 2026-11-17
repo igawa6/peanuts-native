@@ -1,0 +1,18 @@
+PEANUTS: on arm64, stdafx.h takes the SSE2 intrinsics kraken.cpp uses from ooz_neon.h (AArch64 NEON) in place of <x86intrin.h>. Applied by build.sh after
+ooz-port.patch, on arm64 only; the x86-64 build does not apply it. The decoder itself is not changed by this patch.
+Licence: GPL-3.0-or-later, as kraken.cpp (COPYING).
+
+--- a/stdafx.h
++++ b/stdafx.h
+@@ -26,7 +26,11 @@
+ // gcc / clang on x86-64: the MSVC names kraken.cpp uses
+ #include <stdint.h>
+ #include <stddef.h>
++#if defined(__aarch64__)
++#include "ooz_neon.h"
++#else
+ #include <x86intrin.h>
++#endif
+ #define __int64 long long
+ #define __forceinline inline __attribute__((always_inline))
+ static inline unsigned char _BitScanReverse(unsigned long *index, unsigned int x) { *index = 31 - __builtin_clz(x); return x != 0; }
