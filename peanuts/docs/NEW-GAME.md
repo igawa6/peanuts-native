@@ -99,17 +99,13 @@ The first run translates every shader (Kirby: 47,099 shaders in 12.5 minutes on 
 
 ## 6. A test app
 
-The host reads each game's profile from the APK (`assets/profiles/<TITLE ID>.profile.bin`), so a new game needs an APK built with it. Build the Peanuts app under another id, so that it installs beside the release and leaves its saves alone. Today that takes one local line in `android/app/build.gradle` (do not commit it), after `applicationId …` in `defaultConfig`:
-
-```groovy
-applicationIdSuffix providers.gradleProperty('nxIdSuffix').getOrElse('')
-```
+The host reads each game's profile from the APK (`assets/profiles/<TITLE ID>.profile.bin`), so a new game needs an APK built with it. Build the Peanuts app under another id, so that it installs beside the release and leaves its saves alone: `-PnxAppId=<suffix>` makes it `dev.nxnative.android.<suffix>` (lower-case letters and digits), an app of its own with its own data.
 
 ```sh
 cd android/app
 export JAVA_HOME=<JDK 21> PATH=<env>/bin:$JAVA_HOME/bin:$PATH ANDROID_HOME=<Android SDK>
-./gradlew apk -PnxApp=peanuts -PnxIdSuffix=test -PnxLabel="Peanuts test" -PnxGames=<TITLE ID> -PnxPackEngine=fake
-adb install -r out/nxnative-android-peanuts.apk          # dev.nxnative.android.peanuts.test
+./gradlew apk -PnxApp=peanuts -PnxAppId=peanutstest -PnxLabel="Peanuts test" -PnxGames=<TITLE ID> -PnxPackEngine=fake
+adb install -r out/nxnative-android-peanuts.apk          # dev.nxnative.android.peanutstest
 ```
 
 `-PnxPackEngine=fake` leaves out the on-device packer, which needs its own stage (`peanuts/scripts/ondevice-stage.sh`). The pack comes from step 5 instead. Add the other games you want in the same app to `-PnxGames` (comma-separated).
@@ -125,9 +121,9 @@ In the test app:
 1. Settings › Library: **Keys** (your `prod.keys`), **Firmware** (your firmware folder or `.zip`), and the **game folder** (`/sdcard/Peanut Roms`).
 2. Install the companion, if there is one, from the catalog (eden-duo-companions), and check that its manifest's build IDs cover your build.
 3. Start the game from the library. Play about 20 seconds past the title, on the system driver, then on Turnip (Settings › GPU driver).
-4. Read the log: `/sdcard/Android/data/dev.nxnative.android.peanuts.test/files/logs/<TITLE ID>-<time>.log` and its `.digest.txt` (or `python scripts/log_digest.py <log>`). Check the `[vk] driver:` line (Turnip is driver ID 18), `PN_BUILD_ID`, `shared font … firmware/fonts`, the `[nvn] frame` lines, `CRASH` and `[RED]`. The companion logs to logcat: `adb logcat -d | grep -E "mod_module|module_ready"` (want `module_ready=1 build_match=1`).
+4. Read the log: `/sdcard/Android/data/dev.nxnative.android.peanutstest/files/logs/<TITLE ID>-<time>.log` and its `.digest.txt` (or `python scripts/log_digest.py <log>`). Check the `[vk] driver:` line (Turnip is driver ID 18), `PN_BUILD_ID`, `shared font … firmware/fonts`, the `[nvn] frame` lines, `CRASH` and `[RED]`. The companion logs to logcat: `adb logcat -d | grep -E "mod_module|module_ready"` (want `module_ready=1 build_match=1`).
 5. Screenshots: `adb exec-out screencap -p > top.png`, and for the second screen `adb exec-out screencap -d <physical display id> -p > bottom.png` (the ids are in `adb shell dumpsys display | grep uniqueId`, as `local:<id>`).
-6. Force-stop the test app afterwards (`adb shell am force-stop dev.nxnative.android.peanuts.test`). Never delete or overwrite a save folder.
+6. Force-stop the test app afterwards (`adb shell am force-stop dev.nxnative.android.peanutstest`). Never delete or overwrite a save folder.
 
 ## 8. The pull request
 

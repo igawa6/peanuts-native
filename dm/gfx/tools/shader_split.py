@@ -3405,11 +3405,11 @@ def main():
         dumps += nvn_dumps(os.environ.get('DM_NVN_SHDUMP_DIR') or os.path.join(os.path.dirname(os.path.abspath(romfs)), 'nvn_shdump'))
         # Unreal Engine shader code archives decoded on the Mac (uepak.py): <version dir>/ue_shaders, or DM_UE_SHADERS; needed when the RomFS has Unreal paks
         ued = os.environ.get('DM_UE_SHADERS') or os.path.join(os.path.dirname(os.path.abspath(romfs)), 'ue_shaders')
-        names = sorted(f for f in os.listdir(ued) if f.endswith('.ushaderbytecode')) if os.path.isdir(ued) else []
+        names = sorted(f for f in os.listdir(ued) if f.endswith('.ushaderbytecode') and not f.startswith('._')) if os.path.isdir(ued) else []   # PEANUTS(upstream-candidate): not macOS's AppleDouble ._<name> files, which it writes beside each file on an exFAT or FAT drive (a Mac build onto such a drive read one as an archive)
         if not names and os.environ.get('DM_UE_DECODE') and uepak.unreal_paks(romfs, inline=False):   # PEANUTS: the phone decodes them here (ue_ondevice.py; the Mac's NSP script did)
             import ue_ondevice
             ued = ue_ondevice.decode(romfs, mainnso, os.environ['DM_UE_DECODE'])
-            names = sorted(f for f in os.listdir(ued) if f.endswith('.ushaderbytecode'))
+            names = sorted(f for f in os.listdir(ued) if f.endswith('.ushaderbytecode') and not f.startswith('._'))   # PEANUTS(upstream-candidate): as above
         if not names and uepak.unreal_paks(romfs, inline=False): red(f'the RomFS has Unreal paks, but there are no decoded shader code archives in {ued} (the NSP script writes them)')
         for nm in names: found += ue_shaders(open(os.path.join(ued, nm), 'rb').read(), f'/ue_shaders/{nm}')
         results.append(('main', last_entries(found), var_pairs(found), {}))

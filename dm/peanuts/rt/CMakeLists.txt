@@ -25,7 +25,20 @@ set(PNRT_THIRD_PARTY ${PNRT_DIR}/../third_party)
 # symlink in the tree, a generated include root maps core/mods -> dm/peanuts/rt/mods.
 set(PNRT_INC_ROOT ${CMAKE_CURRENT_BINARY_DIR}/pnrt_include)
 file(MAKE_DIRECTORY ${PNRT_INC_ROOT}/core)
-file(CREATE_LINK ${PNRT_DIR}/mods ${PNRT_INC_ROOT}/core/mods SYMBOLIC)
+file(CREATE_LINK ${PNRT_DIR}/mods ${PNRT_INC_ROOT}/core/mods RESULT pnrt_link SYMBOLIC)
+if(NOT pnrt_link EQUAL 0 AND CMAKE_HOST_WIN32)
+  # Windows makes symbolic links only with Developer Mode or as administrator; a directory junction needs neither
+  if(IS_DIRECTORY ${PNRT_INC_ROOT}/core/mods)
+    set(pnrt_link 0)   # the junction of an earlier configure
+  else()
+    file(TO_NATIVE_PATH ${PNRT_INC_ROOT}/core/mods pnrt_link_n)
+    file(TO_NATIVE_PATH ${PNRT_DIR}/mods pnrt_dir_n)
+    execute_process(COMMAND cmd /c mklink /J ${pnrt_link_n} ${pnrt_dir_n} RESULT_VARIABLE pnrt_link OUTPUT_QUIET)
+  endif()
+endif()
+if(NOT pnrt_link EQUAL 0)
+  message(FATAL_ERROR "cannot link ${PNRT_INC_ROOT}/core/mods to ${PNRT_DIR}/mods: ${pnrt_link}")
+endif()
 
 set(PNRT_LIFTED
   mods/engine_ichigo.cpp

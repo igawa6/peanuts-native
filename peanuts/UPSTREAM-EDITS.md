@@ -779,7 +779,31 @@ Run: `build.sh <work dir> python`, then on the AYN Thor with `dm_pack_cli`, `sha
 open; with `lz4/frame` moved away, the same `[RED]` line as the failed Prepare. Not run: a whole Prepare of the game on the phone (it needs the full
 stage, `build.sh … tools`, and an APK built with it). No shader-chain file is changed. Upstream candidate: yes (upstream's `build.sh` has the same gap).
 
-### Round 14, half conversions exact for fp16 subnormals (2026-11-17)
+### Round 14, -PnxAppId (2026-11-16)
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/build.gradle` | 2 | `-PnxAppId=<suffix>` (default `nxApp`) names the application ID `dev.nxnative.android.<suffix>`, so a development build installs beside the app | `// PEANUTS` on each line |
+
+Upstream candidate: no (it serves `-PnxApp=peanuts`).
+
+### Round 15, macOS's AppleDouble files on an exFAT drive in the Unreal shader step (2026-11-17)
+
+A Mac build of FINAL FANTASY RESONANCE whose work folder was on an exFAT drive stopped twice. macOS writes an AppleDouble `._<name>` beside each file it
+creates there and removes it with the file. `ue_ondevice.py`'s `rmtree` walked the folder, removed `X`, then found `._X` gone (`FileNotFoundError`); and the
+next run's `shader_split.py` listed `._ShaderArchive-….ushaderbytecode` (4 KB, magic `00 05 16 07`) as a shader archive and stopped with
+`not a version 2 shader code archive`.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/shader_split.py` | 2 | the two listings of `<ue_shaders>/*.ushaderbytecode` leave out names starting with `._` | `# PEANUTS(upstream-candidate)` |
+| `dm/gfx/tools/ue_ondevice.py` | 1 | `rmtree` takes a file already gone as removed | Peanuts-owned file |
+
+Run: the FINAL FANTASY RESONANCE build onto that drive went through both places after the change (the archives reused from `ue_shaders`, then split). No
+shader-chain file is changed. Upstream candidate: the `shader_split.py` hunks, yes (the Mac's NSP script writes `ue_shaders` beside the dump, often on such a
+drive).
+
+### Round 16, half conversions exact for fp16 subnormals (2026-11-17)
 
 Adreno 6xx / 7xx report `shaderDenormPreserveFloat16` false on Turnip and on Qualcomm's driver, and the translator turns every half conversion into GLSL.std.450
 `PackHalf2x16` / `UnpackHalf2x16`, which such a device may make with a conversion that flushes values below 2^-14 to 0 (Maxwell keeps them). Seen in an Eden-based
@@ -798,7 +822,7 @@ made, on such a device only (`DM_VK_FP16_EXACT` overrides): exact encode and dec
 Run: `t_android_spvpatch`; on the AYN Thor (Qualcomm 676.53 and Turnip, Mesa 27.0.0-devel) Pokémon Legends: Z-A logs 92 conversions made exact in its first frames.
 Not run: a picture compared with it off; Fire Emblem Engage's engage attacks on the phone. No shader-chain file is changed. Upstream candidate: yes.
 
-### Round 15, Pokémon Legends: Z-A 2.0.0 on Android (2026-11-17)
+### Round 17, Pokémon Legends: Z-A 2.0.0 on Android (2026-11-17)
 
 Z-A's profile (Banana Native's, brought up on the Mac and iPhone) on the AYN Thor: 2.0.0 gets a build row and a boot race cut, and the note says what the phone run
 showed. The boot race (the title scene starting before the title menu registered its callback, about half of the boots in Eden on PC) is the game's own order of
