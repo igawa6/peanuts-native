@@ -813,6 +813,16 @@ int vka_tex_gw_tbuf_pending(uint64_t addr, uint64_t n) {
     pthread_mutex_unlock(&g_tmu);
     return r;
 }
+// The newest write's sequence number now, and whether a write recorded after `seq` (not done) overlaps [addr, addr + n): a copy of the range taken at `seq` is still what the
+// GPU will read (vka_draw.c tbuf_view's copy kept for the submission)
+uint64_t vka_tex_gw_seq(void) { pthread_mutex_lock(&g_tmu); uint64_t s = g_gwseq - 1; pthread_mutex_unlock(&g_tmu); return s; }
+int vka_tex_gw_since(uint64_t addr, uint64_t n, uint64_t seq) {
+    int r = 0;
+    pthread_mutex_lock(&g_tmu);
+    for (int i = g_ngw - 1; i >= 0 && !r; i--) r = g_gw[i].seq > seq && g_gw[i].lo < addr + n && addr < g_gw[i].hi;
+    pthread_mutex_unlock(&g_tmu);
+    return r;
+}
 // PEANUTS end
 // Stores through raw global memory (an address the shader loaded: dmsh_abi.h DMSH_GMEM_LOG_*) land where only the GPU knows: each draw or dispatch with such stores gets a write
 // log of its own, read once its submission is done; its pools (or, in an older ABI's page-hash log, its pages) become writes of unknown bytes, done (the images over them are
