@@ -290,6 +290,8 @@ DM_OOT_TEXTURE_POOL_X2	developer	Memory			text			both
 DM_OOT_WIDE_KEEP	developer	Diagnostics			text			both						
 DM_OPMODE	developer	Game			text			both						
 DM_OPTION_PATCHES	developer	Game			text			both						
+DM_OPUS_DUMP	developer	Diagnostics			text			both						
+DM_OPUS_SDK	developer	Diagnostics			text			both						
 DM_OVERLAY	developer	Game			text			both						
 DM_PACKER_COMMIT	developer	Diagnostics			text			both						
 DM_PAD_DEADZONE	developer	Input			text			both						
