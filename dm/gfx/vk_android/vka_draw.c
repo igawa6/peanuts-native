@@ -2857,7 +2857,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
                      d->attr[ai].stream < 16 ? (unsigned)d->stream[d->attr[ai].stream].divisor : 0u);
             if (!ind && !di && dw && base && sd >= 4 && sd <= 48 && cnt <= 96) for (int v0 = 0; v0 < cnt && rtl_room(); v0 += 6) {
                 char hx[400]; size_t hn = 0;
-                for (int v = v0; v < cnt && v < v0 + 6 && hn + 80 < sizeof hx; v++) {
+                for (int v = v0; v < cnt && v < v0 + 6 && hn + 12 * 9 + 16 < sizeof hx; v++) {   // PEANUTS(upstream-candidate): room for a whole vertex (up to 12 words): 80 overflowed hx at a 48-byte stride (snprintf's size went negative: FORTIFY abort, FIFA 18)
                     uint32_t w[12] = {0}; int ok = cpu_read(base + (uint64_t)(dw->first + v) * sd, w, sd);
                     hn += (size_t)snprintf(hx + hn, sizeof hx - hn, "%s[", v > v0 ? " " : "");
                     for (uint32_t i = 0; ok && i < sd / 4; i++) hn += (size_t)snprintf(hx + hn, sizeof hx - hn, "%s%08x", i ? " " : "", w[i]);

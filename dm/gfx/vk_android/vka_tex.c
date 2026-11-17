@@ -2234,6 +2234,15 @@ void vka_tex_writeback(VkCommandBuffer cb) {
         VkBufferImageCopy c = {o, (uint32_t)(row / bpb), h, {im->aspect, 0, 0, 1}, {0, 0, 0}, {im->w, h, 1}};
         vk.vkCmdCopyImageToBuffer(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, b, 1, &c);
         static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VLOG("linear texture serial %llu %ux%u format %#x: the GPU's content copied back into its storage", (unsigned long long)im->serial, im->w, h, im->d.format);
+        // PEANUTS(upstream-candidate) begin: with its GPU content in the storage again, the storage is the texture, as on the Switch: CPU writes from now on are followed (wb_cpu,
+        // vka_tex_prepare). FIFA 18's glyph cache (EA::Text::GlyphCache_RNA, a 1024x1024 R8 linear texture) is filled first by a GPU copy (RNA::TexturePlatC::Update) and then by the
+        // CPU through nvnMemoryPoolMap (TexturePlatC::Lock / Unlock with FlushMappedRange): the first copy made the image GPU content, every glyph after it was dropped, and the
+        // menus drew their panels with no text. The pages are protected now: the copy back is a GPU write, which never faults
+        if (im->mem && !img_pool_dead(im) && (im->span || (im->span = nvn_dirty_span(im->mem, im->L.size)))) {
+            if (!im->wb_cpu) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VLOG("linear texture serial %llu %ux%u format %#x: CPU writes to its storage after the GPU's are followed", (unsigned long long)im->serial, im->w, h, im->d.format); }
+            im->wb_cpu = 1; im->track = 1; im->stamp = nvn_dirty_now(); nvn_dirty_protect(im->mem, im->L.size);
+        }
+        // PEANUTS(upstream-candidate) end
         unref_locked(im);
     }
     g_nwb = 0;
@@ -2249,7 +2258,7 @@ void mtl_pkg_stats(uint64_t *uploads, uint64_t *reuploads) { if (uploads) *uploa
 // The CPU wrote the texture's storage: uploaded at its first use, or again at the next submission unless the GPU has written it since (then the GPU's content wins)
 static uint64_t *g_redo; static int g_nredo, g_redocap;
 static void redo_add_locked(vka_img *im) {   // (g_tmu held) its guest storage holds a write the next prepare must read again
-    if (!im || im->gpu_owned || im->cpu_dirty) return;
+    if (!im || (im->gpu_owned && !im->wb_cpu) || im->cpu_dirty) return;   // PEANUTS(upstream-candidate): wb_cpu (vka_tex_writeback)
     im->cpu_dirty = 1;
     if (g_nredo == g_redocap) { g_redocap = g_redocap ? g_redocap * 2 : 64; g_redo = realloc(g_redo, (size_t)g_redocap * sizeof *g_redo); }
     g_redo[g_nredo++] = im->serial;
@@ -3058,6 +3067,12 @@ static VkImageView id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage,
         // class when the image's format list takes it (learned on first use: vka_view, then the next images of this format and size are made with it). Not the bits' own class
         // otherwise: that reads as unbound
         ovr = class_twin(vf.vk, want);
+        // PEANUTS(upstream-candidate): a shader image of an integer class over a 4-byte texture of another class is the texel's raw bits, r32ui / r32i: the translator declares
+        // the raw surface loads and stores (SULD.D / SUST.D .B32, InstEmitSurface.cs GetTextureFormat) and the atomics that way, and that is what the Switch hands it whatever the
+        // texture's format. The per-channel twin read only the red byte: FIFA 18's GPU texture compressors (compress_bc1 / compress_bc3, SportsRNA::Utility::DXTBatchJob) load the
+        // composited RGBA8 kits and faces with SULD.D .B32, so every kit and face came out red with alpha 0 (close-ups invisible, a red face). DM_VK_RAW32=0: the twin, as before
+        if (storage && want && vf.bpb == 4 && vf.bw == 1 && vf.bh == 1 && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT && VKA_ENV("DM_VK_RAW32", 1))
+            ovr = want == 1 ? VK_FORMAT_R32_UINT : VK_FORMAT_R32_SINT;
         if (!ovr || vf.kind > 2) { pthread_mutex_lock(&g_tmu); im_unhold_locked(im); pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
     }
     VkFormat need = storage ? img_view_learn_fmt(ovr ? ovr : vf.vk, im) : VK_FORMAT_UNDEFINED;   // (a storage view in a format the image's list lacks: learned, the image remade below)
@@ -3268,7 +3283,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
         smap_ent *e = map_get(g_redo[i]); vka_img *im = e ? e->im : NULL;
         if (!im || !im->cpu_dirty) continue;
         im->cpu_dirty = 0;
-        if (im->gpu_owned || img_pool_dead(im)) continue;
+        if ((im->gpu_owned && !im->wb_cpu) || img_pool_dead(im)) continue;   // PEANUTS(upstream-candidate): wb_cpu (vka_tex_writeback)
         tex_t t = {0}; t.serial = im->serial; t.d = im->d; t.L = im->L; t.mem = (uint8_t *)im->mem;
         nvn_tex_layout(&t.d, &t.L);
         if (im->vtrack) { sparse_refresh(im, cb); g_reup++; n_up++; continue; }
@@ -3414,7 +3429,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
                 if (g_reup++ < 8) VLOG("sparse texture serial %llu %ux%u format %#x: its mappings or pages changed, re-uploaded", (unsigned long long)im->serial, im->w, im->h, im->d.format);
                 continue;
             }
-            if (!im->track || im->gpu_owned || !im->mem) continue;
+            if (!im->track || (im->gpu_owned && !im->wb_cpu) || !im->mem) continue;   // PEANUTS(upstream-candidate): wb_cpu (vka_tex_writeback)
             uint64_t size = im->L.size;
             if (!im->span) im->span = nvn_dirty_span(im->mem, size);
             if (!nvn_dirty_since_span(im->span, im->mem, size, im->stamp)) continue;
