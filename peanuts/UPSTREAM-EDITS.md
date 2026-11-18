@@ -1257,6 +1257,23 @@ All logic is in Peanuts' own files; the upstream lines only call it.
 
 Tests: `dm/tools/tests/test_android_build_log.py`. Upstream candidate: no (it serves Peanuts' build pipeline).
 
+### Round 25, aarch64 Linux (2026-11-18, rebased onto main after Peanuts Native 0.1.5 on 2026-11-20)
+
+Banana Native's aarch64 Linux host (#335, released in 0.3.40) and its AppImage launcher (#382, released in 0.3.43) brought onto this tree (based on 0.3.26),
+`peanuts/docs/LINUX.md`:
+
+| File | Hunks | Kind |
+|---|---|---|
+| `dm/gfx/vk_android/vka_dev.c` | 2 | marked `PEANUTS(linux)`: Banana Native 0.3.40's `#ifdef NX_LINUX` blocks, same code |
+| `dm/gfx/vk_android/vka_present.c` | 1 | marked `PEANUTS(linux)`: Banana Native 0.3.40's `#ifdef NX_LINUX` surface block |
+| `.gitignore` | 1 | marked: `linux/build/`, `linux/sysroot/`, the translator wrapper `linux-pack.sh` writes |
+| `linux/**` | new | Banana Native v0.3.43's `linux/`: every file but two byte-identical (on `upstream-unmarked.txt`); `linux/host/CMakeLists.txt` and `aarch64-clang.cmake` carry marked Peanuts lines |
+
+A later sync to Banana Native >= 0.3.43 brings the same `linux/` files; it can conflict only at the marked lines of those two files. The launcher
+(`linux/appimage`, `linux/tools`) stays as upstream has it: `peanuts/linux/build-appimage.sh` stages a copy under Peanuts' names and stops with a `[RED]`
+line when one of its edits no longer applies. `tool_lock.py` needs nothing: this tree already starts the translator with `dotnet` on Linux. Upstream
+candidate: none (it is upstream's own code).
+
 ### Shader extraction and build failure cards (2026-11-19)
 
 The marked changes in `dm/gfx/tools/uepak.py` stream decoded LZ4 shader records to disk and reuse the completed

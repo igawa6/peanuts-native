@@ -1,0 +1,395 @@
+#!/bin/sh
+# BananaNative for aarch64 Linux: starts the host built for a prepared pack's game.
+#   BananaNative.AppImage <pack folder> [game file (.nup)]
+#   BananaNative.AppImage                   (no argument, from a desktop) a game picker
+#   BananaNative.AppImage --games           the prepared packs found (title ID, name, pack folder, host here or not)
+#   BananaNative.AppImage --install         menu entries: the picker and one per game found (also listed by Steam's "Add a Non-Steam Game")
+#   BananaNative.AppImage --steam [--close-steam] [title ID ...]   Steam shortcuts for Game Mode, launch options filled in (Steam must be closed)
+#   BananaNative.AppImage --list            title IDs this AppImage has a host for
+#   BananaNative.AppImage --selftest [ID]   the Vulkan self-test of one host (no game needed)
+# Settings: ~/.config/banananative/settings.env (every game) and <title ID>.env (one game), lines KEY=VALUE
+# (docs/env_switches.tsv). Saves, caches and logs: ~/.local/share/banananative/<title ID>/.
+APPDIR=${APPDIR:-$(cd "$(dirname "$0")" && pwd)}
+BIN="$APPDIR/usr/bin"
+ids() { for f in "$BIN"/nxhost_*; do [ -x "$f" ] && echo "${f##*/nxhost_}"; done; }
+# launcher.log: one block per start (what was asked, the display environment, why it stopped), since Steam shows none of it
+LLOG="${XDG_DATA_HOME:-$HOME/.local/share}/banananative/launcher.log"; mkdir -p "${LLOG%/*}" 2>/dev/null
+[ -f "$LLOG" ] && [ "$(wc -c < "$LLOG")" -gt 200000 ] && tail -c 50000 "$LLOG" > "$LLOG.1" && mv "$LLOG.1" "$LLOG"
+note() { echo "$(date '+%F %T') $*" >> "$LLOG" 2>/dev/null; }
+note "start: $* | DISPLAY=$DISPLAY WAYLAND_DISPLAY=$WAYLAND_DISPLAY XAUTHORITY=$XAUTHORITY SDL_VIDEODRIVER=$SDL_VIDEODRIVER XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR XDG_CURRENT_DESKTOP=$XDG_CURRENT_DESKTOP APPIMAGE=$APPIMAGE"
+# a dialog when there is no terminal to read the message (a double-click, a menu entry), and zenity is there
+GUI=0; { [ ! -t 2 ] || [ "${NX_GUI:-0}" = 1 ]; } && { [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; } && command -v zenity >/dev/null && GUI=1
+die() { echo "BananaNative: $*" >&2; note "stopped: $*"; [ $GUI = 1 ] && zenity --error --title=BananaNative --width=480 --text="$*" 2>/dev/null; exit 2; }
+usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
+
+# the system's SDL3 when it has one; else the copy in here (X11 only)
+if ! { ldconfig -p 2>/dev/null | grep -q 'libSDL3\.so\.0'; }; then export LD_LIBRARY_PATH="$APPDIR/usr/lib/sdl3${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"; fi
+
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/banananative"
+SELF=${APPIMAGE:-$0}
+write_settings() { mkdir -p "$CONF"
+  settings_text() { cat <<'EOT'
+# BananaNative settings for every game.
+# How to use: each setting is one line NAME=VALUE. A line starting with '#' is switched off (the default applies).
+# To change a setting, remove the '#' at the start of its line and edit the value. Save, then start the game again.
+# Or use Settings (every game) and Options (one game) in the game window: they edit this file and <title ID>.env.
+# One game only: put the same lines in <title ID>.env next to this file (it wins over this file).
+
+# ---- Picture and speed --------------------------------------------------------------------------------------------
+#DM_OPMODE=handheld
+#   How the game thinks it is played. handheld = the console in hand (the game draws at 720p, lighter), docked = on a TV
+#   (1080p or more, heavier). Default: handheld.
+#DM_GRAPHICS_SCALE=2
+#   The resolution the game draws at. 2 = the game's handheld resolution (720p), 1 = full size. Default: 2.
+#NX_FPS_CAP=30
+#   Frame rate cap. Values: 30, 40, 45 or 60 (Donkey Kong Bananza also 20); 0 = the game decides. Default: the game decides.
+#NX_HOLD60=1
+#   Mario Kart World only: hold 60 fps. 1 = on (when a frame runs long the game slows down instead of dropping to 30),
+#   0 = off. Default: off. NOT recommended on the Odin 2 Pro: free roam runs 35-40 fps there, so the whole game plays at
+#   about 60 % speed (slow motion). Only for a device that reaches 50-55 fps. Not offered in the game window's Options.
+#NX_DRS=40
+#   Dynamic resolution (Donkey Kong Bananza only): the lowest size the game may draw at when busy, in % of the screen.
+#   Values: 30 to 100 (100 = always full size, i.e. off). Default: the game's own range.
+#NX_SCENE=s075
+#   3D resolution (Star Fox only; best in the game's own <title ID>.env): s060, s075 or s100 (60, 75 or 100 % of the screen,
+#   heavier as it grows), nodynres (the game's 50 %, no dynamic resolution). Default: the game's own (dynamic, 768x432 measured).
+#NX_FRAMEGEN=1
+#   Frame generation (Lossless Scaling): adds made-up frames between the game's frames for smoother motion.
+#   1 = on, 0 = off. Default: off. Needs Lossless.dll: found by itself in Steam's Lossless Scaling folder,
+#   or give its place with NX_FRAMEGEN_DLL=/path/to/Lossless.dll. It costs GPU time: on a busy GPU the game itself gets slower.
+#NX_FRAMEGEN_MULT=2
+#   Frame generation: frames shown for each game frame. Values: 2, 3 or 4. Default: 2.
+#NX_FRAMEGEN_FLOW=75
+#   Frame generation: quality of its motion estimate, in %. Values: 25 to 100 (lower = faster, less exact). Default: 75.
+
+# ---- On-screen overlay ------------------------------------------------------------------------------------------------
+#NX_OVERLAY=1
+#   Shows fps, frame time, CPU/GPU load and temperatures and memory in a corner (MangoHud, when installed).
+#   1 = on, 0 = off. Default: off.
+#NX_OVERLAY_CONFIG=fps,frametime,cpu_temp,gpu_temp,ram,position=top-right
+#   What the overlay shows and where (MangoHud's settings; position: top-left, top-right, bottom-left, bottom-right).
+
+# ---- Memory -------------------------------------------------------------------------------------------------------
+#DM_MEM_FILEBACK=1
+#   RAM saver: keeps part of the game's data in a file on the storage instead of in memory. 1 = on, 0 = off. Default: on.
+#DM_MEM_FILEBACK_KINDS=shader,texture
+#   What the RAM saver moves to storage. Values: shader,texture (most saving) or shader (less saving, fewer storage writes).
+#DM_VK_IMG_LIMIT_MB=2300
+#   Most memory (MiB) kept for textures. Default: 2300 on a device with no swap and 12 GB or less; elsewhere measured.
+#DM_VK_PRUNE_MS=3
+#   Most time (ms) a frame spends freeing old textures, so freeing never freezes a frame. 0 = all at once. Default: 3.
+
+# ---- Device -------------------------------------------------------------------------------------------------------
+#NX_GOVERNOR=schedutil
+#   CPU speed policy while a game runs. schedutil = balanced (default), performance = always fastest (hotter),
+#   0 = leave the system's own. Needs the governor helper (installed once with sudo; see the README).
+#NX_WINDOW=1280x720
+#   A window of that size instead of full screen. Default: full screen.
+#NX_GAMESCOPE_WSI=1
+#   Steam Game Mode: keep Gamescope's own Vulkan layer on. 1 = on, 0 = off. Default: off (it caused GPU faults on the Odin 2).
+EOT
+  }
+  if [ ! -f "$CONF/settings.env" ]; then settings_text > "$CONF/settings.env"
+  elif ! grep -q '^# How to use: each setting' "$CONF/settings.env"; then   # (a file of an older AppImage: rewritten when it has only comments, else its explained options appended once)
+    if grep -qv '^[[:space:]]*\(#.*\)\{0,1\}$' "$CONF/settings.env"; then { echo; settings_text; } >> "$CONF/settings.env"
+    else cp "$CONF/settings.env" "$CONF/settings.env.old"; settings_text > "$CONF/settings.env"; fi
+  fi
+}
+# Prepared packs: folders with a pack.tsv under ~/Games and removable media (5 levels down), plus those added in the picker
+# (games.list, one folder a line). Prints title ID, name, folder, "yes"/"no" (a host for it here), tab-separated, one per pack.
+games() {
+  { find "$HOME/Games" /run/media /media -maxdepth 5 -name pack.tsv 2>/dev/null | sed 's|/pack\.tsv$||'
+    [ -f "$CONF/games.list" ] && cat "$CONF/games.list"; } |
+  while IFS= read -r d; do [ -f "$d/pack.tsv" ] || continue; d=$(cd "$d" && pwd)
+    i=$(awk -F'\t' '$1=="title_id"{print $2; exit}' "$d/pack.tsv"); n=$(awk -F'\t' '$1=="name"{print $2; exit}' "$d/pack.tsv")
+    [ -n "$i" ] || continue; h=no; [ -x "$BIN/nxhost_$i" ] && h=yes
+    printf '%s\t%s\t%s\t%s\n' "$i" "${n:-$i}" "$d" "$h"
+  done | sort -u -t "$(printf '\t')" -k3,3 | sort -t "$(printf '\t')" -k2,2; }
+# One pack per game and version: the newest (pack.tsv's time) of each; the name gets " (v<version>)" when a game has packs of more than one version.
+# Same columns as games()
+games_one() {
+  games | while IFS="$(printf '\t')" read -r i n d h; do
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(stat -c %Y "$d/pack.tsv" 2>/dev/null || echo 0)" "$(awk -F'\t' '$1=="version"{print $2; exit}' "$d/pack.tsv")" "$i" "$n" "$d" "$h"; done |
+  sort -t "$(printf '\t')" -k1,1nr | awk -F'\t' -v OFS='\t' '!seen[$3 "/" $2]++ {r[++k]=$0; nv[$3]++} END{for (j=1;j<=k;j++) {split(r[j],f,"\t"); if (nv[f[3]]>1) f[4]=f[4] " (v" f[2] ")"; print f[3],f[4],f[5],f[6]}}' |
+  sort -t "$(printf '\t')" -k2,2; }
+# The game file of title ID $1 whose pack is folder $2: the one chosen earlier (<ID>.nup), else a .nup with "[<ID>]" in its name beside the pack,
+# one or two folders up, or in ~/Games (also one folder down in each). Prints nothing when there is none
+find_nup() {
+  if [ -f "$CONF/$1.nup" ]; then f=$(cat "$CONF/$1.nup"); [ -f "$f" ] && { echo "$f"; return; }; fi
+  for d in "$2" "$2/.." "$2/../.." "$HOME/Games"; do
+    f=$(ls "$d"/*"[$1]"*.nup "$d"/*/*"[$1]"*.nup 2>/dev/null | head -1); [ -n "$f" ] && { echo "$f"; return; }
+  done; }
+tilde() { case "$1" in "$HOME"/*) echo "~${1#$HOME}";; *) echo "$1";; esac; }
+# Prepare a game: its pack made here from its .nup, with the packer the Android app runs (scripts/pack_android.py, through linux/tools/linux-pack.sh) at the
+# source this AppImage was built from (usr/share/banananative/source: commit and repository). The tools go to ~/.local/share/banananative/packer once per AppImage
+# version (the source, ~130 MB) and once for all (Python packages, the .NET 10 runtime); the pack to ~/Games/BananaNative/packs/<ID>, replacing an older one
+# when the new one is done. The device is kept awake meanwhile (kde-inhibit or systemd-inhibit); no game may run (both would not fit in memory)
+prepare() {
+  Z() { zenity --title="Prepare a game" --width=520 "$@" 2>/dev/null; }
+  if pgrep -f "[u]sr/bin/nxhost_" >/dev/null; then Z --error --text="A game is running. Close it first: preparing needs the memory."; return; fi
+  if pgrep -f "[s]cripts/pack_android.py" >/dev/null; then Z --error --text="A game is already being prepared."; return; fi
+  f=$(zenity --file-selection --title="The game file (.nup) to prepare" --filename="$HOME/Games/" --file-filter="Game file (.nup) | *.nup" 2>/dev/null) || return
+  i=$(basename "$f" | sed -n 's/.*\[\([0-9A-Fa-f]\{16\}\)\].*/\1/p' | tr a-f A-F)
+  [ -n "$i" ] || { Z --error --text="$(basename "$f"): its name has no [title ID] (16 hexadecimal digits in square brackets)."; return; }
+  [ -x "$BIN/nxhost_$i" ] || { Z --error --text="This AppImage cannot run $i ($(basename "$f")).\nIt runs: $(ids | tr '\n' ' ')\nA newer AppImage with that game is needed first."; return; }
+  command -v spirv-val >/dev/null || { Z --error --text="spirv-val (SPIRV-Tools) is missing: install the spirv-tools package, then try again."; return; }
+  command -v python3 >/dev/null && command -v curl >/dev/null || { Z --error --text="python3 and curl are needed."; return; }
+  SRCF="$APPDIR/usr/share/banananative/source"
+  [ -f "$SRCF" ] || { Z --error --text="This AppImage does not say which source it was built from: it cannot prepare games."; return; }
+  c=$(awk '$1=="commit"{print $2}' "$SRCF"); u=$(awk '$1=="url"{print $2}' "$SRCF")
+  PE="${XDG_DATA_HOME:-$HOME/.local/share}/banananative/packer"; SRC="$PE/src-$(echo "$c" | cut -c1-12)"
+  if [ ! -x "$SRC/linux/tools/linux-pack.sh" ] || [ ! -x "$PE/venv/bin/python" ] || [ ! -x "$PE/dotnet/dotnet" ]; then
+    Z --question --ok-label=Download --text="Preparing needs the pack tools of this AppImage's version, once:\n- the source (about 130 MB)\n- Python packages and the .NET 10 runtime (first time only)\nThis takes about 10 minutes. Download them now?" || return
+    mkdir -p "$PE"
+    ( set -e
+      echo "# Downloading the source..."; rm -rf "$SRC.part"; mkdir -p "$SRC.part"
+      curl -fsSL --retry 3 "$u/archive/$c.tar.gz" | tar -xz -C "$SRC.part" --strip-components=1
+      echo "# Setting up Python and .NET (several minutes)..."
+      NX_PACK_ENV="$PE" "$SRC.part/linux/tools/linux-pack.sh" setup >"$PE/setup.log" 2>&1
+      rm -rf "$SRC"; mv "$SRC.part" "$SRC"
+      for o in "$PE"/src-*; do [ "$o" = "$SRC" ] || rm -rf "$o"; done
+      echo 100 ) | Z --progress --pulsate --auto-close --no-cancel --text="Getting the pack tools..."
+    [ -x "$SRC/linux/tools/linux-pack.sh" ] && [ -x "$PE/venv/bin/python" ] ||
+      { Z --error --text="Getting the pack tools failed. Details: $PE/setup.log"; return; }
+  fi
+  OUT="$HOME/Games/BananaNative/packs/$i"; LOGF="$PE/prepare-$i.log"; mkdir -p "$(dirname "$OUT")"; rm -rf "$OUT.new" "$LOGF.rc"
+  inh=; if command -v kde-inhibit >/dev/null; then inh="kde-inhibit --power --screenSaver"; elif command -v systemd-inhibit >/dev/null; then inh="systemd-inhibit --what=idle:sleep --why=BananaNative"; fi
+  setsid sh -c "NX_PACK_ENV='$PE' $inh '$SRC/linux/tools/linux-pack.sh' \"\$0\" -j 4 -J 6 --made-by 'AppImage $c' --out '$OUT.new' >'$LOGF' 2>&1; echo \$? >'$LOGF.rc'" "$f" &
+  pk=$!
+  # the packer's progress as zenity's: "progress N M translate" lines are the shaders (most of the time), the rest are steps
+  tail -n +1 -F --pid=$pk "$LOGF" 2>/dev/null | awk '
+    /^progress [0-9]+ [0-9]+/ { if ($3 > 0) { printf "%d\n# Shaders: %d of %d\n", 5 + 90 * $2 / $3, $2, $3; fflush() } next }
+    /rewriting/ { print "2\n# Rewriting the game code..."; fflush(); next }
+    /^stage: / { sub(/^stage: /, ""); print "# " $0; fflush() }' |
+    Z --progress --auto-close --text="Preparing $(basename "$f")..." --ok-label=Close
+  if kill -0 $pk 2>/dev/null; then   # cancelled
+    kill -TERM -- -$pk 2>/dev/null; sleep 2; rm -rf "$OUT.new"; Z --info --text="Preparing stopped."; return
+  fi
+  while [ ! -f "$LOGF.rc" ]; do sleep 1; done
+  if [ "$(cat "$LOGF.rc")" = 0 ] && [ -f "$OUT.new/pack.tsv" ]; then
+    rm -rf "$OUT.old"; [ -d "$OUT" ] && mv "$OUT" "$OUT.old"; mv "$OUT.new" "$OUT"; rm -rf "$OUT.old"
+    install_entries >/dev/null 2>&1
+    Z --info --text="$(awk -F'\t' '$1=="name"{print $2}' "$OUT/pack.tsv") is ready.\nIts pack: $(tilde "$OUT")"
+  else
+    rm -rf "$OUT.new"; Z --error --text="Preparing failed. The last lines of its log ($(tilde "$LOGF")):\n\n$(grep -v '^progress' "$LOGF" | tail -6)"
+  fi; }
+# The picker: a list of the packs found, "Add a pack folder", "Settings"; the choice starts that pack in this same process
+pick() {
+  while :; do
+    sel=$(games_one | while IFS="$(printf '\t')" read -r i n d h; do
+            f=$(find_nup "$i" "$d")
+            printf '%s\n%s\n%s\n%s\n%s\n' "$d" "$n$([ "$h" = yes ] || echo "  (this AppImage cannot run it)")" "$i" "$(tilde "$d")" "$([ -n "$f" ] && basename "$f" || echo "not found: choose it at the first start")"
+          done |
+          { cat; printf '%s\n' "+prepare" "Prepare a game from its game file (.nup)..." "" "" "" \
+                                 "+add" "Add a pack folder from somewhere else..." "" "" "" \
+                                 "+steam" "Add the prepared games to Steam (for Game Mode)..." "" "" "" \
+                                 "+settings" "Settings (opens settings.env)" "" "" ""; } |
+          zenity --list --title=BananaNative --width=1500 --height=440 \
+                 --text="Choose a game. A game needs a pack (prepared once, from its game file) and its game file (.nup).\nPacks are looked for in ~/Games and on SD cards; game files beside the pack or in ~/Games." \
+                 --column=key --column=Game --column="Title ID" --column="Pack" --column="Game file" --hide-column=1 --print-column=1 2>/dev/null) || exit 0
+    case "$sel" in
+      "") continue ;;
+      +add) d=$(zenity --file-selection --directory --title="The pack folder (the one with pack.tsv)" 2>/dev/null) || continue
+            if [ -f "$d/pack.tsv" ]; then mkdir -p "$CONF"; echo "$d" >> "$CONF/games.list"
+            else zenity --error --title=BananaNative --width=480 --text="$d has no pack.tsv: choose the folder of a pack prepared by BananaNative on Android." 2>/dev/null; fi ;;
+      +prepare) prepare ;;
+      +steam) out=$(steam_entries 2>&1); rc=$?
+              if [ $rc = 3 ] && zenity --title=BananaNative --width=520 --question --text="Steam has to close for a moment to add the games (it starts again by itself). Close Steam now?" 2>/dev/null; then
+                out=$(steam_entries --close-steam 2>&1); rc=$?; fi
+              if [ $rc = 0 ]; then zenity --title=BananaNative --width=520 --info --text="In Steam now (Game Mode: Library, Non-Steam):\n\n$out" 2>/dev/null; elif [ $rc != 3 ]; then zenity --title=BananaNative --width=520 --error --text="$out" 2>/dev/null; fi ;;
+      +settings) write_settings
+                 xdg-open "$CONF/settings.env" >/dev/null 2>&1 & ;;
+      *) PICKED=$sel; return ;;
+    esac
+  done; }
+# each game once, its newest pack when there are several: ID, name, pack folder, host here (yes/no)
+games_newest() {
+  games_one | while IFS="$(printf '\t')" read -r i n d h; do printf '%s\t%s\t%s\t%s\t%s\n' "$(stat -c %Y "$d/pack.tsv" 2>/dev/null || echo 0)" "$i" "$n" "$d" "$h"; done |
+  sort -t "$(printf '\t')" -k1,1nr | awk -F'\t' '!seen[$2]++' | cut -f2-; }
+# --steam [--close-steam] [title ID ...]: a Steam shortcut ("<name> (BananaNative)", launch options filled in) for each game with a pack and a host
+# here (all of them, or the title IDs given), for Game Mode. steam_shortcut.py writes Steam's shortcuts.vdf; Steam must be closed (--close-steam
+# closes it and starts it again). Exit codes: steam_shortcut.py's, and 5 when there is no prepared game
+steam_entries() {
+  close=; [ "$1" = --close-steam ] && { close=1; shift; }
+  want=" $* "; all=; [ -z "$*" ] && all=1
+  I="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/256x256/apps"; mkdir -p "$I"
+  [ -f "$APPDIR/banananative.png" ] && cp "$APPDIR/banananative.png" "$I/banananative.png"
+  list=$(games_newest | awk -F'\t' '$4=="yes"{print $1 "\t" $2 "=" $3}')
+  set --; [ -n "$close" ] && set -- --close-steam
+  set -- "$@" --exe "$SELF" --icon "$I/banananative.png"; n=0
+  old=$IFS; IFS='
+'
+  for l in $list; do
+    i=${l%%"$(printf '\t')"*}
+    [ -n "$all" ] || case "$want" in *" $i "*) ;; *) continue ;; esac
+    set -- "$@" "${l#*"$(printf '\t')"}"; n=$((n + 1))
+  done
+  IFS=$old
+  [ $n -gt 0 ] || { echo "No prepared game to add (a game needs its pack and a host in this AppImage: --games lists them)."; return 5; }
+  python3 "$APPDIR/usr/share/banananative/steam_shortcut.py" "$@"; }
+# --install: ~/.local/share/applications/banananative.desktop (the picker) and banananative-<ID>.desktop for each game with a host
+install_entries() {
+  A="${XDG_DATA_HOME:-$HOME/.local/share}/applications"; I="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/256x256/apps"
+  mkdir -p "$A" "$I"; [ -f "$APPDIR/banananative.png" ] && cp "$APPDIR/banananative.png" "$I/banananative.png"
+  rm -f "$A"/banananative-*.desktop
+  # (PATH: Steam starts non-Steam games with none, and the AppImage runtime needs fusermount from it)
+  q=$(printf %s "$SELF" | sed 's/[\\"`$]/\\&/g')
+  printf '[Desktop Entry]\nType=Application\nName=BananaNative\nComment=Choose a prepared game pack and play it\nExec=env PATH=/usr/local/bin:/usr/bin:/bin "%s"\nIcon=banananative\nCategories=Game;\nTerminal=false\n' "$q" > "$A/banananative.desktop"
+  echo "$A/banananative.desktop (the picker)"
+  # one entry per game: its newest pack when there are several (of any version: the entry's file name is the title ID's)
+  games_newest | while IFS="$(printf '\t')" read -r i n d h; do [ "$h" = yes ] || continue
+    dq=$(printf %s "$d" | sed 's/[\\"`$]/\\&/g')
+    printf '[Desktop Entry]\nType=Application\nName=%s (BananaNative)\nComment=%s, prepared pack in %s\nExec=env PATH=/usr/local/bin:/usr/bin:/bin "%s" "%s"\nIcon=banananative\nCategories=Game;\nTerminal=false\n' "$n" "$i" "$d" "$q" "$dq" > "$A/banananative-$i.desktop"
+    echo "$A/banananative-$i.desktop ($n)"; done
+  command -v update-desktop-database >/dev/null && update-desktop-database "$A" 2>/dev/null; return 0; }
+
+case "$1" in
+  "") # the game window (launcher.py, PyQt6) where the system has PyQt6; else the zenity picker below
+      if [ $GUI = 1 ] && [ "${NX_ZENITY:-0}" != 1 ] && python3 -c 'import PyQt6.QtWidgets' 2>/dev/null; then
+        NX_APPDIR="$APPDIR" NX_SELF="$SELF" NX_CONF="$CONF" exec python3 "$APPDIR/usr/share/banananative/launcher.py"
+      fi
+      if [ $GUI = 1 ]; then pick; set -- "$PICKED"; else usage; echo "Hosts in this AppImage: $(ids | tr '\n' ' ')"; exit 0; fi ;;
+  -h|--help) usage; echo "Hosts in this AppImage: $(ids | tr '\n' ' ')"; exit 0 ;;
+  --games) games; exit 0 ;;
+  --install) install_entries; exit 0 ;;
+  --steam) shift; steam_entries "$@"; exit $? ;;
+  --write-settings) write_settings; exit 0 ;;
+  --list) ids; exit 0 ;;
+  --selftest) id=${2:-$(ids | head -1)}; [ -x "$BIN/nxhost_$id" ] || die "no host for $id here"; exec "$BIN/nxhost_$id" --vk-selftest 60 ;;
+esac
+
+PACK=$(cd "$1" 2>/dev/null && pwd) || die "pack folder not found: $1"
+[ -f "$PACK/pack.tsv" ] || die "$PACK has no pack.tsv: not a prepared pack (prepare the game with BananaNative on Android and copy the pack here)"
+ID=$(awk -F'\t' '$1=="title_id"{print $2; exit}' "$PACK/pack.tsv")
+NAME=$(awk -F'\t' '$1=="name"{print $2; exit}' "$PACK/pack.tsv")
+[ -n "$ID" ] || die "$PACK/pack.tsv names no title_id"
+HOST="$BIN/nxhost_$ID"
+[ -x "$HOST" ] || die "this AppImage has no host for $ID ($NAME). It has: $(ids | tr '\n' ' ')"
+
+# the game file: the second argument, or a .nup carrying the title ID beside the pack folder or one level up
+NUP=$2
+[ -z "$NUP" ] && NUP=$(find_nup "$ID" "$PACK")
+# none found and a dialog can ask: the game file, remembered in <ID>.nup
+if [ -z "$NUP" ] && [ $GUI = 1 ]; then
+  NUP=$(zenity --file-selection --title="The game file of $NAME ($ID)" --file-filter="Game file (.nup) | *.nup" --file-filter="All files | *" 2>/dev/null) || exit 0
+  mkdir -p "$CONF"; printf '%s\n' "$NUP" > "$CONF/$ID.nup"
+fi
+[ -z "$NUP" ] || [ -f "$NUP" ] || die "game file not found: $NUP"
+
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}/banananative/$ID"
+mkdir -p "$CONF" "$DATA/save" "$DATA/temp" "$DATA/root" "$DATA/aoc" "$DATA/home" "$DATA/tmp" "$DATA/logs" || die "cannot create $DATA"
+write_settings
+# settings: defaults, then settings.env, then <ID>.env; a variable already in the environment wins over all three
+setdef() { eval "[ -n \"\${$1+x}\" ]" || export "$1=$2"; }
+loadenv() { [ -f "$1" ] || return 0
+  while IFS= read -r l || [ -n "$l" ]; do l=${l%%#*}; k=${l%%=*}; v=${l#*=}
+    k=$(printf %s "$k" | tr -d ' \t'); v=$(printf %s "$v" | sed 's/^[ \t]*//; s/[ \t]*$//')
+    case "$k" in DM_*|NX_*|SDL_*|NXHOST_*) [ "$l" != "$k" ] && setdef "$k" "$v" ;; esac
+  done < "$1"; }
+loadenv "$CONF/$ID.env"; loadenv "$CONF/settings.env"
+setdef DM_VK_PRUNE_MS 3   # texture cache evictions spread over frames: all at once they froze a frame for about a second
+setdef DM_OPMODE handheld; setdef DM_GRAPHICS_SCALE 2; setdef DM_MEM_FILEBACK 1; setdef DM_MEM_FILEBACK_KINDS shader,texture
+# No swap: the measured texture cache limit (free memory less a reserve) falls below what a scene needs and textures are uploaded again every frame
+if [ "$(awk '/^SwapTotal:/{print $2}' /proc/meminfo)" = 0 ] && [ "$(awk '/^MemTotal:/{print int($2/1048576)}' /proc/meminfo)" -le 12 ]; then setdef DM_VK_IMG_LIMIT_MB 2300; fi
+# The game options (settings.env NX_FPS_CAP, NX_HOLD60, NX_DRS, NX_FRAMEGEN*, NX_OVERLAY*) as GameActivity.java sets them, by the game's kind in its profile
+# (the pack's game.tsv): fps_decouple (its speed follows the measured rate: presents on the display's tick and a frame limit), fps_limit (the host limits it),
+# else the game's own 30 / 60 mode; fps_steps (Hold 60 fps); drs_ctl (dynamic resolution)
+gt() { awk -F'\t' -v k="$1" '$1==k{f=1} END{exit !f}' "$PACK/game.tsv" 2>/dev/null; }
+cap=${NX_FPS_CAP:-}
+if gt fps_decouple; then
+  setdef DM_PRESENT_INTERVAL display; setdef DM_PRESENT_HZ "${NX_DISPLAY_HZ:-60}"; setdef DM_FPS_TARGET 0
+  [ -n "$cap" ] && [ "$cap" != 0 ] && setdef DM_FPS_LIMIT "$cap" || setdef DM_FPS_LIMIT 60
+elif gt fps_limit; then [ -n "$cap" ] && setdef DM_FPS_LIMIT "$cap"
+elif [ -n "$cap" ]; then setdef DM_FPS_TARGET "$cap"; fi
+[ "${NX_HOLD60:-0}" = 1 ] && gt fps_steps && setdef DM_FPS_HOLD60 1
+# 3D resolution of a game whose engine takes it as arguments (game.tsv scene_arg <name> <scale or -> <arguments with {s}> <label>; Star Fox): the chosen row's
+# arguments, {s} replaced by its scale, go to the host as DM_GAME_ARGS_ADD (dm/host/main.c), as SceneRes.argLine does on Android
+if [ -n "${NX_SCENE:-}" ]; then
+  sa=$(awk -F'\t' -v n="$NX_SCENE" '$1=="scene_arg" && $2==n {a=$4; gsub(/\{s\}/, $3, a); print a; exit}' "$PACK/game.tsv" 2>/dev/null)
+  if [ -n "$sa" ]; then setdef DM_GAME_ARGS_ADD "$sa"; note "3D resolution $NX_SCENE: DM_GAME_ARGS_ADD $sa"; else note "3D resolution $NX_SCENE: not a choice of this game, the game's own"; fi
+fi
+if [ -n "${NX_DRS:-}" ] && gt drs_ctl; then [ "$NX_DRS" -ge 100 ] 2>/dev/null && setdef DM_DRS 100,100 || setdef DM_DRS "$NX_DRS,100"; fi
+if [ "${NX_FRAMEGEN:-0}" = 1 ]; then
+  dll=${NX_FRAMEGEN_DLL:-}
+  [ -n "$dll" ] || for d in "$HOME/.local/share/Steam/steamapps/common/Lossless Scaling" "$HOME/.steam/steam/steamapps/common/Lossless Scaling"; do [ -f "$d/Lossless.dll" ] && { dll="$d/Lossless.dll"; break; }; done
+  if [ -n "$dll" ] && [ -f "$dll" ]; then setdef DM_LSFG 1; setdef DM_LSFG_DLL "$dll"; setdef DM_LSFG_MULT "${NX_FRAMEGEN_MULT:-2}"; setdef DM_LSFG_FLOW "${NX_FRAMEGEN_FLOW:-75}"
+  else note "frame generation asked for, but no Lossless.dll found (NX_FRAMEGEN_DLL)"; fi
+fi
+if [ "${NX_OVERLAY:-0}" = 1 ]; then export MANGOHUD=1; setdef MANGOHUD_CONFIG "${NX_OVERLAY_CONFIG:-fps,frametime,cpu_temp,gpu_temp,ram,position=top-right}"; fi
+[ -d "$APPDIR/usr/share/banananative/fonts" ] && setdef DM_FONT_DIR "$APPDIR/usr/share/banananative/fonts"   # the shared-font stand-ins (Noto Sans, button icons)
+if [ "${NX_GAMESCOPE_WSI:-0}" != 1 ]; then unset ENABLE_GAMESCOPE_WSI; export DISABLE_GAMESCOPE_WSI=1; fi
+
+[ -n "$NUP" ] && export DM_ROMFS="$NUP"
+# Add-on content the pack lists (pack.tsv "aoc <index> <folder>"): the host takes DM_AOC_DIR/<index>.nup, a link to the .nup whose addon package
+# has that index (hle_fs.c, android/NUP.md), as the Android app gives it. Links of earlier runs are made again (the .nup may have moved)
+if [ -n "$NUP" ]; then
+  find "$DATA/aoc" -maxdepth 1 -name '*.nup' -type l -delete 2>/dev/null
+  awk -F'\t' '$1=="aoc"{print $2}' "$PACK/pack.tsv" | while IFS= read -r n; do ln -sfn "$NUP" "$DATA/aoc/$n.nup"; done
+fi
+export DM_SAVE="$DATA/save" DM_TEMP="$DATA/temp" DM_ROOT="$DATA/root" DM_AOC_DIR="$DATA/aoc" TMPDIR="$DATA/tmp"
+LOG="$DATA/logs/$(date +%Y%m%d-%H%M%S).log"
+ls -t "$DATA/logs"/*.log 2>/dev/null | tail -n +10 | while IFS= read -r f; do rm -f "$f"; done   # the newest 9 stay
+cd "$PACK" || die "cannot enter $PACK"
+# One run of a game at a time: a second start (a double tap on the launcher) would not fit in memory beside the first (the kernel's OOM killer ended one
+# on a 12 GB device). The lock is held by this shell for the host's whole run and goes with it
+exec 9>"$DATA/.running"
+if command -v flock >/dev/null && ! flock -n 9; then
+  [ $GUI = 1 ] && { zenity --info --timeout=6 --title=BananaNative --width=420 --text="$NAME is already running." 2>/dev/null &}   # (closes by itself: it may be behind the game)
+  note "not started: $ID is already running"; echo "BananaNative: $NAME is already running" >&2
+  exit 0
+fi
+# While the game runs, the schedutil CPU governor (NX_GOVERNOR=performance: that one; 0: none), when the helper is installed (linux/tools/install-governor-helper.sh)
+GOV=/usr/local/sbin/banananative-governor; gov=0
+case "${NX_GOVERNOR:-schedutil}" in performance) g=performance;; 0|off|no) g=;; *) g=schedutil;; esac
+if [ -n "$g" ] && [ -x "$GOV" ] && sudo -n "$GOV" on $g 2>/dev/null; then gov=1; note "CPU governor: $g while the game runs"; fi
+echo "BananaNative: $NAME ($ID), log $LOG"; note "host $ID, log $LOG"
+if [ -t 1 ] && [ "${NX_LOG_TTY:-0}" = 1 ]; then HOME="$DATA/home" "$HOST" "$PACK" & else HOME="$DATA/home" "$HOST" "$PACK" > "$LOG" 2>&1 & fi
+child=$!
+# Memory trace and guard. With no swap, Ocarina of Time's 3D world needed more memory than the Odin 2 had (2026-11-16): the device thrashed with no frame
+# for minutes (once frozen until switched off, once ended by the kernel's OOM killer after 2.5 min). Mario Kart World races normally with MemAvailable
+# at ~100 MiB (its file-backed texture pools page through flash) but keeps drawing, so the guard needs both: MemAvailable below NX_MEM_GUARD_MB
+# (default 300; 0 = off) and no new frame-pace line ("pace up to frame N", every 5 s) in the game's log for NX_MEM_GUARD_STALL seconds (default 20).
+# Then the game is stopped (TERM, KILL after 2 s) and the reason shown. Every second a line goes to <log>.mem (MiB unless said): time, MemAvailable,
+# MemFree, Cached, the host's RssAnon and RssFile, its GPU memory (DRM fdinfo total / resident), system major page faults a second, the host's
+# storage reads MiB a second
+rm -f "$DATA/.memguard"; MG=${NX_MEM_GUARD_MB:-300}; MS=${NX_MEM_GUARD_STALL:-20}; MEM="${LOG%.log}.mem"; guard=
+( echo "# time avail free cached rss_anon rss_file gpu_total gpu_resident majfault_per_s read_MiB_per_s (memory guard: below ${MG} MiB with no frame for ${MS} s; 0 = off)" > "$MEM"
+  low=0; pf=; pr=; lastf=; chg=$(date +%s); still=0; t=0
+  while kill -0 $child 2>/dev/null; do
+    set -- $(awk '/^MemAvailable:/{a=int($2/1024)} /^MemFree:/{f=int($2/1024)} /^Cached:/{c=int($2/1024)} /^pgmajfault /{m=$2}
+                  /^RssAnon:/{ra=int($2/1024)} /^RssFile:/{rf=int($2/1024)} END{print a+0, f+0, c+0, ra+0, rf+0, m+0}' /proc/meminfo /proc/vmstat /proc/$child/status 2>/dev/null)
+    g=$(awk '/^drm-client-id/{c=$2} /^drm-total-memory/{t[c]=$2*($3=="KiB"?1/1024:($3=="MiB"?1:1/1048576))}
+             /^drm-resident-memory/{r[c]=$2*($3=="KiB"?1/1024:($3=="MiB"?1:1/1048576))} END{for(k in t){T+=t[k]; R+=r[k]} printf "%d %d", T, R}' /proc/$child/fdinfo/* 2>/dev/null)
+    rd=$(awk '/^read_bytes/{print int($2/1048576)}' /proc/$child/io 2>/dev/null)
+    printf '%s %s %s %s %s %s %s %s %s\n' "$(date +%T)" "$1" "$2" "$3" "$4" "$5" "${g:-0 0}" "$([ -n "$pf" ] && echo $(( $6 - pf )) || echo 0)" \
+      "$([ -n "$pr" ] && [ -n "$rd" ] && echo $(( rd - pr )) || echo 0)" >> "$MEM"
+    pf=$6; pr=$rd
+    # frames: the last pace line's frame number, every 2 s (from the log's end only)
+    if [ $((t % 2)) = 0 ]; then
+      fr=$(tail -c 262144 "$LOG" 2>/dev/null | grep -o 'pace up to frame [0-9]*' | tail -1)
+      [ "$fr" = "$lastf" ] || chg=$(date +%s); lastf=$fr   # (seconds by the clock: under memory thrash one round can take 10 s)
+      still=$(( $(date +%s) - chg ))
+    fi
+    t=$((t + 1))
+    if [ "$MG" -gt 0 ] 2>/dev/null && [ "$1" -lt "$MG" ] && [ -n "$lastf" ] && [ $still -ge "$MS" ]; then low=1; else low=0; fi
+    if [ $low = 1 ]; then
+      echo "$1" > "$DATA/.memguard"; echo "$(date +%T) memory guard: $1 MiB available (below $MG) and no frame for $still s: game stopped" >> "$MEM"
+      kill -TERM $child 2>/dev/null; sleep 2; kill -KILL $child 2>/dev/null; exit 0
+    fi
+    sleep 1
+  done ) &
+guard=$!
+ls -t "$DATA/logs"/*.mem 2>/dev/null | tail -n +10 | while IFS= read -r f; do rm -f "$f"; done
+trap 'kill -TERM $child 2>/dev/null' TERM INT HUP
+wait $child; rc=$?
+while kill -0 $child 2>/dev/null; do wait $child; rc=$?; done   # (a signal ended the first wait: the host is still closing)
+[ -n "$guard" ] && kill $guard 2>/dev/null
+[ $gov = 1 ] && sudo -n "$GOV" off 2>/dev/null
+note "host ended: exit code $rc"
+if [ -f "$DATA/.memguard" ]; then
+  a=$(cat "$DATA/.memguard"); note "memory guard stopped $ID: $a MiB available (NX_MEM_GUARD_MB $MG); trace $MEM"
+  msg="$NAME was closed: the device ran out of memory ($a MiB left) and the game had stopped drawing. Left running, the device would have stayed frozen. Progress since the last save is lost."
+  [ $GUI = 1 ] && { zenity --warning --title=BananaNative --width=480 --text="$msg" 2>/dev/null || notify-send -a BananaNative "BananaNative" "$msg" 2>/dev/null; }
+  echo "BananaNative: $msg" >&2
+fi
+exit $rc

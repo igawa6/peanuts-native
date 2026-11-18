@@ -642,7 +642,12 @@ static void window_take(void) {   // g_pmu held
     g_win = w; g_fps_set = 0;
     if (w && V.has_android_surface) {
         VkAndroidSurfaceCreateInfoKHR si = {VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR, .window = w};
+#ifdef NX_LINUX   // PEANUTS(linux): Banana Native 0.3.40's hook (#335): the surface comes from the front end (linux/host/front_sdl.c)
+        extern int nx_linux_vk_surface(ANativeWindow *w, void *instance, void *surface_out); (void)si;
+        VkResult r = nx_linux_vk_surface(w, V.inst, &g_surf) ? VK_ERROR_INITIALIZATION_FAILED : VK_SUCCESS; VkBool32 ok = VK_FALSE;
+#else   // PEANUTS(linux)
         VkResult r = vk.vkCreateAndroidSurfaceKHR(V.inst, &si, NULL, &g_surf); VkBool32 ok = VK_FALSE;
+#endif   // PEANUTS(linux)
         if (!r) vk.vkGetPhysicalDeviceSurfaceSupportKHR(V.pd, V.qf, g_surf, &ok);
         if (r || !ok) { VRED("surface on window %p: %d, present support %d", (void *)w, r, ok); if (!r) vk.vkDestroySurfaceKHR(V.inst, g_surf, NULL); g_surf = VK_NULL_HANDLE; }
         else swap_create();

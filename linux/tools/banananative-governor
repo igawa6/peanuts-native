@@ -1,0 +1,29 @@
+#!/bin/sh
+# banananative-governor on [schedutil|performance] | off   (root; installed by install-governor-helper.sh with a sudoers rule for these calls only)
+# on:  the CPU clusters go to that governor (schedutil when none is named); what they had is kept in /run/banananative-governor.
+#      A watcher puts it back once no nxhost_<title ID> process is left
+# off: what they had comes back
+# Why: "ondemand" raises a core's clock only past 95 % load. The host's replay thread waits for the rest of the frame every frame, shows about 70 % load,
+# and the clock settles near 70 %. Mario Kart World on an Odin 2, one scripted race each, calm scene / 24 karts on screen:
+#   ondemand 37 / 24 fps, schedutil 36 / 29 (on a hotter device), performance 45 / 30 from a cool device.
+# performance is the fastest for a few minutes; in real play with the charger in it took the device to 95 degrees C and the gain went (firmware throttling),
+# so schedutil is the default. The GPU is left alone: its "performance" governor gave no frame time, only heat.
+S=/run/banananative-governor
+nodes() { ls -d /sys/devices/system/cpu/cpufreq/policy*/scaling_governor 2>/dev/null; }
+case "$1" in
+  on)  g=${2:-schedutil}; case "$g" in schedutil|performance) ;; *) echo "banananative-governor: on [schedutil|performance]" >&2; exit 2;; esac
+       [ -f "$S" ] || for n in $(nodes); do echo "$n $(cat "$n")"; done > "$S"
+       for n in $(nodes); do echo "$g" > "$n" 2>/dev/null; done
+       # A watcher of its own puts the governors back once no host runs: Steam's "Exit game" kills the launcher with the game, so the launcher's own "off"
+       # never runs there (seen: the device stayed on performance, idle at 79 degrees C). Root, so that kill does not reach it
+       if ! [ -f "$S.watch" ] || ! kill -0 "$(cat "$S.watch" 2>/dev/null)" 2>/dev/null; then
+         ( trap '' HUP; sleep 20; m=0
+           while [ -f "$S" ]; do if pgrep -f '/nxhost_[0-9A-F]{16}( |$)' >/dev/null; then m=0; else m=$((m+1)); fi; [ $m -ge 2 ] && break; sleep 3; done
+           rm -f "$S.watch"; "$0" off ) </dev/null >/dev/null 2>&1 &
+         echo $! > "$S.watch"
+       fi ;;
+  off) [ -f "$S" ] || exit 0
+       while read -r n g; do case "$n" in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor|/sys/class/devfreq/*/governor) echo "$g" > "$n" 2>/dev/null;; esac; done < "$S"
+       rm -f "$S" ;;
+  *)   echo "usage: banananative-governor on [schedutil|performance] | off" >&2; exit 2 ;;
+esac
