@@ -1,0 +1,41 @@
+# Game profile of STORY OF SEASONS: Grand Bazaar (Switch, update v655360 over the base game)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Unity 2020.3 IL2CPP with CRIWARE and FMOD, SDK 18.3.5, NVN; subsdk0 is the movie module. 16 MB of system resource: the game maps its own memory (no heap).
+# The shaders are in the UnityFS bundles under data/ and main (shader_split.py: 14,249).
+# Status: provisional profile (dm/games/profile_guess.py from the survey); memory values not measured yet
+
+# ---- Identity ----
+title_id	0100DAE01E4C8000
+program_id	0100DAE01E4C8000
+
+# ---- App ----
+name	STORY OF SEASONS: Grand Bazaar
+ipa	StoryOfSeasonsGrandBazaar.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v655360	?	main=2ef3bb19eac3b0a5697768f8a453953f	subsdk0=6b29d0c7a23a7c0bf7fb98699cc8bcb7	sdk=6075151627016eef437c1312f2e3ed56
+package	v655360
+shader_versions	v655360
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Data/StreamingAssets/Sound/se_common.acb
+zip_store	.assets:.awb:.bundle:.dat:.json:.nro:.ress:.metallib
+
+# ---- Memory ----
+# the NPDM declares 16 MB of system resource (virtual address memory) and main never sets a heap: a 5 GB block with a 4.375 GB alias region, where the game maps its memory itself
+mem_reserve	0x140000000
+mem_alias	0x118000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+# the rewritten modules (186 MB) are larger than the default 64 MB of used memory (profile_guess.mem_used on the pack)
+mem_used	0xba80000
+
+# ---- Shader split ----
+shader_groups	/Data/=data /Plugins/=plugins /.nrr/=nrr
+shader_note	STORY OF SEASONS: Grand Bazaar shaders
