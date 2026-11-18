@@ -22,9 +22,14 @@ final class DumpLayout {
         List<Long> out = new ArrayList<>();
         try {
             if (Nup.isNup(dump)) {
-                Nup n = Nup.open(dump);
-                for (Nup.Pkg p : n.packages)
-                    if ((p.kind == Nup.BASE || p.kind == Nup.UPDATE) && isFile(n, p, "exefs/main")) out.add(p.kind == Nup.BASE ? 0L : p.version);
+                List<Nup> all = new ArrayList<>();
+                all.add(Nup.open(dump));
+                all.addAll(Nup.companions(dump));   // other versions of an NSP game, each an NSP of its own
+                for (Nup n : all)
+                    for (Nup.Pkg p : n.packages) {
+                        long v = p.kind == Nup.BASE ? 0L : p.version;
+                        if ((p.kind == Nup.BASE || p.kind == Nup.UPDATE) && isFile(n, p, "exefs/main") && !out.contains(v)) out.add(v);
+                    }
             } else {
                 if (new File(root(new File(dump, "base")), "exefs/main").isFile()) out.add(0L);   // a one-version folder (exefs/ at its top) has no version number: not here
                 File[] ups = new File(dump, "updates").listFiles(File::isDirectory);
@@ -66,7 +71,10 @@ final class DumpLayout {
         java.util.Set<Long> supported = prof == null ? java.util.Set.of() : prof.buildMap().keySet();
         try {
             if (Nup.isNup(dump)) {
-                Nup n = Nup.open(dump);
+                List<Nup> all = new ArrayList<>();
+                all.add(Nup.open(dump));
+                all.addAll(Nup.companions(dump));   // the DLC and other versions beside an NSP game, each an NSP of its own
+                for (Nup n : all)
                 for (Nup.Pkg p : n.packages) {
                     if (p.kind == Nup.BASE) out.add(new Item("base", "Base game", p.exefsDir == Nup.NONE ? "no game code of its own" : null));
                     else if (p.kind == Nup.UPDATE)
@@ -115,7 +123,7 @@ final class DumpLayout {
     /**
      * A version folder's package, the folder that holds its exefs/ and romfs/ (scripts/pack_dump.py package_root): the folder itself, or in OunceCake's layout
      * program/0/ in it (each content at program/&lt;index&gt;/, with program/ below that when a data content shares the index). Program 0 is the application's own;
-     * a Switch 2 Edition's program/1/ is another program, not read
+     * a Switch 2 Edition's program/1/ is another program (programDir)
      */
     static File root(File verDir) {
         for (String r : new String[] {"", "program/0", "program/0/program"}) {
@@ -123,6 +131,66 @@ final class DumpLayout {
             if (new File(d, "exefs").isDirectory() || new File(d, "romfs").isDirectory()) return d;
         }
         return verDir;
+    }
+
+    /**
+     * Program n &gt; 0 of a folder dump (a Switch 2 Edition's program 1, scripts/pack_dump.py program_dir): the package (the folder with exefs/ and romfs/) of the
+     * newest version that has its exefs/main.npdm, an update's, else the base's. Where the dump tools keep it: program/&lt;n&gt;/ in the version folder in the
+     * console's layout (program/&lt;n&gt;/program/ when a data content shares the index), program&lt;n&gt;/ beside the version's exefs/ and romfs/ in the flattened one
+     * (updates/&lt;v&gt;/program1/, leading zeros allowed), and Yoink's switch2/updates/&lt;v&gt;/ and switch2/base/ (program 1); a one-version folder's own
+     * program&lt;n&gt;/ is the base's. null when none has it, and for a .nup, which holds program 0 only
+     */
+    static File programDir(File dump, int n) {
+        if (Nup.isNup(dump)) return null;
+        long best = -1;
+        File found = null;
+        List<Object[]> vers = new ArrayList<>();   // {version, version folder, whether the folder is program n itself (Yoink's switch2/)}
+        for (File u : numbered(new File(dump, "updates"))) vers.add(new Object[] {Long.parseLong(u.getName()), u, false});
+        vers.add(new Object[] {0L, new File(dump, "base"), false});
+        vers.add(new Object[] {0L, dump, false});
+        if (n == 1) {
+            for (File u : numbered(new File(dump, "switch2/updates"))) vers.add(new Object[] {Long.parseLong(u.getName()), u, true});
+            vers.add(new Object[] {0L, new File(dump, "switch2/base"), true});
+        }
+        for (Object[] e : vers) {
+            long ver = (Long) e[0];
+            File v = (File) e[1];
+            List<File> cands = new ArrayList<>();
+            if ((Boolean) e[2]) cands.add(v);
+            else {
+                cands.add(new File(v, "program/" + n));
+                cands.add(new File(v, "program/" + n + "/program"));
+                File[] flat = v.listFiles(f -> f.isDirectory() && f.getName().matches("program0*[1-9]\\d{0,2}") && Integer.parseInt(f.getName().substring(7)) == n);
+                if (flat != null) { java.util.Arrays.sort(flat); cands.addAll(java.util.Arrays.asList(flat)); }
+            }
+            for (File d : cands)
+                if (ver > best && new File(d, "exefs/main.npdm").isFile()) { best = ver; found = d; break; }
+        }
+        return found;
+    }
+
+    /**
+     * A folder dump's control data (Nacp): the control/ folder with control.nacp of the newest version that has one, an update's, else the base's, in the
+     * console's layout (program/0/control/) or the flattened one (&lt;version&gt;/control/). A dump of an installed game has only its update's (the Control
+     * content goes with the update), which then stands for the game, as github.com/a55uka/nup pack takes it. null when none has it, and for a .nup
+     */
+    static File controlDir(File dump) {
+        if (Nup.isNup(dump)) return null;
+        List<File> vers = numbered(new File(dump, "updates"));
+        vers.sort((a, b) -> Long.compare(Long.parseLong(b.getName()), Long.parseLong(a.getName())));
+        vers.add(new File(dump, "base"));
+        vers.add(dump);
+        for (File v : vers)
+            for (File d : new File[] {new File(root(v), "control"), new File(v, "program/0/control"), new File(v, "control")})
+                if (new File(d, "control.nacp").isFile()) return d;
+        return null;
+    }
+
+    private static List<File> numbered(File parent) {
+        List<File> out = new ArrayList<>();
+        File[] l = parent.listFiles(f -> f.isDirectory() && f.getName().matches("\\d{1,18}"));
+        if (l != null) out.addAll(java.util.Arrays.asList(l));
+        return out;
     }
 
     private static boolean nonEmpty(File d) {
@@ -136,7 +204,7 @@ final class DumpLayout {
      */
     static String path(File dump, long v, String sub) {
         boolean romfs = sub.equals("romfs") || sub.startsWith("romfs/");
-        if (Nup.isNup(dump)) return Nup.spec(dump, selector(dump, v, romfs), sub);
+        if (Nup.isNup(dump)) { String sel = selector(dump, v, romfs); return Nup.spec(Nup.holder(dump, sel), sel, sub); }
         File own = dir(dump, v), base = dir(dump, 0);
         if (v != 0 && own.isDirectory() && !has(own, romfs, sub) && has(base, romfs, sub)) return new File(base, sub).getPath();   // a version the dump does not have: its own path (missing)
         return new File(own, sub).getPath();
@@ -151,6 +219,7 @@ final class DumpLayout {
         String own = Nup.versionSelector(v);
         if (v == 0) return own;
         try {
+            nup = Nup.holder(nup, own);   // an update that is an NSP of its own (beside the game's)
             Nup n = Nup.open(nup);
             Nup.Pkg p = n.find(own), b = n.base();
             if (p != null && (romfs ? hasRomfs(n, p) : p.exefsDir != Nup.NONE)) return own;
@@ -170,8 +239,9 @@ final class DumpLayout {
     static boolean hasRomfs(File dump, long v) {
         try {
             if (Nup.isNup(dump)) {
-                Nup n = Nup.open(dump);
-                Nup.Pkg p = n.find(selector(dump, v, true));
+                String sel = selector(dump, v, true);
+                Nup n = Nup.open(Nup.holder(dump, sel));
+                Nup.Pkg p = n.find(sel);
                 return p != null && hasRomfs(n, p);
             }
             return nonEmpty(new File(path(dump, v, "romfs")));
@@ -190,8 +260,9 @@ final class DumpLayout {
     static boolean exists(File dump, long v, String sub) {
         if (!Nup.isNup(dump)) return new File(path(dump, v, sub)).isFile();
         try {
-            Nup n = Nup.open(dump);
-            Nup.Pkg p = n.find(selector(dump, v, sub.startsWith("romfs")));
+            String sel = selector(dump, v, sub.startsWith("romfs"));
+            Nup n = Nup.open(Nup.holder(dump, sel));
+            Nup.Pkg p = n.find(sel);
             return p != null && isFile(n, p, sub);
         } catch (IOException e) {
             return false;
@@ -248,7 +319,7 @@ final class DumpLayout {
     private static String find(Found f, File dump, boolean anyBuild) {
         String fn = dump.getName();
         boolean nup = Nup.isNup(dump);
-        if (Nup.wrongCase(dump)) return fn + ": rename it so that its name ends in \".nup\" (lower case); the tools and the game read only that name.";
+        if (Nup.wrongCase(dump)) return fn + ": rename it so that its name ends in \".nup\" or \".nsp\" (lower case); the tools and the game read only that name.";
         if (nup) {
             if (!Nup.picked(dump) && (!dump.isFile() || !dump.canRead())) return dump + " is not a file this app can read. Check that All files access is on.";
             try { Nup.open(dump); } catch (IOException e) { return fn + " cannot be used: " + e.getMessage(); }
@@ -266,7 +337,12 @@ final class DumpLayout {
             return e.getMessage();
         }
         Profile prof = Profile.of(f.titleId);
-        if (prof == null) return Profile.missing(f.titleId, null);
+        if (prof == null) {
+            // a dump whose program n > 0 this APK runs (Pack.playableIdOf) holds that program: Profile.missing's sentence for a Switch 1-only dump does not apply
+            String other;
+            try { other = Pack.playableIdOf(dump); } catch (IOException e) { other = f.titleId; }
+            return other.equals(f.titleId) ? Profile.missing(f.titleId, null) : Profile.notIncluded(f.titleId, null);
+        }
         Map<Long, Map<String, String>> builds = prof.buildMap();
         for (int i = have.size() - 1; i >= 0 && f.version < 0; i--) {
             long v = have.get(i);

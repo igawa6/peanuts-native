@@ -1,0 +1,12 @@
+# The fix finder ("Try this setting"): when a run ends the way rule_id says, the launcher's exit notice and its "What it means" page offer this Advanced row once per game,
+# while the row is still Auto for that game (FixFinder.java; dm/tools/advanced_fix.py writes the table of wiki/Troubleshooting.md from it). Tab-separated, in order of
+# preference (the first row of a rule that can be offered is the one shown):
+#   rule_id      an id of dm/tools/log_rules.tsv, or exit:<kind> for an end the log digest names without a matching line (LogDigest.verdict's kind, e.g. Android's own
+#                low-memory exit reason with no lowmemorykiller line in the log)
+#   advanced_id  a friendly or advanced row of docs/advanced_settings.tsv that the player can set (no owner); its `fixes` column names the rule
+#   value        a value that row accepts
+#   scope        game (set for that game only) | global (set for every game)
+#   sentence     what it does and what it costs, plain, ASCII, at most 100 characters; it must follow from the switch's text in docs/env_switches.tsv or a reference entry
+rule_id	advanced_id	value	scope	sentence
+lmk-kill	DM_VK_TEX_SOFT	1	game	Keeps large textures without their finest level: less memory, textures look a little softer.
+exit:out_of_memory	DM_VK_TEX_SOFT	1	game	Keeps large textures without their finest level: less memory, textures look a little softer.

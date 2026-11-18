@@ -70,6 +70,18 @@ class NdsrRecords(unittest.TestCase):
         found = ss.ndsr_shaders(bytes(data), '/vr')
         self.assertEqual([(w, c, k) for w, _, c, k in found], [(f'/vr#NDSR@{o:#x}', c, k) for o, c, k in shaders])
 
+    def test_loose_pack_file_is_scanned(self):
+        # Kirby and the Forgotten Land - Nintendo Switch 2 Edition's add-on: ndsr/lower_left.ndsr, an NDSR pack as a file of its own (not inside a SARC or VIPR),
+        # which the file filter in scan_file_in passes to the readers by its magic
+        import tempfile, os
+        data, shaders = pack(0x10, [0x0461, 0x1462])
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, 'lower_left.ndsr')
+            with open(p, 'wb') as f: f.write(data)
+            rel, keys, pairs, _ = ss.scan_file_in((p, 'ndsr/lower_left.ndsr'))
+        self.assertEqual(set(keys), {ss.skey(ctl, code) for _, ctl, code in shaders})
+        self.assertEqual(len(pairs), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

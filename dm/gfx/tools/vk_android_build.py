@@ -37,6 +37,7 @@
 # Output: dmsh_vk.lib (the library), index.json (the same reflection as JSON, for tools), inputs.tsv (game and profile inputs, as the Apple libraries' stamp),
 #   _vk_build.json (each key's status), and a summary on stdout: counts, failure reasons, what the device must support
 import ast, collections, concurrent.futures as cf, ctypes, hashlib, json, mmap, os, re, shutil, struct, subprocess, sys, tempfile, threading, time
+from typing import Any   # PEANUTS(upstream-candidate): borrowed functions join modules in the execution namespace.
 HERE = os.path.dirname(os.path.abspath(__file__)); GFX = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import dmsh_chain, dmsh_abi as abi, dmsh_ampere, split_pool, tool_lock, vk_android_spv as spv, vk_android_delta as delta
@@ -190,7 +191,7 @@ BUILD = os.path.join(HERE, 'dmsh_build.py')
 BORROWED = ('record_index', 'vertex_ab', 'early_fragment_tests', 'tf_layout', 'job_for', 'decode_tex', 'const_sampler', 'decode_ubo_tex', 'c2_array', 'load_pairs', 'build_keys')
 
 
-def borrow(namespace):
+def borrow(namespace: dict[str, Any]) -> dict[str, Any]:   # PEANUTS(upstream-candidate): exec adds callable values to this namespace.
     tree = ast.parse(open(BUILD).read(), BUILD)
     fns = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
     missing = [n for n in BORROWED if n not in fns]
@@ -208,7 +209,8 @@ def borrow_key(key_skip):
     """skey(ctl, code) of shader_split.py, with the profile's shader_key_skip (its KEY_SKIP)"""
     tree = ast.parse(open(SPLIT).read(), SPLIT)
     fns = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in KEY_FNS}
-    consts = [n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, (ast.Name, ast.Tuple)) and
+    # PEANUTS(upstream-candidate): ast.Module accepts a list of statements, including these assignments.
+    consts: list[ast.stmt] = [n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, (ast.Name, ast.Tuple)) and
               {e.id for e in (t.elts if isinstance(t, ast.Tuple) else [t]) if isinstance(e, ast.Name)} & set(KEY_CONSTS) for t in n.targets)]
     if len(fns) != len(KEY_FNS): sys.exit(f'[RED] {SPLIT} no longer defines {", ".join(sorted(set(KEY_FNS) - set(fns)))}: vk_android_build.py takes them from there')
     ns = {'struct': struct, 'hashlib': hashlib, 'KEY_SKIP': key_skip}
@@ -401,10 +403,11 @@ KIND_TEX_DYN, KIND_SAMP_DYN = 'tex_dyn', 'samp_dyn'   # the Vulkan ABI's own kin
 KIND = {abi.KIND_CBUF: 'CBUF', abi.KIND_C1: 'C1', abi.KIND_DRVCB: 'DRVCB', abi.KIND_SUPPORT: 'SUPPORT', abi.KIND_SBUF: 'SBUF', abi.KIND_SBUF_UBO: 'SBUF_UBO', abi.KIND_UBO_PTR: 'UBO_PTR',
         abi.KIND_TEX: 'TEX', abi.KIND_TBUF: 'TBUF', abi.KIND_IMG: 'IMG', abi.KIND_SAMP: 'SAMP', abi.KIND_SAMP_TEX: 'SAMP_TEX', abi.KIND_SAMP_ID: 'SAMP_ID', abi.KIND_TEX_UBO: 'TEX_UBO',
         abi.KIND_SAMP_UBO: 'SAMP_UBO', abi.KIND_TEX_C2A: 'TEX_C2A', abi.KIND_SAMP_C2A: 'SAMP_C2A', abi.KIND_TEX_POOL: 'TEX_POOL', abi.KIND_SAMP_POOL: 'SAMP_POOL',
-        abi.KIND_GMEM_MAP: 'GMEM_MAP', abi.KIND_GMEM_LOG: 'GMEM_LOG', abi.KIND_SHARED_SPILL: 'SHARED_SPILL', abi.KIND_UNKNOWN: 'UNKNOWN',
+        abi.KIND_GMEM_MAP: 'GMEM_MAP', abi.KIND_GMEM_LOG: 'GMEM_LOG', abi.KIND_SHARED_SPILL: 'SHARED_SPILL', abi.KIND_IMG_UBO: 'IMG_UBO', abi.KIND_UNKNOWN: 'UNKNOWN',
         KIND_TEX_DYN: 'TEX_DYN', KIND_SAMP_DYN: 'SAMP_DYN'}
 KIND_NUM = {k: VK['KIND_' + v] for k, v in KIND.items()}
-SLOT_KINDS = {abi.KIND_CBUF, abi.KIND_SAMP, abi.KIND_SAMP_TEX, abi.KIND_TEX, abi.KIND_IMG, abi.KIND_TBUF, abi.KIND_SBUF, abi.KIND_UBO_PTR, abi.KIND_SBUF_UBO, abi.KIND_TEX_UBO, abi.KIND_SAMP_UBO, abi.KIND_SAMP_ID}
+SLOT_KINDS = {abi.KIND_CBUF, abi.KIND_SAMP, abi.KIND_SAMP_TEX, abi.KIND_TEX, abi.KIND_IMG, abi.KIND_TBUF, abi.KIND_SBUF, abi.KIND_UBO_PTR, abi.KIND_SBUF_UBO, abi.KIND_TEX_UBO, abi.KIND_SAMP_UBO, abi.KIND_SAMP_ID,
+              abi.KIND_IMG_UBO}
 POOL_SUFFIX = '_cb0_40000000'   # a handle traced to no slot indexes the pools by its IDs (Program.cs QueryTextureArrayLengthFromPool; dmsh_build.py pool_arrays)
 
 
@@ -419,6 +422,16 @@ def sampler_half(name):
     return (abi.KIND_SAMP, s, 0) if ty else (abi.KIND_SAMP_TEX, t, 0)
 
 
+def ubo_img(nm):
+    """An image whose handle the game keeps in its own uniform buffer: <stage>_i<type>_cb<bank>_<handle> with bank 3..16 (c[3 + slot]), handle type 0 (one word,
+    the low 20 bits the texture ID). Unreal Engine 5.6 on the Switch 2 keeps every image of its compute shaders there (Orbitals: cp_i_cb3_0_ … cp_i_cb3_E_, 2,820
+    compute, 50 pixel and 1 vertex shader). → (uniform slot, byte offset), or None (dmsh_build.decode_tex reads bank 2's image slots)"""
+    mm = re.match(r'[a-z]+_i\w*?_cb(\d+)_([0-9A-F]+)', nm)
+    if not mm: return None
+    bank, h = int(mm.group(1)), int(mm.group(2), 16)
+    return (bank - 3, (h & 0x3fff) * 4) if 3 <= bank <= 16 and h >> 28 == 0 else None
+
+
 def classify(stage, r, res, m):
     """A descriptor variable → its binding record (dict): the kind and slot from its name (dmsh_build.py reflect's rules, on the SPIR-V names the MSL members come from)"""
     nm, desc = r['name'], r['desc']
@@ -426,11 +439,11 @@ def classify(stage, r, res, m):
     texlike = desc in (spv.VK_COMBINED, spv.VK_SAMPLED_IMAGE, spv.VK_UNIFORM_TEXEL, spv.VK_STORAGE_IMAGE, spv.VK_STORAGE_TEXEL, spv.VK_SAMPLER)
     if nm == 'support_buffer': e['kind'] = abi.KIND_SUPPORT
     elif desc in (spv.VK_UNIFORM_BUFFER,) and re.fullmatch(r'[a-z]+_c(\d+)', nm):
-        n = int(re.fullmatch(r'[a-z]+_c(\d+)', nm).group(1))
+        n = int(re.fullmatch(r'[a-z]+_c(\d+)', nm).group(1))   # pyright: ignore[reportOptionalMemberAccess]  # PEANUTS(upstream-candidate): the same fullmatch guarded this branch.
         if 3 <= n <= 16: e.update(kind=abi.KIND_CBUF, reg=n - 3)
         else: e.update(kind=abi.KIND_C1 if n == 1 else abi.KIND_DRVCB, reg=n)
     elif desc == spv.VK_STORAGE_BUFFER and re.fullmatch(r'[a-z]+_s(\d+)', nm):
-        e.update(kind=abi.KIND_SBUF, index=int(re.fullmatch(r'[a-z]+_s(\d+)', nm).group(1)))
+        e.update(kind=abi.KIND_SBUF, index=int(re.fullmatch(r'[a-z]+_s(\d+)', nm).group(1)))   # pyright: ignore[reportOptionalMemberAccess]  # PEANUTS(upstream-candidate): the same fullmatch guarded this branch.
     elif texlike and nm.endswith(POOL_SUFFIX) and r['count'] == 32 and re.fullmatch(r'[a-z]+_(tb|s)_cb0_40000000', nm) and desc in (spv.VK_UNIFORM_TEXEL, spv.VK_SAMPLER):
         e['kind'] = KIND_SAMP_DYN if desc == spv.VK_SAMPLER else KIND_TEX_DYN   # a texture word traced to no slot, here from c2's tables (tex_dyn_slots): the replay binds slot k at element k
     elif texlike and nm.endswith(POOL_SUFFIX) and r['count'] >= 33:
@@ -441,6 +454,8 @@ def classify(stage, r, res, m):
         if desc == spv.VK_SAMPLER: e.update(kind=abi.KIND_SAMP_ID, reg=us[1]) if us[0] == 'id' else e.update(kind=abi.KIND_SAMP_UBO, reg=us[0], off=us[1])
         elif desc == spv.VK_UNIFORM_TEXEL: e['kind'] = abi.KIND_UNKNOWN   # a bindless buffer texture: not implemented in the replay (as on Metal)
         else: e.update(kind=abi.KIND_TEX_UBO, reg=ut[0], off=ut[1])
+    elif desc in (spv.VK_STORAGE_IMAGE, spv.VK_STORAGE_TEXEL) and (iu := ubo_img(nm)):
+        e.update(kind=abi.KIND_IMG_UBO, reg=iu[0], off=iu[1])
     elif texlike and r['count'] > 1 and NS['c2_array'](nm, 'array<'):
         off, soff = NS['c2_array'](nm, 'array<')
         e.update(kind=abi.KIND_SAMP_C2A if desc == spv.VK_SAMPLER else abi.KIND_TEX_C2A, off=off)
@@ -506,8 +521,8 @@ def place(stage, binds, m):
             e['set'], e['binding'] = VK['SET_DRAW'], base + n; n += 1
         m.set_binding(e['id'], e['set'], e['binding'])
         if e['kind'] in SLOT_KINDS and e.get('reg') is None: e['flags'] |= VK['BF_NOSLOT']
-        if e['kind'] == abi.KIND_IMG and m_atomic(m, e['id']): e['flags'] |= VK['BF_ATOMIC']
-        if e['kind'] == abi.KIND_IMG and m_writes(m, e['id']): e['flags'] |= VK['BF_RW']
+        if e['kind'] in (abi.KIND_IMG, abi.KIND_IMG_UBO) and m_atomic(m, e['id']): e['flags'] |= VK['BF_ATOMIC']
+        if e['kind'] in (abi.KIND_IMG, abi.KIND_IMG_UBO) and m_writes(m, e['id']): e['flags'] |= VK['BF_RW']
 
 
 def m_atomic(m, vid):   # an image texel pointer on this image: its atomics
@@ -862,7 +877,7 @@ def read_result(key):
             if o + ln > end: raise ResultCut(p)   # cut after this run's check (result_file): the caller translates it again
             if loose:
                 f.seek(o); stored = f.read(ln)
-                mods.append((variant, size, stored, codec, zstd.decompress(stored) if codec == VK['CODEC_ZSTD'] else stored))
+                mods.append((variant, size, stored, codec, zstd.decompress(stored) if codec == VK['CODEC_ZSTD'] else stored))   # pyright: ignore[reportOptionalMemberAccess]  # PEANUTS(upstream-candidate): compressed cached results require the available zstd codec.
             else: mods.append((variant, size, Stored(p, o, ln), codec, None))
             o += ln
     return key, h['st'], h['err'], (h['refl'], mods)
@@ -902,7 +917,7 @@ def index_packs():
         try: _bins = sorted(n for n in os.listdir(dm_dir) if n.endswith('.bin'))
         except OSError as e: sys.exit(f'[RED] shader package {dm_dir}: {e}')
         for _name in _bins: packs[_name] = NS['record_index'](os.path.join(dm_dir, _name))
-def _rec(name, k):
+def _rec(name, k):   # pyright: ignore[reportRedeclaration]  # PEANUTS(upstream-candidate): the worker deliberately replaces the parent record reader.
     fd, offs = packs[name]
     return os.pread(fd, offs[k + 1] - offs[k], offs[k])
 MISSING = set()   # keys the package does not hold, left out of this build (DMSH_VK_REQUIRE_ALL=0: open_packs)
@@ -940,7 +955,7 @@ def fin(key, bd, job, c1, xerr):
     except (ValueError, KeyError, IndexError, StopIteration) as e: return key, 'reflection failed', f'{type(e).__name__}: {e}'[:160], None
 
 
-def stopped(): return False   # (a worker's says whether the parent wants it to stop: serve)
+def stopped(): return False   # (a worker's says whether the parent wants it to stop: serve)   # pyright: ignore[reportRedeclaration]  # PEANUTS(upstream-candidate): the worker deliberately replaces the parent stop predicate.
 
 
 def batch_results(batch):
@@ -1014,7 +1029,7 @@ if WORKER and not WORKER.get('proc'):
 
     def stopped():
         """The parent put something on the stop queue (Pool.close): the batch in hand ends after the shader in hand, no other batch starts"""
-        if not _STOP[0] and not WORKER['stop'].empty(): _STOP[0] = True
+        if not _STOP[0] and not WORKER['stop'].empty(): _STOP[0] = True   # pyright: ignore[reportOptionalSubscript]  # PEANUTS(upstream-candidate): this helper runs only in the guarded worker branch.
         return _STOP[0]
 
     class QueueGate:
@@ -1025,7 +1040,7 @@ if WORKER and not WORKER.get('proc'):
             while True:
                 try: self.q.get_nowait(); return
                 except QueueEmpty:
-                    if stopped(): raise Stop()
+                    if stopped(): raise Stop()   # noqa: B904  # PEANUTS(upstream-candidate): retain the existing Stop traceback context.
                     time.sleep(0.01)
         def __exit__(self, *a): self.q.put(1)
     XLATE_GATE = QueueGate(WORKER['gate'])
@@ -1033,7 +1048,7 @@ if WORKER and not WORKER.get('proc'):
     def serve():
         """A worker's loop: WORKER['threads'] threads take batches from the jobs queue and run them (run_batch, no progress: the parent counts) until the parent stops them"""
         global w, _rec
-        w = WORKER['w']; jobs, results = WORKER['jobs'], WORKER['results']
+        w = WORKER['w']; jobs, results = WORKER['jobs'], WORKER['results']   # pyright: ignore[reportOptionalSubscript]  # PEANUTS(upstream-candidate): serve runs only in the guarded worker branch.
         fds, at, flock = {}, {}, threading.Lock()
         def rec(name, k):   # the package record the parent named (its offsets): this interpreter's own descriptor, no record_index of a package of several GB per worker
             off, n = at[(name, k)]
@@ -1055,8 +1070,8 @@ if WORKER and not WORKER.get('proc'):
                 except BaseException as e:   # the parent raises it (as a thread's exception ended the build before)
                     import traceback
                     results.put(worker_message('err', n, f'{type(e).__name__}: {e}\n' + ''.join(traceback.format_exception(e))[-1500:]))
-        ts = [threading.Thread(target=loop) for _ in range(max(1, WORKER['threads']))]
-        results.put(worker_message('ready', WORKER['id']))
+        ts = [threading.Thread(target=loop) for _ in range(max(1, WORKER['threads']))]   # pyright: ignore[reportOptionalSubscript]  # PEANUTS(upstream-candidate): this setup runs only in the guarded worker branch.
+        results.put(worker_message('ready', WORKER['id']))   # pyright: ignore[reportOptionalSubscript]  # PEANUTS(upstream-candidate): this setup runs only in the guarded worker branch.
         for t in ts: t.start()
         for t in ts: t.join()
         for fd in fds.values(): os.close(fd)
@@ -1071,7 +1086,7 @@ if WORKER and not WORKER.get('proc'):
 if WORKER and WORKER.get('proc'):
     w = WORKER['w']
     def _rec(name, k): return _RECS[(name, k)]
-    PIPE_POOL_SERVE()
+    PIPE_POOL_SERVE()   # noqa: F821  # pyright: ignore[reportUndefinedVariable]  # PEANUTS(upstream-candidate): split_pool injects PIPE_POOL_SERVE through runpy init_globals.
     raise SystemExit(0)
 
 
@@ -1152,7 +1167,7 @@ if MANIFEST:
     def _reuse(k):
         L, ent, errs = delta.find_entry(MANIFEST, k, _libs, zstd)
         if L is None: return k, None, '; '.join(errs) or None, None
-        _, e, b, c1, mods = ent
+        _, e, b, c1, mods = ent   # pyright: ignore[reportGeneralTypeIssues]  # PEANUTS(upstream-candidate): a successful library lookup supplies its entry tuple.
         refl = {'stage': STAGE_OF[k], 'reused': L.version, 'lib': {'entry': delta.zeroed(e).hex(), 'binds': b.hex(), 'c1': c1.hex()}}
         return k, L.version, None, write_result(k, 'ok', '', (refl, [(v, size, bytes(st), codec, None) for v, size, st, codec in mods]), None, sync=False)
     _from, _kc, _tmps = collections.Counter(), [k for k in _cand if any(k in L.index for L in _libs)], []
@@ -1251,10 +1266,10 @@ class Pool:
         """The next message from the workers, polled (a KeyboardInterrupt reaches this thread between polls)"""
         from concurrent.interpreters import QueueEmpty
         while True:
-            try: return json.loads(self.results.get_nowait())
+            try: return json.loads(self.results.get_nowait())   # pyright: ignore[reportArgumentType]  # PEANUTS(upstream-candidate): worker_message puts JSON strings on this queue.
             except QueueEmpty: pass
             if not any(th.is_alive() for th in self.threads):
-                try: return json.loads(self.results.get_nowait())
+                try: return json.loads(self.results.get_nowait())   # pyright: ignore[reportArgumentType]  # PEANUTS(upstream-candidate): worker_message puts JSON strings on this queue.
                 except QueueEmpty: raise RuntimeError('every shader worker ended') from None
             time.sleep(0.01)
 
@@ -1340,14 +1355,14 @@ def translate_keys(ks, count=True):
                             os.unlink(result_path(k))
                             if open_packs([k]): run_batch([k], False)
                             continue
-                        _b = next(m for m in _r[1] if m[0] == VK['MOD_BASE'])
+                        _b = next(m for m in _r[1] if m[0] == VK['MOD_BASE'])   # pyright: ignore[reportOptionalSubscript]  # PEANUTS(upstream-candidate): a reused successful result includes its reflection and modules.
                         PS_INPUTS[k] = set(spv.Module(delta.spirv(stored_bytes(_b[2]), _b[3], zstd)).io(spv.SC_INPUT))
         batches = [_phase[i:i + BATCH] for i in range(0, len(_phase), BATCH)]
         if not batches: continue
         pool = pool_for(-(-len(ks) // BATCH))
         if isinstance(pool, split_pool.PipePool):   # a thread here per worker process: it sends a batch, waits for its results and writes them
             with cf.ThreadPoolExecutor(len(pool.workers)) as ex:
-                for _ in ex.map(lambda b: run_batch(b, count, pool), batches): pass
+                for _ in ex.map(lambda b: run_batch(b, count, pool), batches): pass   # noqa: B023  # PEANUTS(upstream-candidate): the executor map is exhausted before this loop changes pool.
             continue
         if pool: pool.run(batches, count); continue
         with cf.ThreadPoolExecutor(NJ) as ex:

@@ -18,6 +18,10 @@ extern int g_swkbd_min_chars;   // hle_swkbd.c: this input's minimum length from
 int front_text_input(const char *title, const char *sub, const char *guide, const char *initial, int max_chars, char *out, int out_cap) {
     return android_text_input(title, sub, guide, initial, max_chars, g_swkbd_min_chars > 0 ? g_swkbd_min_chars : 0, out, out_cap);
 }
+// User selector (front.h): the launcher's picker over the game (input_android.c, GameActivity's UserPicker); -2 without its callback (the host takes the preselected user)
+int front_user_select(const char *const *names, const int *offered, int n, int def) { return android_user_select(names, offered, n, def); }
+// Controller applet (front.h): the launcher's join screen over the game (input_android.c, GameActivity's CtrlScreen); -2 without its callback (the host answers at once)
+int front_controller_support(const void *arg, int *count) { return android_controller_support(arg, count); }
 int main(int argc, char **argv);
 // The launcher (android/app) calls this on a thread of its own with an 8 MB stack, which is not attached to ART. Heap pointer tagging goes off first: Bionic's malloc hands
 // out pointers with a tag in the top byte (0xb4) since Android 11, and the host gives malloc'd blocks to the guest (its TLS and thread-local region, the libc passthrough),

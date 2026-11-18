@@ -39,3 +39,8 @@ shader_note	Link's Awakening shaders
 depth_mode	zero
 # PEANUTS: hold the frame controller at 60 (hle_fpslock.c EXTRA_VSYNCS_U8 row)
 fps_target	60
+
+# PEANUTS: keep the original timing; the experimental 120 fps mode was broken in gameplay.
+fps_limit	60
+fps_limit_max	60
+fps_modes	30,60

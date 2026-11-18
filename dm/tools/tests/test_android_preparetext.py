@@ -78,7 +78,7 @@ class Wiring(unittest.TestCase):
     def test_translator_mismatch_is_the_tools_text(self):   # the trigger (2026-11-10): an APK with a stale translator library; its card said Tap Retry
         java = (SRC / 'PrepareText.java').read_text(encoding='utf-8')
         m = re.search(r'static final String XLATE_MISMATCH = "([^"]+)";', java)
-        self.assertIsNotNone(m, 'PrepareText.XLATE_MISMATCH')
+        assert m is not None, 'PrepareText.XLATE_MISMATCH'   # PEANUTS(upstream-candidate): required text definition.
         tool = (REPO / 'dm/gfx/tools/vk_android_build.py').read_text(encoding='utf-8')
         self.assertIn(f"sys.exit('\\n'.join('[RED] {m.group(1)}' + b for b in _bad))", tool, 'check_translator refuses with the text PrepareText matches')
         self.assertIn('if (red.startsWith(XLATE_MISMATCH))', java)

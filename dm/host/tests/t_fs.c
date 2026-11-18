@@ -394,6 +394,27 @@ int main(void) {
         CHECK(rm_tree(lnk) == -1 && errno == ENOTDIR && same(vf, "keep"), "rm_tree of a symlink to a directory refuses it (ENOTDIR) and leaves the target alone");
     }
 
+    printf("⑨ Unmount: a no-op with one user; with more, a save's entry is freed and the next save mount takes it\n");
+    {   extern int g_test_users; g_nmnt = 0;
+        CHECK(h_fs_MountSave("save", NULL) == RES_OK && write_save("save:/a", "keep") == RES_OK, "one user: mount, write a=keep without committing");
+        h_fs_Unmount("save");
+        CHECK(g_nmnt == 1 && !strcmp(g_mnt[0].name, "save") && read_fs("save:/a", got, sizeof got) && !strcmp(got, "keep"), "one user: Unmount leaves the mount and its uncommitted write (a = %s)", got);
+        CHECK(h_fs_Commit("save") == RES_OK, "commit a=keep");
+        g_test_users = 2; int i = 0;
+        for (; i < MAX_MOUNT + 8; i++) { h_fs_Unmount("save"); if (h_fs_MountSave("save", NULL) != RES_OK) break; }
+        CHECK(i == MAX_MOUNT + 8 && g_nmnt == 1 && g_mnt[0].txn_root == 0, "two users: %d Unmount + mount cycles keep one entry (table holds %d)", MAX_MOUNT + 8, g_nmnt);
+        CHECK(write_save("save:/a", "drop") == RES_OK, "write a=drop without committing"); h_fs_Unmount("save");
+        CHECK(!g_mnt[0].name[0], "Unmount frees the save's name");
+        CHECK(h_fs_MountSave("save", NULL) == RES_OK && g_nmnt == 1 && read_fs("save:/a", got, sizeof got) && !strcmp(got, "keep"), "the mount after Unmount starts from the committed save, in the same entry (a = %s)", got);
+        // an entry whose transaction another mounted name still shares is not taken: that name's pending writes live in it
+        CHECK(h_fs_MountSave("alias", NULL) == RES_OK && g_nmnt == 2 && g_mnt[1].txn_root == 0, "an alias shares entry 0's transaction");
+        CHECK(write_save("alias:/a", "pending") == RES_OK, "write a=pending through the alias"); h_fs_Unmount("save");
+        CHECK(h_fs_MountSave("save", NULL) == RES_OK && g_nmnt == 3 && g_mnt[2].txn_root == 0, "a new mount of the save appends (entry 0 is the alias's transaction) and shares it (table holds %d)", g_nmnt);
+        CHECK(read_fs("save:/a", got, sizeof got) && !strcmp(got, "pending") && h_fs_Commit("alias") == RES_OK, "and sees the alias's pending write (a = %s), which commits", got);
+        snprintf(p, sizeof p, "%s/a", save); CHECK(same(p, "pending"), "committed a = pending");
+        g_test_users = 1;
+    }
+
     char cmd[1200]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", root); system(cmd);
     printf("== %d checks, %d failed ==\n", checks, fails);
     return fails != 0;

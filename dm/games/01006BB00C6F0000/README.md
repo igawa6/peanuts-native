@@ -13,6 +13,12 @@ Update 1.1.0 (v131072) over the base game, SDK 8.2.0. Grezzo's engine on Nintend
 
 `dm/tools/sdk_patches.py`'s SDK-wide rules cut its `sdk` build (`3ae34e68…`): the node area and 2 MB alignment of large regions. No `pad_layout`: the virtual gamepad starts in the 2D layout.
 
+## Android frame rate choices
+
+The default remains 60 fps with the existing Grezzo controller lock. The choices are Game owned, 30 and 60 fps, all using the original game timing. Game owned leaves the native controller and timing alone.
+
+The experimental 120 fps mode was removed after the owner reported broken gameplay. Its main-module timing patches and associated controller-memory override are no longer shipped. The precise timing failure remains unresolved; title-screen frame counts did not validate gameplay. Previously saved 120 fps selections resolve to the 60 fps default on the next launch through the launcher's existing cap normalization. Game files are unchanged; restart any running session to use the updated profile.
+
 ## Rendering
 
 Game-specific findings; the general host changes they led to are listed under [Found on this game](#found-on-this-game).

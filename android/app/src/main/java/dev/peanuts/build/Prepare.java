@@ -161,7 +161,7 @@ final class Prepare {
                 // ...and the shaders are made again when the game file was imported again since the pack was made (PackNote: the old job's pack, or this one),
                 // though the library in the pack is this APK's: it was made from the shaders the old file had
                 boolean stale = reimported || PackNote.stale(packDir);
-                boolean code = blocking != null || noOrig(packDir) || Boolean.FALSE.equals(Upstream.packCode(c, pack, dumpR)), sh = shaders != null || stale;
+                boolean code = blocking != null || noOrig(packDir) || Boolean.FALSE.equals(Upstream.packCode(c, pack, dumpR)), sh = shaders != null || stale || needsShaderRepair(packDir, id);
                 job = Upstream.jobAdopt(r, packDir, code, sh);
                 Upstream.jobSave(job);
                 Upstream.jobRemember(c, Upstream.jobFile(job));
@@ -299,11 +299,31 @@ final class Prepare {
     /** A pack whose main was rewritten before the rewriter kept the file's own bytes of what it changed (main.orig.bin) */
     private static boolean noOrig(File packDir) { return new File(packDir, "main.changed.tsv").isFile() && !new File(packDir, "main.orig.bin").isFile(); }
 
-    private boolean current(File packDir, File dump, String id) {
+    private boolean current(File packDir, File dump, String id) throws IOException {
         try {
             Object pack = Upstream.packRead(packDir);
-            return pack != null && Upstream.packBlocking(c, pack, dump) == null && !Boolean.FALSE.equals(Upstream.packCode(c, pack, dump)) && Upstream.packShaders(packDir, id) == null;
+            return pack != null && Upstream.packBlocking(c, pack, dump) == null && !Boolean.FALSE.equals(Upstream.packCode(c, pack, dump)) && Upstream.packShaders(packDir, id) == null && !needsShaderRepair(packDir, id);
         } catch (ReflectiveOperationException | RuntimeException e) { return true; }   // cannot judge: as before
+    }
+
+    /** A valid version header alone accepted old packs whose decoder silently omitted a whole shader group (issue #78). */
+    private boolean needsShaderRepair(File pack, String titleId) throws IOException {
+        if (PackNote.without(pack) != null) return false;   // the player's explicit choice to build without add-on content
+        File library = new File(pack, "shaders/v-" + dev.nxnative.android.BuildConfig.NX_DMSH_VK_CHAIN + "/dmsh_vk.lib");
+        if (!library.isFile()) return false;   // the normal version check already rebuilds it
+        try {
+            Object p = Upstream.packRead(pack);
+            @SuppressWarnings("unchecked") java.util.List<String> builds = (java.util.List<String>) Upstream.get(p, "builds");
+            if (!RuntimeShaderMap.matchesBuild(c.getAssets().open("pack/tools.zip"), titleId, builds)) return false;
+        } catch (ReflectiveOperationException | RuntimeException e) { return false; }   // cannot establish that this map describes the pack
+        int missing;
+        try { missing = RuntimeShaderMap.missingStatic(c.getAssets().open("pack/tools.zip"), titleId, library); }
+        catch (IOException e) {   // a library that cannot be read, is another game's or has a cut entry table is what this repair is for: its shaders are made again
+            Log.i(TAG, "prepare: the shader library of " + titleId + " cannot be checked (" + e.getMessage() + "): rebuilding shaders");
+            return true;
+        }
+        if (missing > 0) Log.i(TAG, "prepare: " + missing + " required static shaders are absent from " + titleId + ": rebuilding shaders");
+        return missing > 0;
     }
 
     private File runModded0(File dump, String titleId, File workDir, File packDir, String modArgs, File normalPackShaders, Progress p)

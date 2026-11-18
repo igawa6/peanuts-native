@@ -1,0 +1,49 @@
+# Game profile of Crash Team Racing Nitro-Fueled (Switch, update 1.0.15 = v983040)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Vicarious Visions' Alchemy engine (build name Octane), SDK 8.2.0, NVN, Havok, FMOD, Bink 2; subsdk0 is the game's own GLSLC.
+# The shaders are whole GLSLC outputs in the shader .igz files of archives/shaders_nx.pak, an igArchive version 13 with LZMA blocks (shader_split.py iga_shaders),
+# and 12 more in main. The game compiles 2 more at run time with its own GLSLC: captured on a device with DM_GLSLC_CAPTURE, the /glslc_capture/ rows (README.md).
+# Status: plays on an AYN Thor; the memory values are the survey's guess (dm/games/profile_guess.py), not measured
+
+# ---- Identity ----
+title_id	0100F9F00C696000
+program_id	0100F9F00C696000
+
+# ---- App ----
+name	Crash Team Racing Nitro-Fueled
+ipa	CrashTeamRacingNitroFueled.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v983040	1.0.15	main=1c689518406930512c13ddf4217e7676	subsdk0=c8a3cc0b1d1858330a881c0c2fc87940	sdk=3ae34e689d7a35f13cbf42bfd672af8b
+package	v983040
+shader_versions	v983040
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	archives/update.pak
+zip_store	.bk2:.pak:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: a 3328 MB heap region
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon
+sys_resource	0x0
+# the modules take 107 MB (main 84.4, sdk 13.0, subsdk0 9.2), more than the default 64 MB: SetHeapSize(pool − used) needs at least their size here
+mem_used	0x7000000
+
+# ---- Frame rate ----
+# The game asks for present interval 2 (30 fps) and steps its races by the time that passed: at 60 fps the race clock ran 20.43 s in 20.43 s (AYN Thor).
+# Follow the display ticks so the host's frame limit picks the rate; 60 by default, the launcher's choices down to 20 and up to 120. No code patch.
+present_interval	display
+fps_limit	60
+fps_limit_max	120
+
+# ---- Shader split ----
+shader_groups	/archives/=archives /ghosts/=ghosts /dlog/=dlog /glslc_capture/=runtime
+shader_note	Crash Team Racing Nitro-Fueled shaders

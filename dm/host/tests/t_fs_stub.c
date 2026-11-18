@@ -10,7 +10,10 @@ int g_nmod;
 #include <stdint.h>
 int dm_guest_as_contains(uintptr_t a) { (void)a; return 0; }
 // main's imports (loader.c) and the MiiModel stand-in (hle_mii.c): no main module, no system data
-int dm_main_imports(const char *prefix) { (void)prefix; return 0; }
+int dm_game_imports(const char *prefix) { (void)prefix; return 0; }
 int dm_mii_standin(const char *dir) { (void)dir; return 0; }
+// the console's users (hle_account.c): one, as hle_fs.c's weak form says; t_fs sets more to check Unmount
+int g_test_users = 1;
+int dm_account_users(void) { return g_test_users; }
 // the guest scheduler (hle_thread.c): no guest threads, so no handoff to leave
 void dm_thread_service_request(void) {}

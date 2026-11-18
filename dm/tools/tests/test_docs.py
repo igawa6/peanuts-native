@@ -17,7 +17,7 @@ import docs_symptoms   # noqa: E402
 import docs_gallery   # noqa: E402
 import docs_patches   # noqa: E402
 
-SKIP = ('third_party', 'node_modules')
+SKIP = ('third_party', 'node_modules', 'wiki')   # wiki/ has its own link rules (page names, no .md): test_wiki.py
 AGENTS_WORDS, GUIDE_WORDS = 1500, 6000
 
 

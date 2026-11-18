@@ -1,7 +1,7 @@
 // The readiness check's Vulkan facts (vk_android.h nxhost_vk_readiness): what the device and the driver the game would run on report, for the launcher to compare with
 // the host's own needs and the game profile's req rows (android/app Readiness.java; android/README.md "Readiness check"). Its own instance, made and destroyed here, on the
-// same driver the replay loads (DM_VK_DRIVER through vka_driver_open, else the system's libvulkan.so) and the same physical device (the first, as vka_dev.c takes); no
-// device is created, so it costs a few milliseconds and leaves nothing behind for the replay's own vka_init. Nothing here decides: the facts are "key=value" lines
+// same driver the replay loads (DM_VK_DRIVER through vka_driver_open, else the system's libvulkan.so) and the same physical device (the first, as vka_dev.c takes).
+// PEANUTS: a temporary device checks guest-buffer mapping and is destroyed before the replay's own vka_init. Nothing here decides: the facts are "key=value" lines
 // whose keys the profiles' readiness.tsv rows name (dm/games/README.md "Readiness rows"), and a key the driver does not report is simply absent (it reads as missing)
 #if defined(__ANDROID__)
 #include "vka.h"
@@ -12,6 +12,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include "vka_fd_alias.h"
+#include "../../peanuts/peanuts_memory_probe.h"   // PEANUTS: probe actual guest-buffer remaps (#47)
 
 typedef struct { char *p; int n, at; } outbuf;
 static void put(outbuf *o, const char *fmt, ...) {
@@ -43,27 +44,30 @@ static const struct { const char *name; VkFormat f; } k_sparse_fmt[] = {
     {"bc7", VK_FORMAT_BC7_UNORM_BLOCK}, {"astc4x4", VK_FORMAT_ASTC_4x4_UNORM_BLOCK}, {"astc8x8", VK_FORMAT_ASTC_8x8_UNORM_BLOCK},
 };
 
-// A driver that has placed maps without advertising them (vka_dev.c vka_placed_probe: Qualcomm 512.863 on the Adreno 740): a device of its own on queue family 0,
-// one placed map of a 64 KiB host-visible allocation at a reserved address through vkMapMemory2 (core 1.4 name). 1 when it lands there and reads back
-static int placed_unadvertised(PFN_vkGetInstanceProcAddr gipa, VkInstance inst, VkPhysicalDevice pd, int map2_ext, int fd_ext, outbuf *o, int *fd_alias) {
+// PEANUTS: a temporary device probes guest-buffer remaps, including advertised support (#47), and the exported-alias fallback.
+// Unadvertised placed maps remain supported (vka_dev.c vka_placed_probe: Qualcomm 512.863).
+static int placed_memory_probe(PFN_vkGetInstanceProcAddr gipa, VkInstance inst, VkPhysicalDevice pd, int map2_ext, int fd_ext, int advertised, outbuf *o, int *fd_alias) {
     const char *e = getenv("DM_VK_PLACED_PROBE"); int try_placed = !e || strcmp(e, "0");
 #define I(f) PFN_##f f = (PFN_##f)gipa(inst, #f);
     I(vkCreateDevice) I(vkGetDeviceProcAddr) I(vkGetPhysicalDeviceMemoryProperties)
     I(vkGetPhysicalDeviceFeatures2)
 #undef I
-    if (!vkCreateDevice || !vkGetDeviceProcAddr || !vkGetPhysicalDeviceMemoryProperties) return 0;
+    if (!vkCreateDevice || !vkGetDeviceProcAddr || !vkGetPhysicalDeviceMemoryProperties) { put(o, "memory.placedUsable=0\nmemory.placedProbe=missing device entry points\n"); return 0; }   // PEANUTS
     float prio = 1; VkDeviceQueueCreateInfo q = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = 0, .queueCount = 1, .pQueuePriorities = &prio};
-    const char *exts[2]; uint32_t next = 0;
+    const char *exts[3]; uint32_t next = 0;   // PEANUTS: enable placed maps when advertised
     if (map2_ext) exts[next++] = VK_KHR_MAP_MEMORY_2_EXTENSION_NAME;
     if (fd_ext) exts[next++] = VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME;
+    if (advertised) exts[next++] = VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME;   // PEANUTS
+    VkPhysicalDeviceMapMemoryPlacedFeaturesEXT placed = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_FEATURES_EXT};   // PEANUTS
     VkPhysicalDeviceBufferDeviceAddressFeatures bda = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES};
+    bda.pNext = advertised ? &placed : NULL;   // PEANUTS: query and enable advertised placed-map features
     VkPhysicalDeviceFeatures2 features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &bda};
     if (vkGetPhysicalDeviceFeatures2) vkGetPhysicalDeviceFeatures2(pd, &features);
     VkDeviceCreateInfo dci = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = &bda, .queueCreateInfoCount = 1, .pQueueCreateInfos = &q,
                              .enabledExtensionCount = next, .ppEnabledExtensionNames = exts};
-    VkDevice dev; if (vkCreateDevice(pd, &dci, NULL, &dev)) return 0;
+    VkDevice dev; if (vkCreateDevice(pd, &dci, NULL, &dev)) { put(o, "memory.placedUsable=0\nmemory.placedProbe=device creation failed\n"); return 0; }   // PEANUTS: do not pass an untested advertised feature
 #define D(f) PFN_##f f = (PFN_##f)vkGetDeviceProcAddr(dev, #f);
-    D(vkDestroyDevice) D(vkAllocateMemory) D(vkFreeMemory)
+    D(vkDestroyDevice)   // PEANUTS: the shared probe loads allocation functions below
 #undef D
     PFN_vkMapMemory2KHR map2 = (PFN_vkMapMemory2KHR)vkGetDeviceProcAddr(dev, "vkMapMemory2KHR");
     if (!map2) map2 = (PFN_vkMapMemory2KHR)vkGetDeviceProcAddr(dev, "vkMapMemory2");
@@ -72,29 +76,27 @@ static int placed_unadvertised(PFN_vkGetInstanceProcAddr gipa, VkInstance inst, 
     int ok = 0;
     VkPhysicalDeviceMemoryProperties mp; vkGetPhysicalDeviceMemoryProperties(pd, &mp);
     const VkMemoryPropertyFlags hv = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    uint32_t type = ~0u; for (uint32_t i = 0; i < mp.memoryTypeCount && type == ~0u; i++) if ((mp.memoryTypes[i].propertyFlags & hv) == hv) type = i;
+    uint32_t type;   // PEANUTS: selected with the guest-memory preferences below
     put(o, "placed.probe.map2Available=%d\n", map2 && unmap2 ? 1 : 0);
-    if (try_placed && map2 && unmap2 && vkAllocateMemory && vkFreeMemory && type != ~0u) {
-        const VkDeviceSize n = 64 << 10;
-        VkMemoryAllocateInfo mai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = n, .memoryTypeIndex = type};
-        VkDeviceMemory mem;
-        if (!vkAllocateMemory(dev, &mai, NULL, &mem)) {
-            void *at = mmap(NULL, n, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-            if (at != MAP_FAILED) {
-                VkMemoryMapPlacedInfoEXT pi = {VK_STRUCTURE_TYPE_MEMORY_MAP_PLACED_INFO_EXT, .pPlacedAddress = at};
-                VkMemoryMapInfoKHR mi = {VK_STRUCTURE_TYPE_MEMORY_MAP_INFO_KHR, .pNext = &pi, .flags = VK_MEMORY_MAP_PLACED_BIT_EXT, .memory = mem, .size = VK_WHOLE_SIZE};
-                void *got = NULL;
-                VkResult result = map2(dev, &mi, &got);
-                put(o, "placed.probe.result=%d\nplaced.probe.exactAddress=%d\n", result, !result && got == at ? 1 : 0);
-                if (!result) {
-                    if (got == at) { volatile uint32_t *w = got; w[0] = 0x5eed1234u; ok = w[0] == 0x5eed1234u; }
-                    VkMemoryUnmapInfoKHR ui = {VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO_KHR, .memory = mem}; unmap2(dev, &ui);
-                }
-                munmap(at, n);
-            }
-            vkFreeMemory(dev, mem, NULL);
-        }
-    }
+    // PEANUTS begin: use the same guest buffer usage, memory type and remap/readback as launch.
+    vka_fns probe = {.vkMapMemory2KHR = map2, .vkUnmapMemory2KHR = unmap2};
+#define PROBE_LOAD(fn) probe.fn = (PFN_##fn)vkGetDeviceProcAddr(dev, #fn);
+    PROBE_LOAD(vkCreateBuffer) PROBE_LOAD(vkDestroyBuffer) PROBE_LOAD(vkGetBufferMemoryRequirements) PROBE_LOAD(vkBindBufferMemory)
+    PROBE_LOAD(vkAllocateMemory) PROBE_LOAD(vkFreeMemory) PROBE_LOAD(vkMapMemory) PROBE_LOAD(vkUnmapMemory)
+#undef PROBE_LOAD
+    // Match vka_dev.c's cached/device-local preference instead of taking the first host-visible type.
+    const VkMemoryPropertyFlags want[] = {hv | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, hv | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, hv};
+    type = ~0u;
+    for (size_t w = 0; w < sizeof want / sizeof *want && type == ~0u; w++)
+        for (uint32_t i = 0; i < mp.memoryTypeCount && type == ~0u; i++) if ((mp.memoryTypes[i].propertyFlags & want[w]) == want[w]) type = i;
+    VkPhysicalDeviceMapMemoryPlacedPropertiesEXT pp = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_PROPERTIES_EXT};
+    PFN_vkGetPhysicalDeviceProperties2 props = (PFN_vkGetPhysicalDeviceProperties2)gipa(inst, "vkGetPhysicalDeviceProperties2");
+    if (advertised && props) { VkPhysicalDeviceProperties2 p = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &pp}; props(pd, &p); }
+    char why[160] = "placed probe disabled";
+    if ((advertised || try_placed) && (!advertised || placed.memoryMapPlaced))
+        ok = peanuts_placed_probe(&probe, dev, type, bda.bufferDeviceAddress, pp.minPlacedMemoryMapAlignment, why, sizeof why);
+    put(o, "memory.placedUsable=%d\nmemory.placedProbe=%s\n", ok, why);
+    // PEANUTS end
     if (!ok && fd_ext && vka_fd_enabled()) {
         vka_fns f = {.vkGetPhysicalDeviceExternalBufferProperties = (PFN_vkGetPhysicalDeviceExternalBufferProperties)gipa(inst, "vkGetPhysicalDeviceExternalBufferProperties")};
 #define FD_LOAD(fn) f.fn = (PFN_##fn)vkGetDeviceProcAddr(dev, #fn);
@@ -157,7 +159,8 @@ __attribute__((visibility("default"))) int nxhost_vk_readiness(char *buf, int n)
     put(&o, "ext.count=%u\n", nde);
     free(de);
     // Placed maps the driver has but does not advertise count as present (the replay uses them the same way: vka_dev.c)
-    int fd_alias = 0, placed_hidden = !placed && placed_unadvertised(gipa, inst, pd, map2_ext, fd_ext, &o, &fd_alias);
+    int fd_alias = 0, placed_ok = placed_memory_probe(gipa, inst, pd, map2_ext, fd_ext, placed, &o, &fd_alias);   // PEANUTS: probe advertised drivers too
+    int placed_hidden = !placed && placed_ok;   // PEANUTS
     if (placed_hidden) put(&o, "ext.%s=1\next.%s=1\nplaced.unadvertised=1\n", VK_KHR_MAP_MEMORY_2_EXTENSION_NAME, VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME);
 
     // Driver identity (1.2 core) and the 1.1 / 1.3 properties the requirements may name

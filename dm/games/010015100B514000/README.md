@@ -14,6 +14,7 @@ No game-specific executable cuts. `dm/tools/sdk_patches.py`'s SDK-wide rules cut
 
 ## Versions
 
+- On Android the app builds and plays 1.2.1 only (`android_builds v327680` in `game.tsv`): the launcher reads 1.0.0 and 1.0.1 as versions it does not have, and its sheet asks before building one anyway.
 - v0 (1.0.0), 1.0.1 (v65536) and 1.2.1 (v327680). With 1.2.1 layered over v0, unchanged files become APFS clones, so the merged RomFS adds only about 114 MB to the 3.5 GB base.
 - 1.2.1 imports 28 SDK functions v0 did not, which the host answers: `nn::nfp` (amiibo, initialized at boot) finds none, `pl::IsRunningOnOunce` (is this a Switch 2) is false, `ec::ShowShopApplicationInformationForUpgrade` is a no-op, `account::PopOpenUsers` returns none and `aoc::CountAddOnContent` none. Mario only reads the count from `PopOpenUsers` and falls back to `TryOpenPreselectedUser` on 0, and counts add-on content only on a Switch 2 (`hle_sdk16.c`, `hle_account.c`, `hle_misc.c`).
 - 1.2.1 compresses the NACP's title area (a u16 size, then raw deflate inflating to 32 entries of 0x300 bytes), which `dm/tools/nacp.py` decodes.
@@ -34,6 +35,15 @@ No game-specific executable cuts. `dm/tools/sdk_patches.py`'s SDK-wide rules cut
 - How the heap was traced: probes on the gsys GPU allocator (`main+0x4290c0` in v0, `+0x4286e0` in 1.2.1) and the heap's `tryAlloc` (vtable slot +0x30); the `!xN` heap walk uses Mario's sead layout by default (`DM_PROBE_HEAP` `20,28,30,b0,c8`; [05, Probes](../../../docs/agents/05-debugging.md#probes-without-a-debugger-dm_probe)).
 
 ## Frame rate
+
+### Android real-time FPS on 1.2.1
+
+The Android profile defaults to 60 FPS and offers Game owned plus 20/30/40/45/60/90/120. Numeric targets use the measured frame duration, so a higher target does not intentionally speed up the game. Actual performance depends on the scene. Game owned requires restart and keeps the original interval-based timing. This reviewed plan requires the exact 1.2.1 main build; it is not applied to other game versions.
+
+The clock derives from [MacNativeGames' Wonder implementation](https://github.com/ly05010419/MacNativeGames/blob/f7fda5e32a532e5101fee10c2a1fb5c207d6056c/games/wonder/runtime/game_patches_wonder.c), pinned at `f7fda5e32a532e5101fee10c2a1fb5c207d6056c`, under the [MIT notice](FPS-LICENSE.txt). Both nine-word blocks at `main+0xc5a28` and `main+0xc5a8c` match the owned main exactly. The loader validates all original words before changes and relocates reads to an auxiliary data page. Each present publishes a single atomic 64-bit pair: elapsed seconds multiplied by 60, and elapsed seconds. Five-frame averaging smooths hitches; samples below 1 ms or above 250 ms reset the averaging window, and the averaged step is bounded at 1/15 second. The NVN host supplies interval 1. Original game, pack and save files are unchanged.
+
+This does not copy the older 1.0.1 static 120 FPS constants or its manual dialogue/cutscene cheat toggles. The real-time clock has a different mechanism; complete dialogue, Wonder-effect, musical-level and Bowser coverage remains open. All 18 sites match the owned binary. Focused checks pass, including both branch blocks executed in an Android ARM64 fixture at all six requested rates and a 120 target with 60 actual frames adding up to real time. A bounded Turnip run reached roughly 118–119 FPS on title/character selection, then lost foreground; course and dialogue correctness are not established.
+
 
 - **Current:** 60 fps with a dynamic present interval. The game times every frame (`main+0xcfd24`); after a frame that ran past one vertical sync it sets present interval 2 for the next frame and sets its own time step to the interval (a float at `main+0x36ceff0`), so that frame catches up 2/60 s (Mario 1.2.1 on the iPhone). A user's 2-minute iPhone session switched 123 times, mostly for one frame.
 - **Resolved:** in `display` mode those frames were shown for 16.7 ms and the game visibly jumped ahead ("sometimes the speed increases when jumping"). In `game` mode (the default since 2026-10-15) the display link keeps a frame whose period is over 25 ms on screen for its whole period (`g_link_hold_until` in `nvn_mtl.m`), and the 30 fps target waits until interval 2 has held for a full second (`nvn_game_fps` in `hle_nvn.c`), so one-frame switches no longer flip the display-link mode. `DM_TEST_PRESENT_LAG=90,30` (30 ms before every 90th present) makes Mario do this on the Mac; run it with `DM_WINDOW=1` to get the display link.
@@ -103,6 +113,7 @@ Game-specific findings; the general host changes they led to are listed under [F
 ## Found on this game
 
 - **Resolved: button icons as "?" on Android** ("Press ? + ? to start"): [Button icons drawn as "?" on Android](../../../docs/reference/services.md#button-icons-drawn-as--on-android).
+- **One save file only:** its save files are per user, and a new one is made for a user the user selector offers without a save; the host had one user. [More than one user, each with a save of its own](../../../docs/reference/services.md#more-than-one-user-each-with-a-save-of-its-own) (the launcher's Settings › Users); not yet checked in the game.
 
 - [Offline pipeline archive missing for the device GPU](../../../docs/reference/shaders.md#offline-pipeline-archive-missing-for-the-device-gpu): archive targets can follow profile metadata while iOS Metal 4 remains opt-in; [the probe above](#offline-pipeline-archive-probe) records the build evidence and open device checks.
 General host changes first needed here; each applies to every game:

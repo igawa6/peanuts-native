@@ -194,6 +194,7 @@ Each shader's binding records (`dmsh_vk_bind`) give the kind, the Vulkan descrip
 | `TEX_UBO` reg, off | `COMBINED_IMAGE_SAMPLER` | the 32-bit handle in uniform slot reg at byte off (low 20 bits texture ID, high 12 sampler ID), sampler as above |
 | `TBUF` reg | `UNIFORM_TEXEL_BUFFER` | the buffer texture in slot reg. Flag `FETCH1D` on a `TEX`: a 1D integer fetch the translator made a 2D read of 16384-texel rows (`tbuf_as_2d`) |
 | `IMG` reg | `STORAGE_IMAGE` / `STORAGE_TEXEL_BUFFER` | image slot reg (`c2 0x120 + 8 r`). Flags `RW`, `ATOMIC` (R32Uint / R32Sint only) |
+| `IMG_UBO` reg, off | `STORAGE_IMAGE` / `STORAGE_TEXEL_BUFFER` | the 32-bit image handle the game keeps in uniform slot reg at byte off (low 20 bits the texture ID, with the pool base as `TEX_UBO`'s), bound as `IMG`; Unreal Engine 5 on the Switch 2 keeps its images there ([Images whose handle is in the game's uniform buffer](../docs/reference/shaders.md#images-whose-handle-is-in-the-games-uniform-buffer)) |
 | `TEX_C2A` / `SAMP_C2A` off | arrays, count elements | element k from the c2 handle at byte off + 8 k; `soff` a sampler word ORed into every element |
 | `TEX_POOL` / `SAMP_POOL` | set 1 | nothing per draw: the pools |
 | `GMEM_MAP` | `STORAGE_BUFFER` | the pool table for raw global memory (`DMSH_GMEM_MAP_*`), delta = buffer device address − guest address: the shader goes through `PhysicalStorageBuffer` pointers, so the device needs `bufferDeviceAddress` |

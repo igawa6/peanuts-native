@@ -138,9 +138,35 @@ final class PackFind {
         Arrays.sort(l);
         for (File f : l) {
             if (f.getName().startsWith(".")) continue;
-            if (f.isFile() && (Nup.isNup(f) || Nup.wrongCase(f))) out.add(f);
+            if (f.isFile() && (Nup.isNup(f) || Nup.wrongCase(f))) {
+                if (!companion(f, l)) out.add(f);
+            }
             else if (f.isDirectory() && !f.getName().matches("(?i)[0-9a-f]{16}-work") && !new File(f, "pack.tsv").isFile() && Pack.npdmOf(f) != null) out.add(f);
         }
         return out;
+    }
+
+    /**
+     * Whether an NSP in the list is a part of a game that another NSP of the list stands for: a DLC (no game snapshot in it), or a version of the game older than
+     * another's. Then Add game adds the newest one only, which finds the rest beside it (Nup.companions). Always false for a .nup
+     */
+    private static boolean companion(File f, File[] folder) {
+        if (!f.getName().endsWith(Nup.EXT_NSP)) return false;
+        try {
+            Nup me = Nup.open(f);
+            Nup.Pkg mine = me.newest();
+            if (mine == null) return true;   // a DLC: it belongs to a game NSP beside it, or to none (then nothing is lost: it is no game)
+            String id = me.programId();
+            for (File g : folder) {
+                if (g.equals(f) || !g.getName().endsWith(Nup.EXT_NSP) || g.getName().startsWith(".")) continue;
+                Nup o;
+                try { o = Nup.open(g); } catch (IOException | RuntimeException e) { continue; }
+                Nup.Pkg p = o.newest();
+                if (p != null && o.programId().equals(id) && (p.version > mine.version || p.version == mine.version && g.getName().compareTo(f.getName()) < 0)) return true;
+            }
+        } catch (IOException | RuntimeException e) {
+            return false;   // unreadable: listed, so that Add game says why
+        }
+        return false;
     }
 }

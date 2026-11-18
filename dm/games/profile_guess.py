@@ -442,7 +442,11 @@ def heap_signals(log, g):
         heap = -(-max(req) // 0x8000000) * 0x8000000
         alias = reserve - 0x10000000 - stack - heap
         if alias >= 0x40000000: out['mem_alias'] = (f'{alias:#x}', f'the game asked for a {max(req) / 2**30:.2f} GB heap: a {heap / 2**30:.3f} GB heap region')
-        else: out['mem_reserve'] = (f'{0x10000000 + 0x40000000 + stack + heap:#x}', f'the game asked for a {max(req) / 2**30:.2f} GB heap')
+        else:   # a heap the block cannot hold beside a 1 GB alias region: the block grows by it, the alias region as the profile has it (the address region check sizes that after).
+            # It was sized for a 1 GB alias region and left mem_alias alone: Super Mario Bros. Wonder's program 1 (a 4.94 GB heap, a 4.375 GB alias region) got 0x1a0000000, a 1.6 GB heap region
+            have = max(int(g.get('mem_alias'), 0), 0x40000000)
+            out['mem_reserve'] = (f'{0x10000000 + have + stack + heap:#x}', f'the game asked for a {max(req) / 2**30:.2f} GB heap: a {heap / 2**30:.3f} GB heap region beside a {have / 2**30:.3f} GB alias region')
+            if have != int(g.get('mem_alias'), 0): out['mem_alias'] = (f'{have:#x}', 'the smallest alias region the heap check leaves')
     top = [float(x) for x in re.findall(r'\[mem\] alias region mapped up to \+([0-9.]+) GB', log)]
     alias = int(g.get('mem_alias'), 0) / 2**30
     if not req and '[mem] heap ' not in log and int(g.get('sys_resource', '0'), 0) and top and max(top) > alias - 0.25 and int(g.get('app_pool'), 0) > 0x40000000:

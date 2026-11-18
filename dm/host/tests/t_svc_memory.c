@@ -43,6 +43,7 @@ uint64_t guest_ticks(void) { return 0; }
 uint64_t dm_entropy64(void) { return 0; }
 int thr_limit_used(void) { return 0; }
 int dm_ue_heap_owns(uint64_t a, uint64_t n) { (void)a; (void)n; return 0; } // No Unreal allocator is installed in this fixture.
+void dm_ue_heap_why(uint64_t a, uint64_t n, char *buf, size_t len) { (void)a; (void)n; snprintf(buf, len, "no Unreal allocator in this fixture"); }
 // This fixture calls the SVC dispatcher directly, without rewritten guest gates.
 void gate_obs_set(int id, void (*fn)(uint64_t *, int)) { (void)id; (void)fn; }
 module_t *module_of(const void *p) {
@@ -60,6 +61,7 @@ module_t *module_of(const void *p) {
 static void (*write_prepare)(void *, size_t);
 static int (*fault_hook)(void *, int, void *);
 void dm_fault_hook_register(int (*fn)(void *, int, void *)) { fault_hook = fn; }
+void dm_fault_explain_register(void (*fn)(void *)) { (void)fn; }
 void dm_guest_write_prep_register(void (*fn)(void *, size_t)) { write_prepare = fn; }
 static void memory_fault(int sig, siginfo_t *info, void *ctx) {
     if (fault_hook && fault_hook(info->si_addr, 1, ctx)) return;

@@ -18,6 +18,7 @@
 #include <string.h>
 
 uint64_t vka_memu_n_batches, vka_memu_n_draws, vka_memu_n_splits, vka_memu_n_skip;
+extern uint64_t vka_memu_n_cross, vka_memu_n_dropped, vka_memu_n_nbar;   // vka_memu_draw.inc
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 static const char *stage_name(int st) { return st == DMSH_VK_STAGE_TS ? "task" : "mesh"; }
 
@@ -200,11 +201,13 @@ int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layo
     *setup = ps; *dist = pd; *layout = pl; return 1;
 }
 void vka_memu_stats(char *b, size_t n) {
-    static uint64_t b0, d0, s0, k0;
-    uint64_t nb = vka_memu_n_batches - b0, nd = vka_memu_n_draws - d0, ns = vka_memu_n_splits - s0, nk = vka_memu_n_skip - k0;
-    b0 = vka_memu_n_batches; d0 = vka_memu_n_draws; s0 = vka_memu_n_splits; k0 = vka_memu_n_skip;
+    static uint64_t b0, d0, s0, k0, c0, x0, r0;
+    uint64_t nb = vka_memu_n_batches - b0, nd = vka_memu_n_draws - d0, ns = vka_memu_n_splits - s0, nk = vka_memu_n_skip - k0, nc = vka_memu_n_cross - c0, nx = vka_memu_n_dropped - x0;
+    uint64_t nr = vka_memu_n_nbar - r0;
+    b0 = vka_memu_n_batches; d0 = vka_memu_n_draws; s0 = vka_memu_n_splits; k0 = vka_memu_n_skip; c0 = vka_memu_n_cross; x0 = vka_memu_n_dropped; r0 = vka_memu_n_nbar;
     if (!nb && !nd) { if (n) b[0] = 0; return; }
-    snprintf(b, n, "mesh draws through compute: %llu draws in %llu batches (%.1f a batch), %llu render passes split for one, %llu not prepared", (unsigned long long)nd, (unsigned long long)nb,
-             nb ? (double)nd / (double)nb : 0.0, (unsigned long long)ns, (unsigned long long)nk);
+    snprintf(b, n, "mesh draws through compute: %llu draws in %llu batches (%.1f a batch), %llu render passes split for one, %llu not prepared; %llu draws prepared past a game barrier "
+             "(DM_VK_MESH_EMU_BAR), %llu of them dropped at a barrier that ended the pass; %llu compute barriers besides one full barrier a batch", (unsigned long long)nd, (unsigned long long)nb,
+             nb ? (double)nd / (double)nb : 0.0, (unsigned long long)ns, (unsigned long long)nk, (unsigned long long)nc, (unsigned long long)nx, (unsigned long long)nr);
 }
 #endif

@@ -104,6 +104,10 @@ void dm_backtrace(uint64_t fp) {
 static int (*g_fault_hook[MAX_FAULT_HOOK])(void *addr, int is_write, void *uc);
 static void (*g_write_prep[MAX_FAULT_HOOK])(void *addr, size_t len);
 static int g_nfault_hook, g_nwrite_prep;
+// What the owners of guest memory know about a fault address no hook claimed (the dirty tracker's ranges, the Vulkan replay's placed segments and swaps): printed in the crash report
+static void (*g_fault_explain[MAX_FAULT_HOOK])(void *addr);
+static int g_nfault_explain;
+void dm_fault_explain_register(void (*fn)(void *addr)) { if (g_nfault_explain < MAX_FAULT_HOOK) g_fault_explain[g_nfault_explain++] = fn; }
 void dm_fault_hook_register(int (*fn)(void *addr, int is_write, void *uc)) {
     if (g_nfault_hook >= MAX_FAULT_HOOK) die("too many page fault hooks");
     g_fault_hook[g_nfault_hook++] = fn;
@@ -146,6 +150,33 @@ int dm_host_has_pac(void) { static int v = -1; if (v < 0) v = (getauxval(AT_HWCA
 int dm_host_has_pac(void) { return 1; }   // the Apple builds keep what they did before
 #endif
 
+// What the faulting address was, for SIGSEGV / SIGBUS: the kernel's code (unmapped or no permission), whether the access was a write, and the mappings of
+// /proc/self/maps around it. A write into a page that a fault hook should have released (the dirty tracker's write protection, a pool swap's read-only window) and
+// one into a range something unmapped look the same in pc and the registers; this tells them apart (a crash in Kirby's LZ4 decoder into a memory pool, 2026-11-13)
+static void crash_fault_where(int sig, const siginfo_t *si, int is_write) {
+    if (sig != SIGSEGV && sig != SIGBUS) return;
+    const char *code = "?";
+    if (sig == SIGSEGV) code = si->si_code == SEGV_MAPERR ? "SEGV_MAPERR: nothing mapped there" : si->si_code == SEGV_ACCERR ? "SEGV_ACCERR: mapped, no permission" : "other";
+    else code = si->si_code == BUS_ADRALN ? "BUS_ADRALN" : si->si_code == BUS_ADRERR ? "BUS_ADRERR" : si->si_code == BUS_OBJERR ? "BUS_OBJERR" : "other";
+    fprintf(stderr, "[dm] fault: code %d (%s), %s, %d fault hooks did not claim it\n", si->si_code, code, is_write ? "write" : "read", g_nfault_hook);
+#if defined(__linux__)
+    uint64_t a = (uint64_t)(uintptr_t)si->si_addr;
+    FILE *f = fopen("/proc/self/maps", "re"); if (!f) return;
+    char prev[384] = "", ln[384]; int after = -1;   // the line before the address, the one holding it (or the gap), the one after
+    while (fgets(ln, sizeof ln, f)) {
+        if (!strchr(ln, '\n')) { int c; while ((c = getc(f)) != EOF && c != '\n') {} }
+        else *strchr(ln, '\n') = 0;
+        unsigned long lo, hi; if (sscanf(ln, "%lx-%lx", &lo, &hi) != 2) continue;
+        if (after >= 0) { fprintf(stderr, "[dm] fault maps:   %s\n", ln); break; }
+        if (hi <= a) { snprintf(prev, sizeof prev, "%s", ln); continue; }
+        if (prev[0]) fprintf(stderr, "[dm] fault maps:   %s\n", prev);
+        if (lo > a) { fprintf(stderr, "[dm] fault maps: > %#llx is in no mapping\n[dm] fault maps:   %s\n", (unsigned long long)a, ln); break; }
+        fprintf(stderr, "[dm] fault maps: > %s\n", ln); after = 1;
+    }
+    fclose(f);
+#endif
+    for (int i = 0; i < g_nfault_explain; i++) g_fault_explain[i](si->si_addr);
+}
 static void on_crash(int sig, siginfo_t *si, void *uc_) {
     ucontext_t *uc = uc_;
     if (sig == SIGTRAP && g_trap_hook && g_trap_hook(uc)) return;
@@ -213,6 +244,7 @@ static void on_crash(int sig, siginfo_t *si, void *uc_) {
     fprintf(stderr, " sp=%#llx\n", (unsigned long long)PLAT_UC_SP(uc));
     for (int i = 0; i < 29; i++) fprintf(stderr, "x%d=%#llx%s", i, (unsigned long long)PLAT_UC_X(uc, i), i % 6 == 5 ? "\n" : " ");
     fprintf(stderr, "\n");
+    crash_fault_where(sig, si, (sig == SIGSEGV || sig == SIGBUS) ? (int)((PLAT_UC_ESR(uc) >> 6) & 1) : 0);
     // What the registers point at: the first six words of each readable target (read with vm_read_overwrite, which fails instead of faulting); a word inside a module prints as a module offset, so an object's vtable names its class
     for (int i = 0; i < 29; i++) {
         uint64_t a = PLAT_UC_X(uc, i), w[6];

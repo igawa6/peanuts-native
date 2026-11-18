@@ -43,12 +43,12 @@ public final class FrontendLaunch extends Activity {
             return;
         }
         File game = new File(Frontend.normal(path));
-        if (Nup.wrongCase(game)) { fail(game.getName() + ": rename it so that its name ends in \".nup\" (lower case); the game and the tools read only that name."); return; }
+        if (Nup.wrongCase(game)) { fail(game.getName() + ": rename it so that its name ends in \".nup\" or \".nsp\" (lower case); the game and the tools read only that name."); return; }
         if (!game.exists()) { fail(game + " is not there (the frontend sent " + path + ")."); return; }
         if (!game.canRead()) { fail(game + " cannot be read. Check that All files access is on."); return; }
         new Thread(() -> {
             String id = null, err = null;
-            try { id = Pack.titleIdOf(game); } catch (IOException e) { err = e.getMessage(); }   // a .nup's TOC is hashed: off the main thread
+            try { id = Pack.playableIdOf(game); } catch (IOException e) { err = e.getMessage(); }   // a .nup's TOC is hashed: off the main thread
             String fid = id, ferr = err;
             Game g = ferr == null ? ready(game, fid) : null;
             runOnUiThread(() -> {
@@ -144,6 +144,8 @@ public final class FrontendLaunch extends Activity {
     }
 
     private void play(Game g) {
+        // PEANUTS: use Home's launch warning and per-game driver picker when a choice is needed.
+        if (GpuDriver.launchesSystem(this, g.titleId)) { home(new File(g.gameDir)); return; }
         // PEANUTS begin: a shortcut or a frontend plays the build with mods too, as Home's Play does (MainActivity.launch): it started the normal pack, so a game
         // with code mods on ran without them (GitHub issue #12: a Luminescent Platinum save read by the unmodded game). The same rule as there: the variant when
         // it is built and fits, else the normal pack and a line that says so

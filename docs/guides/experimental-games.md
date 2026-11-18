@@ -16,11 +16,18 @@ Back to the [guides](README.md).
   makes this slower. Changing the GPU driver starts the cache again for that driver.
 - Details for contributors: [its game note](../../dm/games/0400486024DEC000/README.md).
 
-## Star Fox (`0400E88025B1A000`)
+## Mario Tennis Fever (`0400D4201C6EA000`)
 
-- **State:** new. It boots and reaches its first scenes on the system driver and on Turnip; not tested further.
-- **Memory:** it needs a lot (on the Mac about 8.5 GB); a phone with 16 GB is the safe choice.
-- Details for contributors: [its game note](../../dm/games/0400E88025B1A000/README.md).
+- **State:** plays. On the author's phone it ran a whole tournament (about 16 minutes) at 60 fps on a Turnip driver.
+- **First Prepare:** long. The game has 35,045 shaders; the archive unpack runs as native code on the phone, so the shader split takes minutes, but the translation still takes a while. Keep the phone charged and let it finish.
+- **Known problems:** on Qualcomm's own driver the GPU stalls for about a quarter of a second at times and the player intros show dark patches. A Turnip driver is the way to go ([GPU drivers](gpu-drivers.md)).
+- Details for contributors: [its game note](../../dm/games/0400D4201C6EA000/README.md).
+
+## Super Mario Bros. Wonder - Nintendo Switch 2 Edition (`040015100B514001`)
+
+- **State:** new. It reached a first course at 30 fps on one phone with a Turnip driver (about 9.5 minutes of play). The system driver and other phones are not tested.
+- **Your dump:** the Switch 2 Edition is program 1 of the game. Prepare needs a dump folder that holds it (`updates/<version>/program/1/`); a `.nup` holds the original program 0 only, so it cannot give you the edition yet. The game's page switches between the two editions; both share one save.
+- Details for contributors: [its game note](../../dm/games/040015100B514001/README.md).
 
 ## Splatoon Raiders (`0400380020056000`)
 

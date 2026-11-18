@@ -177,6 +177,35 @@ uint64_t nvn_tex_level_offset(const nvn_texdesc *d, unsigned level) {
     return level_offset(d, level, dpl, w, h, z, L.tileH, L.tileD, t);
 }
 
+// A single-layer, single-sample, block-linear 2D texture (not sparse): its levels are one run of storage, level after level
+static int level_run(const nvn_texdesc *d) { return d->target == 1 && !(d->flags & 0x70) && d->samples <= 1 && fmt_of(d->format).bpb; }
+static uint32_t dim_at(uint32_t v, unsigned lv) { return v >> lv ? v >> lv : 1; }
+static uint64_t level_end(const nvn_texdesc *d, unsigned lv) {   // where level lv's bytes end in a layer
+    unsigned n = d->levels ? d->levels : 1;
+    if (lv + 1 < n) return nvn_tex_level_offset(d, lv + 1);
+    nvn_texlayout L; nvn_tex_layout(d, &L); return L.layer_size;
+}
+int nvn_tex_level_of(const nvn_texdesc *p, const nvn_texdesc *c, uint64_t off, unsigned *k) {
+    if (!off || !level_run(p) || !level_run(c) || p->format != c->format) return 0;
+    unsigned pn = p->levels ? p->levels : 1, cn = c->levels ? c->levels : 1, kk = 1;
+    while (kk < pn && nvn_tex_level_offset(p, kk) < off) kk++;
+    if (kk >= pn || nvn_tex_level_offset(p, kk) != off || kk + cn > pn) return 0;
+    for (unsigned j = 0; j < cn; j++) {
+        unsigned pl = kk + j, ph, pd, ch, cd;
+        if (dim_at(p->width, pl) != dim_at(c->width, j) || dim_at(p->height, pl) != dim_at(c->height, j)) return 0;
+        uint64_t po = nvn_tex_level_offset(p, pl) - off, co = nvn_tex_level_offset(c, j);
+        if (po != co || level_end(c, j) - co > level_end(p, pl) - off - po) return 0;
+        nvn_tex_level_tiles(p, pl, &ph, &pd); nvn_tex_level_tiles(c, j, &ch, &cd);
+        if (ph != ch || pd != cd || nvn_tex_level_gobs(p, pl) != nvn_tex_level_gobs(c, j)) return 0;
+    }
+    *k = kk; return 1;
+}
+uint64_t nvn_tex_parent_off(const nvn_texdesc *c, unsigned k) {
+    if (!k || k > 15 || !level_run(c) || (uint64_t)c->width << k > 65536 || (uint64_t)c->height << k > 65536) return 0;
+    nvn_texdesc g = *c; g.width = c->width << k; g.height = c->height << k; g.levels = (c->levels ? c->levels : 1) + k;
+    return nvn_tex_level_offset(&g, k);
+}
+
 uint32_t nvn_tex_level_gobs(const nvn_texdesc *d, unsigned level) {
     fmt_t t = fmt_of(d->format);
     unsigned dpl; int layered; uint32_t w, h, z, g = 0;

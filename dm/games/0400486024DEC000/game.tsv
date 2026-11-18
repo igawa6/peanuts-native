@@ -23,6 +23,11 @@ romfs_marker	Pack/ZsDic.pack.zs
 zip_store	.zs:.bwav:.webm:.metallib
 romfs_substitute	Tex/CmnTex_Map_Soil_FairyFountain_Floor_D_Nrm.bntx.zs=Tex/Dummy_Flat_Normal_CmnTex_Chara_DetailMap_Nrm.bntx.zs Tex/Rock_WaterTemple_Gate_M_01_Nrm.bntx.zs=Tex/Dummy_Flat_Normal_CmnTex_Chara_DetailMap_Nrm.bntx.zs Tex/RBake_Scene_GanonStage_G_2_1_d0_t0.bntx.zs=Tex/RBake_Scene_GanonStage_G_2_2_d0_t0.bntx.zs
 
+# ---- Cheats ----
+# Atmosphère-format cheat file of main build e0f3ccfa, named by the first 16 hex digits of the build ID as dmnt and the host's cheat engine pick it (hle_cheats.c): Prepare copies
+# it into the pack, and the launcher's Game settings › Cheats (off by default) passes it to the host; the in-game panel then lists its cheats (README.md "Cheats")
+cheats	cheats/E0F3CCFAF50065AE.txt
+
 # ---- Memory ----
 # The Switch 2 leaves games 9 GB of its 12 GB. The NPDM declares 48 MB of system resource.
 # 8 GB alias region stops OptimizeChangeBanc thread freeze in Kokiri Forest.

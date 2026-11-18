@@ -59,6 +59,12 @@ public final class ReadinessJvmTest {
         check(f.get("driver.info").equals("v1 = one") && f.get("ram_gib").equals("14.7") && f.get("android.sdk").equals("36"), "facts: the first '=' splits; the launcher's own");
         List<Readiness.Check> l = Readiness.evaluate(f, rows);
         check(!Readiness.any(l, Readiness.Status.FAIL) && !Readiness.any(l, Readiness.Status.WARNING), "all present: " + l);
+        // PEANUTS begin: #47 advertised placed maps fail their guest-buffer remap; a tested alias still works.
+        List<Readiness.Check> brokenMaps = Readiness.evaluate(Readiness.merge(all + "memory.placedUsable=0\nmemory.placedProbe=failed placed remap (-5)\n", 14.66, 36), rows);
+        check(Readiness.any(brokenMaps, Readiness.Status.FAIL) && brokenMaps.stream().anyMatch(c -> c.status == Readiness.Status.FAIL && c.message.contains("remap test failed")), "advertised but unusable maps fail");
+        List<Readiness.Check> aliasMaps = Readiness.evaluate(Readiness.merge(all + "memory.placedUsable=0\nmemory.fdAlias=1\n", 14.66, 36), rows);
+        check(!Readiness.any(aliasMaps, Readiness.Status.FAIL), "tested exported alias rescues failed placed maps");
+        // PEANUTS end
         check(Readiness.summary("0123456789ABCDEF", f, l).startsWith("[readiness] 0123456789ABCDEF: PASS; Test GPU, Vulkan 1.4.295; driver Test driver (v1 = one), driver ID 8"), "summary " + Readiness.summary("0123456789ABCDEF", f, l));
 
         // Missing: a required row fails, a degraded one warns, a degraded row of a failed fact is left out, a host need fails once per title

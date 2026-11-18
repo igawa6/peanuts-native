@@ -39,6 +39,35 @@ namespace Ryujinx.Graphics.Shader
         }
 
         /// <summary>
+        /// nxnative: whether the host binds a storage buffer from an address it reads in a bank other than c[0]'s storage entries, decoding a bindless constant
+        /// buffer handle where the shader takes the address as handle << 4 and reading the push constants (c[24]) (Metal: nvn_mtl.m NVN_RB_SBUFU / NVN_RB_SBUFQ). When it
+        /// does not (Android: its storage kinds are c[0]'s slots and addresses in a game uniform buffer), such accesses go through the memory pool table instead (GlobalToStorage).
+        /// </summary>
+        bool QueryHostStorageHandles()
+        {
+            return false;
+        }
+
+        /// <summary>
+        /// NVN2 (Switch 2) graphics stages: the stage's own constant bank, c[25 + stage index], which holds the buffer entries the game pushes into graphics push block
+        /// 1 + stage index; the translator maps it onto that block of c[24] (AStageBlock). -1 for other shaders.
+        /// </summary>
+        int QueryAmpereStageBank()
+        {
+            return -1;
+        }
+
+        /// <summary>
+        /// NVN2 (Switch 2) task and mesh shaders, translated as compute (upstream's Metal path): the byte offsets in shared memory of the stage memory the build reads back
+        /// (dmsh_meshstage.py): the workgroup's number, the stage input (a task's payload), the outputs (a payload, or a mesh shader's attributes) and a mesh shader's
+        /// primitive bytes; null for other shaders, and for the native task / mesh programs of TranslationFlags.TaskShader / MeshShader.
+        /// </summary>
+        int[] QueryAmpereStageMemory()
+        {
+            return null;
+        }
+
+        /// <summary>
         /// nxnative (after azmasm/switch2mac, MIT): the layout of a Switch 2 task / mesh program (TranslationFlags.TaskShader / MeshShader): max vertices, max primitives,
         /// task memory (payload) bytes, then the per-vertex planes (0-3 position x y z w, 4 + 4 g + c generic g component c), optionally -1 and the per-primitive values,
         /// optionally -2 and generic locations to declare unwritten (StructuredIr/MeshShaderInfo.cs).

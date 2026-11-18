@@ -278,8 +278,10 @@ final class ExitWatch {
                 File dg = log == null ? null : digestOf(log);
                 String url = v == null ? null : v.docUrl();
                 String likely = LogDigest.likely(v, end.why);
+                FixFinder.Fix fix = FixOffer.find(a, v, rec);   // "Try: <row>" for this end (FixFinder), on the notice and on What it means
                 AlertDialog.Builder b = new PadFocus.Builder(a).setTitle(ExitNotice.TITLE).setMessage(ExitNotice.message(rec.get("name"), end.why, likely))
                         .setPositiveButton("OK", null);
+                FixOffer.add(a, b, fix, rec);
                 if (log != null) b.setNeutralButton("Share log", (d, w) -> a.shareLog(log, dg != null && dg.isFile() ? dg : null));
                 if (v != null && v.rule != null) {
                     b.setNegativeButton("What it means", (d, w) -> {
@@ -294,6 +296,7 @@ final class ExitWatch {
                         }
                         AlertDialog.Builder mb = new PadFocus.Builder(a).setTitle(ExitNotice.MEANING_TITLE).setMessage(msg)
                                 .setPositiveButton("OK", null);
+                        FixOffer.add(a, mb, fix, rec);
                         if (url != null) mb.setNegativeButton("More details", (d2, w2) -> a.openLink(url));
                         showing = mb.show();
                     });

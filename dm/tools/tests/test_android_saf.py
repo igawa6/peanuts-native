@@ -28,7 +28,7 @@ class SaveZipJvm(unittest.TestCase):
             t = Path(d)
             (t / 'BuildConfig.java').write_text(STUB)
             srcs = [SRC / f'{n}.java' for n in ('SaveZip', 'SaveStore', 'PackZip', 'CopyPlan', 'GameFile', 'GameList', 'Frontend', 'Pack', 'DumpLayout', 'BuildCheck',
-                                                'RomfsCheck', 'Nup', 'Zstd', 'Profile', 'ShaderLibs')]
+                                                'RomfsCheck', 'Nup', 'Nsp', 'Zstd', 'Profile', 'ShaderLibs')]
             r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-encoding', 'UTF-8', '-d', str(t / 'classes'), *map(str, srcs), str(TEST), str(t / 'BuildConfig.java')],
                                capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

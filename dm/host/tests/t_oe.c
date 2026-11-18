@@ -190,6 +190,20 @@ int main(void) {
       nxhost_graphics_mode_set(0, 0); CHECK(defres_sig == 1, "default display resolution change event: signalled once on a mode change (asked for twice, kept once)");
       while (h_oe_TryPopMsg(&(uint32_t){0})) {}
       g_defres_n = 0; }
+    // Graphics size (DM_GRAPHICS_SIZE, the in-game panel's nxhost_graphics_set): read once, 0x0 the game's own; a live change posts 300 so the game sizes its scenes again
+    { fflush(stdout); pid_t p = fork();
+      if (!p) { int w, h, a; setenv("DM_GRAPHICS_SIZE", "960x540", 1); g_gfx_size = UINT32_MAX; dm_graphics_size(&w, &h); a = w == 960 && h == 540;
+                setenv("DM_GRAPHICS_SIZE", "960", 1); g_gfx_size = UINT32_MAX; dm_graphics_size(&w, &h); a = a && !w && !h; _exit(a ? 0 : 1); }
+      int st = 0; waitpid(p, &st, 0);
+      CHECK(p > 0 && WIFEXITED(st) && WEXITSTATUS(st) == 0, "DM_GRAPHICS_SIZE=960x540 read; a malformed one is the game's own (0x0)"); }
+    { int w, h; reset(); unsetenv("DM_GRAPHICS_SIZE"); g_gfx_size = UINT32_MAX; g_opmode = 0; g_gfx_scale = 2; h_oe_GfxScaleNotify(1);
+      dm_graphics_size(&w, &h); CHECK(!w && !h && empty(), "no DM_GRAPHICS_SIZE: 0x0, nothing queued");
+      nxhost_graphics_set(2, 0, 960, 540); dm_graphics_size(&w, &h);
+      CHECK(w == 960 && h == 540 && pop_is(300) && empty(), "live size: the new size, then 300");
+      nxhost_graphics_set(2, 0, 960, 540); CHECK(empty(), "the same size again: nothing queued");
+      nxhost_graphics_set(0, 0, 0, 0); dm_graphics_size(&w, &h);
+      CHECK(!w && !h && h_oe_GfxScale() == 0 && pop_is(300) && empty(), "540p to 1080p: size and scale together, one 300 (no 720p between)");
+      nxhost_graphics_mode_set(2, 0); dm_graphics_size(&w, &h); CHECK(!w && !h && pop_is(300) && empty(), "the mode setter alone keeps the size"); }
     // DM_LANG: the console's codes as they are, BCP-47 style tags mapped to them (fr-FR fell back to Japanese when it went to the game as typed), others en-US
     static const char *const lang_in[][2] = {
         {"ja", "ja"}, {"en-US", "en-US"}, {"en-GB", "en-GB"}, {"fr", "fr"}, {"fr-CA", "fr-CA"}, {"de", "de"}, {"it", "it"}, {"es", "es"}, {"es-419", "es-419"}, {"nl", "nl"},

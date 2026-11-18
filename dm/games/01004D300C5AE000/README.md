@@ -41,6 +41,13 @@ No code of the game is cut, and no run-time key is set. The game asks for presen
 - `nn::atk2` through an audio renderer (96 voices, 14 effects, one sink). 131,543 of the first 132,000 rendered frames were not silent.
 - **Current, open: with the silent sink the game often crashes right after Continue.** On the Mac's default output (no `DM_AUDIO`, or `DM_AUDIO=0` as `regress.py` runs it), `A` on the title's Continue crashed 7 boots of 11 within 4 s, during the load: `CRASH sig=11 addr=0 pc=main+0x6da824 lr=main+0x6dabf8`, on a job worker (priority 46, backtrace `main+0x6dabf8 main+0x803cd4 main+0x6a69e4 main+0x6d9e80 main+0x78a5b8`), with Continue pressed at 20 s or 26 s, an empty or a full pipeline archive, this host or the one the game was brought up with. With `DM_AUDIO=1` (Core Audio output) 3 boots of 3 reached the beach. The cause is not known: what the null pointer is and why the silent sink's pacing exposes it (2026-10-27).
 
+## Android
+
+- 2026-11-13, AYN Thor (Adreno 740), Turnip (PurpleVK 26.3.0): plays at 30 fps (GPU about 10 ms a frame), App 3.0 GiB, from Continue through Point of Arrival and the supermarket door.
+- **Resolved: crashes while loading an area.** The game overwrites hundreds of MiB of write-protected texture storage in its 1.4 GiB pool (`0x40377ec000+0x5aa00000`, placed in 16 MiB parts) when it loads an area; made writable page by page, that passed `vm.max_map_count` ([Write faults made writable page by page split GPU memory past vm.max_map_count](../../../docs/reference/memory.md#write-faults-made-writable-page-by-page-split-gpu-memory-past-vmmax_map_count-android)).
+- **Resolved: stutters at two spots of the first walk.** [Joining contiguous placed segments holds frames at the same spots](../../../docs/reference/memory.md#joining-contiguous-placed-segments-holds-frames-at-the-same-spots-android).
+- **Current, open: with frame generation on, a dark translucent vertical column, about 14-24 px wide at 1920x1080, moves across the generated frames** (every other presented frame; the game's own frames are clean). Seen with flow 50 % at 1920x1080; the cause in the chain (`dm/gfx/vk_android/lsfg`) is not known. Frame generation off has none.
+
 ## Mac routes
 
 - Build with `scripts/build_ipa_from_nsp.py <dump folder> --platform mac`; its last line runs the game.
@@ -62,3 +69,5 @@ No code of the game is cut, and no run-time key is set. The game asks for presen
 
 - [HAL's `.cmp` containers: a size-prefixed frame](../../../docs/reference/shaders.md#hals-cmp-containers-a-size-prefixed-frame).
 - [A host lock held across a same-core handoff](../../../docs/reference/threads.md#a-host-lock-held-across-a-same-core-handoff).
+- [Write faults made writable page by page split GPU memory past vm.max_map_count](../../../docs/reference/memory.md#write-faults-made-writable-page-by-page-split-gpu-memory-past-vmmax_map_count-android).
+- [Joining contiguous placed segments holds frames at the same spots](../../../docs/reference/memory.md#joining-contiguous-placed-segments-holds-frames-at-the-same-spots-android).

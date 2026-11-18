@@ -36,6 +36,8 @@ def signStore = System.getenv('NX_SIGN_STORE'), signAlias = System.getenv('NX_SI
 if ((nxLive || nxRelease) && !(signStore && signAlias && signPass && new File(signStore).isFile()))   // PEANUTS: nxRelease too
     throw new GradleException('nxLive and nxRelease need the release key: NX_SIGN_STORE (an existing keystore), NX_SIGN_ALIAS and NX_SIGN_PASS')   // PEANUTS: nxRelease too
 def nxLabel = providers.gradleProperty('nxLabel').getOrElse(nxApp ? "Banana Native $nxApp" : '')
+def nxAppId = providers.gradleProperty('nxAppId').getOrElse(nxApp)   // PEANUTS: -PnxAppId=<suffix> (with -PnxApp=peanuts) installs a development build beside the Peanuts Native app, with its own data
+if (nxAppId && !(nxAppId ==~ /[a-z][a-z0-9]*/)) throw new GradleException("nxAppId must be lower-case letters and digits, not $nxAppId")   // PEANUTS
 // The build tag the launcher shows over the game and in its main screen, and writes as the first line of each game log: branch@commit[+dirty] (no build time: the commit and the signer identify a build)
 def gitOut = { List<String> a -> try { providers.exec { commandLine(['git'] + a); ignoreExitValue = true }.standardOutput.asText.get().trim() } catch (Exception e) { '' } }
 def commit = gitOut(['rev-parse', '--short=12', 'HEAD'])
@@ -60,7 +62,16 @@ if (!(nxPackEngine in ['fake', 'native'])) throw new GradleException("nxPackEngi
 def repo = file('../..')
 nxGames.each { g -> if (!new File(repo, "dm/games/$g/game.tsv").isFile()) throw new GradleException("nxGames: $g has no profile (dm/games/$g/game.tsv)") }
 def tsvRows = { String game, String key -> def t = new File(repo, "dm/games/$game/game.tsv"); t.isFile() ? t.readLines().findAll { it.startsWith(key + '\t') }.collect { it.split('\t') } : [] }
-def buildsOf = { String game -> tsvRows(game, 'build').collect { c -> def m = (c[1] =~ /\d+/); (m.find() ? m.group() : c[1]) + (c.size() > 2 && c[2] ==~ /\d+(\.\d+)+/ ? ' @' + c[2] : '') + ' ' + c.drop(3).join(' ') }.join(';') }   // "<version> [@<display version>] <module>=<build ID> ..."
+// PEANUTS begin: game.tsv android_builds <version> ...: the builds of the profile this app builds and plays, when not all of them (Super Mario Bros. Wonder: 1.2.1 only).
+// The launcher then reads the others as any build the profile does not name ("Not one of this build's versions", Build anyway asks first). Without the key: every build row
+def androidBuildsOf = { String game ->
+    def only = tsvRows(game, 'android_builds').collectMany { r -> r.drop(1).collectMany { (it.trim().split(/\s+/) as List) } }.findAll { it }
+    def known = tsvRows(game, 'build').collect { it[1].trim() }
+    only.each { v -> if (!known.contains(v)) throw new GradleException("dm/games/$game/game.tsv: android_builds names $v, which no build row has (${known.join(' ')})") }
+    only
+}
+// PEANUTS end
+def buildsOf = { String game -> def only = androidBuildsOf(game); tsvRows(game, 'build').findAll { c -> only.isEmpty() || only.contains(c[1].trim()) /* PEANUTS: android_builds */ }.collect { c -> def m = (c[1] =~ /\d+/); (m.find() ? m.group() : c[1]) + (c.size() > 2 && c[2] ==~ /\d+(\.\d+)+/ ? ' @' + c[2] : '') + ' ' + c.drop(3).join(' ') }.join(';') }   // "<version> [@<display version>] <module>=<build ID> ..."
 def nameOf = { String game -> tsvRows(game, 'name').collect { it[1] }.find() ?: game }
 def defineOf = { String path, String name -> def f = new File(repo, path); def m = f.isFile() ? (f.text =~ /#define\s+${name}\s+"([^"]*)"/) : null; (m != null && m.find()) ? m.group(1) : 'unknown' }
 // The shaders Prepare builds: every key of the profile's shader_map.tsv, or for a profile with a selected set (shader_seen.tsv; ShaderLibs.selection, android/SHADERS.md
@@ -123,8 +134,52 @@ def drsOf = { String game -> tsvRows(game, 'drs_ctl').isEmpty() ? '' : '1' }
 // The profile's default frame limit (game.tsv fps_limit: frames a second, the host's limiter, hle_fpslock.c), or empty without one (0 = none). The launcher then offers a frame limit
 // as for a paced game, the profile's limit its default (Prefs.limited)
 def fpsLimitOf = { String game -> tsvRows(game, 'fps_limit').with { rs -> rs.isEmpty() || rs[0].size() < 2 || rs[0][1].trim() == '0' ? '' : rs[0][1].trim() } }
+def fpsLimitMaxOf = { String game ->
+    def rs = tsvRows(game, 'fps_limit_max')
+    if (rs.isEmpty()) return ''
+    def value = rs[0].size() > 1 ? rs[0][1].trim() : ''
+    if (!(value in ['60', '90', '120'])) throw new GradleException("$game: fps_limit_max must be 60, 90 or 120")
+    value
+}
 // Whether the game's DLSS runs on the host's stand-in upscaler (game.tsv dlss_standin rows): "1", or empty. The launcher's Upscaler row then offers the stand-in's modes, with
 // Motion clarity and Temporal sharpness (Prefs.dlssGame, GameUpscaler, DlssTune: DM_VK_DLSS, DM_VK_GSR2_CLARITY, DM_VK_DLSS_SHARP)
+// Reviewed FPSLocker memory-write rows; executable-code configs are not accepted here.
+def fpsLockerOf = { String game ->
+    // PEANUTS: reviewed typed rows include dynamic elapsed FPS and full-width state caps.
+    (tsvRows(game, 'fpslocker') + tsvRows(game, 'fps_memory')).collect { c ->
+        if (c.size() != 6 || !(c[1] ==~ /[0-9a-f]{32}/) || !(c[2] in ['zero_i32','target_f32','frame_ms_f32','frame_ms2_f32','vsync_u32','inverse_f32','frame_scaled_f32','target_scaled_f32','time_ratio_f32','flag_cap_u8','target_i32','zero_u16','time_step_pair_f32','constant_i32','elapsed_fps_f32','flag_cap_u32_gt']) || !(c[3] ==~ /[@%]?0x[0-9a-f]+(\/0x[0-9a-f]+){0,3}/) || !(c[4] in ['1','2']))
+            throw new GradleException("$game: invalid reviewed fpslocker row")
+        c[1..5].join(',')
+    }.join(';')
+}
+def fpsLimitMinOf = { String game ->
+    def rs = tsvRows(game, 'fps_limit_min')
+    if (rs.isEmpty()) return ''
+    def value = rs[0].size() > 1 ? rs[0][1].trim() : ''
+    if (!(value in ['20', '30'])) throw new GradleException("$game: fps_limit_min must be 20 or 30")
+    value
+}
+def fpsModesOf = { String game ->
+    def rows = tsvRows(game, 'fps_modes')
+    if (rows.isEmpty()) return ''
+    def value = rows[0].size() == 2 ? rows[0][1].trim() : ''
+    def modes = value.split(',') as List
+    if (rows.size() != 1 || !modes.contains('60') || modes.unique(false).size() != modes.size() || !modes.every { it in ['20','30','40','45','60','90','120'] } || modes != modes.sort(false) { it as int })
+        throw new GradleException("$game: fps_modes must be unique ascending supported rates including 60")
+    value
+}
+def fpsPlan120Of = { String game ->
+    tsvRows(game, 'fps_plan_120').collect { c ->
+        if (c.size() != 5 || !(c[1] ==~ /[0-9a-f]{32}/)) throw new GradleException("$game: invalid reviewed fps_plan_120")
+        c[1..4].join(',')
+    }.join(';')
+}
+def fpsLockerPlanOf = { String game ->
+    (tsvRows(game,'fpslocker_plan') + tsvRows(game,'fps_plan')).collect { c ->
+        if (c.size() != 5 || !(c[1] ==~ /[0-9a-f]{32}/)) throw new GradleException("$game: invalid reviewed fpslocker_plan")
+        c[1..4].join(',')
+    }.join(';')
+}
 def dlssOf = { String game -> tsvRows(game, 'dlss_standin').isEmpty() ? '' : '1' }
 // Whether the profile's frame limit only paces the presents (game.tsv fps_limit_present 1): the launcher says so beside the cap (Prefs.presentOnly)
 def presentOnlyOf = { String game -> tsvRows(game, 'fps_limit_present').isEmpty() ? '' : '1' }
@@ -142,6 +197,10 @@ def optionsOf = { String game ->
         def mode = 'restart'
         def implies = ''
         def needs = ''
+        def patches = tsvRows(game, 'option_patch').findAll { it.size() > 1 && it[1] == env }.collect { patch ->
+            if (patch.size() != 6 || !(patch[2] ==~ /[0-9a-f]{32}/) || !(patch[3] ==~ /0x[0-9a-f]+/) || !(patch[4] ==~ /[0-9a-f]{8}/) || !(patch[5] ==~ /[0-9a-f]{8}/)) throw new GradleException("$game: invalid option_patch")
+            [patch[2], 'm' + patch[3], patch[4], patch[5]].join(',')
+        }.join('~')
         if (c.size() > 4) {
             c.drop(4).collectMany { it.trim().split(/\s+/) as List }.each { tok ->
                 if (tok == 'restart' || tok == 'live') mode = tok
@@ -149,7 +208,7 @@ def optionsOf = { String game ->
                 else if (tok.startsWith('needs=')) needs = tok.substring('needs='.length()).trim()
             }
         }
-        [env, label, desc, mode, implies, needs].collect { it.replaceAll(/[\t\n\\"]/, ' ').replaceAll(/[;|]/, ',').trim() }.join('|')
+        [env, label, desc, mode, implies, needs, patches].collect { it.replaceAll(/[\t\n\\"]/, ' ').replaceAll(/[;|]/, ',').trim() }.join('|')
     }.join(';')
 }
 // The 3D scene choices for Advanced (or 3D scene): the overlays (game.tsv scene_scale rows, only with a scene_scale_palette row: dm/tools/scene_res.py), "<name>|<label>|<scale>|<mode>",
@@ -228,7 +287,10 @@ def recommendOf = { String game ->
 def linkPlayOf = { String game -> tsvRows(game, 'link_play').any { it.size() > 1 && it[1].trim() == '1' } ? '1' : '' }   // opt-in join settings only for profiles with checked Link Play
 def aspectsOf = { String game -> tsvRows(game, 'aspect').findAll { it.size() > 1 && it[1].trim() }.collect { it[1].trim() }.join(',') }   // game.tsv aspect rows: the picture shapes whose 3D cameras the host follows, no module variant ("21:9,4:3"); Game settings > Aspect ratio
 def handheldGames = nxGames.findAll { g -> tsvRows(g, 'op_mode').any { it.size() > 1 && it[1].trim() == 'handheld' } }.join(' ')   // PEANUTS: the games whose profile says op_mode handheld (ScreenMode's default for them)
-def nxProfiles = nxGames.collect { g -> [g, nameOf(g).replaceAll(/[\t\n\\"]/, ' '), shaderTotalOf(g), shaderInputsOf(g), buildsOf(g), reqsOf(g), statusOf(g), deltaOf(g), stampOf(g), resolutionOf(g), romfsChecksOf(g), gpuTsOf(g), windowOf(g), decoupleOf(g), drsOf(g), fpsLimitOf(g), dlssOf(g), presentOnlyOf(g), stepsOf(g), tsvRows(g, 'mesh_vegetation_cut').isEmpty() ? '' : '1', optionsOf(g), sceneOf(g), presetsOf(g), skipLayersOf(g), recommendOf(g), variantsOf(g), presetFromOf(g), linkPlayOf(g), aspectsOf(g)].join('\\t') }.join('\\n')
+// Whether the game has cheat files (game.tsv cheats rows: pack_android.py place_cheats copies them into the pack): "1", or empty. The launcher then offers Game settings › Cheats (Cheats.java)
+def cheatsOf = { String game -> tsvRows(game, 'cheats').isEmpty() ? '' : '1' }
+def timeOfDayOf = { String game -> tsvRows(game, 'time_of_day').any { it.size() > 1 && it[1].trim() == '1' } ? '1' : '' }   // the Game tab's Time of day row only for profiles whose day/night cycle follows the user clock
+def nxProfiles = nxGames.collect { g -> [g, nameOf(g).replaceAll(/[\t\n\\"]/, ' '), shaderTotalOf(g), shaderInputsOf(g), buildsOf(g), reqsOf(g), statusOf(g), deltaOf(g), stampOf(g), resolutionOf(g), romfsChecksOf(g), gpuTsOf(g), windowOf(g), decoupleOf(g), drsOf(g), fpsLimitOf(g), dlssOf(g), presentOnlyOf(g), stepsOf(g), tsvRows(g, 'mesh_vegetation_cut').isEmpty() ? '' : '1', optionsOf(g), sceneOf(g), presetsOf(g), skipLayersOf(g), recommendOf(g), variantsOf(g), presetFromOf(g), linkPlayOf(g), aspectsOf(g), timeOfDayOf(g), cheatsOf(g), fpsLimitMaxOf(g), fpsLockerOf(g), fpsLockerPlanOf(g), fpsLimitMinOf(g), fpsModesOf(g), fpsPlan120Of(g)].join('\\t') }.join('\\n')
 def lockOf = { String key -> def f = new File(repo, 'dm/gfx/tools/dmsh_chain.lock'); f.isFile() ? (f.readLines().find { it.startsWith(key + '\t') }?.split('\t')?.getAt(1) ?: 'unknown') : 'unknown' }
 
 android {
@@ -237,7 +299,7 @@ android {
     ndkVersion '28.2.13676358'
 
     defaultConfig {
-        applicationId nxLive ? 'dev.bananative.android' : nxPlay ? 'dev.nxnative.android.play' : nxApp ? "dev.nxnative.android.$nxApp" : 'dev.nxnative.android'
+        applicationId nxLive ? 'dev.bananative.android' : nxPlay ? 'dev.nxnative.android.play' : nxApp ? "dev.nxnative.android.$nxAppId" : 'dev.nxnative.android'   // PEANUTS: nxAppId
         resValue 'string', 'app_name', nxPlay || nxLive ? 'Banana Native' : nxApp ? nxLabel : 'Banana Native test'
         minSdk 33
         targetSdk 35
@@ -332,6 +394,16 @@ def nxDigest = tasks.register('nxDigestAssets', Sync) {
 android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/nxdigest/assets'))
 tasks.named('preBuild') { dependsOn nxDigest }
 
+// The Advanced pages' table (AdvancedTable.java): docs/advanced_settings.tsv (and env_switches.tsv, for the developer rows' meanings), copied at every build into the APK's assets/advanced/ (dm/tools/advanced_switches.py keeps it
+// in step with docs/env_switches.tsv)
+def nxAdvanced = tasks.register('nxAdvancedAssets', Sync) {
+    from(new File(repo, 'docs')) { include 'advanced_settings.tsv', 'env_switches.tsv' }
+    from(new File(repo, 'dm/tools')) { include 'advanced_fix.tsv' }   // the fix finder's table (FixFinder.java, dm/tools/advanced_fix.py)
+    into layout.buildDirectory.dir('generated/nxadvanced/assets/advanced')
+}
+android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/nxadvanced/assets'))
+tasks.named('preBuild') { dependsOn nxAdvanced }
+
 // The shared-font stand-in (GameFonts.java, dm/third_party/fonts): Noto Sans Regular, subset, with its licence, copied at every build into the APK's assets/fonts/
 def nxFontAssets = tasks.register('nxFontAssets', Sync) {
     from(new File(repo, 'dm/third_party/fonts')) { include 'NotoSans-Regular-subset.ttf', 'OFL.txt' }
@@ -383,6 +455,7 @@ tasks.register('apk', Copy) {
 //   lib/arm64-v8a/libpython3.14.so, libnxpack.so      (jniLibs: loaded by PackNative in the :pack process only)
 //   lib/arm64-v8a/libdmsh_xlate.so, libSPIRV-Tools-shared.so   the translator and the validator, which vk_android_build.py loads through ctypes in that process
 //   lib/arm64-v8a/libzbicdec.so   the ZBIC decoder (dm/third_party/zstd-zbic), which nso.py loads through ctypes for the segments of system 22.0.0+ modules
+//   lib/arm64-v8a/libcra.so       the unscramble of Camelot's archive (dm/gfx/tools/cra_unscramble.c), which cra.py loads through ctypes in the shader split
 //   assets/pack/python.zip   the Python home (lib/python3.14 with lib-dynload, capstone, lz4), unpacked to filesDir by PackNative
 //   assets/pack/tools.zip    the repository's tools the job runs (scripts, dm/tools, dm/games/<game>, dm/gfx/tools without the Mac binaries, and the other sources DMSH_CHAIN
 //                            hashes), likewise
@@ -392,7 +465,9 @@ if (nxPackEngine == 'native') {
     if (!stageProp) throw new GradleException('The APK carries the on-device packer: pass -PnxPackStage=<android/ondevice/build.sh work dir>/stage (or set NX_PACK_STAGE); -PnxPackEngine=fake builds a simulated one instead')
     def stage = file(stageProp)
     def nxPack = layout.buildDirectory.dir('nxpack')
-    def need = ['lib/libpython3.14.so', 'lib/libnxpack.so', 'lib/libzbicdec.so', 'lib/libdmsh_xlate.so', 'lib/libSPIRV-Tools-shared.so', 'python/lib/python3.14/os.py']
+    def need = ['lib/libpython3.14.so', 'lib/libnxpack.so', 'lib/libzbicdec.so', 'lib/libcra.so', 'lib/libdmsh_xlate.so', 'lib/libSPIRV-Tools-shared.so', 'python/lib/python3.14/os.py']
+    // PEANUTS: HAL's .cmp containers need lz4.frame; an older stage silently lost Kirby's 9,693 particle shaders (issue #78).
+    need += ['python/lib/python3.14/site-packages/lz4/frame/__init__.py', 'python/lib/python3.14/site-packages/lz4/frame/_frame.cpython-314-aarch64-linux-android.so']
     need.each { if (!new File(stage, it).isFile()) throw new GradleException("$stage has no $it: run android/ondevice/build.sh <work dir> (it makes <work dir>/stage)") }
     // The stage's translator must be built from this tree: vk_android_build.py check_translator refuses any other on the phone, so an APK with a stale one fails
     // every Prepare at the shaders step (2026-11-10: a stage made before a translator change). xlate_tree.py --check-lib reads the digests the library embeds
@@ -410,7 +485,7 @@ if (nxPackEngine == 'native') {
     }
     def jni = tasks.register('nxPackJni', Sync) {
         dependsOn xlateCheck
-        from(new File(stage, 'lib')) { include 'libpython3.14.so', 'libnxpack.so', 'libzbicdec.so', 'libdmsh_xlate.so', 'libSPIRV-Tools-shared.so' }
+        from(new File(stage, 'lib')) { include 'libpython3.14.so', 'libnxpack.so', 'libzbicdec.so', 'libcra.so', 'libdmsh_xlate.so', 'libSPIRV-Tools-shared.so' }
         into nxPack.map { it.dir('jni/arm64-v8a') }
     }
     def pyZip = tasks.register('nxPackPython', Zip) {

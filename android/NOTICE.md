@@ -37,6 +37,10 @@ atomics in `AstOptimizer.cs`, of else-ifs for SPIR-V and of TMML's negative LOD,
 [LICENSE](../LICENSE)), with the TMML finding from yuzu #10234 (no yuzu code); the changes are listed in
 [dm/third_party/ryujinx/README.md](../dm/third_party/ryujinx/README.md). Thanks to them.
 
+The Legend of Zelda: Ocarina of Time's cheat file (`dm/games/0400486024DEC000/cheats/E0F3CCFAF50065AE.txt`) takes its list of game-data keys (which records hold the
+rupees, the ammunition and the tokens) from [NX2navi-Trainer](https://github.com/Miragui/NX2navi-Trainer) by Miragui (MIT); no code of it is used: the pointer chain,
+the record layout and the key function were found again in the game's code (the game note's "Cheats"). Thanks to them.
+
 The launcher's gate on adb control commands (`AdbControl.java`, Settings › ADB control in `MainActivity.java` and `Prefs.java`) is ported from
 [Anka Native](https://github.com/EddizEge/AnkaNative) 0.2.2 by EddizEge (MIT: "Copyright (c) 2026 seedds", "Copyright (c) 2026 EddizEge" and the MIT permission notice
 in [LICENSE](../LICENSE)). Thanks to them.
@@ -103,7 +107,7 @@ The camera, HUD, movie and save picture sites (the UI, movie and matrix sites ar
 NX2navi patch list `patches-v111.txt` by Ivan0xFF (MIT) and to [`nx2/oot_wide.py`](https://github.com/NotRexed/Hookshot) of Hookshot by NotRexed (GPL-3.0). The Android file re-expresses
 them as host callbacks on rewriter gates and adds the vertical field-of-view correction for pictures narrower than 16:9. It lives under `dm/host/android/` so the Mac and iPhone builds do not include it.
 
-**The optional Donkey Kong Bananza camera and 2D layer aspect (`dm/host/android/dkb_wide.c`, with the three gates in `dm/games/040074A01BF12000/patches.py`) is GPL-3.0-or-later.**
+**The optional Donkey Kong Bananza camera and 2D layer aspect (`dm/host/android/dkb_wide.c`, with its gates in `dm/games/040074A01BF12000/patches.py`) is GPL-3.0-or-later.**
 The idea of changing the scene camera's aspect and of scaling the UI projection where it is copied into the draw info (two of their four sites, `main+0x45f9dc` and `main+0x803c94`, are the layout projection setups gated here) come from the `dkbwide` patch set of Lucas-blip-png's
 [dkb-pc-recomp](https://github.com/Lucas-blip-png/dkb-pc-recomp) (`recomp/patches-dkb458752.txt`, GPL-3.0). The Android file re-expresses them as host callbacks on rewriter gates, reads the camera's
 values where the game uses them, squeezes the UI into the middle of the unchanged 16:9 frame instead of widening it, and adds the vertical field-of-view correction for pictures narrower than 16:9.

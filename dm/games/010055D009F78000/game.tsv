@@ -45,3 +45,28 @@ shader_groups	/DATA1.bin=data /patch4/=patch4 /patch3/=patch3 /patch2/=patch2 /p
 shader_note	Fire Emblem: Three Houses shaders
 # KTGL compiles 9 built-in GLSL shaders at boot with the game's own GLSLC (subsdk0; sources in main): the NSP script captures them once on the Mac with DM_GLSLC_CAPTURE=<version dir>/glslc_capture
 # (hle_glslc.c), as for any game whose main holds GLSL sources and imports glslcCompile
+
+present_interval	display
+fps_limit	60
+fpslocker	89048449ba238c8cf565518b83bf02d3	frame_scaled_f32	%0x0	1	0.99:1
+fpslocker	89048449ba238c8cf565518b83bf02d3	frame_scaled_f32	%0x4	1	0.84:1
+
+# Reviewed FPSLocker code plan: exact main build and expected bytes; no pack-file mutation.
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	m0x4c82d0	0af17dd3	p10:0x0
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	m0x4c82d4	22696abc	420140bd
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	m0x4c8300	280d088b	p8:0x4
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	m0x4c8304	020540bd	020540bd
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	d0x0	-	00000842
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	d0x4	-	0000c841
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13de0	01000000	02000000
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13de4	01000000	01000000
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13de8	01000000	02000000
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13dec	01000000	02000000
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13df0	01000000	01000000
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13df4	01000000	02000000
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13e40	0000803f	00000040
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13e44	0000803f	0000803f
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13e48	0000803f	00000040
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13e4c	0000803f	00000040
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13e50	0000803f	0000803f
+fpslocker_plan	89048449ba238c8cf565518b83bf02d3	o0xd13e54	0000803f	00000040

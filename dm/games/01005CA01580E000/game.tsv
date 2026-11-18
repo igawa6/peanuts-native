@@ -42,3 +42,36 @@ mem_used	0x4c00000
 # PEANUTS: hold the present-interval field at 60 (hle_fpslock.c, the "Persona 5 Royal present interval" row for main d4b150b2...)
 # ---- Frame rate ----
 fps_target	60
+
+present_interval	display
+fps_limit	60
+fps_limit_max	120
+
+# Cucholix HD resolution mod, main 1.0.2 only. Uncompressed NSO offsets minus its 0x100 header.
+# Independent opt-in; does not alter the FPS plan or the owned dump/pack.
+option	DM_P5R_HD	HD resolution	Render at 1080p docked or 720p handheld. Restart the game to apply.	restart
+option_patch	DM_P5R_HD	d4b150b29a931cd381e2a30318fc299f	0x10a4c80	0978c0f2	09a0c0f2
+option_patch	DM_P5R_HD	d4b150b29a931cd381e2a30318fc299f	0x10a4c90	88438052	085a8052
+option_patch	DM_P5R_HD	d4b150b29a931cd381e2a30318fc299f	0x10a4cfc	08b480d2	08f080d2
+option_patch	DM_P5R_HD	d4b150b29a931cd381e2a30318fc299f	0x10a4d00	4865c0f2	0887c0f2
+
+# Reviewed FPSLocker code plan: exact main build and expected bytes; no pack-file mutation.
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x0	-	0000221e
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x4	-	0009201e
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x8	-	02102d1e
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0xc	-	0020221e
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x10	-	8a000054
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x14	-	0028201e
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x18	-	49000036
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x1c	-	0038201e
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x20	-	8102221e
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x24	-	0008211e
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x28	-	0800391e
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x2c	-	e91f8052
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x30	-	1f01096b
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x34	-	08b1891a
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x38	-	c0035fd6
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	m0xebdf5c	0000221e	q9:0x231a000
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	m0xebdf60	01102e1e	29dd47b9
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	m0xebdf64	2018201e	l0x0
+fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	m0xebdf68	8102221e	t0xebdf88

@@ -25,6 +25,7 @@ static module_t mods[3]; module_t *g_mod = mods; int g_nmod;
 // auto-repeat counter rose once more while A was held ("C4: released: nothing fires" failed)
 uint64_t now_ns(void) { static _Atomic uint64_t t; return atomic_fetch_add(&t, 1000) + 1000; }
 void dm_guest_write_prepare(void *addr, size_t len) { (void)addr; (void)len; }   // no dirty-page tracking in the test
+#define HEAP 0x100000   // the guest heap's size: room for the Fire Emblem fixture's block of 250 units (0x87D30 bytes)
 static uint8_t *heap; static size_t heap_open;   // the guest heap (hle_svc.c): a plain buffer, opened in full
 void dm_guest_heap_range(uint64_t *base, size_t *open_len) { *base = (uint64_t)(uintptr_t)heap; *open_len = heap_open; }
 int dm_guest_heap_read(uint64_t a, void *out, size_t n) { memcpy(out, (void *)(uintptr_t)a, n); return 0; }
@@ -114,7 +115,7 @@ int main(void) {
     snprintf(root, sizeof root, "%s/t_cheats.XXXXXX", tmp && *tmp ? tmp : "/tmp");
     if (!mkdtemp(root)) { perror("mkdtemp"); return 1; }
     img = mmap(NULL, IMG, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-    heap = calloc(1, 0x10000); heap_open = 0x10000;
+    heap = calloc(1, HEAP); heap_open = HEAP;
     gas = mmap(NULL, GAS, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
     if (gas == MAP_FAILED || mprotect(gas, 0x10000, PROT_READ | PROT_WRITE)) { perror("guest block"); return 1; }
     sdk = mmap(NULL, SDK, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -364,7 +365,7 @@ int main(void) {
     put("1111111111111111.enabled", "H\n");
     heap_open = 0; load_all(); cheats_pass();
     CHECK(dm_cheat_kind_at(at("H", 0)) == 0 && dm_cheat_on_at(at("H", 0)), "with no heap yet the cheat waits, still on");
-    heap_open = 0x10000; cheats_pass();
+    heap_open = HEAP; cheats_pass();
     CHECK(heap[0x10] == 0x2A, "and writes once the heap is open");
 
     // ---- the VM held to docs/reference/cheats.md: opcodes 1 (both forms), 2 (else), nesting, 8 ----
@@ -643,6 +644,130 @@ int main(void) {
     CHECK(exists(".cheats-running-0100000000000000"), "a cheat on: the safe-mode flag is there");
     rm("1111111111111111.txt"); load_all();
     CHECK(!dm_cheats_found() && !exists(".cheats-running-0100000000000000"), "a reload that finds no file removes the flag: nothing runs now");
+
+    // ---- dm_cheat_set: the Android in-game panel's toggles, by key ----
+    fresh("set", "{M}\n04000000 00004800 00000001\n[Ammo]\n04000000 00004804 00000063\n[Dup]\n04000000 00004808 00000001\n[Dup]\n04000000 0000480C 00000002\n[Credits]\n");
+    load_all();
+    CHECK(dm_cheat_set("ammo", 1) == 1 && dm_cheat_on_at(at("Ammo", 0)) && !strcmp(get("1111111111111111.enabled"), "Ammo\n"), "set: by key in any case, on, <build>.enabled rewritten");
+    CHECK(dm_cheat_set("Ammo", 1) == 1 && dm_cheat_on_at(at("Ammo", 0)), "set: to the state it has already, it stays (no flip)");
+    CHECK(dm_cheat_set("Dup #2", 1) == 1 && !dm_cheat_on_at(at("Dup", 0)) && dm_cheat_on_at(at("Dup", 1)), "set: a duplicate's second entry by its key");
+    cheats_pass();
+    CHECK(rd32(0x4800) == 1 && rd32(0x4804) == 0x63 && rd32(0x4808) == 0 && rd32(0x480C) == 2, "set: the pass runs the master and the cheats set on");
+    CHECK(dm_cheat_set("M", 0) == 0 && dm_cheat_set("Credits", 1) == 0, "set: a master or a label is no switch");
+    CHECK(dm_cheat_set("Nope", 1) == -1 && dm_cheat_set("", 1) == -1 && dm_cheat_set(NULL, 1) == -1, "set: an unknown key");
+    CHECK(dm_cheat_set("AMMO", 0) == 1 && !dm_cheat_on_at(at("Ammo", 0)) && !strcmp(get("1111111111111111.enabled"), "Dup #2\n"), "set: off again, the file follows");
+    CHECK(nxhost_cheat_set("Ammo", 1) == 1 && dm_cheat_on_at(at("Ammo", 0)), "set: the launcher's entry point is the same switch");
+
+    // ---- the shape of a game-data cheat (Ocarina of Time's cheats/<build>.txt): a pointer chain from a global in main to a record array on the
+    // heap, a static store, and a register copy (health = max health); a null pointer (the manager not made yet) skips the cheat without a fault ----
+    fresh("chain", "[Rupees]\n580F0000 00004900\n580F1000 000000D8\n780F0000 0000001C\n640F0000 00000000 000003E7\n"
+                   "[Health]\n580F0000 00004900\n580F1000 000000D8\n780F0000 00000044\n540E2F00 00000028\nA4EF0000\n");
+    memset(heap, 0, 0x2000);
+    load_all();
+    dm_cheat_set("Rupees", 1); dm_cheat_set("Health", 1);
+    cheats_pass();
+    CHECK(dm_cheat_on_at(at("Rupees", 0)) && dm_cheat_on_at(at("Health", 0)) && g_cheat[at("Rupees", 0)].why[0], "chain: a null manager pointer: the cheats stay on, noted, nothing faults");
+    uint64_t mgr = (uint64_t)(uintptr_t)(heap + 0x100), recs = (uint64_t)(uintptr_t)(heap + 0x1000);
+    memcpy(img + 0x4900, &mgr, 8); memcpy(heap + 0x100 + 0xD8, &recs, 8);
+    { uint32_t life = 3, max = 12; memcpy(heap + 0x1000 + 0x44, &life, 4); memcpy(heap + 0x1000 + 0x6C, &max, 4); }
+    cheats_pass();
+    uint32_t rup, life;
+    memcpy(&rup, heap + 0x1000 + 0x1C, 4); memcpy(&life, heap + 0x1000 + 0x44, 4);
+    CHECK(rup == 999 && life == 12, "chain: once the pointers are set, rupees 999 and health = max health (5 with I=2, A from a register)");
+    CHECK(heap[0x1000 + 0x20] == 0 && heap[0x1000 + 0x48] == 0, "chain: only the value words are written");
+    dm_cheat_set("Health", 0); { uint32_t hurt = 4; memcpy(heap + 0x1000 + 0x44, &hurt, 4); }
+    cheats_pass(); memcpy(&life, heap + 0x1000 + 0x44, 4);
+    CHECK(life == 4, "chain: a cheat set off writes nothing more");
+
+    // ---- Fire Emblem Fortune's Weave's own file (dm/games/04007EF01F8AE000/cheats/DB93B0125F485060.txt; its README "Cheats"), run on a fixture of its
+    // unit table: main's singletons moved into this image's data (the only change to the file), the pool's block of 250 units of 0x8B0 bytes on the heap,
+    // a force descriptor per unit (id at +0x10; player forces 0, 4, 5, 6, 7), PersonData with caps (+0x232) and a weapon mask (+0x262), the two EXP tables ----
+    {
+        static const char *const FE = "../../games/04007EF01F8AE000/cheats/DB93B0125F485060.txt";   // make -C dm/host/tests runs here
+        FILE *f = fopen(FE, "r"); if (!f) { perror(FE); return 1; }
+        static char fe[16384]; size_t n = fread(fe, 1, sizeof fe - 1, f); fe[n] = 0; fclose(f);
+        static const char *const reloc[][2] = { { "0220A350", "00005A00" }, { "0220AB10", "00005A10" },   // UnitPool*, GameUserData*
+                                                { "02219A18", "00005A20" }, { "02219A20", "00005A28" },   // level EXP table: begin, end
+                                                { "02219A58", "00005A30" }, { "02219A60", "00005A38" } }; // weapon EXP table: begin, end
+        int moved[6] = { 0 };
+        for (int r = 0; r < 6; r++) for (char *q = fe; (q = strstr(q, reloc[r][0])); q += 8) { memcpy(q, reloc[r][1], 8); moved[r]++; }
+        CHECK(moved[0] == 3 && moved[1] == 1 && moved[2] == 1 && moved[3] == 1 && moved[4] == 1 && moved[5] == 1, "FE: the file names main's singletons as its README says (3 party cheats, gold, two tables)");
+        fresh("fe", fe);
+        memset(heap, 0, 0xB0000);
+        uint8_t *pool = heap + 0x1000, *gud = heap + 0x3000, *blk = heap + 0x20000, *pda = heap + 0x2000, *pdb = heap + 0x2400;
+        uint8_t *lvt = heap + 0x4000, *wxt = heap + 0x5000;
+        #define FE_U(s) (blk + (size_t)(s) * 0x8B0)
+        #define FE_DESC(fo) (blk + 0x87BE0 + 0x18 * (fo))
+        for (int fo = 0; fo < 10; fo++) FE_DESC(fo)[0x10] = (uint8_t)fo;
+        for (int k = 0; k < 9; k++) { int16_t ca = (int16_t)(40 + k), cb = (int16_t)(60 + k); memcpy(pda + 0x232 + 2 * k, &ca, 2); memcpy(pdb + 0x232 + 2 * k, &cb, 2); }
+        { uint16_t ma = 0x1005, mb = 0x0002; memcpy(pda + 0x262, &ma, 2); memcpy(pdb + 0x262, &mb, 2); }   // weapon slots 0, 2, 12 / slot 1
+        // Slots: 0 force 0, 1 force 4, 2 force 7, 7 force 5 without PersonData, 249 force 6: the army. 3, 9 enemies (1, 2), 4 force 3, 10 force 8,
+        // 5 the free list (9), 6 no descriptor, 8 a descriptor on an unmapped page (a read that fails must not read as force 0); the rest no descriptor
+        struct { int slot, force; uint8_t *pd; } fx[] = { { 0, 0, pda }, { 1, 4, pdb }, { 2, 7, pda }, { 3, 1, pda }, { 4, 3, pda }, { 5, 9, NULL },
+                                                          { 6, -1, pda }, { 7, 5, NULL }, { 8, -2, pda }, { 9, 2, pdb }, { 10, 8, pda }, { 249, 6, pdb } };
+        for (int s = 0; s < 250; s++) {   // every unit's fields hold a mark the cheats must leave alone, or overwrite
+            uint8_t *u = FE_U(s);
+            for (int k = 0; k < 9; k++) { int16_t v = 0x1111; memcpy(u + 0x1D4 + 2 * k, &v, 2); }
+            u[0x1F2] = 0x22; { uint32_t e = 0x33333333; memcpy(u + 0x1F8, &e, 4); }
+            for (int j = 0; j < 13; j++) { uint16_t v = 0x4444; memcpy(u + 0x202 + 2 * j, &v, 2); u[0x21C + j] = 0x55; }
+        }
+        for (size_t i = 0; i < sizeof fx / sizeof fx[0]; i++) {
+            uint8_t *u = FE_U(fx[i].slot);
+            uint64_t d = fx[i].force >= 0 ? (uint64_t)(uintptr_t)FE_DESC(fx[i].force) : fx[i].force == -2 ? (uint64_t)(uintptr_t)gas + 0x10000 : 0, pd = (uint64_t)(uintptr_t)fx[i].pd;
+            memcpy(u + 0x1B8, &d, 8); memcpy(u + 0x188, &pd, 8);
+        }
+        { uint32_t g = 100; memcpy(gud + 0x48, &g, 4); }
+        load_all();
+        const char *names[] = { "Gold 9,999,999", "Party: all stats at cap", "Party: max level and EXP (experimental)", "Party: max weapon/class EXP (experimental)" };
+        for (int i = 0; i < 4; i++) dm_cheat_set(names[i], 1);
+        int all_on = 1; for (int i = 0; i < 4; i++) all_on &= at(names[i], 0) >= 0 && dm_cheat_on_at(at(names[i], 0)) && !g_cheat[at(names[i], 0)].broken;
+        CHECK(all_on && g_ncheat > 4, "FE: the file loads, its four cheats decode and switch on (the labels beside them)");
+        static uint8_t snap[0x8B0]; memcpy(snap, FE_U(0), sizeof snap);
+        cheats_pass();
+        int any = 0; for (int i = 0; i < 4; i++) any |= g_cheat[at(names[i], 0)].dead;
+        { uint32_t g0; memcpy(&g0, gud + 0x48, 4); CHECK(!any && !memcmp(snap, FE_U(0), sizeof snap) && g0 == 100, "FE: before the game made its pool and user data nothing is written and no cheat turns off"); }
+        uint64_t p64 = (uint64_t)(uintptr_t)pool, g64 = (uint64_t)(uintptr_t)gud, b64 = (uint64_t)(uintptr_t)blk;
+        memcpy(img + 0x5A00, &p64, 8); memcpy(img + 0x5A10, &g64, 8); memcpy(pool + 0x38, &b64, 8);
+        cheats_pass();   // the EXP tables are still empty (begin = end = 0): the level and weapon cheats write nothing
+        uint32_t gold; memcpy(&gold, gud + 0x48, 4);
+        CHECK(gold == 9999999, "FE: gold 9,999,999 at [main+0x220AB10]+0x48");
+        CHECK(FE_U(0)[0x1F2] == 0x22 && FE_U(0)[0x21C] == 0x55, "FE: empty EXP tables: no level and no weapon EXP written");
+        uint64_t lb = (uint64_t)(uintptr_t)lvt, le = lb + 40 * 4, wb = (uint64_t)(uintptr_t)wxt, we = wb + 15 * 4;
+        for (uint32_t i = 0; i < 120; i++) { uint32_t v = i * 100; memcpy(lvt + 4 * i, &v, 4); }
+        for (uint32_t i = 0; i < 15; i++) { uint32_t v = i * 10 + 5; memcpy(wxt + 4 * i, &v, 4); }
+        memcpy(img + 0x5A20, &lb, 8); memcpy(img + 0x5A28, &le, 8); memcpy(img + 0x5A30, &wb, 8); memcpy(img + 0x5A38, &we, 8);
+        cheats_pass();
+        int ok_stats = 1, ok_lvl = 1, ok_wx = 1, ok_other = 1;
+        for (int s = 0; s < 250; s++) {
+            uint8_t *u = FE_U(s);
+            int player = s == 0 || s == 1 || s == 2 || s == 7 || s == 249;
+            uint8_t *pd = s == 0 || s == 2 ? pda : s == 1 || s == 249 ? pdb : NULL;
+            uint16_t mask = pd == pda ? 0x1005 : pd == pdb ? 0x0002 : 0;
+            for (int k = 0; k < 9; k++) {
+                int16_t v; memcpy(&v, u + 0x1D4 + 2 * k, 2);
+                int16_t want = player && pd ? (int16_t)((pd == pda ? 40 : 60) + k) : 0x1111;
+                if (v != want) { *(player ? &ok_stats : &ok_other) = 0; }
+            }
+            uint32_t e; memcpy(&e, u + 0x1F8, 4);
+            if (player ? (u[0x1F2] != 40 || e != 3900) : (u[0x1F2] != 0x22 || e != 0x33333333)) *(player ? &ok_lvl : &ok_other) = 0;
+            for (int j = 0; j < 13; j++) {
+                uint16_t v; memcpy(&v, u + 0x202 + 2 * j, 2);
+                int hit = player && (mask >> j & 1);
+                if (hit ? (v != 115 || u[0x21C + j] != 12) : (v != 0x4444 || u[0x21C + j] != 0x55)) *(player ? &ok_wx : &ok_other) = 0;
+            }
+        }
+        CHECK(ok_stats, "FE: stats: every army unit's nine gained stats = its PersonData's caps (a unit without PersonData untouched)");
+        CHECK(ok_lvl, "FE: level: the army at the table's last level (40 of 40) with its total EXP (table[39] = 3900)");
+        CHECK(ok_wx, "FE: weapon EXP: the slots of the PersonData mask only, at table[11] (15 entries, capped to 12) with rank 12");
+        CHECK(ok_other, "FE: enemies, other sides, the free list, no or an unreadable descriptor: nothing written");
+        le = lb + 120 * 4; memcpy(img + 0x5A28, &le, 8);
+        cheats_pass();
+        { uint32_t e; memcpy(&e, FE_U(1) + 0x1F8, 4); CHECK(FE_U(1)[0x1F2] == 99 && e == 9800, "FE: a table of 120 levels: level 99, the game's own cap, with table[98]"); }
+        any = 0; for (int i = 0; i < 4; i++) any |= g_cheat[at(names[i], 0)].dead | g_cheat[at(names[i], 0)].broken;
+        CHECK(!any, "FE: the loops of 250 units stay within the step cap: no cheat turned off");
+        #undef FE_U
+        #undef FE_DESC
+    }
 
     // ---- Atmosphère's limits in the report ----
     size_t cap = 0x200 * 9 + 64; char *big = malloc(cap); size_t o = (size_t)snprintf(big, cap, "[Big]\n");

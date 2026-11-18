@@ -52,8 +52,32 @@ Not measured yet. In the first stage on the Thor the app used 3.9 GiB (the overl
 
 - **Resolved: startup crash without firmware fonts (Android).** With no firmware in the app, the host serves Android's fallback font for every shared font type, which lacks U+25A1; right after nnMain the game dereferences a null glyph and crashes (`CRASH sig=11 addr=0x38 pc=main+0x4a78c8`, `x1=0x25a1`), as [Echoes of Wisdom](../01008CF01BAAC000/README.md) does. The game's own fault, not the host's: the fix is the firmware's shared fonts, and the launcher's font gate (`dev.peanuts.ui.FontGate`, `NEED_FONTS`) now holds this title back without them.
 
+<!-- PEANUTS: on-device shader preparation and retained validation. -->
+
+## Missing effects in on-device builds (issue #78)
+
+The supplied 0.1.3 log has 37,406 shaders, exactly 9,693 fewer than the profile's 47,099. Every one of its 27 distinct missing-shader keys
+maps to a `/ptcl/` source. The older on-device Python stage omitted `lz4.frame`, which the splitter needs for those `.cmp` containers. The stage
+build already includes that module; APK configuration now also refuses an old stage without its wrapper and native extension. The test APK's
+`python.zip` contains both. Rebuild now compares the actual library entries against the profile’s required file-based shader keys, so an older
+incomplete pack is rebuilt even when its version header is current. The comparison runs only when the pack’s module build IDs match the profile’s package build;
+another registered version is not assumed to have the same shaders. Runtime capture keys, optional keys and deliberately selected profiles
+are excluded from this check; the player’s existing choice to omit add-on content is respected. On the AYN Thor, the APK’s exact Python runtime and bundled splitter read all 246 particle archives and
+recovered all 9,693 expected keys, with none missing or unreadable. LZ4 linked and independent block round trips also passed. A copied-save
+Turnip V39 run with firmware fonts reached the ship area and rendered its glowing stars near 60 fps, with no native crash during the
+60-second test. That run used an existing complete library. A later full on-device Prepare completed with all 47,099 entries and `[0, 0]` missing.
+A migration test then removed the 9,693 particle entries from a copy while keeping its current version header and completed job.
+Build detected the deficit and rebuilt that copy to 47,099 entries, again with `[0, 0]` missing. The repaired pack booted on both drivers;
+a later Turnip V39 run reached the reporter’s first-stage inhale tutorial (B sign, star crate and Waddle Dee).
+Inhale streaks and particles rendered near 60 fps with the repaired library, with no missing-shader errors. The matching scene was captured
+in a local screenshot and recording; later worlds remain untested.
+The first system-driver attempt in the fresh test app lacked the firmware-font environment and reproduced the known null-glyph crash above;
+a corrected system-driver run with those fonts then completed 30 seconds near 60 fps without a native crash. The cube-texture view warnings
+below remain a separate open rendering question.
+
 ## Open
 
+- PEANUTS: A repaired-pack system-driver run on the Thor (Qualcomm driver ID 8) rendered the ship and character as black silhouettes while its world map and stage-selection screen rendered correctly. Turnip V39 rendered the ship correctly with the same library. The system run had no missing-shader errors or pipeline-creation failures and no native crash during its 195-second window; the rendering cause is not established.
 - `[RED] vk: … texture ID … has no view of shape …: it reads as unbound` on both drivers: a 16x16 cube texture (6 layers) sampled through a view of another target, from two shaders; what it draws, and whether anything looks wrong, is not checked.
 - Frame pacing (above), memory layout and pool sizes (the sibling's, not checked against this game).
 - Only the title, the file select and the first stage were played: later worlds, movies, the Magolor Epilogue, Merry Magoland and saves over several sessions are untested.

@@ -160,10 +160,10 @@ void vka_perf_frame(double period_s) {
 // ---------- The pace line (vka_pace.h) ----------
 // DM_VK_PACE_LOG=<ms> (live; default 5000, 0 off): every that many ms, on the replay thread at a present, one line with what decides a dynamic interval's frame rate:
 //   [vk] pace up to frame F (5.0 s): interval 2 60 %, 3 40 %; 24.1 fps; GPU busy p50/p90 31.2/40.3 ms, recording start to GPU end p50/p90 48.0/60.1 ms; replay recording
-//   32.0 ms a frame (its CPU 21.0), 21000 draws; GPU clock floor KGSL 100 % (0); ADPF span against 16.7 ms; window 30 fps, panel 30.00 Hz; thermal 3, headroom nan; CPU MHz 2745/3628 3129/4608
+//   32.0 ms a frame (its CPU 21.0), 21000 draws; GPU clock floor KGSL 100 % (0); ADPF span against 16.7 ms; window 30 fps, panel 30.00 Hz; thermal 3, headroom nan; CPU MHz 2745/3628 3129/4608; GPU MHz 680/680
 // The game's controller (DKB main+0x204a18) steps up only once its measure of a frame (start to GPU end, about the span here) fits the faster interval, so the line tells
 // a frame that cannot fit (the span, the recording or the GPU time over the period of the next faster interval) from one held by the clocks: the floor, ADPF, the thermal
-// status (AThermal_getCurrentThermalStatus: 0 none, 1 light, 2 moderate, 3 severe, 4 critical) and the CPU clocks (cpufreq policies: now / cap). The window's rate and the
+// status (AThermal_getCurrentThermalStatus: 0 none, 1 light, 2 moderate, 3 severe, 4 critical) and the CPU and GPU clocks (cpufreq policies, KGSL: now / cap). The window's rate and the
 // panel's refresh show whether the panel runs below the game's rate (vka_present.c frame_rate, DM_VK_FRAME_RATE_HOLD)
 #include "vka_pace.h"
 void vka_worker_waits(uint64_t *room_ns, uint64_t *sub_ns); uint64_t vka_worker_sub_cpu(void); void mtl_stats(uint64_t *passes, uint64_t *draws);
@@ -184,6 +184,21 @@ static void pace_cpu(char *b, size_t n) {   // "now/cap" MHz of each cpufreq pol
         int w = snprintf(b + o, n - o, "%s%lu/%lu", o ? " " : "", cur / 1000, max / 1000); if (w < 0) break; o += (size_t)w;
     }
     if (!b[0]) snprintf(b, n, "not readable");
+}
+// "now/cap" MHz of the GPU (KGSL: gpuclk and max_gpuclk in Hz, the cap lowered by thermal limits; else devfreq's cur_freq / max_freq), "not readable" where neither is.
+// With the CPU's it tells a frame held by a clock cap (Forgejo #224, #248, #264: CPU caps of 1.7-2.0 GHz on a Galaxy S25 with Qualcomm's driver while the GPU clock floor
+// asked for its highest clock) from one that is not
+static void pace_gpu(char *b, size_t n) {
+    static const char *const pp[2][2] = {{"/sys/class/kgsl/kgsl-3d0/gpuclk", "/sys/class/kgsl/kgsl-3d0/max_gpuclk"}, {"/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq", "/sys/class/kgsl/kgsl-3d0/devfreq/max_freq"}};
+    for (int k = 0; k < 2; k++) {
+        unsigned long cur = 0, max = 0; FILE *f;
+        if (!(f = fopen(pp[k][0], "re"))) continue;
+        int ok = fscanf(f, "%lu", &cur) == 1; fclose(f);
+        if (!ok || !cur) continue;
+        if ((f = fopen(pp[k][1], "re"))) { if (fscanf(f, "%lu", &max) != 1) max = 0; fclose(f); }
+        snprintf(b, n, "%lu/%lu", cur / 1000000, max / 1000000); return;
+    }
+    snprintf(b, n, "not readable");
 }
 // The second pace line: where the recording's time goes. Its parts a frame: the draws (the timed sample's mean per draw, vka_draw.c, times the draws), the texture work at each
 // submission's start (vka_tex_prepare), the rest of the start, the commit; the remainder is the walk of the other records (passes, clears, copies, barriers, state). The
@@ -235,7 +250,7 @@ static void pace_tick(double period_s) {
     if (f > 10 && f - 10 > sampled) sampled = f - 10;
     if (now - P.t0 < (uint64_t)ms * 1000000ull) return;
     double s = (now - P.t0) / 1e9, nf = f > P.f0 ? (double)(f - P.f0) : 0;
-    char itv[96], cpus[160]; vkpace_intervals(&P, itv, sizeof itv); pace_cpu(cpus, sizeof cpus);
+    char itv[96], cpus[160], gpus[48]; vkpace_intervals(&P, itv, sizeof itv); pace_cpu(cpus, sizeof cpus); pace_gpu(gpus, sizeof gpus);
     int fl = -1, flr = 0; const char *fk = vka_floor_state(&fl, &flr); int wfps = 0; double hz = 0; vka_present_rates(&wfps, &hz);
     float head; int th = pace_thermal(&head);
     int pct = H.report2 && H.wd_create && H.wd_gpu && VKA_ENV("DM_VK_ADPF_GPU", 1) ? span_pct() : 0;
@@ -243,9 +258,9 @@ static void pace_tick(double period_s) {
     char adpf[64]; if (!have) snprintf(adpf, sizeof adpf, "no session"); else if (pct) snprintf(adpf, sizeof adpf, "span against %.1f ms", tg / 1e6); else snprintf(adpf, sizeof adpf, "present period against %.1f ms", tg / 1e6);
     char flb[48]; if (fl < 0) snprintf(flb, sizeof flb, "%s", fk); else snprintf(flb, sizeof flb, "%s %d %% (%d)", fk, fl, flr);
     VLOG("pace up to frame %llu (%.1f s): interval %s; %.1f fps; GPU busy p50/p90 %.1f/%.1f ms, recording start to GPU end p50/p90 %.1f/%.1f ms; replay recording %.1f ms a frame (its CPU %.1f), %.0f draws; "
-         "GPU clock floor %s; ADPF %s; window %d fps, panel %.2f Hz; thermal %d, headroom %.2f; CPU MHz %s",
+         "GPU clock floor %s; ADPF %s; window %d fps, panel %.2f Hz; thermal %d, headroom %.2f; CPU MHz %s; GPU MHz %s",
          (unsigned long long)f, s, itv, nf / s, vkpace_pct(P.gpu_us, P.ng, 50), vkpace_pct(P.gpu_us, P.ng, 90), vkpace_pct(P.span_us, P.ns, 50), vkpace_pct(P.span_us, P.ns, 90),
-         nf ? (rec - P.rec0) / 1e6 / nf : 0.0, nf ? (cpu - P.cpu0) / 1e6 / nf : 0.0, nf ? (draws - P.draws0) / nf : 0.0, flb, adpf, wfps, hz, th, (double)head, cpus);
+         nf ? (rec - P.rec0) / 1e6 / nf : 0.0, nf ? (cpu - P.cpu0) / 1e6 / nf : 0.0, nf ? (draws - P.draws0) / nf : 0.0, flb, adpf, wfps, hz, th, (double)head, cpus, gpus);
     pace_cost(f, nf, draws - P.draws0, nf ? (rec - P.rec0) / 1e6 / nf : 0.0);
     vkpace_reset(&P, now, f, draws, rec, cpu);
 }

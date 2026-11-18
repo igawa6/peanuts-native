@@ -1,11 +1,12 @@
 #!/bin/zsh
 # Builds the on-device packer's native side (android/ONDEVICE.md) on the Mac, the stage the APK takes (build.gradle -PnxPackStage=<work dir>/stage):
-#   python: the official CPython 3.14 Android build, Capstone 5 and python-lz4 built with the NDK, libnxpack.so (dm_pack.c) and libzbicdec.so (dm/third_party/zstd-zbic)
+#   python: the official CPython 3.14 Android build, Capstone 5 and python-lz4 built with the NDK, libnxpack.so (dm_pack.c), libzbicdec.so (dm/third_party/zstd-zbic)
+#           and libcra.so (dm/gfx/tools/cra_unscramble.c)
 #   tools:  the translator (dm/gfx/tools/dmsh_xlate_android/build.sh lib: libdmsh_xlate.so, NativeAOT, .NET 10 SDK) and SPIRV-Tools' validator
 #           (build_spirv_tools.sh: libSPIRV-Tools-shared.so), which vk_android_build.py loads through ctypes on the phone
-# Usage: build.sh <work dir> [all|python|tools|zbic]   (default all; zbic adds only libzbicdec.so to an existing stage; downloads and intermediate files go into the work dir: put it on the dump drive, not in the home folder)
+# Usage: build.sh <work dir> [all|python|tools|zbic]   (default all; zbic adds only libzbicdec.so and libcra.so to an existing stage; downloads and intermediate files go into the work dir: put it on the dump drive, not in the home folder)
 # → <work dir>/stage/
-#     lib/libpython3.14.so, libnxpack.so, libzbicdec.so, libdmsh_xlate.so, libSPIRV-Tools-shared.so   the app's jniLibs (arm64-v8a)
+#     lib/libpython3.14.so, libnxpack.so, libzbicdec.so, libcra.so, libdmsh_xlate.so, libSPIRV-Tools-shared.so   the app's jniLibs (arm64-v8a)
 #     python/lib/python3.14/                   the Python home: the standard library with lib-dynload/, site-packages/capstone (+ lib/libcapstone.so), site-packages/lz4
 #     bin/dm_pack_cli                          the adb shell test runner (dm_pack_cli.c)
 # The sources are pinned by version and SHA-256 (below; SPIRV-Tools by its Vulkan SDK tag); a mismatch stops the build. "python" makes the stage afresh, so run
@@ -71,6 +72,11 @@ if [[ $WHAT == all || $WHAT == python || $WHAT == zbic ]]; then
   sh $HERE/../../dm/third_party/zstd-zbic/build.sh $S/lib/libzbicdec.so $=CC -Wall
   $BIN/llvm-strip --strip-debug $S/lib/libzbicdec.so
   if grep -qaF "$HOME" $S/lib/libzbicdec.so; then echo "[RED] $S/lib/libzbicdec.so names this machine's home folder"; exit 1; fi
+  # libcra.so (dm/gfx/tools/cra_unscramble.c): the unscramble of Camelot's archive (Mario Tennis Fever), which cra.py loads through ctypes by its bare name;
+  # the phone's split runs in one process, where the Python loop was most of its time
+  $=CC -shared -fPIC -O2 -Wall -Werror -ffile-prefix-map=$HERE/../..=. -Wl,-soname,libcra.so -Wl,-z,max-page-size=16384 -o $S/lib/libcra.so $HERE/../../dm/gfx/tools/cra_unscramble.c
+  $BIN/llvm-strip --strip-debug $S/lib/libcra.so
+  if grep -qaF "$HOME" $S/lib/libcra.so; then echo "[RED] $S/lib/libcra.so names this machine's home folder"; exit 1; fi
 fi
 if [[ $WHAT == all || $WHAT == tools ]]; then
   [ -d $S/lib ] || { echo "[RED] $S has no lib/: run build.sh $W python first"; exit 1; }

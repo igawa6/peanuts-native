@@ -20,7 +20,8 @@ NAMES = ('ResultCut', 'Stored', 'stored_bytes', 'result_path', 'result_file', 'r
 
 def vk_functions(res):
     src = (TOOLS / 'vk_android_build.py').read_text()
-    keep = [n for n in ast.parse(src).body if isinstance(n, (ast.FunctionDef, ast.ClassDef)) and n.name in NAMES
+    # PEANUTS(upstream-candidate): retain the statement list type accepted by ast.Module.
+    keep: list[ast.stmt] = [n for n in ast.parse(src).body if isinstance(n, (ast.FunctionDef, ast.ClassDef)) and n.name in NAMES
             or isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'RESULT_MAGIC' for t in n.targets)]
     ns = {'os': os, 'sys': sys, 'json': json, 'struct': struct, 'RES': str(res), 'TOOLS': 'vk0', 'INPUTS': 'in0', 'RAW': False, 'VAL_ID': 'val0',
           'STAGE_OF': {}, 'VK': {'CODEC_ZSTD': 1}, 'zstd': None}

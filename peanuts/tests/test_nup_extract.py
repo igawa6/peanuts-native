@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """peanuts/scripts/nup-extract.py: a dump folder packed into a .nup by dm/tools/nup_pack.py (a second, clean-room writer) comes back file for file in the
-layout scripts/pack_dump.py reads (base/, updates/<version>/, dlc/<title ID>/<version>/); --exefs-only leaves the RomFS out; a folder with files is refused"""
+layout scripts/pack_dump.py reads (base/, updates/<version>/, dlc/<title ID>/<version>/); --exefs-only leaves the RomFS out; --heads keeps the code modules and the NRO files whole and every other RomFS file as a file of its real size with its first
+32 bytes (what the survey reads of a game whose dump does not fit on the disk); a folder with files is refused"""
 import contextlib, importlib.util, io, subprocess, sys, tempfile, unittest
 from pathlib import Path
 
@@ -17,6 +18,7 @@ FILES = {   # a dump in the flattened layout: two versions and one add-on
     'base/exefs/main.npdm': b'META base',
     'base/romfs/data/a.bin': b'a' * 5000,
     'base/romfs/data/sub/b.txt': b'hello',
+    'base/romfs/.nro/Game.nro': b'NRO0' * 50,   # a module the game loads, in a folder that is itself named .nro
     'updates/65536/exefs/main': b'NSO0 update main',
     'updates/65536/exefs/main.npdm': b'META update',
     'updates/65536/romfs/data/a.bin': b'b' * 5000,
@@ -56,6 +58,17 @@ class Extract(unittest.TestCase):
         out = Path(self.tmp.name) / 'out-exefs'
         self.run_main(self.nup, out, '--exefs-only')
         self.assertEqual(tree(out), {k: v for k, v in FILES.items() if '/exefs/' in k})
+
+    def test_heads(self):
+        out = Path(self.tmp.name) / 'out-heads'
+        self.run_main(self.nup, out, '--heads')
+        got = tree(out)
+        self.assertEqual(sorted(got), sorted(FILES))   # every file is there
+        for rel, data in FILES.items():
+            if '/exefs/' in rel or rel.endswith('.nro'): self.assertEqual(got[rel], data, rel)   # whole
+            else: self.assertEqual(got[rel], data[:32] + bytes(max(0, len(data) - 32)), rel)   # its size, its first 32 bytes, zeros after them
+        self.assertEqual(got['base/romfs/data/sub/b.txt'], b'hello')   # a file shorter than 32 bytes is whole
+        with self.assertRaises(SystemExit): self.run_main(self.nup, Path(self.tmp.name) / 'out-both', '--heads', '--exefs-only')
 
     def test_refuses_a_folder_with_files(self):
         out = Path(self.tmp.name) / 'out-busy'

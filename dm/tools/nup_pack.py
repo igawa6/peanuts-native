@@ -86,11 +86,11 @@ def main():
     zc = None
     if not a.raw:
         try:
-            import zstandard
+            import zstandard   # pyright: ignore[reportMissingImports]  # PEANUTS: optional compressor; stdlib fallback below.
             zc = zstandard.ZstdCompressor(level=a.level, write_content_size=True, threads=-1)
         except ImportError:   # compression.zstd (Python 3.14) or backports.zstd: the frame's content size from the pledged size
             try: from compression import zstd
-            except ImportError: from backports import zstd
+            except ImportError: from backports import zstd   # pyright: ignore[reportMissingImports]  # PEANUTS: optional Python <3.14 fallback.
             class Std:
                 @staticmethod
                 def copy_stream(src, out, size):
@@ -143,9 +143,9 @@ def main():
             codec = 0
             if zc:
                 class Hashing:
-                    def __init__(s, fh): s.fh = fh
-                    def read(s, n=-1):
-                        b = s.fh.read(n); h.update(b); return b
+                    def __init__(self, fh, digest=h): self.fh, self.digest = fh, digest   # PEANUTS(upstream-candidate): bind this file's digest.
+                    def read(self, n=-1):   # PEANUTS(upstream-candidate): normal instance-method names.
+                        b = self.fh.read(n); self.digest.update(b); return b
                 with open(f.path, 'rb') as src:
                     _, stored = zc.copy_stream(Hashing(src), out, size=f.size)
                 codec = 1

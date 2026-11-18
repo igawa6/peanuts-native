@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-typedef struct img { int id; } img;
+typedef struct img { int id; uint32_t smap_n; } img;   // PEANUTS: smap_n
 #define VKA_SMAP_IM img
 #include "../../gfx/vk_android/vka_smap.h"
 
@@ -21,7 +21,7 @@ static void check_counts(const vksm *m) {
 }
 
 int main(void) {
-    img ims[8]; for (int i = 0; i < 8; i++) ims[i].id = i;
+    img ims[8]; for (int i = 0; i < 8; i++) ims[i] = (img){i, 0};
     // 1. a chain with a tombstone before a live key: re-put must overwrite, delete must remove it for good
     {   vksm m = {0}; uint64_t k[3]; int n = 0; CHECK(vksm_put(&m, 1, &ims[0]), "put");   // (cap 1024 now)
         size_t home = vksm_hslot(1, m.cap);
@@ -38,6 +38,7 @@ int main(void) {
         check_counts(&m); free(m.e); }
     // 2. random operations against a reference
     {   enum { K = 3000 }; static img *ref[K]; static int has[K]; vksm m = {0};
+        for (int i = 0; i < 8; i++) ims[i].smap_n = 0;   // PEANUTS: a new map (the one before was freed with its entries)
         for (int it = 0; it < 400000; it++) {
             int k = (int)(rnd() % K); uint64_t s = (uint64_t)k * 4096 + 7;
             if (rnd() % 3 < 2) { img *im = &ims[rnd() % 8]; if (rnd() % 16 == 0) im = NULL; CHECK(vksm_put(&m, s, im), "put"); ref[k] = im; has[k] = 1; }
@@ -48,10 +49,15 @@ int main(void) {
         }
         // an image's entries go together
         int want = 0; for (int j = 0; j < K; j++) if (has[j] && ref[j] == &ims[1]) { has[j] = 0; want++; }
+        for (int q = 0; q < 8; q++) {   // PEANUTS: each image counts its entries (image 1's are out of has[] already: want)
+            uint32_t c = 0; for (int j = 0; j < K; j++) c += has[j] && ref[j] == &ims[q];
+            CHECK(ims[q].smap_n == (q == 1 ? (uint32_t)want : c), "image %d counts %u entries, has %u", q, ims[q].smap_n, q == 1 ? (uint32_t)want : c); }
         CHECK(vksm_del_im(&m, &ims[1]) == want && want > 0, "del_im %d", want);
+        CHECK(ims[1].smap_n == 0 && vksm_del_im(&m, &ims[1]) == 0, "PEANUTS: an image without entries: nothing to scan for");
         for (size_t i = 0; i < m.cap; i++) CHECK(!(m.e[i].serial && m.e[i].serial != VKSM_TOMB && m.e[i].im == &ims[1]), "image left an entry");
         check_counts(&m); CHECK(m.cap <= 16384, "cap %zu after random ops on %d keys", m.cap, K); free(m.e); }
     // 3. churn: a million short-lived serials, a few live at a time: the table does not grow
+    for (int i = 0; i < 8; i++) ims[i].smap_n = 0;   // PEANUTS: a new map
     {   vksm m = {0}; for (uint64_t s = 1; s <= 1000000; s++) { vksm_put(&m, s, &ims[s & 7]); if (s > 40) CHECK(vksm_del(&m, s - 40), "del"); }
         CHECK(m.live == 40, "live %zu", m.live); CHECK(m.cap == 1024, "cap grew to %zu", m.cap); check_counts(&m);
         for (uint64_t s = 1; s <= 1000000 - 40; s += 9973) CHECK(!vksm_get(&m, s), "stale %llu", (unsigned long long)s);

@@ -12,6 +12,7 @@
 #include "nvn_protos.h"
 #include "nvn_count.h"
 #include "nvn_tex.h"
+#include "nvn_dpool.h"
 #include "../tex/nvn_deswizzle.h"
 #include "nvn_mtl.h"
 #include "nvn_pace.h"
@@ -609,52 +610,50 @@ NVN(nvnMemoryPoolGetBufferAddress, NVNbufferAddress, const NVNmemoryPool *p) {
 // Fire Emblem: Three Houses: a 12,544-entry texture pool and a 3,856-entry sampler pool for the scene, and 4,096-entry ones its 2D UI command buffer binds. Both fill IDs from 256 up; the scene's
 // default 8×8 white texture overwrote the UI's textures, and the title menu's labels, the name entry and other menus drew as plain bars or not at all. The scene also registers each draw's
 // textures into fresh IDs of a ring in its large pool (8,729 and up a few seconds in); with the table's capacity taken from the last pool alone, those all read as empty slots and the screen was black
-enum { NDPOOL = 16 };
-static struct dpool_base { const void *pool; int base; } g_tpb[NDPOOL], g_spb[NDPOOL];
-static int g_ntpb, g_nspb, g_tnext, g_snext;
+// The ranges: nvn_dpool.h
+static nvn_dpool_tab g_tpt, g_spt;
 static pthread_mutex_t g_dpool_mu = PTHREAD_MUTEX_INITIALIZER;
-static int dpool_add(struct dpool_base *t, int *nt, int *next, const void *pool, int n, const char *kind) {   // → the pool's base (assigned at its first Initialize)
+static int dpool_add(nvn_dpool_tab *t, const void *pool, int n, const char *kind) {   // → the pool's base (assigned at its first Initialize)
     pthread_mutex_lock(&g_dpool_mu);
-    int i = 0; while (i < *nt && t[i].pool != pool) i++;
-    if (i == *nt) {
-        if (*nt == NDPOOL) { pthread_mutex_unlock(&g_dpool_mu); LOG("[RED] %s pools exceed %d: later ones share the first pool's numbering", kind, NDPOOL); return 0; }
-        t[i] = (struct dpool_base){pool, *next}; (*nt)++; *next += (n + 255) & ~255;
-        if (i) LOG("[nvn] pool #%d (%s, %d entries): numbered from %d in the host table, separate from the earlier pools", i + 1, kind, n, t[i].base);
-    }
-    int b = t[i].base; pthread_mutex_unlock(&g_dpool_mu); return b;
+    int had = t->n, b = nvn_dpool_add(t, pool, n);
+    pthread_mutex_unlock(&g_dpool_mu);
+    if (b < 0) { LOG("[RED] %s pools exceed %d: later ones share the first pool's numbering", kind, NVN_NDPOOL); return 0; }
+    if (t->n > had && had) LOG("[nvn] pool #%d (%s, %d entries): numbered from %d in the host table, separate from the earlier pools", t->n, kind, n, b);
+    return b;
 }
-static int dpool_base(const struct dpool_base *t, int nt, const void *pool) { for (int i = 0; i < nt; i++) if (t[i].pool == pool) return t[i].base; return 0; }
-int nvn_dpool_base(const void *pool, int tex) { return tex ? dpool_base(g_tpb, g_ntpb, pool) : dpool_base(g_spb, g_nspb, pool); }   // the replay's bound pools (nvn_mtl.m state_op)
+static int dpool_base(nvn_dpool_tab *t, const void *pool) { pthread_mutex_lock(&g_dpool_mu); int b = nvn_dpool_find(t, pool); pthread_mutex_unlock(&g_dpool_mu); return b; }
+static void dpool_release(nvn_dpool_tab *t, const void *pool) { pthread_mutex_lock(&g_dpool_mu); nvn_dpool_release(t, pool); pthread_mutex_unlock(&g_dpool_mu); }
+int nvn_dpool_base(const void *pool, int tex) { return dpool_base(tex ? &g_tpt : &g_spt, pool); }   // the replay's bound pools (nvn_mtl.m state_op)
 // The Android frame replayer (dm/gfx/vk_android/vka_replay.c), which runs in the host library without the game: a captured descriptor pool's bases, as its Initialize gave them
 void nvn_dpool_base_set(const void *pool, int tex_base, int samp_base) {
     pthread_mutex_lock(&g_dpool_mu);
-    if (g_ntpb < NDPOOL) g_tpb[g_ntpb++] = (struct dpool_base){pool, tex_base};
-    if (g_nspb < NDPOOL) g_spb[g_nspb++] = (struct dpool_base){pool, samp_base};
+    if (g_tpt.n < NVN_NDPOOL) g_tpt.e[g_tpt.n++] = (nvn_dpool_ent){pool, tex_base, 0};
+    if (g_spt.n < NVN_NDPOOL) g_spt.e[g_spt.n++] = (nvn_dpool_ent){pool, samp_base, 0};
     pthread_mutex_unlock(&g_dpool_mu);
 }
 // The pools each command buffer last bound are kept in its own host state (cmd_t tex_base / samp_base). They used to be a 64-entry list of command buffers that was never cleared:
 // Dark Souls Remastered binds one of 12 sampler pools in more than 64 command buffers, and every later one read its samplers through the first pool's numbering
 NVN(nvnTexturePoolInitialize, NVNboolean, NVNtexturePool *tp, const NVNmemoryPool *p, ptrdiff_t off, int n) {
     *(dpool_t *)tp = (dpool_t){(const pool_t *)p, off, n}; OLOG("TexturePool n=%d", n);
-    dpool_add(g_tpb, &g_ntpb, &g_tnext, tp, n, "texture"); mtl_set_tex_pool_n(g_tnext);
+    dpool_add(&g_tpt, tp, n, "texture"); mtl_set_tex_pool_n(g_tpt.next);
     return 1;
 }
-NVN(nvnTexturePoolFinalize, void, NVNtexturePool *tp) { (void)tp; }
+NVN(nvnTexturePoolFinalize, void, NVNtexturePool *tp) { dpool_release(&g_tpt, tp); }   // its range is free for a later pool (nvn_dpool.h)
 NVN(nvnTexturePoolRegisterTexture, void, const NVNtexturePool *tp, int id, const NVNtexture *t, const NVNtextureView *v) {
-    mtl_reg_tex(dpool_base(g_tpb, g_ntpb, tp) + id, (const tex_t *)t, (const view_t *)v);
+    mtl_reg_tex(dpool_base(&g_tpt, tp) + id, (const tex_t *)t, (const view_t *)v);
 }
 // Image descriptors live in the same pool index space as texture descriptors, and image handles are pool indices (nvnDeviceGetImageHandle; BindImages below), so an image
 // registers into the same table. Hyrule Warriors: Age of Calamity registers the images its compute shaders write in the first battle (earlier games registered only textures)
 NVN(nvnTexturePoolRegisterImage, void, const NVNtexturePool *tp, int id, const NVNtexture *t, const NVNtextureView *v) {
-    mtl_reg_image(dpool_base(g_tpb, g_ntpb, tp) + id, (const tex_t *)t, (const view_t *)v);
+    mtl_reg_image(dpool_base(&g_tpt, tp) + id, (const tex_t *)t, (const view_t *)v);
 }
 NVN(nvnSamplerPoolInitialize, NVNboolean, NVNsamplerPool *sp, const NVNmemoryPool *p, ptrdiff_t off, int n) {
-    *(dpool_t *)sp = (dpool_t){(const pool_t *)p, off, n}; OLOG("SamplerPool n=%d", n); dpool_add(g_spb, &g_nspb, &g_snext, sp, n, "sampler"); return 1;
+    *(dpool_t *)sp = (dpool_t){(const pool_t *)p, off, n}; OLOG("SamplerPool n=%d", n); dpool_add(&g_spt, sp, n, "sampler"); return 1;
 }
-NVN(nvnSamplerPoolFinalize, void, NVNsamplerPool *sp) { (void)sp; }
-NVN(nvnSamplerPoolRegisterSampler, void, const NVNsamplerPool *sp, int id, const NVNsampler *s) { mtl_reg_samp(dpool_base(g_spb, g_nspb, sp) + id, &((const samp_t *)s)->p); }
+NVN(nvnSamplerPoolFinalize, void, NVNsamplerPool *sp) { dpool_release(&g_spt, sp); }   // (nvn_dpool.h)
+NVN(nvnSamplerPoolRegisterSampler, void, const NVNsamplerPool *sp, int id, const NVNsampler *s) { mtl_reg_samp(dpool_base(&g_spt, sp) + id, &((const samp_t *)s)->p); }
 // straight from a builder, without a sampler object (FINAL FANTASY TACTICS - The Ivalice Chronicles registers its samplers this way)
-NVN(nvnSamplerPoolRegisterSamplerBuilder, void, const NVNsamplerPool *sp, int id, const NVNsamplerBuilder *b) { mtl_reg_samp(dpool_base(g_spb, g_nspb, sp) + id, &((const samp_builder_t *)b)->p); }
+NVN(nvnSamplerPoolRegisterSamplerBuilder, void, const NVNsamplerPool *sp, int id, const NVNsamplerBuilder *b) { mtl_reg_samp(dpool_base(&g_spt, sp) + id, &((const samp_builder_t *)b)->p); }
 // Unreal Engine reads a descriptor pool's size back at device setup (Octopath Traveler 0)
 NVN(nvnTexturePoolGetMemoryPool, const NVNmemoryPool *, const NVNtexturePool *tp) { return (const NVNmemoryPool *)((const dpool_t *)tp)->pool; }
 NVN(nvnTexturePoolGetMemoryOffset, ptrdiff_t, const NVNtexturePool *tp) { return (ptrdiff_t)((const dpool_t *)tp)->off; }
@@ -860,6 +859,11 @@ NVN(nvnTextureInitialize, NVNboolean, NVNtexture *t, const NVNtextureBuilder *b)
     if (o->mem) pc_use(o->pool, 't', o->off, o->L.size);
     if (o->mem && shp_use(SHK_TEX, (uint64_t)(uintptr_t)o->mem, o->L.size, NULL, NULL) == 2 && !g_shp_place) mtl_pool_need(o->mem, o->L.size, "a texture in a shader-code pool");   // (Shader-code pools: a texture is a data use)
     if (o->mem && o->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET)) mtl_pool_need(o->mem, o->L.size, "a linear texture");   // its GPU content is copied back into the storage (vka_tex_writeback)
+    static int tbuf_place = -1; if (tbuf_place < 0) { const char *e = getenv("DM_VK_TBUF"); tbuf_place = !(e && e[0] == '0'); }   // (DM_VK_TBUF=0: buffer textures unbound, as before)
+    if (o->mem && o->d.target == NVN_TEXTURE_TARGET_BUFFER && tbuf_place) {   // the GPU reads and writes a buffer texture's storage itself (vka_tbuf.c: a texel buffer view over it, or rows copied from it)
+        int bw, bh, bpb = nvn_fmt_bpb(o->d.format, &bw, &bh); uint64_t n = bpb > 0 ? (uint64_t)o->d.width * (uint64_t)bpb : 0;
+        mtl_pool_need(o->mem, n > o->L.size ? n : o->L.size, "a buffer texture");
+    }
     {   // DM_NVN_TEXINFO=WxH also logs every texture of that size as it is initialized (render targets included): which ones share storage, and how their descriptions differ
         static int ti = -1; static uint32_t tw, th;
         if (ti < 0) { const char *e = getenv("DM_NVN_TEXINFO"); ti = e && sscanf(e, "%ux%u", &tw, &th) == 2; }
@@ -1441,7 +1445,9 @@ NVN(nvnCommandBufferBindVertexStreamState, void, NVNcommandBuffer *c, int n, con
     p_bind_vstream *r = RECN(c, OP_BIND_VSTREAM, p_bind_vstream, st, n); r->first = 0; r->n = n; memcpy(r->st, st, 8 * n);
 }
 NVN(nvnCommandBufferBindVertexBuffers, void, NVNcommandBuffer *c, int first, int n, const NVNbufferRange *rg) {
-    if (n < 0 || first + n > 16) { LOG("[RED] BindVertexBuffers first=%d n=%d", first, n); return; }
+    // NVN has 16 streams. Mario Tennis Fever clears 32 before each model (first = 16 to 31 with a null range, thousands of times a run): nothing can read those, so only a real range past the limit is wrong
+    if (first >= 16 && n == 1 && !rg[0].address && !rg[0].size) return;
+    if (n < 0 || first + n > 16) { static int red; if (red++ < 8) LOG("[RED] BindVertexBuffers first=%d n=%d", first, n); return; }
     for (int i = 0; i < n; i++) shp_bind(SHK_VBUF, rg[i].address, rg[i].size);
     if (n == 1 && (unsigned)first < 16 && rg[0].size <= UINT32_MAX) {
         *REC(c, OP_BIND_VBUF1, p_bind_vbuf1) = (p_bind_vbuf1){(uint32_t)first, (uint32_t)rg[0].size, rg[0].address}; return;
@@ -1523,8 +1529,8 @@ NVN(nvnCommandBufferDispatchComputeIndirect, void, NVNcommandBuffer *c, NVNbuffe
     *REC(c, OP_DISPATCH, p_dispatch) = (p_dispatch){0, 0, 0, (uint64_t)__builtin_return_address(0), ind};
 }
 NVN(nvnCommandBufferBarrier, void, NVNcommandBuffer *c, int bits) { *(int32_t *)rec(c, OP_BARRIER, 8) = bits; }
-NVN(nvnCommandBufferSetTexturePool, void, NVNcommandBuffer *c, const NVNtexturePool *p) { REC(c, OP_SET_TEX_POOL, p_set_pool)->pool = (const dpool_t *)p; CB(c)->tex_base = dpool_base(g_tpb, g_ntpb, p); }
-NVN(nvnCommandBufferSetSamplerPool, void, NVNcommandBuffer *c, const NVNsamplerPool *p) { REC(c, OP_SET_SAMP_POOL, p_set_pool)->pool = (const dpool_t *)p; CB(c)->samp_base = dpool_base(g_spb, g_nspb, p); }
+NVN(nvnCommandBufferSetTexturePool, void, NVNcommandBuffer *c, const NVNtexturePool *p) { REC(c, OP_SET_TEX_POOL, p_set_pool)->pool = (const dpool_t *)p; CB(c)->tex_base = dpool_base(&g_tpt, p); }
+NVN(nvnCommandBufferSetSamplerPool, void, NVNcommandBuffer *c, const NVNsamplerPool *p) { REC(c, OP_SET_SAMP_POOL, p_set_pool)->pool = (const dpool_t *)p; CB(c)->samp_base = dpool_base(&g_spt, p); }
 
 NVN(nvnCommandBufferCopyBufferToTexture, void, NVNcommandBuffer *c, NVNbufferAddress src, const NVNtexture *t, const NVNtextureView *v,
     const NVNcopyRegion *r, int flags) {
@@ -1752,18 +1758,21 @@ NVN(nvnWindowBuilderSetTextures, void, NVNwindowBuilder *b, int n, NVNtexture *c
     if (n < 0 || n > 4) { LOG("[RED] WindowBuilderSetTextures count %d", n); n = n < 0 ? 0 : 4; }
     WB(b)->ntex = n; for (int i = 0; i < n; i++) WB(b)->tex[i] = t[i];
 }
-NVN(nvnWindowBuilderSetPresentInterval, void, NVNwindowBuilder *b, int v) { WB(b)->interval = v; }
+// PEANUTS: FPSLocker's interval mode changes the window state as well as presentation pacing.
+static int fpslocker_window_interval(void) { const char *e=getenv("DM_FPSLOCKER_INTERVAL"); return e && !strcmp(e,"1"); }
+NVN(nvnWindowBuilderSetPresentInterval, void, NVNwindowBuilder *b, int v) { WB(b)->interval = fpslocker_window_interval()?1:v; }
 NVN(nvnWindowInitialize, NVNboolean, NVNwindow *w, const NVNwindowBuilder *b) {
     const win_builder_t *s = (const win_builder_t *)b; win_t *o = (win_t *)w;
-    memset(o, 0, sizeof *o); o->magic = MAGIC('W', 'I', 'N', 'D'); o->native = s->native; o->ntex = s->ntex; o->interval = s->interval;
+    memset(o, 0, sizeof *o); o->magic = MAGIC('W', 'I', 'N', 'D'); o->native = s->native; o->ntex = s->ntex; o->interval = fpslocker_window_interval()?1:s->interval;
     memcpy(o->tex, s->tex, sizeof o->tex);
     for (int i = 0; i < o->ntex; i++) if (o->tex[i]) mtl_xv_window_tex(CTX(o->tex[i])->serial);
     LOG("[nvn] WindowInitialize swap chain %d textures, interval %d, first %dx%d format %#x", o->ntex, o->interval,
         o->ntex && o->tex[0] ? (int)CTX(o->tex[0])->d.width : 0, o->ntex && o->tex[0] ? (int)CTX(o->tex[0])->d.height : 0, o->ntex && o->tex[0] ? CTX(o->tex[0])->d.format : 0);
     return 1;
 }
-NVN(nvnWindowGetPresentInterval, int, const NVNwindow *w) { return ((const win_t *)w)->interval; }   // Link's Awakening reads it back every frame
+NVN(nvnWindowGetPresentInterval, int, const NVNwindow *w) { return fpslocker_window_interval()?1:((const win_t *)w)->interval; }   // Link's Awakening reads it back every frame
 NVN(nvnWindowSetPresentInterval, void, NVNwindow *w, int v) {
+    if (fpslocker_window_interval()) v=1;
     if (((win_t *)w)->interval != v) { module_t *m = module_of(__builtin_return_address(0));
         LOG("[nvn] the game sets present interval %d → %d (from %s+%#llx)", ((win_t *)w)->interval, v, m ? m->name : "?", m ? (unsigned long long)((uint64_t)__builtin_return_address(0) - (uint64_t)m->base) : 0ULL); }
     ((win_t *)w)->interval = v;
@@ -2515,6 +2524,7 @@ NVN(nvnQueuePresentTexture, void, NVNqueue *q, NVNwindow *w, int idx) {
         uint64_t g0, g1; if (frame_rec() && mtl_gpu_span(f - 8, &g0, &g1)) { trow(f - 8, "@gpu_beg_ms", (g0 - g_t0_ns) / 1e6); trow(f - 8, "@gpu_end_ms", (g1 - g_t0_ns) / 1e6); } }
     prev_in = t0; prev_pass = ps; prev_draw = dr;
     dump_frame();
+    { void dm_vi_frame_queued(uint64_t); dm_vi_frame_queued(g_frame); }   // the layer's frame history (hle_vi.c), numbered as GetLatestFrameNumber
     if (g_frame % TWIN == 0) tsummary(g_frame);
     mtl_set_frame(g_frame);
     // Real-device semantics: present only enqueues and returns immediately; this frame's display time is scheduled by the pacer, and the texture can be acquired again only at "display time + one period" (blocking in AcquireTexture)

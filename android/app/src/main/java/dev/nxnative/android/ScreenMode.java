@@ -3,7 +3,7 @@ package dev.nxnative.android;
 // The host has both modes (hle_oe.c dm_opmode: DM_OPMODE, else the profile's op_mode), but the Android launcher had no row for it outside the
 // graphics_scale games, so a game started as its profile says: docked, a 1080p picture, for nearly all of them. It lives in this package because
 // Ui.Setting, Prefs.of and Profile are package-private; the hooks are one line each (Prefs.GAME_SETTINGS, GameActivity.settingsEnv, GameSettings' Picture,
-// MainActivity's Game defaults).
+// MainActivity's Settings, the card Performance and picture: "Game defaults" before Banana Native v0.3.22).
 
 import android.content.Context;
 
@@ -92,7 +92,7 @@ final class ScreenMode {
         return s.note((n != null ? n + " " : "The picture size the game draws at, as on a Switch. Handheld also turns on the game's touch screen. ") + "From the next start; while the game runs, its in-game panel changes it at once.");
     }
 
-    /** Settings › Game defaults */
+    /** Settings › Performance and picture */
     static Ui.Setting defaultRow(MainActivity a) {
         Ui.Setting[] s = new Ui.Setting[1];
         s[0] = new Ui.Setting(a, "📺", "Console mode", v -> new PadFocus.Builder(a).setTitle("Console mode")

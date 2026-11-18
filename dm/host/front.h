@@ -30,6 +30,14 @@ void front_progress(const char *title, long done, long total);
 // Confirm returns 1 and writes the result into out (including the terminating 0); cancel returns 0;
 // with no window (front_metal_layer() == NULL) nothing is shown and -1 is returned.
 int front_text_input(const char *title, const char *sub, const char *guide, const char *initial, int max_chars, char *out, int out_cap);
+// User selector (nn::account::ShowUserSelector, hle_account.c): the front end shows the n users' names (UTF-8), offered[i] = whether user i may be picked (the game leaves
+// some out), def = the preselected user; the calling thread blocks until one is picked. The picked index, -1 for a cancel, -2 when the front end has no picker (the host
+// then takes the preselected user). Android: the launcher's picker (front_android.c); elsewhere a weak default returns -2
+int front_user_select(const char *const *names, const int *offered, int n, int def);
+// Controller applet (nn::hid::ShowControllerSupport, hle_hid.c): the front end shows the join screen for the game's argument (pad_join.h: ctrl_arg) and the calling thread
+// blocks until it ends; the joined controllers are then the game's players (dm_pad_players). 1 OK with *count players, 0 canceled, -2 when the front end has no join screen
+// (the host then answers at once with the controllers already connected). Android: the launcher's screen (front_android.c); elsewhere a weak default returns -2
+int front_controller_support(const void *arg, int *count);   // arg: a const ctrl_arg *
 
 // Early start of host loading (main.c): reading the NSO / relocation / forced takeover / prefetch start are moved to a background thread, in parallel with the front end (UIKit launch chain, Metal view);
 // the dm_main / main called afterwards waits for it to finish. For call timing and preconditions see the comments in main.c (set DM_ROMFS and the other environment variables and the cwd first; arguments identical item by item to those of the later main).

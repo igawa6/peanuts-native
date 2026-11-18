@@ -182,6 +182,20 @@ PPtr<Shader>: int m_FileID; SInt64 m_PathID
 PPtr<Texture>: int m_FileID; SInt64 m_PathID
 Shader: string m_Name; SerializedShader m_ParsedForm; vector<data:unsigned int> platforms; vector<data:vector<data:unsigned int>> offsets; vector<data:vector<data:unsigned int>> compressedLengths; vector<data:vector<data:unsigned int>> decompressedLengths; vector<data:UInt8> compressedBlob; vector<data:PPtr<Shader>> m_Dependencies; map<data:pair(string,PPtr<Texture>)>~ m_NonModifiableTextures; bool! m_ShaderIsBaked
 '''
+# PEANUTS(upstream-candidate): the Unity 2021.3.26f1 Shader (My Time at Sandrock: every serialized file is stripped, its asset bundles too, 3,000 of the 34,325 looked
+# at, so no bundle lends a tree), from Unity 2021.3.26f1's type tree as AssetRipper's TypeTreeDumps records it (StructsDump/release/2021.3.26f1.dump). It is the 2021.2
+# layout with a program's player subprograms and parameter blob indices and the Shader's stage counts, each as the 2022.3 layout has it; the pass keeps 2021.2's
+# serialized keyword state mask. Checked node for node with the alignment flags (2,304 nodes), and the dump's tree gives the hash below (Unity's type hash: MD4 over each
+# node's type, name, byte size, array flag, version and alignment flag; the same sum over the dump's ComputeShader gives COMPUTE_2021_3's key). All 287 Shader objects of
+# the game's Data/ files and of its `shader` bundle read to their exact ends, and their 8,075 blob entries are exactly the player subprograms' 6,145 code entries and the
+# 1,930 parameter entries. The name says 2021.3 as COMPUTE_2021_3 does: an earlier 2021.3 release without the stage counts has another hash and is not read by this one;
+# which releases besides 2021.3.26f1 share the hash was not looked up.
+SHADER_2021_3 = SHADER_2021_2.replace(
+    'SerializedProgram: vector<data:SerializedSubProgram> m_SubPrograms; SerializedProgramParameters m_CommonParameters\n',
+    'SerializedPlayerSubProgram: unsigned int m_BlobIndex; vector<data:UInt16> m_KeywordIndices; SInt64 m_ShaderRequirements; SInt8! m_GpuProgramType\n'
+    'SerializedProgram: vector<data:SerializedSubProgram> m_SubPrograms; vector<data:vector<data:SerializedPlayerSubProgram>> m_PlayerSubPrograms; '
+    'vector<data:vector<data:unsigned int>> m_ParameterBlobIndices; SerializedProgramParameters m_CommonParameters\n').replace(
+    'vector<data:UInt8> compressedBlob; vector<data:PPtr<Shader>> m_Dependencies', 'vector<data:UInt8> compressedBlob; vector<data:unsigned int> stageCounts; vector<data:PPtr<Shader>> m_Dependencies')
 # The Unity 2018.3 Shader (Raging Loop, Unity 2018.3.10f1: no bundles, its 48 shaders in Data/*.assets and Data/Resources), from Unity 2018.3.10f1's type tree as AssetRipper's TypeTreeDumps
 # records it (StructsDump/release/2018.3.10f1.dump), checked node for node with the flags: older than the common structs above (no conservative raster state, no buffer array sizes, no partial
 # constant buffers), the parameters in each subprogram, one segment per platform (offsets, compressedLengths and decompressedLengths are plain numbers per platform), no local keywords
@@ -274,6 +288,7 @@ COMPUTE_6000_3 = COMPUTE_2022_3.replace('int texDimension', 'int texDimension; i
 CLASS_COMPUTE_SHADER = 72
 KNOWN_TREES = {(CLASS_SHADER, bytes.fromhex('ea424a5fc1e48db62144df956f9e1005')): ('Shader', SHADER_2022_3),
                (CLASS_SHADER, bytes.fromhex('d8236c9bd87d85edb203acf352348124')): ('Shader', SHADER_2021_2),
+               (CLASS_SHADER, bytes.fromhex('f0c184272a05e54447e36366ec4876a6')): ('Shader', SHADER_2021_3),   # PEANUTS(upstream-candidate): Unity 2021.3.26f1 (above)
                (CLASS_SHADER, bytes.fromhex('2ec7223dce3af4232b14ae1441bd7999')): ('Shader', SHADER_6000_0),
                (CLASS_SHADER, bytes.fromhex('a30e3dcf6c6d25153d6f64e5e41caf4e')): ('Shader', SHADER_2020_3),
                (CLASS_SHADER, bytes.fromhex('ed2a06ce7fb8203f6efb5ab5e0ce20d5')): ('Shader', SHADER_2019_4),

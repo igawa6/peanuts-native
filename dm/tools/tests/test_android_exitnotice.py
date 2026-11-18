@@ -82,8 +82,11 @@ class ExitNotice(unittest.TestCase):
         mem = 'Android closed it: the phone ran out of memory. Closing other apps before playing can help.'
         self.assertEqual(self.cause(RUN, LOW_MEMORY), mem)
         self.assertEqual(self.cause(RUN, SIGNALED, 9, 'lmk'), mem)                               # phones that report the low-memory killer as a signal
-        self.assertTrue(self.cause(RUN, LOW_MEMORY, bg=True).startswith('Android closed it while it was in the background'))
-        self.assertTrue(self.cause(RUN, SIGNALED, 9).startswith('Android closed it without saying why'))
+        # PEANUTS(upstream-candidate): these exit records must produce a cause before prefix checks.
+        background = self.cause(RUN, LOW_MEMORY, bg=True); unknown = self.cause(RUN, SIGNALED, 9)
+        assert background is not None and unknown is not None
+        self.assertTrue(background.startswith('Android closed it while it was in the background'))
+        self.assertTrue(unknown.startswith('Android closed it without saying why'))
         self.assertEqual(self.cause(RUN, ANR), 'Android closed it because it stopped responding.')
         self.assertEqual(self.cause(RUN), 'It closed without saying why.')                       # no exit info at all
         self.assertEqual(self.cause(RUN + 'state=native\nsig=6\n', log='[RED] mmap: out of memory\n[dm] CRASH sig=6\n'), mem)

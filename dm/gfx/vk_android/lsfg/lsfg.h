@@ -47,4 +47,7 @@ void lsfg_chain_free(lsfg_chain *c);   // the GPU must be done with it
 VkImage lsfg_chain_input(lsfg_chain *c, uint64_t count);   // the image game frame count is copied into (GENERAL layout)
 void lsfg_chain_shared(lsfg_chain *c, VkCommandBuffer cb, uint64_t count);                            // after the copy: mipmaps, alpha, beta of frame count
 void lsfg_chain_generate(lsfg_chain *c, VkCommandBuffer cb, uint64_t count, size_t ngen, size_t gen);  // generation gen of ngen between frames count - 1 and count, into outs[gen]
+// Diagnostics (DM_LSFG_DUMP, vka_framegen.c): the chain's images worth looking at, in GENERAL layout: the inputs, the flow input, the motion fields. The count returned
+typedef struct { VkImage img; VkExtent2D ext; VkFormat fmt; const char *name; } lsfg_dbg_img;
+int lsfg_chain_debug_images(lsfg_chain *c, lsfg_dbg_img *out, int max);
 #endif

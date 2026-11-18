@@ -63,6 +63,13 @@ static inline void m3_orthonormalize(float R[3][3]) {   // Gram-Schmidt on the c
     }
     for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) R[i][j] = c[j][i];
 }
+// The player's tuning of a rotation rate (rad/s, any frame): a dead zone first (rates under dz read 0, rates over it lose dz, so there is no step at its edge), then the sensitivity
+// factor. A phone held at a point is never still: its tremor and the sensor's noise are rates of a few hundredths of rad/s, which a game reads as aim moving by itself
+static inline void motion_shape(float w[3], float sens, float dz) {
+    float n = sqrtf(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
+    float f = n > dz && n > 0 ? (n - dz) / n : 0;
+    for (int i = 0; i < 3; i++) w[i] *= f * sens;
+}
 // One sample: raw Apple acceleration (G) and rotation rate (rad/s), dt in seconds since the previous one (0 for the first). k = tilt correction gain (rad/s per unit error)
 static inline void motion_update(motion_state *s, const motion_map *m, const float acc_raw[3], const float rot_raw[3], float dt, float k) {
     float a[3], w[3];
@@ -90,10 +97,13 @@ static inline void motion_update(motion_state *s, const motion_map *m, const flo
     } else {
         // tilt correction: predicted gravity in the body = R^T (0,0,-1) = -(third row of R)
         float n = sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
-        if (k > 0 && n > 0.8f && n < 1.2f) {
+        // The accelerometer reads gravity plus the hand's own acceleration: the further |acc| is from 1 G, the less it is trusted (full weight at 1 G, none at 0.9 or 1.1 G), so a
+        // hand that moves while aiming does not pull the pitch with it
+        float wt = 1 - fabsf(n - 1) / 0.1f;
+        if (k > 0 && wt > 0) {
             float gm[3] = {a[0] / n, a[1] / n, a[2] / n}, gp[3] = {-s->R[2][0], -s->R[2][1], -s->R[2][2]};
             float e[3] = {gm[1] * gp[2] - gm[2] * gp[1], gm[2] * gp[0] - gm[0] * gp[2], gm[0] * gp[1] - gm[1] * gp[0]};
-            for (int i = 0; i < 3; i++) w[i] += k * e[i];
+            for (int i = 0; i < 3; i++) w[i] += k * wt * e[i];
         }
         float th = sqrtf(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]) * dt;
         if (th > 1e-9f) {

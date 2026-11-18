@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# The game name, display version and languages from a game's control data (control.nacp beside an extraction's RomFS; a dump folder has none): the iOS app name and version come from them (shared by the packing script and build_ipa.sh),
+# The game name, publisher, display version and languages from a game's control data (control.nacp beside an extraction's RomFS, or a dump folder's control/ in the console's layout): the iOS app name and version come from them (shared by the packing script and build_ipa.sh),
 #   and the packing script checks the game language against the languages the game supports.
-# Usage: nacp.py <control.nacp> (prints the game name), nacp.py --version <control.nacp> (prints the display version), nacp.py --languages <control.nacp> (prints the supported language codes);
-#   each prints an empty line and exits 1 when none can be read. From Python: import nacp; nacp.name(path), nacp.version(path), nacp.languages(path)
+# Usage: nacp.py <control.nacp> (prints the game name), nacp.py --publisher <control.nacp> (prints the publisher), nacp.py --version <control.nacp> (prints the display version), nacp.py --languages <control.nacp> (prints the supported language codes);
+#   each prints an empty line and exits 1 when none can be read. From Python: import nacp; nacp.name(path), nacp.publisher(path), nacp.version(path), nacp.languages(path)
 import re, struct, sys, zlib
 from pathlib import Path
 
@@ -11,8 +11,9 @@ LANGUAGES = [('en-US', 'American English'), ('en-GB', 'British English'), ('ja',
              ('nl', 'Dutch'), ('fr-CA', 'Canadian French'), ('pt', 'Portuguese'), ('ru', 'Russian'), ('ko', 'Korean'), ('zh-Hant', 'Traditional Chinese'), ('zh-Hans', 'Simplified Chinese'), ('pt-BR', 'Brazilian Portuguese')]
 
 
-def name(path):
-    """The title area holds 0x300 bytes per language (name 0x200 + publisher 0x100); take the first non-empty one (0 = American English); a missing file or no sensible name returns an empty string"""
+def _title(path, at, size):
+    """The title area holds 0x300 bytes per language (name 0x200 at 0 + publisher 0x100 at 0x200); the field of the first entry with a name (0 = American English);
+    a missing file or no sensible text returns an empty string"""
     p = Path(path)
     if not p.is_file(): return ''
     b = p.read_bytes(); t = b[:0x3000]
@@ -22,12 +23,18 @@ def name(path):
             if d.eof and len(z) == 0x6000: t = z
         except zlib.error: pass   # not compressed
     for i in range(len(t) // 0x300):
-        n = t[i * 0x300:i * 0x300 + 0x200].split(b'\0', 1)[0]
-        if not n: continue
+        if not t[i * 0x300:i * 0x300 + 0x200].split(b'\0', 1)[0]: continue
+        n = t[i * 0x300 + at:i * 0x300 + at + size].split(b'\0', 1)[0]
         try: n = n.decode('utf-8')
         except UnicodeDecodeError: return ''
         return n if n.isprintable() else ''
     return ''
+
+
+def name(path): return _title(path, 0, 0x200)   # the game name
+
+
+def publisher(path): return _title(path, 0x200, 0x100)   # the publisher (the studio the console shows with the name)
 
 
 def version(path):
@@ -50,7 +57,7 @@ def languages(path):
 
 
 if __name__ == '__main__':
-    a = sys.argv[1:]; f = {'--version': version, '--languages': lambda p: ' '.join(languages(p))}.get(a[0] if a else '', name)
+    a = sys.argv[1:]; f = {'--version': version, '--publisher': publisher, '--languages': lambda p: ' '.join(languages(p))}.get(a[0] if a else '', name)
     if f is not name: a = a[1:]
-    if len(a) != 1: sys.exit('usage: nacp.py [--version | --languages] <control.nacp>')
+    if len(a) != 1: sys.exit('usage: nacp.py [--version | --publisher | --languages] <control.nacp>')
     n = f(a[0]); print(n); sys.exit(0 if n else 1)

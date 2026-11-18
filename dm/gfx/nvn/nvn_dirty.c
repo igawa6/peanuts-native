@@ -133,14 +133,33 @@ static int release_page(range_t *r, uintptr_t p, _Atomic uint64_t *count) {
     }
 }
 static void release_pages(range_t *r, uintptr_t p, uintptr_t q, _Atomic uint64_t *count);
+// A write fault releases the run of protected pages around the faulting page (up to g_frun pages each way, DM_DIRTY_FAULT_RUN_KB, default 1024), in one mprotect, not
+// the page alone. Placed GPU memory is mapped by the kernel driver (/dev/kgsl-3d0), and its maps never merge again once split: a page made writable in the middle of a
+// read-only stretch left two more maps. Kirby and the Forgotten Land overwrites hundreds of MiB of protected texture storage when it loads an area (60,864 write faults
+// in about 10 s, 2026-11-13); page by page that passed vm.max_map_count (65,530) between two looks of the maps budget (vka_mem.c maps_tick, every 5 s), and from then on
+// every mmap, mprotect and thread creation in the process failed with ENOMEM: an unprotect failed and the write crashed the game, placed maps failed, MapMemory stopped
+// the host, Java could not start a thread. A whole run is one protection call's stretch (one texture's pages, nvn_dirty_protect), so releasing it splits nothing; the
+// cap bounds what a write next to many textures stamps. The textures over the run upload again at their next use, as the pages the game is overwriting would anyway
+static uintptr_t g_frun = 256;
+static void fault_run(range_t *r, uintptr_t *p, uintptr_t *q) {
+    size_t np = (r->end - r->base) >> g_shift; uintptr_t s = *p, e = *q;
+    while (s > 0 && *p - s < g_frun && atomic_load(&r->state[s - 1]) == PG_PROT) s--;
+    while (e + 1 < np && e - *q < g_frun && atomic_load(&r->state[e + 1]) == PG_PROT) e++;
+    *p = s; *q = e;
+}
 static int on_fault(void *addr, int is_write, void *uc) {
     (void)uc;
     if (!is_write) return 0;
     uintptr_t a = (uintptr_t)addr; int ours = 0, n = atomic_load(&g_nr);
     for (int i = 0; i < n; i++)   // Every range sharing the page must be released: releasing only one leaves the other range's state at "protected", and later writes no longer fault and are missed
         { range_t *r = rg(i); if (live_at(i) && a >= r->base && a < r->end) {
-            uintptr_t p = (a - r->base) >> g_shift, q = p; int mine = release_page(r, p, &g_faults); ours |= mine;
-            if (mine && g_bmask) { block_bounds(r, &p, &q); release_pages(r, p, q, &g_faults); } } }
+            uintptr_t f = (a - r->base) >> g_shift, p = f, q = f;
+            if (atomic_load(&r->state[f]) == PG_PROT) {   // (a page this range never protected releases nothing around it)
+                if (g_bmask) block_bounds(r, &p, &q);
+                fault_run(r, &p, &q);
+                release_pages(r, p, q, &g_faults);   // (the faulting page among them, in one mprotect with its run)
+            }
+            ours |= release_page(r, f, &g_faults); } }   // its state now: NONE (released above or by another thread) claims it; still PROT tries the page alone
     return ours;
 }
 // Unprotect pages p..q of a range with one mprotect per run of protected pages (a host write over a whole texture, e.g. WriteTexels, used to make one system call per 16 KB page:
@@ -179,13 +198,32 @@ static void prep_write(void *addr, size_t len) {
     }
 }
 
+// For the crash report (a write fault no hook claimed): every range, live or retired, that covers the address, with the page's state, generation and whether it was ever
+// protected. A read-only page that no live range holds as PROT is a protection nobody owns (Kirby, 2026-11-13: writes into placed pool memory left r--s)
+static void explain(void *addr) {
+    uintptr_t a = (uintptr_t)addr; int n = atomic_load(&g_nr), k = 0;
+    for (int i = 0; i < n; i++) {
+        range_t *r = rg(i);
+        if (a < r->base || a >= r->end) continue;
+        uintptr_t p = (a - r->base) >> g_shift; uint64_t g = r->gen ? atomic_load(&r->gen[p]) : 0;
+        fprintf(stderr, "[dm] fault dirty: range %d %s pool %#lx (%#lx-%#lx): page state %d (0 none, 1 protected, 2 busy), generation %llu (clock %llu), ever protected %d\n",
+                i, live_at(i) ? "live" : "retired", (unsigned long)r->mem, (unsigned long)r->base, (unsigned long)r->end, r->state ? atomic_load(&r->state[p]) : -1,
+                (unsigned long long)g, (unsigned long long)atomic_load(&g_now), r->ever ? r->ever[p] : -1);
+        if (++k >= 8) break;
+    }
+    fprintf(stderr, "[dm] fault dirty: %d ranges cover it; blocks of %zu KiB; mprotect failures %llu, the last errno %d (%s) on %#lx+%#zx to prot %d\n", k, g_bmask ? (size_t)(g_bmask + 1) >> 10 : 0,
+            (unsigned long long)atomic_load(&g_mp_fail), atomic_load(&g_mp_errno), strerror(atomic_load(&g_mp_errno) > 0 ? atomic_load(&g_mp_errno) : 0),
+            (unsigned long)atomic_load(&g_mp_fail_a), atomic_load(&g_mp_fail_n), atomic_load(&g_mp_fail_prot));
+}
 void nvn_dirty_add_range(const void *mem, size_t size) {
     static int inited;
+    if (!inited) dm_fault_explain_register(explain);
     if (!inited) { inited = 1; g_pg = (uintptr_t)getpagesize(); g_shift = __builtin_ctzl(g_pg); plat_timebase(&g_tb);
         { const char *e = getenv("DM_DIRTY_BLOCK_KB"); size_t kb = e ? strtoul(e, NULL, 0) : DIRTY_BLOCK_KB; size_t b = kb << 10;   // a power of two of at least a page, else by the page
           g_bwant = b > g_pg && !(b & (b - 1)) ? b - 1 : 0;
           e = getenv("DM_DIRTY_BLOCK_AT"); g_block_at = e ? strtoull(e, NULL, 0) : 8192;
-          if (!g_block_at) g_bmask = g_bwant; } dm_fault_hook_register(on_fault); dm_guest_write_prep_register(prep_write); }
+          if (!g_block_at) g_bmask = g_bwant;
+          e = getenv("DM_DIRTY_FAULT_RUN_KB"); { size_t kb = e ? strtoul(e, NULL, 0) : 1024; g_frun = (kb << 10) >> g_shift; } } dm_fault_hook_register(on_fault); dm_guest_write_prep_register(prep_write); }
     atomic_fetch_add(&g_adds_total, 1);
     pthread_mutex_lock(&g_slot_mu);
     int n = atomic_load(&g_nr);

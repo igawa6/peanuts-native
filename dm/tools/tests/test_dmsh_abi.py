@@ -23,7 +23,9 @@ import dmsh_abi as abi   # noqa: E402
 # A count may only go down; when it does, lower it here.
 # Binding kinds only the Android build writes: the Apple build never answers the translator's shared_max (dmsh_abi.h), so its
 # shaders never have them. Checked against vk_android_build.py and vka_bind.c instead of dmsh_build.py and nvn_refl.m.
-ANDROID_ONLY_KINDS = ('KIND_SHARED_SPILL',)
+# img_ubo (an image handle in the game's uniform buffer, Unreal Engine 5 on the Switch 2) is bound by the Vulkan replay only: this tree's Metal path does not take it
+# (upstream nxnative's has it as NVN_RB_IMGU).
+ANDROID_ONLY_KINDS = ('KIND_SHARED_SPILL', 'KIND_IMG_UBO')
 
 BASELINE = {
     'dm/gfx/nvn/nvn_mtl.m': {"'?'": 2, "'geometry'": 3, '0x100': 2, '0x1000': 2},

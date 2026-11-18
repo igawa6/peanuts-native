@@ -94,3 +94,9 @@ General host changes first needed here; each applies to every game (or every Unr
 - Battles are not tested yet.
 - Shader decode counts and times differ between sources: `docs/development.md` says 10,324 shaders decoded in about 10 s; `dm/games/README.md` says 10,596 shaders in 2 s (10,596 is the two archives' total, 1,219 + 9,377; 10,324 the unique count).
 - Touches as a mouse would suit Romance of the Three Kingdoms 8 Remake, but this game, Tears of the Kingdom and Unicorn Overlord also read a mouse and no touch screen, so such a rule needs testing here first.
+
+## Android FPSLocker method
+
+The owner prefers the [matching FPSLocker Warehouse config](https://github.com/masagrator/FPSLocker-Warehouse/blob/v4/SaltySD/plugins/FPSLocker/patches/01005270232F2000/9FE60A212CFF9B9A.yaml). Reviewed `fpslocker` rows in game.tsv now apply that config's memory writes for this exact main build on Android: r.VSync off, t.MaxFPS follows the selected cap, and the dynamic-resolution frame budget follows it where the config specifies one. The generic host's [restricted evaluator](../../../docs/reference/frame-rate.md#reviewed-fpslocker-warehouse-memory-writes-on-android) takes precedence over its legacy UE limiter writes. No executable patch or shader rebuild is needed.
+
+Default target is 60; experimental 90/120 choices use a high-refresh screen. A target is not a performance guarantee, and complete gameplay-speed/physics coverage above 60 is unverified. Bounded Android/Turnip validation at the 120 target: about 117.7–118.6 fps in the indoor playable scene, 131.8 s wall with no recorded crash. Other areas, combat and full game-speed/physics correctness above 60 remain unverified. Other platforms retain the existing method described above.

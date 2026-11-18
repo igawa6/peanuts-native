@@ -160,6 +160,7 @@ public final class ReadinessActivity extends Activity {
         int fails = 0, warns = 0;
         for (Readiness.Check x : phone) rep.append(x).append('\n');
         for (Readiness.Check x : gpu) rep.append(x).append('\n');
+        rep.append(advanced(c, null, false));   // what the player changed from the defaults: Settings > Advanced, for every game
         List<Game> added = Game.load(c);
         for (Profile p : Profile.all()) {
             List<Readiness.Check> l = new ArrayList<>();
@@ -185,6 +186,7 @@ public final class ReadinessActivity extends Activity {
             if (fail) fails++; else if (warn) warns++;
             rep.append("-- game ").append(p.titleId).append(" --\n");
             for (Readiness.Check x : l) rep.append(x).append('\n');
+            rep.append(advanced(c, p.titleId, true));   // the game's own Advanced rows
         }
         String last = lastReports(c);
         if (!last.isEmpty()) rep.append(last);
@@ -345,6 +347,25 @@ public final class ReadinessActivity extends Activity {
     static String header(Context c, String game) {
         return "nxnative readiness report: " + Prefs.buildTag(c) + "\nSigner: " + Prefs.signerId(c) + " (SHA-256 of the signing certificate, first 16 hex digits)\nPhone: " + Build.MANUFACTURER + " " + Build.MODEL + " (" + Build.SOC_MANUFACTURER + " " + Build.SOC_MODEL + "), Android "
                 + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + "), " + Build.SUPPORTED_ABIS[0] + (game == null ? "" : "\nGame: " + game);
+    }
+
+    /**
+     * The report's "Settings changed from the defaults" block (the same words as the run log's digest): the Advanced rows set, for every game (titleId null) or the
+     * game's own (gameOnly: the global ones are in the first block); values as the run log prints them (paths and secrets redacted). "none" once, by the first block
+     */
+    static String advanced(Context c, String titleId, boolean gameOnly) {
+        StringBuilder s = new StringBuilder();
+        List<String> rows = new ArrayList<>();
+        for (Map.Entry<String, String[]> e : AdvancedSettings.active(c, titleId, null).entrySet()) {
+            if (gameOnly && !"game".equals(e.getValue()[1])) continue;
+            rows.add(e.getKey() + "=" + AdvancedTable.redact(e.getKey(), e.getValue()[0]) + " (Advanced, " + e.getValue()[1] + ")");
+        }
+        if (gameOnly && rows.isEmpty()) return "";   // "none" is said once, by the first block
+        s.append("-- Settings changed from the defaults").append(titleId == null ? " (every game)" : " (this game)");
+        if (rows.isEmpty()) return s.append(": none --\n").toString();
+        s.append(" (").append(rows.size()).append(") --\n");
+        for (String r : rows) s.append(r).append('\n');
+        return s.toString();
     }
 
     /** The newest start-up check of each game (GameActivity writes files/readiness-&lt;title ID&gt;.txt), for the report */

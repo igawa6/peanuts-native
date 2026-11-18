@@ -112,7 +112,7 @@ def is_image(path):
 
 def _resolve(path):
     p = _os.path.abspath(_os.fsdecode(path))
-    if '.nup:' in p:
+    if '.nup:' in p or '.nsp:' in p:
         found = _nup.resolve(p)
         if found: return _NupView(*found), ''
     parts = p.replace(_os.sep, '/').split('/') if _os.sep != '/' else p.split('/')   # Windows: abspath gives '\\'; the image is opened as 'C:/…/RomFS.img'

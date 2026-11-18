@@ -11,7 +11,10 @@ This guide sets up a game with the phone alone. A Windows PC or a Mac prepares a
   ([GPU drivers](gpu-drivers.md)).
 - A phone cooler is recommended, strongly for Mario Kart World (`0400C3F00006E000`).
 - Your own dump of the game, made from your own console, as a folder (or a `.nup` file of one). No keys or firmware
-  are needed; NSP and XCI files don't work. Mario Kart World (`0400C3F00006E000`) 1.8.0 is a dump with `base/` only.
+  are needed; XCI and encrypted (retail) NSP files don't work. A plain NSP that NSP Box wrote is read where it is, as a `.nup` is: Add game › the
+  `.nsp` file. Keep a game's other NSPs (its DLC, other versions) in the same folder and the app finds them by what they hold, whatever they are called
+  (only when the folder is read by its path, with All files access; a file picked without it is used alone). `scripts/nsp_extract.py` unpacks
+  one into a dump folder instead (no keys). Mario Kart World (`0400C3F00006E000`) 1.8.0 is a dump with `base/` only.
   ```
   Switch2/
     DonkeyKongBananza/

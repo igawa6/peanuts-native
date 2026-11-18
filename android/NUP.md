@@ -1,7 +1,8 @@
 # NUP support (branch android-nup)
 
 Play and prepare a game straight from one `.nup` file (github.com/a55uka/nup, SPEC.md at commit 92089de3, format 1.0-draft),
-with no unpacking. The `.nup` is only ever read: it is the user's dump and is never modified. The rewritten code goes into the
+with no unpacking. The `.nup` is only ever read by the app and the pack tools: it is the user's dump. The one tool that writes to it is
+[`scripts/nup_meta.py`](#setting-an-icon), and only when the user runs it. The rewritten code goes into the
 pack as it does for a folder.
 
 ## The format in one paragraph
@@ -118,6 +119,35 @@ works (`/proc/self/fd/<n>` reopened by path is not reliable on every provider). 
 - Readiness: a "Game files" row per game (a `.nup` must open and pass its TOC hash).
 - Tests: `NupJvmTest` (javac + java, no Gradle runner yet; see its header): 293 checks on a synthetic `.nup`, 30 on the
   real DKB one.
+
+## A plaintext NSP, read where it is
+
+NSP Box (github.com/smarkyie/NSP-Box) writes a game or a DLC as an NSP of unsigned, unencrypted NCAs (a PFS0; no keys). The app reads one where it is, as it reads a
+`.nup`, with no copy and no unpacking: its files are byte ranges of the NSP (the NCAs' sections are stored plain), so each reader makes the TOC of a NUP file from
+the NSP and goes on as for a `.nup`. Names are the same with `.nsp` (`game.nsp:update/131072/romfs`). Not read: an encrypted (retail) NCA, a patch or delta
+record, an NCA no record names; the refusal says which.
+
+- Package of a game NSP: `update/<version>` (a base-less update, flag 1: the NSP is a whole snapshot of that version, the update already laid over the base) or
+  `base` for version 0; of a DLC NSP: `addon/<title ID>`. Version and title ID come from the content meta record (CNMT), the program ID from `main.npdm`.
+- **DLC and other versions are found by content, not by name or folder layout**: an NSP of the same game in the game's folder (a DLC whose ID is the game's + 0x1000 +
+  an index of 1 to 2000, or a game snapshot of the same program ID) is one of its companions, whatever it is called (`Nup.companions`, `pack_dump.nup_scan`). Add game
+  lists the newest game NSP of a folder only. `pack.tsv` rows name the file that holds each version and add-on (`other.nsp:update/<v>/romfs`); the host's
+  `DM_AOC_DIR/<index>.nsp` links to the DLC's NSP. A picked file without All files access has no folder to look in: it is used alone.
+- Readers: `dm/tools/nsp.py` (`nup_toc`; `nup.py` takes a file starting with `PFS0` as a synthetic NUP: no TOC hash, any alignment), `dm/host/nsp_toc.h` (the host:
+  RomFS only), `Nsp.java` (the launcher: ExeFS and RomFS). NSP Box's own NCAs are checked by `nsp.py --verify` / `scripts/nsp_extract.py` (SHA-256 of each NCA against
+  its name and record); the in-place readers check structure and bounds, not content hashes (a damaged file is the user's to notice, as a `.nup` read by the host).
+- Tests: `dm/tools/tests/test_nsp.py` (a writer of the layout written from nsp.py's header, the Python view, `pack_dump.scan` with DLC and versions beside,
+  `t_nup_dump` against the folder `nsp_extract.py` unpacks to, the launcher's `NspJvmTest`); NSP-Box's own writer's NSP was checked by hand against all three.
+
+## Setting an icon
+
+A `.nup` shows an icon, title and publisher on the game cards only if its package carries a meta block (the app reads it: `Nup.gameMeta`). Packs that
+lack one can be given it in place, with no unpacking: `python3 scripts/nup_meta.py <file.nup> --icon image.png [--title T] [--version V] [--publisher P]`
+(`--show` lists what a file holds). The icon is a JPEG or PNG, 256x256. The new block goes to the end of the file; only the package record, the TOC SHA-256 and
+the superblock's file size are rewritten (a few KiB), and the records the block already had are kept. The old block stays as dead bytes, and setting what is
+already there changes nothing. An error part way restores the file; a killed run's leftover bytes are cut off by the next run. For a copy on a phone, patch the Mac's copy, then write only its head (superblock and TOC) and the
+appended tail into the phone's file (adb push, then `dd conv=notrunc`, the tail first).
+Tests: `dm/tools/tests/test_nup_meta.py`.
 
 ## Test data
 

@@ -3,7 +3,7 @@ package dev.nxnative.android;
 // DM_RES_SCALE, dm/gfx/vk_android/vka_resscale.inc: the game's render targets are made larger or smaller without the game knowing). A default in Settings › Game
 // defaults and a row in each game's Picture settings, from the next start. Not offered for a game with a render_cfg profile row: it has its own Resolution and
 // Upscaling quality, and its upscaler works in the sizes the game made its targets at. It lives in this package because Ui.Setting, Prefs.of and Profile are
-// package-private; the hooks are one line each (Prefs.GAME_SETTINGS, GameActivity.settingsEnv, GameSettings' Picture, MainActivity's Game defaults), as ScreenMode's.
+// package-private; the hooks are one line each (Prefs.GAME_SETTINGS, GameActivity.settingsEnv, GameSettings' Picture, MainActivity's Settings, the card Performance and picture), as ScreenMode's.
 
 import android.content.Context;
 
@@ -70,7 +70,7 @@ final class ResScale {
         return s.note(NOTE);
     }
 
-    /** Settings › Game defaults */
+    /** Settings › Performance and picture */
     static Ui.Setting defaultRow(MainActivity a) {
         Ui.Setting[] s = new Ui.Setting[1];
         s[0] = new Ui.Setting(a, "🔍", "Resolution scale", v -> new PadFocus.Builder(a).setTitle("Resolution scale")

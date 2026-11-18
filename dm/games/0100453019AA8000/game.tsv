@@ -1,0 +1,166 @@
+# PEANUTS: nxnative starter profile; PC packing / Android validation in README.md.
+# Xenoblade Chronicles X: Definitive Edition 1.0.2 (SDK 19.3.2, Monolith, NVN).
+# See README.md for bring-up evidence and remaining validation.
+
+# ---- Identity ----
+title_id	0100453019AA8000
+program_id	0100453019AA8000
+
+# ---- App ----
+name	Xenoblade Chronicles X: Definitive Edition
+ipa	XenobladeChroniclesXDefinitiveEdition.ipa
+app_category	public.app-category.role-playing-games
+
+pad_layout	full
+
+# ---- Versions ----
+build	v131072	1.0.2	main=2a720c7ce5c84905c1c6847211f670fb	subsdk0=99f9fc3860de320166ad07a6442a64f4	sdk=cff74470477c5fc65bb2538fd4a72441
+package	v131072
+shader_versions	v131072
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	sts.ard
+zip_store	.ard:.arh:.pck:.webm:.metallib
+
+# ---- Memory ----
+# A 5 GB reservation, with 4.375 GB alias memory for Monolith's page allocator.
+# patches.py adapts its outer region and first arena to this layout.
+mem_reserve	0x140000000
+mem_alias	0x118000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 32 MB of system resource
+sys_resource	0x2000000
+# The allocator probes physical capacity; stop at the Horizon application pool.
+mem_map_limit	on
+# Observed at boot: nvnDeviceSetDepthMode near=-w.
+depth_mode	gl
+
+# ---- Shader split ----
+shader_groups	/movie/=movie /sound/=sound
+shader_note	Xenoblade Chronicles X: Definitive Edition shaders
+
+# ---- Experimental frame rates (1.0.2 only) ----
+# FPSLocker Warehouse's exact-build dynamic timing and gameplay corrections.
+# Code is installed transactionally before RX sealing; Game owned skips it.
+# Host monotonic present time replaces the Switch-only raw-tick code cave.
+# The native wait loop also reads the target period: see README.md.
+fps_limit	30
+fps_limit_min	30
+fps_limit_max	120
+fps_modes	30,60,120
+fpslocker	2a720c7ce5c84905c1c6847211f670fb	constant_i32	@0x1d943a0	2	1:1
+fpslocker	2a720c7ce5c84905c1c6847211f670fb	time_ratio_f32	%0x0	1	30:2
+fpslocker	2a720c7ce5c84905c1c6847211f670fb	elapsed_fps_f32	%0x4	1	1:0.0666666667
+fpslocker	2a720c7ce5c84905c1c6847211f670fb	time_ratio_f32	%0x8	1	1:0.0666666667
+fpslocker	2a720c7ce5c84905c1c6847211f670fb	inverse_f32	%0xc	1	1:1
+fpslocker	2a720c7ce5c84905c1c6847211f670fb	flag_cap_u32_gt	@0x1fefaf4	1	2:30
+# Combat speed ratio; preserve x16.
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x0	-	f00f1ff8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x4	-	p16:0x0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x8	-	000240bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xc	-	f00741f8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x10	-	c0035fd6
+# Camera signed square root; preserve x16 and q16.
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x20	-	f00f1ef8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x24	-	f007803d
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x28	-	p16:0x0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x2c	-	100240bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x30	-	000a201e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x34	-	0820201e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x38	-	aa000054
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x3c	-	0040211e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x40	-	00c0211e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x44	-	0040211e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x48	-	02000014
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x4c	-	00c0211e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x50	-	f007c03d
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x54	-	f00742f8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x58	-	c0035fd6
+# FN-site speed ratio; preserve x16 and q1.
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x60	-	f00f1ef8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x64	-	e107803d
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x68	-	60d240bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x6c	-	p16:0x0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x70	-	010240bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x74	-	0008211e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x78	-	e107c03d
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x7c	-	f00742f8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x80	-	c0035fd6
+# Long-jump correction.
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x90	-	0bd0271e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x94	-	6b292b1e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x98	-	c0035fd6
+# QTE speed ratio; preserve x16 and q2.
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xa0	-	f00f1ef8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xa4	-	e207803d
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xa8	-	p16:0x0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xac	-	010240bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xb0	-	622241bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xb4	-	4108211e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xb8	-	e207c03d
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xbc	-	f00742f8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xc0	-	c0035fd6
+# Fog correction.
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xd0	-	42c0211e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xd4	-	2000021f
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xd8	-	c0035fd6
+# Native engine wait period (selected target, movie cap included).
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xe0	-	f00f1ff8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xe4	-	p16:0xc
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xe8	-	000e40bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xec	-	f00741f8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0xf0	-	c0035fd6
+# Overdrive step in seconds.
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x100	-	f00f1ff8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x104	-	p16:0x8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x108	-	000a40bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x10c	-	f00741f8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	c0x110	-	c0035fd6
+# Exact-build timing consumers and gameplay corrections.
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x286968	1f000072	p21:0x0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x28696c	000d47f9	000d47f9
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x286970	2a1c201e	aa0240bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0xa16f00	1f000072	p0:0x0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0xa16f04	281c201e	080040bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0xa1f060	1f000072	p0:0x4
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0xa1f064	0001271e	0001271e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0xa1f068	001c211e	000440bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x2672dc	1f000072	p0:0x4
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x2672e0	0001271e	0001271e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x2672e4	68d24079	68d24079
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x2672e8	251c201e	050440bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x26db70	c6870294	p0:0x4
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x26db74	1f000072	000440bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x26db78	a8008052	0000391e
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x26db7c	49018052	c9008052
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x26db80	2811881a	0808c91a
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x1e2924	fafe4694	p9:0x8
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x1e2938	0009201e	200940bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x1e8f48	00102e1e	l0x0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x30facc	80000036	1f2003d5
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x13a90b4	08a140f9	p8:0xc
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x13a90b8	00013fd6	000d40bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x1e17a0	00013fd6	l0x20
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x1e17b0	a0077dad	a1037dad
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x1e17bc	00013fd6	l0x20
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0xe5e00	79e00b94	p0:0x0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0xe5e04	69e300f0	q9:0x1d54000
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0xe5e08	0800271e	080040bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0xe5858	60d240bd	l0x60
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x23ef70	0bd0271e	l0x90
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x5c6280	612241bd	l0xa0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x296ae0	0828211e	p8:0x0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x296ae4	8fa5ff97	020140bd
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x296ae8	0009201e	l0xd0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x676d4	eea00a94	l0x100
+# Replace only the native wait loop's two fixed-1/60 period calls.
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x13a9ae8	00013fd6	l0xe0
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	m0x13a9b60	00013fd6	l0xe0
+# Initial timing values before the first host present (30 fps).
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	d0x0	-	0000803f
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	d0x4	-	0000f041
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	d0x8	-	8988083d
+fpslocker_plan	2a720c7ce5c84905c1c6847211f670fb	d0xc	-	8988083d

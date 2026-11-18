@@ -48,7 +48,7 @@ if hasattr(os, 'pread'): pread = os.pread
 else:
     import threading
     _seek_lock = threading.Lock()
-    def pread(fd, n, offset):
+    def pread(fd, n, offset, /):   # PEANUTS(upstream-candidate): the same positional-only contract as os.pread.
         out = []
         with _seek_lock:
             os.lseek(fd, offset, os.SEEK_SET)
@@ -87,7 +87,7 @@ def zstd():
     """The zstd module: compression.zstd (Python 3.14), else backports.zstd (the same API)"""
     try: from compression import zstd as z
     except ImportError:
-        try: from backports import zstd as z
+        try: from backports import zstd as z   # pyright: ignore[reportMissingImports]  # PEANUTS: optional fallback for Python before 3.14.
         except ImportError: raise Error(f'Python {sys.version_info[0]}.{sys.version_info[1]} has no compression.zstd (3.14+): a .nup with zstd files needs it, '
                                         'or pip install backports.zstd') from None
     return z
@@ -114,19 +114,27 @@ class Nup:
             st = os.fstat(fd); self.stat = st
             if not _stat.S_ISREG(st.st_mode): raise Error(f'{path}: not a file')
             head = pread(fd, SB.size, 0)
-            if len(head) < SB.size: raise Error(f'{path}: not a NUP file (shorter than its superblock)')
-            magic, hsize, hver, toc_off, toc_size, toc_sha, blob, fsize, npk, flags, self.uuid, _ = SB.unpack(head)
-            if magic[:3] != MAGIC[:3]: raise Error(f'{path}: not a NUP file')
-            if magic != MAGIC: raise Error(f'{path}: NUP format {magic[3]}, this reader knows format 1')
-            if hsize < SB.size: raise Error(f'{path}: header size {hsize:#x} is below 0x80')
-            if flags: raise Error(f'{path}: unknown superblock flags {flags:#x}')
-            if fsize != st.st_size: raise Error(f'{path}: {st.st_size} bytes, the superblock says {fsize} (a copy cut off, or not a whole NUP file)')
-            if toc_off != hsize or blob % 16 or blob < toc_off + toc_size or blob > fsize or toc_size < TOC.size: raise Error(f'{path}: bad region bounds in the superblock')
-            if not npk: raise Error(f'{path}: no packages')
-            toc = pread(fd, toc_size, toc_off)
+            self.synthetic = head[:4] == b'PFS0'   # a plaintext NSP (dm/tools/nsp.py): its files are the extents of a TOC made from it, read where they are
+            if self.synthetic:
+                import nsp
+                try:
+                    with nsp.open_fd(fd, st.st_size, self.path) as n: toc, recs = nsp.nup_toc(n.packages)
+                except nsp.Error as e: raise Error(str(e)) from None
+                toc_off, toc_size, blob, fsize, npk, self.uuid, toc_sha = SB.size, len(toc), 0, st.st_size, len(recs), bytes(16), None
+            else:
+                if len(head) < SB.size: raise Error(f'{path}: not a NUP file (shorter than its superblock)')
+                magic, hsize, hver, toc_off, toc_size, toc_sha, blob, fsize, npk, flags, self.uuid, _ = SB.unpack(head)
+                if magic[:3] != MAGIC[:3]: raise Error(f'{path}: not a NUP file')
+                if magic != MAGIC: raise Error(f'{path}: NUP format {magic[3]}, this reader knows format 1')
+                if hsize < SB.size: raise Error(f'{path}: header size {hsize:#x} is below 0x80')
+                if flags: raise Error(f'{path}: unknown superblock flags {flags:#x}')
+                if fsize != st.st_size: raise Error(f'{path}: {st.st_size} bytes, the superblock says {fsize} (a copy cut off, or not a whole NUP file)')
+                if toc_off != hsize or blob % 16 or blob < toc_off + toc_size or blob > fsize or toc_size < TOC.size: raise Error(f'{path}: bad region bounds in the superblock')
+                if not npk: raise Error(f'{path}: no packages')
+                toc = pread(fd, toc_size, toc_off)
         finally: os.close(fd)
         if len(toc) != toc_size: raise Error(f'{path}: TOC cut off')
-        if hashlib.sha256(toc).digest() != toc_sha: raise Error(f'{path}: the TOC does not match its SHA-256 (damaged)')
+        if toc_sha is not None and hashlib.sha256(toc).digest() != toc_sha: raise Error(f'{path}: the TOC does not match its SHA-256 (damaged)')
         self.toc, self.blob, self.size = toc, blob, fsize
         tm, tpk, nd, nf, pool, pool_size, _ = TOC.unpack_from(toc, 0)
         if tm != TOC_MAGIC: raise Error(f'{path}: bad TOC magic')
@@ -178,7 +186,7 @@ class Nup:
                 if stored or codec: raise Error(f'{self.path}: empty file {i} with an extent')
                 continue
             if codec == RAW and stored != size: raise Error(f'{self.path}: raw file {i}: extent {stored} bytes, size {size}')
-            if not stored or off % 16 or off < self.blob or off + stored > self.size: raise Error(f'{self.path}: file {i} extent out of the blob region')
+            if not stored or (off % 16 and not self.synthetic) or off < self.blob or off + stored > self.size: raise Error(f'{self.path}: file {i} extent out of the blob region')
             ext.add((off, stored))
         end = 0   # extents may be shared (dedup) but never overlap otherwise
         for off, stored in sorted(ext):
@@ -272,7 +280,7 @@ class Nup:
             else: hi = mid
         return kids[lo] if lo < len(kids) and self.name(kids[lo]) == want else None
 
-    def find(self, inner, start=''):
+    def find(self, inner, start: str | int | tuple[str, int]=''):   # PEANUTS(upstream-candidate): virtual package roots are ('pkg', index).
         """The node of a path inside the container ('' its root; 'update/458752/romfs/a/b', 'base/exefs/main'); FileNotFoundError when there is none"""
         k = start
         for part in inner.split('/'):
@@ -316,7 +324,8 @@ class Nup:
         with self.open(k) as f: return f.read()
 
     def verify(self, k):
-        """True when file node k's content matches its SHA-256"""
+        """True when file node k's content matches its SHA-256 (an NSP's files have none: its NCAs' own hashes, nsp.Nsp(verify=True), cover them)"""
+        if self.synthetic: return True
         h = hashlib.sha256()
         with self.open(k) as f:
             while b := f.read(8 << 20): h.update(b)
@@ -398,6 +407,7 @@ class _Zstd(io.RawIOBase):
             data = self.head[self.pos:self.pos + want]
         elif self.length <= SMALL:
             if self.data is None: self._load()
+            assert self.data is not None   # PEANUTS(upstream-candidate): _load fills data or raises.
             data = self.data[self.pos:self.pos + want]
         else:
             if self.stream is None or self.stream.tell() > self.pos:
@@ -411,6 +421,7 @@ class _Zstd(io.RawIOBase):
     def readall(self):
         if self.tmp is None and self.length <= SMALL:
             if self.data is None: self._load()
+            assert self.data is not None   # PEANUTS(upstream-candidate): _load fills data or raises.
             data = self.data[self.pos:]; self.pos = max(self.pos, self.length); return bytes(data)
         return super().readall()
     def fileno(self):
@@ -447,11 +458,11 @@ def open_nup(path):
 
 
 def split(path):
-    """(the .nup file's path, the rest) of `<file>.nup:<rest>`, split at the last '.nup:', or None for any other path. The rest is always written with '/':
+    """(the .nup (or .nsp) file's path, the rest) of `<file>.nup:<rest>`, split at the last '.nup:' or '.nsp:', or None for any other path. The rest is always written with '/':
     on Windows a path joined to a package (pathlib, os.path.join) has '\\' after the colon (`C:\\games\\game.nup:update\\458752\\romfs`), read the same as '/'
     (a drive letter's colon is not '.nup:')"""
     p = os.fsdecode(path)
-    i = p.rfind('.nup:')
+    i = max(p.rfind('.nup:'), p.rfind('.nsp:'))   # a plaintext NSP is read as a NUP file (nsp.py): `<file>.nsp:update/<version>/romfs`
     if i < 0: return None
     rest = p[i + 5:]
     if os.sep != '/': rest = rest.replace(os.sep, '/')
@@ -459,10 +470,10 @@ def split(path):
 
 
 def is_nup(path):
-    """Whether path is a NUP file itself (no selector): its magic, whatever its name"""
+    """Whether path is a NUP file itself (no selector), or a plaintext NSP, which is read as one: its magic, whatever its name"""
     try:
         fd = open_fd(path)
-        try: return _stat.S_ISREG(os.fstat(fd).st_mode) and pread(fd, 3, 0) == MAGIC[:3]
+        try: return _stat.S_ISREG(os.fstat(fd).st_mode) and pread(fd, 4, 0) in (MAGIC, b'PFS0')
         finally: os.close(fd)
     except (OSError, TypeError, ValueError): return False
 
@@ -485,7 +496,7 @@ def default_romfs(path):
     p = os.fsdecode(path)
     s = split(p)
     if s is None:
-        if p.endswith('.nup') and is_nup(p): return f'{p}:{open_nup(p).default().selector}/romfs'
+        if p.endswith(('.nup', '.nsp')) and is_nup(p): return f'{p}:{open_nup(p).default().selector}/romfs'
         return p
     f, rest = s
     m = SELECTOR.fullmatch(rest)

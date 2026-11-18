@@ -245,6 +245,13 @@ def collect(target, ios_log=None, home=None, total_cap=TOTAL_CAP, file_cap=FILE_
     collector = f'Collector checkout: {git_state() or "unknown"}; shader chain: {chain_version() or "unknown"} (collector only; does not identify the build that ran).'
     dev = device()
 
+    # the [adv] lines of an included log (the Android launcher writes them; GameActivity): what the player changed from the defaults
+    adv = {}
+    for arc, t in b.files.items():
+        if not arc.startswith('logs/'): continue
+        found = [m.group(1) for m in (re.match(r'^(?:\[nxlaunch\] )*\[adv\] (.*)$', l.rstrip('\r')) for l in t.split('\n') if '[adv] ' in l) if m]
+        if found: adv[arc] = [x for x in found if not x.startswith('none')][:300]
+
     def block(lines): return '```\n' + '\n'.join(lines) + '\n```' if lines else 'none'
     kind = 'Mac app (--platform mac-app)' if app else None
     r = ['# nxnative bug report data', '',
@@ -257,6 +264,7 @@ def collect(target, ios_log=None, home=None, total_cap=TOTAL_CAP, file_cap=FILE_
          'Player env.txt (Application Support):', block(env_text.splitlines() if env_text else []),
          'Bundled env.txt (Contents/Resources/dm/env.txt):', block(bundled_env.splitlines() if bundled_env else []),
          'Saved choices:', block(pl), 'DM_* in the terminal this script ran in:', block(dm_env), '',
+         ] + (['## Settings changed from the defaults'] + [x for arc, v in adv.items() for x in ([f'{arc}: ' + ('none' if not v else '')] + ([block(v)] if v else []))] + [''] if adv else []) + [
          '## Logs and files included'] + [f'- {n}' for n in b.notes] + ['', 'Nothing here contains game files or keys.', '']
     text = '\n'.join(r)
     # env.txt and report.md go through the same redaction as the files

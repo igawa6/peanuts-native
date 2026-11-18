@@ -12,6 +12,36 @@ Update 1.0.1 (v65536) over the base game, SDK 11.4.0. Nintendo's Wii-era engine,
 
 No rewriter cuts of its own, no `patches.py`.
 
+## Frame rate
+
+PEANUTS: **dynamic timing candidate, pending device validation.** The Android
+profile defaults to a 60 fps limit and exposes ceilings through 120. The reviewed
+plan runs only for main build `5441af3c89f97e1d25a8ccf14c742bf8`, with every
+changed word checked before code is sealed; Game owned leaves the original
+instructions and timing fields intact. A selected ceiling does not establish
+that the device can sustain it or that gameplay at that rate is validated.
+
+The starting reference is Fl4sh9174's experimental
+[Skyward Sword HD 120 fps mod](https://github.com/Fl4sh9174/Switch-Emulator-Ultrawide-FPS-Mods)
+at commit `5eed21701e8091389e2e746f073f694ea2ad4ec6`. Inspection of the exact
+1.0.1 instructions shows that main+`0x181bd38` holds a step in 30 Hz units:
+the original controller writes 0.5 in its 60 fps mode or 1 in its 30 fps mode.
+The local step also feeds a fractional accumulator at main+`0x2cffd818`, whose
+whole ticks are stored at main+`0x181bd40`. Changing only the global step to
+0.25, as in the static public patch, leaves that accumulator's local input at
+0.5 or 1. The Android candidate instead reads the same measured step for both
+paths, bounded between `30 / selected_fps` and 2 (a maximum 66.7 ms advance).
+Its second memory row supplies the selected frame period in milliseconds at
+main+`0x181bd3c`; both original controller stores are disabled. Initial values
+are the 60 fps values until the first present updates the rows.
+
+The original angular-velocity multiply at main+`0xb386f4`..`0xb386fc` remains.
+The public patch replaces it with a constant square, so copying that change
+would discard the object's current angular velocity. The host's reviewed FPS
+backend supplies present interval 1 instead of modifying the SDK. A bounded Turnip run reached Skyloft outside the academy at about 100–115 fps with a 120 target; the default-60 opening stayed about 59–60. The ARM64 clock fixture kept the original fractional accumulator at 30 ticks per second for 20/30/40/60/90/120 targets. These are bounded checks, not complete gameplay validation. Combat,
+flight, motion controls, cutscene synchronization and sustained high-rate
+performance remain unverified for this candidate.
+
 ## Rendering
 
 - **Resolved: a brown cast over the distance, near objects as dark silhouettes, in the title's sky and the opening's flight (issues #497, #928).** It came and went with the camera, because it depends on how much fog is on screen. `Dof_FogToAlpha` (`f11c15a99b0c1790`) writes `(0, 0, 0, fog)` with logic operation OR into the frame's RGBA8Unorm target, whose alpha was just cleared to 0, to hand the depth of field its fog in the alpha. The host drew logic operations only on integer targets, so here it wrote black into the colours. General fix: [Logic operations through a library of its own](../../../docs/reference/rendering.md#logic-operations-through-a-library-of-its-own). `eb1648acad4e38e3` takes the same path in the Knight Academy.

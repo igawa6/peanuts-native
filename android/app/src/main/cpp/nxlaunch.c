@@ -37,6 +37,7 @@ void nxhost_env_changed(void);
 #pragma weak nxhost_input_device_removed
 #pragma weak nxhost_input_key
 #pragma weak nxhost_input_axes
+#pragma weak nxhost_input_motion
 #pragma weak nxhost_input_touch
 #pragma weak nxhost_touch_layout
 #pragma weak nxhost_touch_controls_enable
@@ -45,6 +46,8 @@ void nxhost_env_changed(void);
 #pragma weak nxhost_motion_start
 #pragma weak nxhost_motion_stop
 #pragma weak nxhost_motion_rotation
+#pragma weak nxhost_motion_sens
+void nxhost_motion_sens(float factor);
 #pragma weak nxhost_lifecycle
 #pragma weak nxhost_paused
 #pragma weak nxhost_audio_interrupt
@@ -52,8 +55,12 @@ void nxhost_env_changed(void);
 #pragma weak nxhost_fps
 #pragma weak nxhost_overlay_set
 #pragma weak nxhost_overlay_state
+#pragma weak nxhost_presentation_deadline_set   // PEANUTS: active display's compositor queue lead
+#pragma weak peanuts_ovl_block   // PEANUTS: dm/peanuts/peanuts_graph.c, in libnxhost: the overlay graph's bars painted by the host every game frame
+void peanuts_ovl_block(int slot, void *px, int w, int h, int stride);   // PEANUTS: its prototype
 #pragma weak nxhost_framegen_set
 #pragma weak nxhost_framegen_status
+#pragma weak nxhost_framegen_enabled   // PEANUTS: requested state for the running display policy
 #pragma weak nxhost_picture_place
 #pragma weak nxhost_fps_cap_set
 #pragma weak nxhost_fps_cap_status
@@ -68,6 +75,10 @@ void nxhost_fps_decouple_set(int on);
 #pragma weak nxhost_fps_hold60_set
 void nxhost_fps_hold60_set(int on);   // hle_fpslock.c: a steps framework held at one step a frame at the cap of 60, live from the in-game panel   // hle_fpslock.c: sead's controller at the measured rate, live from the in-game panel
 #pragma weak nxhost_text_input_callback
+#pragma weak nxhost_user_select_callback
+#pragma weak nxhost_ctrl_callback
+#pragma weak nxhost_ctrl_state
+#pragma weak nxhost_ctrl_button
 
 // ---- Log: the host's stdout and stderr go straight into the log file (nothing is lost when the process dies), and a thread copies new lines to logcat ----
 // At the end of the file the thread sleeps until the file is written (inotify IN_MODIFY), not on a 20 ms timer: the timer woke it 50 times a second for the whole game,
@@ -227,6 +238,72 @@ static void text_input_setup(JNIEnv *env) {
     nxhost_text_input_callback(text_input, NULL);
 }
 
+// ---- The user selector (nxhost_user_select_callback): UserPicker.ask shows the picker on the UI thread and blocks until a user is picked or it is cancelled; called the
+// way the input box is (a thread of this shim attached for the call while the guest thread waits). The names cross as one UTF-8 byte array, one name a line ----
+static jclass g_up_class; static jmethodID g_up_ask;
+typedef struct { const char *const *names; const int *offered; int n, def, pick; } user_req;
+static void *user_select_thread(void *p) {
+    user_req *q = p; JNIEnv *env = NULL; q->pick = -1;
+    JavaVMAttachArgs a = {JNI_VERSION_1_6, "nxusers", NULL};
+    if ((*g_vm)->AttachCurrentThread(g_vm, &env, &a) != JNI_OK) { fprintf(stderr, "[RED] [nxlaunch] user selector: cannot attach to the VM: cancel\n"); return NULL; }
+    size_t len = 0; for (int i = 0; i < q->n; i++) len += strlen(q->names[i]) + 1;
+    char *all = calloc(1, len + 1);
+    if (all) { for (int i = 0; i < q->n; i++) { strcat(all, q->names[i]); strcat(all, "\n"); } }
+    jbyteArray nm = jbytes(env, all ? all : ""); free(all);
+    jintArray of = (*env)->NewIntArray(env, q->n);
+    if (of) (*env)->SetIntArrayRegion(env, of, 0, q->n, (const jint *)q->offered);
+    q->pick = (*env)->CallStaticIntMethod(env, g_up_class, g_up_ask, nm, of, (jint)q->def);
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionDescribe(env); (*env)->ExceptionClear(env); fprintf(stderr, "[RED] [nxlaunch] user selector: UserPicker.ask threw: cancel\n"); q->pick = -1; }
+    (*g_vm)->DetachCurrentThread(g_vm);
+    return NULL;
+}
+static int user_select(void *ctx, const char *const *names, const int *offered, int n, int def) {
+    (void)ctx; user_req q = {names, offered, n, def, -1};
+    pthread_t t; int e = pthread_create(&t, NULL, user_select_thread, &q);
+    if (e) { fprintf(stderr, "[RED] [nxlaunch] user selector: cannot start its thread: %s: cancel\n", strerror(e)); return -1; }
+    pthread_join(t, NULL);
+    return q.pick;
+}
+static void user_select_setup(JNIEnv *env) {
+    if (!nxhost_user_select_callback) { fprintf(stderr, "[nxlaunch] user selector: not in this host (the preselected user)\n"); return; }
+    jclass k = (*env)->FindClass(env, "dev/nxnative/android/UserPicker");
+    jmethodID m = k ? (*env)->GetStaticMethodID(env, k, "ask", "([B[II)I") : NULL;
+    if (!m || (!g_vm && (*env)->GetJavaVM(env, &g_vm) != JNI_OK)) { (*env)->ExceptionClear(env); fprintf(stderr, "[RED] [nxlaunch] user selector: no UserPicker.ask: the preselected user\n"); return; }
+    g_up_class = (*env)->NewGlobalRef(env, k); g_up_ask = m;
+    nxhost_user_select_callback(user_select, NULL);
+}
+
+// ---- The controller applet's join screen (nxhost_ctrl_callback): the host says when it opens and ends, from the guest thread that waits on it; CtrlScreen.changed shows or
+// hides the screen on the UI thread and returns at once, on a thread of this shim attached for the call. The screen reads the state (Native.ctrlState) while it shows ----
+static jclass g_cs_class; static jmethodID g_cs_changed;
+static void *ctrl_thread(void *p) {
+    JNIEnv *env = NULL; JavaVMAttachArgs a = {JNI_VERSION_1_6, "nxctrl", NULL};
+    if ((*g_vm)->AttachCurrentThread(g_vm, &env, &a) != JNI_OK) { fprintf(stderr, "[RED] [nxlaunch] controller applet: cannot attach to the VM\n"); return NULL; }
+    (*env)->CallStaticVoidMethod(env, g_cs_class, g_cs_changed, (jboolean)(p != NULL));
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionDescribe(env); (*env)->ExceptionClear(env); fprintf(stderr, "[RED] [nxlaunch] controller applet: CtrlScreen.changed threw\n"); }
+    (*g_vm)->DetachCurrentThread(g_vm);
+    return NULL;
+}
+static void ctrl_changed(void *ctx, int open) {
+    (void)ctx; pthread_t t; int e = pthread_create(&t, NULL, ctrl_thread, open ? (void *)1 : NULL);
+    if (e) { fprintf(stderr, "[RED] [nxlaunch] controller applet: cannot start its thread: %s: cancel\n", strerror(e)); if (open && nxhost_ctrl_button) nxhost_ctrl_button(0); return; }
+    pthread_join(t, NULL);
+}
+static void ctrl_setup(JNIEnv *env) {
+    if (!nxhost_ctrl_callback) { fprintf(stderr, "[nxlaunch] controller applet: not in this host (it answers at once)\n"); return; }
+    jclass k = (*env)->FindClass(env, "dev/nxnative/android/CtrlScreen");
+    jmethodID m = k ? (*env)->GetStaticMethodID(env, k, "changed", "(Z)V") : NULL;
+    if (!m || (!g_vm && (*env)->GetJavaVM(env, &g_vm) != JNI_OK)) { (*env)->ExceptionClear(env); fprintf(stderr, "[RED] [nxlaunch] controller applet: no CtrlScreen.changed: it answers at once\n"); return; }
+    g_cs_class = (*env)->NewGlobalRef(env, k); g_cs_changed = m;
+    nxhost_ctrl_callback(ctrl_changed, NULL);
+}
+JNIEXPORT jbyteArray JNICALL Java_dev_nxnative_android_Native_ctrlState(JNIEnv *env, jclass cls) {   // UTF-8: the game's texts may hold any character
+    (void)cls; char buf[2048] = "closed\n";
+    if (nxhost_ctrl_state) nxhost_ctrl_state(buf, sizeof buf);
+    return jbytes(env, buf);
+}
+JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_ctrlButton(JNIEnv *env, jclass cls, jint what) { (void)env; (void)cls; if (nxhost_ctrl_button) nxhost_ctrl_button(what); }
+
 // A surface can arrive while the readiness dialog is still up, before Native.start opens the log file and applies env.txt / env-<id>.txt (DM_VK_DRIVER, DM_VK_GPL,
 // DM_VK_MESH, DM_VK_VALIDATE, ...). Hold the window here and hand it to nxhost_set_window only once Native.start has set the environment
 static ANativeWindow *g_window;
@@ -263,6 +340,8 @@ JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_start(JNIEnv *env, jclas
     fprintf(stderr, "[nxlaunch] hooks: window %s, input %s, lifecycle %s\n", nxhost_set_window ? "yes" : "not in this build", nxhost_input_key ? "yes" : "not in this build",
             nxhost_lifecycle ? "yes" : "not in this build");
     text_input_setup(env);
+    user_select_setup(env);
+    ctrl_setup(env);
     pthread_attr_t a; pthread_attr_init(&a); pthread_attr_setstacksize(&a, HOST_STACK);
     pthread_t t; int r = pthread_create(&t, &a, host_thread, NULL); pthread_attr_destroy(&a);
     if (r) { fprintf(stderr, "[nxlaunch] cannot start the host thread: %s\n", strerror(r)); return -3; }
@@ -328,8 +407,15 @@ JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_touchControlsState(JNIEn
     if (pressed) { int n = (*env)->GetArrayLength(env, pressed); if (n > NXT_MAX) n = NXT_MAX; (*env)->SetLongArrayRegion(env, pressed, 0, n, (const jlong *)p); }
     if (stick && (*env)->GetArrayLength(env, stick) >= 4) (*env)->SetFloatArrayRegion(env, stick, 0, 4, s);
 }
+// A gamepad's own accelerometer (m/s²) and gyroscope (rad/s), PadMotion.java. False: the host takes no controller motion (switched off, or an older host): the launcher stops reading
+JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_padMotion(JNIEnv *env, jclass cls, jint device, jfloat ax, jfloat ay, jfloat az, jfloat gx, jfloat gy, jfloat gz) {
+    (void)env; (void)cls; if (!nxhost_input_motion) return JNI_FALSE;
+    const float a[3] = {ax, ay, az}, g[3] = {gx, gy, gz};
+    return nxhost_input_motion(device, a, g);
+}
 JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_motionStart(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_motion_start ? nxhost_motion_start() : JNI_FALSE; }
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_motionStop(JNIEnv *env, jclass cls) { (void)env; (void)cls; if (nxhost_motion_stop) nxhost_motion_stop(); }
+JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_motionSens(JNIEnv *env, jclass cls, jfloat f) { (void)env; (void)cls; if (nxhost_motion_sens) nxhost_motion_sens(f); }
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_motionRotation(JNIEnv *env, jclass cls, jint r) { (void)env; (void)cls; if (nxhost_motion_rotation) nxhost_motion_rotation(r); }
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_lifecycle(JNIEnv *env, jclass cls, jint ev) { (void)env; (void)cls; if (nxhost_lifecycle) nxhost_lifecycle(ev); }
 JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_paused(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_paused ? nxhost_paused() : -1; }
@@ -351,6 +437,7 @@ JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_overlaySet(JNIEnv *e
     (void)cls; if (!nxhost_overlay_set) return JNI_FALSE;
     const void *p = px ? (*env)->GetDirectBufferAddress(env, px) : NULL;
     if (p && (w <= 0 || h <= 0 || stride < w * 4 || (jlong)stride * h > (*env)->GetDirectBufferCapacity(env, px))) p = NULL;
+    if (peanuts_ovl_block) peanuts_ovl_block(slot, (void *)p, p ? w : 0, p ? h : 0, stride);   // PEANUTS: JNI entry points forwarded to dm/peanuts: the host keeps the block and paints the graph's bars into it
     return nxhost_overlay_set(slot, p, p ? w : 0, p ? h : 0, stride) ? JNI_TRUE : JNI_FALSE;
 }
 JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_overlayState(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_overlay_state ? nxhost_overlay_state() : -1; }
@@ -366,6 +453,17 @@ JNIEXPORT jstring JNICALL Java_dev_nxnative_android_Native_frameGenStatus(JNIEnv
     int st = nxhost_framegen_status(buf, sizeof buf);
     snprintf(out, sizeof out, "%d %s", st, buf);
     return (*env)->NewStringUTF(env, out);
+}
+
+// PEANUTS: an unavailable requested-FG interface leaves display selection unrestricted.
+JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_frameGenEnabled(JNIEnv *env, jclass cls) {
+    (void)env; (void)cls; return nxhost_framegen_enabled ? nxhost_framegen_enabled() : -1;
+}
+
+// PEANUTS: negative/unavailable Java deadlines fall back to zero; older hosts safely ignore the hint.
+JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_presentationDeadlineSet(JNIEnv *env, jclass cls, jlong ns) {
+    (void)env; (void)cls;
+    if (nxhost_presentation_deadline_set) nxhost_presentation_deadline_set(ns > 0 ? (uint64_t)ns : 0);
 }
 
 // The frame rate cap (nxhost_fps_cap_set / _status): "<cap> <rates> <game fps> <limit held>" (input_android.h), "-1 0 0" when this host has no cap
@@ -507,6 +605,13 @@ JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_fpsLimitSet(JNIEnv *env,
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_decoupleSet(JNIEnv *env, jclass cls, jboolean on) { (void)env; (void)cls; if (nxhost_fps_decouple_set) nxhost_fps_decouple_set(on ? 1 : 0); }
 // Hold 60 fps, live from the in-game panel (Native.hold60Set)
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_hold60Set(JNIEnv *env, jclass cls, jboolean on) { (void)env; (void)cls; if (nxhost_fps_hold60_set) nxhost_fps_hold60_set(on ? 1 : 0); }
+// A cheat on or off by its key, live from the in-game panel's Cheats section (Native.cheatSet): 1 now in that state, 0 no plain cheat, -1 no such key, -2 not in this host
+#pragma weak nxhost_cheat_set
+int nxhost_cheat_set(const char *key, int on);   // hle_cheats.c dm_cheat_set
+JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_cheatSet(JNIEnv *env, jclass cls, jstring key, jboolean on) {
+    (void)cls; if (!nxhost_cheat_set) return -2;
+    char *k = jstr(env, key); int r = k ? nxhost_cheat_set(k, on ? 1 : 0) : -1; free(k); return r;
+}
 // Game resolution of a game that sizes its scenes by the graphics scale, live from the in-game panel (Native.graphicsModeSet): the host changes the scale and operation mode
 // and posts the console's notifications (300, 30 / 31), which the game answers by querying them again
 #pragma weak nxhost_graphics_mode_set
@@ -514,6 +619,13 @@ void nxhost_graphics_mode_set(int scale, int opmode);   // hle_oe.c: -1 = the ga
 JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_graphicsModeSet(JNIEnv *env, jclass cls, jint scale, jint opmode) {
     (void)env; (void)cls; if (!nxhost_graphics_mode_set) return JNI_FALSE;
     nxhost_graphics_mode_set(scale, opmode); return JNI_TRUE;
+}
+// The same with the graphics size of a game whose size gate draws below its scales (Native.graphicsStateSet): scale, mode and size together, one round of notifications
+#pragma weak nxhost_graphics_set
+void nxhost_graphics_set(int scale, int opmode, int w, int h);   // hle_oe.c: 0x0 = the game's own size
+JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_graphicsStateSet(JNIEnv *env, jclass cls, jint scale, jint opmode, jint w, jint h) {
+    (void)env; (void)cls; if (!nxhost_graphics_set) return JNI_FALSE;
+    nxhost_graphics_set(scale, opmode, w, h); return JNI_TRUE;
 }
 // Resolution and Upscaling quality of a game with a render_cfg row, live from the in-game panel (Native.renderSet): the host keeps the setting pending and posts notification 31
 #pragma weak nxhost_render_set

@@ -47,9 +47,13 @@ def stamp(romfs):
 
 
 def rmtree(p):
+    """<p> and everything in it. A file already gone is no error: macOS on an exFAT or FAT drive removes a file's AppleDouble ._<name> with it, so the walk's
+    listing of that ._ entry is stale by its turn (a Mac build of FINAL FANTASY RESONANCE onto such a drive stopped here)"""
     if os.path.isdir(p):
         for dp, ds, fs in os.walk(p, topdown=False):
-            for f in fs: os.remove(os.path.join(dp, f))
+            for f in fs:
+                try: os.remove(os.path.join(dp, f))
+                except FileNotFoundError: pass
             for d in ds: os.rmdir(os.path.join(dp, d))
         os.rmdir(p)
 

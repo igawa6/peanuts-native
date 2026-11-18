@@ -134,6 +134,15 @@ public final class OutputsJvmTest {
         check(!split.exists(), "deleteTree removes a complete folder");
 
         stepsRecordedDone(root);
+        // The shaders step's results: in the app's own storage, one folder a game, never beside the job on shared storage (FUSE: a file a shader, each written,
+        // synced and renamed there); a job an earlier app began with results beside it finishes there
+        File job = new File(root, "dump/0400D4201C6EA000-work/ondevice"), own = new File(root, "no_backup");
+        File res = Outputs.results(job, own, "0400D4201C6EA000");
+        check(res.equals(new File(own, "xlate/0400D4201C6EA000")), "the results are in the app's own storage, a folder a game");
+        check(!res.getAbsolutePath().startsWith(job.getAbsolutePath()), "not beside the job");
+        write(new File(job, "xlate/abc.r"), "r");
+        check(Outputs.results(job, own, "0400D4201C6EA000").equals(new File(job, "xlate")), "an earlier app's results beside the job are used until the job is done");
+        check(Outputs.resultFolders(job, own, "0400D4201C6EA000").size() == 2, "both folders are deleted when the results go");
         System.out.println("all ok");
     }
 }

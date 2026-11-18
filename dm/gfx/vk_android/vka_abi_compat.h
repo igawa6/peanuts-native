@@ -14,13 +14,20 @@
 
 // The host ABI the rows were checked against: when DMSH_VK_ABI moves, the table is not used (vka_abi_compat_of) until its rows are checked again against the new
 // headers and this line is raised (the unit test t_android_shlib fails meanwhile)
-// PEANUTS: raised for the kinds TEX_DYN (23) and SAMP_DYN (24) (dmsh_abi_vk.h, 2026-11-14): additive, an older library holds neither, its row differs as before
-#define VKA_ABI_COMPAT_FOR "d9c33f6111c1"
+// PEANUTS: raised for this tree's ABI, which is neither upstream's nor this fork's before: both sides' kinds, IMG_UBO renumbered (dmsh_abi_vk.h: TEX_DYN 23, SAMP_DYN 24,
+// IMG_UBO 25). Upstream's own ABI of v0.3.22-v0.3.26 (4fbeb79f5ab7, IMG_UBO 23) is no row: its 23 is this host's TEX_DYN
+#define VKA_ABI_COMPAT_FOR "cb5a89b39291"
 // The rows' ABIs, space-separated, in the table's order: what the launcher reads (build.gradle NX_DMSH_VK_ABI_COMPAT, ShaderLibs.playable)
-#define DMSH_VK_ABI_COMPAT "674db0a4ff79"
+#define DMSH_VK_ABI_COMPAT "d9c33f6111c1 228b73bd10f6 674db0a4ff79"   // PEANUTS: d9c33f6111c1 (the row below)
 
 typedef struct { const char *abi; unsigned differs; } vka_abi_compat_row;
 static const vka_abi_compat_row vka_abi_compat[] = {
+    // PEANUTS: this fork's releases (its ABI from 2026-11-14 on; Vulkan chains c3959e8b8f88 to 4d3a924dcd04): the headers differ only in the kind added since
+    // (dmsh_abi_vk.h DMSH_VK_KIND_IMG_UBO, 25 here, dmsh_abi.h DMSH_KIND_IMG_UBO), which no library of that ABI holds; TEX_DYN and SAMP_DYN keep their numbers
+    {"d9c33f6111c1", 0},
+    // Before the image handles in uniform buffers (2026-11-13; Vulkan chains up to 65883461079b): the headers differ only in the kind added (dmsh_abi_vk.h
+    // DMSH_VK_KIND_IMG_UBO, dmsh_abi.h DMSH_KIND_IMG_UBO), which no library of that ABI holds; every other convention is this host's
+    {"228b73bd10f6", 0},
     // Before a319e773 (2026-11-07; Vulkan chains up to d64f157175fd): a pool table of 4096 entries, searched in 12 steps, and the page-hash write log.
     // The table of 8192 entries is a superset (entries 0..4095 the same, the lookup hint in word 6 unread; entry 0's sink in words 6 and 7 still written); the log is not
     {"674db0a4ff79", VKA_ABI_LOG_PAGES},

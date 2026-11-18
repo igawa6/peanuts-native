@@ -2,6 +2,7 @@
 arguments are taken, which setting values are stored, and that what goes into status.json is JSON a script can read. javac/java only, the pattern of
 test_mod_store.py."""
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -36,7 +37,7 @@ public final class CtlTest {
             case "set": {   // set <key> <value> <per game 0|1> <paced 0|1>  ->  "ok <key> <per game> <value> <effective>" | "bad <code>"
                 boolean own = a[3].equals("1"), paced = a[4].equals("1");
                 try {
-                    Settings.Change c = Settings.parse(a[1], a[2], own, paced ? new int[] {0, 45, 40, 30, 20} : new int[] {0, 60, 30, 20, 15}, paced);
+                    Settings.Change c = Settings.parse(a[1], a[2], own, paced ? new int[] {-2, 0, 45, 40, 30, 20} : new int[] {0, 60, 30, 20, 15}, paced);
                     System.out.println("ok " + c.key + " " + c.perGame + " " + c.value + " " + c.effective);
                 } catch (Request.Bad e) { System.out.println("bad " + e.code); }
                 break;
@@ -146,6 +147,21 @@ class CtlTest(unittest.TestCase):
         self.assertEqual(self.request('cmd=companion', 'do=remove', 'title_id=' + TITLE, 'confirm=no'), 'bad needs_confirm')
         self.assertEqual(self.run_cmd('companion_state').split(), ['none', 'installed', 'not_installed', 'installed', 'update'])
 
+    def test_pages_of_the_status_file(self):
+        """The pages Up.pageOf names are the ones CONTROL.md lists, and what it reads of upstream's MainActivity by name is there (a rename shows only as a
+        command's error on the phone): the Advanced page of Banana Native v0.3.26 is a page of its own, and Up.page closes it before it changes the page"""
+        up = (CTL / 'Up.java').read_text(encoding='utf-8')
+        body = up[up.index('static String pageOf('):]; body = body[:body.index('\n    }')]
+        pages = set(re.findall(r'"([a-z]+)"', body)) - {'settingsGame', 'settingsPage', 'advancedOpen'}
+        self.assertEqual(pages, {'home', 'settings', 'game', 'advanced'})
+        row = next(l for l in (REPO / 'peanuts/docs/CONTROL.md').read_text(encoding='utf-8').splitlines() if l.startswith('| `screen`'))
+        for p in pages: self.assertIn(f'`{p}`', row)
+        main = (REPO / 'android/app/src/main/java/dev/nxnative/android/MainActivity.java').read_text(encoding='utf-8')
+        for decl in ('private boolean advancedOpen;', 'private void closeAdvanced() {', 'private void page(boolean settings) {', 'private Game settingsGame;', 'private boolean resumed, settingsPage;'):
+            self.assertIn(decl, main, 'upstream changed what dev.peanuts.ctl.Up reads by name')
+        page = up[up.index('static void page('):]; page = page[:page.index('\n    }')]
+        self.assertLess(page.index('closeAdvanced'), page.index('"page"'), 'Up.page closes the Advanced page first')
+
     def test_refusals(self):
         self.assertEqual(self.request(), 'bad bad_args')
         self.assertEqual(self.request('cmd=delete', 'title_id=' + TITLE), 'bad unknown_command')
@@ -215,7 +231,7 @@ class CtlTest(unittest.TestCase):
         # a game with the frame limit list: 60 is stored as 0, 45 and 40 exist, "the game's own" does not
         self.assertEqual(self.set('fps_cap', '60', own=True, paced=True), 'ok fps_cap true 0 next_start')
         self.assertEqual(self.set('fps_cap', '45', own=True, paced=True), 'ok fps_cap true 45 next_start')
-        self.assertEqual(self.set('fps_cap', 'own', own=True, paced=True), 'bad bad_value')
+        self.assertEqual(self.set('fps_cap', 'own', own=True, paced=True), 'ok fps_cap true -2 next_start')
         self.assertEqual(self.set('fps_cap', '0', own=True, paced=True), 'bad bad_value')
         self.assertEqual(self.set('fps_cap', '15', own=True, paced=True), 'bad bad_value')
 

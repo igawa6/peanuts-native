@@ -56,3 +56,9 @@ General mechanisms used here:
 
 - The iPhone: no IPA built or tested yet.
 - Only the opening and the prologue were played; the first town, a battle and a church save are not tested yet. 38 of the 39 geometry shaders have not been seen in play.
+
+## Android FPSLocker method
+
+The owner prefers the [matching FPSLocker Warehouse config](https://github.com/masagrator/FPSLocker-Warehouse/blob/v4/SaltySD/plugins/FPSLocker/patches/01003E601E324000/A6BD61CFB142E663.yaml). Reviewed `fpslocker` rows in game.tsv now apply that config's memory writes for this exact main build on Android: r.VSync off, t.MaxFPS follows the selected cap, and the dynamic-resolution frame budget follows it where the config specifies one. The generic host's [restricted evaluator](../../../docs/reference/frame-rate.md#reviewed-fpslocker-warehouse-memory-writes-on-android) takes precedence over its legacy UE limiter writes. No executable patch or shader rebuild is needed.
+
+Default target is 60; experimental 90/120 choices use a high-refresh screen. A target is not a performance guarantee, and complete gameplay-speed/physics coverage above 60 is unverified. Bounded Android/Turnip validation at the 120 target: about 118.6–119 fps in light opening frames, falling to about 53.7–55 in the forest/tutorial view; 130.8 s wall with no recorded crash. This does not establish sustained 120 gameplay. Other platforms retain the existing method described above.

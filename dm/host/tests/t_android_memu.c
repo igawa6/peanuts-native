@@ -84,6 +84,18 @@ static void t_order(void) {
     // a draw the replay does not meet (a render condition skipped it) is passed over
     vka_memu_order_reset(&o); vka_memu_order_add(&o, a); vka_memu_order_add(&o, b); vka_memu_order_add(&o, c);
     CHECK(vka_memu_order_take(&o, b) == 1 && vka_memu_order_find(&o, a) == -1 && vka_memu_order_take(&o, c) == 2, "an entry not met is passed over");
+    // past game barriers: entries 0, 1 before any, 2 after one, 3 and 4 after two. The replay took entry 0 and the first barrier inside the pass, then met the second
+    // one and did not take it (it ended the pass): entries 3 and 4 go, 1 and 2 stay; a cut at no barrier taken leaves only those before the first
+    {
+        uint16_t bar[5] = {0, 0, 1, 2, 2};
+        vka_memu_order_reset(&o); for (int i = 0; i < 5; i++) vka_memu_order_add(&o, i == 4 ? c : i & 1 ? b : a);
+        CHECK(vka_memu_order_take(&o, a) == 0, "entry 0 taken");
+        CHECK(vka_memu_order_cut(&o, bar, 1) == 2 && o.n == 3 && o.next == 1, "a barrier not taken after one taken: 2 entries dropped (n %d next %d)", o.n, o.next);
+        CHECK(vka_memu_order_find(&o, c) == -1 && vka_memu_order_take(&o, b) == 1 && vka_memu_order_take(&o, a) == 2, "c's entry is gone, b and a's later meeting stay");
+        CHECK(vka_memu_order_cut(&o, bar, 1) == 0 && o.n == 3, "nothing past it: no entry dropped");
+        vka_memu_order_reset(&o); for (int i = 0; i < 5; i++) vka_memu_order_add(&o, a);
+        CHECK(vka_memu_order_take(&o, a) == 0 && vka_memu_order_take(&o, a) == 1 && vka_memu_order_cut(&o, bar, 0) == 3 && o.n == 2 && o.next == 2, "the first barrier not taken: the entries before it stay");
+    }
     // full
     vka_memu_order_reset(&o); for (int i = 0; i < VKA_MEMU_ORDER_MAX; i++) vka_memu_order_add(&o, a);
     CHECK(vka_memu_order_add(&o, b) == -1 && o.n == VKA_MEMU_ORDER_MAX, "a full batch takes no more");
@@ -128,6 +140,8 @@ int main(void) {
         CHECK(o && count_op(o, n, 62) >= 13, "13 word stores into the arena at least (%d stores)", o ? count_op(o, n, 62) : -1);
         int bind = 0; for (size_t i = 5; o && i < n; i += o[i] >> 16) if ((o[i] & 0xffff) == 71 && o[i + 2] == 33 && (o[i + 3] == VKA_MEMU_ARENA_BINDING || o[i + 3] == VKA_MEMU_REC_BINDING)) bind++;
         CHECK(bind == 2, "the arena and the records bound at VKA_MEMU_ARENA_BINDING / _REC_BINDING");
+        // position invariance: each floating-point result NoContraction, once (the fixture's OpFMul, and its OpFAdd that already was)
+        CHECK(o && count_dec(o, n, 42) == 2, "the OpFMul and the OpFAdd NoContraction, each once (%d)", o ? count_dec(o, n, 42) : -1);
         free(o);
     }
     {   // the pixel shader made flat

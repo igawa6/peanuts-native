@@ -18,7 +18,7 @@ import dev.peanuts.build.Companions;
 
 /**
  * The Companion section of a game's page (its Game tab, GameSettings.build; a PEANUTS hook, HOOKS.md): the installed companion and the catalog's version, Install /
- * Update / Remove, and where the companion shows ("Second screen": Physical / Off, kept in the "peanuts" prefs as second_screen_&lt;title ID&gt; for dev.peanuts.Companion
+ * Update / Remove, and where the companion shows ("Second screen": Physical / Off, Off by default on a device without a second display, kept in the "peanuts" prefs as second_screen_&lt;title ID&gt; for dev.peanuts.Companion
  * to read). Rows are upstream's Ui.Setting and Ui.button, reached through SectionUi.
  */
 public final class CompanionSection {
@@ -72,8 +72,12 @@ public final class CompanionSection {
     }
 
     public static String secondScreen(Context c, String titleId) {
-        return prefs(c).getString(KEY_SECOND_SCREEN + titleId, PHYSICAL);
+        String v = prefs(c).getString(KEY_SECOND_SCREEN + titleId, null);
+        return v != null ? v : dev.peanuts.Companion.hasSecondDisplay(c) ? PHYSICAL : OFF;   // not chosen: Off on a device without a second display
     }
+
+    /** Whether the user chose the title's Second screen (else {@link #secondScreen} is the device's default) */
+    public static boolean secondScreenChosen(Context c, String titleId) { return prefs(c).contains(KEY_SECOND_SCREEN + titleId); }
 
     public static void secondScreen(Context c, String titleId, String v) {
         prefs(c).edit().putString(KEY_SECOND_SCREEN + titleId, v).apply();
@@ -176,7 +180,7 @@ public final class CompanionSection {
             // A pack built before the app kept the game's original code, which the last start could not add: the companion works with less, and only this row says so
             if (have != null && packNotice != null) body.addView(ui.setting("⚠️", packNotice[0], packNotice[1], null), SectionUi.lp(0, 0));
             String ss = secondScreen(c, titleId);
-            body.addView(ui.setting("📱", "Second screen", ss.equals(OFF) ? "Off: the companion does not show" : "Physical: the companion shows on the second display",
+            body.addView(ui.setting("📱", "Second screen", ss.equals(OFF) ? (secondScreenChosen(c, titleId) ? "Off: the companion does not load" : "Off: no second display found, the companion does not load") : "Physical: the companion shows on the second display",
                     v -> new AlertDialog.Builder(c).setTitle("Second screen").setSingleChoiceItems(new String[] {"Physical display", "Off"}, ss.equals(OFF) ? 1 : 0, (d, w) -> {
                         dev.peanuts.ui.Feel.picked(d);
                         secondScreen(c, titleId, w == 1 ? OFF : PHYSICAL);

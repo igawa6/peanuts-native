@@ -1,0 +1,45 @@
+# Super Mario Bros. Wonder, Nintendo Switch 2 Edition: program 1 of application 010015100B514000 (README.md). Started from the provisional profile
+# scripts/build_ipa_from_nsp.py made from the survey (dm/games/profile_guess.py); SDK 21.4.1
+
+# ---- Identity ----
+title_id	040015100B514001
+program_id	040015100B514001
+
+# ---- App ----
+name	Super Mario Bros. Wonder - Nintendo Switch 2 Edition
+ipa	040015100b514001.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v0	1.2.1	main=ec47e6f8846d2a7b6892e2682845c725	subsdk0=3fddebac0ad5c3f9e018dcadca9e55ed	sdk=31945f745022d0232d2562252641b3d3
+package	v0
+shader_versions	v0
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Model/DVCastleSiro.bfres.zs
+zip_store	.bwav:.zs:.metallib
+
+# ---- Memory ----
+# main sets a 4.94 GB heap (SetHeapSize 0x13be00000 with the 9 GB pool) and uses it without checking the result, so the heap region (block - 256 MB - alias - stack) must hold it
+# the game asked for a 4.94 GB heap: a 5.000 GB heap region beside a 4.375 GB alias region
+mem_reserve	0x278000000
+# heap check: 2026-11-14, the heap request did not fit; set mem_reserve
+# address regions: 2026-11-14, in its first 15 s in nnMain the game's regions reach alias +2.09 GB, within the profile's 4.38 GB alias region (on the phone, +3.25 GB in a course)
+mem_alias	0x118000000
+mem_stack	0x10000000
+# the sdk is built for the Switch 2 (spec: Ounce): its 9 GB pool
+app_pool	0x240000000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+
+# ---- Rendering ----
+# conditional clears evaluated at replay: without them the half-resolution depth and occlusion targets are wiped between their draws, the occlusion mask goes black and the
+# overworld turns blue (nxnative PR #1639)
+render_cond	on
+
+# ---- Shader split ----
+# program 0's groups (dm/games/010015100B514000): its shaders are where program 0's are, in the RomFS it reads (conorig) and in the add-on's Shader/, Effect/ and Layout/
+shader_groups	/Shader/SecredUber=SecredUber .sharcb=agl /Effect/=effect /Layout/=layout /Shader/=SecredUber
+shader_note	Super Mario Bros. Wonder - Nintendo Switch 2 Edition shaders: the add-on's Nin_Ounce_NVN2 archives and program 0's Nin_NX_NVN ones (conorig)

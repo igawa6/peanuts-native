@@ -86,7 +86,7 @@ final class Ui {
     static TextView title(Context c, CharSequence s) {
         TextView t = text(c, s, 24, R.color.bn_text, 800);
         t.setLetterSpacing(-0.01f);
-        t.setSingleLine(true);
+        t.setMaxLines(2);   // a long title wraps (two lines) rather than ends in an ellipsis
         t.setEllipsize(TextUtils.TruncateAt.END);
         return t;
     }
@@ -341,7 +341,7 @@ final class Ui {
             col.setPadding(pad, 0, dp(c, 8), 0);
             col.addView(t);
             TextView s = text(c, subtitle, 11, R.color.bn_accent, 600);
-            s.setSingleLine(true);
+            s.setMaxLines(3);   // the build tag and its commit wrap rather than end in an ellipsis
             s.setEllipsize(TextUtils.TruncateAt.END);
             s.setTextIsSelectable(true);
             col.addView(s);
@@ -561,11 +561,11 @@ final class Ui {
             col.setOrientation(LinearLayout.VERTICAL);
             col.setPadding(dp(c, 12), 0, dp(c, 8), 0);
             this.title = text(c, title, 15, R.color.bn_text, 600);
-            this.title.setMaxLines(2);   // one line at the normal font scale (titles are kept short); a large font scale wraps it rather than cut it
+            this.title.setMaxLines(3);   // one line at the normal font scale (titles are kept short); a large font scale wraps it rather than cut it
             this.title.setEllipsize(TextUtils.TruncateAt.END);
             col.addView(this.title);
             value = small(c, "");
-            value.setMaxLines(3);
+            value.setMaxLines(8);
             value.setEllipsize(TextUtils.TruncateAt.END);
             value.setVisibility(View.GONE);   // shown by value(…) when there is one
             LinearLayout.LayoutParams vp = fill();
@@ -591,7 +591,7 @@ final class Ui {
             lp.topMargin = dp(c, 3);
             col.addView(tags, lp);
             note = small(c, "");
-            note.setMaxLines(2);
+            note.setMaxLines(8);
             note.setEllipsize(TextUtils.TruncateAt.END);
             note.setVisibility(View.GONE);   // shown by note(…)
             col.addView(note);

@@ -39,3 +39,14 @@ shader_note	Metroid Dread shaders
 
 # PEANUTS: cutscenes at 60 fps through the frame step state page (patches.py; README "Frame rate"); a cap of 0 keeps the game's own 30 fps cutscenes
 fps_target	60
+
+# theboy181's 60 fps cutscene clock, expressed as the predicate's false branch.
+# The host supplies the interval and live presentation cap; original game-owned
+# mode keeps the predicate and its audio-clock path. Exact 2.1.0 main words only.
+fps_limit	60
+fps_limit_max	120
+fps_plan	646761f643afebb379edd5e6a5151af2	clock	-	1
+fps_plan	646761f643afebb379edd5e6a5151af2	m0x119a350	41030054	1a000014
+# Keep the existing 100 ms stall bound instead of the FPS-dependent step clamp.
+# Otherwise a 20/30/40 cap clips elapsed time to 1/60 and slows gameplay.
+fps_plan	646761f643afebb379edd5e6a5151af2	m0x80db4	c9000034	06000014

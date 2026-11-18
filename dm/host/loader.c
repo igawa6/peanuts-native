@@ -97,10 +97,11 @@ module_t *module_of(const void *p) {
     return NULL;
 }
 
-// Whether main imports a symbol whose name starts with prefix (an undefined dynamic symbol: one main calls but another module defines), for behaviour that follows what the game uses
-int dm_main_imports(const char *prefix) {
+// Whether main or an NRO imports a symbol whose name starts with prefix (an undefined dynamic symbol: one the module calls but another module defines), for behaviour that
+// follows what the game uses. The NROs count too, loaded or not: main may be only a boot stub that loads the game's code as an NRO (Mario Tennis Fever)
+int dm_game_imports(const char *prefix) {
     size_t n = strlen(prefix);
-    for (int i = 0; i < g_nmod; i++) if (!strcmp(g_mod[i].name, "main")) {
+    for (int i = 0; i < g_nmod; i++) if (g_mod[i].nro || !strcmp(g_mod[i].name, "main")) {
         module_t *m = &g_mod[i];
         for (unsigned k = 1; k < m->nsym; k++) if (!m->symtab[k].st_shndx && !strncmp(m->strtab + m->symtab[k].st_name, prefix, n)) return 1;
     }
@@ -309,6 +310,11 @@ static void oot_patches_apply(void) {
 // The settings in the state page, written when the game starts (main.c, after host loading): on iOS the loading runs at app launch, before the launcher has set DM_FPS_TARGET and
 // DM_RENDER_SCALE (Launcher.swift), and nothing reads the page before the game runs
 __attribute__((weak)) void dm_fps_step_fold(void) {}   // hle_fpslock.c; tests that link the loader alone have no limiter
+#if PLAT_ANDROID
+static int fpslocker_clock_selected(void);
+#else
+static int fpslocker_clock_selected(void) { return 0; }
+#endif
 void dm_fps_state_apply(void) {
     oot_patches_apply();
     if (!dm_fps_state) return;
@@ -323,6 +329,7 @@ void dm_fps_state_apply(void) {
     char cap[32]; snprintf(cap, sizeof cap, ", capped at %d fps", t);
     LOG("%s: frame step %s%s (%s)", g_fps_mod, !t ? "as the game sets it" : "in whole vsyncs decided by the host", t ? cap : "", e ? "DM_FPS_TARGET" : "game profile fps_target");
     // The frame limit (DM_FPS_LIMIT, on Android the profile's fps_limit) caps the step too (hle_fpslock.c dm_fps_step_fold)
+    if (fpslocker_clock_selected()) { memset(dm_fps_state,0,4); dm_fps_state=NULL; LOG("FPSLocker fractional clock selected; legacy whole-vsync frame step disabled"); return; }
     dm_fps_step_fold();
 }
 static void install_key_page(module_t *m) {
@@ -922,10 +929,12 @@ void *dm_module_arena_tail(size_t size) {
     if (p == MAP_FAILED) return NULL;
     g_tail += size; return p;
 }
+static uint64_t fpslocker_reserve(module_t *m, uint64_t size);
 static size_t module_span(module_t *m, const char *dir) {   // what map_image maps for m, before it runs
     char path[1024]; snprintf(path, sizeof path, "%s/%s.patched.bin", dir, m->name);
     struct stat st; if (stat(path, &st)) die("stat %s", path);
-    return m->patch_off < 0 ? (size_t)-m->patch_off + m->image_size : ((size_t)st.st_size + 0x3FFF) & ~(size_t)0x3FFF;
+    size_t image = m->patch_off < 0 ? m->image_size : ((size_t)st.st_size + 0x3FFF) & ~(size_t)0x3FFF;
+    return fpslocker_reserve(m, image) + (m->patch_off < 0 ? (size_t)-m->patch_off : 0);
 }
 static void arena_reserve(module_t *mods, int n, const char *dir) {
     const char *e = getenv("DM_MODULE_ARENA"); if (e && !strcmp(e, "0")) return;
@@ -937,13 +946,63 @@ static void arena_reserve(module_t *mods, int n, const char *dir) {
     g_arena = g_arena_cur = a; g_arena_end = a + total; g_tail = g_arena_end; g_tail_end = g_tail + ARENA_TAIL;
     LOG("module arena %p +%#zx: %d modules back to back in load order", a, total, n);
 }
-static uint8_t *module_mmap(const char *name, size_t len) {   // the next len bytes of the arena, or a mapping of their own without one
-    if (!g_arena) return mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+// An NRO (nro.tsv, preload_nros) has a mapping of its own, as upstream maps it: the arena is sized for the modules of the game's start (arena_reserve), which are
+// the ones the console lays back to back, and an NRO mapped into it found no room ("do not fit in the module arena (0 left)": every pack with NROs, which the
+// packer writes since Banana Native v0.3.22). What asks whether an address is the game's code asks the module list (module_of), which holds the NROs too
+static uint8_t *module_mmap(const char *name, size_t len, int nro) {   // the next len bytes of the arena, or a mapping of their own without one
+    if (!g_arena || nro) return mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
     if (g_arena_cur + len > g_arena_end) die("%s: %#zx bytes do not fit in the module arena (%#zx left)", name, len, (size_t)(g_arena_end - g_arena_cur));
     uint8_t *p = mmap(g_arena_cur, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_FIXED, -1, 0);
     if (p != MAP_FAILED) g_arena_cur += len;
     return p;
 }
+
+// PEANUTS: apply a reviewed Warehouse plan before executable permissions, without changing any pack file.
+#include "fpslocker_plan.h"
+#include "option_patch.h"
+static void option_apply_patches(module_t *m) {
+    if (strcmp(m->name, "main") || m->nro) return;
+    const char *spec = getenv("DM_OPTION_PATCHES");
+    if (!spec || !*spec) return;
+    int n = dm_option_patch(spec, m->build_id, m->base, m->text_end);
+    if (n < 0) die("Option code patches failed expected-byte/text check (%d); no option writes applied", n);
+    if (!n) { LOG("Option code patches: no rows for main build %s; skipped", m->build_id); return; }
+    plat_icache_invalidate(m->base, m->text_end);
+    LOG("%s: selected option code patches: %d words", m->name, n);
+}
+static uint64_t fpslocker_reserve(module_t *m,uint64_t size) {
+    if (strcmp(m->name,"main")) return size;
+    // arena_reserve sizes the same allocation before map_image consumes it.
+    if (m->fpslocker_plan) return size + (m->fpslocker_code_off ? 2 * FPW_AUX_PAGE : 0);
+    const char *spec=getenv("DM_FPSLOCKER_PLAN");if (!spec || !*spec) return size;
+    struct fpw_plan *p=calloc(1,sizeof *p);if (!p) die("FPSLocker plan allocation");
+    int n=fpw_plan_parse(spec,m->build_id,p);if (n<0) die("FPSLocker plan is malformed");
+    if (!n) { free(p);die("FPSLocker code plan does not match main build %s",m->build_id); }
+    int owned=getenv("DM_FPSLOCKER_OWNED") && !strcmp(getenv("DM_FPSLOCKER_OWNED"),"1");
+    m->fpslocker_plan=p;m->fpslocker_active=!owned;m->fpslocker_clock=p->clock;
+    if (!owned && p->aux) { m->fpslocker_code_off=size;m->fpslocker_data_off=size+FPW_AUX_PAGE;size+=2*FPW_AUX_PAGE; }
+    return size;
+}
+static void fpslocker_apply_plan(module_t *m) {
+    struct fpw_plan *p=m->fpslocker_plan;if (!p) return;
+    uint64_t original=m->fpslocker_code_off?m->fpslocker_code_off:m->size;
+    int n=fpw_plan_apply(p,m->base,original,m->fpslocker_code_off,m->fpslocker_data_off,!m->fpslocker_active);
+    if (n<0) die("FPSLocker plan for %s failed expected-byte/bounds/branch check (%d); no code writes applied",m->build_id,n);
+    for (unsigned i=0;i<p->n;i++) {
+        struct fpw_insn *row=&p->row[i];
+        if (strchr("mro",row->where) && row->off<m->text_end) plat_icache_invalidate(m->base+row->off,4);
+    }
+    LOG("%s: reviewed FPS code plan: %d words; %s",m->name,n,m->fpslocker_active?"selected":"Game owned (legacy FPS cuts restored)");
+    free(p);m->fpslocker_plan=NULL;
+}
+static void fpslocker_seal(module_t *m) {
+    if (!m->fpslocker_code_off) return;
+    if (mprotect(m->base+m->fpslocker_code_off,FPW_AUX_PAGE,PROT_READ|PROT_EXEC) ||
+        mprotect(m->base+m->fpslocker_data_off,FPW_AUX_PAGE,PROT_READ|PROT_WRITE)) die("FPSLocker auxiliary page permissions");
+    plat_icache_invalidate(m->base+m->fpslocker_code_off,FPW_AUX_PAGE);
+}
+int dm_fpslocker_plan_active(void) { for (int i=0;i<g_nmod;i++) if (g_mod[i].fpslocker_active) return 1;return 0; }
+static int fpslocker_clock_selected(void) { for (int i=0;i<g_nmod;i++) if (g_mod[i].fpslocker_clock) return 1;return 0; }
 
 // Seal the code area immediately after copying into anonymous pages (16 KB pages): [0, text_end) and the patch area are read-only+execute, and from then on any write to the code area crashes on the spot;
 // what lies between (ro and data on the same page can only go together) is writable
@@ -955,28 +1014,30 @@ static void map_image(module_t *m, const char *dir) {
         // With a back patch area (patch_nso.py TWO) the file ends with it, BACK_LEN bytes, copied to BACK_OFF in the image
         uint64_t pre = (uint64_t)-m->patch_off, fl = m->file_image_len, bl = m->back_len;
         if (sz < fl + bl) die("%s is shorter than FILE_IMAGE_LEN %#llx + BACK_LEN %#llx", path, (unsigned long long)fl, (unsigned long long)bl);
-        m->size = m->image_size; m->patch_len = (sz - bl - fl + 0x3FFF) & ~0x3FFFull;
+        m->size = fpslocker_reserve(m,m->image_size); m->patch_len = (sz - bl - fl + 0x3FFF) & ~0x3FFFull;
         if (m->patch_len > pre) die("%s patch area of %#llx bytes does not fit in the %#llx before the base", path, (unsigned long long)m->patch_len, (unsigned long long)pre);
-        uint8_t *a = module_mmap(m->name, pre + m->size);   // PEANUTS: module arena (see above)
+        uint8_t *a = module_mmap(m->name, pre + m->size, m->nro);   // PEANUTS: module arena (see above)
         if (a == MAP_FAILED) die("%s mmap %#llx", m->name, (unsigned long long)(pre + m->size));
         m->base = a + pre;
         memcpy(m->base, raw, fl); memcpy(a, raw + fl, sz - bl - fl); if (bl) memcpy(m->base + m->back_off, raw + sz - bl, bl);
-        free(raw); install_key_page(m); window_apply(m); fiber_pac_apply(m); pac_patch_text(m); rt_pool_apply(m);
+        free(raw); install_key_page(m); window_apply(m); fiber_pac_apply(m); pac_patch_text(m); rt_pool_apply(m); option_apply_patches(m); fpslocker_apply_plan(m);
         if (bl && mprotect(m->base + m->back_off, bl, PROT_READ | PROT_EXEC)) die("%s mprotect back patch", m->name);
         uint64_t rx = (m->text_end + 0x3FFF) & ~0x3FFFull;
         if (mprotect(m->base, rx, PROT_READ | PROT_EXEC)) die("%s mprotect text", m->name);
         if (mprotect(a, m->patch_len, PROT_READ | PROT_EXEC)) die("%s mprotect patch", m->name);
         if (pre > m->patch_len && mprotect(a + m->patch_len, pre - m->patch_len, PROT_NONE)) die("%s mprotect gap", m->name);
+        fpslocker_seal(m);
         return;
     }
-    m->size = (sz + 0x3FFF) & ~0x3FFFull;
-    m->base = module_mmap(m->name, m->size);   // PEANUTS: module arena (see above)
+    m->size = fpslocker_reserve(m,(sz + 0x3FFF) & ~0x3FFFull);
+    m->base = module_mmap(m->name, m->size, m->nro);   // PEANUTS: module arena (see above)
     if (m->base == MAP_FAILED) die("%s mmap", m->name);
-    memcpy(m->base, raw, sz); free(raw); install_key_page(m); window_apply(m); fiber_pac_apply(m); pac_patch_text(m); rt_pool_apply(m);
+    memcpy(m->base, raw, sz); free(raw); install_key_page(m); window_apply(m); fiber_pac_apply(m); pac_patch_text(m); rt_pool_apply(m); option_apply_patches(m); fpslocker_apply_plan(m);
     uint64_t rx = (m->text_end + 0x3FFF) & ~0x3FFFull;
     if (mprotect(m->base, rx, PROT_READ | PROT_EXEC)) die("%s mprotect text", m->name);
     uint64_t po = m->patch_off & ~0x3FFFull;
     if (mprotect(m->base + po, m->size - po, PROT_READ | PROT_EXEC)) die("%s mprotect patch", m->name);
+    fpslocker_seal(m);
 }
 #endif
 

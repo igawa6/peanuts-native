@@ -36,6 +36,8 @@ typedef struct { char name[32]; char type[8]; char module[16]; uint64_t off[MAX_
 typedef struct { uint64_t addr; uint64_t last; } cand_t;
 
 #include "rt/peanuts_rt.h"
+#include "peanuts_frametime.h"
+#include "peanuts_graph.h"
 static void rt_tick(void);   // the companion runtime, below
 static PnRt *_Atomic g_rt;   // set once (rt_start, on the presenting thread); read by the tick thread, the page's UI thread (touch, presence) and the lifecycle's thread
 static void rt_ui_publish(void *u, uint32_t w, uint32_t h, const uint32_t *px);
@@ -290,6 +292,8 @@ static void refresh(void) {
 }
 
 void peanuts_tick(void) {
+    pn_ft_note();   // the frame time first: it runs whatever the rest of this tick does
+    pn_graph_frame();   // the overlay graph's new bar (peanuts_graph.c)
     g_frames++;
     rt_tick();   // the companion runtime: started at the first presented frame after main is loaded; its ticks come from a timer of its own (rt_thread)
     if (g_frames % REFRESH_EVERY) return;
@@ -324,7 +328,11 @@ static pthread_mutex_t g_frame_mu = PTHREAD_MUTEX_INITIALIZER;
 // cache, so every read of a tracked page was a system call and, being "readable but not cached", made the whole of /proc/self/maps be read again every 500 ms; and a block
 // in more than 512 pieces lost the rest of its pieces the same way. Joined, the block is a handful of ranges whatever its pages' protection is.
 // g_rd is written under g_rd_mu by whoever refreshes and read under it by every reader (the tick thread, the runtime's workers)
-static range_t g_rd[512]; static int g_nrd; static _Atomic int64_t g_rd_at_ms;
+// RD_MAX ranges (2026-11-18, was 512): Breath of the Wild's block was in 4,414 anonymous pieces between 2,103 placed GPU segments after a few minutes (the placed
+// segments are not the guest's name, so they end a run), the cache kept the lowest 512, and every read above them was a system call: 10,400 of 10,560 reads a tick,
+// the companion at 50 % of a core. A block in more pieces than RD_MAX still loses the highest ones, and says so once
+enum { RD_MAX = 16384 };
+static range_t g_rd[RD_MAX]; static int g_nrd; static _Atomic int64_t g_rd_at_ms;
 static pthread_mutex_t g_rd_mu = PTHREAD_MUTEX_INITIALIZER;
 static int64_t mono_ns(void) { struct timespec m; clock_gettime(CLOCK_MONOTONIC, &m); return (int64_t)m.tv_sec * 1000000000 + m.tv_nsec; }
 static int range_cmp(const void *a, const void *b) { uint64_t x = ((const range_t *)a)->a, y = ((const range_t *)b)->a; return x < y ? -1 : x > y; }
@@ -345,14 +353,20 @@ static int rt_scan_readable(range_t *r, int max) {
         n = range_add(r, n, max, a, b);
     }
     if (f) fclose(f);
-    for (int i = 0; i < g_nmod && n < max; i++) if (g_mod[i].loaded && !g_mod[i].nro) { r[n].a = (uint64_t)(uintptr_t)g_mod[i].base; r[n].b = r[n].a + g_mod[i].size; n++; }
     return n;
 }
+// One refresh at a time, into a buffer of its own (too large for a worker's stack); a thread that finds one running leaves it to that one
 static void rt_ranges_refresh(void) {
-    range_t r[512]; int n = rt_scan_readable(r, 512);
+    static pthread_mutex_t one = PTHREAD_MUTEX_INITIALIZER; static range_t r[RD_MAX]; static int said;
+    if (pthread_mutex_trylock(&one)) return;
+    int n = 0;   // the modules first: the block's pieces can fill the table, the modules' code and data are read every tick
+    for (int i = 0; i < g_nmod && n < RD_MAX; i++) if (g_mod[i].loaded && !g_mod[i].nro) { r[n].a = (uint64_t)(uintptr_t)g_mod[i].base; r[n].b = r[n].a + g_mod[i].size; n++; }
+    int nm = n; n = nm + rt_scan_readable(r + nm, RD_MAX - nm);
+    if (n == RD_MAX && !said) { said = 1; __android_log_print(ANDROID_LOG_INFO, "peanuts", "companion: the guest block is in more readable pieces than the read cache holds (%d): reads above them go through the kernel (logged once)", RD_MAX); }
     qsort(r, n, sizeof r[0], range_cmp);
     pthread_mutex_lock(&g_rd_mu); memcpy(g_rd, r, n * sizeof r[0]); g_nrd = n; pthread_mutex_unlock(&g_rd_mu);
     atomic_store(&g_rd_at_ms, mono_ns() / 1000000);
+    pthread_mutex_unlock(&one);
 }
 // The game's code as its file has it. The process runs main rewritten (dm/tools/patch_nso.py: x18 sites, cuts, patches), so the bytes in memory differ from the file's at
 // the runs of main.changed.tsv; a package's module that hashes a function to know the build, or decodes its instructions for an address, then fails on every function
@@ -411,6 +425,7 @@ static void rt_heap_range(void *u, uint64_t *base, uint64_t *open_len) { (void)u
 static uint64_t rt_code_block_find(size_t size);
 // The block is guest code for the host's thread pause from now on (hle_thread.c dm_guest_code_range): a game thread running the helper is stopped as one running the game
 void dm_guest_code_range(uint64_t lo, uint64_t hi);
+__attribute__((weak)) int dm_account_start_save_dir(const char *base, char *out, size_t cap);   // hle_account.c; absent in this file's PC test
 static uint64_t rt_code_block(void *u, size_t size) {
     (void)u;
     uint64_t at = rt_code_block_find(size);
@@ -471,19 +486,55 @@ static int rt_copy(void *dst, uint64_t addr, size_t len) {
     g_rd_guard = &j; memcpy(dst, (const void *)(uintptr_t)addr, len); g_rd_guard = NULL;
     return 1;
 }
+// Read accounting for the 30 s line (2026-11-18: Breath of the Wild's companion took 46-50 % of a core, half of it in process_vm_readv, and nothing said which reads
+// those were): reads answered by the cache, by the kernel, and refused by it, with the last few distinct pages of the last two kinds, named from /proc/self/maps
+// when the line is printed (rt_read_stats). Relaxed counters; the samples are a ring written without a lock (a torn entry is only a wrong sample address)
+static _Atomic uint64_t g_rdn_cached, g_rdn_kernel, g_rdn_refused, g_rdn_kbytes;
+static _Atomic uint64_t g_rd_miss[8], g_rd_bad[8]; static _Atomic unsigned g_rd_miss_n, g_rd_bad_n;
+static void rd_note(_Atomic uint64_t *ring, _Atomic unsigned *n, uint64_t addr) {
+    uint64_t pg = addr & ~0xfffffull;   // (by MiB: neighbours are one sample)
+    for (int i = 0; i < 8; i++) if (atomic_load_explicit(&ring[i], memory_order_relaxed) == pg) return;
+    atomic_store_explicit(&ring[atomic_fetch_add_explicit(n, 1, memory_order_relaxed) & 7], pg, memory_order_relaxed);
+}
 static int rt_mem_read(void *u, uint64_t addr, void *buf, size_t len) {
     (void)u;
     if (rt_range_has(addr, len)) {
-        if (rt_copy(buf, addr, len)) { rt_orig_apply(addr, buf, len); return 1; }
+        if (rt_copy(buf, addr, len)) { rt_orig_apply(addr, buf, len); atomic_fetch_add_explicit(&g_rdn_cached, 1, memory_order_relaxed); return 1; }
         rt_ranges_refresh();   // the cache was wrong: read it again, and let the kernel answer this read
     }
-    if (plat_mem_read(addr, buf, len)) return 0;
+    if (plat_mem_read(addr, buf, len)) { atomic_fetch_add_explicit(&g_rdn_refused, 1, memory_order_relaxed); rd_note(g_rd_bad, &g_rd_bad_n, addr); return 0; }
+    atomic_fetch_add_explicit(&g_rdn_kernel, 1, memory_order_relaxed); atomic_fetch_add_explicit(&g_rdn_kbytes, len, memory_order_relaxed); rd_note(g_rd_miss, &g_rd_miss_n, addr);
     rt_orig_apply(addr, buf, len);
     // Readable but not in the cache: maybe a new mapping, so refresh, but at most every 500 ms. Some pages read memory that stays outside the cached ranges
     // (Animal Crossing's, every tick), and a /proc/self/maps parse per such read held the tick thread at 100 % (~140 ms a tick, the page at ~7 Hz).
     static _Atomic int64_t miss_at; int64_t now = mono_ns() / 1000000;
     if (now - atomic_load(&miss_at) >= 500) { atomic_store(&miss_at, now); rt_ranges_refresh(); }
     return 1;
+}
+// The read accounting as text for the tick thread's 30 s line; the counters start over. Sample addresses are named by their /proc/self/maps line (one pass, only when
+// the kernel answered or refused reads in the period)
+static void rt_read_stats(char *out, size_t n, unsigned ticks) {
+    uint64_t c = atomic_exchange(&g_rdn_cached, 0), k = atomic_exchange(&g_rdn_kernel, 0), r = atomic_exchange(&g_rdn_refused, 0), kb = atomic_exchange(&g_rdn_kbytes, 0);
+    double t = ticks ? (double)ticks : 1.0;
+    int o = snprintf(out, n, "; reads a tick: %.0f from the cache (%d ranges), %.0f through the kernel (%.0f bytes), %.0f refused", c / t, g_nrd, k / t, kb / t, r / t);
+    if (!(k + r) || o < 0 || (size_t)o >= n) return;
+    uint64_t a[16]; int na = 0;
+    for (int i = 0; i < 8; i++) { uint64_t v = atomic_exchange(&g_rd_miss[i], 0); if (v) a[na++] = v; }
+    int nm = na;
+    for (int i = 0; i < 8; i++) { uint64_t v = atomic_exchange(&g_rd_bad[i], 0); if (v) a[na++] = v; }
+    char what[16][72]; for (int i = 0; i < na; i++) snprintf(what[i], sizeof what[i], "no mapping");
+    FILE *f = fopen("/proc/self/maps", "r"); char line[512];
+    while (f && fgets(line, sizeof line, f)) {
+        uint64_t lo, hi; char perm[8]; int name = 0;
+        if (sscanf(line, "%" SCNx64 "-%" SCNx64 " %7s %*s %*s %*s %n", &lo, &hi, perm, &name) < 3) continue;
+        for (int i = 0; i < na; i++) if (a[i] + 0x100000 > lo && a[i] < hi && !strcmp(what[i], "no mapping")) {
+            size_t L = strlen(line); if (L && line[L - 1] == '\n') line[L - 1] = 0;
+            snprintf(what[i], sizeof what[i], "%s %.48s", perm, name && line[name] ? line + name : "(anonymous, no name)");
+        }
+    }
+    if (f) fclose(f);
+    for (int i = 0; i < na && (size_t)o < n; i++)
+        o += snprintf(out + o, n - (size_t)o, "%s0x%" PRIx64 " [%s]", i == 0 ? (nm ? "; kernel-read near " : "; refused near ") : i == nm ? "; refused near " : ", ", a[i], what[i]);
 }
 // A guest write: process_vm_writev (plat_mem_write) first. Reads of the cached ranges are plain memcpys, so a seccomp policy that refuses process_vm_* (ENOSYS / EPERM)
 // was never noticed on the read side, but it fails every write - and a companion's writes (Octopath Traveler 0 hiding its party HUD and raising the command panel on the
@@ -640,8 +691,19 @@ static int rt_scan_root(const char *root, uint64_t want, int allow_old, char *di
 }
 static int rt_find_package(char *dir, size_t n, uint64_t *title) {
     uint64_t want = rt_running_title();
-    char roots[2][512]; int nroots = 0;
+    char roots[3][512]; int nroots = 0;
     snprintf(roots[nroots++], sizeof roots[0], "%s/../peanuts", dm_module_dir());
+    // A code-mod build in the chosen build folder lives at <title>/mod-<hash>/pack. Its companion is still installed beside the
+    // normal pack, at <title>/peanuts, not inside the variant. App-owned packs already share <packs>/peanuts through the first root.
+    const char *pack = dm_module_dir(), *end = strrchr(pack, '/');
+    if (end && !strcmp(end + 1, "pack")) {
+        const char *variant = end;
+        while (variant > pack && variant[-1] != '/') variant--;
+        if (end - variant == 16 && !strncmp(variant, "mod-", 4)
+                && strspn(variant + 4, "0123456789abcdef") == 12) {
+            snprintf(roots[nroots++], sizeof roots[0], "%s/../../peanuts", pack);
+        }
+    }
     const char *romfs = getenv("DM_ROMFS");
     if (romfs && want) {
         const char *nup = strstr(romfs, ".nup:"); const char *slash = NULL;
@@ -751,7 +813,14 @@ static void rt_start(void) {
     if (!data_dir[0]) snprintf(data_dir, sizeof data_dir, "%s/peanuts-rt", getenv("DM_TEMP") ? getenv("DM_TEMP") : "/data/local/tmp");
     mkdir(data_dir, 0700);
     c.data_dir = data_dir;
+    // The save folder of the user the game starts with (upstream's users, Settings › Users: the first user's is DM_SAVE, another's DM_SAVE_user_<uid>,
+    // hle_account.c). A game that lets the player pick another user later, in its own selector, still shows the companion the starting user's save
     c.save_dir = getenv("DM_SAVE");
+    { static char sd[1100]; size_t L = c.save_dir ? strlen(c.save_dir) : 0;
+      if (L && dm_account_start_save_dir) {
+          char base[1024]; while (L > 1 && c.save_dir[L - 1] == '/') L--;
+          if (L < sizeof base) { memcpy(base, c.save_dir, L); base[L] = 0;
+              if (!dm_account_start_save_dir(base, sd, sizeof sd)) { LOG("[peanuts] companion: the save folder is the starting user's, %s", sd); c.save_dir = sd; } } } }
     c.memory.read = rt_mem_read; c.memory.write = rt_mem_write; c.memory.pointer_at = rt_mem_pointer; c.memory.heap_range = rt_heap_range;
     c.pad.set_button = rt_pad_button; c.pad.set_stick = rt_pad_stick; c.pad.read = rt_pad_read;
     c.ui.publish_ui = rt_ui_publish; c.ui.publish_ui_partial = rt_ui_publish_partial;
@@ -833,9 +902,10 @@ static void *rt_thread(void *arg) {
         busy += d; if (d > longest) longest = d; ticks++; hidden += !shown;
         if (t1 - stat_at >= 30000000000ll) {
             uint64_t stops = 0, failed = 0, stop_us = 0; pn_rt_stop_stats(&stops, &failed, &stop_us);
-            LOG("[peanuts] companion ticks: %u in %.1f s (%u with the page not shown), %.2f ms each on average, longest %.2f ms, %.1f%% of one core; the game's threads stopped for writes %llu times since the start (%llu given up), longest %.2f ms",
+            char rds[1600]; rt_read_stats(rds, sizeof rds, ticks);
+            LOG("[peanuts] companion ticks: %u in %.1f s (%u with the page not shown), %.2f ms each on average, longest %.2f ms, %.1f%% of one core; the game's threads stopped for writes %llu times since the start (%llu given up), longest %.2f ms%s",
                 ticks, (t1 - stat_at) / 1e9, hidden, ticks ? busy / 1e6 / ticks : 0.0, longest / 1e6, 100.0 * busy / (double)(t1 - stat_at),
-                (unsigned long long)stops, (unsigned long long)failed, stop_us / 1e3);
+                (unsigned long long)stops, (unsigned long long)failed, stop_us / 1e3, rds);
             stat_at = t1; busy = longest = 0; ticks = hidden = 0;
         }
     }

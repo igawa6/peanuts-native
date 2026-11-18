@@ -224,6 +224,18 @@ If you hit this symptom on a new title, look for it before assuming the pack is 
   public repository begins with one commit that imports Banana Native at that point (crediting it, its license and
   its authors in the message and in the README), followed by Peanuts' own commits.
 
+### Checks of a release APK
+
+Run both on the APK that is to be published, after it is built and signed:
+
+- `ANDROID_HOME=<the Android SDK> python3 peanuts/scripts/check-min-api.py <apk>` must print "nothing newer than API 33". It lists every platform method
+  and field the app's code calls that is newer than the app's minimum Android version; the compiler does not say so, and such a call closes the app on
+  older phones (0.1.1 and 0.1.2 did, on Android 13).
+- `python3 peanuts/scripts/check-apk-holes.py <apk>` must print "no holes". It lists the bytes of the file that belong to no entry: an APK packaged over an
+  earlier output file keeps that file's old entries as dead bytes (a 45 MB app came out as 59 MB). When it fails, remove the old output APK and Gradle's
+  packaging intermediates (`android/app/out/*.apk`, `android/app/build/outputs/apk`, `android/app/build/intermediates/incremental/packageRelease`), not the
+  whole build, and build again.
+
 ## Using AI agents
 
 You may use coding tools, AI ones included, to prepare a change — but you are its author, you answer for it, and

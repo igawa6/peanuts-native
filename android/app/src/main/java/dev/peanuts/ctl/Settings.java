@@ -59,13 +59,13 @@ public final class Settings {
                 int[] offered = perGame ? caps : GLOBAL_CAPS;
                 Integer n = null;
                 if (dflt) n = -1;
-                else if (v.equals("own")) n = pacedGame ? null : 0;
+                else if (v.equals("own")) n = pacedGame ? -2 : 0;
                 else try { n = Integer.parseInt(v); } catch (NumberFormatException e) { n = null; }
                 if (n != null && pacedGame && n == 60) n = 0;   // the frame limit list stores 60 fps as 0
                 else if (n != null && pacedGame && n == 0) n = null;
                 if (n != null && !v.equals("-1")) for (int c : offered) if (c == n) return new Change(k, perGame, n, "next_start");
                 StringBuilder all = new StringBuilder();
-                for (int c : offered) if (c != -1) all.append(all.length() > 0 ? ", " : "").append(c == 0 ? (pacedGame ? "60" : "own") : String.valueOf(c));
+                for (int c : offered) if (c != -1) all.append(all.length() > 0 ? ", " : "").append(c == -2 ? "own" : c == 0 ? (pacedGame ? "60" : "own") : String.valueOf(c));
                 throw bad(k, all + " or default", v);
             }
             case "overlay": case "keep_screen_on": {

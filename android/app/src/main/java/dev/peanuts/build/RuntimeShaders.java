@@ -23,8 +23,8 @@ import java.util.List;
  * text). The Mac's NSP script boots the game once with DM_GLSLC_CAPTURE to collect them (dm/host/hle_glslc.c, dm/games/README.md); this does the same on the
  * phone, inside Build, after Prepare:
  * <ol>
- * <li>the game gets DM_GLSLC_CAPTURE=&lt;work&gt;/glslc_capture in its own env lines (Prefs.gameEnv) and is started as Play does (MainActivity --es game --ez run);</li>
- * <li>its boot is watched until the folder holds the missing count of .glslc files (or {@link #CAPTURE_MS} pass), then the ":game" process is ended and the env line removed;</li>
+ * <li>the non-exported GameActivity starts in internal preparation mode, with an opaque progress screen, isolated save data, no input, sound or companion;</li>
+ * <li>its boot is watched until the folder holds the missing count of .glslc files (or {@link #CAPTURE_MS} pass), then the ":game" process is ended;</li>
  * <li>&lt;work&gt;/ondevice/env.txt gets the same line for the packer's tools (PackService reads it; shader_split.py reads DM_GLSLC_CAPTURE), the job's split, shaders
  *     and pack steps are set back to pending, and Prepare resumes it: the split finds the captured outputs, the shaders step keeps the library's translated shaders
  *     (DMSH_VK_DELTA_FROM) and translates the new ones, the pack is written again.</li>
@@ -33,7 +33,6 @@ import java.util.List;
  */
 final class RuntimeShaders {
     private static final String TAG = Prepare.TAG;
-    private static final String MAIN = "dev.nxnative.android.MainActivity";
     private static final String ENV = "DM_GLSLC_CAPTURE";
     /** How long the game may run for its boot-time compiles (they come within seconds of the first frame) */
     private static final long CAPTURE_MS = 150_000;
@@ -64,6 +63,11 @@ final class RuntimeShaders {
         return RuntimeShaderMap.compilesAtRunTime(c.getAssets().open("pack/tools.zip"), titleId);
     }
 
+    static int missingInPack(Context c, String titleId, File pack) throws IOException {
+        File library = new File(pack, "shaders/v-" + dev.nxnative.android.BuildConfig.NX_DMSH_VK_CHAIN + "/dmsh_vk.lib");
+        return RuntimeShaderMap.missing(c.getAssets().open("pack/tools.zip"), titleId, library);
+    }
+
     static File captureDir(File work) { return new File(work, "glslc_capture"); }
 
     static int captured(File dir) {
@@ -73,30 +77,23 @@ final class RuntimeShaders {
 
     /**
      * Captures the game's run-time shaders when the capture folder holds fewer than {@code need}; returns true when the folder has enough afterwards.
-     * {@code game} and {@code pack} are what Play hands MainActivity; {@code cancelled} ends the wait early.
+     * {@code game} and {@code pack} are the prepared input and pack; {@code cancelled} ends the wait early.
      */
     boolean capture(String titleId, File work, File game, File pack, int need, Prepare.Progress p, java.util.function.BooleanSupplier cancelled) throws IOException {
         File dir = captureDir(work);
         if (captured(dir) >= need) return true;
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot make " + dir);
         // A game already running (the player's, perhaps another title) would count as this capture's start, and endGame() would then end it, unsaved
-        if (gameAlive()) throw new IOException("A game is running. Close it, then tap Build again: the build starts " + game.getName() + " once to capture its shaders.");
-        String line = ENV + "=" + dir.getPath();
-        String before;
+        if (gameAlive()) throw new IOException("A game is running. Close it, then tap Build again to finish graphics setup.");
+        File save = new File(work, "shader-capture-save");
+        Files.deleteIfExists(ShaderCapture.error(dir).toPath());
         try {
-            before = Upstream.gameEnv(c, titleId);
-            Upstream.gameEnv(c, titleId, withLine(before, line));
-        } catch (ReflectiveOperationException e) {
-            throw new IOException("This build of the app has no game settings the build service knows (" + e.getMessage() + ").");
-        }
-        try {
-            p.on(0, "Starting the game once to capture its run-time shaders");
-            Intent i = new Intent().setClassName(c.getPackageName(), MAIN).putExtra("game", game.getPath()).putExtra("run", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            if (pack != null) i.putExtra("pack", pack.getPath());
+            p.on(0, "Finishing graphics setup");
+            Intent i = ShaderCapture.intent(c, titleId, game, pack, dir, save);
             try {
                 c.startActivity(i);
-            } catch (RuntimeException e) {   // Android lets a service start an activity only while the app is in front
-                throw new IOException("Android did not let the build start the game. Play " + game.getName() + " once from the library, then tap Build again.");
+            } catch (RuntimeException e) {
+                throw new IOException("Android did not let graphics setup start. Open the app and tap Build again.", e);
             }
             long t0 = SystemClock.elapsedRealtime();
             boolean seen = false;
@@ -105,17 +102,18 @@ final class RuntimeShaders {
                 int have = captured(dir);
                 boolean alive = gameAlive();
                 seen |= alive;
-                if (have >= need) { p.on(100, "Captured " + have + " run-time shaders"); break; }
+                if (have >= need) { p.on(100, "Finishing graphics setup"); break; }
                 long t = SystemClock.elapsedRealtime() - t0;
                 if (seen && !alive) { Log.w(TAG, "capture: the game ended with " + have + " of " + need); break; }
-                if (!seen && t > START_MS) throw new IOException("The game did not start for the shader capture. Play " + game.getName() + " once from the library, then tap Build again.");
+                if (!seen && t > START_MS) throw new IOException("Graphics setup could not start. Tap Build again to retry.");
                 if (t > CAPTURE_MS) { Log.w(TAG, "capture: " + have + " of " + need + " after " + t / 1000 + " s"); break; }
-                p.on((int) Math.min(95, 5 + have * 90L / Math.max(1, need)), "Capturing the game's run-time shaders: " + have + " of " + need);
+                p.on((int) Math.min(95, 5 + have * 90L / Math.max(1, need)), "Finishing graphics setup: " + have + " of " + need);
             }
-            endGame();
         } finally {
-            try { Upstream.gameEnv(c, titleId, withoutLine(Upstream.gameEnv(c, titleId), ENV)); } catch (ReflectiveOperationException e) { Log.w(TAG, "capture: env restore " + e); }
+            endGame();   // also on cancellation, a start failure or timeout
         }
+        File error = ShaderCapture.error(dir);
+        if (error.isFile()) throw new IOException("Graphics setup failed: " + new String(Files.readAllBytes(error.toPath()), StandardCharsets.UTF_8));
         return captured(dir) >= need;
     }
 
@@ -146,7 +144,7 @@ final class RuntimeShaders {
     private boolean gameAlive() {
         ActivityManager am = c.getSystemService(ActivityManager.class);
         List<ActivityManager.RunningAppProcessInfo> l = am == null ? null : am.getRunningAppProcesses();
-        if (l != null) for (ActivityManager.RunningAppProcessInfo p : l) if (p.processName != null && p.processName.endsWith(":game")) return true;
+        if (l != null) for (ActivityManager.RunningAppProcessInfo p : l) if (p.processName != null && p.processName.equals(c.getPackageName() + ":game")) return true;
         return false;
     }
 
@@ -160,7 +158,7 @@ final class RuntimeShaders {
         }
         ActivityManager am = c.getSystemService(ActivityManager.class);
         List<ActivityManager.RunningAppProcessInfo> l = am == null ? null : am.getRunningAppProcesses();
-        if (l != null) for (ActivityManager.RunningAppProcessInfo p : l) if (p.processName != null && p.processName.endsWith(":game")) android.os.Process.killProcess(p.pid);
+        if (l != null) for (ActivityManager.RunningAppProcessInfo p : l) if (p.processName != null && p.processName.equals(c.getPackageName() + ":game")) android.os.Process.killProcess(p.pid);
         SystemClock.sleep(1500);
     }
 
@@ -172,9 +170,4 @@ final class RuntimeShaders {
         return String.join("\n", out) + "\n";   // every line ended: an append to the file (another tool's line) never runs into the last one (Engage's env.txt read "DMSH_VK_XLATE_J=4DMSH_VK_XLATE_J=4")
     }
 
-    static String withoutLine(String text, String key) {
-        List<String> out = new ArrayList<>();
-        for (String l : (text == null ? "" : text).split("\n")) if (!l.trim().isEmpty() && !l.trim().startsWith(key + "=")) out.add(l);
-        return out.isEmpty() ? "" : String.join("\n", out) + "\n";   // as withLine
-    }
 }

@@ -652,3 +652,15 @@ arguments stay page ids), so a module package can be run against a game RomFS.
   Module actions are logged "unsupported on this host" and otherwise no-op.
 - No pan/pinch-zoom or drag-and-drop coverage in rt_test (optional for R2; the code path is
   lifted and should work, matching Eden's UpdateGestures).
+
+## Companion search for code-mod builds (issue #33)
+
+A custom build folder stores the normal pack at `<title>/pack` and a code-mod variant at `<title>/mod-<hash>/pack`, while the installed
+companion remains at `<title>/peanuts`. The host previously searched only beside the running pack and beside the dump's work folder; neither
+is the installed location for that variant. The search now includes the normal pack's companion root for the recognized 12-hex-digit variant
+layout. Title matching, active-before-parked-version selection and refusal of unfinished `.new` installs still apply. App-owned variant packs
+already share their normal companion root. `test_companion_search.py` compiles the production search and exercises all of these layouts.
+Device check (2026-11-17): AYN Thor, Brilliant Diamond / Luminescent Platinum build `94CEAE325C205C4B9D6F7235552F28FD`,
+with a copied save in Twinleaf Town. The log loads the module from `mod-<hash>/pack/../../peanuts`; the second display leaves standby and
+shows the Party and Map pages. System and Mesa Turnip 27.0.0-devel (V39) runs completed without a native crash; steady frame windows were
+about 60 fps. The Turnip run covered 60 seconds.

@@ -108,6 +108,10 @@ int vka_walk(const vka_bstate *s, int st, const dmsh_vk_entry *e, const dmsh_vk_
                 int tid = noslot || reg >= 32 ? 0 : (int)(s->img[st][reg] & 0xfffff);
                 if (tid) { r.what = VKA_R_IMG; r.tid = tid; }
                 break; }
+            case DMSH_VK_KIND_IMG_UBO: {   // the image handle the game keeps in its uniform buffer (Unreal Engine 5 on the Switch 2: c[3]), read at bind time as tex_ubo's
+                int tid = noslot ? 0 : ubo_tex_id(s, (uint32_t)ubo_word(s, st, reg, b->off + ubo_elem(b, k), 4, rd, ctx));
+                if (tid) { r.what = VKA_R_IMG; r.tid = tid; }
+                break; }
             case DMSH_VK_KIND_SAMP: case DMSH_VK_KIND_SAMP_TEX: case DMSH_VK_KIND_SAMP_ID: case DMSH_VK_KIND_SAMP_UBO: case DMSH_VK_KIND_SAMP_C2A: {
                 dmsh_vk_bind sb = *b; sb.skind = b->kind; sb.sreg = b->reg; sb.soff = b->kind == DMSH_VK_KIND_SAMP_C2A ? b->soff : b->off;   // a sampler on its own: its own fields name it
                 int sid = noslot && b->kind != DMSH_VK_KIND_SAMP_C2A ? 0 : samp_of(s, st, &sb, k, rd, ctx);

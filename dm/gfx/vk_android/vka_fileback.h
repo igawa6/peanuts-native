@@ -89,22 +89,37 @@ static inline int vkfb_move(void *t, uintptr_t lo, size_t n, int *lost_map) {
     munmap(t, n);
     return -e;
 }
+// The copies in the file's mapping t at [a, b) (offsets into the range) out of RAM while the range still holds its own pages: written to flash and waited for, then
+// unmapped from t (MADV_DONTNEED on a shared file mapping drops only the page table entries; the page cache keeps the bytes) and dropped from the page cache, which
+// takes only clean, unmapped pages (a page whose write failed stays dirty and stays). Reads of the range after the move fault them back from the file
+enum { VKFB_DROP = 64 << 20 };
+static inline void vkfb_drop(int fd, uint64_t off, uint8_t *t, uint64_t a, uint64_t b) {
+    if (b <= a) return;
+    sync_file_range(fd, (off64_t)(off + a), (off64_t)(b - a), SYNC_FILE_RANGE_WAIT_BEFORE | SYNC_FILE_RANGE_WRITE | SYNC_FILE_RANGE_WAIT_AFTER);
+    madvise(t + a, b - a, MADV_DONTNEED);
+    posix_fadvise(fd, (off_t)(off + a), (off_t)(b - a), POSIX_FADV_DONTNEED);
+}
 // Anonymous [lo, lo + n) to the file's [off, off + n): runs: the readable runs of the range (the caller's protection read). *copied: bytes written into the file.
 // 0 = the range is the file's now; else -errno and the range holds its bytes (anonymous, its old pages unless *lost_map)
+// The copies go to flash and out of RAM every VKFB_DROP bytes of the range (vkfb_drop): held until the move, they doubled the pool's RAM for the length of the copy, and a
+// 2.9 GB shader-code pool (Kirby and the Forgotten Land - Nintendo Switch 2 Edition) took the process from 5.7 GB to 7.4 GB, where Android's low-memory killer stopped it
 static inline int vkfb_to_file(int fd, uint64_t off, uintptr_t lo, size_t n, const vkfb_run *runs, int nruns, int pm, uint64_t *copied, int *lost_map) {
     *copied = 0; *lost_map = 0;
     uint8_t *t = vkfb_mmap(NULL, n, MAP_SHARED, fd, off);
     if (t == MAP_FAILED) return -errno;
-    uint8_t tb[512];
+    uint8_t tb[512]; uint64_t from = 0, at = 0, held = 0;   // [from, at): copied since the last drop; held: bytes copied in it
     for (int i = 0; i < nruns; i++) {
         uintptr_t a = runs[i].lo < lo ? lo : runs[i].lo, e = runs[i].hi > lo + n ? lo + n : runs[i].hi;
+        if (a < e && a - lo < from) { vkfb_drop(fd, off, t, from, at); from = at = a - lo; held = 0; }   // (runs out of order: what came before goes now)
         for (; a < e;) {
             size_t k = (e - a) / VKFB_PG < 512 ? (e - a) / VKFB_PG : 512; if (!k) break;
             vkfb_touched(pm, a, k, tb);
-            for (size_t j = 0; j < k; j++) { const uint8_t *s = (const uint8_t *)(a + j * VKFB_PG); if (tb[j] && !vkfb_zero_page(s)) { memcpy(t + (a - lo) + j * VKFB_PG, s, VKFB_PG); *copied += VKFB_PG; } }
-            a += k * VKFB_PG;
+            for (size_t j = 0; j < k; j++) { const uint8_t *s = (const uint8_t *)(a + j * VKFB_PG); if (tb[j] && !vkfb_zero_page(s)) { memcpy(t + (a - lo) + j * VKFB_PG, s, VKFB_PG); *copied += VKFB_PG; held += VKFB_PG; } }
+            a += k * VKFB_PG; at = a - lo;
+            if (held >= VKFB_DROP) { vkfb_drop(fd, off, t, from, at); from = at; held = 0; }
         }
     }
+    if (held) vkfb_drop(fd, off, t, from, at);
     return vkfb_move(t, lo, n, lost_map);
 }
 // The file's [off, off + n), mapped at [lo, lo + n), back to anonymous pages: the data extents' pages that are readable and not all zero. *copied: bytes copied.

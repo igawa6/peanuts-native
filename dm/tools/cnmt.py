@@ -21,7 +21,11 @@ class Error(ValueError): pass
 class Record:
     def __init__(self, id, version, type):
         self.id, self.version, self.type = id, version, type
-        self.application_id = self.patch_id = self.data_patch_id = self.data_id = None
+        # PEANUTS(upstream-candidate): links are absent until the matching extended header supplies them.
+        self.application_id: int | None = None
+        self.patch_id: int | None = None
+        self.data_patch_id: int | None = None
+        self.data_id: int | None = None
         self.required_version = 0   # RequiredApplicationVersion: the game version an add-on or a data patch needs (0: none)
         self.contents = []          # (ContentType, IdOffset, size)
 

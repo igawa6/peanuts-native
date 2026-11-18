@@ -249,5 +249,26 @@ class LowRam(unittest.TestCase):
         self.assertIn("below the profile's app_pool (1 MiB)", out)
 
 
+
+
+class FpsModes(unittest.TestCase):
+    def test_checked_modes(self):
+        for rows in ('fps_modes\t30,60,120\n', 'fps_modes\t20,30,40,60,90,120\n'):
+            self.assertEqual(header(rows), (0, ''))
+
+    def test_reject_unsupported_or_ambiguous_modes(self):
+        for modes in ('30,120', '60,30,120', '30,60,60,120', '30,60,144', '30 60 120'):
+            rc, out = header('fps_modes\t' + modes + '\n')
+            self.assertNotEqual(rc, 0)
+            self.assertIn('fps_modes must be unique ascending', out)
+
+    def test_static_plan_requires_selected_mode(self):
+        plan = 'fps_plan_120\t909e904af78ac1b8deefe97ab2ccdb51\tm0xdb8544\t00102e1e\t00102c1e\n'
+        self.assertEqual(header('fps_modes\t30,60,120\n' + plan), (0, ''))
+        rc, out = header(plan)
+        self.assertNotEqual(rc, 0)
+        self.assertIn('requires fps_modes including 120', out)
+
+
 if __name__ == '__main__':
     unittest.main()

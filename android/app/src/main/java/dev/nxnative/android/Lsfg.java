@@ -156,5 +156,9 @@ final class Lsfg {
         return st;
     }
 
-    static void push(Context c) { Native.frameGenSet(on(c), multiplier(c), target(c), flow(c)); }
+    static void push(Context c) {
+        boolean enabled = on(c);
+        dev.peanuts.display.RunningDisplayMode.beforeFrameGeneration(c, enabled);   // PEANUTS: release the window request before enabling FG
+        Native.frameGenSet(enabled, multiplier(c), target(c), flow(c));
+    }
 }

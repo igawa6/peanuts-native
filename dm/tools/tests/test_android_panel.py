@@ -52,6 +52,7 @@ class PanelJvm(unittest.TestCase):
             c_src = Path(d) / 'grid.c'
             c_src.write_text(C_GRID)
             exe = Path(d) / 'grid'
+            assert CC is not None   # PEANUTS(upstream-candidate): the compiler-gated fixture needs its executable.
             subprocess.run([CC, '-std=c11', '-I', str(FIT.parent), '-o', str(exe), str(c_src)], check=True, capture_output=True, text=True)
             c = subprocess.run([str(exe)], capture_output=True, text=True, check=True).stdout
             jr, cr = rows(j), rows(c)

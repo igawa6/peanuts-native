@@ -44,9 +44,21 @@ General changes first needed here; each applies to every game:
 - **Dual-source blending for NVN shaders** (`dmsh_build.py` `fs_dual`, `main0_d`, the profile's `dual_want.tsv`, `DM_NVN_DUAL_WANT`; `pso_desc` `pso_reads_src1`): [A written secondary blend source (NVN dual-source blending)](../../../docs/reference/rendering.md#a-written-secondary-blend-source-nvn-dual-source-blending).
 - **The NSP script's rewrite key always covers `sdk_patches.py`** (`patch_files`): [The packing script in detail](../../../docs/development.md#the-packing-script-in-detail).
 
+- [Reviewed community FPS timing plans on Android](../../../docs/reference/frame-rate.md#reviewed-community-fps-timing-plans-on-android): exact-build clock and activity corrections, including Game owned and supported target bounds.
+
 ## Android (Peanuts Native)
 
-PEANUTS: built on the device and played on an AYN Thor (Adreno 740, Turnip) through the opening to the first field, 30 fps as on the Switch. Two things were missing for it:
+PEANUTS: built on the device and played on an AYN Thor (Adreno 740, Turnip) through the opening to the first field, initially at the original 30 fps. The current optional Android timing correction is described below. Two things were missing during bring-up:
 
 - The device's shader split could not decode the 678 GFPAK archives (Oodle Kraken): it now runs the game's own decoder in the app's host library, as it does for an Unreal game's shader archives (`shader_split.py` `oodle`, `ue_ondevice.py`).
 - People and Pokémon were not drawn: the game skins them with transform feedback (vertex shader `3374449f919e50db` captures three outputs into buffers of stride 12 / 4 / 4), which the Vulkan replay skipped. It captures now (`dm/gfx/vk_android/vka_tf.c`, `VK_EXT_transform_feedback`; `DM_VK_XFB=0` turns it off).
+
+## Android community FPS timing corrections
+
+Android defaults to 60 with a reviewed port of Fl4sh9174's 1.1.1 Dynamic FPS clock. It measures elapsed time through the game's system-tick import, bounds a simulation step to 1/15 second, and replaces two former 1/30-second constants. The game's nanosecond frame period follows the selected target. The source mod's fixed 60 FPS minimum period is replaced by the live cap; 90/120 remain experimental.
+
+The helper uses separate RX code and RW data pages. The original function used as the source mod's code cave stays intact. The inserted call preserves caller registers, full SIMD registers, NZCV and FPSR, including X8 which is live at the hook. Game owned omits the code/memory writes and retains the original 30 FPS path. Choices are 20/30/40/45/60/90/120 plus Game owned.
+
+The actual ARM64 clock fixture passed 1,088 checks: equal elapsed time and nanosecond periods at every requested target, first-frame initialization, live X8 preservation and long-pause bounds. A bounded Turnip run reached the playable beach at about 59–60 FPS; live memory reads showed roughly 16.9 ms simulation steps. An earlier run stopped at a fresh-save naming prompt because the harness did not supply a name. Broad gameplay, later areas and high-rate physics remain unvalidated.
+
+Source: [Fl4sh9174 Switch emulator mods](https://github.com/Fl4sh9174/Switch-Emulator-Ultrawide-FPS-Mods), reviewed commit `5eed21701e8091389e2e746f073f694ea2ad4ec6`. These community timing patches are separate from FPSLocker Warehouse configs.

@@ -1,0 +1,9 @@
+# What this game needs of an Android phone, for the launcher's readiness check (android/README.md "Readiness check"; the format in dm/games/README.md "Readiness rows").
+# A status row also marks the game as supported on Android: gradle.properties' nxGames builds every such profile into the APK (dm/tools/tests/test_android_games.py).
+
+# In bring-up on Android: reached a first course at 30 fps on one phone (Turnip) from a dump folder with program 1; the system driver is not tested (the note, Open)
+status	bring-up
+
+# No rows for the phone's needs yet: no shader library of this game has been built here (its Prepare needs a dump with program 1), so the features its shaders use are not counted.
+# After a Prepare, run dm/tools/library_caps.py on its library folder and add the geometry / draw parameters / storage image rows; the memory rows come from a measured run (the
+# note's Open section). The author's phone is the only one that has run it

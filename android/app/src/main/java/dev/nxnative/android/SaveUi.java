@@ -141,7 +141,10 @@ final class SaveUi {
         String st = stamp();
         File to = target(a, g);
         Ui.confirmDanger(a, "Delete " + g.name + "'s save data?", "The game starts from the beginning the next time. The save is backed up first (checked), so "
-                + "Restore saves can bring it back. No backup is deleted.\n\nSave: " + save + "\nBackup of it: " + new File(to, st),
+                + "Restore saves can bring it back. No backup is deleted."
+                + (Users.list(a).size() > 1 ? "\n\nThis is the save of the first user (" + Users.list(a).get(0).name + "). The saves of the other users (Settings › Users) are in folders of "
+                        + "their own beside it and stay as they are, as Back up saves and Restore saves leave them." : "")   // (upstream's users, since Banana Native v0.3.22: Users.saveDir)
+                + "\n\nSave: " + save + "\nBackup of it: " + new File(to, st),
                 "Delete", () -> {
                     if (!ready(a, g, "delete the save")) return;
                     run(a, g, "Backing up, then deleting " + g.name + "'s save…", () -> {

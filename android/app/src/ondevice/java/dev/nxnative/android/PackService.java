@@ -349,7 +349,7 @@ public final class PackService extends Service {
             if (j.apkChanged()) {
                 stepLog(j, "the job's shaders are from another app version: translating them again");
                 j.resetChainSteps();
-                Job.deleteTree(new File(j.dir(), "xlate")); Job.deleteTree(j.xlate(this));   // PEANUTS: the results live in the app's own storage (Job.xlate)
+                j.deleteResults(this);
                 Job.deleteTree(new File(j.dir(), "lib"));
             }
             ranNow.clear();
@@ -401,7 +401,7 @@ public final class PackService extends Service {
                 }
                 Job.deleteTree(j.splitScan(this));
                 Job.deleteTree(j.ueShaders(this));   // PEANUTS: an Unreal game's decoded archives (Job.ueShaders)
-                Job.deleteTree(new File(j.dir(), "xlate")); Job.deleteTree(j.xlate(this));   // PEANUTS: the results live in the app's own storage (Job.xlate)
+                j.deleteResults(this);
                 Job.deleteTree(new File(j.dir(), "lib"));
             } else if (stopReason != null) {
                 j.state("paused", stopReason, null);
@@ -481,7 +481,7 @@ public final class PackService extends Service {
         // The update's RomFS and main: folders of the dump, or (a .nup) <file>.nup:update/<version>/romfs and …/exefs/main (base/… for version 0), which the
         // tools take where they take the folders (android/NUP.md "Naming a package"); the dump itself goes to pack_android.py as it is, folder or .nup
         String upRomfs = DumpCheck.versionPath(dump, j.version(), "romfs"), upMain = DumpCheck.versionPath(dump, j.version(), "exefs/main");
-        File split = new File(od, "split"), splitTmp = new File(od, "split.tmp"), splitScan = j.splitScan(this), xlate = j.xlate(this), lib = new File(od, "lib");   // PEANUTS: xlate in the app's own storage (Job.xlate)
+        File split = new File(od, "split"), splitTmp = new File(od, "split.tmp"), splitScan = j.splitScan(this), xlate = j.results(this), lib = new File(od, "lib");
         String tool;
         String[] argv;
         List<String> selected = null;
@@ -492,7 +492,7 @@ public final class PackService extends Service {
         // The split is resumable by RomFS file: its scan results are kept in the app's own storage (Job.splitScan, DM_SPLIT_RESUME, shader_split.py ScanCache) and a rerun scans only the files
         // that have none; it writes its outputs into split/ at its end, which counts as complete only once its marker is written after them (Outputs: no folder is
         // renamed on shared storage, where MediaProvider may refuse it).
-        // The shaders step is resumable by shader: each result is a file in xlate/ (DMSH_VK_RESULTS) and a rerun skips the shaders that have one; it writes the
+        // The shaders step is resumable by shader: each result is a file in the app's own storage (Job.results, DMSH_VK_RESULTS) and a rerun skips the shaders that have one; it writes the
         // library (lib/v-<DMSH_VK_CHAIN>/) from the results at its end. The pack step copies the library into the pack (--shader-cache)
         switch (s) {
             case "rewrite":
@@ -540,10 +540,12 @@ public final class PackService extends Service {
                 // a split without some of the profile's optional shaders (shader_optional.tsv, splitMatchesProfile): the key list is the map's (or the selection's) other
                 // keys, so vk_android_build.py with DMSH_VK_REQUIRE_ALL=1 neither stops on them nor passes a shader that did not build
                 List<String> absent = j.tryAnyway() || engine.simulated() ? null : ShaderLibs.absentOptional(new File(PackNative.repo(), "dm/games/" + j.titleId()), new File(split, "shader_map.tsv"), j.version());   // PEANUTS: j.version(): also the shaders only another listed version of the game has (ShaderLibs.otherVersionKeys)
+                if (absent == null && !j.tryAnyway() && !engine.simulated()) absent = dev.peanuts.build.RuntimeShaderMap.missingRuntime(   // PEANUTS: translate all file-based shaders before internal runtime capture
+                        new File(PackNative.repo(), "dm/games/" + j.titleId() + "/shader_map.tsv"), new File(split, "shader_map.tsv"));   // PEANUTS
                 if (absent != null) {
                     if (selected == null) selected = new java.util.ArrayList<>(new java.util.TreeSet<>(ShaderLibs.mapKeys(new File(PackNative.repo(), "dm/games/" + j.titleId() + "/shader_map.tsv"))));
                     selected.removeAll(absent);
-                    keysFrom = "shader_map.tsv without " + absent.size() + " of " + ShaderLibs.OPTIONAL;
+                    keysFrom = "shader_map.tsv without " + absent.size() + " absent shaders";   // PEANUTS: optional or boot-generated outputs
                     // PEANUTS begin: a dump of one of the versions the tables are the union of (game.tsv shader_versions): one plain line, in logcat and in the step's log
                     File prof = new File(PackNative.repo(), "dm/games/" + j.titleId());
                     java.util.Set<String> theirs = ShaderLibs.otherVersionKeys(prof, j.version());
@@ -765,8 +767,9 @@ public final class PackService extends Service {
         File have = new File(split, "shader_map.tsv");
         try {
             File want = new File(PackNative.repo(), "dm/games/" + j.titleId() + "/shader_map.tsv");
-            if (tableRows(Files.readAllBytes(want.toPath())).equals(tableRows(Files.readAllBytes(have.toPath())))) return null;   // PEANUTS: without the comment lines (shader_split.py table_rows: the header prose changed with the tool's wording on 2026-10-28, and 86 profiles carry the older prose)
+            if (tableRows(Files.readAllBytes(want.toPath())).equals(tableRows(Files.readAllBytes(have.toPath())))) return null;   // PEANUTS: without the comment lines (shader_split.py tables_data, upstream's since Banana Native v0.3.22; table_rows before: the header prose changed with the tool's wording on 2026-10-28, and 86 profiles carry the older prose)
             if (ShaderLibs.absentOptional(want.getParentFile(), have, j.version()) != null) return null;   // a registered build that lacks only the profile's optional shaders (the shaders step leaves them out); PEANUTS: j.version(): or only what another listed version of the game has, checked before any message below
+            if (dev.peanuts.build.RuntimeShaderMap.missingRuntime(want, have) != null) return null;   // PEANUTS: boot-generated shaders are completed by Build, not missing DLC
         } catch (IOException | RuntimeException | UnsatisfiedLinkError e) {
             // the app's own list is missing (work() refuses a game this APK does not include, so this is an app built without the profile's tables) or the split's
             String why = "cannot compare the dump's shaders with the app's list: " + e.getMessage();

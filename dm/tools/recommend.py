@@ -63,7 +63,7 @@ def check_row(g, words, o=None):
         k, eq, v = kv.partition('=')
         if not k or not eq or not v: raise Error(f"{where}: '{kv}' is not <setting>=<value>")
 
-        def take(ok, have=True):
+        def take(ok, have=True, k=k, v=v):   # PEANUTS(upstream-candidate): bind the current setting.
             if not have: raise Error(f'{where}: {k}: this game does not offer the setting')
             if v not in ok: raise Error(f'{where}: {k} takes {", ".join(ok)}, not {v}')
         if k == 'res_preset': take(o['presets'], bool(o['presets']))

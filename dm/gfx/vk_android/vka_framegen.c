@@ -34,6 +34,9 @@ static void settings_init(void) {
     atomic_compare_exchange_strong(&g_on, &exp, e && atoi(e) ? 1 : 0);
 }
 
+// PEANUTS: let window display policy observe initialized requested FG state independently of rendering warm-up.
+int nxhost_framegen_enabled(void) { settings_init(); return atomic_load(&g_on) > 0; }
+
 void nxhost_framegen_set(int on, int multiplier, int target_rate, int flow_pct) {
     atomic_store(&g_mult, multiplier < 2 ? 2 : multiplier > 4 ? 4 : multiplier);
     atomic_store(&g_target, target_rate < 0 ? 0 : target_rate);
@@ -102,7 +105,7 @@ static int load(void) {
 
 static void teardown(void) {
     if (!F.chain && !F.out[0]) return;
-    pthread_mutex_lock(&V.qmu); vk.vkQueueWaitIdle(V.q); pthread_mutex_unlock(&V.qmu);
+    vka_queue_idle();   // (a CPU wait: a gate holding the queue opens, vka_dev.c)
     for (int i = 0; i < NFG; i++) if (F.fr[i].held) { vka_tex_drop(F.fr[i].held); F.fr[i].held = NULL; }
     lsfg_chain_free(F.chain); F.chain = NULL;
     for (int i = 0; i < LSFG_MAX_GENERATIONS; i++) {
@@ -157,7 +160,11 @@ static VkFormat own_fmt(const vka_img *im, int format) {
     return w;
 }
 
-static int rebuild(VkExtent2D e, int flow) {
+static int rebuild_now(VkExtent2D e, int flow);
+// On the present thread, which the game's thread waits for: the gates' time stands still meanwhile (vka_gate_host_stall), or a GPU wait for the game's next signal
+// ran out during the chain's 327 ms and banned its event for the rest of the run
+static int rebuild(VkExtent2D e, int flow) { vka_gate_host_stall(1); int ok = rebuild_now(e, flow); vka_gate_host_stall(0); return ok; }
+static int rebuild_now(VkExtent2D e, int flow) {
     teardown();
     VkImage imgs[LSFG_MAX_GENERATIONS];
     for (int i = 0; i < LSFG_MAX_GENERATIONS; i++) { if (!(F.out[i] = out_new(e, i, &F.out_view[i]))) { teardown(); return 0; } imgs[i] = F.out[i]->img; }
@@ -167,6 +174,67 @@ static int rebuild(VkExtent2D e, int flow) {
     F.ext = e; F.flow = flow;
     VLOG("frame generation: chain for %ux%u made in %.1f ms", e.width, e.height, (now_ns() - t0) / 1e6);
     return 1;
+}
+
+// DM_LSFG_DUMP=<n> (live; set it again to another value to dump again): the next n game frames that generate write their chain's images and their generated frames as
+// PNGs into the DM_CTL folder (lsfg-<count>-<name>.png), after the frame generation's submission is done; the present waits for it (a diagnostic: the frame hitches).
+// RGBA8 as it is, R8 as grey, RGBA16F (motion) channel by channel as grey around 128 scaled to the largest magnitude, logged
+static float half_f(uint16_t h) {
+    uint32_t s = h >> 15, e = h >> 10 & 31, m = h & 1023; float v = e == 0 ? m / 16777216.0f : e == 31 ? 65504.0f : (1.0f + m / 1024.0f) * (float)(1u << e) / 32768.0f;
+    return s ? -v : v;
+}
+static void fg_dump(unsigned k, uint64_t count, size_t ng) {
+    lsfg_dbg_img im[16]; int n = lsfg_chain_debug_images(F.chain, im, 12);
+    for (size_t g = 0; g < ng && n < 16; g++) { static const char *gn[3] = {"gen0", "gen1", "gen2"}; im[n++] = (lsfg_dbg_img){F.out[g]->img, F.ext, VK_FORMAT_R8G8B8A8_UNORM, gn[g]}; }
+    VkDeviceSize off[16], tot = 0;
+    for (int i = 0; i < n; i++) { int bpp = im[i].fmt == VK_FORMAT_R8_UNORM ? 1 : im[i].fmt == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4; off[i] = tot; tot += ((VkDeviceSize)im[i].ext.width * im[i].ext.height * bpp + 255) & ~(VkDeviceSize)255; }
+    vk.vkWaitForFences(V.dev, 1, &F.fr[k].fence, VK_TRUE, 2000000000ull);
+    VkBuffer buf = VK_NULL_HANDLE; VkDeviceMemory mem = VK_NULL_HANDLE; void *map = NULL; VkCommandBuffer cb = VK_NULL_HANDLE; VkFence fe = VK_NULL_HANDLE;
+    VkBufferCreateInfo bi = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = tot, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+    VkResult r = vk.vkCreateBuffer(V.dev, &bi, NULL, &buf);
+    VkMemoryRequirements mr = {0}; if (!r) vk.vkGetBufferMemoryRequirements(V.dev, buf, &mr);
+    uint32_t t = vka_mem_type(mr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0);
+    VkMemoryAllocateInfo ai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = mr.size, .memoryTypeIndex = t};
+    if (!r && t == UINT32_MAX) r = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    if (!r) r = vk.vkAllocateMemory(V.dev, &ai, NULL, &mem);
+    if (!r) r = vk.vkBindBufferMemory(V.dev, buf, mem, 0);
+    if (!r) r = vk.vkMapMemory(V.dev, mem, 0, VK_WHOLE_SIZE, 0, &map);
+    static VkCommandBuffer dcb;   // (one for every dump, from the frame generation's pool: the table has no vkFreeCommandBuffers)
+    VkCommandBufferAllocateInfo ca = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = F.pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1};
+    if (!r && !dcb) r = vk.vkAllocateCommandBuffers(V.dev, &ca, &dcb);
+    cb = dcb; if (!r) vk.vkResetCommandBuffer(cb, 0);
+    VkFenceCreateInfo fi = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    if (!r) r = vk.vkCreateFence(V.dev, &fi, NULL, &fe);
+    if (!r) {
+        VkCommandBufferBeginInfo cbi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+        vk.vkBeginCommandBuffer(cb, &cbi); vka_barrier(cb);
+        for (int i = 0; i < n; i++) { VkBufferImageCopy c = {off[i], 0, 0, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, 0, 0}, {im[i].ext.width, im[i].ext.height, 1}}; vk.vkCmdCopyImageToBuffer(cb, im[i].img, VK_IMAGE_LAYOUT_GENERAL, buf, 1, &c); }
+        VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+        vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+        vk.vkEndCommandBuffer(cb);
+        VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cb};
+        pthread_mutex_lock(&V.qmu); r = vk.vkQueueSubmit(V.q, 1, &si, fe); pthread_mutex_unlock(&V.qmu);
+        if (!r) r = vk.vkWaitForFences(V.dev, 1, &fe, VK_TRUE, 2000000000ull);
+    }
+    char line[600]; int o = snprintf(line, sizeof line, "frame generation: dump of game frame %llu (%zu generated, %ux%u, flow %d%%):", (unsigned long long)count, ng, F.ext.width, F.ext.height, F.flow);
+    for (int i = 0; !r && i < n; i++) {
+        int w = (int)im[i].ext.width, h = (int)im[i].ext.height; uint8_t *rgb = malloc((size_t)w * h * 3); if (!rgb) break;
+        const uint8_t *s = (const uint8_t *)map + off[i]; float mx[3] = {0, 0, 0};
+        if (im[i].fmt == VK_FORMAT_R16G16B16A16_SFLOAT) {
+            const uint16_t *p = (const uint16_t *)s;
+            for (size_t q = 0; q < (size_t)w * h; q++) for (int c = 0; c < 3; c++) { float v = fabsf(half_f(p[4 * q + c])); if (v > mx[c] && v < 65504.0f) mx[c] = v; }
+            for (size_t q = 0; q < (size_t)w * h; q++) for (int c = 0; c < 3; c++) { float v = mx[c] > 0 ? half_f(p[4 * q + c]) / mx[c] : 0; if (v > 1) v = 1; if (v < -1) v = -1; rgb[3 * q + c] = (uint8_t)(128 + v * 127); }
+        } else if (im[i].fmt == VK_FORMAT_R8_UNORM) { for (size_t q = 0; q < (size_t)w * h; q++) rgb[3 * q] = rgb[3 * q + 1] = rgb[3 * q + 2] = s[q]; }
+        else { for (size_t q = 0; q < (size_t)w * h; q++) { rgb[3 * q] = s[4 * q]; rgb[3 * q + 1] = s[4 * q + 1]; rgb[3 * q + 2] = s[4 * q + 2]; } }
+        char path[1200]; snprintf(path, sizeof path, "%s/lsfg-%llu-%s.png", vka_ctl_dir(), (unsigned long long)count, im[i].name);
+        int ok = vka_png_rgb(path, rgb, w, h); free(rgb);
+        if (o < (int)sizeof line) o += snprintf(line + o, sizeof line - (size_t)o, " %s %dx%d%s", im[i].name, w, h, ok ? "" : " (not written)");
+        if (im[i].fmt == VK_FORMAT_R16G16B16A16_SFLOAT && o < (int)sizeof line) o += snprintf(line + o, sizeof line - (size_t)o, " [max %.3g %.3g %.3g]", mx[0], mx[1], mx[2]);
+    }
+    if (r) VLOG("frame generation: dump of game frame %llu failed (%d)", (unsigned long long)count, r); else VLOG("%s", line);
+    if (fe) vk.vkDestroyFence(V.dev, fe, NULL);
+    if (buf) vk.vkDestroyBuffer(V.dev, buf, NULL);
+    if (mem) vk.vkFreeMemory(V.dev, mem, NULL);
 }
 
 int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence, int format, vka_img **gen, double *hold, double *out_period) {
@@ -273,6 +341,9 @@ int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence
     pthread_mutex_lock(&V.qmu); VkResult r = vk.vkQueueSubmit(V.q, 1, &si, F.fr[k].fence); pthread_mutex_unlock(&V.qmu);
     F.fr[k].held = im;   // the window texture stays alive until this submission is done
     if (r) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("frame generation submission %d", r); ng = 0; }
+    { static int last, left; int d = VKA_ENV("DM_LSFG_DUMP", 0);   // (see fg_dump)
+      if (d != last) { last = d; left = d > 0 ? d : 0; }
+      if (left > 0 && ng) { left--; fg_dump(k, count, ng); } }
     for (size_t g = 0; g < ng; g++) gen[g] = F.out[g];
     double interval = F.pacer.smoothed_interval > 0 ? F.pacer.smoothed_interval : period;
     if (interval < period) interval = period;

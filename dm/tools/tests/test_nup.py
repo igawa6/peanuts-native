@@ -179,10 +179,14 @@ class Read(Fixture):
                 if peek >= io.DEFAULT_BUFFER_SIZE:   # buffered: the reader asks for its whole buffer
                     with romfs.open(p, 'rb') as f: self.assertEqual(f.read(4), BIG[:4])
                 with romfs.open(p, 'rb', buffering=0) as f:
-                    self.assertEqual(f.read(4), BIG[:4]); self.assertLessEqual(len(f.head), 4)
+                    assert isinstance(f, nup._Zstd)   # PEANUTS(upstream-candidate): unbuffered compressed extent reader.
+                    self.assertEqual(f.read(4), BIG[:4])
+                    assert f.head is not None   # PEANUTS(upstream-candidate): a prefix read retains its small head.
+                    self.assertLessEqual(len(f.head), 4)
                     f.seek(100); self.assertEqual(f.read(8), BIG[100:108])   # past the prefix kept: decoded again further, still not whole
                 self.assertEqual(load.call_count, 0)
                 with romfs.open(p, 'rb', buffering=0) as f:   # read on to the end: the whole file is loaded once and the prefix dropped
+                    assert isinstance(f, nup._Zstd)   # PEANUTS(upstream-candidate): inspect the compressed reader's cached head.
                     self.assertEqual(f.read(4), BIG[:4]); self.assertEqual(f.read(), BIG[4:]); self.assertIsNone(f.head)
                 self.assertEqual(load.call_count, 1)
                 with romfs.open(p, 'rb', buffering=0) as f:   # chunks that run past PEEK: the same bytes as one read
@@ -370,7 +374,7 @@ public final class BuildConfig {
         t = Path(tempfile.mkdtemp(prefix='nupjvm_'))
         try:
             (t / 'BuildConfig.java').write_text(self.STUB)
-            subprocess.run(['javac', '-d', str(t / 'classes')] + [str(src / f'{c}.java') for c in ('Nup', 'Zstd', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Profile', 'ShaderLibs', 'PickedPath', 'CopyPlan')]
+            subprocess.run(['javac', '-d', str(t / 'classes')] + [str(src / f'{c}.java') for c in ('Nup', 'Nsp', 'Zstd', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Profile', 'ShaderLibs', 'PickedPath', 'CopyPlan')]
                            + [str(REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/NupJvmTest.java'), str(t / 'BuildConfig.java')], check=True, capture_output=True, text=True)
             (t / 'run').mkdir()
             r = subprocess.run(['java', '-cp', str(t / 'classes'), 'dev.nxnative.android.NupJvmTest', str(REPO), str(t / 'run')] + ([sys.executable] if have_zstd() else []),

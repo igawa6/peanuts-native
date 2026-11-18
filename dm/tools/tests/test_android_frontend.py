@@ -28,23 +28,23 @@ class FrontendManifest(unittest.TestCase):
     def test_aliases(self):
         m = MANIFEST.read_text()
         act = re.search(r'<activity\s[^>]*android:name="\.FrontendLaunch"[^>]*>', m)
-        self.assertIsNotNone(act)
+        assert act is not None   # PEANUTS(upstream-candidate): narrow the required source match.
         self.assertIn('android:exported="false"', act.group(0))
         # Android 15 checks an explicit intent against an exported component's filters when it has any, and never matches one with no action (Daijisho's
         # -e game {file.path}): the frontends' alias must have none
         launch = re.search(r'<activity-alias\s[^>]*?android:name="\$\{applicationId\}\.Launch"[^>]*?(/>|>)', m)
-        self.assertIsNotNone(launch)
+        assert launch is not None   # PEANUTS(upstream-candidate): narrow the required source match.
         self.assertEqual(launch.group(1), '/>', 'the Launch alias must have no intent filters')
         self.assertIn('android:targetActivity=".FrontendLaunch"', launch.group(0))
         self.assertIn('android:exported="true"', launch.group(0))
         op = re.search(r'<activity-alias\s[^>]*?android:name="\$\{applicationId\}\.Open"[^>]*>(.*?)</activity-alias>', m, re.S)
-        self.assertIsNotNone(op)
+        assert op is not None   # PEANUTS(upstream-candidate): narrow the required source match.
         self.assertIn('pathPattern', op.group(1))
 
     def test_category(self):
         m = MANIFEST.read_text()
         app = re.search(r'<application\s[^>]*>', m)
-        self.assertIsNotNone(app)
+        assert app is not None   # PEANUTS(upstream-candidate): narrow the required source match.
         self.assertIn('android:appCategory="game"', app.group(0))
 
 

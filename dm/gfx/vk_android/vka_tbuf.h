@@ -34,4 +34,30 @@ static inline int vka_tbuf_path(int storage, uint64_t bytes, int placed, int ali
     if (copyable && (!viewable || copy_sw)) return VKTB_CPU;
     return viewable ? VKTB_PLACE : VKTB_NONE;
 }
+
+// ---- A buffer texture read through an image binding (vka_draw.c tbuf_img_gpu): this fork's row image of the CPU's bytes, or upstream's copy the GPU makes
+// (vka_tbuf.c). 1 = upstream's copy: only while a storage texel buffer's stores over the range are pending (gw, as above), and only when the copy can be made and
+// read: switches (DM_VK_TBUF, DM_VK_TBUF_GW), shape (1D or 2D rows), cls (the format's numeric class is the binding's: the copy's view has no class twin), fits (an
+// image the device takes), placed (all of it in placed guest memory), grid (its offset there a multiple of the texel size)
+static inline int vka_tbuf_img_choice(int switches, int shape, int cls, int fits, int gw, int placed, int grid) {
+    return switches && gw && shape && cls && fits && placed && grid;
+}
+// The answers of one draw or dispatch, by texture ID and shape. A draw asks two or three times for a binding (whether its images are to be made, making them,
+// binding them), and a store the draw's own earlier binding records changes what the tracker says in between: the first answer holds for the draw. fresh: the
+// copy was made, or found made this frame and not written over since, when the draw's images were made; only then is it bound (an older copy is another frame's
+// bytes). A full memo answers the row image for what it cannot hold
+enum { VKTB_MEMO_N = 64 };
+typedef struct { int n; struct { int tid; uint8_t dim, gpu, fresh; } e[VKTB_MEMO_N]; } vktb_memo;
+static inline void vktb_memo_reset(vktb_memo *m) { m->n = 0; }
+static inline int vktb_memo_find(const vktb_memo *m, int tid, uint8_t dim) {
+    for (int i = 0; i < m->n; i++) if (m->e[i].tid == tid && m->e[i].dim == dim) return i;
+    return -1;
+}
+static inline int vktb_memo_put(vktb_memo *m, int tid, uint8_t dim, int gpu) {   // the entry's index, -1 when the memo is full
+    if (m->n == VKTB_MEMO_N) return -1;
+    m->e[m->n].tid = tid; m->e[m->n].dim = dim; m->e[m->n].gpu = (uint8_t)(gpu != 0); m->e[m->n].fresh = 0;
+    return m->n++;
+}
+static inline void vktb_memo_fresh(vktb_memo *m, int tid, uint8_t dim) { int i = vktb_memo_find(m, tid, dim); if (i >= 0 && m->e[i].gpu) m->e[i].fresh = 1; }
+static inline int vktb_memo_bind_gpu(const vktb_memo *m, int tid, uint8_t dim) { int i = vktb_memo_find(m, tid, dim); return i >= 0 && m->e[i].gpu && m->e[i].fresh; }
 #endif

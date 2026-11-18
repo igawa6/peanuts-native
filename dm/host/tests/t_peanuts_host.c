@@ -13,6 +13,9 @@
 #include <sys/prctl.h>
 #include <sys/uio.h>
 #include "../../peanuts/peanuts.c"
+// the overlay graph (peanuts_frametime.c, peanuts_graph.c) has tests of its own (t_peanuts_frametime, t_peanuts_graph); built as if for Android those files want jni.h
+void pn_ft_note(void) {}
+void pn_graph_frame(void) {}
 
 // ---- the runtime (rt/peanuts_rt.h): what was asked of it ----
 struct PnRt { int unused; };

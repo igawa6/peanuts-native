@@ -22,6 +22,7 @@ SITE_ORIG = bytes.fromhex('ff0305d1')   # sub sp, sp, #0x140: the predicate's fi
 
 def load_patches():
     spec = importlib.util.spec_from_file_location('dread_patches', REPO / 'dm/games' / GAME / 'patches.py')
+    assert spec is not None and spec.loader is not None   # PEANUTS(upstream-candidate): required fixture loader.
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
     return m
 

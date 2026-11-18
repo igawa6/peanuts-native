@@ -37,6 +37,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_oot_wide
 	$(B)/t_dkb_wide
 	$(B)/t_mkw_wide
+	$(B)/t_mtf_size
 	$(B)/t_pkp_aspect
 	$(B)/t_uecvar
 	$(B)/t_audren_work
@@ -62,6 +63,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_nv
 	$(B)/t_nfc
 	$(B)/t_motion
+	$(B)/t_pad_motion
 	$(B)/t_motion_apple
 	$(B)/t_pad_apple
 	$(B)/t_motion_pro
@@ -87,6 +89,11 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_texown
 	$(B)/t_android_mapbudget
 	$(B)/t_android_psogate
+	$(B)/t_android_auto
+	$(B)/t_nvn_dpool
+	$(B)/t_android_t2tpath
+	$(B)/t_android_wbfollow
+	$(B)/t_nvn_levelof
 	$(B)/t_android_pckeep
 	$(B)/t_android_pwlist
 	$(B)/t_android_fmtlist
@@ -171,10 +178,10 @@ $(B)/t_thread_leak: t_thread_leak.c ../thread.c ../dm.h $(GAME_H) | $(B)
 # zstd's decompressor for the NUP container tests (nup_image.h, built with DM_NUP_ZSTD as the Android host is; the Mac host is built without it)
 $(B)/zstddec.o: ../../third_party/zstd/zstddeclib.c | $(B)
 	$(CLANG) -O2 -w -c -o $@ $<
-$(B)/t_fs: t_fs.c t_fs_stub.c ../hle_fs.c ../save_sync.c ../save_sync.h ../hle_bigstack.c ../hle.h ../dm.h ../nup_image.h nup_fixture_zst.h $(B)/zstddec.o $(GAME_H) | $(B)
+$(B)/t_fs: t_fs.c t_fs_stub.c ../hle_fs.c ../save_sync.c ../save_sync.h ../hle_bigstack.c ../hle.h ../dm.h ../nup_image.h ../nsp_toc.h nup_fixture_zst.h $(B)/zstddec.o $(GAME_H) | $(B)
 	$(CLANG) -O1 -Wno-unused-function -DDM_NUP_ZSTD -I.. $(GINC) -o $@ t_fs.c t_fs_stub.c ../hle_bigstack.c ../save_sync.c $(B)/zstddec.o
 # Manual check of the NUP reader against a real dump (not in run): build/t_nup_dump <file>.nup:<selector> <RomFS folder>
-$(B)/t_nup_dump: t_nup_dump.c t_fs_stub.c ../hle_fs.c ../save_sync.c ../hle_bigstack.c ../nup_image.h ../romfs_image.h $(B)/zstddec.o $(GAME_H) | $(B)
+$(B)/t_nup_dump: t_nup_dump.c t_fs_stub.c ../hle_fs.c ../save_sync.c ../hle_bigstack.c ../nup_image.h ../nsp_toc.h ../romfs_image.h $(B)/zstddec.o $(GAME_H) | $(B)
 	$(CLANG) -O2 -Wno-unused-function -DDM_NUP_ZSTD -I.. $(GINC) -o $@ t_nup_dump.c t_fs_stub.c ../hle_bigstack.c ../save_sync.c $(B)/zstddec.o
 # Inject only the folder handle allocation; directory I/O remains real.
 $(B)/t_fs_directory: t_fs_directory.c t_fs_stub.c ../hle_fs.c ../romfs_image.h ../save_sync.c ../save_sync.h ../hle_bigstack.c ../hle.h ../dm.h $(GAME_H) | $(B)
@@ -254,6 +261,9 @@ $(B)/t_language: t_language.c ../hle_sdk16.c ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -Wno-frame-address -fsanitize=address,undefined -I.. $(GINC) -o $@ t_language.c
 $(B)/t_motion: t_motion.c ../motion_fusion.h | $(B)
 	$(CLANG) -O1 -Wall -Werror -Wno-unused-function -o $@ t_motion.c -lm
+run: $(B)/t_pad_motion
+$(B)/t_pad_motion: t_pad_motion.c ../android/pad_motion.h | $(B)
+	$(CLANG) -O1 -Wall -Werror -Wno-unused-function -o $@ t_pad_motion.c -lm
 run: $(B)/t_motion_apple
 $(B)/t_motion_apple: t_motion_apple.m ../motion_apple.h ../dm_input.h | $(B)
 	$(CLANG) -O1 -g -fobjc-arc -Wall -Werror -I.. -o $@ t_motion_apple.m -framework Foundation -framework GameController
@@ -265,9 +275,9 @@ $(B)/t_motion_pro: t_motion_pro.c ../motion_pro.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -o $@ t_motion_pro.c
 $(B)/t_motion_pro_mac: t_motion_pro_mac.m ../motion_pro_mac.h ../motion_pro.h ../dm_input.h | $(B)
 	$(CLANG) -O1 -g -fobjc-arc -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_motion_pro_mac.m -framework Foundation -framework GameController -framework IOKit
-$(B)/t_hid: t_hid.c ../hle_hid.c ../motion_fusion.h ../hle_haptics.c ../hle_haptics.h ../pad_slots.h ../dm_input.h ../hle.h ../dm.h $(GAME_H) | $(B)
+$(B)/t_hid: t_hid.c ../hle_hid.c ../motion_fusion.h ../hle_haptics.c ../hle_haptics.h ../pad_slots.h ../pad_join.h ../dm_input.h ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -Wall -Werror -Wno-unused-function -I.. $(GINC) -o $@ t_hid.c ../hle_haptics.c
-$(B)/t_hid_tsan: t_hid.c ../hle_hid.c ../motion_fusion.h ../hle_haptics.c ../hle_haptics.h ../pad_slots.h ../dm_input.h ../hle.h ../dm.h $(GAME_H) | $(B)
+$(B)/t_hid_tsan: t_hid.c ../hle_hid.c ../motion_fusion.h ../hle_haptics.c ../hle_haptics.h ../pad_slots.h ../pad_join.h ../dm_input.h ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -fsanitize=thread -Wall -Werror -Wno-unused-function -I.. $(GINC) -o $@ t_hid.c ../hle_haptics.c
 $(B)/t_haptics: t_haptics.c ../hle_haptics.c ../hle_haptics.h ../dm_input.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -I.. -o $@ t_haptics.c ../hle_haptics.c
@@ -413,7 +423,7 @@ coverage:
 	LLVM_PROFILE_FILE="$(call cov_profile,$(B)/cov)" $(MAKE) -i B=$(B)/cov SAN="$(COV_FLAGS)" run
 	@$(call cov_export,$(B)/cov)
 # The Android host's pure parts (dm/host/android): resampler, channel map, SPS size, MediaCodec picture layouts; gamepad / touch / sensor mapping
-run: $(B)/t_android_av $(B)/t_android_input $(B)/t_android_shlib $(B)/t_android_spvpatch $(B)/t_android_imgmem $(B)/t_android_zshare $(B)/t_android_texlimit $(B)/t_android_lowram $(B)/t_android_livemap $(B)/t_android_smap $(B)/t_android_mapbudget $(B)/t_android_psogate $(B)/t_android_pckeep $(B)/t_android_pwlist $(B)/t_android_fmtlist $(B)/t_android_place $(B)/t_android_ovl $(B)/t_android_pace $(B)/t_android_skipwarn $(B)/t_android_gmem $(B)/t_android_fpenv $(B)/t_android_soft $(B)/t_android_qsched $(B)/t_android_poolslot $(B)/t_android_prepass $(B)/t_android_tlsig $(B)/t_android_texown $(B)/t_android_gbar $(B)/t_android_memu
+run: $(B)/t_android_av $(B)/t_android_input $(B)/t_android_shlib $(B)/t_android_spvpatch $(B)/t_android_imgmem $(B)/t_android_zshare $(B)/t_android_texlimit $(B)/t_android_lowram $(B)/t_android_livemap $(B)/t_android_smap $(B)/t_android_mapbudget $(B)/t_android_psogate $(B)/t_android_wbfollow $(B)/t_android_pckeep $(B)/t_android_pwlist $(B)/t_android_fmtlist $(B)/t_android_place $(B)/t_android_ovl $(B)/t_android_pace $(B)/t_android_skipwarn $(B)/t_android_gmem $(B)/t_android_fpenv $(B)/t_android_soft $(B)/t_android_qsched $(B)/t_android_poolslot $(B)/t_android_prepass $(B)/t_android_tlsig $(B)/t_android_texown $(B)/t_android_gbar $(B)/t_android_memu $(B)/t_android_auto
 $(B)/t_android_av: t_android_av.c ../android/av_android.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. $(WEAK_HOST) -o $@ t_android_av.c
 $(B)/t_android_input: t_android_input.c ../android/input_map.c ../android/input_map.h ../../gfx/vk_android/vka_present_fit.h ../motion_fusion.h ../dm_input.h | $(B)
@@ -447,9 +457,28 @@ $(B)/t_android_texown: t_android_texown.c $(VKA)/vka_texown.h ../../gfx/nvn/nvn_
 # The memory maps budget: the dirty tracker's block size by share of vm.max_map_count, compaction's picks, the lines of /proc/self/maps (vka_mapbudget.h; vka_mem.c maps_tick)
 $(B)/t_android_mapbudget: t_android_mapbudget.c $(VKA)/vka_mapbudget.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_mapbudget.c
+# The descriptor pools' ranges: a finalized pool's range is used again (nvn_dpool.h; hle_nvn.c "Descriptor pools")
+$(B)/t_nvn_dpool: t_nvn_dpool.c ../../gfx/nvn/nvn_dpool.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -I.. -o $@ t_nvn_dpool.c
+run: $(B)/t_nvn_dpool
+# A scaled texture copy is a blit only into a blit destination; a depth one into a format that is none is a draw (vka_t2tpath.h; vka_exec.c copy_t2t)
+$(B)/t_android_t2tpath: t_android_t2tpath.c $(VKA)/vka_t2tpath.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_t2tpath.c
+run: $(B)/t_android_t2tpath
+# A texture over the mip levels of another is those levels (nvn_tex.c nvn_tex_level_of; vka_tex.c level children)
+$(B)/t_nvn_levelof: t_nvn_levelof.c ../../gfx/nvn/nvn_tex.c ../../gfx/nvn/nvn_tex.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -I.. -o $@ t_nvn_levelof.c ../../gfx/nvn/nvn_tex.c
+run: $(B)/t_nvn_levelof
 # The background pipeline compiles' gate: slots by MemAvailable and the maps' headroom, the frame's compiles before prewarm's and the optimizer's (vka_psogate.h; vka_pso.c gate_enter)
+# A tracked texture the GPU wrote follows the CPU's writes again once its copy-back into the storage has run (vka_wbfollow.h; vka_tex.c, the prepare's scan)
+$(B)/t_android_wbfollow: t_android_wbfollow.c $(VKA)/vka_wbfollow.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_wbfollow.c
+run: $(B)/t_android_wbfollow
 $(B)/t_android_psogate: t_android_psogate.c $(VKA)/vka_psogate.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_psogate.c
+# Automatic defaults by driver: the rules and the "[auto]" log line (vka_auto.h; vka_dev.c auto_log)
+$(B)/t_android_auto: t_android_auto.c $(VKA)/vka_auto.h $(VKA)/vka_psogate.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_auto.c
 # The pipeline cache stamp: which file a run reads after a shader library update (vka_pckeep.h; vka_pso.c pc_open_once)
 $(B)/t_android_pckeep: t_android_pckeep.c $(VKA)/vka_pckeep.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_pckeep.c
@@ -535,6 +564,16 @@ run: fileback
 endif
 $(B)/t_android_fileback: t_android_fileback.c $(VKA)/vka_fileback.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_fileback.c -lpthread
+# Fixed maps in the guest block merge with their neighbours again (plat_guestmap.h; hle_svc.c guest_release, vka_mem.c sw_mmap_fixed). Linux only (the kernel's merge rules,
+# counted in /proc/self/maps): make guestmap, in `run` on a Linux host
+.PHONY: guestmap
+guestmap: $(B)/t_android_guestmap
+	$(B)/t_android_guestmap
+ifeq ($(shell uname -s),Linux)
+run: guestmap
+endif
+$(B)/t_android_guestmap: t_android_guestmap.c ../plat/plat_guestmap.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_guestmap.c
 # The game's barriers between compute dispatches: the barrier chosen for each, checked against NVN's ordering over every short sequence (vka_gbar.h; vka_gbar.c)
 $(B)/t_android_gbar: t_android_gbar.c $(VKA)/vka_gbar.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_gbar.c
@@ -606,6 +645,10 @@ run: $(B)/t_mkw_wide
 $(B)/t_mkw_wide: t_mkw_wide.c ../android/mkw_wide.c ../android/wide_shape.h ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_mkw_wide.c -lm -pthread
 
+run: $(B)/t_mtf_size
+$(B)/t_mtf_size: t_mtf_size.c ../android/mtf_size.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_mtf_size.c -lm -pthread
+
 run: $(B)/t_oot_wide
 $(B)/t_oot_wide: t_oot_wide.c ../android/oot_wide.c ../android/wide_shape.h ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_oot_wide.c -lm -pthread
@@ -623,10 +666,12 @@ $(B)/t_pkp_aspect: t_pkp_aspect.c ../android/pkp_aspect.c ../hle.h ../dm.h $(GAM
 # (hle_hid.c dm_pad_raw / dm_pad_gate), over t_hid.c's stand-ins. t_peanuts_host: dm/peanuts/peanuts.c's tick thread, presence, pad reads and guarded reads
 PN_ASIF = -D__ANDROID__=1 -D__aarch64__=1 -D_ASM_X86_SIGCONTEXT_H -include stdbool.h
 .PHONY: peanuts-host
-peanuts-host: $(B)/t_peanuts_stopworld $(B)/t_peanuts_padgate $(B)/t_peanuts_host
+peanuts-host: $(B)/t_peanuts_stopworld $(B)/t_peanuts_padgate $(B)/t_peanuts_host $(B)/t_peanuts_frametime $(B)/t_peanuts_graph
 	$(B)/t_peanuts_stopworld
 	TMPDIR="$(abspath $(B))" $(B)/t_peanuts_padgate
 	$(B)/t_peanuts_host "$(abspath $(B))"
+	$(B)/t_peanuts_frametime
+	$(B)/t_peanuts_graph
 ifeq ($(shell uname -s),Linux)
 run: peanuts-host
 endif
@@ -634,8 +679,15 @@ $(B)/t_peanuts_stopworld: t_peanuts_stopworld.c ../hle_thread.c ../dm.h $(GAME_H
 	$(CLANG) -O1 -g -Wall -Wno-format -Wno-unused-function -Wno-unused-variable $(PN_ASIF) -DDM_TEST_THREAD_ENTER -I.. $(GINC) -o $@ t_peanuts_stopworld.c -lpthread -lm
 $(B)/t_peanuts_padgate: t_peanuts_padgate.c t_hid.c t_peanuts_hid_stubs.c ../hle_hid.c ../hle_haptics.c ../dm_input.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wall -Wno-unused-function -Wno-unused-variable $(PN_ASIF) -I.. $(GINC) -o $@ t_peanuts_padgate.c t_peanuts_hid_stubs.c ../hle_haptics.c -lpthread -lm
-$(B)/t_peanuts_host: t_peanuts_host.c stub_android/android/log.h ../../peanuts/peanuts.c ../../peanuts/peanuts.h ../../peanuts/rt/peanuts_rt.h ../dm.h $(GAME_H) | $(B)
+$(B)/t_peanuts_host: t_peanuts_host.c stub_android/android/log.h ../../peanuts/peanuts.c ../../peanuts/peanuts.h ../../peanuts/peanuts_frametime.h ../../peanuts/peanuts_graph.h ../../peanuts/rt/peanuts_rt.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wall -Wno-unused-function -Wno-unused-variable $(PN_ASIF) -Istub_android -I.. $(GINC) -o $@ t_peanuts_host.c -lpthread -lm
+# t_peanuts_frametime: the ring of presented-frame intervals (peanuts_frametime.c, included as the other peanuts tests include their sources): the first push, the gap rule,
+# the ring's wrap and the reads. Built without __ANDROID__, so the JNI function is left out.
+$(B)/t_peanuts_frametime: t_peanuts_frametime.c ../../peanuts/peanuts_frametime.c ../../peanuts/peanuts_frametime.h | $(B)
+	$(CLANG) -O1 -g -Wall -Wno-unused-function -o $@ t_peanuts_frametime.c -lpthread -lm
+# t_peanuts_graph: the host's drawing of the overlay's frame-time bars (peanuts_graph.c, included): background, columns, colours, premultiplied bytes, the block path.
+$(B)/t_peanuts_graph: t_peanuts_graph.c ../../peanuts/peanuts_graph.c ../../peanuts/peanuts_graph.h ../../peanuts/peanuts_frametime.c ../../peanuts/peanuts_frametime.h | $(B)
+	$(CLANG) -O1 -g -Wall -Wno-unused-function -o $@ t_peanuts_graph.c -lpthread -lm
 # t_peanuts_syncstress: a hunt for lost wake-ups in hle_thread.c's waits and signals with real threads (single cases, then a storm of SYNC_SECS seconds; with --stops the
 # game is stopped and resumed throughout): make GAME=<id> peanuts-sync [SYNC_SECS=300] [SYNC_ARGS=--stops]. peanuts-sync-control builds the host's old condition
 # variable order (-DDM_TEST_CV_OLD_ORDER, a lost wake-up that is known) and passes when the test catches it
@@ -647,6 +699,14 @@ peanuts-sync-control: $(B)/t_peanuts_syncstress_old
 	! SYNC_STALL_S=3 $(B)/t_peanuts_syncstress_old 60 > $(B)/t_peanuts_syncstress_old.log 2>&1
 	grep -a "was pushed and never taken\|stalled at" $(B)/t_peanuts_syncstress_old.log
 peanuts-host: peanuts-sync
+# t_peanuts_nroarena: loader.c's load_modules as the Android host runs it (the module arena) over a pack with NROs (nro.tsv): the game's modules back to back in
+# the arena, each NRO in a mapping of its own
+.PHONY: peanuts-nro
+peanuts-nro: $(B)/t_peanuts_nroarena
+	$(B)/t_peanuts_nroarena "$(abspath $(B))" 2> $(B)/t_peanuts_nroarena.log
+peanuts-host: peanuts-nro
+$(B)/t_peanuts_nroarena: t_peanuts_nroarena.c ../loader.c ../hle.h ../dm.h $(GAME_H) | $(B)
+	$(CLANG) -O1 -g -Wall -Wno-format -Wno-unused-function -Wno-unused-variable $(PN_ASIF) -Istub_android -I.. $(GINC) -o $@ t_peanuts_nroarena.c -lpthread -lm
 $(B)/t_peanuts_syncstress: t_peanuts_syncstress.c ../hle_thread.c ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wall -Wno-format -Wno-unused-function -Wno-unused-variable $(PN_ASIF) -DDM_TEST_THREAD_ENTER -I.. $(GINC) -o $@ t_peanuts_syncstress.c -lpthread -lm
 $(B)/t_peanuts_syncstress_old: t_peanuts_syncstress.c ../hle_thread.c ../dm.h $(GAME_H) | $(B)

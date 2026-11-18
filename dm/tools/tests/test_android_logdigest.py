@@ -24,7 +24,7 @@ DOCS = 'https://git.eden-emu.dev/moceure/BananaNative/src/branch/android/'
 
 NONE, SIGNALED, LOW_MEMORY, CRASH_NATIVE = -1, 2, 3, 5
 RUN = f'v=1\ntitle={TID}\nname=Test Game\npid=1234\nstart=1700000000000\nstate=running\nlog={TID}-20261109-101010.log\n'
-KEPT = ('== log digest', '-- verdict', '-- crash', '-- [RED] / error lines', '-- rules')
+KEPT = ('== log digest', '-- Settings changed from the defaults', '-- verdict', '-- crash', '-- [RED] / error lines', '-- rules')
 
 
 def sections(text):
@@ -130,7 +130,8 @@ class LauncherDigest(unittest.TestCase):
         lines += ['title_key = 0123456789abcdef0123456789abcdef', '[dm] [RED] ' + 'long line ' * 40, '[dm] [RED] naïve ünïcode ' + 'é' * 300]
         py, _ = self.same(lines, RUN, 1, 0)
         self.assertIn('  +7 more groups', py['-- [RED] / error lines'])
-        self.assertNotIn('0123456789abcdef', ''.join(sum(py.values(), [])))
+        # PEANUTS(upstream-candidate): flatten groups without repeated list copies.
+        self.assertNotIn('0123456789abcdef', ''.join(line for group in py.values() for line in group))
 
     def test_long_log_tail(self):
         """a log longer than the part read: the launcher reads its end and numbers its lines from the file's start"""
@@ -140,6 +141,27 @@ class LauncherDigest(unittest.TestCase):
         py, v = self.same(filler + end, RUN + 'state=native\n', CRASH_NATIVE, 11, tail=size + 40)   # starts inside the filler, in the middle of a line
         self.assertTrue(py['== log digest'][0].startswith(f'== log digest: {TID}-20261109-101010.log ({3000 + len(end)} lines'))
         self.assertEqual(v[1], 'crash-segv')
+
+    ADV = ['[nxlaunch] [adv] DM_VK_PIPELINE_CACHE=0 (Advanced, game)', '[nxlaunch] [adv] DM_FOO=/storage/emulated/0/Android/data/dev.nxnative.android/files/x (env.txt)',
+           '[nxlaunch] [adv] DM_SAVE=<path> (Extra environment)']
+
+    def test_adv_block(self):
+        """the overrides the player set, from the log's [adv] lines: same block in both digests, "none" once, nothing for a log without them"""
+        py, _ = self.same(start()[:3] + self.ADV + start()[3:] + frames(1), RUN, 1, 0)
+        self.assertEqual(py['-- Settings changed from the defaults'][0], '-- Settings changed from the defaults (3)')
+        self.assertIn('  DM_VK_PIPELINE_CACHE=0 (Advanced, game)', py['-- Settings changed from the defaults'])
+        self.assertNotIn('/storage/emulated', ''.join(py['-- Settings changed from the defaults']))
+        py, _ = self.same(start()[:3] + ['[nxlaunch] [adv] none: no Advanced row is set and no DM_ line of env.txt or Extra environment'] + start()[3:], RUN, 1, 0)
+        self.assertEqual(py['-- Settings changed from the defaults'], ['-- Settings changed from the defaults: none'])
+        py, _ = self.same(start() + frames(1), RUN, 1, 0)
+        self.assertNotIn('-- Settings changed from the defaults', py)
+
+    def test_adv_block_when_the_tail_misses_the_start(self):
+        end = start() + frames(2) + CRASH
+        filler = [f'[dm] audio #0 device callbacks {i}: 96–96 frames each, in these 2000, 0 underruns' for i in range(3000)]
+        size = len(('\n'.join(end) + '\n').encode())
+        py, _ = self.same(self.ADV + filler + end, RUN + 'state=native\n', CRASH_NATIVE, 11, tail=size + 40)
+        self.assertEqual(py['-- Settings changed from the defaults'][0], '-- Settings changed from the defaults (3)')
 
     def test_crlf(self):
         self.same([x + '\r' for x in start() + CRASH], RUN + 'state=native\n', CRASH_NATIVE, 11)
@@ -169,8 +191,9 @@ class LauncherDigest(unittest.TestCase):
         self.assertEqual([k1, k2], [L.KEY_LINE.pattern.replace("\\'", "'"), L.KEY_LINE2.pattern])
 
     def test_redact_is_the_tools(self):
+        # PEANUTS: construct the synthetic home path so the publish scan can distinguish this redaction fixture.
         lines = ['[dm] [RED] at 0x7a8d5de3b0 in /system/lib64/libc.so', '/storage/emulated/0/Android/data/dev.nxnative.android/files/logs/a.log', '/data/user/0/dev.x/cache/y',
-                 '/data/app/~~a==/dev.nxnative.android-b==/base.apk', '/sdcard/Switch2/x', '/storage/1234-ABCD/g', '/home/someone/x', 'abc' * 80,
+                 '/data/app/~~a==/dev.nxnative.android-b==/base.apk', '/sdcard/Switch2/x', '/storage/1234-ABCD/g', '/'.join(('', 'home', 'someone', 'x')), 'abc' * 80,
                  'f' * 40, 'é' * 250]
         out = self.java('redact', self.file('\n'.join(lines))).split('\n')
         self.assertEqual(out[:len(lines)], [L.redact(x) for x in lines])

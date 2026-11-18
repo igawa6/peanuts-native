@@ -1,6 +1,6 @@
 # Peanuts Native FAQ
 
-For version 0.1.3. Labels in **bold** are the words the app shows. "Settings" is the gear button on the home screen. "Hold the cover" means a long press on a game's cover (or Y on a controller).
+For version 0.1.4. Labels in **bold** are the words the app shows. "Settings" is the gear button on the home screen. "Hold the cover" means a long press on a game's cover (or Y on a controller).
 
 ## Quick answers
 
@@ -120,6 +120,7 @@ The row shows **Firmware not added:** and a reason. The last one in this table c
 | **keys not loaded** | Keys were not added, or not yet read in this session. | Add **Keys** (pick the file again if needed), then pick the firmware again. |
 | **no NCA files not found among 0 NCAs** | The folder or zip holds no firmware files the app could read. | Pick the folder or zip of a full firmware dump. |
 | **the shared font archives were not found among N NCAs** | It is a firmware dump, but the font archives are missing from it, or your keys cannot open them. | Dump the firmware again, complete, and check your keys. |
+| **cannot read FontStandard / FontNintendoExtended … prod.keys has no key_area_key_…** | The font archive is present, but the selected keys lack its encryption generation. | Select your keys that match the firmware, then pick the firmware again. Repeating the import with the same older keys cannot decrypt it. |
 | **could not copy the zip** | The zip could not be read from where it is. | Copy the zip to the device's storage and pick it there. |
 | **That folder is not on the phone's storage** | You picked a cloud folder. | Pick a folder on the device or its SD card. |
 
@@ -245,9 +246,9 @@ For a game that is already built, tapping the cover shows the dialog **Game file
 
 ### Which games are supported?
 
-The project's README lists the tested games with the update each one needs. In 0.1.1 they are Link's Awakening, Echoes of Wisdom, Fire Emblem: Three Houses, Fire Emblem Engage, Metroid Dread, Super Mario Odyssey, Mario Kart 8 Deluxe, Animal Crossing: New Horizons, Persona 5 Royal, Castlevania: Belmont's Curse, Octopath Traveler 0, Pokémon Brilliant Diamond, Pokémon Sword and Breath of the Wild (new, little tested). Super Mario Bros. Wonder and Dragon Quest III HD-2D Remake are in the app too, but were not tested on a device yet. 0.1.2 adds Pokémon Shining Pearl, Pokémon Shield, Final Fantasy Resonance, Skyward Sword HD, Pokémon Legends: Arceus and Resident Evil 4, all new and little tested, and Kirby's Return to Dream Land Deluxe, which was run by its contributor on their own AYN Thor only; the README's table says what was seen of each.
+The project's README lists the tested games with the update each one needs. In 0.1.1 they are Link's Awakening, Echoes of Wisdom, Fire Emblem: Three Houses, Fire Emblem Engage, Metroid Dread, Super Mario Odyssey, Mario Kart 8 Deluxe, Animal Crossing: New Horizons, Persona 5 Royal, Castlevania: Belmont's Curse, Octopath Traveler 0, Pokémon Brilliant Diamond, Pokémon Sword and Breath of the Wild (new, little tested). Super Mario Bros. Wonder and Dragon Quest III HD-2D Remake are in the app too, but were not tested on a device yet. 0.1.2 adds Pokémon Shining Pearl, Pokémon Shield, Final Fantasy Resonance, Skyward Sword HD, Pokémon Legends: Arceus and Resident Evil 4, all new and little tested, and Kirby's Return to Dream Land Deluxe, which was run by its contributor on their own AYN Thor only. 0.1.4 adds Crash Team Racing Nitro-Fueled, Kirby and the Forgotten Land, Super Mario 3D World + Bowser's Fury, Chained Echoes, My Time at Sandrock, Monster Sanctuary and Yoru, Tomosu, all new and little tested, and Xenoblade Chronicles X: Definitive Edition as an experiment. Super Mario Bros. Wonder was checked on a device for 0.1.4, on its 1.2.1 update, the only one the app builds now. The README's table says what was seen of each.
 
-Settings › **About** may list more titles. Those have a profile but are not on the tested list. Two profiles in the source are first drafts that were only packed on a PC and never run: Chained Echoes and Yoru, Tomosu.
+Settings › **About** lists the games of the app you have installed, each with its title ID.
 
 ### Why does building take so long?
 
@@ -374,7 +375,7 @@ Some of these rows show only with Settings › **Tester settings** on.
 
 ### Can I choose docked or handheld mode?
 
-Yes. **Console mode** is in Settings › Game defaults and in each game's settings (hold the cover › **Performance** › Picture). **Docked** makes the game draw as it does on a TV, up to 1080p. **Handheld** makes it draw as on the Switch's own screen, up to 720p: that is lighter, so it can hold a higher frame rate, and the app's upscaler fills the screen. Handheld also turns on the game's touch screen. With nothing chosen, each game uses its own mode, which is Docked for most.
+Yes. **Console mode** is in Settings › Performance and picture and in each game's settings (hold the cover › **Performance** › Picture). **Docked** makes the game draw as it does on a TV, up to 1080p. **Handheld** makes it draw as on the Switch's own screen, up to 720p: that is lighter, so it can hold a higher frame rate, and the app's upscaler fills the screen. Handheld also turns on the game's touch screen. With nothing chosen, each game uses its own mode, which is Docked for most.
 
 The row applies from the next start. To change it while you play, open the in-game panel: **Console mode** is at the top of its first tab, above **Frame rate cap**. It changes at once, as when a Switch leaves its dock, and is kept for that game. Some games take the new picture size only at their next scene or their next start.
 
@@ -382,7 +383,7 @@ A few games are fixed to Handheld because they need the touch screen or the poin
 
 ### Can I make a game sharper, or lighter, than its own resolution?
 
-Yes. **Resolution scale** is in Settings › Game defaults and in each game's settings (hold the cover › **Performance** › Picture). It draws the game's picture at a multiple of the size the game itself asks for: **1.25x**, **1.5x** or **2x** is sharper and asks more of the GPU, **0.75x** or **0.5x** is lighter and the app's upscaler fills the screen. **1x** is the game's own size. A game in Handheld mode draws at 720p, so 1.5x gives it exactly a 1080p screen. The choice applies from the next start.
+Yes. **Resolution scale** is in Settings › Performance and picture and in each game's settings (hold the cover › **Performance** › Picture). It draws the game's picture at a multiple of the size the game itself asks for: **1.25x**, **1.5x** or **2x** is sharper and asks more of the GPU, **0.75x** or **0.5x** is lighter and the app's upscaler fills the screen. **1x** is the game's own size. A game in Handheld mode draws at 720p, so 1.5x gives it exactly a 1080p screen. The choice applies from the next start.
 
 It works on the app's side, so it is there for every game, but not every part of a picture follows it. Some effects (a blur, an outline, anti-aliasing) are made for the game's own size and can look a little different, and a game that reads its picture back, or passes it through its own upscaler, keeps that part at 1x. If a game looks wrong with it, set it back to 1x for that game and tell us which game and which scale. Games that have their own **Resolution** and **Upscaling quality** rows do not show this one.
 
@@ -555,7 +556,7 @@ On a single-screen device the game runs without it. A game without a companion l
 
 ### Which games have a companion?
 
-Settings › Library › **Companions** shows the catalog: **Your games** first, then **Other companions · add the game first**. Every game on the tested list has a companion. The catalog is read online, so the list can change without an app update.
+Settings › Library › **Companions** shows the catalog: **Your games** first, then **Other companions · add the game first**. Most games on the tested list have a companion: the README's table says which. The catalog is read online, so the list can change without an app update.
 
 ### How do I install a companion for the first time?
 
@@ -598,7 +599,9 @@ Turn it off without removing it:
 2. In the **Companion** section tap **Second screen**.
 3. Pick **Off**. **Physical display** turns it back on.
 
-What you should see: the row reads **Off: the companion does not show**. It applies at the game's next start, and the second screen is left to Android.
+What you should see: the row reads **Off: the companion does not load**. It applies at the game's next start, and the second screen is left to Android.
+
+On a device without a second display the row starts at **Off: no second display found, the companion does not load**, and a new build does not install the companion unless you tick it. Pick **Physical display** to load it anyway, for a display you connect later.
 
 ### What can I do on a companion's pages?
 
@@ -716,7 +719,7 @@ No. An update keeps the app's storage, and saves are in it. Uninstalling can del
 
 ### How do I tell which version I have?
 
-The build name is under the app's title on the home screen and in Settings › **About**. A release build reads `peanuts-native-0.1.3`. Every log starts with it too.
+The build name is under the app's title on the home screen and in Settings › **About**. A release build reads `peanuts-native-0.1.4`. Every log starts with it too.
 
 ## Credits
 

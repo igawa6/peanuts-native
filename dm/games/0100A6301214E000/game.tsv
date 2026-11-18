@@ -47,3 +47,11 @@ shader_groups	/data.unity3d=engine /Resources/=engine /StreamingAssets/=assets
 shader_note	Fire Emblem Engage shaders
 # the NVN depth mode the game sets (nvnDeviceSetDepthMode near = 0): the pipeline archive made offline holds the main0_z vertex entries (dm/gfx/tools/pso_offline.py)
 depth_mode	zero
+
+# FPSLocker Warehouse 2.0.0: both vsync counters and the hub step; only whole 60 Hz divisors are safe.
+present_interval	display
+fps_limit	60
+fpslocker	8c08b9719e085f91847b5e0f935d9488	vsync_u32	0x65abca0/0x30/0x68	1	0
+fpslocker	8c08b9719e085f91847b5e0f935d9488	vsync_u32	@0x62035a0	1	0
+fpslocker	8c08b9719e085f91847b5e0f935d9488	inverse_f32	0x6157f28/0xb8/0x0/0x20	1	30:0.14
+fpslocker_plan	8c08b9719e085f91847b5e0f935d9488	r0x32f92d4	33008052	f303002a

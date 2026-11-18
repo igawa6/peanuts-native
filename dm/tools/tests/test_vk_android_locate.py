@@ -19,7 +19,8 @@ def vk_functions(*names):
     """Functions of vk_android_build.py (a script: it cannot be imported), with the globals they use"""
     src = (TOOLS / 'vk_android_build.py').read_text()
     tree = ast.parse(src)
-    keep = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in names]
+    # PEANUTS(upstream-candidate): retain the statement list type accepted by ast.Module.
+    keep: list[ast.stmt] = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in names]
     keep += [n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in ('SPLIT', 'KEY_FNS', 'KEY_CONSTS') for t in n.targets)
              or isinstance(n, ast.Assign) and any(isinstance(t, ast.Tuple) and any(isinstance(e, ast.Name) and e.id == 'KEY_FNS' for e in t.elts) for t in n.targets)]
     ns = {'ast': ast, 'os': os, 'sys': sys, 'struct': struct, 'hashlib': hashlib, 'HERE': str(TOOLS)}

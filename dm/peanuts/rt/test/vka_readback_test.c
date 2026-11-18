@@ -76,7 +76,7 @@ static struct { VkDevice dev; } V;
 enum { NVN_TEXTURE_TARGET_2D = 1 };
 typedef struct vka_img {
     uint64_t serial; const uint8_t *mem; struct { int width, height, target; } d; struct { VkFormat vk; uint8_t srgb; } f;
-    VkImage img; VkFlags aspect; uint32_t levels, layers, samples, depth, base; void *rs; const void *vpool; int is_video, inited, cpu_dirty, refs, holds;
+    VkImage img; VkFlags aspect; uint32_t levels, layers, samples, depth, base; void *rs; const void *vpool; int is_video, inited, cpu_dirty, refs, holds; struct vka_img *par;   // par: a level child (vka.h; never one here)
     uint64_t linger, last_frame, last_fence; uint8_t rsc; int pool_dead;
     uint64_t rb_gen, rb_fence, rb_pgen, rb_pfence, rb_frame; uint8_t rb_rt, rb_redrawn, rb_pok, rb_srgb; uint16_t rb_holds;
 } vka_img;
