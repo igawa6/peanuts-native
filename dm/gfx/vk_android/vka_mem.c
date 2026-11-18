@@ -1107,7 +1107,16 @@ static void join_placed(const pool_ent *p, uintptr_t a, uintptr_t e, const char 
     else if (!q && k < 8) VRED("memory pool %#lx+%#llx (placed by parts): the GPU is given %#lx+%#lx (%s) across parts placed earlier, which are not joined (%s): lookups over the whole range fail (draws that need it in one piece are skipped)",
                                (unsigned long)p->mem, (unsigned long long)p->size, (unsigned long)a, (unsigned long)(e - a), why, join_cap() ? "more than 32 joins waiting" : "DM_VK_PLACE_JOIN_MB=0");
 }
-void mtl_pool_need(const void *addr, uint64_t len, const char *why) {
+// PEANUTS(upstream-candidate) begin: placed for the GPU, joined only for one that needs the range in one piece. A texture's own storage is never looked up in one piece
+// (vka_tex.c reads it on the CPU through staging; raw global memory finds each address's segment on its own; a linear texture's write-back and a buffer texture ask for
+// themselves, hle_nvn.c), so its ask places the parts and queues no join: Kirby and the Forgotten Land's 1.4 GiB shader-code pool grew one segment to 352 MiB by
+// joins for textures, each join longer than the last (17 to 84 ms of a frame), until one more was past DM_VK_PLACE_JOIN_MB and refused ([RED] … which are not joined).
+// A command that names an address in the range still asks with join (mtl_pool_need), and joins its own range then
+static void pool_need(const void *addr, uint64_t len, const char *why, int join);
+void mtl_pool_need(const void *addr, uint64_t len, const char *why) { pool_need(addr, len, why, 1); }
+void mtl_pool_place(const void *addr, uint64_t len, const char *why) { pool_need(addr, len, why, 0); }
+static void pool_need(const void *addr, uint64_t len, const char *why, int join) {
+// PEANUTS(upstream-candidate) end
     if (!atomic_load_explicit(&g_nlazy, memory_order_relaxed)) return;
     uintptr_t a = (uintptr_t)addr, e = a + (len ? len : 1);
     if (e < a) e = UINTPTR_MAX;
@@ -1126,7 +1135,7 @@ void mtl_pool_need(const void *addr, uint64_t len, const char *why) {
             if (g_pool[i].lazy == 2) busy = 1; else { k = i; break; }
         }
         if (k < 0 && busy) { pthread_cond_wait(&g_lzcv, &g_pmu); pthread_mutex_unlock(&g_pmu); continue; }
-        if (k < 0) { *ng = (negent){gen, a, e}; pthread_mutex_unlock(&g_pmu); if (cp.id) join_placed(&cp, a, e, why); return; }   // (gen read before the scan: a pool added since bumped it)
+        if (k < 0) { *ng = (negent){gen, a, e}; pthread_mutex_unlock(&g_pmu); if (cp.id && join) join_placed(&cp, a, e, why); return; }   // PEANUTS(upstream-candidate): join   // (gen read before the scan: a pool added since bumped it)
         if (ndone == NDONE) { pthread_mutex_unlock(&g_pmu); static _Atomic int nr; if (!atomic_fetch_add(&nr, 1)) VRED("the GPU is given %#lx+%#lx across more than %d memory pools placed by parts: the rest is not placed", (unsigned long)a, (unsigned long)(e - a), NDONE); return; }
         pool_ent pe = g_pool[k]; g_pool[k].lazy = 2;
         pthread_mutex_unlock(&g_pmu);
@@ -1136,7 +1145,7 @@ void mtl_pool_need(const void *addr, uint64_t len, const char *why) {
         uintptr_t sa = a > pe.mem ? a : pe.mem, se = e < pe.mem + pe.size ? e : pe.mem + pe.size;   // the ask in the pool
         pthread_mutex_lock(&g_pl);
         int placed = place_pool(plo, phi - plo, &l, &lg, &tot, &mine);
-        if (placed && !whole) span = !vka_addr(sa, se - sa, NULL, NULL, NULL);
+        if (placed && !whole && join) span = !vka_addr(sa, se - sa, NULL, NULL, NULL);   // PEANUTS(upstream-candidate): join (no ask to join, nothing to report)
         pthread_mutex_unlock(&g_pl);
         pthread_mutex_lock(&g_pmu);   // (mtl_pool_del waits while the pool is being placed: it is still in the table)
         uint32_t nparts = 0, nspan = 0;

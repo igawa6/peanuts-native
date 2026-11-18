@@ -857,7 +857,7 @@ NVN(nvnTextureInitialize, NVNboolean, NVNtexture *t, const NVNtextureBuilder *b)
     }
     o->serial = nvn_new_serial(); mtl_tex_init(o);
     if (o->mem) pc_use(o->pool, 't', o->off, o->L.size);
-    if (o->mem && shp_use(SHK_TEX, (uint64_t)(uintptr_t)o->mem, o->L.size, NULL, NULL) == 2 && !g_shp_place) mtl_pool_need(o->mem, o->L.size, "a texture in a shader-code pool");   // (Shader-code pools: a texture is a data use)
+    if (o->mem && shp_use(SHK_TEX, (uint64_t)(uintptr_t)o->mem, o->L.size, NULL, NULL) == 2 && !g_shp_place) mtl_pool_place(o->mem, o->L.size, "a texture in a shader-code pool");   // (Shader-code pools: a texture is a data use) PEANUTS(upstream-candidate): placed, never joined (vka_mem.c mtl_pool_place)
     if (o->mem && o->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET)) mtl_pool_need(o->mem, o->L.size, "a linear texture");   // its GPU content is copied back into the storage (vka_tex_writeback)
     static int tbuf_place = -1; if (tbuf_place < 0) { const char *e = getenv("DM_VK_TBUF"); tbuf_place = !(e && e[0] == '0'); }   // (DM_VK_TBUF=0: buffer textures unbound, as before)
     if (o->mem && o->d.target == NVN_TEXTURE_TARGET_BUFFER && tbuf_place) {   // the GPU reads and writes a buffer texture's storage itself (vka_tbuf.c: a texel buffer view over it, or rows copied from it)
