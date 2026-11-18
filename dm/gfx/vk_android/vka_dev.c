@@ -300,7 +300,8 @@ static int init_once(void) {
 
     VkPhysicalDeviceMapMemoryPlacedPropertiesEXT pmp = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_PROPERTIES_EXT};
     VkPhysicalDeviceVulkan13Properties p13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES, .pNext = placed ? &pmp : NULL};
-    VkPhysicalDeviceVulkan11Properties p11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES, .pNext = &p13};
+    VkPhysicalDeviceVulkan12Properties p12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES, .pNext = &p13};   // PEANUTS: shaderDenormPreserveFloat16 for fp16_exact
+    VkPhysicalDeviceVulkan11Properties p11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES, .pNext = &p12};
     VkPhysicalDevicePushDescriptorPropertiesKHR ppd = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR, .pNext = &p11};
     VkPhysicalDeviceMaintenance3Properties pm3 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES, .pNext = V.push_desc ? (void *)&ppd : (void *)&p11};
     VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT pgpl = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT, .pNext = &pm3};
@@ -331,6 +332,10 @@ static int init_once(void) {
          p11.subgroupSupportedStages & VK_SHADER_STAGE_GEOMETRY_BIT ? "yes" : "NO", p11.subgroupSupportedStages & VK_SHADER_STAGE_FRAGMENT_BIT ? "yes" : "NO", p11.subgroupSupportedStages & VK_SHADER_STAGE_VERTEX_BIT ? "yes" : "NO",
          p11.subgroupSupportedOperations, p11.subgroupQuadOperationsInAllStages ? "yes" : "no", p13.requiredSubgroupSizeStages);
     V.subgroup_stages = p11.subgroupSupportedStages;
+    // PEANUTS: fp16 subnormals: a device that cannot preserve them (Adreno 6xx / 7xx) has the library's half conversions made exact for them (vka_shader.c fp16_exact). DM_VK_FP16_EXACT (restart): 0 off, 1 on any device
+    V.fp16_exact = VKA_ENV("DM_VK_FP16_EXACT", !p12.shaderDenormPreserveFloat16);
+    VLOG("fp16 subnormals: %s", V.fp16_exact ? (p12.shaderDenormPreserveFloat16 ? "half conversions made exact for them (DM_VK_FP16_EXACT=1)" : "the device cannot preserve them: half conversions made exact for them (DM_VK_FP16_EXACT=0: as built)")
+                                             : p12.shaderDenormPreserveFloat16 ? "preserved by the device" : "the device cannot preserve them; half conversions as built (DM_VK_FP16_EXACT=0)");
     V.cache_ctl = f13.pipelineCreationCacheControl;
     V.subgroup_req_stages = f13.subgroupSizeControl ? p13.requiredSubgroupSizeStages : 0;
     V.subgroup_size = p11.subgroupSize; V.subgroup_min = p13.minSubgroupSize ? p13.minSubgroupSize : p11.subgroupSize; V.subgroup_max = p13.maxSubgroupSize ? p13.maxSubgroupSize : p11.subgroupSize;

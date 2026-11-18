@@ -372,10 +372,21 @@ static void gs_fill(uint64_t key, int stage, uint32_t **w, size_t *nb) {
     static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VLOG("geometry shader %016llx: emits a degenerate primitive where it would emit none (DM_VK_GS_FILL)", (unsigned long long)key);
     free(*w); *w = o; *nb = on * 4;
 }
-// The library's words for a module, made ready for this device: subgroups of one lane where the stage has none (single_lane), a geometry shader's empty runs filled (gs_fill)
+// PEANUTS: half conversions kept exact for fp16 subnormals on a device that flushes them (vka_spv_fp16_exact: Maxwell keeps them; Fire Emblem Engage's engage attacks divide by one).
+// Logged for the first few shaders; a module that cannot be rewritten is used as built, with a red line
+static void fp16_exact(uint64_t key, uint32_t **w, size_t *nb) {
+    if (!V.fp16_exact) return;
+    size_t on = 0; int sites = 0; char e[160] = ""; uint32_t *o = vka_spv_fp16_exact(*w, *nb / 4, &on, &sites, e, sizeof e);
+    if (!o) { if (e[0]) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("shader %016llx: half conversions not made exact for fp16 subnormals: %s", (unsigned long long)key, e); } return; }
+    static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VLOG("shader %016llx: %d half conversions made exact for fp16 subnormals (DM_VK_FP16_EXACT)", (unsigned long long)key, sites);
+    free(*w); *w = o; *nb = on * 4;
+}
+// The library's words for a module, made ready for this device: subgroups of one lane where the stage has none (single_lane), a geometry shader's empty runs filled (gs_fill),
+// half conversions exact for fp16 subnormals (fp16_exact; PEANUTS)
 static void prep_words(const dmsh_vk_entry *e, uint64_t key, uint32_t **w, size_t *nb) {
     if (e->flags & DMSH_VK_F_SUBGROUP) single_lane(key, e->stage, w, nb);
     gs_fill(key, e->stage, w, nb);
+    fp16_exact(key, w, nb);   // PEANUTS
     vka_tf_prep(key, w, nb);   // PEANUTS: a transform feedback capture variant's words get their capture (vka_tf.c; a key of no variant, every library key among them: untouched)
 }
 // A library module's words. With the mesh draws drawn through compute (V.memu, vka_memu.c), a pixel shader of per-primitive inputs is only ever drawn behind the generated

@@ -1158,3 +1158,22 @@ version moves. Device state: see the game's note.
 |---|---|---|---|
 | `dm/gfx/tools/shader_split.py` | 3 | `iga_entries`, `iga_member`, `iga_shaders` and their branch in `scan_file_in`: Alchemy's igArchive version 13 (`IGA\x1a`), whose files are LZMA in 0x8000-byte blocks placed by the archive's small / medium / large block tables; every file is decoded and its whole GLSLC outputs taken. The game's split went from 12 shaders (those in `main`) to 1,945. Checked on all 74,311 files of its 401 archives; the large table (a file over 0x7FFF sectors) follows the same rule and was met on no file. nxnative has an open pull request with a reader of its own (#1077), not used here. Test: `test_split_iga.py`. Upstream candidate: yes | `PEANUTS(upstream-candidate)` |
 | `dm/host/hle_audren.c`, `dm/host/tests/t_audren_layout.c`, `dm/host/tests/t_audren_work.c`, `docs/reference/audio.md` | 71 | The host drives up to 4 audio renderers, each with its own state (`ar_t`), PCM blocks, render thread and output; it drove one, and a second `OpenAudioRenderer` logged `[RED] audren: a second renderer` and was never rendered. A hand port of nxnative 18b435ac38 and a334797d12 (MIT) onto this tree's clock pacing, catch-up queue and `DM_AUDREN_WAIT`, which stay, now per renderer. One renderer behaves as before; its log lines now name the renderer (`renderer 0 …`). Tests: the two host tests, built natively with ASan and UBSan, with a case of two renderers open at once. Not run on a device. Upstream candidate: yes (Banana Native 0.3.42 does not have it) | `PEANUTS(upstream-candidate)` on each file's first hunk, `PEANUTS` on the others |
+
+### Round 20, half conversions exact for fp16 subnormals (2026-11-17)
+
+Adreno 6xx / 7xx report `shaderDenormPreserveFloat16` false on Turnip and on Qualcomm's driver, and the translator turns every half conversion into GLSL.std.450
+`PackHalf2x16` / `UnpackHalf2x16`, which such a device may make with a conversion that flushes values below 2^-14 to 0 (Maxwell keeps them). Seen in an Eden-based
+emulator with the same Maxwell → SPIR-V path: Fire Emblem Engage's engage attacks drew white shapes on black on the AYN Thor. Each module is rewritten when it is
+made, on such a device only (`DM_VK_FP16_EXACT` overrides): exact encode and decode of the subnormal range, other values as the hardware gives them.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_spvpatch.c`, `vka_spvpatch.h` | 1 each | `vka_spv_fp16_exact` | `// PEANUTS begin` / `end`; `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_shader.c` | 2 | `fp16_exact`, called from `prep_words` | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_dev.c`, `vka.h` | 2, 1 | `VkPhysicalDeviceVulkan12Properties` read; `V.fp16_exact` | `// PEANUTS:` |
+| `dm/host/tests/t_android_spvpatch.c` | 4 | both instructions rewritten, a module without them left alone, the arithmetic against `_Float16` | `PEANUTS` per hunk / span |
+| `docs/reference/shaders.md`, `docs/agents/symptoms.md` | 1 entry, generated | "Half conversions flushing fp16 subnormals on Adreno 6xx / 7xx" | `PEANUTS` in the Symptom text (the index copies it) |
+| `dm/games/0100A6301214E000/README.md` | 1 | the Found-on line | `<!-- PEANUTS -->` |
+
+Run: `t_android_spvpatch`; on the AYN Thor (Qualcomm 676.53 and Turnip, Mesa 27.0.0-devel) Pokémon Legends: Z-A logs 92 conversions made exact in its first frames.
+Not run: a picture compared with it off; Fire Emblem Engage's engage attacks on the phone. No shader-chain file is changed. Upstream candidate: yes.

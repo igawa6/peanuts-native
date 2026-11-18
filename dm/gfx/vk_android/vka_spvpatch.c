@@ -1446,3 +1446,107 @@ fail:
     free(loc); free(ptr_sc); free(ptr_to); free(var_ty); free(kind); free(o.w);
     return NULL;
 }
+
+// PEANUTS begin: vka_spv_fp16_exact: half-precision conversions that keep fp16 subnormals on a device that flushes them. Maxwell keeps fp16 denormals unless an instruction asks for FTZ, and
+// the translator turns every conversion to and from half precision (F2F.F16, the operands and results of HADD2 / HMUL2 / HFMA2, half texture results) into GLSL.std.450
+// PackHalf2x16 / UnpackHalf2x16. A device that cannot preserve fp16 denormals (VkPhysicalDeviceVulkan12Properties.shaderDenormPreserveFloat16 false: Adreno 6xx / 7xx, on
+// Turnip and Qualcomm's driver) may make those conversions with the hardware's half conversion, which gives 0 for a value below 2^-14. Fire Emblem Engage's engage-attack
+// effects divide by such a value (1 - f16(a) * (1 / a)): flushed, the division gave infinity, then NaN, white shapes on black (observed in an Eden-based emulator on the AYN Thor).
+// So each PackHalf2x16 encodes a component below 2^-14 in magnitude by hand, sign | round-to-even(|x| * 2^24) (a mantissa that rounds up to 1024 is
+// exactly the smallest normal's encoding), and each UnpackHalf2x16 decodes a half of exponent 0 as +-mantissa * 2^-24; both are exact in fp32. Other values (normal,
+// infinity, NaN) keep the hardware's result. Returns the rewritten module (malloc'd, *out_nw words, *sites the instructions rewritten); NULL with err empty when it has none,
+// NULL with the reason in err when it cannot be rewritten
+enum { H_ExtInstImport = 11, H_CompositeExtract = 81, H_ConvertFToU = 109, H_ConvertUToF = 112, H_FNegate = 127, H_FMul = 133, H_INotEqual = 171, H_FOrdLessThan = 184,
+       H_BitwiseOr = 197, G_RoundEven = 2, G_FAbs = 4, G_PackHalf2x16 = 58, G_UnpackHalf2x16 = 62 };
+#define H_OP(n, op) ((uint32_t)(n) << 16 | (uint32_t)(op))
+uint32_t *vka_spv_fp16_exact(const uint32_t *w, size_t nw, size_t *out_nw, int *sites, char *err, size_t errn) {
+    vec_t o = {0}; *sites = 0; err[0] = 0;
+    if (nw < 5 || w[0] != 0x07230203) { snprintf(err, errn, "not SPIR-V"); return NULL; }
+    uint32_t glsl = 0, t_f32 = 0, t_u32 = 0, t_bool = 0; size_t first_fn = nw; int n = 0;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
+        if (!len || i + len > nw) { snprintf(err, errn, "bad instruction at word %zu", i); return NULL; }
+        if (op == H_ExtInstImport && len >= 6 && !memcmp(w + i + 2, "GLSL.std.450", 13)) glsl = w[i + 1];
+        else if (op == OpTypeFloat && len == 3 && w[i + 2] == 32) t_f32 = w[i + 1];
+        else if (op == OpTypeInt && len >= 4 && w[i + 2] == 32 && !w[i + 3]) t_u32 = w[i + 1];
+        else if (op == OpTypeBool && len >= 2) t_bool = w[i + 1];
+        else if (op == OpFunction && first_fn == nw) first_fn = i;
+        else if (op == OpExtInst && len == 6 && glsl && w[i + 3] == glsl && (w[i + 4] == G_PackHalf2x16 || w[i + 4] == G_UnpackHalf2x16)) n++;
+        i += len;
+    }
+    if (!n) return NULL;
+    if (!t_f32 || !t_u32) { snprintf(err, errn, "no 32-bit float or unsigned type"); return NULL; }
+    uint32_t nb = w[3], mk_bool = 0;
+    if (!t_bool) t_bool = mk_bool = nb++;
+    enum { K0, K16, KFFFF, K8000, K7C00, K3FF, KF_2M14, KF_2P24, KF_2M24, NK };
+    static const uint32_t kval[NK] = {0, 16, 0xffff, 0x8000, 0x7c00, 0x3ff, 0x38800000 /* 2^-14 */, 0x4b800000 /* 2^24 */, 0x33800000 /* 2^-24 */};
+    uint32_t k[NK]; for (int j = 0; j < NK; j++) k[j] = nb++;
+#define EMIT(...) do { const uint32_t x_[] = {__VA_ARGS__}; if (!put_n(&o, x_, sizeof x_ / 4)) goto oom; } while (0)
+    if (!put_n(&o, w, 5)) goto oom;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16; const uint32_t *in = w + i;
+        if (i == first_fn) {   // the bool type when the module has none, then the constants, before the first function
+            if (mk_bool) EMIT(H_OP(2, OpTypeBool), mk_bool);
+            for (int j = 0; j < NK; j++) EMIT(H_OP(4, OpConstant), j >= KF_2M14 ? t_f32 : t_u32, k[j], kval[j]);
+        }
+        if (op == OpExtInst && len == 6 && in[3] == glsl && in[4] == G_PackHalf2x16) {   // %r = PackHalf2x16 %v (vec2 float -> uint)
+            uint32_t r = in[2], v = in[5], hw = nb++, part[2];
+            if (in[1] != t_u32) { snprintf(err, errn, "PackHalf2x16 %u of another result type than uint", r); goto fail; }
+            EMIT(H_OP(6, OpExtInst), t_u32, hw, glsl, G_PackHalf2x16, v);
+            for (uint32_t c = 0; c < 2; c++) {
+                uint32_t x = nb++, a = nb++, s = nb++, m = nb++, re = nb++, mu = nb++, b = nb++, sh = nb++, sg = nb++, e = nb++, h = nb++;
+                part[c] = nb++;
+                EMIT(H_OP(5, H_CompositeExtract), t_f32, x, v, c);
+                EMIT(H_OP(6, OpExtInst), t_f32, a, glsl, G_FAbs, x);
+                EMIT(H_OP(5, H_FOrdLessThan), t_bool, s, a, k[KF_2M14]);   // (NaN: false, the hardware's)
+                EMIT(H_OP(5, H_FMul), t_f32, m, a, k[KF_2P24]);
+                EMIT(H_OP(6, OpExtInst), t_f32, re, glsl, G_RoundEven, m);
+                EMIT(H_OP(4, H_ConvertFToU), t_u32, mu, re);
+                EMIT(H_OP(4, OpBitcast), t_u32, b, x);
+                EMIT(H_OP(5, PF_ShiftRightLogical), t_u32, sh, b, k[K16]);
+                EMIT(H_OP(5, PF_BitwiseAnd), t_u32, sg, sh, k[K8000]);
+                EMIT(H_OP(5, H_BitwiseOr), t_u32, e, sg, mu);
+                if (c) EMIT(H_OP(5, PF_ShiftRightLogical), t_u32, h, hw, k[K16]); else EMIT(H_OP(5, PF_BitwiseAnd), t_u32, h, hw, k[KFFFF]);
+                EMIT(H_OP(6, OpSelect), t_u32, part[c], s, e, h);
+            }
+            uint32_t hi = nb++;
+            EMIT(H_OP(5, PF_ShiftLeftLogical), t_u32, hi, part[1], k[K16]);
+            EMIT(H_OP(5, H_BitwiseOr), t_u32, r, part[0], hi);
+            (*sites)++; i += len; continue;
+        }
+        if (op == OpExtInst && len == 6 && in[3] == glsl && in[4] == G_UnpackHalf2x16) {   // %r = UnpackHalf2x16 %u (uint -> vec2 float)
+            uint32_t t_v2f = in[1], r = in[2], u = in[5], hw = nb++, part[2];
+            EMIT(H_OP(6, OpExtInst), t_v2f, hw, glsl, G_UnpackHalf2x16, u);
+            for (uint32_t c = 0; c < 2; c++) {
+                uint32_t h = nb++, ex = nb++, z = nb++, mn = nb++, mf = nb++, mg = nb++, sb = nb++, ng = nb++, nm = nb++, sm = nb++, hc = nb++;
+                part[c] = nb++;
+                if (c) EMIT(H_OP(5, PF_ShiftRightLogical), t_u32, h, u, k[K16]); else EMIT(H_OP(5, PF_BitwiseAnd), t_u32, h, u, k[KFFFF]);
+                EMIT(H_OP(5, PF_BitwiseAnd), t_u32, ex, h, k[K7C00]);
+                EMIT(H_OP(5, OpIEqual), t_bool, z, ex, k[K0]);
+                EMIT(H_OP(5, PF_BitwiseAnd), t_u32, mn, h, k[K3FF]);
+                EMIT(H_OP(4, H_ConvertUToF), t_f32, mf, mn);
+                EMIT(H_OP(5, H_FMul), t_f32, mg, mf, k[KF_2M24]);
+                EMIT(H_OP(5, PF_BitwiseAnd), t_u32, sb, h, k[K8000]);
+                EMIT(H_OP(5, H_INotEqual), t_bool, ng, sb, k[K0]);
+                EMIT(H_OP(4, H_FNegate), t_f32, nm, mg);
+                EMIT(H_OP(6, OpSelect), t_f32, sm, ng, nm, mg);
+                EMIT(H_OP(5, H_CompositeExtract), t_f32, hc, hw, c);
+                EMIT(H_OP(6, OpSelect), t_f32, part[c], z, sm, hc);
+            }
+            EMIT(H_OP(5, OpCompositeConstruct), t_v2f, r, part[0], part[1]);
+            (*sites)++; i += len; continue;
+        }
+        if (!put_n(&o, in, len)) goto oom;
+        i += len;
+    }
+#undef EMIT
+    o.w[3] = nb;
+    *out_nw = o.n; return o.w;
+oom:
+    snprintf(err, errn, "out of memory");
+fail:
+    free(o.w);
+    return NULL;
+}
+#undef H_OP
+// PEANUTS end
