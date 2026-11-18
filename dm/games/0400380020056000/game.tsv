@@ -22,6 +22,14 @@ modules	main subsdk0 sdk
 romfs_marker	System/RegionLangMask.txt
 zip_store	.zs:.bwav:.webm:.metallib
 
+# ---- Frame rate ----
+# The game advances its world by the frame rate sead's frame-rate controller hands its framework (build 663c2e087a083f05: the controller main+0x3df0ca0, called once a frame from
+# main+0x3df0270 with the controller at framework+0x260; its sdiv of 60 by the interval at main+0x3df0e28 stores the rate at controller+0x50 and framework+0xe0), and the step
+# of its game time is 60 / that rate: main+0x3df02d0 puts it in the float at main+0x4d24ef0, which main+0x31efb10 adds to the objects' frame counter. With this key the rewriter
+# gates that sdiv (found by the controller's code, no OBS row needed) and the host makes the rate the measured one there, so the game keeps its speed at any frame rate
+# (dm/tools/nso_code.py sead_find, hle_fpslock.c sead_rate; docs/reference/frame-rate.md). The key also tells the launcher to offer a frame limit with presentation on the host's own tick
+fps_decouple	sead
+
 # ---- Memory ----
 # The Switch 2 leaves games 9 GB of its 12 GB (Donkey Kong Bananza's figure, not measured here). Unlike Bananza this NPDM declares a system resource, so virtual address memory is on.
 # 256 MB in front + alias region + 256 MB stack region + heap region: a starting split, to be measured

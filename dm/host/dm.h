@@ -57,6 +57,9 @@ typedef struct {
     struct { char name[32]; uint64_t off; } ue_cvar[8];   // Unreal console variables found by their registered names (patch_nso.py, ue_cvar.py; UE_CVAR:<name>): each one's TAutoConsoleVariable
     int n_ue_cvar;
     uint64_t fps_state_off;    // frame step state page (patch_nso.py FRAME_STEP: Tears of the Kingdom 1.4.3 and Breath of the Wild 1.9.0 main); 0 = none
+    uint64_t fpslocker_code_off, fpslocker_data_off;   // reviewed loader code/data pages; no on-disk ABI
+    unsigned fpslocker_active, fpslocker_clock;
+    void *fpslocker_plan;
     unsigned oot_patches;      // this rewrite of Ocarina's main has the optional resolution, pool and timing stubs
     int64_t patch_off;         // patch area relative to the base; negative = before the base (image too large, see patch_nso.py FAR), and size does not include it
     uint64_t image_size, file_image_len, patch_len;   // only with the patch area before the base: whole image (with bss and key page), length of the image part of the file, patch area length
@@ -82,6 +85,7 @@ typedef struct {
 extern module_t *g_mod;         // allocated once from the NSO list and NRO manifest; module addresses stay stable
 extern int g_nmod;
 // main's build ID (empty if none): code with fixed addresses in a game's module runs only on the build they were found in
+void dm_graphics_size(int *w, int *h);   // hle_oe.c: DM_GRAPHICS_SIZE or the in-game panel's, 0x0 = the game's own (a game's size gate reads it)
 static inline const char *dm_main_build(void) { for (int i = 0; i < g_nmod; i++) if (!strcmp(g_mod[i].name, "main")) return g_mod[i].build_id; return ""; }
 // Four thread-local slots: K18 = the Switch's x18, KTLS = tpidr_el0, KTLR = tpidrro_el0 (ThreadLocalRegion), KGATE = host gate entry (dm_slot_get / dm_slot_set, plat.h);
 // where each lies is written into the key page by the loader
@@ -100,7 +104,7 @@ int dm_sdk_major(void);   // SDK major version from the sdk module's version str
 int dm_sdk_ounce(void);   // 1 when the sdk module was built for the Switch 2 (its spec string "spec: Ounce", loader.c)
 int dm_sdk_nvn2_item(unsigned item, int *out);   // a constant NVN2's own nvnDeviceGetInteger answers for item, read from the sdk module (loader.c); 0 when it has none
 #define DM_SDK_OLD(major) ((major) > 0 && (major) <= 10)   // SDK 10 and older: NVN API 53, the shared-font address points at the TTF itself
-int dm_main_imports(const char *prefix);   // main imports a symbol whose name starts with prefix (loader.c)
+int dm_game_imports(const char *prefix);   // main or an NRO imports a symbol whose name starts with prefix (loader.c)
 void *guest_sym(const char *name);
 module_t *module_of(const void *p);
 // Gate dispatch: rewritten svc / timer reads come in through the common entry, ret_addr = the return point of that gate block, regs points to the saved x0..x30
@@ -114,9 +118,10 @@ enum { OBS_UE_MALLOC = 21,                                       // Unreal's FMa
        OBS_SEAD_RATE = 27,                                             // sead's frame-rate controller's sdiv of 60 by its interval: dividend, divisor and controller registers in its upper bits (dm/tools/nso_code.py sead_find, hle_fpslock.c)
        OBS_PKP_CAM_SUBMIT = 28, OBS_PKP_PROJ_BUILD = 29, OBS_PKP_PROJ_DONE = 30, // Pokopia exact-build opt-in camera observation gates (android/pkp_aspect.c)
        OBS_OOT_WIDE = 31,                                               // Ocarina of Time (main v131072): 3D camera projections about to be read (register in the parameter bits 0-4) and the 2D layer sites (kind in bits 5 up: HUD, movie, save picture) (android/oot_wide.c)
-       OBS_DKB_WIDE = 32,                                               // Donkey Kong Bananza (main v458752): the scene camera's updater about to be read (register in the parameter bits 0-4) and the UI projection copies (kind in bits 5 up) (android/dkb_wide.c)
+       OBS_DKB_WIDE = 32,                                               // Donkey Kong Bananza (main v458752): the scene camera's updater about to be read (register in the parameter bits 0-4) and, by the kind in bits 5 up, the UI projection copies, a pane just sized and a layout just built (android/dkb_wide.c)
        OBS_MKW_WIDE = 33,                                               // Mario Kart World (main 1.8.0): camera aspect stores (register in the parameter bits 0-4) and the 2D layer's projection reads (kind in bits 5 up) (android/mkw_wide.c)
-       OBS_MAX = 34 };   // 28-30 are Pokopia's camera gates on its own branch (android/pkp_aspect.c)
+       OBS_MTF_SIZE = 34,                                               // Mario Tennis Fever (nro0 1.1.1): its scenes' size just computed from the graphics scale (android/mtf_size.c)
+       OBS_MAX = 35 };   // 28-30 are Pokopia's camera gates on its own branch (android/pkp_aspect.c)
 // A gate number's bits from 8 up are a parameter for its callback (OBS_REGION_GOT: the register that holds the address). Callbacks read the registers; a write to x0–x29 takes
 // effect when the gate returns (entry.S restores them from the frame), which OBS_STDALLOC_INIT and OBS_UE_REGION do
 void gate_obs_set(int id, void (*fn)(uint64_t *regs, int param));
@@ -159,6 +164,7 @@ uint32_t hle_dup_readable_handle(uint32_t h);   // hle_thread.c: a second read e
 uint32_t hle_new_event(uint32_t *write_end);   // hle_thread.c: a new kernel event's read end (a service's handle copied to its client); its write end in *write_end, none when NULL (never signaled)
 // Page fault hook / hook before the host writes guest memory (crash.c; used for write-protect dirty page tracking)
 void dm_fault_hook_register(int (*fn)(void *addr, int is_write, void *uc));
+void dm_fault_explain_register(void (*fn)(void *addr));   // crash.c: what an owner of guest memory knows about a fault address no hook claimed (printed in the crash report)
 void dm_guest_write_prep_register(void (*fn)(void *addr, size_t len));
 void dm_res_report_register(void (*fn)(uint32_t tick, const char *why));   // Resource count callback (registered by the graphics layer): called every 250 ticks, when the loading screen has been dismissed, and on exit when the record is full
 void (*dm_res_report_cb(void))(uint32_t tick, const char *why);   // Get the registered resource count callback (null if not registered)
@@ -183,6 +189,8 @@ const char *dm_cheat_why_at(int i);   // The disabled state's reason (" (unsuppo
 int dm_cheat_kind_at(int i);          // 0 a plain row (click toggles), 1 master (always on, no toggle), 2 disabled (broken or killed at run time), 3 a label (credits, a section marker)
 int dm_cheat_on_at(int i);
 void dm_cheat_toggle(int i);          // The click on a plain row: flips the cheat (an on / off pair as one switch) and rewrites <build ID>.enabled
+int dm_cheat_set(const char *key, int on);   // The same switch by key ("Name", "Name #2"; any case), taken only when the state differs: 1 now in that state, 0 no plain cheat, -1 no such key
+int nxhost_cheat_set(const char *key, int on);   // dm_cheat_set for the Android launcher's in-game panel (libnxlaunch's Native.cheatSet)
 void dm_cheats_reload(void);          // "Reload cheats": re-reads the file (the same path), so edits during play need no re-launch
 // What the panel shows beyond the menu (hle_cheats.c header: labels and sections, the meta file of scripts/cheat_anchor.py)
 enum { DM_CHEAT_LABEL = 1, DM_CHEAT_SECTION_START = 2, DM_CHEAT_SECTION_END = 4, DM_CHEAT_PAIR_ON = 8, DM_CHEAT_PAIR_OFF = 16,

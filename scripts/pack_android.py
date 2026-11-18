@@ -6,9 +6,13 @@
 #   pack.tsv     what the launcher reads: title ID, version, build IDs, and the RomFS and DLC folders relative to the game folder; the shader library's path in the pack
 #   shaders/v-<DMSH_VK_CHAIN>/dmsh_vk.lib, inputs.tsv   the game's shaders as SPIR-V for the Vulkan replay (dm/gfx/tools/vk_android_build.py; android/SHADERS.md), the library
 #                of this source tree's version: an up-to-date one in the shader cache is copied, else it is built from the Switch shader package
+#   nro.tsv, nro<i>.patched.bin and the rest   the NROs the game loads at run time with nn::ro (dm/tools/nro_collect.py: by the SHA-256s its NRRs list, from the RomFS or packed in
+#                a boot stub's main), collected into <work>/android-nro/ and rewritten like the modules; the host maps what nro.tsv lists (loader.c preload_nros). Not in pack.tsv's
+#                modules row: the launcher checks those against the dump's own files, and an NRO is not one
 #   build_src.sha256, rewrite_<module>.log
 #   scene_res/<preset>/<RomFS path>, scene_res.tsv   for a profile with scene_scale_palette rows: the game's dynamic resolution palette rewritten, one RomFS overlay folder per
 #                scene_scale row and per res_preset row with a floor or fixed scene (dm/tools/scene_res.py), which the launcher's Resolution passes as DM_ROMFS_OVERLAY; made from the dump's own RomFS
+#   cheats/<build>.txt   the profile's Atmosphère-format cheat files (game.tsv cheats rows; place_cheats), for the launcher's Game settings › Cheats; not in the rewrite key
 # The RomFS is not in the pack (the app gives the host <game folder>/<romfs> as DM_ROMFS) and neither is anything else of the dump but the rewritten code.
 # The game may be a NUP file instead of a folder (android/NUP.md): its packages are read in place (pack_dump.scan, dm/tools/nup.py), the modules and the RomFS are
 # named `<name>.nup:update/<version>/...` (or `:base/...`), the DLC `<name>.nup:addon/<title ID>/romfs`, and pack.tsv's paths are relative to the folder holding the file.
@@ -26,7 +30,7 @@
 # unfinished: the launcher refuses it, the next run rewrites it). Libraries of other versions in the pack's shaders/ are kept.
 # --code-only rewrites the modules and stops (pack.tsv, game.tsv and the shaders untouched); --keep-code packs without rewriting (the phone's two steps).
 # Usage: pack_android.py <game folder | .nup file> [--version N] [--out DIR] [-j N] [--shader-cache DIR] [--shader-pkg DIR] [--shader-python PY] [-J N] [--no-shaders] [--code-only | --keep-code] [--in-process]   (exit 1 on error)
-import argparse, hashlib, os, runpy, shutil, signal, struct, subprocess, sys, time   # PEANUTS: struct (cross_module)
+import argparse, hashlib, os, runpy, shutil, signal, struct, subprocess, sys, tempfile, time   # PEANUTS: struct (cross_module), tempfile (shader selection)
 from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'scripts')); sys.path.insert(0, str(REPO / 'dm/games'))
@@ -107,7 +111,7 @@ def windows_job():
         _fields_ = [('Basic', Basic), ('Io', ctypes.c_uint64 * 6), ('ProcessMemoryLimit', ctypes.c_size_t), ('JobMemoryLimit', ctypes.c_size_t),
                     ('PeakProcessMemoryUsed', ctypes.c_size_t), ('PeakJobMemoryUsed', ctypes.c_size_t)]
     try:
-        k = ctypes.WinDLL('kernel32', use_last_error=True)
+        k = ctypes.WinDLL('kernel32', use_last_error=True)   # pyright: ignore[reportAttributeAccessIssue]  # PEANUTS: Windows-only API absent from Darwin stubs.
         k.CreateJobObjectW.restype, k.CreateJobObjectW.argtypes = wintypes.HANDLE, [ctypes.c_void_p, wintypes.LPCWSTR]
         k.SetInformationJobObject.restype, k.SetInformationJobObject.argtypes = wintypes.BOOL, [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
         k.AssignProcessToJobObject.restype, k.AssignProcessToJobObject.argtypes = wintypes.BOOL, [wintypes.HANDLE, wintypes.HANDLE]
@@ -115,7 +119,7 @@ def windows_job():
         job = k.CreateJobObjectW(None, None)   # not inheritable: this process holds the only handle, which closes when it ends
         info = Extended(); info.Basic.LimitFlags = 0x2000   # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         if not job or not k.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)) or not k.AssignProcessToJobObject(job, k.GetCurrentProcess()):   # 9: JobObjectExtendedLimitInformation
-            print(f'the tools this packer starts are not in a job (Windows error {ctypes.get_last_error()}): a stop by TerminateProcess leaves them running', flush=True)
+            print(f'the tools this packer starts are not in a job (Windows error {ctypes.get_last_error()}): a stop by TerminateProcess leaves them running', flush=True)   # pyright: ignore[reportAttributeAccessIssue]  # PEANUTS: Windows-only API absent from Darwin stubs.
             return None
         return job   # kept open for this process's life
     except (OSError, AttributeError) as e:
@@ -207,9 +211,93 @@ def upgrade_keys(srcs, out, g, xmod=None):   # PEANUTS: xmod, as rewrite's
             print(f'  {m}: key brought to the current formula (same rewrite)')
 
 
-def nso_text_size(path):   # the module's code segment, decompressed (NSO header +0x18): what the rewriter's time follows
-    with open(path, 'rb') as f: b = f.read(0x20)
-    return int.from_bytes(b[0x18:0x1C], 'little') if b[:4] == b'NSO0' else 0
+def nso_text_size(path):   # the module's code segment, decompressed (NSO header +0x18; an NRO's at +0x24): what the rewriter's time follows
+    with open(path, 'rb') as f: b = f.read(0x28)
+    if b[:4] == b'NSO0': return int.from_bytes(b[0x18:0x1C], 'little')
+    return int.from_bytes(b[0x24:0x28], 'little') if b[0x10:0x14] == b'NRO0' else 0
+
+
+# ---- NROs: the modules a game loads at run time (nn::ro) ----
+NRO_TOOLS = ('dm/tools/nro_collect.py', 'dm/tools/boot_nro.py', 'dm/tools/nso.py', 'dm/tools/nso_syms.py', 'dm/tools/romfs.py', 'dm/gfx/tools/smash_arc.py', 'dm/gfx/tools/cra.py')
+
+
+def rfs():   # dm/tools/romfs.py: the os, open of plain folders and of paths inside a .nup package or a RomFS image
+    sys.path.insert(0, str(REPO / 'dm/tools'))
+    import romfs
+    return romfs
+
+
+def nrr_files(romfs):   # [(path in the RomFS, bytes)] of its NRR files (*.nrr: Super Smash Bros. Ultimate keeps them in a folder named .nrr), as nro_collect.py reads them
+    R = rfs(); out = []
+    for dp, _, fs in R.os.walk(str(romfs)):
+        for f in sorted(fs):
+            if f.endswith('.nrr'):
+                p = R.os.path.join(dp, f)
+                with R.open(p, 'rb') as h: out.append((R.os.path.relpath(p, str(romfs)), h.read()))
+    return out
+
+
+def nro_key(exe, romfs, nrrs):
+    """What the collection depends on: its tools, the NRRs, the ExeFS's modules (a boot stub's NRO: their headers, which hold the build ID, and sizes) and the RomFS's
+    file list with sizes (where a registered NRO is found)"""
+    R = rfs(); h = hashlib.sha256()
+    for f in NRO_TOOLS: part(h, f, (REPO / f).read_bytes())
+    for n, b in nrrs: part(h, n, b)
+    for n in sorted(R.os.listdir(str(exe))):
+        p = R.os.path.join(str(exe), n)
+        if R.os.path.isfile(p):
+            with R.open(p, 'rb') as f: part(h, n, f.read(0x100) + str(R.os.path.getsize(p)).encode())
+    for dp, _, fs in R.os.walk(str(romfs)):
+        for f in sorted(fs):
+            p = R.os.path.join(dp, f); part(h, R.os.path.relpath(p, str(romfs)), str(R.os.path.getsize(p)).encode())
+    return h.hexdigest()
+
+
+def pack_nros(d):   # the NROs d/nro.tsv lists with files (a 'refused' row, an online SDK, has none)
+    t = Path(d) / 'nro.tsv'
+    if not t.is_file(): return []
+    return [l.split('\t')[0] for l in t.read_text(encoding='utf-8').splitlines() if l and not l.startswith('#') and not l.startswith('refused\t')]
+
+
+def collect_nros(exe, romfs, work, in_process=False):
+    """The NROs the game registers: {name: collected .nro} in <work>/android-nro/ (dm/tools/nro_collect.py, with the version's own ExeFS for a boot stub's NRO),
+    {} without NRRs. Reused while nro_key is unchanged (Super Smash Bros. Ultimate's scan takes minutes). in_process: in this Python, without a pool (the phone).
+    Written in place, its key file the marker (deleted first, written last, by a file's rename): a folder renamed under /storage/emulated goes through MediaProvider,
+    which may refuse it with EPERM (BananaNative issues #1 and #296; android/app Outputs.java)"""
+    work = Path(work); coll, kf = work / 'android-nro', work / 'android-nro.key'
+    nrrs = nrr_files(romfs)
+    if not nrrs:
+        kf.unlink(missing_ok=True); shutil.rmtree(coll, ignore_errors=True); return {}
+    key = nro_key(exe, romfs, nrrs)
+    if collected_nros(work) is None or kf.read_text().strip() != key:
+        work.mkdir(parents=True, exist_ok=True); kf.unlink(missing_ok=True)
+        shutil.rmtree(work / 'android-nro.partial', ignore_errors=True)   # left by a version that renamed the folder into place
+        if coll.exists(): shutil.rmtree(coll)
+        coll.mkdir()
+        stage(f'finding the NROs {len(nrrs)} NRR file{"s" if len(nrrs) != 1 else ""} register{"" if len(nrrs) != 1 else "s"}')
+        args, log = [str(romfs), str(coll), '--exefs', str(exe)], work / 'nro_collect.log'
+        if in_process: rc = run_in_process(REPO / 'dm/tools/nro_collect.py', args, {'DM_NRO_COLLECT_J': '1'}, log)
+        else:
+            with open(log, 'w') as f: rc = subprocess.run([sys.executable, str(REPO / 'dm/tools/nro_collect.py'), *args], env=child_env(), stdout=f, stderr=subprocess.STDOUT).returncode
+        if rc:
+            tail = log.read_text(errors='replace').splitlines()[-20:]
+            raise Error(f'nro_collect.py exit code {rc} (full output: {log}):\n' + '\n'.join(tail))
+        tmp = work / 'android-nro.key.tmp'; write_lf(tmp, key + '\n'); os.replace(tmp, kf)
+    got = {n: coll / f'{n}.nro' for n in pack_nros(coll)}
+    print(f'  NROs: {len(got)} the game loads at run time' + (f' ({", ".join(got)})' if len(got) <= 8 else ''), flush=True)
+    return got
+
+
+def place_nros(coll, out):   # the collection's nro.tsv into the pack (after the NROs' rewrite), or none for a game without NROs
+    t = Path(out) / 'nro.tsv'
+    if coll is None or not (Path(coll) / 'nro.tsv').is_file(): t.unlink(missing_ok=True); return
+    tmp = Path(out) / 'nro.tsv.partial'; shutil.copyfile(Path(coll) / 'nro.tsv', tmp); os.replace(tmp, t)
+
+
+def unfinished_nros(out):   # the pack's NROs whose rewrite did not finish: '<name> (<files> missing)'
+    out = Path(out)
+    return [f'{n} ({" and ".join(f for f in (f"{n}.patched.bin", f"{n}.android.key") if not (out / f).is_file())} missing)'
+            for n in pack_nros(out) if not (out / f'{n}.patched.bin').is_file() or not (out / f'{n}.android.key').is_file()]
 
 
 def nso_build_id(path):   # the module's build ID (NSO header +0x40), as the profile's build rows name it
@@ -464,7 +552,7 @@ def rewriter_src(src, out, m):
     """The file patch_nso.py reads for module m: src itself, or for a module in a NUP package (`game.nup:update/<v>/exefs/main`) a copy in the pack's
     .nup-src/<module>/ under the module's own name. The rewriter then reads a plain file, so its files (REWRITER, rewrite_key) are the same for a NUP
     file and a folder, and a pack made from either keeps the other's rewritten modules"""
-    if '.nup:' not in str(src): return src
+    if '.nup:' not in str(src) and '.nsp:' not in str(src): return src
     d = out / '.nup-src' / m; d.mkdir(parents=True, exist_ok=True)
     f = d / src.name; f.write_bytes(src.read_bytes()); return f
 
@@ -644,6 +732,11 @@ def map_keys(path):
     with open(path) as f: return {c[3] for c in (l.rstrip('\n').split('\t') for l in f) if len(c) > 4 and c[0].endswith('.bin')}
 
 
+def table_lines(path):
+    """A table's lines less its comment lines ('#'), as shader_split.py's targeted scan compares them"""
+    with open(path, encoding='utf-8') as f: return [l for l in f.read().splitlines() if not l.startswith('#')]
+
+
 def selected_keys(profile_dir):
     """The shaders the phone's shaders step builds for a profile with a selected set (shader_seen.tsv): its keys that the map has, sorted, each once, as
     ShaderLibs.selection reads them (the map's column 4 of every row but comments and the header); None without a shader_seen.tsv (the whole map). vk_android_build.py
@@ -740,7 +833,14 @@ def require_shaders(g):
 # PEANUTS end
 
 
-def split_shaders(a, g, vdir, pkg, parts=None):   # parts: the version's (romfs, exefs) when they are not vdir's own (pack_dump.version_part)
+def collected_nros(work):
+    """The folder of the NROs collect_nros collected into work, or None when it has none or its collection did not finish (no key file) (shader_split.py reads a CRA
+    archive's file table from them: DM_NRO_DIR)"""
+    d = Path(work) / 'android-nro'
+    return d if (d / 'nro.tsv').is_file() and (Path(work) / 'android-nro.key').is_file() else None
+
+
+def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: the version's (romfs, exefs) when they are not vdir's own (pack_dump.version_part); aoc: add-on RomFS roots to split too; nros: collected_nros
     """The Switch shader package from the dump, as the phone's split step makes it (the version's romfs and main, android/app PackService "split"): shader_split.py into
     <pkg> (written beside it, then renamed, so a stopped split leaves no half package). Its tables go beside the package. The library is the profile's (its shader_map.tsv
     decides what is built, and vk_android_build.py finds each of its shaders in the package by key), so the split must hold every shader of the profile's map: one that
@@ -749,18 +849,20 @@ def split_shaders(a, g, vdir, pkg, parts=None):   # parts: the version's (romfs,
     py = shader_python(a.shader_python, split=True)
     tmp = pkg.with_name(pkg.name + '.tmp'); shutil.rmtree(tmp, ignore_errors=True); tmp.mkdir(parents=True)
     print(f'shaders: splitting the shaders out of {rd} into {pkg} with {py} (a few minutes)', flush=True)
-    env = child_env(DM_GAME=g.id, DM_SPLIT_TARGETED='1')   # as the phone: only the files the profile's map names, when the build is the profile's and the tables come out the same
+    env = child_env(DM_GAME=g.id, DM_SPLIT_TARGETED='1', **({'DM_NRO_DIR': str(nros)} if nros else {}))   # as the phone: only the files the profile's map names, when the build is the profile's and the tables come out the same
     env.update(peanuts_env('split'))   # PEANUTS: as the phone's split (PackService): the direct scan
     # PEANUTS: DM_OODLE_OOZ (the PC builder's worker from the open-source ooz decoder, dm/third_party/ooz) decodes in place of the game's own decoder, so its
     # split counts only against a profile's map (ooz_split_checked below); a game without one is not split with it at all
     if (ooz := env.get('DM_OODLE_OOZ')) and not (g.dir / 'shader_map.tsv').is_file():
         raise Error(f'DM_OODLE_OOZ is set ({ooz}), and the profile {g.id} has no shader_map.tsv to check the ooz decoder\'s output against: this game\'s shaders are not decoded with it')
+    # a program n > 0 (--program) keeps its shaders in the application's add-ons: a Switch 2 Edition's NVN2 archives are in its add-on (Wonder's 010015100B515001)
     r = subprocess.run([py, str(SPLIT), str(rd), str(ed / 'main'), str(tmp / 'pkg'),
-                        *[str(tmp / f) for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv', 'pso_pairs.tsv')]], env=env)
+                        *[str(tmp / f) for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv', 'pso_pairs.tsv')], *([','.join(map(str, aoc))] if aoc else [])], env=env)
     if r.returncode: raise Error(f'shader_split.py exit code {r.returncode}')
     if not map_keys(tmp / 'shader_map.tsv') and not no_nvn_shaders(g): raise Error(empty_split(g, rd, tmp))   # PEANUTS: no shader read is a failure, not an empty library
     ver = getattr(a, 'pack_ver', None)   # PEANUTS: the dump's version (main), for the shaders only another listed version has (may_lack)
     if ooz: ooz_split_checked(ooz, g, tmp, ver)   # PEANUTS: the ooz decoder's output is taken only when the split's keys are the profile's
+    want: set[str] = set(); have: set[str] = set()   # PEANUTS(upstream-candidate): no profile table means no absent keys.
     if (g.dir / 'shader_map.tsv').is_file():
         want, have = map_keys(g.dir / 'shader_map.tsv'), map_keys(tmp / 'shader_map.tsv')
         missing = sorted(want - have)
@@ -770,7 +872,7 @@ def split_shaders(a, g, vdir, pkg, parts=None):   # parts: the version's (romfs,
         if theirs := [k for k in missing if k in other_version_keys(g, ver)]:
             print(f'shaders: {len(theirs):,} of {len(want):,} shaders in this app\'s table belong to other versions of the game ({", ".join(other_versions(g, ver))}): not needed for v{ver}', flush=True)
         for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv'):
-            if (g.dir / f).is_file() and (g.dir / f).read_bytes() != (tmp / f).read_bytes():
+            if (g.dir / f).is_file() and table_lines(g.dir / f) != table_lines(tmp / f):   # the comment lines name the game and the split's wording at the time
                 print(f'shaders: the dump\'s {f} differs from the profile\'s ({len(have - want)} shaders more); the library is the profile\'s, its shaders found in the package by key')
     shutil.rmtree(pkg, ignore_errors=True); (tmp / 'pkg').rename(pkg)
     absent = sorted(want - have) if (g.dir / 'shader_map.tsv').is_file() else []   # the keys only another registered build has (shader_optional.tsv): listed for a library build to leave out
@@ -782,7 +884,14 @@ def split_shaders(a, g, vdir, pkg, parts=None):   # parts: the version's (romfs,
     tmp.rmdir()
 
 
-def pack_shaders(a, g, work, out, vdir, parts=None):
+def shader_work(a, work):
+    """PEANUTS(upstream-candidate): the folder of the library build's temporary files. Beside the library cache when --shader-cache names one, as <work>/android-shaders/work
+    is beside the default cache: with --out and --shader-cache elsewhere (a .nup on a drive the pack is not made on) nothing is made beside the game any more.
+    Before, a pack with both still made <title ID>-work/android-shaders/work beside the .nup"""
+    return a.shader_cache.resolve().parent / 'work' if a.shader_cache else work / 'android-shaders' / 'work'
+
+
+def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
     """shaders/v-<V>/ in the pack: an up-to-date library from the cache (built there first when it is missing or stale, from the shader package, split from the dump
     first when there is none and --shader-pkg names none). → the library path in the pack, or None"""
     require_shaders(g)   # PEANUTS: an empty map without the profile's word for it is no library to pack
@@ -793,27 +902,29 @@ def pack_shaders(a, g, work, out, vdir, parts=None):
     if not library_current(lib, g):
         if a.in_process: raise Error(f'no current shader library {lib}: --in-process does not build one yet (vk_android_build.py starts the translator and spirv-val as programs); --no-shaders packs without')
         pkg = (a.shader_pkg or work / 'android-shaders' / 'pkg').resolve()
-        if not pkg.is_dir(): split_shaders(a, g, vdir, pkg, parts)   # also into a --shader-pkg folder that is not there yet
+        if not pkg.is_dir(): split_shaders(a, g, vdir, pkg, parts, aoc, collected_nros(work))   # also into a --shader-pkg folder that is not there yet
         py = shader_python(a.shader_python)
         print(f'shaders: building the Vulkan library {lib} from {pkg} with {py} (J={a.J}; about 10 minutes on DKB)', flush=True)
-        (work / 'android-shaders' / 'work').mkdir(parents=True, exist_ok=True)
-        env = child_env(DM_GAME=g.id, J=str(a.J), WORK=str(work / 'android-shaders' / 'work'))
+        swork = shader_work(a, work); swork.mkdir(parents=True, exist_ok=True)   # PEANUTS(upstream-candidate): beside a --shader-cache folder (shader_work)
+        env = child_env(DM_GAME=g.id, J=str(a.J), WORK=str(swork))
         env.update(peanuts_env('shaders'))   # PEANUTS: as the phone's shaders step (PackService): zstd 6
         keys = selected_keys(g.dir)   # a profile with a selected set (shader_seen.tsv): only its shaders, as the phone builds them (PackService, ShaderLibs.selection)
         if keys is not None:
-            if not keys: raise Error(f'the profile\'s shader_seen.tsv names none of the shaders of its shader_map.tsv')
+            if not keys: raise Error('the profile\'s shader_seen.tsv names none of the shaders of its shader_map.tsv')   # PEANUTS(upstream-candidate): no substitutions.
             print(f'shaders: the profile selects {len(keys):,} shaders (shader_seen.tsv) and the pixel shaders paired with them, as the phone builds', flush=True)
         if absent := absent_optional(g, pkg, getattr(a, 'pack_ver', None)):   # a registered build without some of the map's shaders (shader_optional.tsv; PEANUTS: or another listed version's own, may_lack): the library is built without them
             print(f'shaders: {len(absent)} of the profile\'s shaders are not in this build of the game (shader_optional.tsv); the library leaves them out '
                   '(the [RED] "not in the package" line below counts them)', flush=True)
             env['DMSH_VK_REQUIRE_ALL'] = '0'
             if keys is not None: keys = [k for k in keys if k not in absent]
-        args = []
-        if keys:   # on Windows a file the wrapper reads (vk_android_win.py "@<file>"): thousands of keys pass a command line's 32,767 characters there
-            if WINDOWS:
-                kf = work / 'android-shaders' / 'keys.txt'; write_lf(kf, ''.join(k + '\n' for k in keys)); args = ['@' + str(kf)]
-            else: args = keys
-        r = subprocess.run([py, str(VK_BUILD_WIN if WINDOWS or sys.platform.startswith('linux') else VK_BUILD), '--target', 'vulkan', str(pkg), str(cache), *args], env=env)   # PEANUTS: on Linux too, for the translator's start (the repository's apphost is the Mac's; vk_android_win.py starts the dlls with dotnet)
+        # PEANUTS(upstream-candidate): each child owns its selection file, even with sibling caches and concurrent builds.
+        with tempfile.TemporaryDirectory(prefix='selection-', dir=swork) as selection_dir:
+            args = []
+            if keys:   # on Windows a file the wrapper reads (vk_android_win.py "@<file>"): thousands of keys pass a command line's 32,767 characters there
+                if WINDOWS:
+                    kf = Path(selection_dir) / 'keys.txt'; write_lf(kf, ''.join(k + '\n' for k in keys)); args = ['@' + str(kf)]   # PEANUTS: private to this child; removed after it exits
+                else: args = keys
+            r = subprocess.run([py, str(VK_BUILD_WIN if WINDOWS or sys.platform.startswith('linux') else VK_BUILD), '--target', 'vulkan', str(pkg), str(cache), *args], env=env)   # PEANUTS: on Linux too, for the translator's start (the repository's apphost is the Mac's; vk_android_win.py starts the dlls with dotnet)
         if r.returncode: raise Error(f'vk_android_build.py exit code {r.returncode} (a package that lacks the profile\'s shaders stops it: delete {pkg} and the split runs again)')
         if not library_current(lib, g): raise Error(f'vk_android_build.py finished but {lib} is not a full library of {g.id} with the current inputs')
     else: print(f'shaders: {lib} is current (game {g.id}, inputs {dmsh_chain.inputs(g)})')
@@ -859,19 +970,45 @@ def scene_overlays(g, romfs, out):
     return [(m[0], f'scene_res/{m[0]}') for m in made]
 
 
+def work_dir(out, app):
+    """The work folder the shader split and library cache go to (android-shaders/): the pack's own <title ID>-work, so a pack folder picked elsewhere (--out) takes
+    the extracted shaders with it instead of leaving them beside the game. The default pack, <game folder>/../<title ID>-work/android-pack, gives the same folder as before"""
+    name = f'{app:016X}-work'
+    return out.parent if out.parent.name.upper() == name.upper() else out.parent / name
+
+
 def commit():   # the packer's commit; DM_PACKER_COMMIT when the repository's tool has none (the phone: no git there, the app passes the commit it was built from)
     try: r = subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--short=12', 'HEAD'], capture_output=True, text=True).stdout.strip()
     except OSError: r = ''
     return r or os.environ.get('DM_PACKER_COMMIT') or 'unknown'
 
 
+def place_cheats(g, out):
+    """The profile's cheat files (game.tsv cheats rows, game.Game.cheats: Atmosphère-format, named <build>.txt) into <out>/cheats/, from where the launcher copies them into
+    its own cheats folder for the game when Game settings › Cheats is on (Cheats.java). Not in the rewrite key: they change no code, only what the host writes while the game
+    runs, so a new or changed cheat file needs a Prepare (this copy) but never makes a pack's code stale. A file of a row the profile no longer has is removed"""
+    try: files = g.cheats()
+    except ValueError as e: raise Error(str(e)) from None
+    d = out / 'cheats'
+    if files: d.mkdir(exist_ok=True)
+    for f in files:
+        tmp = d / (f.name + '.partial'); shutil.copyfile(f, tmp); os.replace(tmp, d / f.name)
+    if d.is_dir():
+        for old in d.iterdir():
+            if old.name not in {f.name for f in files}: old.unlink()
+        if not files: d.rmdir()
+    if files: print(f'cheats: {", ".join(f.name for f in files)} into {d}')
+
+
 def main():
     ap = argparse.ArgumentParser(description='Pack a dumped game for the Android launcher: its code modules rewritten with --target android, no RomFS')
     ap.add_argument('game', type=Path, help='the game folder (base/exefs, base/romfs or an update\'s romfs, updates/<version>/, dlc/), or a .nup file')
     ap.add_argument('--version', type=int, help='the update version to pack (default: the newest in updates/; 0 = the base game)')
+    ap.add_argument('--program', type=int, default=0, help='pack program n > 0 of a dump folder (a Switch 2 Edition\'s program 1: updates/<version>/program/1/ in the console\'s layout) instead of the game '
+                                                            '(program 0): its own profile and pack folder; program 0\'s newest RomFS and the add-ons are named beside its own RomFS')
     ap.add_argument('--out', type=Path, help='the pack folder (default: <game folder>/../<title ID>-work/android-pack)')
     ap.add_argument('-j', type=int, default=2, help='modules rewritten at once (default 2)')
-    ap.add_argument('--shader-cache', type=Path, help='the folder of Vulkan shader libraries v-<V>/ (default: <title ID>-work/android-shaders/lib)')
+    ap.add_argument('--shader-cache', type=Path, help='the folder of Vulkan shader libraries v-<V>/ (default: <title ID>-work/android-shaders/lib, the <title ID>-work beside or holding the pack folder)')
     ap.add_argument('--shader-pkg', type=Path, help='the Switch shader package to build the library from, split from the dump into it when it is not there (default: <title ID>-work/android-shaders/pkg)')
     ap.add_argument('--shader-python', help='the Python 3.14 (or one with backports.zstd) that runs vk_android_build.py')
     ap.add_argument('-J', type=int, default=8, help='shaders translated at once when the library is built (default 8)')
@@ -891,26 +1028,40 @@ def main():
     # PEANUTS end
     a = ap.parse_args()
     if WINDOWS:
-        for s in (sys.stdout, sys.stderr): s.reconfigure(encoding='utf-8', errors='backslashreplace')   # as the tools' output (child_env): one encoding for the reader
+        for s in (sys.stdout, sys.stderr): s.reconfigure(encoding='utf-8', errors='backslashreplace')   # as the tools' output (child_env): one encoding for the reader   # pyright: ignore[reportAttributeAccessIssue]  # PEANUTS: standard streams use TextIOWrapper.reconfigure.
         if not a.in_process: _job = windows_job()   # noqa: F841  (held until the process ends)
-        signal.signal(signal.SIGBREAK, signal.default_int_handler)   # CTRL_BREAK_EVENT (a GUI that shares a console): stop as on Ctrl-C, the tools stopped in the finally blocks
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)   # CTRL_BREAK_EVENT (a GUI that shares a console): stop as on Ctrl-C, the tools stopped in the finally blocks   # pyright: ignore[reportAttributeAccessIssue]  # PEANUTS: Windows-only API absent from Darwin stubs.
     folder = a.game.resolve()
     try:
         try: import capstone, lz4.block   # noqa: F401  (patch_nso.py needs both; checked here so a missing one fails before any work)
         except ImportError as e: raise Error(f'{e.name} is missing in {sys.executable}: see android/README.md for the environment') from None
         if capstone.cs_version()[0] != 5: raise Error(f'Capstone {capstone.__version__}: the rewriter needs Capstone 5')
         app, vers, dlc = pack_dump.scan(folder)
+        app0, conorig = app, None
+        vdir = folder   # PEANUTS(upstream-candidate): both version branches replace this before use; keep the path's type explicit
+        if a.program:   # program n > 0: its package program/<n> stands where a version folder would; program 0's newest RomFS is its "conorig"
+            if pack_dump.nup.is_nup(folder): raise Error(f'--program {a.program}: {folder} is a .nup, which holds program 0 only; pack from the dump folder (updates/<version>/program/{a.program}/)')
+            found = pack_dump.program_dir(folder, a.program)
+            if found is None: raise Error(f'{folder}: no program/{a.program}/exefs/main.npdm in updates/<version>/ or base/ (the console\'s layout, docs/agents/01-extract.md)')
+            ver, vdir = found
+            conorig = pack_dump.version_part(folder, vers, max(vers, default=0), 'romfs')
+            app = pack_dump.program_id(vdir / 'exefs/main.npdm')
+            if (app & pack_dump.TITLE_NUMBER & ~0xFF) != (app0 & pack_dump.TITLE_NUMBER) or (app & 0xFF) != a.program:
+                raise Error(f'{vdir}: program ID {app:016X} is not program {a.program} of {app0:016X}')
         try: g = game.load(f'{app:016X}')
         except SystemExit: raise Error(f'no profile dm/games/{app:016X}: the Android pack needs one (build_ipa_from_nsp.py makes a provisional one)') from None
-        ver = a.version if a.version is not None else max(vers, default=0)
-        if ver and ver not in vers: raise Error(f'no updates/{ver} (have: {", ".join(map(str, sorted(vers))) or "none"})')
+        if not a.program:
+            ver = a.version if a.version is not None else max(vers, default=0)
+            if ver and ver not in vers: raise Error(f'no updates/{ver} (have: {", ".join(map(str, sorted(vers))) or "none"})')
         for tid, p in sorted(dlc.items()):   # the add-on's content meta record: the game version it needs (pack_dump.dlc_required_version)
             if (need := pack_dump.dlc_required_version(p)) > ver:
                 print(f'[RED] DLC {tid:016X} needs game version {need} or later (its content meta record); this pack is version {ver}: the game may not use it', flush=True)
         a.dlc_count = len(dlc)   # PEANUTS: for split_shaders' message (lacking_shaders): a dump without add-on content whose missing shaders come from files it does not have
         a.pack_ver = ver   # PEANUTS: the version packed, for the shaders only another version of the profile's shader_versions has (may_lack)
-        vdir = pack_dump.version_dir(folder, vers, ver)
-        exe, romfs = pack_dump.version_part(folder, vers, ver, 'exefs'), pack_dump.version_part(folder, vers, ver, 'romfs')   # its own, else the base's
+        if a.program: exe, romfs = vdir / 'exefs', vdir / 'romfs'
+        else:
+            vdir = pack_dump.version_dir(folder, vers, ver)
+            exe, romfs = pack_dump.version_part(folder, vers, ver, 'exefs'), pack_dump.version_part(folder, vers, ver, 'romfs')   # its own, else the base's
         if not (exe / 'main.npdm').is_file() or not romfs.is_dir(): raise Error(f'{vdir}: no exefs/main.npdm and romfs (neither its own nor the base\'s)')
         if (pid := pack_dump.program_id(exe / 'main.npdm')) != app: raise Error(f'{vdir}: program ID {pid:016X}, the base is {app:016X}')
         mods = dump_modules(g, exe)
@@ -951,6 +1102,7 @@ def main():
             try: ok = nso.zbic_decoder()
             except nso.Error as e: raise Error(f'{" ".join(zb)}: ZBIC-compressed (system 22.0.0+): {e}') from None
             if not ok: raise Error(f'{" ".join(zb)}: ZBIC-compressed (system 22.0.0+), and {sys.executable} has no decoder: {nso.ZBIC_MISSING} (android/README.md)')
+        work = work_dir(out, app)
         ids = {m: nso_build_id(srcs[m]) for m in mods}
         # PEANUTS begin: code mods (DESIGN-MODS.md) - a modded build adding a module past the profile's own game.tsv row gets its own profile.bin (the
         # generic host's per-title data, dm/peanuts/profile/gen_runtime_profile.py) written beside the pack, read instead of the APK asset
@@ -978,17 +1130,25 @@ def main():
             # each module needs its rewritten code and, written last by the rewrite, its key: a module without the key is a rewrite that did not finish (or one from before keys)
             gaps = [f'{m} ({" and ".join(f for f in (f"{m}.patched.bin", f"{m}.android.key") if not (out / f).is_file())} missing)'
                     for m in mods if not (out / f'{m}.patched.bin').is_file() or not (out / f'{m}.android.key').is_file()]
+            gaps += unfinished_nros(out)
             if gaps: raise Error(f'--keep-code: the rewrite step has not finished for {", ".join(gaps)} in {out}: run the rewrite step again')
             print('  modules kept as they are (--keep-code)')
         else:
+            work = folder.parent / f'{app:016X}-work'
+            nros = collect_nros(exe, romfs, work, a.in_process)
             try:
-                rewrite(sys.executable, srcs, out, max(1, a.j), g, a.in_process, xmod_files)   # PEANUTS: xmod_files
+                rewrite(sys.executable, srcs | nros, out, max(1, a.j), g, a.in_process, xmod_files)   # PEANUTS: xmod_files
                 rewrite_variants(sys.executable, srcs, out, g, a.in_process)   # game.tsv variant rows (a native 4:3 mod) into <pack>/<variant>/
             finally: shutil.rmtree(out / '.nup-src', ignore_errors=True)   # the module copies a NUP game's rewrite read (rewriter_src)
+            place_nros(work / 'android-nro' if nros else None, out)
         if a.code_only: print(f'done: the modules in {out} (--code-only: pack.tsv and the shaders unchanged)'); return
-        if a.keep_code: upgrade_keys(srcs, out, g, xmod_files)   # PEANUTS: xmod_files. Before the copy below replaces the game.tsv an earlier key was made with (a rewrite run did it in rewrite)
+        if a.keep_code:
+            coll = collected_nros(folder.parent / f'{app:016X}-work')   # the collected NROs the keys were made from, when this machine collected them
+            upgrade_keys(srcs | {n: coll / f'{n}.nro' for n in pack_nros(out) if coll and (coll / f'{n}.nro').is_file()}, out, g, xmod_files)   # PEANUTS: xmod_files. Before the copy below replaces the game.tsv an earlier key was made with (a rewrite run did it in rewrite)
         shutil.copyfile(g.dir / 'game.tsv', out / 'game.tsv')
-        shaders = None if a.no_shaders else pack_shaders(a, g, folder.parent / f'{app:016X}-work', out, vdir, (romfs, exe))
+        place_cheats(g, out)
+        # a program n > 0 splits program 0's RomFS (its conorig) and the add-ons with its own main: its own RomFS holds no shaders (Wonder's program 1: one text file)
+        shaders = None if a.no_shaders else pack_shaders(a, g, work, out, vdir, (conorig, exe) if a.program else (romfs, exe), list(dlc.values()) if a.program else ())
         scenes = scene_overlays(g, romfs, out)
         top = folder.parent if pack_dump.nup.is_nup(folder) else folder   # a NUP file's paths are `<name>.nup:<package>/...`, relative to its folder
         rel = lambda p: p.relative_to(top).as_posix()
@@ -996,7 +1156,9 @@ def main():
                 # PEANUTS: a module a mod supplies is listed as mod_build, not build: the launcher compares every build row with the game's own file of that name
                 # (BuildCheck.build), which an added module does not have and a replaced one differs from, and would refuse to start the pack
                 ('modules', ' '.join(mods)), *[('mod_build' if m in mod_exefs else 'build', f'{m}={ids[m]}') for m in mods], ('romfs', rel(romfs)),
-                *[('aoc', f'{tid - app - 0x1000}\t{rel(p)}') for tid, p in sorted(dlc.items())],
+                *[('aoc', f'{pack_dump.dlc_index(tid, app)}\t{rel(p)}') for tid, p in sorted(dlc.items())],
+                # program n > 0: which program it is, the application (its save and add-ons), and each program index's RomFS (DM_ROMFS_PROGRAM_<i>: 0 is the game's, "conorig")
+                *([('program', str(a.program)), ('application', f'{app0:016X}'), ('romfs_program', f'0\t{rel(conorig)}'), ('romfs_program', f'{a.program}\t{rel(romfs)}')] if a.program else []),
                 *([('shaders', shaders.relative_to(out).as_posix())] if shaders else []), *[('scene_res', f'{n}\t{p}') for n, p in scenes], ('packer', commit()), *([('made_by', a.made_by)] if a.made_by else [])]
         stage('writing the pack\'s list of files')
         tmp = out / 'pack.tsv.partial'

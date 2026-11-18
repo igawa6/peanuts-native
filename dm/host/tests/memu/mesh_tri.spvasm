@@ -1,7 +1,8 @@
 ; A mesh module in the form of the translator's SpirvMeshEntry.cs (written by hand, no game code): triangles, a per-vertex block with Position, two per-vertex
 ; locations (0 and 2), a payload it reads, WorkgroupId read through a signed index, whole-vector, member and component stores, a dynamic component index.
 ; Vertex v: position (wg.x, payload[1], v, 1) with z stored again through a component chain; location 0 the same vector; location 2 component (v & 3) = wg.x.
-; Primitive t: (t, t + 1, t + 2) for t below payload[2], else (0, 0, 0)
+; Primitive t: (t, t + 1, t + 2) for t below payload[2], else (0, 0, 0). The y goes through an OpFMul, and an OpFAdd (z + 1, unused) is decorated NoContraction already:
+; the conversion decorates each floating-point result once (position invariance)
                OpCapability Shader
                OpCapability MeshShadingEXT
                OpExtension "SPV_EXT_mesh_shader"
@@ -21,6 +22,7 @@
                OpDecorate %out0 Location 0
                OpDecorate %out2 Location 2
                OpDecorate %idx BuiltIn PrimitiveTriangleIndicesEXT
+               OpDecorate %fz1 NoContraction
        %void = OpTypeVoid
          %fn = OpTypeFunction %void
        %uint = OpTypeInt 32 0
@@ -74,8 +76,10 @@
         %pw2 = OpLoad %uint %pp2
                OpControlBarrier %uint_2 %uint_2 %uint_264
          %fx = OpConvertUToF %float %wgx
-         %fy = OpConvertUToF %float %pw1
+        %fy0 = OpConvertUToF %float %pw1
+         %fy = OpFMul %float %fy0 %float_1
          %fz = OpConvertUToF %float %l
+        %fz1 = OpFAdd %float %fz %float_1
           %v = OpCompositeConstruct %v4float %fx %fy %fz %float_1
          %p0 = OpAccessChain %p_out_v4 %pos %l %uint_0
                OpStore %p0 %v

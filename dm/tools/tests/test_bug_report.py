@@ -129,6 +129,15 @@ class BugReport(unittest.TestCase):
         self.assertIn('~/Games/x', z.read(f'logs/mac-app/{TID}.log').decode())
         self.assertIn('~/data', z.read('report.md').decode())
 
+    def test_settings_changed_block(self):
+        (self.home / f'Library/Logs/nxnative/{TID}.log').write_text('[nxlaunch] [adv] DM_X=1 (Advanced, global)\nok\n')
+        z = zipfile.ZipFile(self.run_main(str(self.app))[1])
+        self.assertIn('## Settings changed from the defaults\n', z.read('report.md').decode())
+        self.assertIn('DM_X=1 (Advanced, global)', z.read('report.md').decode())
+        (self.home / f'Library/Logs/nxnative/{TID}.log').write_text('ok\n')
+        z = zipfile.ZipFile(self.run_main(str(self.app))[1])
+        self.assertNotIn('Settings changed', z.read('report.md').decode())
+
     def test_key_lines_dropped(self):
         code, out = self.run_main(TID)
         z = zipfile.ZipFile(out)

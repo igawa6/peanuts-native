@@ -49,3 +49,13 @@ shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
 shader_note	OCTOPATH TRAVELER 0 shaders
 # The shaders are in the shader code archives of the pak (ShaderArchive-*.ushaderbytecode), each one Oodle-compressed; the NSP script decodes them on the Mac with the game's own Oodle (uepak.py, DM_OODLE_JOB),
 # as for any game with Unreal paks. Unreal combines vertex and pixel shaders per draw from its pipeline state, so every vertex shader is made to link with any pixel shader (shader_split.py separable_pairs)
+
+present_interval	display
+
+fps_limit	60
+
+fps_limit_max	120
+
+# Reviewed FPSLocker Warehouse v4 memory writes for this exact main; no executable patch or arbitrary YAML evaluation.
+fpslocker	9fe60a212cff9b9a3656ab63d4f882e5	zero_i32	0x6c516e8	2	0
+fpslocker	9fe60a212cff9b9a3656ab63d4f882e5	target_f32	0x7c738e0	2	0

@@ -27,6 +27,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "romfs_image.h"
+#include "nsp_toc.h"
 #include "plat/plat.h"
 
 // zstd's decompressor (dm/third_party/zstd/zstddeclib.c): DM_NUP_ZSTD is defined where it is linked (the Android host, android/host/CMakeLists.txt,
@@ -74,10 +75,10 @@ static void nup_aux_free(void *p) {
 // spec that does not name a .nup.
 static int nup_split(const char *spec, char *file, size_t fn, char *sel, size_t sn) {
     const char *c = NULL;
-    for (const char *p = spec; (p = strstr(p, ".nup:")); p++) c = p;
+    for (const char *p = spec; *p; p++) if (!strncmp(p, ".nup:", 5) || !strncmp(p, ".nsp:", 5)) c = p;   // a plaintext NSP is read as a NUP file (nsp_toc.h)
     size_t L = strlen(spec);
     if (!c) {
-        if (L < 4 || strcmp(spec + L - 4, ".nup")) return 0;
+        if (L < 4 || (strcmp(spec + L - 4, ".nup") && strcmp(spec + L - 4, ".nsp"))) return 0;
         if (L >= fn) return 0;
         memcpy(file, spec, L + 1); if (sn) sel[0] = 0; return 1;
     }
@@ -123,10 +124,15 @@ static romfs_img *nup_image_open(const char *spec, char *why, size_t wn) {
     if ((fd = nup_open_file(file)) < 0) { e = errno; NUP_BAD("cannot open %s", file); }
     if (fstat(fd, &st) || !S_ISREG(st.st_mode) || !romfs_image_read(fd, sb, sizeof sb, 0)) { e = errno ? errno : EINVAL; NUP_BAD("cannot read the superblock (not a file?)"); }
     e = EINVAL;
-    if (memcmp(sb, "NUP\x01", 4)) NUP_BAD("not a NUP file (magic)");
+    int nsp = !memcmp(sb, "PFS0", 4);   // a plaintext NSP: its TOC is made from it, its files are extents of it at any alignment (nsp_toc.h)
+    if (!nsp && memcmp(sb, "NUP\x01", 4)) NUP_BAD("not a NUP file (magic)");
     uint16_t hsize; memcpy(&hsize, sb + 4, 2);
     uint64_t toc_off = nup_u64(sb + 8), toc_size = nup_u64(sb + 0x10), blob = nup_u64(sb + 0x38), fsize = nup_u64(sb + 0x40);
     uint32_t npk = nup_u32(sb + 0x48), sflags = nup_u32(sb + 0x4C);
+    if (nsp) {
+        if (!nsp_toc_build(fd, (uint64_t)st.st_size, &toc, &toc_size, &npk, why, wn)) { e = EINVAL; goto bad; }
+        blob = 0; fsize = (uint64_t)st.st_size;
+    } else {
     if (hsize < 0x80 || toc_off != hsize || blob % 16 || toc_size < 0x30 || toc_size > (1ull << 31) || blob < toc_off + toc_size || fsize != (uint64_t)st.st_size)
         NUP_BAD("superblock sizes do not match the file (copied in part?)");
     if (sflags) NUP_BAD("unknown superblock flags %#x", sflags);
@@ -135,6 +141,7 @@ static romfs_img *nup_image_open(const char *spec, char *why, size_t wn) {
     if (!romfs_image_read(fd, toc, (size_t)toc_size, (off_t)toc_off)) { e = errno ? errno : EINVAL; NUP_BAD("cannot read the TOC"); }
     e = EINVAL;
     { uint8_t h[32]; plat_sha256(toc, (size_t)toc_size, h); if (memcmp(h, sb + 0x18, 32)) NUP_BAD("the TOC's SHA-256 does not match (a damaged file)"); }
+    }
     if (memcmp(toc, "TOC\x01", 4) || nup_u32(toc + 4) != npk) NUP_BAD("bad TOC header");
     uint64_t nd = nup_u64(toc + 8), nf = nup_u64(toc + 0x10), pool_off = nup_u64(toc + 0x18), pool_size = nup_u64(toc + 0x20);
     uint64_t o_pk = 0x30, o_dir = o_pk + 0x40ull * npk;
@@ -189,7 +196,7 @@ static romfs_img *nup_image_open(const char *spec, char *why, size_t wn) {
               else {
                   uint64_t size = nup_u64(r + 8), xo = nup_u64(r + 0x10), xs = nup_u64(r + 0x18); uint8_t codec = r[0x40];
                   if (codec > 1) NUP_BAD("unknown codec %u", codec);
-                  if (size && (xo < blob || xo % 16 || xs > fsize - xo || xo > fsize)) NUP_BAD("a file's extent is out of bounds");
+                  if (size && (xo < blob || (xo % 16 && !nsp) || xs > fsize - xo || xo > fsize)) NUP_BAD("a file's extent is out of bounds");
                   if (!codec && xs != size) NUP_BAD("a raw file's extent is not its size");
                   if (codec == 1) { if (!xs) NUP_BAD("an empty zstd extent"); nz++; }
               }

@@ -60,6 +60,9 @@ final class Overlay {
             {"gpu", "GPU time a frame"},
             {"cpu", "CPU clock caps"},
             {"battery", "Battery temperature and level"},
+            {"soc", "SoC temperature (hottest CPU / GPU zone)"},   // PEANUTS: SoC temperature (dev.peanuts.overlay.SocTemp)
+            {"graph", "Frame time graph and 1% low"},   // PEANUTS: frame time table (dev.peanuts.overlay.Hud)
+            {"driver", "GPU driver"},   // PEANUTS: frame time table (Hud)
             {"tag", "Build tag"},
             {"memory", "Memory: the game's and the phone's"},
     };
@@ -202,7 +205,8 @@ final class Overlay {
         ticks++;
         boolean fps = Prefs.overlayItem(ctx, "fps"), dot = Prefs.overlayItem(ctx, "throttle"), gpu = Prefs.overlayItem(ctx, "gpu"),
                 cpu = Prefs.overlayItem(ctx, "cpu"), bat = Prefs.overlayItem(ctx, "battery"), mem = Prefs.overlayItem(ctx, "memory");
-        if (!fps && !dot && !gpu && !cpu && !bat && !mem) return null;
+        boolean soc = Prefs.overlayItem(ctx, "soc");   // PEANUTS: SoC temperature (SocTemp)
+        if (!fps && !dot && !gpu && !cpu && !bat && !mem && !soc && !dev.peanuts.overlay.Hud.extra(ctx)) return null;   // PEANUTS: && !soc (SocTemp), graph / driver items (Hud)
         if (mem) askMemory();
         if (dot || cpu) readCpu();
         if (dot) { readThermal(); level = level(); note(); }
@@ -227,6 +231,7 @@ final class Overlay {
         if (fps && rate[3] < 0) line(s, "no LSFG");
         if (gpu && fresh && rate[5] >= 0) line(s, String.format(Locale.ROOT, "GPU %.1f ms", rate[5]));
         if (cpu) caps(s);
+        if (soc) dev.peanuts.overlay.SocTemp.append(s);   // PEANUTS: SoC temperature line (SocTemp)
         if (bat && batLevel >= 0)
             line(s, (Float.isNaN(batTemp) ? "" : String.format(Locale.ROOT, "%.0f°C ", batTemp)) + batLevel + (charging ? "% ⚡\uFE0E" : "%"));
         if (mem && memTotal > 0) {   // two short lines, as the others: the game process's resident set, then the phone's RAM in use / total, "low" in red when Android says so
@@ -237,7 +242,7 @@ final class Overlay {
                 s.setSpan(new ForegroundColorSpan(DOT[2]), s.length() - 3, s.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
         }
-        return s;   // every line at the overlay's one size (GameActivity.OVERLAY_SP): at 8 sp a smaller second size would no longer read
+        return dev.peanuts.overlay.Hud.table(ctx, s, rate, fresh, level, mainCap(), batTemp, batLevel, charging, rss, memTotal, memAvail, memLow);   // every line at the overlay's one size (GameActivity.OVERLAY_SP): at 8 sp a smaller second size would no longer read   // PEANUTS: the table style (Hud)
     }
 
     /** The text with its colours (the dot's, "low"), so that a change of colour alone counts as a change of the text */

@@ -1,7 +1,8 @@
 // PEANUTS: how a texel buffer is read (dm/gfx/vk_android/vka_tbuf.h; vka_draw.c tbuf_view): the choice between a view in place, the CPU's copy and a copy the GPU makes,
 // for every combination of its inputs against the rules written out here; without a pending GPU write (or with DM_VK_TBUF_GW=0) it is the choice the replay made
 // before; then which writes count as pending, over a small model of the tracker (vka_tex.c g_gw): the sequence of Final Fantasy Resonance's first frame of a scene
-// (a clear and a count through storage texel buffers, then the read of the counts in the same submission), the frames after it, and the writes that must not count
+// (a clear and a count through storage texel buffers, then the read of the counts in the same submission), the frames after it, and the writes that must not count;
+// then which image a buffer texture read through an image binding takes (vka_tbuf_img_choice) and how one draw keeps its answer (vktb_memo)
 #include <stdio.h>
 #include <stdint.h>
 #include "../../gfx/vk_android/vka_tbuf.h"
@@ -79,7 +80,40 @@ int main(void) {
     commit(10); done_ = 10;
     CHECK(!pending(X, XN), "and done");
 
+    // ---- A buffer texture read through an image binding (vka_draw.c tbuf_img_gpu): the row image of the CPU's bytes, or the copy the GPU makes
+    int nc = 0;
+    for (int m = 0; m < 128; m++) {
+        int sw = m & 1, shape = m >> 1 & 1, cls = m >> 2 & 1, fits = m >> 3 & 1, gw = m >> 4 & 1, placed = m >> 5 & 1, grid = m >> 6 & 1, c = vka_tbuf_img_choice(sw, shape, cls, fits, gw, placed, grid); nc++;
+        if (!gw) CHECK(!c, "no pending store over the range: the row image, whatever else (%#x)", m);
+        if (!sw || !shape || !cls || !fits || !placed || !grid) CHECK(!c, "a copy that cannot be made or read is never chosen (%#x)", m);
+        if (m == 127) CHECK(c, "a pending store, and the copy can be made and read: the copy");
+    }
+    // The answers of one draw. The tracker's answer is latched at the submission's prepare (done_ here: vka_tex.c g_gw_done), so between two asks of one draw it
+    // can only go from 0 to 1, by a store an earlier binding of the same draw records; the first answer holds
+    vktb_memo M; vktb_memo_reset(&M); nw = 0; done_ = 20;
+    #define ASK(tid, dim, a, n) ({ int k_ = vktb_memo_find(&M, tid, dim); if (k_ < 0) k_ = vktb_memo_put(&M, tid, dim, vka_tbuf_img_choice(1, 1, 1, 1, pending(a, n), 1, 1)); k_ >= 0 && M.e[k_].gpu; })
+    CHECK(!ASK(7, 1, X, XN), "the draw's first question, nothing pending: the row image");
+    mark(X, XN, 1);                              // the same draw's storage texel buffer binding records its stores
+    CHECK(pending(X, XN) && !ASK(7, 1, X, XN), "asked again after the draw's own store: still the row image (no copy was made for this draw)");
+    CHECK(!vktb_memo_bind_gpu(&M, 7, 1), "and nothing binds the copy");
+    CHECK(ASK(7, 0, X, XN), "another shape of the same texture is another question");
+    CHECK(!vktb_memo_bind_gpu(&M, 7, 0), "a copy chosen but not made for this draw is not bound (an older copy holds another frame's bytes)");
+    vktb_memo_fresh(&M, 7, 0); CHECK(vktb_memo_bind_gpu(&M, 7, 0), "made, or found current, when the draw's images were made: bound");
+    vktb_memo_fresh(&M, 7, 1); CHECK(!vktb_memo_bind_gpu(&M, 7, 1), "the row image's entry never binds the copy");
+    vktb_memo_reset(&M);                         // the next draw of the same submission
+    CHECK(ASK(7, 1, X, XN) && !vktb_memo_bind_gpu(&M, 7, 1), "the next draw asks anew: the store is pending, the copy is chosen and must be made first");
+    commit(21); done_ = 20;                      // the watcher completes fence 21 while this submission is recorded: done_ is the prepare's reading, unchanged
+    vktb_memo_reset(&M); CHECK(ASK(7, 1, X, XN), "a fence completed meanwhile changes nothing until the next prepare");
+    done_ = 21; nw = 0;                          // the next prepare: the write is dropped, the textures over it are uploaded again
+    vktb_memo_reset(&M); CHECK(!ASK(7, 1, X, XN), "after that prepare: the row image, uploaded again by it");
+    vktb_memo_reset(&M);
+    for (int i = 0; i < VKTB_MEMO_N; i++) CHECK(vktb_memo_put(&M, 100 + i, 1, 1) == i, "the memo holds %d answers", VKTB_MEMO_N);
+    mark(X, XN, 1); CHECK(!ASK(7, 1, X, XN) && !vktb_memo_bind_gpu(&M, 7, 1), "a full memo answers the row image for one more");
+    CHECK(vktb_memo_find(&M, 100 + VKTB_MEMO_N - 1, 1) == VKTB_MEMO_N - 1 && vktb_memo_find(&M, 100, 0) < 0, "found by texture ID and shape");
+    #undef ASK
+    (void)nc;
+
     if (fails) { printf("t_android_tbuf: %d FAILED\n", fails); return 1; }
-    printf("t_android_tbuf: ok (%d choices; the pending writes)\n", n);
+    printf("t_android_tbuf: ok (%d choices; the pending writes; the image of a buffer texture and a draw's answers)\n", n);
     return 0;
 }

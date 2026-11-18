@@ -20,11 +20,13 @@ graphics to Vulkan. It is an Android port of [nxnative](https://github.com/seedd
 | Mario Kart World (`0400C3F00006E000`) | 1.8.0 | Supported | a phone cooler is recommended |
 | Pokémon Pokopia (`0400A3A01EE4C000`) | update 655360 (Ver. 2.0.1) | Supported | about 60 fps |
 | The Legend of Zelda: Ocarina of Time (`0400486024DEC000`) | 2.0 | Experimental | plays on the system driver and Turnip, full foliage; about 30 fps in Kokiri Forest, 50 indoors |
-| Star Fox (`0400E88025B1A000`) | update 131072 | Experimental | boots and reaches its first scenes on both drivers; not tested further |
+| Star Fox (`0400E88025B1A000`) | update 131072 | Supported | played from start to finish by a player, who reported no problems; frame rate and memory not measured |
+| Mario Tennis Fever (`0400D4201C6EA000`) | update 327680 (1.1.1) | Experimental | plays at 60 fps on Turnip on the tested phone; Qualcomm's own driver stalls and shows dark patches on the player intros; a long first Prepare (35,045 shaders) |
+| Super Mario Bros. Wonder - Nintendo Switch 2 Edition (`040015100B514001`) | update 327680 (1.2.1), program 1 | Experimental | reached a first course at 30 fps on Turnip on one phone; the system driver is not tested; needs a dump with the edition's own program |
 | Splatoon Raiders (`0400380020056000`) | update 65536 | Experimental | boots and runs, but not playable yet (very low frame rate) |
 
 The app tells you if your dump is another version. Splatoon Raiders is not playable yet: it boots and runs at a very low
-frame rate, and ships so that people can test it and help. Star Fox is new and little tested. Ocarina of Time: only version 2.0 is
+frame rate, and ships so that people can test it and help. Ocarina of Time: only version 2.0 is
 tested; the first starts are slow (minutes of loading, then low fps and black frames) until the GPU driver's pipeline cache fills.
 Games with a recommendation for your phone show it at the top of their ⋯ page: one tap applies it. Game language follows the
 phone (Polish and Thai too, where the game has them) or can be set per game. [Experimental games](../docs/guides/experimental-games.md) has their known problems and how to help.
@@ -35,7 +37,7 @@ phone (Polish and Thai too, where the game has them) or can be set per game. [Ex
   (`0400C3F00006E000`). Tested on a Snapdragon 8 Elite Gen 5 with 16 GB, with the phone's own Qualcomm (system) driver
   and Turnip.
 - Your own dump of the game, as a folder (or a `.nup` file of one): `base/`, and `updates/<version>/` and `dlc/` if you
-  have them, each with `exefs/` and `romfs/`. NSP and XCI files don't work.
+  have them, each with `exefs/` and `romfs/`. XCI and encrypted (retail) NSP files don't work; a plain NSP that NSP Box wrote is read where it is, as a `.nup` is.
 - Recommended: a Windows PC or a Mac, and a phone cooler.
 
 ## Setup

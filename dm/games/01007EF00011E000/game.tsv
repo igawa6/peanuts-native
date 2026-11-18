@@ -51,3 +51,38 @@ app_pool	0xCD500000
 # ---- Shader split (shader_split.py) ----
 shader_groups	/Shader/=shader /Effect/=effect /Layout/=layout /System/=gsys /Terrain/=terrain
 shader_note	Breath of the Wild shaders
+
+present_interval	display
+fps_limit	60
+fps_limit_max	120
+fpslocker	cd57b23fa4bbad65803d9788c01821ee	time_ratio_f32	%0x0	1	30:2
+fpslocker	cd57b23fa4bbad65803d9788c01821ee	target_scaled_f32	%0x8	1	30:100
+fpslocker	cd57b23fa4bbad65803d9788c01821ee	inverse_f32	@0x1dad0e0	1	30:1
+fpslocker	cd57b23fa4bbad65803d9788c01821ee	flag_cap_u8	%0x10	1	0:30
+
+# Reviewed FPSLocker code plan: exact main build and expected bytes; no pack-file mutation.
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	clock	-	1
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	r0x112670c	4041201e	6041201e
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	r0x1126710	7f070071	7f0b0071
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	r0x112665c	58008052	78008052
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	r0x1126748	1f090071	1f0d0071
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	r0x1126794	3f090071	3f0d0071
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	r0x112691c	03000014	c00000b4
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	r0x1126974	03000014	c00000b4
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0xe93dc8	61f64239	21008052
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0x12670a4	0859a852	p8:0x8
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0x12670a8	0308211e	0308211e
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0x12670ac	0101271e	010940bd
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0x151d448	a8010034	t0x151d454
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0x151d46c	6218221e	p9:0x0
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0x151d470	4108211e	210140bd
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0x1280ed8	01102c1e	p7:0x0
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0x1280ee4	0008211e	e00040bd
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0xd13910	3edeff97	l0x0
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	m0xd140d0	4edcff97	l0x0
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	c0x0	-	p7:0x10
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	c0x4	-	e1400039
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	c0x8	-	t0xd0b208
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	d0x0	-	0000803f
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	d0x8	-	0000c842
+fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	d0x10	-	01000000

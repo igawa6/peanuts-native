@@ -26,12 +26,22 @@ sead_why = "sead's frame-rate controller: 60 / interval (w8 / w21, the controlle
 # aspect setter, main+0x45d5d4, and widen the virtual display; we keep the frame and read the values where used)
 _DKB_WIDE = 32   # OBS_DKB_WIDE in dm/host/dm.h
 _dkb_hud = 32 | 1 << 13
+# The same callback's pane rules for a picture narrower than 16:9 (dkb_wide.c "The layouts' panes"): the squeezed 16:9 layer is the middle of a taller canvas, and nn::ui2d's panes are put
+# where a layout made for that canvas has them. Kind 2, a pane just sized: the instruction after the pane constructor (main+0x8615e0) stores the height (str s0,[x19,#0x54] at main+0x8619fc,
+# which the parts path main+0x861bc4 also reaches); x19 the pane, x23 its record in the layout file. A full-screen picture pane gets the canvas's height. Kind 3, a layout just built: the
+# two places a build ends, nn::ui2d::Layout::Build's (main+0x850680) and the game's own layout class's (main+0x13c94c), the layout in x19 (root pane at +0x18); panes near the top and
+# bottom of the 16:9 layer move to the canvas's edges. The three words are position independent (two read sp, which the gate block has restored by then)
+_dkb_pane = 32 | 2 << 13
+_dkb_layout = 32 | 3 << 13
 OBS = {
     'e25c90c1c136638885659fd55bf8a03b': [   # v458752
         (0x204b20, 27 | (8 | 21 << 5 | 20 << 10) << 8, '1ad50d08', sead_why),
         (0x45e238, _DKB_WIDE | 19 << 8, 'bd410660', 'scene camera updater projection update, before it reads the fovy (ldr s0,[x19,#0x104]); x19 the updater (aspect +0x100, fovy degrees +0x104)'),
         (0x45f9e0, _dkb_hud, 'bd400e80', 'layout system projection setup main+0x45f840, after its copy main+0xb1314 (ldr s0,[x20,#0xc]); x0 the draw info, the perspective matrix at +0x10'),
         (0x803c9c, _dkb_hud, '910003e8', 'the second layout projection setup main+0x803b60 (the scene\'s layouts: HUD), after its copy main+0xb1314 (mov x8,sp; the adrp before it is not relocatable); x0 the draw info'),
+        (0x861a00, _dkb_pane, 'a94057f6', 'pane constructor main+0x8615e0, after it stored the size (ldp x22,x21,[sp]); x19 the pane (size +0x50, translate +0x30), x23 its layout file record'),
+        (0x850d3c, _dkb_layout, '52800020', 'nn::ui2d::Layout::Build main+0x850680, its build done (mov w0,#1); x19 the layout, the root pane at +0x18'),
+        (0x13cb50, _dkb_layout, 'a95e4ff4', "the game's own layout class's build main+0x13c94c, done (ldp x20,x19,[sp,#0x1e0]: x19 is still the layout); the root pane at +0x18"),
     ],
 }
 
@@ -46,4 +56,8 @@ BINDING = [
      'why': "sead::PerspectiveProjection and the draw info's projection copy are engine code, but the three gate sites (the scene camera updater's projection update and the two layout projection setups after their copies) are fixed addresses of this build",
      'blocked': 'one build on hand; the projection update and the matrix copy are plain code a function fingerprint could find',
      'checked': 'v458752 by disassembly, 2026-11-13: every original word read from the main image; the prior art\'s sites (dkbwide set) match the same words; the layout uniform block seen on the phone (DM_VK_UB_PEEK)'},
+    {'what': 'layout panes on a picture narrower than 16:9: full-screen picture panes cover the picture, panes near the top and bottom of the 16:9 layer move to its edges', 'now': 'build', 'goal': 'game', 'purpose': 'rendering',
+     'why': "nn::ui2d's pane constructor and Layout::Build are SDK code linked into main, and the game's own layout class is its own; the three gate sites and the pane and layout offsets are fixed for this build. The names of the groups left as authored are this game's layouts",
+     'blocked': 'one build on hand; the constructor and the two build ends are plain code a function fingerprint could find',
+     'checked': 'v458752 by disassembly, 2026-11-13: the three words read from the main image, x19 / x23 live at each site'},
 ]

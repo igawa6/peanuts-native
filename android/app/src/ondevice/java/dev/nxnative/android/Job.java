@@ -634,15 +634,19 @@ final class Job {
         return new File(c.getNoBackupFilesDir(), "split.scan/" + titleId());
     }
 
-    /** PEANUTS: the shaders step's results (DMSH_VK_RESULTS), one file per shader, in the app's own storage: on shared storage each write goes through Android's FUSE
-     *  layer and the step ran at ~19 shaders a second with its workers waiting; here 248 (Pokémon Sword, AYN Thor) */
-    synchronized File xlate(Context c) {
-        return new File(c.getNoBackupFilesDir(), "xlate/" + titleId());
-    }
-
     /** PEANUTS: an Unreal game's decoded shader code archives (shader_split.py DM_UE_DECODE, ue_ondevice.py), in the app's own storage: the decode swaps its folder in by renaming */
     synchronized File ueShaders(Context c) {
         return new File(c.getNoBackupFilesDir(), "ue/" + titleId());
+    }
+
+    /** The shaders step's results (Outputs.results): in the app's own storage, one folder a game */
+    synchronized File results(Context c) {
+        return Outputs.results(dir(), c.getNoBackupFilesDir(), titleId());
+    }
+
+    /** Deletes the shaders step's results, wherever results() kept them */
+    synchronized void deleteResults(Context c) {
+        for (File f : Outputs.resultFolders(dir(), c.getNoBackupFilesDir(), titleId())) deleteTree(f);
     }
 
     /** Deletes a folder of the job's own outputs: ondevice/ paths, and the pack the job made itself (Ondevice's Manage, asked first; never the dump or the saves) */

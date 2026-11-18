@@ -24,4 +24,21 @@
     </string-array>
     <!-- shown only when a pick needs another render target pool size than the running game loaded (in Game settings: than the setting stored before the pick) -->
     <string name="render_restart_note">This change will apply on game restart.</string>
+    <!-- Cheats (a game whose profile has cheat files: Game settings › Game options, its Cheat files sheet, and the in-game panel's General tab; Cheats.java, CheatsUi.java) -->
+    <string name="cheats_title">Cheats</string>
+    <string name="cheats_caution">Cheated values are stored when the game saves.</string>
+    <string name="cheats_on">Cheat list in the in-game panel (General). Cheated values are stored when the game saves</string>
+    <string name="cheats_off">No cheats</string>
+    <string name="cheats_files_title">Cheat files</string>
+    <string name="cheats_files_note">The game\'s own file, and Atmosphère-format files you import for this game\'s build</string>
+    <string name="cheats_shipped">%1$s (comes with the app)</string>
+    <string name="cheats_shipped_missing">The game\'s own file: Prepare again to add it to this game\'s pack</string>
+    <string name="cheats_import_file">Import cheat file…</string>
+    <string name="cheats_export">Export cheats…</string>
+    <string name="cheats_import_zip">Import cheats…</string>
+    <string name="cheats_remove">Remove</string>
+    <string name="cheats_imported">Imported %1$s. Its cheats are listed in the in-game panel from the next start.</string>
+    <string name="cheats_refused">Not imported: %1$s</string>
+    <string name="cheats_zip_done">Imported %1$d cheat files and the cheat switches.</string>
+    <string name="cheats_exported">Cheats exported.</string>
 </resources>

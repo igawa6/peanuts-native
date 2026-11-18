@@ -62,6 +62,14 @@ final class Rumble {
         if (set(p, v)) Native.note("rumble: player " + (p + 1) + " (" + d.getName() + ") on " + (v == null ? "no vibrator" : ids.length > 0 ? "the controller's vibrator" : "the phone's vibrator"));
     }
 
+    /** The host moved controllers to other players (GameActivity.padPlayers, Native.deviceFirst): every route is made again from the devices' players now */
+    void reroute(Iterable<Integer> devices) {
+        Integer[] players;
+        synchronized (this) { players = byPlayer.keySet().toArray(new Integer[0]); }
+        for (int p : players) set(p, p == 0 ? phone : null);
+        for (int id : devices) route(id);
+    }
+
     /** A player's vibrator; true when it changed */
     private boolean set(int player, Vibrator v) {
         Vibrator was;

@@ -102,6 +102,25 @@ final class GpuDriver {
         return "GPU driver: " + i.label() + " (" + i.dir + ")";
     }
 
+    // PEANUTS begin: match the launch driver's overrides before creating a Vulkan device.
+    static boolean launchesSystem(Context c, String titleId) {
+        List<String> lines = new ArrayList<>();
+        env(c, titleId, lines);
+        lines.addAll(AdvancedSettings.lines(c, titleId, GameActivity.PROTECTED));
+        File files = c.getExternalFilesDir(null);
+        lines.addAll(driverFileLines(new File(files, "env.txt")));
+        lines.addAll(GameActivity.envLines(Prefs.gameEnv(c, titleId)));
+        lines.addAll(driverFileLines(new File(files, "env-" + titleId + ".txt")));
+        return DriverLaunch.usesSystem(lines);
+    }
+
+    private static List<String> driverFileLines(File file) {
+        try {
+            return file.isFile() ? GameActivity.envLines(new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8)) : new ArrayList<>();
+        } catch (IOException | SecurityException e) { return new ArrayList<>(); }
+    }
+    // PEANUTS end
+
     private static JSONObject meta(File f) {
         byte[] b = DriverZip.readMeta(f);
         if (b == null) return null;

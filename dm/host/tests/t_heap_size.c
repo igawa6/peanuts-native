@@ -35,6 +35,7 @@ uint64_t guest_ticks(void) { return 0; }
 uint64_t dm_entropy64(void) { return 0; }
 int thr_limit_used(void) { return 0; }
 int dm_ue_heap_owns(uint64_t a, uint64_t n) { (void)a; (void)n; return 0; } // No Unreal allocator is installed in this fixture.
+void dm_ue_heap_why(uint64_t a, uint64_t n, char *buf, size_t len) { (void)a; (void)n; snprintf(buf, len, "no Unreal allocator in this fixture"); }
 void dm_guest_write_prepare(void *addr, size_t size) { (void)addr; (void)size; }
 // This fixture calls the SVC dispatcher directly, without rewritten guest gates.
 void gate_obs_set(int id, void (*fn)(uint64_t *, int)) { (void)id; (void)fn; }
@@ -57,7 +58,7 @@ static int heap_mprotect(void *addr, size_t size, int prot) {
 static void *heap_mmap(void *addr, size_t size, int prot, int flags, int fd, off_t offset) {
     if (flags & MAP_FIXED) {
         map_calls++; last_addr = addr; last_size = size; last_prot = prot;
-        assert(flags == (MAP_PRIVATE | MAP_ANON | MAP_FIXED) && fd == -1 && offset == 0);
+        assert(flags == (PLAT_GUEST_MAP | MAP_FIXED) && fd == -1 && offset == 0);   // the guest block's flags (plat_guestmap.h): the range merges with its neighbours again
         assert(g_heap_cur == old_size && regs[0] == sentinel && regs[1] == requested);
         if (injected_map_error) { errno = injected_map_error; return MAP_FAILED; }
     }

@@ -370,7 +370,7 @@ lsfg_chain *lsfg_chain_new(const lsfg_modules *mods, VkExtent2D ext, float flow_
             r = vk.vkEndCommandBuffer(cb);
         }
         VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cb};
-        if (!r) { pthread_mutex_lock(&V.qmu); r = vk.vkQueueSubmit(V.q, 1, &si, VK_NULL_HANDLE); if (!r) r = vk.vkQueueWaitIdle(V.q); pthread_mutex_unlock(&V.qmu); }
+        if (!r) { pthread_mutex_lock(&V.qmu); r = vk.vkQueueSubmit(V.q, 1, &si, VK_NULL_HANDLE); pthread_mutex_unlock(&V.qmu); if (!r && !vka_queue_idle()) r = VK_TIMEOUT; }   // (vka_queue_idle: a CPU wait, so a gate holding the queue opens)
         if (r) { VRED("lsfg: layout setup: %d", r); c->bad = 1; }
     }
     if (c->bad) { lsfg_chain_free(c); return NULL; }
@@ -406,6 +406,13 @@ void lsfg_chain_free(lsfg_chain *c) {
 }
 
 VkImage lsfg_chain_input(lsfg_chain *c, uint64_t count) { return c->frames[count % 2]->img; }
+int lsfg_chain_debug_images(lsfg_chain *c, lsfg_dbg_img *out, int max) {
+    const limg *l[7] = {c->frames[0], c->frames[1], c->mip[0], c->gamma[0].out, c->gamma[MIPS - 1].out, c->delta[DELTA_N - 1].out1, c->delta[DELTA_N - 1].out2};
+    static const char *nm[7] = {"in0", "in1", "flow_mip0", "gamma_coarse", "gamma_fine", "delta_out1", "delta_out2"};
+    int n = 0;
+    for (int i = 0; i < 7 && n < max; i++) if (l[i]) out[n++] = (lsfg_dbg_img){l[i]->img, l[i]->ext, l[i]->fmt, nm[i]};
+    return n;
+}
 
 // LsfgChain::DispatchShared: mipmaps of the new frame, the 4 alpha stages at every level, beta
 void lsfg_chain_shared(lsfg_chain *c, VkCommandBuffer cb, uint64_t count) {

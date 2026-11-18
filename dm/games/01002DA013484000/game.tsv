@@ -36,3 +36,20 @@ shader_note	The Legend of Zelda: Skyward Sword HD shaders
 # ---- Graphics ----
 # the game's last nvnDeviceSetDepthMode at boot is near = 0
 depth_mode	zero
+
+# ---- Android frame rate ----
+# PEANUTS: reviewed dynamic timing candidate for this exact 1.0.1 build;
+# README "Frame rate" records the source and remaining validation.
+fps_limit	60
+fps_limit_max	120
+fps_memory	5441af3c89f97e1d25a8ccf14c742bf8	time_ratio_f32	@0x181bd38	1	30:2
+fps_memory	5441af3c89f97e1d25a8ccf14c742bf8	frame_ms_f32	@0x181bd3c	1	0
+fps_plan	5441af3c89f97e1d25a8ccf14c742bf8	clock	-	1
+# Read the measured 30 Hz step both for continuous motion and the fractional
+# whole-tick accumulator. Leave the original angular-velocity multiply intact.
+fps_plan	5441af3c89f97e1d25a8ccf14c742bf8	m0x104a4f8	00ad201e	00394dbd
+fps_plan	5441af3c89f97e1d25a8ccf14c742bf8	m0x104a4fc	00390dbd	1f2003d5
+fps_plan	5441af3c89f97e1d25a8ccf14c742bf8	m0x104a520	013d0dbd	1f2003d5
+# The first frame, before a present can update the memory rows, starts at 60.
+fps_plan	5441af3c89f97e1d25a8ccf14c742bf8	m0x181bd38	0000803f	0000003f
+fps_plan	5441af3c89f97e1d25a8ccf14c742bf8	m0x181bd3c	56550542	55558541

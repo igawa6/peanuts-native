@@ -18,7 +18,7 @@ import game   # noqa: E402
 
 try: from compression import zstd
 except ImportError:
-    try: from backports import zstd
+    try: from backports import zstd   # pyright: ignore[reportMissingImports]  # PEANUTS(upstream-candidate): optional fallback for older Python.
     except ImportError: zstd = None
 
 PACK = 'Pack/Bootup.Test.pack.zs'
@@ -88,6 +88,7 @@ def sarc(members):   # [(name, bytes)]
 
 
 def train():
+    assert zstd is not None   # PEANUTS(upstream-candidate): codec-gated fixtures require zstd.
     r = random.Random(7)
     words = [b'YB', b'SARC', b'ResolutionReduceScale', b'Priority', b'LoadThreshold', b'Sound', b'Reaction', b'\x00\x00\x40\x3f']
     samples = [b''.join(r.choice(words) for _ in range(r.randint(40, 300))) for _ in range(400)]
@@ -96,6 +97,7 @@ def train():
 
 def romfs(root, scales=SCALES, with_dict=True):
     """A RomFS folder: Pack/ZsDic.pack.zs and the palette's pack. → the dictionary (None: the pack is plain zstd)"""
+    assert zstd is not None   # PEANUTS(upstream-candidate): codec-gated fixtures require zstd.
     zd = train() if with_dict else None
     (root / 'Pack').mkdir(parents=True)
     filler = bytes(random.Random(3).randrange(256) for _ in range(3000))
@@ -131,12 +133,14 @@ class SceneRes(unittest.TestCase):
         d = self.d / 'profiles' / name; d.mkdir(parents=True); return d
 
     def decoded(self, path):
+        assert zstd is not None   # PEANUTS(upstream-candidate): codec-gated fixtures require zstd.
         return zstd.decompress(path.read_bytes(), zstd_dict=self.zd) if self.zd else zstd.decompress(path.read_bytes())
 
     def test_finds_every_shared_word_once(self):
         p = scene_res.find(str(self.root), self.g)
         self.assertEqual([round(v, 5) for v in p.scales()], SCALES)
         self.assertTrue(p.matches())
+        assert self.zd is not None   # PEANUTS(upstream-candidate): this fixture uses a trained dictionary.
         self.assertEqual(p.head['dict_id'], self.zd.dict_id)
 
     def test_make_fixed_and_floor(self):
@@ -187,6 +191,7 @@ class SceneRes(unittest.TestCase):
         self.assertIn('[RED]', r.stderr)
 
     def test_plain_zstd_pack(self):
+        assert zstd is not None   # PEANUTS(upstream-candidate): codec-gated fixtures require zstd.
         root = self.d / 'plain'; zd, s = romfs(root, with_dict=False)
         with redirect_stdout(io.StringIO()): scene_res.make(str(root), self.d / 'po', self.g)
         new = zstd.decompress((self.d / 'po' / '720p' / PACK).read_bytes())
@@ -224,6 +229,7 @@ class SceneRes(unittest.TestCase):
 
     def corrupt_cases(self):
         """(what, pack bytes): a truncated frame, a frame that is not zstd past its magic, and a SARC whose BYML root offset points past the member"""
+        assert zstd is not None   # PEANUTS(upstream-candidate): codec-gated fixtures require zstd.
         orig = (self.root / PACK).read_bytes()
         yield 'truncated zstd frame', orig[:len(orig) // 2]
         yield 'garbage after the magic', orig[:4] + bytes(range(256)) * 4

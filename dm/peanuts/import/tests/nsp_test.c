@@ -31,6 +31,7 @@ static _Atomic int g_prep_calls; static int g_prep_unprotect_at;   // the test o
 void dm_guest_write_prepare(void *a, size_t n) { if (++g_prep_calls == g_prep_unprotect_at) mprotect(a, n, PROT_READ | PROT_WRITE); }
 static module_t g_main; module_t *g_mod = &g_main; int g_nmod = 1;
 int dm_main_imports(const char *prefix) { (void)prefix; return 0; }
+int dm_game_imports(const char *prefix) { (void)prefix; return 0; }   // (hle_fs.c asks this one since Banana Native v0.3.22)
 int dm_mii_standin(const char *dir) { (void)dir; return 0; }
 void dm_thread_service_request(void) {}
 uint64_t plat_clock_ns(clockid_t c) { struct timespec t; clock_gettime(c, &t); return (uint64_t)t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec; }
@@ -263,7 +264,7 @@ static void test_overlay(const FxGame *g, const char *dir, const char *nup) {
 
 // ---- 4: add-on content
 static void test_aoc(const FxKeys *k, const char *dir) {
-    FxAddon a1, a2, a3, a5; char ad[700], p[800], t[800]; size_t sz = 0;
+    FxAddon a1, a2, a3, a5, a6, a7; char ad[700], p[800], t[800]; size_t sz = 0;
     printf("4 add-on content\n");
     fx_addon(k, dir, "dlc1", TID, 1, FX_TIK_COMMON, 3, &a1); fx_addon(k, dir, "dlc2", TID, 2, FX_TIK_PERSONAL, 3, &a2);
     fx_addon(k, dir, "dlc3", TID, 3, 0, 3, &a3); fx_addon(k, dir, "dlc5", TID + 0x100000, 5, FX_TIK_COMMON, 3, &a5);
@@ -279,6 +280,16 @@ static void test_aoc(const FxKeys *k, const char *dir) {
     CHECK(h_fs_MountAoc("aoc2", 2, NULL, 0) != RES_OK && !img_of("aoc2"), "add-on 2 answers \"target not found\" and nothing is mounted");
     CHECK(!files_differ("aoc1", a1.f, a1.nf) && !files_differ("aoc3", a3.f, a3.nf), "every file of both add-ons is the fixture's");
     CHECK(!ranges_differ("aoc1", a1.f, a1.nf, THREADS, 500), "%d threads reading add-on 1 at once", THREADS);
+    // A descriptor's name is the picked file's own: an XCI, or an NSP named in capitals. Neither ends in ".nsp", which is what upstream's reader of plaintext
+    // NSPs knows a package by (nup_image.h nup_split): the host's aoc_dir hands such a link to the dumps' reader itself
+    fx_addon(k, dir, "dlc6", TID, 6, FX_TIK_COMMON, 3, &a6); fx_addon(k, dir, "dlc7", TID, 7, 0, 3, &a7);
+    int f6 = open(a6.path, O_RDONLY), f7 = open(a7.path, O_RDONLY);
+    snprintf(t, sizeof t, "fd:%d/dlc6.xci", f6); snprintf(p, sizeof p, "%s/6.nsp", ad); CHECK(f6 >= 0 && !symlink(t, p), "6.nsp links to fd:<n>/dlc6.xci");
+    snprintf(t, sizeof t, "fd:%d/DLC7.NSP", f7); snprintf(p, sizeof p, "%s/7.nsp", ad); CHECK(f7 >= 0 && !symlink(t, p), "7.nsp links to fd:<n>/DLC7.NSP");
+    CHECK(dm_aoc_usable(6) && dm_aoc_usable(7), "add-ons 6 and 7 are usable");
+    CHECK(h_fs_MountAoc("aoc6", 6, NULL, 0) == RES_OK && h_fs_MountAoc("aoc7", 7, NULL, 0) == RES_OK, "add-ons 6 and 7 mount");
+    CHECK(!files_differ("aoc6", a6.f, a6.nf) && !files_differ("aoc7", a7.f, a7.nf), "every file of both is the fixture's");
+    snprintf(t, sizeof t, "fd:%d/gone.bin", 987); snprintf(p, sizeof p, "%s/8.nup", ad); CHECK(!symlink(t, p) && !dm_aoc_usable(8), "8.nup links to a descriptor that is not open: not usable");
 }
 
 // ---- 5: what is refused

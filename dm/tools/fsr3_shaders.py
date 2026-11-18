@@ -72,7 +72,7 @@ def header(glslang, sdk, name, pass_name, defines, tmp):
     return ''.join('static ' + l if l.startswith('const uint32_t') else l for l in lines if l.strip() != '#pragma once')
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])   # PEANUTS(upstream-candidate): docs can be stripped.
     ap.add_argument('--sdk'); ap.add_argument('--glslang'); ap.add_argument('--check', action='store_true')
     ap.add_argument('--out', default=os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'gfx', 'vk_android', 'fsr3'))
     a = ap.parse_args(argv)

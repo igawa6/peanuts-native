@@ -1451,6 +1451,7 @@ public final class Library {
         String game = PeanutsPrefs.gameDir(a);
         // Keys and firmware fonts are a one-time setup requirement before Build, not per-build (owner, 2026-11-13): no longer worded "Optional" here, since
         // Build itself is gated on both (GameSheet, Library.startBuild). Browsing this screen (Show my games, below) still needs only the game folder.
+        PUi.add(c, PUi.body(a, LibrarySettings.KEYS_FIRMWARE_GUIDANCE), 12);
         PUi.add(c, new PUi.Setting(a, "🔑", "Keys", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.pickKeys(a)))
                 .value(keys ? "Added: prod.keys is in the app." : "Needed before building. Importing an NSP or XCI needs it; browsing your folders here does not.").chevron(a).view, 16);
         PUi.add(c, new PUi.Setting(a, "📁", "Game folder", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.pickFolder(a, LibrarySettings.REQ_GAME, "Pick your game folder")))

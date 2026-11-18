@@ -1,0 +1,39 @@
+# Kirby and the Forgotten Land, Nintendo Switch 2 Edition + Star-Crossed World: program 1 of application 01004D300C5AE000 (README.md). Started from the provisional
+# profile scripts/build_ipa_from_nsp.py makes from the survey (dm/games/profile_guess.py); SDK 19.3.7
+
+# ---- Identity ----
+title_id	04004D300C5AE001
+program_id	04004D300C5AE001
+
+# ---- App ----
+name	Kirby and the Forgotten Land - Nintendo Switch 2 Edition
+ipa	04004d300c5ae001.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v65536	1.1.0	main=395fc326c2e5b1651d937074f8cfd75d	subsdk0=411c90dfba759498adbff820f33b7a71	sdk=5e81e79381e8be36fe8bcf05ae18d6dd
+package	v65536
+shader_versions	v65536
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	mov/EventMovie/Ending.webm
+zip_store	.bfstm:.cmpbin:.opus:.webm:.metallib
+
+# ---- Memory ----
+# the NPDM declares 16 MB of system resource (virtual address memory) and main never sets a heap: the game takes its memory from three StandardAllocators over address regions,
+# nninitStartup's over 20 GB (main+0x86cf10), then nnMain's (main+0x661ba0) over 10 GB (a 3.17 GB limit) and 5 GB, after blocks of 2.64 GB and 2.83 GB from the first;
+# it spins forever (main+0x661e00) with 8.69 GB of memory or less. A 38 GB alias region holds all three as asked, after the 62 MB node area, with 0.94 GB for regions made later:
+# address space only, the 9 GB pool bounds what is mapped (README.md, Memory)
+mem_reserve	0x9a8000000
+mem_alias	0x980000000
+mem_stack	0x10000000
+# the sdk is built for the Switch 2 (spec: Ounce): its 9 GB pool
+app_pool	0x240000000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+
+# ---- Shader split ----
+shader_groups	/gfx/=gfx /ptcl/=ptcl /lyt/=lyt /shader/=shader
+shader_note	Kirby and the Forgotten Land - Nintendo Switch 2 Edition shaders: the Star-Crossed World add-on's and program 0's (both in the RomFS it reads)

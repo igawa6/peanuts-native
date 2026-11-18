@@ -46,9 +46,13 @@ final class BuildCheck {
 
     /**
      * The folder's module of the pack's version: updates/&lt;version&gt;/exefs/&lt;module&gt;, else the base's (an update without its own ExeFS: DumpLayout), base/exefs
-     * for version 0, or a one-version folder's exefs/
+     * for version 0, or a one-version folder's exefs/; for a program pack's "program/&lt;n&gt;" (Pack.programSelector) that program's exefs/ (DumpLayout.programDir)
      */
     static File module(File game, String version, String m) {
+        if (version.startsWith("program/")) {
+            File d = DumpLayout.programDir(game, Integer.parseInt(version.substring(8)));
+            return new File(d != null ? d : new File(game, version), "exefs/" + m);
+        }
         long v;
         try { v = Long.parseLong(version); } catch (NumberFormatException e) { return new File(game, "updates/" + version + "/exefs/" + m); }
         File f = new File(DumpLayout.path(game, v, "exefs/" + m));
@@ -106,11 +110,13 @@ final class BuildCheck {
             File f = module(game, version, m);
             return new Mod(f, null, null, rel(game, f), null);
         }
+        if (version.startsWith("program/"))   // a program pack: a .nup holds program 0 only
+            return new Mod(null, null, null, version + "/exefs/" + m, "a .nup holds program 0 only; this pack's " + version + " is read from a dump folder");
         long v;
         try { v = Long.parseLong(version); } catch (NumberFormatException e) { v = -1; }
         String sel = v < 0 ? "update/" + version : DumpLayout.selector(game, v, false), label = sel + "/exefs/" + m;
         try {
-            Nup n = Nup.open(game);
+            Nup n = Nup.open(Nup.holder(game, sel));
             Nup.Pkg p = n.find(sel);
             return new Mod(null, n, p == null ? null : n.lookup(p, "exefs/" + m), label, null);
         } catch (IOException e) {

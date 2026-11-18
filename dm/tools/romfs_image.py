@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import romfs
 
 
-def _nup(path): return '.nup:' in os.fspath(path)   # a NUP package's file (romfs.py); every other path through os, as before
+def _nup(path): return '.nup:' in os.fspath(path) or '.nsp:' in os.fspath(path)   # a NUP package's file (romfs.py); every other path through os, as before
 
 
 def _scandir(path): return romfs.scandir(path) if _nup(path) else os.scandir(path)

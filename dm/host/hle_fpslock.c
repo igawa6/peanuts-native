@@ -163,6 +163,49 @@ static const steps_row_t k_steps[] = DM_FPS_STEPS_ROWS;   // PEANUTS: the per-ti
 #define STEPS_MAX 3    // 20 fps: the most steps a frame offered (each 1/60 s)
 #define STEPS_HOLD 3   // a mode outside the game's 0..2: its pick then leaves the count the host wrote
 static int rd(uint64_t a, void *out, size_t n) { return a >= 0x1000 && !plat_mem_read(a, out, n); }
+// PEANUTS: preferred, reviewed Warehouse rows are build-gated and use the host presentation limiter's live target.
+#include "fpslocker_rows.h"
+static void fpslocker_store(uint64_t a, uint32_t value) {
+    uint32_t *p = (uint32_t *)(uintptr_t)a;
+    dm_guest_write_prepare(p, sizeof *p); __atomic_store_n(p, value, __ATOMIC_RELAXED);
+}
+static void fpslocker_store16(uint64_t a, uint16_t value) {
+    uint16_t *p = (uint16_t *)(uintptr_t)a;
+    dm_guest_write_prepare(p, sizeof *p); __atomic_store_n(p, value, __ATOMIC_RELAXED);
+}
+static void fpslocker_store64(uint64_t a, uint64_t value) {
+    uint64_t *p = (uint64_t *)(uintptr_t)a;
+    dm_guest_write_prepare(p, sizeof *p); __atomic_store_n(p, value, __ATOMIC_RELEASE);
+}
+static int limit_raw(void);
+__attribute__((weak)) int dm_fpslocker_plan_active(void) { return 0; }
+static struct fpw_rows g_fpw; static uint8_t *g_fpw_main,*g_fpw_aux; static uint64_t g_fpw_last;
+static int g_fpw_pair; static struct fpw_step_filter g_fpw_filter;
+static int fpslocker_effective(int fps) { return g_fpw_main ? fpw_effective_cap(&g_fpw,(uint64_t)(uintptr_t)g_fpw_main,(uint64_t)(uintptr_t)g_fpw_aux,fps,rd) : fps; }
+static int fpslocker_tick(void) {
+    static int state,logged;
+    if (!state) {
+        state=-1;const char *e=getenv("DM_FPSLOCKER");
+        if (!e || !*e) return dm_fpslocker_plan_active();
+        for (int i=0;i<g_nmod;i++) if (!strcmp(g_mod[i].name,"main")) {
+            int n=fpw_parse(e,g_mod[i].build_id,&g_fpw);
+            if (n>0) {
+                for (unsigned r=0;r<g_fpw.n;r++) if (g_fpw.row[r].kind==13) g_fpw_pair=1;
+                g_fpw_main=g_mod[i].base;
+                g_fpw_aux=g_mod[i].fpslocker_data_off?g_mod[i].base+g_mod[i].fpslocker_data_off:NULL;
+                state=1;LOG("main: reviewed FPS memory rows: %d reviewed memory rows for build %s",n,g_mod[i].build_id);
+            } else LOG("[RED] reviewed FPS memory rows: %s; no memory writes applied",n<0?"invalid reviewed rows":"main build does not match");
+        }
+    }
+    if (state<0) return dm_fpslocker_plan_active();
+    int fps=limit_raw();uint64_t now=now_ns();double elapsed=g_fpw_last?(double)(now-g_fpw_last)/1e9:0;g_fpw_last=now;
+    double pair_elapsed=elapsed;
+    if (g_fpw_pair && !fpw_step_filter_push(&g_fpw_filter,elapsed,&pair_elapsed)) pair_elapsed=0;
+    if (fpw_apply_context_storage(&g_fpw,(uint64_t)(uintptr_t)g_fpw_main,(uint64_t)(uintptr_t)g_fpw_aux,fps,elapsed,pair_elapsed,rd,fpslocker_store,fpslocker_store16,fpslocker_store64) && !logged) {
+        logged=1;LOG("main: reviewed FPS memory writes applied at %d fps; presentation limiter controls the live cap",fps);
+    }
+    return 1;
+}
 
 // NieR 1.0.3 exposes its preset minimum but ships fixed mode-specific fallbacks.
 // Keep the native current-scale and UV controller intact; only select its
@@ -590,7 +633,7 @@ static int fps_limit_start(void) {
     if (atomic_compare_exchange_strong(&g_fps_limit, &was, l)) { g_fps_limit_src = e ? "DM_FPS_LIMIT" : "game profile fps_limit"; if (l) LOG("main: frame limit %d fps (%s)", l, g_fps_limit_src); }
     return atomic_load(&g_fps_limit);
 }
-static int limit_raw(void) { int l = atomic_load(&g_fps_limit); if (l < 0) l = fps_limit_start(); return l > 0 ? l : 0; }
+static int limit_raw(void) { int l = atomic_load(&g_fps_limit); if (l < 0) l = fps_limit_start(); return fpslocker_effective(l > 0 ? l : 0); }
 // A game with a frame step (the rewriter's stubs, a state page: loader.c) steps its game time by the vsyncs the host hands it each frame (hle_nvn.c fstep_tick). The limiter
 // alone held such a game's frames to the limit while the game went on stepping by its own interval: Ocarina of Time (0400486024DEC000) kept interval 1 (1/60 s a frame) at
 // the profile's 30 fps limit and ran at half speed, and at 25 fps uncapped at 0.4. So for such a game the limit is the frame step's cap, in whole vsyncs: 60, 30 or 20 fps
@@ -682,6 +725,7 @@ static void steps_tick(const lock_t *L, int r, int target, const char *src) {
 void dm_fps_lock_tick(void) {
     fps_limit_wait();
     atomic_fetch_add_explicit(&g_presents, 1, memory_order_relaxed);   // sead_rate's frame count
+    if (fpslocker_tick()) return;   // PEANUTS: one engine-FPS method at a time
     dynamic_resolution_tick();   // separate from the FPS cap
     static int state = -2, nlog[NROWS], target, gen = -1, start_cap; static const char *src; static uint8_t over[NROWS];
     static uint32_t orig[NROWS][2]; static uint8_t have_orig[NROWS][2];   // what a row held before the host first wrote it: put back when the cap goes to 0 while the game runs

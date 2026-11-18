@@ -6,7 +6,7 @@
 #   updates/<version>/program/<index>/...               its updates (patches); <version> is the title version in decimal, 458752 = 0x70000
 #   dlc/<DLC title ID>/<version>/base/program/<index>/romfs/                     add-ons (the DLC title ID in hex)
 #   dlc/<DLC title ID>/<version>/updates/<patch version>/program/<index>/romfs/  their data patches: the newest one's RomFS, the patched tree, is used (dlc_romfs)
-# Program 0 is the game (package_root); a Switch 2 Edition's program/1 is another program, not read. base/romfs may be left out when an update has its romfs: that
+# Program 0 is the game (package_root); a Switch 2 Edition's program/1 is another program, found by program_dir. base/romfs may be left out when an update has its romfs: that
 # one is the whole tree. The flattened layout is read too: base/exefs/, base/romfs/, updates/<version>/{exefs,romfs}/ (program 0's folders in the version folder)
 # and dlc/<DLC title ID>/<version>/romfs/ (the add-on's RomFS with its patch applied); NSP-Box and nxnative take only that one.
 # An update's RomFS in such a dump is the patched RomFS (base + the update's BKTR patch, the tree the game sees), not a patch: it is packed on its own, never laid over the base
@@ -15,15 +15,22 @@
 #   extract/v<version>/ExeFS/   the newest version's code modules (APFS clones, or copies on another volume)
 #   extract/v<version>/RomFS.img   its RomFS as one image (dm/tools/romfs_image.py: the host's DM_ROMFS, the IPA's romfs.img)
 #   aoc/<index>.img   each DLC's RomFS (index = DLC title ID − base title ID − 0x1000), the host's DM_AOC_DIR
-# A dump has no control data, so there is no control.nacp or icon.jpg beside them.
+# A dump in the console's layout has its control data (control/ with control.nacp and the icons; the launcher shows them, Nacp.java), which is not packed here.
 # A NUP file (one file holding base, updates and add-ons, android/NUP.md) stands for such a folder: its base, update/<version> and addon/<title ID> packages are
 # read in place (dm/tools/nup.py through romfs.py) as base/, updates/<version>/ and dlc/<title ID>/<n>/ are, and the build folder goes beside it.
 # The title ID is the program ID in main.npdm. A repeat run keeps code modules that are the same and an image whose source tree, packer and image are unchanged (romfs_image.py --reuse).
 # Usage: pack_dump.py <dump folder | .nup file> [--version N] [--work-dir DIR]   (exit 1 on error)
-import argparse, filecmp, os, shutil, struct, subprocess, sys
+import argparse, filecmp, os, re, shutil, struct, subprocess, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'dm/tools'))
 import cnmt, nup, romfs, romfs_image
+
+TITLE_NUMBER = 0x00FF_FFFF_FFFF_FFFF   # a title ID without its platform byte (01 Switch, 04 Switch 2)
+
+def dlc_index(tid, app):
+    """An add-on's index (its DM_AOC_DIR name) for the game whose program ID is app: related without the platform byte (a Switch 2 Edition's add-on keeps the
+    application's 01…, its program 1 is 04…) and to the application, the program index (app's low byte) left out"""
+    return (tid & TITLE_NUMBER) - (app & TITLE_NUMBER & ~0xFF) - 0x1000
 
 
 class Error(Exception): pass
@@ -79,6 +86,23 @@ def package_root(v):
 def base_dir(dump): return package_root(dump / 'base')   # a folder dump's base package
 
 
+def program_dir(dump, n):
+    """Program n > 0 of a folder dump (a Switch 2 Edition's program 1: Super Mario Bros. Wonder's 040015100B514001 beside 010015100B514000): (its version, its
+    package: the folder with exefs/ and romfs/) of the newest version that has its exefs/main.npdm (an update's, else the base's), or None. Where the dump tools
+    keep it (github.com/a55uka/nup discover.py): program/<n>/ in the version folder in the console's layout (program/<n>/program/ when a data content shares the
+    index), program<n>/ beside the version's own exefs/ and romfs/ in the flattened one (leading zeros allowed; scripts/dump_layout.py), and Yoink's switch2/base/
+    and switch2/updates/<version>/ (program 1, flattened); a one-version folder's own program<n>/ is the base's. A NUP file holds program 0 only (its packages have
+    no program index)"""
+    if nup.is_nup(dump): return None
+    def numbered(p): return sorted(((int(c.name), c) for c in p.iterdir() if c.is_dir() and c.name.isdigit()), key=lambda t: t[0]) if p.is_dir() else []
+    def flat(v): return sorted(c for c in v.iterdir() if c.is_dir() and re.fullmatch(r'program0*([1-9]\d*)', c.name) and int(c.name[7:]) == n) if v.is_dir() else []
+    found = [(ver, r) for ver, v in numbered(dump / 'updates') + [(0, dump / 'base'), (0, dump)]
+             for r in [v / f'program/{n}', v / f'program/{n}/program', *flat(v)]]
+    if n == 1: found += numbered(dump / 'switch2/updates') + [(0, dump / 'switch2/base')]
+    found = [(ver, r) for ver, r in found if (r / 'exefs/main.npdm').is_file()]
+    return max(found, key=lambda t: t[0]) if found else None
+
+
 def updates(dump):   # {version: its package} of updates/<version>/
     return {int(p.name): package_root(p) for p in (dump / 'updates').iterdir() if p.is_dir() and p.name.isdigit()} if (dump / 'updates').is_dir() else {}
 
@@ -108,15 +132,25 @@ def nup_scan(path):
     code = [p for p in base + sorted((p for p in n.packages if p.kind == nup.UPDATE), key=lambda p: -p.version) if p.exefs != nup.NONE and (pkg(p) / 'exefs/main.npdm').is_file()]
     if not code: raise Error(f'{path}: no package with exefs/main.npdm (neither the base nor an update)')
     app = program_id(pkg(code[0]) / 'exefs/main.npdm')
-    if app & 0xFFF: raise Error(f'{path}: base program ID {app:016X} is not a base title ID')
+    if app & 0xFFF: raise Error(f'{path}: base program ID {app:016X} is not a base title ID')   # a NUP file holds program 0 only (no program index in its packages)
     vers = {p.version: pkg(p) for p in n.packages if p.kind == nup.UPDATE}
     if not any(p.romfs != nup.NONE for p in n.packages if p.kind in (nup.BASE, nup.UPDATE)): raise Error(f'{path}: no RomFS in the base or an update')
     dlc = {}
     for p in n.packages:
         if p.kind != nup.ADDON: continue
-        if not 0 < p.title_id - app - 0x1000 <= 2000: raise Error(f'{path}: add-on {p.title_id:016X} is not a DLC of {app:016X}')
+        if not 0 < (index := dlc_index(p.title_id, app)) <= 2000: raise Error(f'{path}: add-on {p.title_id:016X} is not a DLC of {app:016X}')
         if p.romfs == nup.NONE: raise Error(f'{path}: add-on {p.title_id:016X} has no RomFS')
-        dlc[p.title_id] = pkg(p, '/romfs')
+        dlc[app + 0x1000 + index] = pkg(p, '/romfs')
+    if str(n.path).endswith('.nsp'):   # NSP Box writes each DLC, and each version of the game, as an NSP of its own: the ones beside the game's that are of it (found by their content, whatever they are called)
+        for f in sorted(Path(n.path).parent.glob('*.nsp')):
+            if str(f) == n.path: continue
+            try: m = nup.open_nup(f)
+            except (nup.Error, OSError): continue
+            for p in m.packages:
+                if p.kind == nup.ADDON and 0 < (index := dlc_index(p.title_id, app)) <= 2000 and p.romfs != nup.NONE:
+                    dlc.setdefault(app + 0x1000 + index, romfs.Path(f'{m.path}:{p.selector}/romfs'))
+                elif p.kind == nup.UPDATE and p.title_id == app and p.exefs != nup.NONE and p.romfs != nup.NONE:   # another version of the game, a snapshot of its own
+                    vers.setdefault(p.version, romfs.Path(f'{m.path}:{p.selector}'))
     return app, vers, dlc
 
 
@@ -140,16 +174,36 @@ def scan(dump):
     if nup.is_nup(dump): return nup_scan(dump)
     if not is_dump(dump): raise Error(f'{dump}: no base/exefs/main.npdm (or an update\'s exefs/main.npdm) and base/romfs (or an update\'s romfs), '
                                       'in the console\'s layout base/program/0/ and updates/<version>/program/0/ or in the flattened one')
+    # A program ID is the application's ID plus the program's index in its low byte: 0 for the game, 1 for a Switch 2 Edition's program 1 (040015100B514001 of
+    # Super Mario Bros. Wonder), which gets a profile of its own under that ID. Add-ons belong to the application: they are related to its ID, the index left out
     app = program_id(main_npdm(dump))
-    if app & 0xFFF: raise Error(f'{dump}: base program ID {app:016X} is not a base title ID')
+    if app & 0xF00: raise Error(f'{dump}: base program ID {app:016X} is not a base title ID')
     vers = updates(dump)
-    dlc = {}
-    for d in sorted(p for p in (dump / 'dlc').iterdir() if p.is_dir()) if (dump / 'dlc').is_dir() else []:
+    dlc, patches = {}, {}
+    # add-ons under dlc/ or addons/ (the dump tools' names, as github.com/a55uka/nup discover.py reads them); Yoink files an add-on's data patch as a folder of
+    # its own, dlc/<data patch ID>/<version>/ (flattened): its RomFS, the patched tree, then stands for the add-on's
+    for d in sorted(p for r in ('dlc', 'addons') if (dump / r).is_dir() for p in (dump / r).iterdir() if p.is_dir()):
         try: tid = int(d.name, 16)
         except ValueError: raise Error(f'{d}: not a DLC title ID') from None
-        if not 0 < tid - app - 0x1000 <= 2000: raise Error(f'{d}: {tid:016X} is not a DLC of {app:016X}')
-        dlc[tid] = dlc_romfs(d)
+        if (addon := data_patch_of(d, tid)) is not None:
+            if not 0 < (index := dlc_index(addon, app)) <= 2000: raise Error(f'{d}: data patch {tid:016X} of {addon:016X}, which is not a DLC of {app:016X}')
+            patches[(app & ~0xFF) + 0x1000 + index] = dlc_romfs(d)
+            continue
+        if not 0 < (index := dlc_index(tid, app)) <= 2000: raise Error(f'{d}: {tid:016X} is not a DLC of {app:016X}')
+        dlc[(app & ~0xFF) + 0x1000 + index] = dlc_romfs(d)   # named in the game's range, as nup_scan names them
+    dlc.update(patches)
     return app, vers, dlc
+
+
+def data_patch_of(d, tid):
+    """The add-on a flattened DLC folder (dlc/<ID>/[<version>/]) is the data patch of, or None for an add-on: its content meta record's type and DataId in
+    meta/ when it has one, else the ID's 0x800 bit (a data patch's ID is its add-on's + 0x800, as an update's is its program's), as nup's discover.py decides"""
+    if any((v / 'base').is_dir() or (v / 'updates').is_dir() for v in [d, *(p for p in d.iterdir() if p.is_dir())]): return None   # the console's layout: dlc_romfs
+    try: recs = [cnmt.read(f) for v in [d, *sorted(p for p in d.iterdir() if p.is_dir())] for f in sorted((v / 'meta').glob('*.cnmt'))]
+    except cnmt.Error as e: raise Error(str(e)) from None
+    if patch := [r for r in recs if r.type == cnmt.DATA_PATCH]: return patch[0].data_id or tid - 0x800
+    if any(r.type == cnmt.ADDON for r in recs) or not tid & 0x800: return None
+    return tid - 0x800
 
 
 def dlc_romfs(d):
@@ -207,7 +261,7 @@ def pack_version(src, app, out, say=print):   # one version's folder (base/ or u
 
 
 def pack_dlc(app, dlc, aoc, say=print):   # {DLC title ID: its RomFS folder} → aoc/<index>.img; images of DLC no longer in the folder go
-    want = {f'{tid - app - 0x1000}.img': roms for tid, roms in dlc.items()}
+    want = {f'{dlc_index(tid, app)}.img': roms for tid, roms in dlc.items()}
     if aoc.is_dir():
         for f in aoc.iterdir():
             if f.name.removesuffix('.inputs.json') not in want: f.unlink()

@@ -29,14 +29,22 @@ void dm_pad_players(uint32_t mask);   // bit p: player p + 1 has a controller; p
 void dm_pad_raw(uint32_t *npad, uint64_t *buttons, int32_t axes[4]);
 extern void (*_Atomic dm_pad_gate)(int slot, uint64_t *buttons, int32_t axes[4]);
 // PEANUTS end
+uint32_t dm_pad_usable(void);   // bit p: the game reads player p + 1 (its npad is supported; every player in a one-player game), for pad_slot_fill
+void dm_pad_usable_callback(void (*fn)(void));   // the front end's: called on a guest thread when the supported npads change and when the controller applet opens
+// The game's assignments (hle_hid.c SwapNpadAssignment, DisconnectNpad), on a guest thread: DM_PAD_SWAP the controllers of players a and b trade places, DM_PAD_DISCONNECT
+// player a's controller lets go of it until it presses a button again
+enum { DM_PAD_SWAP = 0, DM_PAD_DISCONNECT = 1 };
+void dm_pad_assign_callback(void (*fn)(int op, int a, int b));
 // Live controller motion (hle_hid.c, motion_fusion.h): player 0..DM_PLAYERS-1's gyro and accelerometer as GameController reports them, acceleration in G (gravity direction,
 // (0, 0, -1) face up) and rotation rate in rad/s, in Apple's controller frame. While samples keep coming the player's six-axis sensor follows the controller; dm_motion_clear stops it
 void dm_motion_set(int player, const float acc[3], const float rot[3]);
+void dm_motion_sens(float factor);   // the phone's rotation rates times this from now on (DM_MOTION_SENS sets the start value)
 void dm_motion_set_switch(int player, const float acc[3], const float rot[3]);   // player 0 only: the phone's own sensors in the Switch frame, kept separate; DM_MOTION_AXES does not apply
 void dm_motion_clear(int player);   // clears GameController motion; another fresh source can take over
 // Passive controller HID, already in the Switch frame (G, rad/s). sample_ns is the sample's host now_ns() time, not the packet's arrival; stale / reordered samples are ignored.
 // Kept separate from GameController and the phone; used while GameController supplies no fresh motion for that player. DM_MOTION_AXES / ACC_SIGN apply only to GameController.
 void dm_motion_set_hid(int player, const float acc[3], const float rot[3], uint64_t sample_ns);
+void dm_motion_set_switch_at(int player, const float acc[3], const float rot[3], uint64_t sample_ns);   // PEANUTS: dm_motion_set_switch with the sample's own time on the host clock (now_ns; 0: now), so samples that arrive together keep their real spacing
 void dm_motion_clear_hid(int player);
 uint32_t dm_player_npad(int player);  // the npad id the game reads player p + 1 on: Handheld (0x20) or No1 (0) for player 1, No n (id n - 1) for player n
 

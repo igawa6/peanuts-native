@@ -17,7 +17,9 @@ TOOL = REPO / 'dm/gfx/tools/vk_android_build.py'
 
 
 def magic():
-    return re.search(r"^RESULT_MAGIC = b'([^']+)'", TOOL.read_text(encoding='utf-8'), re.M).group(1).encode()
+    match = re.search(r"^RESULT_MAGIC = b'([^']+)'", TOOL.read_text(encoding='utf-8'), re.M)
+    assert match is not None   # PEANUTS(upstream-candidate): require the source pattern before reading it.
+    return match.group(1).encode()
 
 
 def write_result(d, key, st, err, refl=None, modules=()):
@@ -79,7 +81,9 @@ class Layout(unittest.TestCase):
         src = SRC.read_text(encoding='utf-8')
         self.assertIn(f'"{magic().decode()}"', src)
         tool = TOOL.read_text(encoding='utf-8')
-        head = re.search(r"h = \{'vk': TOOLS.*?\}", tool, re.S).group(0)
+        match = re.search(r"h = \{'vk': TOOLS.*?\}", tool, re.S)
+        assert match is not None   # PEANUTS(upstream-candidate): require the source pattern before reading it.
+        head = match.group(0)
         self.assertLess(head.index("'st'"), head.index("'refl'"))
 
 

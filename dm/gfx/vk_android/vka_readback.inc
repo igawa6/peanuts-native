@@ -203,7 +203,7 @@ static vka_img *rb_pick(rb_slot *s, VkImage *img, int *scaled, int *later) {
         int srgb = o->rb_srgb ? o->rb_srgb == 2 : o->f.srgb;
         c[n] = (vka_rb_cand){.addr = a, .width = (uint32_t)o->d.width, .height = (uint32_t)o->d.height, .format = (uint8_t)vka_rb_format_class((int)o->f.vk, srgb),
                              .plain_2d = o->d.target == NVN_TEXTURE_TARGET_2D && o->aspect == VK_IMAGE_ASPECT_COLOR_BIT && o->samples == 1 && o->layers == 1 && o->depth <= 1 &&
-                                         o->levels >= 1 && !o->base && !o->rs && !o->vpool && !o->is_video,
+                                         o->levels >= 1 && !o->base && !o->rs && !o->vpool && !o->is_video && !o->par,   // (par: a level child's image is its parent's, whose level 0 is not this texture's)
                              .current = o->inited && !o->cpu_dirty, .render_target = o->rb_rt, .redrawn = o->rb_redrawn, .generation = gen};
         ci[n++] = o;
     }

@@ -46,6 +46,8 @@ def scan():
             found = re.findall(READ, text)
         elif p.endswith('.sh'): found = re.findall(r'\$\{?(' + NAME + r')\b', text) + re.findall(r'["\'](' + NAME + r')["\']', text)
         else: found = re.findall(r'["\'](' + NAME + r')=?["\']', text)   # any quoted name: helpers such as envdir("DM_TEMP", …) read it for their caller
+        # a numbered family, its name made with a printf format ("DM_ROMFS_PROGRAM_%d": one switch per program index), is the one switch <NAME>_<n>
+        found += [n + '_<n>' for n in re.findall(r'["\'](' + NAME + r')_%[du]["\']', text)]
         direct |= set(re.findall(READ, text))
         for n in set(found): reads.setdefault(n, set()).add(p)
     for n in macros - direct: reads.pop(n, None); docs.pop(n, None)
@@ -113,7 +115,8 @@ def rows():
     for l in fork_rows():   # PEANUTS: after the DM_* rows, as written
         if l.split('\t')[1] not in CLASSES or not l.split('\t')[2].strip(): bad.append(l.split('\t')[0])   # PEANUTS
         out.append(l)   # PEANUTS
-    unread = sorted(n for n in docs if n not in reads and not n.endswith('_'))
+    families = [n[:-len('_<n>')] for n in reads if n.endswith('_<n>')]   # the docs name a family as `<NAME>_<n>` (quoted up to <NAME>) or by a member (`<NAME>_0`)
+    unread = sorted(n for n in docs if n not in reads and not n.endswith('_') and not any(n == f or re.fullmatch(re.escape(f) + r'_\d+', n) for f in families))
     return HEAD + ''.join(out), bad, unread
 
 

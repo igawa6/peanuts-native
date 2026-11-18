@@ -14,6 +14,10 @@ Update 1.0.2 (`v65536`) over the base game, SDK 13.3.2. Atlus GFD / Needle on NV
 
 ## Rendering
 
+- **Android HD resolution option (1.0.2):** Game settings offers **HD resolution**, applied on the next start. Enabled, the game's internal scene size is 1920x1080 docked or 1280x720 handheld, replacing 1440x810 or 960x540 respectively. This ports the four resolution words from [cucholix's mod](https://gbatemp.net/threads/persona-5-royal-1080p-720p-mod.622556/) ([author's patch source](https://github.com/cucholix/NX-IPS-romfs-compilation/blob/main/P/Persona%205%20Royal/1.2.0.pchtxt)). The source's `1.2.0` label is ambiguous; compatibility here is checked against the registered 1.0.2 main build and all four original instructions. NSO file offsets include the 0x100 header; profile offsets do not. LOD, anisotropy and optional dialogue changes from the larger source bundle are excluded.
+  The option is independent of FPS settings, including Game owned. It changes only the running process before code is sealed; saves, dumps and pack files are unchanged. Disabled uses the game's original resolution. HD renders about 1.78 times as many scene pixels, so performance depends on the scene and driver. A 1920x1080 output texture alone does not establish the internal 3D resolution.
+  **Bounded Android validation (2026-11-17):** Turnip startup and menus rendered in both modes; a docked saved-game check reached Café Leblanc with movement/camera input around 59.8-60 fps. Runtime readback matched all four HD words with the FPS plan selected and with Game owned; the latter retained its native 30 fps cap. Handheld render-target initialization logged 1280x720, docked 1920x1080. Original save/control/environment hashes and the pack main hash were unchanged. An ARM64 constructor fixture also checked enabled/disabled sizes for both modes. Later scenes, battles and HD performance at 90/120 fps remain unverified.
+
 - **Resolved:** the first boot trapped in `SetupSurfaceInfoMemoryInside`, at `main+0x1028fbc`, asserting `ctx.memorySize <= localmemsetupinfo.memorySize`. A 16x16 RGBA8 texture with flags `0x44` (`IMAGE | LINEAR_RENDER_TARGET`) and stride 128 received only 1 KB from the host; the game independently calculated 2 KB. The general fix is linked below. No executable cut is needed.
 
 - **Resolved:** the casino clears only alpha on a 1920x1080 RGBA8 texture (`mask 0x8`). The general partial-channel texture clear implementation preserves RGB and supports explicit regions; no game-specific override is needed.
@@ -50,4 +54,10 @@ Choose offline mode at the network prompt, then New Game and English voices. Adv
 - Rebuild the complete game libraries and host on the current upstream chain, then repeat gameplay validation.
 - Test battles, later story scenes and save/load over a longer playthrough.
 - `SetRenderEnableConditional` still reports that the host draws unconditionally. No visual failure was identified in the tested opening; conditional rendering remains unvalidated.
-- Device validation remains for the user after sideloading.
+- Longer Android playthrough validation remains open; the HD option has the bounded checks recorded under Rendering.
+
+### Android FPSLocker method
+
+Persona 5 Royal uses the reviewed Warehouse fade-step helper in a separate RX page and checked branches, replacing the legacy host engine-limit writer. Targets above 60 remain experimental; correct startup does not establish every animation or game sequence.
+
+The launcher defaults to 60 and offers Game owned as a separate choice. Switching to or from Game owned requires restarting. Code plans require the exact main build and expected instruction words, validate every replacement before writing, and leave pack files unchanged. Other platform patch preparation retains its existing method. See the Thor continuation report for bounded Turnip validation.

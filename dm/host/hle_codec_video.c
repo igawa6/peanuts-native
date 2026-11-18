@@ -32,6 +32,13 @@
 #define CV_HOLD 12                  // and at which packets are refused. Mario Tennis Fever's player sends one packet per signal and ignores the result (nro0+0xd16130), so a signal in flight when the
                                     // event goes down must still find room: refused at 4, a packet about 6 s into the title movie was lost, and libvpx found every frame after it corrupt
 #define CV_HOLDMAX (CV_HOLD + 16)  // room past CV_HOLD for frame-parallel dav1d (profile av1_decoder dav1d): its pictures in flight (up to DM_DAV1D_FRAME_DELAY) come at once at the end of a stream
+// With the decode thread, compressed packets queue apart from the decoded pictures: up to CV_QMAX packets (the event goes down at CV_QREADY), while the thread decodes only
+// as long as the pictures have room (CV_HOLD). Counted together against CV_HOLD, 5 pictures and 7 packets refused every video packet, and the movie library's demuxer waited
+// on it with the audio packets behind it unread: Super Mario Bros. Wonder's program 1 starved its movie's AudioOut stream (1,520 underruns in 2,000 callbacks) and its
+// player, which paces the pictures by the sound, stuttered. A hardware decoder takes compressed input well ahead of the pictures it keeps; CV_QMAX - CV_QREADY leaves room
+// for the signals in flight when the event goes down, as CV_HOLD - CV_READY did (Mario Tennis Fever counts each signal as a packet it may send)
+#define CV_QMAX 64
+#define CV_QREADY (CV_QMAX - 8)
 #define CV_EVENT_OFF 0x100          // the submission-ready SystemEventType inside the decoder type
 #define CV_STAT_N 512               // samples a DM_CODEC_STATS window keeps (5 s of a 60 fps stream is 300)
 #define CV_R(desc) ((Result)(0x6f | ((desc) << 9)))   // nn::codec results (module 111)
@@ -53,6 +60,7 @@ typedef struct {
     vpx_image_t *held[CV_HOLDMAX]; int64_t held_ts[CV_HOLDMAX]; uint8_t held_eos[CV_HOLDMAX]; int nheld;
     int eos_pending;
     int seq, skipped; uint64_t stream_pkts;   // DM_MOVIE_SKIP: the decoder's place in the session; the stream was ended by it (later packets dropped until Stop / Flush); packets since Stop / Flush
+    int ref_pending; int64_t ref_ts; uint64_t ref_size;   // the last packet refused (CV_BUSY), until a packet is taken: that one sent again, or another (the refused one lost)
     struct {   // DM_CODEC_STATS (=1): one log line every 5 s of a stream (cv_stat_*)
         uint64_t t0, last_pic_ns; uint32_t ndec, ngap, nfill, none, refused, held_n, held_max; uint64_t held_sum; float dec_ms[CV_STAT_N], gap_ms[CV_STAT_N];
     } st;
@@ -178,8 +186,14 @@ static void cv_stat_flush(cv_dec *d, uint64_t now, const char *why) {   // decod
 static void cv_stat_tick(cv_dec *d, uint64_t now) { if (!d->st.t0) d->st.t0 = now; else if (now - d->st.t0 >= 5000000000ull) cv_stat_flush(d, now, ""); }
 // before: pictures waiting and packets queued before the caller's change (-1: as drain finds them). The decode thread passes its count from before it took the packet: a packet
 // that gave no picture yet (MediaCodec's first ones) is room come back, and the packet itself was signalled for at Submit
+// The load the submission-ready event and the refusal look at, and its two levels: with the decode thread the packets queued for it (CV_QREADY / CV_QMAX: the pictures
+// have their own room, which the thread waits for); without it pictures and packets together (CV_READY / CV_HOLD), as before
+static int cv_load(const cv_dec *d) { return d->th_ok ? d->nq : d->nheld + d->nq; }
+static int cv_ready_at(const cv_dec *d) { return d->th_ok ? CV_QREADY : CV_READY; }
+static int cv_full_at(const cv_dec *d) { return d->th_ok ? CV_QMAX : CV_HOLD; }
 static void drain_from(cv_dec *d, int took, int before) {
-    if (before < 0) before = d->nheld + d->nq;   // pictures waiting for a buffer and packets waiting for the decode thread
+    if (before < 0) before = cv_load(d);
+    int held0 = d->nheld;
     while (d->pcount && (d->nheld || d->eos_pending)) {
         uint32_t i = d->pend[d->phead]; d->phead = (d->phead + 1) % CV_BUFS; d->pcount--;
         typeof(d->buf[0]) *b = &d->buf[i];
@@ -196,7 +210,8 @@ static void drain_from(cv_dec *d, int took, int before) {
         b->filled = 1; b->filled_gen = b->gen; d->seen[i] = 0; d->st.nfill++;
         spt_fire(d, i);
     }
-    if (d->event) { if (d->nheld + d->nq >= CV_READY) hle_clear_system_event(d->event); else if (took || before >= CV_READY) hle_signal_system_event(d->event); }
+    if (d->nheld < held0 && d->th_ok) pthread_cond_signal(&d->qcv);   // pictures went to buffers: the decode thread may have room again (cv_worker)
+    if (d->event) { if (cv_load(d) >= cv_ready_at(d)) hle_clear_system_event(d->event); else if (took || before >= cv_ready_at(d)) hle_signal_system_event(d->event); }
 }
 static void drain(cv_dec *d, int took) { drain_from(d, took, -1); }
 
@@ -455,7 +470,7 @@ static Result cv_dec_reset(void *t) {   // Stop / Flush: pictures not yet given 
     if (d->th_ok) cv_qwait(d);   // queued packets dropped, a decode running finishes (its pictures given up) before the codec starts over
     for (int i = 0; i < d->nheld; i++) cv_img_free(d->held[i]);
     if (cv_stat_on()) { cv_stat_flush(d, now_ns(), " (to Stop / Flush)"); d->st.last_pic_ns = 0; }
-    d->nheld = 0; d->eos_pending = 0; d->skipped = 0; d->stream_pkts = 0;
+    d->nheld = 0; d->eos_pending = 0; d->skipped = 0; d->stream_pkts = 0; d->ref_pending = 0;
     cv_open(d);
     if (d->event) hle_signal_system_event(d->event);
     pthread_mutex_unlock(&d->mu);
@@ -466,7 +481,7 @@ static Result cv_dec_reset(void *t) {   // Stop / Flush: pictures not yet given 
 static Result cv_dec_start(void *t) {
     cv_dec *d = cv_of(t); if (!d) return CV_R(2004);
     pthread_mutex_lock(&d->mu);
-    if (d->event && d->nheld + d->nq < CV_READY) hle_signal_system_event(d->event);
+    if (d->event && cv_load(d) < cv_ready_at(d)) hle_signal_system_event(d->event);
     pthread_mutex_unlock(&d->mu);
     return 0;
 }
@@ -557,7 +572,7 @@ static void cv_deliver(cv_dec *d, vpx_image_t **pic, const int64_t *pts, int n, 
 // The decode thread (one a decoder; DM_CODEC_THREAD=0: none, packets decode on the submitting thread as before). Submit used to decode on the game's thread, which is the
 // movie player's: Ocarina of Time's AV1 opening (dav1d, Galaxy S25 at 2 GHz) took 47 ms a packet at the median and up to 234 ms, and while the player sat in Submit it took
 // none of the 8 pictures already waiting: the gaps between its pictures reached 241-395 ms, each as long as the slowest decode before it (DM_CODEC_STATS). Now Submit copies the
-// packet and returns; this thread decodes it and hands its pictures to released buffers. Pictures and queued packets count together against CV_READY and CV_HOLD (drain)
+// packet and returns; this thread decodes it, while its pictures have room (CV_HOLD), and hands them to released buffers. The packets queue apart: up to CV_QMAX (drain, cv_load)
 static int cv_thread_on(void) { const char *e = getenv("DM_CODEC_THREAD"); return !(e && *e == '0'); }   // read at each Initialize (t_codec_video.c takes both paths)
 static void cv_qdrop(cv_dec *d) {   // packets not yet taken by the decode thread; decoder lock held
     for (cv_pkt *p = d->q, *nx; p; p = nx) { nx = p->next; free(p); d->nq--; }
@@ -567,7 +582,8 @@ static void *cv_worker(void *a) {
     cv_dec *d = a; char name[16]; snprintf(name, sizeof name, "dm-codec%u", d->id); plat_thread_set_name(name);
     pthread_mutex_lock(&d->mu);
     for (;;) {
-        while (!d->quit && !d->q) pthread_cond_wait(&d->qcv, &d->mu);
+        // A packet is taken once its pictures have room (the packets wait queued meanwhile, CV_QMAX; drain_from wakes this thread when pictures go to buffers)
+        while (!d->quit && (!d->q || cv_room(d) - d->nheld <= 0)) pthread_cond_wait(&d->qcv, &d->mu);
         if (d->quit) break;
         cv_pkt *p = d->q; d->q = p->next; if (!d->q) d->qtail = &d->q;
         // The room the pictures have, taken under the lock as the synchronous path does: only this thread adds pictures and releases only take them, so it holds until
@@ -580,7 +596,7 @@ static void *cv_worker(void *a) {
         pthread_mutex_lock(&d->mu);
         // Submit signalled for this packet when it took it (drain took = 1); here the event rises only if room came back. Signalling again (took = 1) gave two signals for one
         // packet, and Mario Tennis Fever's player counts each as a packet it may send (CV_HOLD)
-        int before = d->nheld + d->nq; d->nq--; d->busy = 0;
+        int before = cv_load(d); d->nq--; d->busy = 0;
         if (gen == d->qgen && !d->quit) { cv_deliver(d, pic, pts, n, p->eos, dns, p->size || p->eos); drain_from(d, 0, before); }
         else for (int k = 0; k < n; k++) cv_img_free(pic[k]);   // decoded across a Stop / Flush or Finalize: given up
         pthread_cond_broadcast(&d->idle);
@@ -601,10 +617,25 @@ static Result cv_dec_submit(uint64_t *out, void *t, const void *data, uint64_t s
         d->skipped = 1; eos = true;
         LOG("[codec] DM_MOVIE_SKIP: %s decoder %u (session decoder %d) ends its stream at packet %llu", k_cv_name[d->codec], d->id, d->seq, (unsigned long long)d->stream_pkts + 1);
     }
-    if (d->nheld + d->nq >= CV_HOLD) {
-        static int n; if (n++ < 4) LOG("[RED] nn::codec %s: a packet refused with %d pictures waiting for a released buffer and %d packets for the decode thread", k_cv_name[d->codec], d->nheld, d->nq);
+    // A full queue refuses the packet (CV_BUSY, description 3603), the protocol's flow control: a client sends it again after the submission-ready event. The SDK's movie
+    // library takes 3603 as a busy result, not a failure (Super Mario Bros. Wonder's program 1, subsdk0+0xfe00: it becomes the library's own result 0x7a, any other
+    // failure aborts), so the decoder running ahead of a player that takes its pictures at the movie's pace is no fault by itself. A client that drops the refused packet
+    // loses its pictures, and libvpx finds the frames after it corrupt (Mario Tennis Fever, CV_HOLD): that shows as the next packet taken not being the refused one, which
+    // is what the [RED] line below reports
+    if (cv_load(d) >= cv_full_at(d)) {
+        static int n; if (n++ < 2) LOG("[codec] %s decoder %u ahead of the player: a packet refused (busy) with %d pictures waiting for a released buffer and %d packets for the decode thread",
+                                      k_cv_name[d->codec], d->id, d->nheld, d->nq);
+        d->ref_pending = 1; d->ref_ts = ts; d->ref_size = size;
         if (d->event) hle_clear_system_event(d->event);
         d->st.refused++; pthread_mutex_unlock(&d->mu); return CV_BUSY;
+    }
+    if (d->ref_pending) {
+        if (ts != d->ref_ts || size != d->ref_size) {
+            static int n; if (n++ < 4) LOG("[RED] nn::codec %s decoder %u: a refused packet (time %lld, %llu bytes) was not sent again; the client went on with another (time %lld, %llu bytes): "
+                                          "its pictures are lost, and the frames after it may decode corrupt until the next key frame", k_cv_name[d->codec], d->id,
+                                          (long long)d->ref_ts, (unsigned long long)d->ref_size, (long long)ts, (unsigned long long)size);
+        }
+        d->ref_pending = 0;
     }
     if (d->th_ok) {
         cv_pkt *p = malloc(sizeof *p + (size_t)size);

@@ -20,6 +20,8 @@ build	v65536	1.0.1	main=f91868b88f60d3d59009db3389fde314	sdk=3053b22935e32ddf15e
 build	v327680	1.2.1	main=ff773e90972d544eb79406eaa65396d5	sdk=e4bd58cac28cf13a08fb417aa013cdcb
 # version packed into the IPA by default
 package	v327680
+# the Android app builds and plays this version only (android/app/build.gradle androidBuildsOf): the others read there as a version the app does not have
+android_builds	v327680
 # the shader tables are the union of these versions (base game first): all of them are needed to build
 shader_versions	v0 v327680
 
@@ -42,3 +44,31 @@ app_pool	0xCD500000
 shader_groups	/Shader/SecredUber=SecredUber .sharcb=agl /Effect/=effect /Layout/=layout /Shader/=SecredUber
 # description of the shader source in the map table header
 shader_note	Super Mario Bros. Wonder shaders
+
+# ---- Android reviewed real-time FPS (owned 1.2.1 build only) ----
+# MacNativeGames f7fda5e32a532e5101fee10c2a1fb5c207d6056c, MIT; see README and FPS-LICENSE.txt.
+# Both interval-to-time branches read one atomically published ratio/seconds pair.
+fps_limit	60
+fps_limit_max	120
+fps_memory	ff773e90972d544eb79406eaa65396d5	time_step_pair_f32	%0x0	1	60:0.066666667
+fps_plan	ff773e90972d544eb79406eaa65396d5	clock	-	1
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a28	006342bd	p8:0x0
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a2c	084ea852	000140bd
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a30	4b5101b0	4b5101b0
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a34	0101271e	010540bd
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a38	e9031faa	e9031faa
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a3c	88220291	88220291
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a40	0af8af52	0af8af52
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a44	00d8215e	1f2003d5
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a48	0118211e	1f2003d5
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a8c	006342bd	p8:0x0
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a90	084ea852	000140bd
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a94	4b5101b0	4b5101b0
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a98	0101271e	010540bd
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5a9c	e9031faa	e9031faa
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5aa0	88220291	88220291
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5aa4	0af8af52	0af8af52
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5aa8	00d8215e	1f2003d5
+fps_plan	ff773e90972d544eb79406eaa65396d5	m0xc5aac	0118211e	1f2003d5
+fps_plan	ff773e90972d544eb79406eaa65396d5	d0x0	-	0000803f
+fps_plan	ff773e90972d544eb79406eaa65396d5	d0x4	-	8988883c

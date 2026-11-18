@@ -107,6 +107,7 @@ class Resume(unittest.TestCase):
     def test_a_foreign_class_is_refused(self):   # a planted file (shared storage) must not run code: it is dropped, nothing is called
         os.makedirs(self.d); Path(self.d, 'digest').write_text('D')
         class Boom:
+            tmp: Path   # PEANUTS(upstream-candidate): the fixture supplies this path before serialization.
             def __reduce__(self): return (os.system, ('echo planted > ' + str(self.tmp / 'ran'),))
         Boom.tmp = self.tmp
         Path(self.d, '0.pkl').write_bytes(pickle.dumps({0: Boom()}))

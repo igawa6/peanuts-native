@@ -33,17 +33,28 @@ static uint32_t original(void *self, char *name, const void *data, unsigned inde
     seen_index = index; seen_capacity = capacity;
     return status;
 }
+static void *init_self, *init_buf; static unsigned init_size; static int inits;
+static void original_init(void *self, void *buf, unsigned size) { inits++; init_self = self; init_buf = buf; init_size = size; }
+static char engine_buffer[1];
+static void *original_work(void *self) { (void)self; return engine_buffer; }   // the engine's own answer: the buffer it was initialized with
 void *guest_sym(const char *name) {
     lookups++;
+    if (!strcmp(name, "_ZN2nn6fontll18ScalableFontEngine10InitializeEPvj")) return (void *)original_init;
+    if (!strcmp(name, "_ZN2nn6fontll18ScalableFontEngine22GetPointerToWorkBufferEv")) return (void *)original_work;
     CHECK(!strcmp(name, "_ZN2nn6fontll18ScalableFontEngine8LoadFontEPcPKvjj"), "original symbol lookup");
     return missing ? NULL : original;
+}
+static void *forced(const hle_force_ent *e, size_t n, const char *name) {
+    for (size_t i = 0; e && i < n; i++) if (!strcmp(e[i].name, name)) return e[i].fn;
+    return NULL;
 }
 module_t *g_mod;
 int g_nmod;
 uint64_t g_t0_ns;
 uint64_t now_ns(void) { return 0; }
 int dm_sdk_major(void) { return 20; }
-int dm_main_imports(const char *prefix) { (void)prefix; return 1; }
+int dm_sdk_ounce(void) { return 0; }
+int dm_game_imports(const char *prefix) { (void)prefix; return 1; }
 module_t *module_of(const void *p) { (void)p; return NULL; }
 void dm_backtrace(uint64_t fp) { (void)fp; }
 void hle_bind_system_event(void *ev, int autoclear) { (void)ev; (void)autoclear; }
@@ -99,7 +110,7 @@ int main(void) {
     // SDK 21's built-in font record (Splatoon Raiders): filled from the standard font, past its header, and reported loaded
     pl_builtin_font_t bf; memset(&bf, 0xee, sizeof bf);
     unsigned got = h_pl_BuiltInOunce(&bf, 0, 0); font_t f0 = font_get(0);
-    CHECK(got == 1 && f0.p && bf.address == f0.p + font_skip() && bf.size == f0.n - font_skip() && bf.type == 0, "built-in font record filled");
+    CHECK(got == 1 && f0.p && bf.address == f0.p + 8 && bf.size == f0.n - 8 && bf.type == 0, "built-in font record filled");
     // Real selection from here on: forget the planted fonts
     memset(type_f, 0, sizeof type_f); memset(type_done, 0, sizeof type_done);
     char dir[] = "/tmp/t_shared_font_XXXXXX"; CHECK(mkdtemp(dir) != NULL, "temp folder");
@@ -172,6 +183,20 @@ int main(void) {
     if (!strstr(SYSTEM_FONT, "nonexistent") && access(SYSTEM_FONT, R_OK)) CHECK(font_get(0).p == NULL && font_get(3).p == NULL && h_pl_Size(1) == 0, "no font found: null, size 0");
 #undef IN
     char rm[600]; snprintf(rm, sizeof rm, "rm -rf '%s'", dir); if (system(rm)) {}
+    // A font engine with too little work memory for the stand-in font (Mario Tennis Fever's second engine: 50 KB) runs on host memory, at least 512 KB; the game still gets
+    // its own buffer back from GetPointerToWorkBuffer (it frees that one). An engine with enough keeps the game's buffer
+    void (*init)(void *, void *, unsigned) = forced(e, bytes / sizeof *e, "_ZN2nn6fontll18ScalableFontEngine10InitializeEPvj");
+    void *(*work)(void *) = forced(e, bytes / sizeof *e, "_ZN2nn6fontll18ScalableFontEngine22GetPointerToWorkBufferEv");
+    CHECK(init && work, "font engine Initialize and GetPointerToWorkBuffer are forced registrations");
+    if (init && work) {
+        static char small[50 * 1024], big[0x80000]; int small_engine, big_engine;
+        init(&small_engine, small, sizeof small);
+        CHECK(inits == 1 && init_self == &small_engine && init_buf != small && init_size >= 0x80000, "a small work buffer is replaced by host memory");
+        CHECK(work(&small_engine) == small, "the game gets its own small buffer back");
+        init(&big_engine, big, sizeof big);
+        CHECK(inits == 2 && init_buf == big && init_size == sizeof big, "a large enough work buffer is the game's");
+        CHECK(work(&big_engine) == engine_buffer, "an engine on the game's buffer answers as the SDK does");
+    }
     printf("shared font: %d checks, %d failed\n", checks, fails);
     return fails != 0;
 }

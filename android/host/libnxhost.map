@@ -8,6 +8,7 @@
     nxhost_vk_selftest;
     JNI_OnLoad;
     Java_*;
+    peanuts_ovl_block;   /* PEANUTS: dm/peanuts/peanuts_graph.c, which libnxlaunch calls (nxlaunch.c overlaySet) */
   local:
     *;
 };

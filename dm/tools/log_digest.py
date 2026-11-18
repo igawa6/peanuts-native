@@ -533,6 +533,8 @@ def gfx_lines(g):
 
 # ---------------------------------------------------------------- the digest
 
+ADV_RX = re.compile(r'^(?:\[nxlaunch\] )*\[adv\] (.*)$')   # GameActivity's [adv] lines (AdvancedSettings.notes): KEY=value (source), or "none: ..."
+MAX_ADV = 300
 ENV_RX = re.compile(r'^\[nxlaunch\] env ([A-Z_][A-Z0-9_]*)=(.*)$')
 PATH_KEYS = {'NX_EXIT_RECORD', 'DM_ROMFS', 'DM_SAVE', 'DM_TEMP', 'DM_ROOT', 'DM_AOC_DIR', 'HOME', 'TMPDIR', 'DM_CTL', 'NX_BUILD_TAG', 'DM_BUILD_COMMIT', 'DM_LSFG_DLL', 'DM_WINDOW_SIZE'}
 
@@ -581,6 +583,7 @@ class Digest:
         self.tail = collections.deque(maxlen=max(tail, 0))
         self.before = collections.deque(maxlen=12)
         self.hdr, self.env, self.build_id, self.app_id = {}, {}, None, None
+        self.adv, self.adv_seen = [], False   # the player's overrides: [adv] lines (none: adv_seen without entries)
         self.stage = {}   # stage -> first line
         self.last_time = None
         self.groups, self.group_order, self.untracked = {}, [], 0
@@ -610,6 +613,11 @@ class Digest:
                 if k not in self.hdr:
                     m = rx.match(line)
                     if m: self.hdr[k] = m.group(1)
+        if '[adv] ' in line:
+            m = ADV_RX.match(line)
+            if m:
+                self.adv_seen = True
+                if not m.group(1).startswith('none') and len(self.adv) < MAX_ADV: self.adv.append(redact(m.group(1)))
         if self.build_id is None and 'cheats: ' in line:
             m = BUILD_ID_RX.match(line)
             if m: self.build_id = m.group(1)
@@ -818,7 +826,17 @@ class Digest:
         rules = sorted((self._rule(i) for i in self.rule_hits), key=lambda r: (r['first_line'] or 10 ** 12, r['id']))
         return {'file': name, 'bytes': size, 'lines': self.n, 'key_lines_dropped': self.dropped_keys, 'header': header, 'stage': stage,
                 'verdict': self.verdict(rec), 'crash': crash, 'errors': errors, 'symptoms': self.symptom_matches(), 'rules': rules,
-                'perf': self.perf.summary(), 'graphics': self.gfx.summary(), 'tail': [{'line': n, 'text': redact(t)} for n, t in self.tail]}
+                'adv': self.adv if self.adv_seen else None, 'perf': self.perf.summary(), 'graphics': self.gfx.summary(), 'tail': [{'line': n, 'text': redact(t)} for n, t in self.tail]}
+
+
+ADV_TITLE = 'Settings changed from the defaults'
+
+
+def adv_lines(adv):
+    """The block of the player's overrides ([adv] lines of the log); nothing for a log without them (an older build), "none" once for a run with none"""
+    if adv is None: return []
+    if not adv: return [f'-- {ADV_TITLE}: none']
+    return [f'-- {ADV_TITLE} ({len(adv)})'] + [f'  {x}' for x in adv]
 
 
 def render(d):
@@ -831,6 +849,7 @@ def render(d):
                          ('host_build', 'host'), ('sdk', 'SDK'), ('shader_library', 'shader library')):
             if k in h: o.append(f'  {label}: {h[k]}')
         if 'switches' in h: o.append('  switches: ' + ' '.join(h['switches']))
+    o += adv_lines(d.get('adv'))
     s = d['stage']
     if s:
         o.append('-- stage')

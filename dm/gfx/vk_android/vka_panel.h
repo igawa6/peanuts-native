@@ -58,12 +58,14 @@ static inline int vkpanel_sample(vkpanel *p, uint64_t t) {
     p->blocks++; p->t0 = t; p->n = 0;
     return 0;
 }
-// A pacing period as whole refreshes of the panel: the nearest whole number of them when that is within 1 % of the period asked for (16.667 ms on a 59.83 Hz panel is
+// A pacing period as whole refreshes of the panel: the nearest whole number of them when that is within 2 % of the period asked for (16.667 ms on a 59.83 Hz panel is
 // one refresh, 33.333 ms two, 16.667 ms on a 120 Hz panel two), else the period as it is (45 fps on a 60 Hz panel, 60 fps on a 90 Hz one). panel_ns 0 = not known
+// PEANUTS: Thor's nominal 120 Hz mode measures 118.52 Hz, a 1.25 % period difference. The old 1 % fit rejected it while the present grid accepted four refreshes
+// for 30 fps, so the limiter/acquire/VI clocks drifted against presentation. Keep these clocks on the same measured grid; incompatible rates still fall back.
 static inline uint64_t vkpanel_fit(uint64_t period_ns, uint64_t panel_ns) {
     if (!panel_ns || !period_ns) return period_ns;
     uint64_t n = (period_ns + panel_ns / 2) / panel_ns;
-    return n >= 1 && vkpn_absdiff(n * panel_ns, period_ns) * 100 <= period_ns ? n * panel_ns : period_ns;
+    return n >= 1 && vkpn_absdiff(n * panel_ns, period_ns) * 100 <= period_ns * 2 ? n * panel_ns : period_ns;
 }
 // The grid point nearest to t, and the first one at or after t (the grid: anchor + i * r, on both sides of the anchor)
 static inline uint64_t vkpanel_near(uint64_t anchor, uint64_t r, uint64_t t) {
@@ -86,14 +88,20 @@ static inline uint32_t vkpanel_hold(uint64_t period_ns, uint64_t r) {
 // lateness is paid once, not carried. The time to hand to vkQueuePresentKHR is the target minus half a refresh (the system shows a frame at the first refresh not
 // before its desired time). Returns the target, 0 when the period is not a whole number of refreshes (the chain ends)
 typedef struct { uint64_t last; } vkgrid;
-static inline uint64_t vkgrid_next(vkgrid *g, uint64_t anchor, uint64_t r, uint64_t period_ns, uint64_t now, int *late) {
+// PEANUTS(upstream-candidate): Android reports the queue lead required by its compositor; a future API timestamp alone is not a reachable display target.
+static inline uint64_t vkgrid_next_deadline(vkgrid *g, uint64_t anchor, uint64_t r, uint64_t period_ns, uint64_t now, uint64_t deadline_ns, int *late) {
     uint32_t hold = vkpanel_hold(period_ns, r);
     if (late) *late = 0;
     if (!hold || !anchor) { g->last = 0; return 0; }
-    uint64_t first = now + r / 2, t = g->last ? vkpanel_near(anchor, r, g->last + (uint64_t)hold * r) : 0;
+    uint64_t lead = deadline_ns > r / 2 ? deadline_ns : r / 2;   // PEANUTS: preserve the old fallback when display timing is unavailable
+    uint64_t first = now + lead, t = g->last ? vkpanel_near(anchor, r, g->last + (uint64_t)hold * r) : 0;
     // (a target more than eight holds ahead cannot come from frames in the swapchain's queue: the clock or the grid moved, start again)
     if (t < first || t > first + 8ull * hold * r) { if (late) *late = g->last != 0; t = vkpanel_up(anchor, r, first); }
     g->last = t;
     return t;
+}
+// PEANUTS: callers without Android display metadata retain the previous fallback.
+static inline uint64_t vkgrid_next(vkgrid *g, uint64_t anchor, uint64_t r, uint64_t period_ns, uint64_t now, int *late) {
+    return vkgrid_next_deadline(g, anchor, r, period_ns, now, 0, late);
 }
 #endif

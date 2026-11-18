@@ -54,11 +54,22 @@ static void *alloc(size_t n, uint32_t a) {
     if (p) used((int64_t)plat_malloc_size(p));
     return p;
 }
-static void release(void *p) { if (p) { used(-(int64_t)plat_malloc_size(p)); plat_zone_free(g_zone, p); } }
+// DM_UE_FREE_CHECK=1 (diagnostic): a block freed or moved by realloc while it holds the source of a live MapMemory (a thread stack moved into the stack region) is logged with
+// [RED]: UnmapMemory copies the stack back over the source, so a block freed before that is written after its reuse
+static int free_check(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_UE_FREE_CHECK"); v = e && *e == '1'; } return v; }
+static void check_freed(void *p, const char *how) {
+    if (!p || !free_check()) return;
+    int dm_map_source_overlap(uint64_t addr, uint64_t size, uint64_t *s, uint64_t *n);   // hle_svc.c
+    uint64_t s, n, sz = plat_malloc_size(p);
+    if (dm_map_source_overlap((uint64_t)(uintptr_t)p, sz, &s, &n)) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 32)
+        LOG("[RED] Unreal heap: block %p +%#llx %s while it holds the source of a live MapMemory (%#llx +%#llx): its UnmapMemory will copy a stack over it", p, (unsigned long long)sz, how, (unsigned long long)s, (unsigned long long)n); }
+}
+static void release(void *p) { if (p) { check_freed(p, "freed"); used(-(int64_t)plat_malloc_size(p)); plat_zone_free(g_zone, p); } }
 static void *realloc_aligned(void *p, size_t n, uint32_t a) {
     if (!p) return alloc(n, a);
     if (!n) { release(p); return NULL; }
     size_t old = plat_malloc_size(p);
+    if (free_check()) check_freed(p, "reallocated");
     if (align_of(a) == 16) { void *q = plat_zone_realloc(g_zone, p, n); if (q) used((int64_t)plat_malloc_size(q) - (int64_t)old); return q; }
     if (!((uintptr_t)p & (align_of(a) - 1)) && old >= n) return p;
     void *q = alloc(n, a); if (!q) return NULL;
@@ -99,13 +110,34 @@ static void obj_made(uint64_t *regs, int param) {
 // FRunnableThreads take theirs from inside larger allocations, so a stack is not always a block start, and malloc has no cheap lookup from an interior pointer), and
 // nn::os::CreateThread moves such a stack into the stack region with svcMapMemory, whose source must be backed memory (hle_svc.c map_source_backed): this heap lives
 // outside the guest block, so the check refused it and the SDK aborted in MapAliasStack before the game started (the caller has already checked the guest block's own regions)
+// The range may span several host mappings: Android's Scudo maps its heap in pieces that /proc/self/maps lists as separate entries (Orbitals' first thread stack, 16 KB at
+// 0x6fd233f000, lay across 0x6fd2301000+0x40000 and the next entry), so each mapping from a on is taken in turn, all of them read-write and with no gap between them
 int dm_ue_heap_owns(uint64_t a, uint64_t n) {
-    if (!g_zone || !a || !n) return 0;
+    if (!g_zone || !a || !n || n > UINT64_MAX - a) return 0;
     int dm_guest_as_contains(uintptr_t a);   // hle_svc.c
     if (dm_guest_as_contains((uintptr_t)a) || dm_guest_as_contains((uintptr_t)(a + n - 1))) return 0;   // inside the guest block: not this heap
+    for (uint64_t cur = a, end = a + n; cur < end;) {
+        uint64_t at = 0, sz = 0; int prot = 0;
+        if (plat_mem_region(cur, &at, &sz, &prot) || at > cur || !sz || (prot & (PROT_READ | PROT_WRITE)) != (PROT_READ | PROT_WRITE)) return 0;
+        cur = at + sz;
+    }
+    return 1;
+}
+
+// Why dm_ue_heap_owns refuses [a, a + n), in a sentence for MapMemory's refusal line (the host mapping the platform reports around a)
+void dm_ue_heap_why(uint64_t a, uint64_t n, char *buf, size_t len) {
+    int dm_guest_as_contains(uintptr_t a);   // hle_svc.c
     uint64_t at = 0, sz = 0; int prot = 0;
-    if (plat_mem_region(a, &at, &sz, &prot)) return 0;
-    return at <= a && a + n <= at + sz && (prot & (PROT_READ | PROT_WRITE)) == (PROT_READ | PROT_WRITE);
+    if (!g_zone) snprintf(buf, len, "no host Unreal heap");
+    else if (dm_guest_as_contains((uintptr_t)a) || dm_guest_as_contains((uintptr_t)(a + n - 1))) snprintf(buf, len, "inside the guest block");
+    else {   // the first mapping of the walk dm_ue_heap_owns makes that does not hold
+        uint64_t cur = a;
+        while (cur < a + n && !plat_mem_region(cur, &at, &sz, &prot) && at <= cur && sz && (prot & (PROT_READ | PROT_WRITE)) == (PROT_READ | PROT_WRITE)) cur = at + sz;
+        if (cur >= a + n) snprintf(buf, len, "host mappings cover it read-write");
+        else if (plat_mem_region(cur, &at, &sz, &prot)) snprintf(buf, len, "no host mapping at or after %#llx", (unsigned long long)cur);
+        else snprintf(buf, len, "at %#llx: host mapping %#llx+%#llx prot %d%s", (unsigned long long)cur, (unsigned long long)at, (unsigned long long)sz, prot,
+                      at > cur ? " (starts after it: unmapped)" : " (not read-write)");
+    }
 }
 
 // The host's vtable over the guest's (the trivial slots stay the guest's), and the zone behind it

@@ -36,7 +36,9 @@ enum {
 };
 enum { SCUniformConstant = 0, SCInput = 1, SCOutput = 3, SCWorkgroup = 4, SCPrivate = 6, SCFunction = 7, SCPushConstant = 9, SCStorageBuffer = 12, SCTaskPayload = 5402 };
 enum { DecBlock = 2, DecArrayStride = 6, DecBuiltIn = 11, DecFlat = 14, DecInvariant = 18, DecNonWritable = 24, DecLocation = 30, DecBinding = 33, DecDescriptorSet = 34,
-       DecOffset = 35, DecPerPrimitive = 5271 };
+       DecOffset = 35, DecNoContraction = 42, DecPerPrimitive = 5271 };
+// Floating-point arithmetic whose result NoContraction may decorate: OpFNegate, OpFAdd, OpFSub, OpFMul, OpFDiv, OpFRem, OpFMod, the vector and matrix products, OpDot
+static int fp_arith(uint32_t op) { return op == 127 || op == 129 || op == 131 || op == 133 || op == 136 || op == 140 || op == 141 || (op >= 142 && op <= 148); }
 enum { BIPosition = 0, BIPointSize = 1, BIClipDistance = 3, BICullDistance = 4, BINumWorkgroups = 24, BIWorkgroupId = 26, BILocalInvocationIndex = 29, BIVertexIndex = 42,
        BIPrimitivePointIndices = 5294, BIPrimitiveLineIndices = 5295, BIPrimitiveTriangleIndices = 5296, BICullPrimitive = 5299 };
 enum { EMVertex = 0, EMFragment = 4, EMGLCompute = 5, EMTask = 5364, EMMesh = 5365 };
@@ -314,6 +316,22 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
     ch = calloc(m.bound, sizeof *ch); oid = calloc(m.bound, 4); wgch = calloc(m.bound, 1);
     if (!ch || !oid || !wgch) FAIL("out of memory");
     for (int i = 0; i < nov; i++) oid[ov[i].id] = (uint32_t)i + 1;
+    // Position invariance (docs/reference/rendering.md "Mesh draws through compute: depth that differs between two programs"): the translator marks the mesh position
+    // Invariant, as Maxwell evaluates the same arithmetic the same way in every program, and Ocarina of Time's foliage relies on it (a depth-only prepass, then an EQUAL
+    // colour pass of another mesh program). The position is not an output here, so that decoration goes, and the driver's compiler may fuse a multiply and an add into
+    // one rounding in one program and not in the other (Turnip's: depending on how often the product is used). Every floating-point arithmetic result is NoContraction,
+    // Maxwell's own rule (its FMUL and FADD round each; a fused form is the program's own FFMA, a GLSL Fma here)
+    {
+        uint8_t *had = calloc(m.bound, 1);
+        if (!had) FAIL("out of memory");
+        for (size_t i = 5; i < m.first_fn;) { uint32_t op = m.w[i] & 0xffff, len = m.w[i] >> 16; if (op == OpDecorate && len >= 3 && m.w[i + 1] < m.bound && m.w[i + 2] == DecNoContraction) had[m.w[i + 1]] = 1; i += len; }
+        for (size_t i = m.first_fn; i < m.n;) {
+            uint32_t op = m.w[i] & 0xffff, len = m.w[i] >> 16;
+            if (fp_arith(op) && len >= 3 && m.w[i + 2] < m.bound && !had[m.w[i + 2]]) { had[m.w[i + 2]] = 1; INS(&A, OpDecorate, m.w[i + 2], DecNoContraction); }
+            i += len;
+        }
+        free(had);
+    }
     // New declarations: the arena and the records (storage buffers of words), the push constant, the dispatch's workgroup ID and counts, the private values
     uint32_t sbw = words_block(&B, &A, 0), p_sbw = ptr(&B, SCStorageBuffer, sbw), p_sb_u32 = ptr(&B, SCStorageBuffer, B.t_u32);
     uint32_t arena = gvar(&B, p_sbw, SCStorageBuffer), recs = gvar(&B, p_sbw, SCStorageBuffer);

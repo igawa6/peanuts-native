@@ -120,7 +120,10 @@ class Signature(unittest.TestCase):
     def test_empty_record(self):
         self.assertEqual(len(ss.EMPTY_RECORD), 0x38)
         self.assertIsNone(ss.record_problem(self.ctl(), b'\x78\x56\x34\x12' + bytes(0x60)))
-        self.assertIn('control magic', ss.record_problem(self.ctl(), ss.CTL_MAGIC + bytes(0x60)))
+        # PEANUTS(upstream-candidate): this malformed record must report a problem.
+        problem = ss.record_problem(self.ctl(), ss.CTL_MAGIC + bytes(0x60))
+        assert problem is not None
+        self.assertIn('control magic', problem)
 
 
 if __name__ == '__main__':

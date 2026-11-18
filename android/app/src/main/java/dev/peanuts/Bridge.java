@@ -28,6 +28,12 @@ public final class Bridge {
     public static native int rtState();
     /** One pending haptic pulse, packed (see peanuts_jni.c): kind(4 bits) &lt;&lt; 25 | respect_system &lt;&lt; 24 | amplitude(1..255) &lt;&lt; 16 | ms(1..65535); 0 = none to play. */
     public static native int haptic();
+    /** The newest game frame times in ms into out, oldest first: how many were written (0 before the first frame; dm/peanuts/peanuts_jni.c) */
+    public static native int frameTimes(float[] out);
+    /** Where the frame-time bars sit in the overlay's top-right bitmap, in its pixels: the host paints a new bar there on every game frame (dm/peanuts/peanuts_graph.c); 0 size = none */
+    public static native void graphRect(int x, int y, int w, int h);
+    /** The corner of the screen for the overlay's stats block (slot 1), as dm/gfx/vk_android/vka_ovl.h: 0 top left, 1 top right, 2 bottom left, 3 bottom right (dm/peanuts/peanuts_graph.c) */
+    public static native void overlayCorner(int corner);
 
     public static final int RT_PENDING = 0, RT_LOADED = 1, RT_NONE = 2, RT_FAILED = 3;
 

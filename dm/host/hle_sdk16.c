@@ -212,8 +212,40 @@ HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine8LoadFontEPcPKvjj", "shared font BFT
     if (q != data) { static int logged; if (r && !__atomic_exchange_n(&logged, 1, __ATOMIC_RELAXED)) LOG("[RED] shared font: ScalableFontEngine::LoadFont(%s) of the host's stand-in returned %u", name ? name : "?", r); }
     return r;
 }
+// A game sizes an engine's work memory for Nintendo's fonts, and the stand-in can be far larger: on the Mac, Arial Unicode's 23 MB did not fit the 50 KB Mario Tennis Fever gives its
+//   second engine (nn::font's texture cache keeps one per glyph thread), so FSS_load_font ran out of memory (error 201), SetFont failed with 301, every lookup of the "?" glyph missed
+//   and nro0+0xaef8a8 crashed on a null pointer (nxnative b6dbb851). An engine gets at least FONT_WORK_MIN of host memory then; the game's buffer stays unused, and
+//   GetPointerToWorkBuffer still gives it back, which is what the game frees. Android's stand-in (Roboto) is much smaller; whether it alone fits 50 KB was not checked
+#define FONT_WORK_MIN 0x80000   // what the same game's first engine gets, in which that font loads
+#define FONT_ENGINES 16
+static struct { void *self, *game, *host; } font_work[FONT_ENGINES];
+HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine10InitializeEPvj", "a work buffer the stand-in font fits in; the engine itself stays in the SDK", void, h_font_Initialize, void *self, void *buf, unsigned size) {
+    static void (*init)(void *, void *, unsigned);
+    if (!init && !(init = guest_sym("_ZN2nn6fontll18ScalableFontEngine10InitializeEPvj"))) die("ScalableFontEngine::Initialize not found in the guest");
+    if (size < FONT_WORK_MIN) {
+        pthread_mutex_lock(&font_mu);
+        int i = 0;
+        while (i < FONT_ENGINES && font_work[i].self && font_work[i].self != self) i++;
+        if (i < FONT_ENGINES) {
+            if (!font_work[i].host && !(font_work[i].host = malloc(FONT_WORK_MIN))) die("font engine work memory");
+            font_work[i].self = self; font_work[i].game = buf;
+            buf = font_work[i].host; size = FONT_WORK_MIN;
+        } else LOG("[RED] more than %d font engines with a small work buffer: this one keeps the game's", FONT_ENGINES);
+        pthread_mutex_unlock(&font_mu);
+    }
+    init(self, buf, size);
+}
+HLE_FORCE("_ZN2nn6fontll18ScalableFontEngine22GetPointerToWorkBufferEv", "the game's own buffer, also when the engine runs on host memory", void *, h_font_WorkBuffer, void *self) {
+    static void *(*get)(void *);
+    if (!get && !(get = guest_sym("_ZN2nn6fontll18ScalableFontEngine22GetPointerToWorkBufferEv"))) die("ScalableFontEngine::GetPointerToWorkBuffer not found in the guest");
+    void *game = NULL;
+    pthread_mutex_lock(&font_mu);
+    for (int i = 0; i < FONT_ENGINES && font_work[i].self; i++) if (font_work[i].self == self) game = font_work[i].game;
+    pthread_mutex_unlock(&font_mu);
+    return game ? game : get(self);
+}
 // The address points straight at the TTF (past the 8-byte header) and the size excludes the header, except for a game on SDK 11 or later whose main imports ScalableFontEngineHelper::Decode
-//   (dm_sdk_major, dm_main_imports; the profile's shared_font overrides). Super Mario 3D World + Bowser's Fury (SDK 10) records shared fonts as type 0 (main+0x975658), calls no Decode and hands the address
+//   (dm_sdk_major, dm_game_imports; the profile's shared_font overrides). Super Mario 3D World + Bowser's Fury (SDK 10) records shared fonts as type 0 (main+0x975658), calls no Decode and hands the address
 //   as is to ScalableFontEngine::LoadFont; with the header LoadFont fails with error 403 and SetFont with 301, every lookup of the "?" glyph then misses, and main+0x6c73c0 crashes on a null pointer.
 //   Odyssey (7), Link's Awakening (8), Age of Calamity (9) and Three Houses (6) take it the same way. Unity's player hands the address and size of every type straight to FreeType's FT_New_Memory_Face
 //   (Patrick's Parabox, SDK 13, Unity 2020.3: main+0x2390b0 maps its OS font names Switch_Font_STD … Switch_Font_NIN_Extended to types 0-5, then main+0x23b2e0), as libnx homebrew does with the same pl offsets;
@@ -233,7 +265,7 @@ static size_t font_skip(void) {
         return (size_t)skip;
 #endif
 #endif
-        int m = dm_sdk_major(), dec = dm_main_imports("_ZN2nn6fontll24ScalableFontEngineHelper6Decode"); skip = DM_SDK_OLD(m) || !dec ? 8 : 0;
+        int m = dm_sdk_major(), dec = dm_game_imports("_ZN2nn6fontll24ScalableFontEngineHelper6Decode"); skip = DM_SDK_OLD(m) || !dec ? 8 : 0;
         LOG("shared font: %s (SDK %d, main %s ScalableFontEngineHelper::Decode)", skip ? "the TTF itself" : "BFTTF header + TTF", m, dec ? "imports" : "does not import");
     }
     return (size_t)skip;
@@ -259,17 +291,29 @@ HLE_FORCE("_ZN2nn2pl13GetSharedFontEPiPNS0_14SharedFontDataEiNS_8settings12Langu
 }
 // One built-in font (SDK 21's pl, Switch 2 and Switch 1 overloads; Splatoon Raiders, sdk+0x59a2b0 and sdk+0x59a670): fills {u8, u8, pad, const void *address, u64 size} from the service's reply and returns whether
 //   it is loaded. Unhooked, the SDK connects to pl:u and aborts. The two bytes are the low bits of the reply's first word, which the game does not read (main+0x36c8518). Types 0-5 are the shared font types, by the
-//   file names main maps to them (main+0x36c8020: nintendo_udsg-r_std, _org_zh-cn, _ext_zh-cn, udjxh-db_zh-tw, udsg-r_ko, nintendo_ext). The address is the same form as GetSharedFontAddress
+//   file names main maps to them (main+0x36c8020: nintendo_udsg-r_std, _org_zh-cn, _ext_zh-cn, udjxh-db_zh-tw, udsg-r_ko, nintendo_ext). The address is the plain TTF, past the 8-byte BFTTF header, as
+//   GetSharedFont's above: the service's offsets point past the header, whatever the older GetSharedFontAddress / Decode convention of the game's main is (the Switch 2 Edition of Super Mario Bros. Wonder,
+//   whose main imports Decode, got the header with font_skip's answer; PR #1639 upstream)
 typedef struct { uint8_t type, flag, pad[6]; const void *address; uint64_t size; } pl_builtin_font_t;
 static unsigned pl_builtin_font(pl_builtin_font_t *out, int type) {
     font_t f = font_get(type); if (!f.p) return 0;
-    *out = (pl_builtin_font_t){ .type = (uint8_t)type, .address = f.p + font_skip(), .size = f.n - font_skip() };
+    *out = (pl_builtin_font_t){ .type = (uint8_t)type, .address = f.p + 8, .size = f.n - 8 };
     return 1;
 }
 HLE_FORCE("_ZN2nn2pl18GetBuiltInFontDataEPNS0_17BuiltInFontDataNxENS0_17BuiltInFontTypeNxEb", "one built-in font (Switch 1 type): the stand-in TTFs", unsigned, h_pl_BuiltInNx, pl_builtin_font_t *out, int type, unsigned b) { (void)b; return pl_builtin_font(out, type); }
 HLE_FORCE("_ZN2nn2pl18GetBuiltInFontDataEPNS0_20BuiltInFontDataOunceENS0_20BuiltInFontTypeOunceEb", "one built-in font (Switch 2 type): the stand-in TTFs", unsigned, h_pl_BuiltInOunce, pl_builtin_font_t *out, int type, unsigned b) { (void)b; return pl_builtin_font(out, type); }
-// Whether running on a Switch 2 (codename Ounce) (returns bool): the host reports false, as a Switch 1. Mario 1.2.1 uses it to decide whether to count add-on content (the upgrade pack) and suggest the Switch 2 Edition
-HLE_FORCE("_ZN2nn2pl16IsRunningOnOunceEv", "running on Switch 2: no", unsigned, h_pl_IsOunce, void) { return 0; }
+// Several built-in fonts at once (Kirby and the Forgotten Land - Nintendo Switch 2 Edition, SDK 19.3.7: sdk+0x4fc780, from main+0x65b534): types is an array of n type bytes (the game asks for 0-5);
+//   the SDK takes at most 6, asks the pl service for them, fills one entry per font it returns with the same fill as GetBuiltInFontData's (sdk+0x4fc650) and returns whether they are loaded. The game
+//   retries every 100 ms until they are. Unhooked, the SDK connects to pl:u and aborts (result 0xe15, sdk+0x4fd4a4). The fonts come in the order asked
+HLE_FORCE("_ZN2nn2pl21GetBuiltInFontDataSetEPiPNS0_20BuiltInFontDataOunceEPKNS0_20BuiltInFontTypeOunceEiNS_8settings12LanguageCodeEb", "several built-in fonts (Switch 2 types): the stand-in TTFs, in the order asked",
+          unsigned, h_pl_BuiltInSetOunce, int *count, pl_builtin_font_t *out, const uint8_t *types, int n, uint64_t lang, unsigned b) {
+    (void)lang; (void)b; int k = 0;
+    for (int i = 0; i < n && i < 6; i++) k += (int)pl_builtin_font(&out[k], types[i]);
+    *count = k; return k > 0;
+}
+// Whether running on a Switch 2 (codename Ounce) (returns bool): what the loaded sdk module was built for (dm_sdk_ounce, its spec string). A Switch 1 program hears no, as before: Mario 1.2.1
+// (program 0, SDK 16) uses it to decide whether to count add-on content (the upgrade pack) and suggest the Switch 2 Edition; a Switch 2 program (the Edition's program 1, SDK 21) hears yes (PR #1639 upstream)
+HLE_FORCE("_ZN2nn2pl16IsRunningOnOunceEv", "running on Switch 2: as the loaded SDK was built", unsigned, h_pl_IsOunce, void) { return (unsigned)dm_sdk_ounce(); }
 // The Legend of Zelda: Breath of the Wild (SDK 20): asks for the shared fonts to be loaded before querying their state; the host's stand-in fonts are there on demand. VR mode (the Labo VR goggles): the host never enters VR; the query is always false,
 // and BeginVrMode returns what the SDK's own returns when pctl::CheckStereoVisionPermission refuses (hle_misc.c), 0xd08e (BotW's sdk+0x412970; Super Smash Bros. Ultimate tests it with cbz); EndVrMode is a no-op
 HLE_FORCE("_ZN2nn2pl21RequestSharedFontLoadENS0_14SharedFontTypeE", "request shared font load; the stand-in font is always available, no-op", void, h_pl_ReqLoad, int type) { (void)type; }

@@ -2,7 +2,7 @@
 
 A Switch 2 game: update v131072, SDK 21.4.4 built for the Switch 2 (`Ounce`), NVN2 with DLSS. A custom engine (its own prefixes: `vfs`, `vrender`, `vjob`, `vscript`, `vspirv`, `veffects`, `vphysics`; project name `eclipse`), with Wwise 2024.1 for audio, Bullet physics and NPLN for online play. Modules `main`, `sdk`, `subsdk0` (the SDK's movie module), `subsdk3` (`nn::camera`); `subsdk1` (the C library) and `subsdk2` (`NintendoSDK_DLSS`) are shipped but `main` imports nothing from them.
 
-**Status on Android:** In bring-up. Host fixes, HLE services, and tooling ported; not run on an Android phone yet. Upstream plays on Mac (M4 Pro / M5 Max): title, prologue cinematic, and tutorial flight.
+**Status on Android (current):** playable by the project's rule (listed as supported, no bring-up warning): it boots and reaches its first scenes on both the system driver and Turnip, and a player played it from start to finish with no complaints reported (user, 2026-11-15; phone and driver not recorded). The frame rate and the memory use on a phone are not measured (open). Upstream plays on Mac (M4 Pro / M5 Max): title, prologue cinematic, and tutorial flight.
 
 ## What it needs
 
@@ -79,7 +79,7 @@ The GPU is already past its budget at 768x432, so the higher choices cost frame 
 
 ## Open
 
-- Not run on an Android phone yet; bring-up verification needed on real devices (Adreno 830 / 840, Turnip & stock drivers).
+- Played start to finish by one player (no phone or driver recorded) and to the first scenes on both drivers by us; frame rate, memory use and online modes are open.
 - High memory footprint: 8.5 GB resident, 4 GB GPU; evaluate phone memory pressure and `tex_soft` applicability when run on hardware.
 - The 3D scene choices on a phone: whether the engine takes the arguments (see [The Picture](#the-picture), phone verification) and what each costs in frame rate.
 - `nn::socket::EventFd` returns stub error; HTTP thread polls without wake-up (harmless offline).

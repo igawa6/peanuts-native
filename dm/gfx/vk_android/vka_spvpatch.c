@@ -1451,8 +1451,8 @@ fail:
 // the translator turns every conversion to and from half precision (F2F.F16, the operands and results of HADD2 / HMUL2 / HFMA2, half texture results) into GLSL.std.450
 // PackHalf2x16 / UnpackHalf2x16. A device that cannot preserve fp16 denormals (VkPhysicalDeviceVulkan12Properties.shaderDenormPreserveFloat16 false: Adreno 6xx / 7xx, on
 // Turnip and Qualcomm's driver) may make those conversions with the hardware's half conversion, which gives 0 for a value below 2^-14. Fire Emblem Engage's engage-attack
-// effects divide by such a value (1 - f16(a) * (1 / a)): flushed, the division gave infinity, then NaN, white shapes on black (Duet Plus on the AYN Thor, fixed the same way
-// in its SPIR-V backend). So each PackHalf2x16 encodes a component below 2^-14 in magnitude by hand, sign | round-to-even(|x| * 2^24) (a mantissa that rounds up to 1024 is
+// effects divide by such a value (1 - f16(a) * (1 / a)): flushed, the division gave infinity, then NaN, white shapes on black (observed in an Eden-based emulator on the AYN Thor).
+// So each PackHalf2x16 encodes a component below 2^-14 in magnitude by hand, sign | round-to-even(|x| * 2^24) (a mantissa that rounds up to 1024 is
 // exactly the smallest normal's encoding), and each UnpackHalf2x16 decodes a half of exponent 0 as +-mantissa * 2^-24; both are exact in fp32. Other values (normal,
 // infinity, NaN) keep the hardware's result. Returns the rewritten module (malloc'd, *out_nw words, *sites the instructions rewritten); NULL with err empty when it has none,
 // NULL with the reason in err when it cannot be rewritten

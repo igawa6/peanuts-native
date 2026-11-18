@@ -196,6 +196,14 @@ Before publishing, the fixes were integrated with main's pipeline archive and GP
 
 ## Found on this game
 
+- PEANUTS, Android: [Desired present times chosen before GPU and queue waits](../../../docs/reference/frame-rate.md#desired-present-times-chosen-before-gpu-and-queue-waits-android): stale deadlines and misleading on-time counts are corrected at submission; subsequent outdoor tests still show short/long presentation pairs.
+
+- PEANUTS, Android: [Future presentation targets missed the compositor queue deadline](../../../docs/reference/frame-rate.md#future-presentation-targets-missed-the-compositor-queue-deadline-android): use the active display's declared queue lead when selecting a target; native regressions cover both panel modes.
+
+- PEANUTS, Android: [Uneven 30 fps presentation in a 120 Hz display mode](../../../docs/reference/frame-rate.md#uneven-30-fps-presentation-in-a-120-hz-display-mode-android) separates the remaining compositor cadence from cold-cache pipeline compilation. The [content-rate hint correction](../../../docs/reference/frame-rate.md#capped-content-advertised-its-presentation-tick-android) alone does not cure the cadence.
+
+- PEANUTS, Android: [Nominal refresh clocks rejected a measured panel mode](../../../docs/reference/frame-rate.md#nominal-refresh-clocks-rejected-a-measured-panel-mode-android): measured 118.52 Hz in nominal 120 Hz mode exposes inconsistent limiter and presentation clocks at 30 fps; the clock-fitting correction awaits device comparison.
+
 - **Open, a SIGSEGV in `nn::util::RelocationTable::Relocate` at one cutscene ([issue #810](https://github.com/seedds/nxnative/issues/810)):** not a host bug as far as the reporter's files show. Their `Event/Demo154_2.sbeventpack` has our length (1,196,295 bytes) but another SHA-256 (`e74e7826…`, ours `b822e8a2…`), from a copy of the base game that fails its hash check, with the damaged files kept as read; the model's relocation table is inside that file, so heap placement is not the cause. Open until the scene loads from a clean copy of the game.
 - **Resolved, parallel rewriting (2026-10-31):** [Parallel scans preserve rewrite output](../../../docs/reference/rewriter.md#parallel-scans-preserve-rewrite-output). All 21 binary and TSV outputs of the three modules of v1114112 are byte-identical to the sequential rewriter. The full regression against `635e8008` passed: zero red diagnostics, matching screenshots, and no frame-time or memory regression (M4 Pro, Xcode 27.2 with the per-run compiler override on both revisions).
 - [Benchmark captures perturb the measured frame pacing](../../../docs/reference/frame-rate.md#benchmark-captures-perturb-the-measured-frame-pacing).
@@ -256,3 +264,9 @@ General host changes first needed here; each applies to every game:
 - `game.tsv` still says "In bring-up", and its memory comment "until measured".
 - 05's `DM_PROBE_POLL` paragraph cites `PlacementMgr` in `main+0x5aaac0` as the one thread in guest code "for that flag" without naming the game; `PlacementMgr` is this game's.
 - Motion on iOS (a controller's gyro, and the phone's own while no controller supplies fresh samples) has not been tested on a device. Source arbitration, concurrent startup and upright orientation were corrected during review and are covered by unit tests; see [Live controller motion](../../../docs/reference/services.md#live-controller-motion). Motion shrines from issue #389 still need a device gameplay check.
+
+### Android FPSLocker method
+
+Breath of the Wild uses the reviewed Warehouse fractional frame ratio, DRS factor, scrolling correction and cutscene flag. The host computes the bounded ratio from monotonic frame elapsed time; cutscenes force 30. Checked legacy floor/GPU-path cuts are restored in memory and the older whole-vsync frame-step backend is disabled. High targets remain experimental pending broad physics coverage.
+
+The launcher defaults to 60 and offers Game owned as a separate choice. Switching to or from Game owned requires restarting. Code plans require the exact main build and expected instruction words, validate every replacement before writing, and leave pack files unchanged. Other platform patch preparation retains its existing method. See the Thor continuation report for bounded Turnip validation.

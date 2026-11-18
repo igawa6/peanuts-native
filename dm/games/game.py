@@ -9,6 +9,7 @@
 #   DM_GAMES_FIRST=1 searches DM_GAMES_DIR before dm/games (the NSP script's --provisional: a provisional profile for a game that has one in dm/games, to test the guesses)
 import os, re, sys
 from pathlib import Path
+from typing import cast   # PEANUTS(upstream-candidate): regex results validated below before use
 
 HERE = Path(__file__).resolve().parent
 
@@ -45,6 +46,22 @@ class Game:
 
     def pairs(self, key):   # "a=b c=d" → [(a, b), (c, d)]
         return [tuple(w.split('=', 1)) for w in self.words(key)]
+
+    def cheats(self):
+        """The profile's cheat files (cheats rows, a path relative to the profile folder each): [Path]. Each is an Atmosphère-format file named as dmnt and the host's
+        engine (dm/host/hle_cheats.c) pick it, the first 16 hex digits of a main build ID in upper case + .txt, and that build must be one of the profile's build rows:
+        the name is the file's build gate (a file of another build never loads). Raises ValueError naming the row otherwise"""
+        mains = {b['main'][:16].upper() for b in self.builds().values() if len(b.get('main', '')) >= 16}
+        out = []
+        for row in self.values('cheats'):
+            rel = row[0] if row else ''
+            p = (self.dir / rel).resolve()
+            if not rel or self.dir not in p.parents: raise ValueError(f'{self.id}: cheats {rel!r}: a file in the profile folder')
+            if not re.fullmatch(r'[0-9A-F]{16}\.txt', p.name): raise ValueError(f'{self.id}: cheats {rel}: the name must be the main build ID\'s first 16 hex digits, upper case, + .txt')
+            if p.stem not in mains: raise ValueError(f'{self.id}: cheats {rel}: build {p.stem} is none of the profile\'s main builds ({", ".join(sorted(mains)) or "none"})')
+            if not p.is_file(): raise ValueError(f'{self.id}: cheats {rel}: no such file')
+            out.append(p)
+        return out
 
 
 def extra_dirs():   # profile folders outside the repository (DM_GAMES_DIR), searched after dm/games
@@ -105,7 +122,7 @@ def scene_args(g):
             scale = None
         else:
             try: scale = float(sc)
-            except ValueError: raise ValueError(usage)
+            except ValueError: raise ValueError(usage) from None   # PEANUTS(upstream-candidate): report the profile usage without conversion context
             if not 0 < scale <= 4 or '{s}' not in r[2]: raise ValueError(f'scene_arg {name}: a scale (above 0, at most 4) goes into the arguments as {{s}}: {r}')
         out.append((name, scale, ' '.join(a.replace('{s}', sc) for a in args), label))
     return out
@@ -122,8 +139,20 @@ def header(g):
     if ft not in ('0', '30', '60'): sys.exit(f'{g.id}: fps_target must be 0, 30 or 60: {ft}')
     fl = g.get('fps_limit', '0')   # Android: the host's frame limiter's default (hle_fpslock.c fps_limit_wait, a wait before each present): 0 = none, else at most that many frames a second; DM_FPS_LIMIT and the launcher's choice override it
     if not fl.isdigit() or int(fl) and not 10 <= int(fl) <= 60: sys.exit(f'{g.id}: fps_limit must be 0 (none) or 10 to 60 frames a second: {fl}')
+    modes = g.get('fps_modes', '')
+    if modes:
+        rates = modes.split(',')
+        if len(g.values('fps_modes')) != 1 or '60' not in rates or any(v not in ('20','30','40','45','60','90','120') for v in rates) or len(set(rates)) != len(rates) or rates != sorted(rates, key=int):
+            sys.exit(f'{g.id}: fps_modes must be unique ascending supported rates including 60')
+    for row in g.values('fps_plan_120'):
+        if len(row) != 4 or not re.fullmatch(r'[0-9a-f]{32}', row[0]):
+            sys.exit(f'{g.id}: invalid reviewed fps_plan_120')
+    if g.values('fps_plan_120') and '120' not in modes.split(','):
+        sys.exit(f'{g.id}: fps_plan_120 requires fps_modes including 120')
     fh = g.get('fps_hold', 'on')   # whether the frame step may hold a frame longer than the cap's vsyncs when frames come late (hle_nvn.c fstep_tick): on / off
     if fh not in ('on', 'off'): sys.exit(f'{g.id}: fps_hold must be on or off: {fh}')
+    try: g.cheats()   # the cheat files' names (their build gate): the host does not compile them in, but a wrong name would never load
+    except ValueError as e: sys.exit(str(e))
     utp = g.get('ue_texture_pool', '0')   # Unreal's r.Streaming.PoolSize in MB, raised to this on the Mac (hle_uecvar.c; DM_UE_TEXTURE_POOL overrides, and turns it on for iOS): 0 = the game's own pool
     if not utp.isdigit(): sys.exit(f"{g.id}: ue_texture_pool must be megabytes (0 = the game's own pool): {utp}")
     ufc = g.get('ue_fps_cvar', 't.MaxFPS')   # the Unreal console variable the host writes fps_target into (hle_fpslock.c; found by name by the rewriter, ue_cvar.py NAMES): a game's own frame limit its settings apply to t.MaxFPS
@@ -258,13 +287,14 @@ def header(g):
             kv = dict(x.split('=', 1) for x in r[7:] if '=' in x)
             ok = len(r) == 10 and re.fullmatch(r'[0-9a-f]{32}', r[0]) and all(re.fullmatch(r'0x[0-9a-fA-F]+', x) for x in (r[1], r[4], r[5])) and r[2].isdigit() and r[3].isdigit() \
                 and sorted(kv) == ['max_render', 'min', 'original'] and sz(kv['original']) and sz(kv['max_render']) and kv['min'] in ('480', '540', '720', '1080', '1440')
+            # PEANUTS(upstream-candidate): all(ents) and size checks guard the casts in this validation.
             ents = [re.fullmatch(r'(\d{1,5})x(\d{1,5})/(\d{1,5})x(\d{1,5})', e) for e in r[6].split(',')] if ok else []
             if not ok or not 1 <= int(r[2]) <= 8 or len(ents) != int(r[2]) or not all(ents) or int(r[3]) < 8 or int(r[3]) % 8 or abs(int(r[4], 0) - int(r[5], 0)) < 8 \
-                    or any(int(v) == 0 for e in ents for v in e.groups()) or any(int(v) == 0 for k in ('original', 'max_render') for v in sz(kv[k]).groups()):
+                    or any(int(v) == 0 for e in ents for v in cast(re.Match[str], e).groups()) or any(int(v) == 0 for k in ('original', 'max_render') for v in cast(re.Match[str], sz(kv[k])).groups()):
                 sys.exit(f"{g.id}: render_cfg takes <main build ID (32 hex)> <slot table offset> <slots 1-8> <slot stride (a multiple of 8)> <output field> <render field (8 bytes apart at least)>"
                          f" <OWxOH/RWxRH per slot, comma-separated> original=<WxH> max_render=<WxH> min=<480|540|720|1080|1440>: {r}")
-            ow, oh = map(int, sz(kv['original']).groups()); mw, mh = map(int, sz(kv['max_render']).groups())
-            rows_c = ', '.join('{' + ', '.join(e.groups()) + '}' for e in ents)
+            ow, oh = map(int, cast(re.Match[str], sz(kv['original'])).groups()); mw, mh = map(int, cast(re.Match[str], sz(kv['max_render'])).groups())   # PEANUTS: validated dimensions
+            rows_c = ', '.join('{' + ', '.join(cast(re.Match[str], e).groups()) + '}' for e in ents)   # PEANUTS: validated entries
             rcf.append('{' + q(r[0]) + f', {r[1]}, {r[2]}, {r[3]}, {r[4]}, {r[5]}, {{{rows_c}}}, {ow}, {oh}, {mw}, {mh}, {kv["min"]}' + '}')
         for k in ('graphics_scale', 'window_fn', 'res_levels'):
             if g.get(k, ''): sys.exit(f'{g.id}: render_cfg and {k} are two levers for one setting: keep one')
@@ -273,7 +303,7 @@ def header(g):
         m = [re.fullmatch(r'(boost|normal):([0-3])', words.get(k, '')) for k in ('quality', 'performance')]
         if len(qr) != 1 or sorted(words) != ['performance', 'quality'] or len(' '.join(qr[0]).split()) != 2 or not all(m):
             sys.exit(f'{g.id}: render_cfg needs one render_quality row: quality=<boost|normal>:<level 0-3> performance=<boost|normal>:<level 0-3>: {qr}')
-        rq = [int(m[0][1] == 'boost'), int(m[0][2]), int(m[1][1] == 'boost'), int(m[1][2])]
+        rq = [int(cast(re.Match[str], m[0])[1] == 'boost'), int(cast(re.Match[str], m[0])[2]), int(cast(re.Match[str], m[1])[1] == 'boost'), int(cast(re.Match[str], m[1])[2])]   # PEANUTS: both matches validated
     elif g.get('render_quality', ''): sys.exit(f'{g.id}: render_quality needs a render_cfg row')
     # A render target pool the loader sizes (loader.c rt_pool_apply, dm/host/rt_pool.h; README.md rt_pool): <build ID> <module> <word offset> <the word there, 8 hex: movz w, lsl #16
     # of the game's own MiB << 4> <the game's own MiB> then 1-4 larger sizes, ascending, each <MiB>=<WxH> (render_cfg's max_render while at least that size is written), and
@@ -288,7 +318,7 @@ def header(g):
             and all(not x.startswith('out_h=') for x in r[5:5 + len(tiers)])
         if ok:
             w, base, off = int(r[3], 16), int(r[4]), int(r[2], 0)
-            mbs = [int(t[1]) for t in tiers]; ws = [int(t[2]) for t in tiers]; hs = [int(t[3]) for t in tiers]
+            mbs = [int(cast(re.Match[str], t)[1]) for t in tiers]; ws = [int(cast(re.Match[str], t)[2]) for t in tiers]; hs = [int(cast(re.Match[str], t)[3]) for t in tiers]   # PEANUTS: all tier matches validated
             ok = (w & 0xFFE00000) == 0x52A00000 and (w >> 5) & 0xFFFF == base << 4 and 16 <= base < mbs[0] and all(a < b for a, b in zip(mbs, mbs[1:])) and mbs[-1] <= 4095 \
                 and off % 4 == 0 and all(ws) and all(hs) and all(a <= b and c <= d for a, b, c, d in zip(ws, ws[1:], hs, hs[1:]))
         if not ok:
@@ -347,6 +377,20 @@ def header(g):
                         sys.exit(f'{g.id}: option needs takes a fixup marker: {tok}')
                 else:
                     sys.exit(f'{g.id}: option unknown attribute (expected restart|live, implies=<ENV>, needs=<marker>): {tok}')
+    option_names = {r[0]: r for r in g.values('option')}
+    option_sites = set()
+    mains = {b.get('main') for b in g.builds().values()}
+    for r in g.values('option_patch'):
+        if len(r) != 5 or r[0] not in option_names or r[1] not in mains or not re.fullmatch(r'0x[0-9a-f]+', r[2]) or int(r[2], 16) % 4 or not all(re.fullmatch(r'[0-9a-f]{8}', x) for x in r[3:]):
+            sys.exit(f'{g.id}: option_patch takes <option ENV> <registered main build> <aligned 0xoffset> <expected LE word> <replacement LE word>: {r}')
+        if 'live' in ' '.join(option_names[r[0]][3:]).split():
+            sys.exit(f'{g.id}: option_patch requires a restart option: {r[0]}')
+        site = (r[1], int(r[2], 16))
+        if site in option_sites:
+            sys.exit(f'{g.id}: option_patch repeats a main code word: {r}')
+        option_sites.add(site)
+    if len(option_sites) > 128:
+        sys.exit(f'{g.id}: option_patch: at most 128 code words')
     # Shaders whose subgroup operations run as subgroups of one invocation on Qualcomm's own driver even where the device has them (vka_shader.c single_lane, one_lane_forced;
     # a workaround, Android): one key per row
     sol = []

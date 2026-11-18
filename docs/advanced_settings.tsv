@@ -1,0 +1,791 @@
+# One row for each row of docs/env_switches.tsv (dm/tools/advanced_switches.py writes and checks it; the columns are described there). The launcher shows the
+# friendly and advanced rows in Settings > Advanced and on each game's page; developer rows are behind "Show developer options"; internal rows are never shown.
+name	tier	area	label	try_if	type	choices	default	scope	warn	owner	profile_key	games	fixes	reason
+DMSH_VK_BATCH	developer	Packing			text			both						
+DMSH_VK_DELTA_FROM	developer	Diagnostics			text			both						
+DMSH_VK_KEEP	developer	Packing			text			both						
+DMSH_VK_LOOSE	developer	Diagnostics			text			both						
+DMSH_VK_PROCS	developer	Packing			text			both						
+DMSH_VK_PROGRESS	developer	Diagnostics			text			both						
+DMSH_VK_RAW	developer	Diagnostics			text			both						
+DMSH_VK_REQUIRE_ALL	developer	Packing			text			both						
+DMSH_VK_RESULTS	developer	Diagnostics			text			both						
+DMSH_VK_WORKER	developer	Diagnostics			text			both						
+DMSH_VK_WORKERS	developer	Packing			text			both						
+DMSH_VK_XLATE_J	developer	Packing			text			both						
+DMSH_VK_ZSTD_LEVEL	developer	Packing			text			both						
+DM_AB	developer	Diagnostics			text			both						
+DM_ALIAS_SIZE	internal	Diagnostics			text			both						Mac or iOS only
+DM_ALIAS_WINDOWS	developer	Diagnostics			text			both						
+DM_ALLOW_OTHER_METAL	internal	Game			text			both						Mac or iOS only
+DM_AOC_DIR	internal	Diagnostics			text			both						Mac or iOS only
+DM_AOC_OWNED	developer	Game			text			both						
+DM_APP_POOL_MB	developer	Diagnostics			text			both						
+DM_APP_VERSION	developer	Game			text			both						
+DM_AUDIO	internal	Audio			text			both						Mac or iOS only
+DM_AUDIO_DUMP	developer	Diagnostics			text			both						
+DM_AUDIO_FEED	developer	Audio			text			both						
+DM_AUDIO_MUTE	internal	Audio			text			both						Mac or iOS only
+DM_AUDIO_STALL_MS	developer	Diagnostics			text			both						
+DM_AUDREN_TRACE	developer	Diagnostics			text			both						
+DM_AUDREN_WAIT	developer	Game			text			both						
+DM_AV1_DAV1D	developer	Diagnostics			text			both						
+DM_AV1_DAV1D_FP	developer	Game			text			both						
+DM_AV1_MC_FAIL	developer	Diagnostics			text			both						
+DM_AV1_RGBA_EARLY	developer	Game			text			both						
+DM_BOOTPROF	internal	Diagnostics			text			both						Mac or iOS only
+DM_BUILD_COMMIT	developer	Diagnostics			text			both						
+DM_BUNDLE_ID	internal	Game			text			both						Mac or iOS only
+DM_CHEATS	developer	Diagnostics			text			both						
+DM_CHEATS_ANY_BUILD	developer	Packing			text			both						
+DM_CHEATS_DEBUG	developer	Diagnostics			text			both						
+DM_CHEATS_ON	developer	Packing			text			both						
+DM_CHEATS_WINDOW	internal	Packing			text			both						Mac or iOS only
+DM_CODEC_STATS	developer	Diagnostics			text			both						
+DM_CODEC_THREAD	developer	Performance			text			both						
+DM_COOP	developer	Game			text			both						
+DM_COOP_INTERNET	developer	Game			text			both						
+DM_COOP_ROOM	developer	Game			text			both						
+DM_COPY_GAME_RESOURCES	developer	Game			text			both						
+DM_COPY_ROMFS	developer	Packing			text			both						
+DM_CRA_LIB	developer	Diagnostics			text			both						
+DM_CTL	internal	Diagnostics			text			both						Mac or iOS only
+DM_DAV1D_FRAME_DELAY	developer	Diagnostics			text			both						
+DM_DAV1D_THREADS	developer	Diagnostics			text			both						
+DM_DBG	developer	Diagnostics			text			both						
+DM_DBG_AU_FRAMES	internal	Diagnostics			text			both						Mac or iOS only
+DM_DETCLOCK	developer	Game			text			both						
+DM_DETCLOCK_PACE	developer	Performance			text			both						
+DM_DEVTOOLS	developer	Diagnostics			text			both						
+DM_DIRTY_BLOCK_AT	developer	Game			text			both						
+DM_DIRTY_BLOCK_KB	developer	Game			text			both						
+DM_DIRTY_FAULT_RUN_KB	developer	Game			text			both						
+DM_DISPLAY_NAME	internal	Game			text			both						Mac or iOS only
+DM_DKB_PANES	developer	Diagnostics			text			both						
+DM_DRS	developer	Graphics			text			both						
+DM_DRS_BACKOFF	developer	Graphics			text			both						
+DM_DRS_SLACK	developer	Graphics			text			both						
+DM_DYNAMIC_RESOLUTION	developer	Game			text			both						
+DM_ENTITLEMENTS	developer	Diagnostics			text			both						
+DM_ENV_FILE	developer	Diagnostics			text			both						
+DM_ENV_FILE_KEYS	internal	Input			text			both						Mac or iOS only
+DM_ENV_LAUNCH_KEYS	internal	Input			text			both						Mac or iOS only
+DM_FASTBOOT	developer	Game			text			both						
+DM_FD_LOG	developer	Diagnostics			text			both						
+DM_FIXED_TIME	developer	Game			text			both						
+DM_FONT_DIR	developer	Diagnostics			text			both						
+DM_FORCE_STRICT	developer	Diagnostics			text			both						
+DM_FPS	developer	Performance			text			both						
+DM_FPSLOCKER	developer	Performance			text			both						
+DM_FPSLOCKER_INTERVAL	developer	Performance			text			both						
+DM_FPSLOCKER_OWNED	developer	Performance			text			both						
+DM_FPSLOCKER_PLAN	developer	Performance			text			both						
+DM_FPS_DECOUPLE	developer	Performance			text			both						
+DM_FPS_HOLD	developer	Performance			text			both						
+DM_FPS_HOLD60	developer	Performance			text			both						
+DM_FPS_LIMIT	advanced	Performance	Frame rate cap		toggle			game		Game settings > Frame rate cap				
+DM_FPS_PATIENCE	developer	Performance			text			both						
+DM_FPS_PIN	developer	Performance			text			both						
+DM_FPS_RETRY	developer	Performance			text			both						
+DM_FPS_TARGET	advanced	Performance	Frame rate cap		toggle			game		Game settings > Frame rate cap				
+DM_FS	developer	Diagnostics			text			both						
+DM_FSLOG	developer	Diagnostics			text			both						
+DM_FSLOG_HASH	developer	Diagnostics			text			both						
+DM_FULLSCREEN	internal	Game			text			both						Mac or iOS only
+DM_GAME	developer	Game			text			both						
+DM_GAMES_DIR	developer	Diagnostics			text			both						
+DM_GAMES_FIRST	developer	Game			text			both						
+DM_GAME_ARGS_ADD	developer	Game			text			both						
+DM_GAME_ENV	developer	Game			text			both						
+DM_GFX_FIXTURE_OUT	internal	Diagnostics			text			both						test harness
+DM_GFX_QUALITY	friendly	Graphics	Graphics quality	the game looks too plain (Quality) or runs too slowly (Performance)	choice	Performance=performance;Quality=quality	Performance	game			render_cfg	04007EF01F8AE000		
+DM_GLSLC_CAPTURE	developer	Diagnostics			text			both						
+DM_GL_CAPTURE	developer	Diagnostics			text			both						
+DM_GL_DRAWLOG	developer	Diagnostics			text			both						
+DM_GL_FBLOG	developer	Diagnostics			text			both						
+DM_GL_LOG	developer	Diagnostics			text			both						
+DM_GL_MISSES	developer	Diagnostics			text			both						
+DM_GL_STUBS	developer	Diagnostics			text			both						
+DM_GPU_CAPTURE	internal	Diagnostics			text			both						Mac or iOS only
+DM_GPU_CAPTURE_DIR	developer	Diagnostics			text			both						
+DM_GPU_CAPTURE_KEEP	developer	Diagnostics			text			both						
+DM_GRAPHICS_SCALE	developer	Game			text			both						
+DM_GRAPHICS_SIZE	developer	Game			text			both						
+DM_GUEST_BASE	developer	Diagnostics			text			both						
+DM_GUEST_SPAWN_TEST	developer	Diagnostics			text			both						
+DM_HID_LOG	developer	Diagnostics			text			both						
+DM_HID_MAP	internal	Input			text			both						Mac or iOS only
+DM_HID_PADS	internal	Input			text			both						Mac or iOS only
+DM_HID_STYLE_EARLY	developer	Input			text			both						
+DM_HITCH_DUMP	developer	Diagnostics			text			both						
+DM_HLECOUNT	developer	Diagnostics			text			both						
+DM_HLECOUNT_AT	developer	Diagnostics			text			both						
+DM_ICON	developer	Diagnostics			text			both						
+DM_IMPORTS	developer	Diagnostics			text			both						
+DM_KBD	developer	Game			text			both						
+DM_KBD_PLAYER	internal	Game			text			both						Mac or iOS only
+DM_KEYS	developer	Input			text			both						
+DM_LANG	advanced	Game	Game language		toggle			game		Game settings > Game language				
+DM_LAUNCHER	internal	Game			text			both						Mac or iOS only
+DM_LINK_VTICK	internal	Game			text			both						Mac or iOS only
+DM_LOADHASH	developer	Diagnostics			text			both						
+DM_LONGFRAME	developer	Diagnostics			text			both						
+DM_LONGFRAME_THREADS	developer	Diagnostics			text			both						
+DM_LSFG	developer	Performance			text			both						
+DM_LSFG_DLL	developer	Diagnostics			text			both						
+DM_LSFG_DUMP	developer	Performance			text			both						
+DM_LSFG_FLOW	developer	Performance			text			both						
+DM_LSFG_MIN_FPS	advanced	Performance	Frame generation floor	generated frames look bad when the game runs slowly (raise it); 0 always generates	number	0..120 fps|0,30,45,60	30 fps	game						
+DM_LSFG_MULT	developer	Performance			text			both						
+DM_LSFG_TARGET	developer	Performance			text			both						
+DM_MARK_DRAWS	developer	Diagnostics			text			both						
+DM_MARK_KEYS_STOP	developer	Input			text			both						
+DM_MAX_RES	developer	Diagnostics			text			both						
+DM_MEASURE_LOCK	developer	Diagnostics			text			both						
+DM_MEMSTAT	internal	Diagnostics			text			both						Mac or iOS only
+DM_MEMSTAT_DUMP	developer	Diagnostics			text			both						
+DM_MEM_CAP_GB	internal	Memory			text			both						Mac or iOS only
+DM_MEM_FILEBACK	advanced	Memory	RAM saver		toggle			game		Game settings > RAM saver				
+DM_MEM_FILEBACK_KINDS	developer	Memory			text			both						
+DM_MEM_FILEBACK_MB	developer	Memory			text			both						
+DM_METAL_CAPTURE	internal	Diagnostics			text			both						Mac or iOS only
+DM_METAL_HUD	internal	Game			text			both						Mac or iOS only
+DM_MODULE_ARENA	developer	Game			text			both						
+DM_MOD_INIT_ARRAY	developer	Diagnostics			text			both						
+DM_MOTION	developer	Input			text			both						
+DM_MOTION_ACC_SIGN	developer	Input			text			both						
+DM_MOTION_AXES	developer	Input			text			both						
+DM_MOTION_DEADZONE	developer	Input			text			both						
+DM_MOTION_GAIN	developer	Input			text			both						
+DM_MOTION_HID	internal	Input			text			both						Mac or iOS only
+DM_MOTION_LOG	developer	Diagnostics			text			both						
+DM_MOTION_SENS	advanced	Input	Motion sensitivity		toggle			game		Game settings > Motion sensitivity				
+DM_MOVIE_RGBA_NEON	developer	Diagnostics			text			both						
+DM_MOVIE_SKIP	developer	Diagnostics			text			both						
+DM_MOVIE_TRACE	developer	Diagnostics			text			both						
+DM_MSL_DIR	internal	Diagnostics			text			both						Mac or iOS only
+DM_NICK	developer	Game			text			both						
+DM_NRO	developer	Game			text			both						
+DM_NRO_COLLECT_J	developer	Game			text			both						
+DM_NRO_DIR	developer	Diagnostics			text			both						
+DM_NSP_ROMFS	developer	Diagnostics			text			both						
+DM_NUP_CACHE_MB	developer	Diagnostics			text			both						
+DM_NUP_DISK_MB	developer	Diagnostics			text			both						
+DM_NUP_FD	developer	Diagnostics			text			both						
+DM_NVN_ALLOCPROF	internal	Diagnostics			text			both						Mac or iOS only
+DM_NVN_API	developer	Graphics			text			both						
+DM_NVN_BARRIER	developer	Graphics			text			both						
+DM_NVN_BF_WANT	developer	Diagnostics			text			both						
+DM_NVN_BLIT_ORDER	developer	Diagnostics			text			both						
+DM_NVN_CAPTURE	internal	Diagnostics			text			both						Mac or iOS only
+DM_NVN_CBDUMP	developer	Diagnostics			text			both						
+DM_NVN_CBDUMP_KEY	developer	Diagnostics			text			both						
+DM_NVN_CBLOG	developer	Diagnostics			text			both						
+DM_NVN_CLEARLOG	developer	Diagnostics			text			both						
+DM_NVN_CMDSTAT	developer	Diagnostics			text			both						
+DM_NVN_COUNT	developer	Diagnostics			text			both						
+DM_NVN_CPUPROF	developer	Diagnostics			text			both						
+DM_NVN_CS_HOIST	developer	Graphics			text			both						
+DM_NVN_CUT	developer	Graphics			text			both						
+DM_NVN_DEFER	developer	Graphics			text			both						
+DM_NVN_DEFER_AB	developer	Diagnostics			text			both						
+DM_NVN_DEPTHOVR	developer	Diagnostics			text			both						
+DM_NVN_DIRECT_UPLOAD	developer	Graphics			text			both						
+DM_NVN_DIRTYCHECK	developer	Diagnostics			text			both						
+DM_NVN_DISPATCH_OWN	developer	Graphics			text			both						
+DM_NVN_DUAL_WANT	developer	Diagnostics			text			both						
+DM_NVN_ENC_LABEL	developer	Diagnostics			text			both						
+DM_NVN_ENC_THREAD	internal	Performance			text			both						Mac or iOS only
+DM_NVN_FAST_WAKE	developer	Graphics			text			both						
+DM_NVN_FB_SNAP	developer	Graphics			text			both						
+DM_NVN_FLUSH_FILL	developer	Graphics			text			both						
+DM_NVN_FRAMES	developer	Diagnostics			text			both						
+DM_NVN_FUSE_CHECK	developer	Diagnostics			text			both						
+DM_NVN_GEOMETRY_COLOR	developer	Graphics			text			both						
+DM_NVN_GEOMETRY_COMPUTE	developer	Diagnostics			text			both						
+DM_NVN_GEOMETRY_CUT	developer	Graphics			text			both						
+DM_NVN_GEOMETRY_INDEX_CACHE	developer	Memory			text			both						
+DM_NVN_GEOMETRY_PACK	developer	Diagnostics			text			both						
+DM_NVN_GEOMETRY_QUERY_RUN	developer	Graphics			text			both						
+DM_NVN_GEOMETRY_WAIT	developer	Diagnostics			text			both						
+DM_NVN_GEO_HOIST	developer	Graphics			text			both						
+DM_NVN_GEO_LEAN	developer	Graphics			text			both						
+DM_NVN_GEO_MESH	developer	Graphics			text			both						
+DM_NVN_GPUPROF	internal	Diagnostics			text			both						Mac or iOS only
+DM_NVN_GPU_TS	advanced	Performance	GPU timing		toggle			game		Game settings > GPU timing				
+DM_NVN_HILITE	developer	Diagnostics			text			both						
+DM_NVN_INDLOG	developer	Diagnostics			text			both						
+DM_NVN_IXCLOG	developer	Diagnostics			text			both						
+DM_NVN_KEYDUMP	developer	Diagnostics			text			both						
+DM_NVN_LAZY_CLEAR	developer	Graphics			text			both						
+DM_NVN_LOADPROBE	developer	Diagnostics			text			both						
+DM_NVN_LOG	developer	Diagnostics			text			both						
+DM_NVN_MAGSCAN	developer	Diagnostics			text			both						
+DM_NVN_PASSDUMP	developer	Diagnostics			text			both						
+DM_NVN_PASSDUMP_ALL	developer	Diagnostics			text			both						
+DM_NVN_PASSGPU	internal	Diagnostics			text			both						Mac or iOS only
+DM_NVN_PASSGPU_SERIAL	developer	Diagnostics			text			both						
+DM_NVN_POOLS	developer	Diagnostics			text			both						
+DM_NVN_PREDICT	developer	Graphics			text			both						
+DM_NVN_PREFETCH	developer	Graphics			text			both						
+DM_NVN_PROF	developer	Diagnostics			text			both						
+DM_NVN_PROGTRACE	developer	Diagnostics			text			both						
+DM_NVN_REGLUM	developer	Diagnostics			text			both						
+DM_NVN_RT_RANGE	developer	Graphics			text			both						
+DM_NVN_RT_RANGE_CHECK	developer	Diagnostics			text			both						
+DM_NVN_SHDUMP	developer	Diagnostics			text			both						
+DM_NVN_SHDUMP_DIR	developer	Diagnostics			text			both						
+DM_NVN_SHMAP	internal	Diagnostics			text			both						Mac or iOS only
+DM_NVN_SHOT	developer	Diagnostics			text			both						
+DM_NVN_SHOT_OUT	developer	Diagnostics			text			both						
+DM_NVN_SKIP_FS	developer	Diagnostics			text			both						
+DM_NVN_SKIP_SMALL	developer	Diagnostics			text			both						
+DM_NVN_SLICE_MERGE	developer	Graphics			text			both						
+DM_NVN_SNAPRAW	developer	Diagnostics			text			both						
+DM_NVN_STORAGE_FIRST_USE	developer	Graphics			text			both						
+DM_NVN_T2T_FROM	developer	Diagnostics			text			both						
+DM_NVN_T2T_TRACE	developer	Diagnostics			text			both						
+DM_NVN_TBDR	developer	Graphics			text			both						
+DM_NVN_TEXCPU	developer	Diagnostics			text			both						
+DM_NVN_TEXDUMP	developer	Diagnostics			text			both						
+DM_NVN_TEXINFO	developer	Diagnostics			text			both						
+DM_NVN_TEXRAW	developer	Diagnostics			text			both						
+DM_NVN_TEXSNAP	developer	Diagnostics			text			both						
+DM_NVN_TREG_ID	developer	Diagnostics			text			both						
+DM_NVN_TSV	developer	Diagnostics			text			both						
+DM_NVN_TSV_CALLS	developer	Diagnostics			text			both						
+DM_NVN_UB	developer	Diagnostics			text			both						
+DM_NVN_UBP_CHECK	developer	Diagnostics			text			both						
+DM_NVN_UB_COPY_THREAD	developer	Performance			text			both						
+DM_NVN_UB_DEFER	developer	Graphics			text			both						
+DM_NVN_UB_LAZY	developer	Graphics			text			both						
+DM_NVN_UB_N	developer	Diagnostics			text			both						
+DM_NVN_UB_PARTIAL	developer	Graphics			text			both						
+DM_NVN_UDC_AB	developer	Diagnostics			text			both						
+DM_NVN_UNWRITTEN_DC	developer	Graphics			text			both						
+DM_NVN_UPLOAD_REUSE	developer	Graphics			text			both						
+DM_NVN_VBUF_CACHE	developer	Memory			text			both						
+DM_NVN_VCONV_CHECK	developer	Diagnostics			text			both						
+DM_NVN_VCONV_CPU	developer	Graphics			text			both						
+DM_NVN_VCONV_RANGE	developer	Graphics			text			both						
+DM_NVN_VLOG	developer	Diagnostics			text			both						
+DM_NVN_VSDUMP	developer	Diagnostics			text			both						
+DM_NVN_VSDUMP_FROM	developer	Diagnostics			text			both						
+DM_NVN_VSDUMP_KEY	developer	Diagnostics			text			both						
+DM_NVN_VSDUMP_MAX	developer	Diagnostics			text			both						
+DM_NVN_WAITS	developer	Diagnostics			text			both						
+DM_NVN_XV	developer	Graphics			text			both						
+DM_NVN_ZBLOCK	developer	Diagnostics			text			both						
+DM_NVN_ZSKIP	developer	Graphics			text			both						
+DM_NX_KEYS	developer	Diagnostics			text			both						
+DM_OE_SCRIPT	developer	Diagnostics			text			both						
+DM_OODLE_HOST	internal	Diagnostics			text			both						Mac or iOS only
+DM_OODLE_JOB	developer	Diagnostics			text			both						
+DM_OODLE_MODULES	internal	Diagnostics			text			both						Mac or iOS only
+DM_OODLE_OOZ	internal	Diagnostics			text			both						Mac or iOS only
+DM_OODLE_SERVE	developer	Game			text			both						
+DM_OOT_FPS_UNLOCK	developer	Performance			text			both						
+DM_OOT_MAX_RESOLUTION	developer	Game			text			both						
+DM_OOT_TEXTURE_POOL_X2	developer	Memory			text			both						
+DM_OOT_WIDE_KEEP	developer	Diagnostics			text			both						
+DM_OPMODE	developer	Game			text			both						
+DM_OPTION_PATCHES	developer	Game			text			both						
+DM_OVERLAY	developer	Game			text			both						
+DM_PACKER_COMMIT	developer	Diagnostics			text			both						
+DM_PAD_DEADZONE	developer	Input			text			both						
+DM_PAD_LABELLED	developer	Input			text			both						
+DM_PAD_MAP	developer	Input			text			both						
+DM_PAD_MERGE	internal	Input			text			both						Mac or iOS only
+DM_PAD_MOTION	developer	Input			text			both						
+DM_PATCH_FRONT	developer	Game			text			both						
+DM_PATCH_VARIANT	developer	Game			text			both						
+DM_PHONE_MOTION	internal	Input			text			both						Mac or iOS only
+DM_PKP_ASPECT	developer	Diagnostics			text			both						
+DM_POSE_GET	developer	Diagnostics			text			both						
+DM_POSE_SET	developer	Diagnostics			text			both						
+DM_PREEMPT	developer	Game			text			both						
+DM_PRELOAD	internal	Diagnostics			text			both						Mac or iOS only
+DM_PRESENT_FIFO	developer	Performance			text			both						
+DM_PRESENT_HZ	developer	Performance			text			both						
+DM_PRESENT_INTERVAL	developer	Performance			text			both						
+DM_PRESENT_LATENCY	developer	Performance			text			both						
+DM_PRESENT_LINK	developer	Performance			text			both						
+DM_PRESENT_SNAP	developer	Performance			text			both						
+DM_PRESENT_UPSCALE	internal	Performance			text			both						Mac or iOS only
+DM_PROBE	internal	Diagnostics			text			both						Mac or iOS only
+DM_PROBE_ALL	developer	Diagnostics			text			both						
+DM_PROBE_DUMP	developer	Diagnostics			text			both						
+DM_PROBE_EVERY	developer	Diagnostics			text			both						
+DM_PROBE_FRAMES	developer	Diagnostics			text			both						
+DM_PROBE_HEAP	developer	Diagnostics			text			both						
+DM_PROBE_HEAPFRAME	developer	Diagnostics			text			both						
+DM_PROBE_HEAPNAME	developer	Diagnostics			text			both						
+DM_PROBE_HEAPRAW	developer	Diagnostics			text			both						
+DM_PROBE_HEAPWORDS	developer	Diagnostics			text			both						
+DM_PROBE_LIMIT	developer	Diagnostics			text			both						
+DM_PROBE_LIVE	developer	Diagnostics			text			both						
+DM_PROBE_POLL	developer	Diagnostics			text			both						
+DM_PROBE_WATCH	developer	Diagnostics			text			both						
+DM_PROBE_X2	developer	Diagnostics			text			both						
+DM_PROFILE_PATH	developer	Diagnostics			text			both						
+DM_PROFILE_SEED	developer	Diagnostics			text			both						
+DM_PROGRAM_ID	developer	Memory			text			both						
+DM_PSO_ARCHIVE	internal	Diagnostics			text			both						Mac or iOS only
+DM_PSO_BUNDLE	internal	Diagnostics			text			both						Mac or iOS only
+DM_PSO_GPUS	developer	Performance			text			both						
+DM_PSO_HYBRID	internal	Performance			text			both						Mac or iOS only
+DM_PSO_IOS_MIN	internal	Performance			text			both						Mac or iOS only
+DM_PSO_MANIFEST	developer	Diagnostics			text			both						
+DM_PSO_MTL4	internal	Performance			text			both						Mac or iOS only
+DM_PSO_PAIRS	developer	Diagnostics			text			both						
+DM_PSO_PREBUILD	internal	Performance			text			both						Mac or iOS only
+DM_PSO_PREBUILD_DEPTH	developer	Performance			text			both						
+DM_PSO_PREBUILD_THREADS	developer	Performance			text			both						
+DM_PSO_PREPARE	developer	Packing			text			both						
+DM_PSO_PREPARE_THREADS	developer	Packing			text			both						
+DM_PSO_PULL_ALL	developer	Diagnostics			text			both						
+DM_PSO_RECORD	developer	Diagnostics			text			both						
+DM_PSO_USER	developer	Diagnostics			text			both						
+DM_PSO_WAITLOG	developer	Diagnostics			text			both						
+DM_QOS_EDGES	developer	Game			text			both						
+DM_QOS_MAP	developer	Game			text			both						
+DM_REC	developer	Diagnostics			text			both						
+DM_REGIONS	developer	Diagnostics			text			both						
+DM_RENDER_PCT	friendly	Graphics	Render size	the picture is too soft (raise it) or the game is too slow (lower it)	choice	33 %=33;50 %=50;59 %=59;67 %=67;100 %=100	50 %	game			render_cfg	04007EF01F8AE000		
+DM_RENDER_SCALE	developer	Graphics			text			both						
+DM_RENDER_UNCAPPED	developer	Diagnostics			text			both						
+DM_RESOURCE_AOC	internal	Diagnostics			text			both						Mac or iOS only
+DM_RESOURCE_BUILD	developer	Game			text			both						
+DM_RESOURCE_CHAIN_H	developer	Diagnostics			text			both						
+DM_RESOURCE_MARKER	developer	Diagnostics			text			both						
+DM_RESOURCE_MSLDIR	developer	Diagnostics			text			both						
+DM_RESOURCE_PSO	internal	Diagnostics			text			both						Mac or iOS only
+DM_RESOURCE_ROMFS	developer	Diagnostics			text			both						
+DM_RESOURCE_SHADERS	internal	Diagnostics			text			both						Mac or iOS only
+DM_RESOURCE_TITLE	developer	Game			text			both						
+DM_RESOURCE_VERSION	developer	Game			text			both						
+DM_RES_CHECK	developer	Diagnostics			text			both						
+DM_RES_SCALE	developer	Game			text			both						
+DM_RES_SCALE_POT	developer	Diagnostics			text			both						
+DM_REWRITE_J	developer	Game			text			both						
+DM_ROMFS	internal	Diagnostics			text			both						Mac or iOS only
+DM_ROMFS_OVERLAY	developer	Diagnostics			text			both						
+DM_ROMFS_PROGRAM_<n>	internal	Diagnostics			text			both						numbered family
+DM_ROMFS_SUBST	developer	Diagnostics			text			both						
+DM_ROMFS_ZSTD_CHECK	developer	Diagnostics			text			both						
+DM_ROOT	developer	Diagnostics			text			both						
+DM_RT	developer	Diagnostics			text			both						
+DM_RT_COMP	developer	Game			text			both						
+DM_RT_POOL_MB	developer	Diagnostics			text			both						
+DM_RT_VALUES	developer	Diagnostics			text			both						
+DM_RUMBLE	advanced	Input	Rumble		toggle			game		Settings > Rumble				
+DM_RUMBLE_GAIN	developer	Input			text			both						
+DM_RUMBLE_LOG	developer	Diagnostics			text			both						
+DM_RUMBLE_MIN	developer	Input			text			both						
+DM_SAVE	internal	Diagnostics			text			both						Mac or iOS only
+DM_SAVED_CHOICES	internal	Game			text			both						Mac or iOS only
+DM_SAVE_SYNC	internal	Game			text			both						Mac or iOS only
+DM_SCHEME_NAME	developer	Game			text			both						
+DM_SCREEN_MATCH	internal	Game			text			both						Mac or iOS only
+DM_SF_TRACE	developer	Diagnostics			text			both						
+DM_SHAKE_G	internal	Game			text			both						Mac or iOS only
+DM_SHARED_FONT	developer	Diagnostics			text			both						
+DM_SHARED_FONT_EXT	developer	Diagnostics			text			both						
+DM_SHOW_FPS	internal	Performance			text			both						Mac or iOS only
+DM_SLOWFRAME	developer	Diagnostics			text			both						
+DM_SPIN	developer	Performance			text			both						
+DM_SPIN_LIST	developer	Diagnostics			text			both						
+DM_SPIN_POLL	developer	Performance			text			both						
+DM_SPLIT_DIFF_DIR	developer	Diagnostics			text			both						
+DM_SPLIT_DIRECT	developer	Packing			text			both						
+DM_SPLIT_FILES	developer	Diagnostics			text			both						
+DM_SPLIT_LARGE	developer	Diagnostics			text			both						
+DM_SPLIT_RESUME	internal	Diagnostics			text			both						Mac or iOS only
+DM_SPLIT_SELECTED	developer	Packing			text			both						
+DM_SPLIT_SPILL	developer	Diagnostics			text			both						
+DM_SPLIT_TARGETED	developer	Packing			text			both						
+DM_SPLIT_WORKER	developer	Diagnostics			text			both						
+DM_SVC	developer	Diagnostics			text			both						
+DM_SYMCHECK	developer	Diagnostics			text			both						
+DM_TBUF_ALIGN	internal	Diagnostics			text			both						Mac or iOS only
+DM_TEAM_ID	developer	Game			text			both						
+DM_TELEPORT	developer	Diagnostics			text			both						
+DM_TEMP	internal	Diagnostics			text			both						Mac or iOS only
+DM_TEST_ARCHIVE_CONSTANTS	internal	Diagnostics			text			both						test harness
+DM_TEST_ARCHIVE_MIXED	internal	Diagnostics			text			both						test harness
+DM_TEST_BORDER	internal	Diagnostics			text			both						test harness
+DM_TEST_BUILD	internal	Diagnostics			text			both						test harness
+DM_TEST_CRASH	developer	Diagnostics			text			both						
+DM_TEST_FS_FAIL	developer	Diagnostics			text			both						
+DM_TEST_FS_FAILAT	developer	Diagnostics			text			both						
+DM_TEST_GEOMETRY	internal	Diagnostics			text			both						test harness
+DM_TEST_GEOMETRY_PRIMITIVE_ID	internal	Diagnostics			text			both						test harness
+DM_TEST_KEYRACE	developer	Diagnostics			text			both						
+DM_TEST_KILL_AT	developer	Diagnostics			text			both						
+DM_TEST_LEAK_GPU	internal	Diagnostics			text			both						Mac or iOS only
+DM_TEST_LINK_STALL	developer	Diagnostics			text			both						
+DM_TEST_NO_METAL4	internal	Diagnostics			text			both						Mac or iOS only
+DM_TEST_PRESENT_LAG	developer	Diagnostics			text			both						
+DM_TEST_SWKBD_HOLD_MS	developer	Diagnostics			text			both						
+DM_TEST_SWKBD_LAG_MS	developer	Diagnostics			text			both						
+DM_TEST_TRANSFORM_FEEDBACK	internal	Diagnostics			text			both						test harness
+DM_TEST_UP_LEAK	developer	Diagnostics			text			both						
+DM_TEST_UP_LOST	developer	Diagnostics			text			both						
+DM_THERMAL_CAP	internal	Game			text			both						Mac or iOS only
+DM_THR	developer	Diagnostics			text			both						
+DM_THRCPU	internal	Diagnostics			text			both						Mac or iOS only
+DM_TIME	developer	Game			text			both						
+DM_TIME_OFFSET	developer	Game			text			both						
+DM_TOUCH_HAPTICS	developer	Input			text			both						
+DM_TOUCH_LOG	developer	Diagnostics			text			both						
+DM_TZ	developer	Game			text			both						
+DM_UDC_SELFTEST	developer	Diagnostics			text			both						
+DM_UE_DECODE	internal	Diagnostics			text			both						Mac or iOS only
+DM_UE_FREE_CHECK	developer	Diagnostics			text			both						
+DM_UE_HOST	developer	Diagnostics			text			both						
+DM_UE_HOST_LIB	developer	Diagnostics			text			both						
+DM_UE_MODULES	developer	Diagnostics			text			both						
+DM_UE_SHADERS	developer	Diagnostics			text			both						
+DM_UE_TEXTURE_POOL	internal	Memory			text			both						Mac or iOS only
+DM_USER	developer	Game			text			both						
+DM_USERS	developer	Game			text			both						
+DM_VK_ADPF	developer	Graphics			text			both						
+DM_VK_ADPF_GPU	developer	Graphics			text			both						
+DM_VK_ADPF_PIPELINE	developer	Graphics			text			both						
+DM_VK_ADPF_SPAN	developer	Diagnostics			text			both						
+DM_VK_AFF_ALL	developer	Diagnostics			text			both						
+DM_VK_AFF_REPLAY	developer	Diagnostics			text			both						
+DM_VK_BANDS	developer	Graphics			text			both						
+DM_VK_BAR_KEEP	developer	Diagnostics			text			both						
+DM_VK_BAR_NARROW	developer	Graphics			text			both						
+DM_VK_BC_RT	developer	Graphics			text			both						
+DM_VK_BIGIMG_MB	developer	Diagnostics			text			both						
+DM_VK_BIND_LOG	developer	Diagnostics			text			both						
+DM_VK_BISECT	developer	Diagnostics			text			both						
+DM_VK_CAPTURE	internal	Diagnostics			text			both						Mac or iOS only
+DM_VK_CHUNK	developer	Graphics			text			both						
+DM_VK_CHUNK_PASS	developer	Graphics			text			both						
+DM_VK_CLASSIC_RP	advanced	Performance	Classic render passes		toggle			game		Game settings > Classic render passes				
+DM_VK_COALESCE_PCT	developer	Graphics			text			both						
+DM_VK_COMPILE_TRACE	developer	Diagnostics			text			both						
+DM_VK_CS_ASYNC	developer	Graphics			text			both						
+DM_VK_CS_SHARED_OVER	developer	Diagnostics			text			both						
+DM_VK_DEVICE_FAULT	developer	Graphics			text			both						
+DM_VK_DISPATCH_LOG	developer	Diagnostics			text			both						
+DM_VK_DISPATCH_ORDER	developer	Graphics			text			both						
+DM_VK_DISPATCH_SKIP	developer	Diagnostics			text			both						
+DM_VK_DISPATCH_SKIP_KEY	developer	Diagnostics			text			both						
+DM_VK_DISP_OBJ	developer	Diagnostics			text			both						
+DM_VK_DISP_OBJ_EVERY	developer	Diagnostics			text			both						
+DM_VK_DLSS	developer	Graphics			text			both						
+DM_VK_DLSS_JX	developer	Diagnostics			text			both						
+DM_VK_DLSS_JY	developer	Diagnostics			text			both						
+DM_VK_DLSS_SHARP	developer	Graphics			text			both						
+DM_VK_DLSS_UNJITTER	developer	Diagnostics			text			both						
+DM_VK_DONE_LAST	developer	Diagnostics			text			both						
+DM_VK_DRAW	developer	Diagnostics			text			both						
+DM_VK_DRAW_SKIP_KEY	developer	Diagnostics			text			both						
+DM_VK_DRIVER	advanced	Graphics	GPU driver		toggle			game		Settings > GPU driver				
+DM_VK_DRV_MEMO	developer	Memory			text			both						
+DM_VK_DRV_STAMP	developer	Graphics			text			both						
+DM_VK_DS_FIRST_HERE	developer	Graphics			text			both						
+DM_VK_DYN_FILTER	developer	Diagnostics			text			both						
+DM_VK_EAGER_TEX	developer	Diagnostics			text			both						
+DM_VK_ENC	developer	Graphics			text			both						
+DM_VK_ENC_BATCH	developer	Graphics			text			both						
+DM_VK_ENC_SPIN	developer	Performance			text			both						
+DM_VK_ENC_TAIL	developer	Graphics			text			both						
+DM_VK_EVENT_GATE	developer	Graphics			text			both						
+DM_VK_EVENT_LOG	developer	Diagnostics			text			both						
+DM_VK_EVENT_PARK_MS	developer	Diagnostics			text			both						
+DM_VK_EVENT_WAIT	developer	Graphics			text			both						
+DM_VK_FD_ALIAS	developer	Graphics			text			both						
+DM_VK_FG	developer	Graphics			text			both						
+DM_VK_FG_OWNFMT	developer	Diagnostics			text			both						
+DM_VK_FG_REFRESH_CAP	developer	Graphics			text			both						
+DM_VK_FOUT_COMPS	developer	Graphics			text			both						
+DM_VK_FOUT_RETYPE	developer	Graphics			text			both						
+DM_VK_FRAME_RATE	developer	Memory			text			both						
+DM_VK_FRAME_RATE_HOLD	developer	Memory			text			both						
+DM_VK_FSR	developer	Graphics			text			both						
+DM_VK_FSR3_JX	developer	Diagnostics			text			both						
+DM_VK_FSR3_JY	developer	Diagnostics			text			both						
+DM_VK_FSR3_MX	developer	Diagnostics			text			both						
+DM_VK_FSR3_MY	developer	Diagnostics			text			both						
+DM_VK_FSR3_OUT_H	developer	Graphics			text			both						
+DM_VK_FSR3_OUT_W	developer	Graphics			text			both						
+DM_VK_FSR3_RESET	developer	Diagnostics			text			both						
+DM_VK_FSR3_SHARP	developer	Graphics			text			both						
+DM_VK_FSR3_WAVE	developer	Diagnostics			text		1 (quad shuffles) with Turnip, 0 with other drivers	both						
+DM_VK_FSR_SHARP	developer	Graphics			text			both						
+DM_VK_GATE_EVENT	developer	Graphics			text			both						
+DM_VK_GMEM_REACH	developer	Diagnostics			text			both						
+DM_VK_GPL	developer	Graphics			text			both						
+DM_VK_GPL_GIVEUP	developer	Graphics			text			both						
+DM_VK_GPL_PROBE	developer	Diagnostics			text			both						
+DM_VK_GPUPROF	developer	Diagnostics			text			both						
+DM_VK_GPUPROF_LIST	developer	Diagnostics			text			both						
+DM_VK_GPUPROF_SPLIT	developer	Diagnostics			text			both						
+DM_VK_GPU_FLOOR	developer	Graphics			text			both						
+DM_VK_GPU_FLOOR_ADPF	developer	Graphics			text			both						
+DM_VK_GPU_FLOOR_AUTO	developer	Graphics			text			both						
+DM_VK_GPU_FLOOR_HI	developer	Graphics			text			both						
+DM_VK_GPU_FLOOR_KGSL	developer	Graphics			text			both						
+DM_VK_GPU_FLOOR_LO	developer	Graphics			text			both						
+DM_VK_GPU_FLOOR_LOG	developer	Diagnostics			text			both						
+DM_VK_GPU_FLOOR_PERIOD	developer	Graphics			text			both						
+DM_VK_GSR2_BOXMOTW	developer	Diagnostics			text			both						
+DM_VK_GSR2_BSMOV	developer	Diagnostics			text			both						
+DM_VK_GSR2_CLARITY	developer	Graphics			text			both						
+DM_VK_GSR2_HMIN	developer	Diagnostics			text			both						
+DM_VK_GSR2_KFOV	developer	Diagnostics			text			both						
+DM_VK_GSR2_MINLERP	developer	Diagnostics			text			both						
+DM_VK_GSR2_MV	developer	Diagnostics			text			both						
+DM_VK_GSR2_MVNEAR	developer	Diagnostics			text			both						
+DM_VK_GSR2_SFCAP	developer	Diagnostics			text			both						
+DM_VK_GSR2_TUNE	developer	Diagnostics			text			both						
+DM_VK_GSR2_VK	developer	Diagnostics			text			both						
+DM_VK_GSR2_VLO	developer	Diagnostics			text			both						
+DM_VK_GSR2_VREJ	developer	Diagnostics			text			both						
+DM_VK_GS_CLAIM	developer	Graphics			text			both						
+DM_VK_GS_FILL	developer	Graphics			text		1 with Qualcomm's driver, 0 with others	both						
+DM_VK_GS_LINK	developer	Graphics			text			both						
+DM_VK_GS_SPV	internal	Diagnostics			text			both						test harness
+DM_VK_GUEST_FPCR	developer	Diagnostics			text			both						
+DM_VK_GW_SORT_KEEP	developer	Graphics			text			both						
+DM_VK_HANG_EXIT	developer	Graphics			text			both						
+DM_VK_HANG_S	developer	Graphics			text			both						
+DM_VK_HOOKDIR	developer	Diagnostics			text			both						
+DM_VK_IMGMEM	developer	Memory			text			both						
+DM_VK_IMG_DIAG	developer	Diagnostics			text			both						
+DM_VK_IMG_DUMP	developer	Diagnostics			text			both						
+DM_VK_IMG_LIMIT_MB	advanced	Memory	Texture cache limit	the game is killed for memory (lower it) or textures keep reloading (raise it)	number	512..8192 MiB|1024,2048,3072,4096	Measured from free memory	both	Too high a limit lets Android kill the game.					
+DM_VK_IMG_PSI	advanced	Memory	Memory pressure guard	textures reload and stutter although the phone has free memory (Off gives the older behaviour)	toggle	Off=0;On=1	On: the texture cache shrinks when Android stalls on memory	both						
+DM_VK_IMG_PSI_EASE	developer	Diagnostics			text			both						
+DM_VK_IMG_PSI_HOLD	developer	Diagnostics			text			both						
+DM_VK_IMG_PSI_SHRINK	developer	Diagnostics			text			both						
+DM_VK_IMG_RESERVE_MB	developer	Memory			text			both						
+DM_VK_IMG_RETYPE	developer	Memory			text			both						
+DM_VK_IMG_SPV	internal	Diagnostics			text			both						test harness
+DM_VK_IMG_UPGRADE	developer	Memory			text			both						
+DM_VK_INSTANCE	advanced	Performance	Instanced draws		toggle			game		Game settings > Instanced draws				
+DM_VK_INSTANCE_FAST	developer	Diagnostics			text			both						
+DM_VK_LC_GLOBAL	developer	Graphics			text			both						
+DM_VK_LEVEL_SHARE	developer	Graphics			text			both						
+DM_VK_LOG	internal	Diagnostics			text			both						Mac or iOS only
+DM_VK_LOW_RAM	developer	Memory			text			both						
+DM_VK_LRZ_TOUCH	developer	Input			text			both						
+DM_VK_MAPS	developer	Graphics			text			both						
+DM_VK_MAPS_BUDGET	developer	Graphics			text			both						
+DM_VK_MAPS_CACHE	developer	Diagnostics			text			both						
+DM_VK_MAPS_COMPACT	developer	Graphics			text			both						
+DM_VK_MAPS_COMPACT_N	developer	Graphics			text			both						
+DM_VK_MAPS_HIST	developer	Diagnostics			text			both						
+DM_VK_MAPS_PERIOD_S	developer	Diagnostics			text			both						
+DM_VK_MDI_GPU	developer	Graphics			text			both						
+DM_VK_MEMLOG	developer	Diagnostics			text			both						
+DM_VK_MEMU_LIB	internal	Diagnostics			text			both						test harness
+DM_VK_MEMU_OUT	internal	Diagnostics			text			both						test harness
+DM_VK_MEM_LOCK_WHOLE	developer	Diagnostics			text			both						
+DM_VK_MESH	developer	Graphics			text		On; off with Qualcomm's driver, where mesh draws go through compute	both						
+DM_VK_MESH_EMU	developer	Graphics			text			both						
+DM_VK_MESH_EMU_BAR	developer	Graphics			text			both						
+DM_VK_MESH_EMU_MB	developer	Graphics			text			both						
+DM_VK_MESH_IND	developer	Graphics			text			both						
+DM_VK_MESH_LOG	developer	Diagnostics			text			both						
+DM_VK_MESH_PREPASS_DEPTH	developer	Graphics			text			both						
+DM_VK_MESH_PREPASS_SIDE	developer	Graphics			text			both						
+DM_VK_MESH_PREPASS_SKIP	friendly	Graphics	Mesh prepass workaround	the picture shows spikes or flicker on models (it is a workaround for Qualcomm's driver)	toggle	Off=0;On=1	On with Qualcomm's driver when its mesh shaders are on, else off	both						
+DM_VK_MESH_SKIP	developer	Diagnostics			text			both						
+DM_VK_NANSCAN	developer	Diagnostics			text			both						
+DM_VK_NANSCAN_BIG	developer	Diagnostics			text			both						
+DM_VK_NANSCAN_DRAWS	developer	Diagnostics			text			both						
+DM_VK_NANSCAN_DUMP	developer	Diagnostics			text			both						
+DM_VK_NANSCAN_FROM	developer	Diagnostics			text			both						
+DM_VK_NANSCAN_FS	developer	Diagnostics			text			both						
+DM_VK_NANSCAN_LINES	developer	Diagnostics			text			both						
+DM_VK_NANSCAN_SERIAL	developer	Diagnostics			text			both						
+DM_VK_NANSCAN_STEP	developer	Diagnostics			text			both						
+DM_VK_NDSR	developer	Graphics			text			both						
+DM_VK_NDSR_INPUT	developer	Graphics			text			both						
+DM_VK_NDSR_SHARP	developer	Graphics			text			both						
+DM_VK_OCCLUSION	developer	Graphics			text			both						
+DM_VK_ONE_LANE	developer	Graphics			text		The game profile's one-lane shaders with Qualcomm's driver, none with others	both						
+DM_VK_ONE_LANE_BASE	developer	Graphics			text			both						
+DM_VK_OQ_SPLIT_PASS	developer	Diagnostics			text		1 with Qualcomm's driver when the game profile asks for it, 0 otherwise	both						
+DM_VK_OVERLAY	developer	Graphics			text			both						
+DM_VK_PACE_LOG	developer	Diagnostics			text			both						
+DM_VK_PACE_PANEL	developer	Performance			text			both						
+DM_VK_PACE_PROF	developer	Diagnostics			text			both						
+DM_VK_PARTLOG	developer	Diagnostics			text			both						
+DM_VK_PASS_CLEARS	developer	Graphics			text			both						
+DM_VK_PASS_KEEP	developer	Graphics			text			both						
+DM_VK_PCACHE	developer	Diagnostics			text			both						
+DM_VK_PCACHE_KEEP	developer	Memory			text			both						
+DM_VK_PCACHE_SAVE_S	developer	Memory			text			both						
+DM_VK_PCACHE_SAVE_SLOW_S	developer	Memory			text			both						
+DM_VK_PFB_SPV_DIR	internal	Diagnostics			text			both						test harness
+DM_VK_PICTURE_ASPECT	developer	Graphics			text			both						
+DM_VK_PICTURE_SIZE	developer	Graphics			text			both						
+DM_VK_PLACED	developer	Diagnostics			text			both						
+DM_VK_PLACED_PROBE	developer	Graphics			text			both						
+DM_VK_PLACE_GRANULE_MB	developer	Diagnostics			text			both						
+DM_VK_PLACE_JOIN_MB	developer	Diagnostics			text			both						
+DM_VK_PLACE_LAZY	developer	Graphics			text			both						
+DM_VK_PLACE_PART_MB	developer	Diagnostics			text			both						
+DM_VK_PLACE_SHADER_POOLS	developer	Memory			text			both						
+DM_VK_POOL_EAGER	developer	Memory			text			both						
+DM_VK_POOL_FB	developer	Memory			text			both						
+DM_VK_POOL_FB_EARLY	developer	Diagnostics			text			both						
+DM_VK_POOL_SLOT_BIND	developer	Diagnostics			text			both						
+DM_VK_PREFAULT	developer	Diagnostics			text			both						
+DM_VK_PRESENT_DEADLINE	developer	Performance			text			both						
+DM_VK_PRESENT_GATE_WAIT	developer	Performance			text		30 ms with Turnip, 0 (off) with other drivers	both						
+DM_VK_PRESENT_GRID	developer	Performance			text			both						
+DM_VK_PRESENT_NEAREST	developer	Performance			text			both						
+DM_VK_PRESENT_OWNFMT	developer	Diagnostics			text			both						
+DM_VK_PRESENT_PREWAIT	developer	Diagnostics			text			both						
+DM_VK_PRESENT_TRACE	developer	Diagnostics			text			both						
+DM_VK_PRETRANSFORM	developer	Graphics			text			both						
+DM_VK_PREWARM	developer	Graphics			text		4 threads; 0 (off) with Qualcomm's driver before 512.800	both						
+DM_VK_PREWARM_FILE	developer	Diagnostics			text			both						
+DM_VK_PREWARM_HEAVY_MS	developer	Graphics			text			both						
+DM_VK_PREWARM_KEEP	developer	Graphics			text			both						
+DM_VK_PREWARM_MAX	developer	Graphics			text			both						
+DM_VK_PREWARM_MEM_MB	developer	Memory			text			both						
+DM_VK_PREWARM_OVERLAP	developer	Graphics			text			both						
+DM_VK_PREWARM_SEED	developer	Graphics			text			both						
+DM_VK_PREWARM_WHY	developer	Diagnostics			text			both						
+DM_VK_PROF	developer	Diagnostics			text			both						
+DM_VK_PRUNE_MS	developer	Graphics			text			both						
+DM_VK_PSO_ASYNC	advanced	Performance	Background pipelines		toggle			game		Game settings > Background pipelines				
+DM_VK_PSO_FAIR_MS	developer	Performance			text			both						
+DM_VK_PSO_ORDER	developer	Performance			text			both						
+DM_VK_PSO_SLOTS	developer	Performance			text		1 with Turnip, 4 with other drivers	both						
+DM_VK_PUSH_DEDUP	developer	Graphics			text			both						
+DM_VK_PUSH_DELTA	developer	Diagnostics			text			both						
+DM_VK_QS_TRACE	developer	Diagnostics			text			both						
+DM_VK_RANGE_WATCH	developer	Diagnostics			text			both						
+DM_VK_RANGE_WATCH_FRAMES	developer	Diagnostics			text			both						
+DM_VK_RANGE_WATCH_FROM	developer	Diagnostics			text			both						
+DM_VK_RANGE_WATCH_LINES	developer	Diagnostics			text			both						
+DM_VK_RC_LOG	developer	Diagnostics			text			both						
+DM_VK_RC_LOG_FROM	developer	Diagnostics			text			both						
+DM_VK_RC_QUERY_MEM	developer	Diagnostics			text			both						
+DM_VK_RD_SPLIT	developer	Packing			text			both						
+DM_VK_RD_TOUCH	developer	Input			text			both						
+DM_VK_READBACK_LOG	developer	Diagnostics			text			both						
+DM_VK_READTEXELS	developer	Graphics			text			both						
+DM_VK_RED_REPEAT	developer	Graphics			text			both						
+DM_VK_RELEASE_PART	developer	Graphics			text			both						
+DM_VK_REMAP_SPV	internal	Diagnostics			text			both						test harness
+DM_VK_REPLAY_NICE	developer	Graphics			text			both						
+DM_VK_ROWS	developer	Graphics			text			both						
+DM_VK_RP_AREA	developer	Graphics			text			both						
+DM_VK_RT_LOG	developer	Diagnostics			text			both						
+DM_VK_RT_LOG_LINES	developer	Diagnostics			text			both						
+DM_VK_SAMP_LOG	developer	Diagnostics			text			both						
+DM_VK_SAMP_SLOTS	developer	Diagnostics			text			both						
+DM_VK_SB_PEEK	developer	Diagnostics			text			both						
+DM_VK_SB_PEEK_AT	developer	Diagnostics			text			both						
+DM_VK_SB_PEEK_FROM	developer	Diagnostics			text			both						
+DM_VK_SB_PEEK_LINES	developer	Diagnostics			text			both						
+DM_VK_SB_WATCH	developer	Diagnostics			text			both						
+DM_VK_SET_NULLS	developer	Diagnostics			text			both						
+DM_VK_SHADER_STATS	developer	Diagnostics			text			both						
+DM_VK_SHARED_SPILL_MB	developer	Graphics			text			both						
+DM_VK_SHARE_MISS	developer	Diagnostics			text			both						
+DM_VK_SHLIB	developer	Diagnostics			text			both						
+DM_VK_SHLIB_ALL	internal	Diagnostics			text			both						test harness
+DM_VK_SHLIB_CHECK	developer	Diagnostics			text			both						
+DM_VK_SHPOOL_LOG	developer	Diagnostics			text			both						
+DM_VK_SHUFFLE_LDS	developer	Graphics			text		1 (shuffles through workgroup memory) with Turnip, 0 with other drivers	both						
+DM_VK_SKIP_FS	developer	Graphics			text			both						
+DM_VK_SKIP_NDVE	developer	Diagnostics			text			both						
+DM_VK_SKIP_WARN	advanced	Diagnostics	Skipped-work notice	the notice "Part of the picture is not drawn" appears and you want it off (0) or only for larger gaps	number	0..100 %|0,5,10,25	5 %	both						
+DM_VK_SPARSE_DENSE_MB	developer	Graphics			text			both						
+DM_VK_SPARSE_LEVELS	developer	Graphics			text			both						
+DM_VK_SPARSE_RES	developer	Graphics			text			both						
+DM_VK_SPARSE_RES_MB	developer	Graphics			text			both						
+DM_VK_SPEC_FOLD	developer	Graphics			text			both						
+DM_VK_SPV_DIR	internal	Diagnostics			text			both						test harness
+DM_VK_SPV_OVERRIDE	developer	Diagnostics			text			both						
+DM_VK_STATS	developer	Diagnostics			text			both						
+DM_VK_STORAGE_FIRST_USE	developer	Graphics			text			both						
+DM_VK_STRETCH	developer	Graphics			text			both						
+DM_VK_SUBGROUP_GS	developer	Graphics			text		0 (one-lane geometry subgroups) with Turnip, 1 with other drivers	both						
+DM_VK_SUBGROUP_PIN	developer	Performance			text			both						
+DM_VK_SWAP_RB	developer	Diagnostics			text			both						
+DM_VK_SYNCLOG	developer	Diagnostics			text			both						
+DM_VK_TBUF	developer	Graphics			text			both						
+DM_VK_TBUF_COPY	developer	Graphics			text			both						
+DM_VK_TBUF_GW	developer	Graphics			text			both						
+DM_VK_TBUF_LOG	developer	Diagnostics			text			both						
+DM_VK_TEST_HANG	developer	Diagnostics			text			both						
+DM_VK_TEXU_ELEM	developer	Diagnostics			text			both						
+DM_VK_TEX_LINGER	developer	Graphics			text			both						
+DM_VK_TEX_MEMO	developer	Memory			text			both						
+DM_VK_TEX_PEEK	developer	Diagnostics			text			both						
+DM_VK_TEX_PEEK_FROM	developer	Diagnostics			text			both						
+DM_VK_TEX_PEEK_LINES	developer	Diagnostics			text			both						
+DM_VK_TEX_RETYPE	developer	Graphics			text			both						
+DM_VK_TEX_SOFT	advanced	Memory	Soft textures	the game runs out of memory; large textures lose their finest level and look a little softer	toggle	Off=0;On=1	The game's profile decides	game	Textures look slightly softer. Not measured on every game.				lmk-kill;killed;out of memory	
+DM_VK_TEX_SOFT_LEVELS	advanced	Memory	Soft texture levels	the game still runs out of memory with Soft textures on (more levels save more, textures get softer)	choice	1 level=1;2 levels=2;3 levels=3	1 level	game	Textures look softer with more levels.					
+DM_VK_TEX_SPV	internal	Diagnostics			text			both						test harness
+DM_VK_TEX_STATS	developer	Diagnostics			text			both						
+DM_VK_TEX_STATS_DRAWS	developer	Diagnostics			text			both						
+DM_VK_TEX_STATS_LINES	developer	Diagnostics			text			both						
+DM_VK_TEX_STATS_TABLE	developer	Diagnostics			text			both						
+DM_VK_TEX_TRACK	developer	Diagnostics			text			both						
+DM_VK_TL_HOST	developer	Graphics			text			both						
+DM_VK_TL_POLL	developer	Diagnostics			text			both						
+DM_VK_TS_LOG	developer	Diagnostics			text			both						
+DM_VK_TU_UBWC_HINT	developer	Graphics			text			both						
+DM_VK_UBWC	developer	Graphics			text			both						
+DM_VK_UB_DEFER	developer	Graphics			text			both						
+DM_VK_UB_PEEK	developer	Diagnostics			text			both						
+DM_VK_UB_PEEK_AT	developer	Diagnostics			text			both						
+DM_VK_UB_PEEK_DONE	developer	Diagnostics			text			both						
+DM_VK_UNPLACE_REMAP	developer	Diagnostics			text			both						
+DM_VK_UPLOAD_BATCH	developer	Graphics			text			both						
+DM_VK_UPLOAD_BATCH_MB	developer	Graphics			text			both						
+DM_VK_UPLOAD_INFLIGHT_MB	developer	Graphics			text			both						
+DM_VK_UPLOAD_MT	developer	Graphics			text			both						
+DM_VK_UPLOAD_MT_MIN	developer	Graphics			text			both						
+DM_VK_VALIDATE	developer	Diagnostics			text			both						
+DM_VK_VATTR_CLEAR	developer	Graphics			text			both						
+DM_VK_VB_FILTER	developer	Graphics			text			both						
+DM_VK_VEGETATION	advanced	Graphics	Full vegetation		toggle			game		Game settings > Full vegetation				
+DM_VK_VIEW_LEARN	developer	Graphics			text			both						
+DM_VK_VIN_DYN	developer	Graphics			text		On where the device has it; off with Qualcomm's driver before 512.800	both						
+DM_VK_VIN_SKIP	developer	Graphics			text			both						
+DM_VK_WB_FOLLOW	developer	Graphics			text			both						
+DM_VK_WORKER	developer	Graphics			text			both						
+DM_VK_WORKER_FRAMES	developer	Memory			text			both						
+DM_VK_XFB	developer	Graphics			text			both						
+DM_VK_XP_SCISSOR	developer	Diagnostics			text			both						
+DM_VK_XP_TS	developer	Diagnostics			text			both						
+DM_VK_XP_TS_SEL	developer	Diagnostics			text			both						
+DM_VK_ZEROLOG	developer	Diagnostics			text			both						
+DM_VK_ZLOG	developer	Diagnostics			text			both						
+DM_VK_ZLOG_LINES	developer	Diagnostics			text			both						
+DM_VK_ZLOG_MIN	developer	Diagnostics			text			both						
+DM_VK_ZSHARE	developer	Graphics			text			both						
+DM_VK_ZSHARE_MAX_MB	developer	Graphics			text		No limit with Turnip, 32 MiB with other drivers	both						
+DM_VK_ZSHARE_MB	developer	Graphics			text			both						
+DM_VSYNC_HZ	developer	Game			text			both						
+DM_WATCH	developer	Diagnostics			text			both						
+DM_WATCH_SAMPLE	internal	Diagnostics			text			both						Mac or iOS only
+DM_WATCH_STALL	developer	Diagnostics			text			both						
+DM_WINDOW	internal	Graphics			text			both						Mac or iOS only
+DM_WINDOW_SIZE	developer	Graphics			text			both						
+DM_WINDOW_TOP	internal	Diagnostics			text			both						Mac or iOS only
+DM_XBOX_LABELS	developer	Input			text			both						
+DM_XCODE_DERIVED_DATA	developer	Diagnostics			text			both						
+DM_XCODE_PROJECT_DIR	developer	Diagnostics			text			both						
+DM_XV_FILE	developer	Diagnostics			text			both						
+DM_YIELD_BACKOFF	developer	Game			text			both						
+DM_ZBIC_LIB	developer	Diagnostics			text			both						
+NXIMPORT_THREADS	developer	Performance			text			both						
+NX_DEBUG	developer	Diagnostics			text			both						
+PN_BUILD_ID	developer	Diagnostics			text			both						

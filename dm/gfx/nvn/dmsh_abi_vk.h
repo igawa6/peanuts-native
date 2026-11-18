@@ -84,6 +84,8 @@
 #define DMSH_VK_KIND_TEX_DYN 23          // tex_dyn: Ryujinx's fallback array of 32 buffer textures (<stage>_tb_cb0_40000000, UNIFORM_TEXEL_BUFFER, profile key tex_dyn_slots): element k = the texture in
                                          // slot k (combined, else separate slot DMSH_SEPTEX_SLOT0 + k). The shader's own c2 words are then slot indices (vka_walk sets bit 2 of *uses_pool, vka_drv_fill reads it)
 #define DMSH_VK_KIND_SAMP_DYN 24         // samp_dyn: the same array of 32 samplers (<stage>_s_cb0_40000000, SAMPLER): element k = the separate sampler in slot k, else the sampler of the combined handle in texture slot k
+#define DMSH_VK_KIND_IMG_UBO 25          // img_ubo: image handle in uniform slot reg at byte off (low 20 bits the texture ID, as tex_ubo's), STORAGE_IMAGE or STORAGE_TEXEL_BUFFER; flag ATOMIC
+                                         // (Banana Native numbers it 23: here 23 and 24 were taken, and are in every library this fork's releases built, before its v0.3.22 came)
 #define DMSH_VK_KIND_UNKNOWN 255         // ?: not placed; the replay refuses the shader
 
 // Binding record flags

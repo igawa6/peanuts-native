@@ -26,7 +26,7 @@ static void aoc_load(void) {
         why = dir; DIR *d = opendir(dir); struct dirent *ent;
         while (d && (ent = readdir(d)) && g_naoc < (int)(sizeof g_aoc / sizeof *g_aoc)) {
             char *end; long i = strtol(ent->d_name, &end, 10);
-            if (ent->d_name[0] >= '1' && ent->d_name[0] <= '9' && (!*end || !strcmp(end, ".img") || !strcmp(end, ".nup") || !strcmp(end, ".nsp") /* PEANUTS: an add-on's dump read where it is (hle_fs.c aoc_dir) */) && i <= 2000) g_aoc[g_naoc++] = (int)i;
+            if (ent->d_name[0] >= '1' && ent->d_name[0] <= '9' && (!*end || !strcmp(end, ".img") || !strcmp(end, ".nup") || !strcmp(end, ".nsp")) && i <= 2000) g_aoc[g_naoc++] = (int)i;
         }
         if (d) closedir(d);
         qsort(g_aoc, g_naoc, sizeof *g_aoc, aoc_int_cmp);

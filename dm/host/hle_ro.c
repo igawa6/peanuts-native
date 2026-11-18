@@ -12,7 +12,7 @@
 #define RO_NOT_NRO ((Result)0x816)           // the SDK's result for an image without NRO0 (sdk+0x3471e8)
 static pthread_mutex_t g_ro_mu = PTHREAD_MUTEX_INITIALIZER;   // the SDK holds g_RoLock over a load as well
 
-HLE_FORCE("_ZN2nn2ro10InitializeEv", "connect to the ldr:ro service; the host has none, symbol lookups search the loaded modules directly", Result, h_ro_Initialize, void) { LOG("init takeover: ro::Initialize (no-op)"); return 0; }
+HLE_FORCE("_ZN2nn2ro10InitializeEv", "connect to the ldr:ro service; the host has none, symbol lookups search the loaded modules directly", Result, h_ro_Initialize, void) { LOG("init takeover: ro::Initialize (no-op)"); dm_thread_service_connect(); return 0; }
 
 HLE_FORCE("_ZN2nn2ro12LookupSymbolEPmPKc", "look up a definition by name in the loaded modules", Result, h_ro_LookupSymbol, uintptr_t *out, const char *name) {
     void *p = name ? guest_sym(name) : NULL;
@@ -97,7 +97,8 @@ HLE_FORCE("_ZN2nn2ro12UnloadModuleEPNS0_6ModuleE", "unload an NRO: its fini, the
 HLE_FORCE("_ZN2nn2ro18RegisterModuleInfoEPNS0_16RegistrationInfoEPKv", "register an NRR: nothing to check, the host's NROs were collected by its hashes", Result, h_ro_RegisterModuleInfo, void *info, const void *nrr) {
     const uint8_t *r = nrr;
     if (!r || memcmp(r, "NRR0", 4)) return RO_FAIL;
-    uint32_t off = *(const uint32_t *)(r + 0x340), cnt = *(const uint32_t *)(r + 0x344), refused = 0;
+    // Version 1 (the byte at +5; the Switch 2's: Mario Tennis Fever) has a header 0x180 bytes longer, the same fields after it: program ID +0x4b0, size +0x4b8, hash table +0x4c0, count +0x4c4
+    size_t hdr = r[5] == 1 ? 0x4c0 : 0x340; uint32_t off = *(const uint32_t *)(r + hdr), cnt = *(const uint32_t *)(r + hdr + 4), refused = 0;
     for (uint32_t i = 0; i < cnt; i++) refused += nro_refused(r + off + 32 * i);
     // An NRR that registers only online SDKs the host refuses (Hades and Hades II: game.nrr with the one EOS SDK hash) fails as every registration did before the host loaded NROs,
     // so such a game takes the path it took then (it never asked for the module)

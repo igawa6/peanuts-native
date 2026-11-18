@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="status" src="https://img.shields.io/badge/release-0.1.3-brightgreen">
+  <img alt="status" src="https://img.shields.io/badge/release-0.1.4-brightgreen">
   <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue">
   <img alt="platform" src="https://img.shields.io/badge/platform-Android%2013%2B-green">
 </p>
@@ -31,7 +31,7 @@ too.
 ## Supported games
 
 These are the Switch 1 games this app version includes. The last column says what was seen on an AYN Thor: a game
-marked "new" was played there for a short time only, and the last two have not been run on a device yet. Kirby's
+marked "new" was played there for a short time only; rows marked untested have no device run. Kirby's
 Return to Dream Land Deluxe and Super Mario 3D World + Bowser's Fury were run by their contributor on their own
 AYN Thor only. The
 Companion column says whether the game has a companion that was checked with it. Use the game update listed. The app
@@ -62,8 +62,14 @@ shows which update you have and which one a game supports, and asks before build
 | Kirby and the Forgotten Land | `01004D300C5AE000` | 1.1.0 | Not checked | 30 fps, as on Switch, with dips to 15 to 20; new, little tested: the start of the game, by its contributor |
 | Kirby's Return to Dream Land Deluxe | `01006B601380E000` | 1.0.0 (base game) | Yes | 50 to 60 fps; new, little tested: its first stage, by its contributor |
 | Super Mario 3D World + Bowser's Fury | `010028600EBDA000` | 1.2.2 | Not checked | 60 fps; new, little tested: the start of the game, by its contributor |
-| Super Mario Bros. Wonder | `010015100B514000` | 1.0.0, 1.0.1, 1.2.1 | Not checked | Not tested on a device yet |
-| DRAGON QUEST III HD-2D Remake | `01003E601E324000` | 1.1.2 only | Not checked | Not tested on a device yet |
+| Super Mario Bros. Wonder | `010015100B514000` | 1.2.1 only | Yes | 1.2.1 on AYN Thor: title, menus and map reached; first course at 56 to 60 fps (average 58), occasional doubled frames; sound, saving and later courses untested |
+| DRAGON QUEST III HD-2D Remake | `01003E601E324000` | 1.1.2 only | Not checked | Packs on Linux; device validation pending |
+| Chained Echoes | `0100C510166F0000` | 1.41 | Not checked | AYN Thor, Turnip: title and opening scenes at about 60 fps with a 2 GB application pool; battles, saving/loading, sound and extended play untested |
+| Yoru, Tomosu | `0100C2901153C000` | Base game | Log unreadable | Opening at 60 fps on AYN Thor; companion log text is unreadable |
+| Crash Team Racing Nitro-Fueled | `0100F9F00C696000` | 1.0.15 | Yes | 60 fps on AYN Thor in single races; with the 120 fps limit, 118 to 120 in the menus and 81 to 97 in a race; new, little tested |
+| Xenoblade Chronicles X: Definitive Edition | `0100453019AA8000` | 1.0.2 only | No | Experimental. On AYN Thor, Turnip: the title and the opening at 30 fps; 57 to 60 fps with the 60 fps limit in two sessions of 5 and 10 minutes; little tested beyond that |
+| My Time at Sandrock | `0100B63016916000` | 1.4.2.0 | Yes | 30 fps on AYN Thor: a 15-minute session through the opening, the town and the menus; new, little tested |
+| Monster Sanctuary | `0100A0F00DA68000` | 2.1.0 | Not checked | Runs on AYN Thor; new, little tested |
 
 ## What you need
 

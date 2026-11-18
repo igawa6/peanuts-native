@@ -26,6 +26,11 @@ final class Pack {
     final String packer;   // the commit of the tools that made it ("" when not recorded)
     final String madeBy;   // its made_by row: "app <version>" when this app's pack step made it, "" for a pack from other tools (or from before the row)
     final Map<String, String> scenes = new LinkedHashMap<>();   // its scene_res rows: Scene resolution preset → its RomFS overlay folder in the pack (SceneRes; none from older packs)
+    // A pack of program n > 0 of a dump folder (pack_android.py --program; a Switch 2 Edition's program 1, updates/<v>/program/1/): which program, its application (the save and the add-ons
+    // are the application's) and each program index's RomFS (the host's DM_ROMFS_PROGRAM_<i>: 0 is the game's, the edition mounts it as "conorig"). 0 / "" / empty otherwise
+    final int program;
+    final String application;
+    final Map<Integer, String> romfsProgram = new LinkedHashMap<>();
 
     private Pack(File dir, Map<String, List<String>> rows) throws IOException {
         this.dir = dir;
@@ -55,6 +60,30 @@ final class Pack {
             String[] c = v.split("\t", 2);
             if (c.length == 2) scenes.put(c[0], c[1]);
         }
+        List<String> pg = rows.get("program"), ap = rows.get("application");
+        program = pg == null || pg.isEmpty() ? 0 : Integer.parseInt(pg.get(0).trim());
+        application = ap == null || ap.isEmpty() ? "" : ap.get(0).trim().toUpperCase(Locale.ROOT);
+        for (String v : rows.getOrDefault("romfs_program", List.of())) {
+            String[] c = v.split("\t", 2);
+            if (c.length == 2) romfsProgram.put(Integer.parseInt(c[0]), c[1]);
+        }
+    }
+
+    /** A program pack's code: "program/&lt;n&gt;" (BuildCheck.module reads it from DumpLayout.programDir), null for the game's own (program 0) */
+    String programSelector() { return program > 0 ? "program/" + program : null; }
+
+    /**
+     * A program pack's DM_ROMFS_PROGRAM_&lt;i&gt; values for a dump folder: each romfs_program row's folder (relative to the dump, as pack_android.py writes it) when
+     * it is there; empty for another pack or a .nup (which holds program 0 only)
+     */
+    Map<Integer, String> romfsProgramPaths(File game) {
+        Map<Integer, String> out = new LinkedHashMap<>();
+        if (program == 0 || Nup.isNup(game)) return out;
+        for (Map.Entry<Integer, String> e : romfsProgram.entrySet()) {
+            File d = new File(game, e.getValue());
+            if (d.isDirectory()) out.put(e.getKey(), d.getPath());
+        }
+        return out;
     }
 
     /** Whether this app made the pack (its made_by row), so its code can be updated without asking when only the tools changed */
@@ -86,6 +115,14 @@ final class Pack {
      */
     static File playableLibrary(File dir, String titleId) {
         return ShaderLibs.playable(dir, titleId, BuildConfig.NX_DMSH_VK_CHAIN, BuildConfig.NX_DMSH_VK_ABI, BuildConfig.NX_DMSH_VK_ABI_COMPAT);
+    }
+
+    /**
+     * An optional shader update: this APK's shader library is missing, an older one plays (ShaderLibs.playable) and no delta manifest says how to update it in the background
+     * (deltaShaders &lt; 0), so nothing starts by itself: the card says an update is available and the game's page offers it. The game plays as before until the player asks
+     */
+    static boolean shaderUpdateAvailable(File dir, String titleId) {
+        return libraryProblem(dir, titleId) != null && playableLibrary(dir, titleId) != null && deltaShaders(dir, titleId) < 0;
     }
 
     /** A library of another version made before versioned shader updates (no ABI): played with a warning when no playable one is there (ShaderLibs.legacy), null when none */
@@ -199,7 +236,12 @@ final class Pack {
     static String titleIdOf(File game) throws IOException {
         if (Nup.isNup(game)) {
             try {
-                return Nup.open(game).programId();
+                Nup n = Nup.open(game);
+                if (n.base() == null && n.newest() == null && game.getName().endsWith(Nup.EXT_NSP))
+                    throw new Nsp.Refused(Nsp.DLC_ONLY, game.getName() + " has neither a base package nor an update");
+                return n.programId();
+            } catch (Nsp.Refused e) {
+                throw new Nsp.Refused(e.plain, game.getName() + " cannot be used: " + e.getMessage(), e);
             } catch (IOException e) {
                 throw new IOException(game.getName() + " cannot be used: " + e.getMessage(), e);
             }
@@ -207,6 +249,23 @@ final class Pack {
         File npdm = npdmOf(game);
         if (npdm == null) throw new IOException(game + " has no main.npdm (base/exefs/, updates/<version>/exefs/ or exefs/).");
         return programId(npdm);
+    }
+
+    /**
+     * The title a game's card is for: the dump's own (program 0, titleIdOf) when this APK runs it, else the first program n &gt; 0 of the dump this APK runs (a
+     * Switch 2 Edition's program 1 beside a game the APK does not have: DumpLayout.programDir, its main.npdm's ID matching the profile), else the dump's own, so
+     * Profile.missing says what is wrong (a Switch 1-only dump of a game whose Edition this APK runs: the dump lacks program 1). A card of program n plays it
+     * with its own pack and the application's save (pack.tsv's application row), and has no edition switch (Edition.offered)
+     */
+    static String playableIdOf(File game) throws IOException {
+        String id = titleIdOf(game);
+        if (Profile.of(id) != null) return id;
+        for (Profile p : Profile.otherPrograms(id)) {
+            File d = DumpLayout.programDir(game, Profile.program(p.titleId));
+            File npdm = d == null ? null : new File(d, "exefs/main.npdm");
+            if (npdm != null && npdm.isFile() && programId(npdm).equals(p.titleId)) return p.titleId;
+        }
+        return id;
     }
 
     private static long le32(byte[] b, int o) {
@@ -259,24 +318,27 @@ final class Pack {
      */
     String romfsPath(File game) throws IOException {
         String gv = gameVersion(game);
-        if (!gv.equals(version)) {   // the pack's build under another version of this dump: that version's RomFS (its own, else the base's), as Prepare would pack it
+        if (program == 0 && !gv.equals(version)) {   // (a program pack's RomFS is its own program/<n> folder's, whatever program 0's versions are) the pack's build under another version of this dump: that version's RomFS (its own, else the base's), as Prepare would pack it
             long v = Long.parseLong(gv);
             if (!DumpLayout.hasRomfs(game, v)) return null;
-            return Nup.isNup(game) ? Nup.spec(game, DumpLayout.selector(game, v, true), "romfs") : DumpLayout.path(game, v, "romfs");
+            return DumpLayout.path(game, v, "romfs");
         }
         if (!Nup.isNup(game)) {
             File f = romfs(game);
             return f == null ? null : f.getPath();
         }
         String sel = romfsSelector();
-        Nup n = Nup.open(game);
+        File holder = Nup.holder(game, sel);   // the version may be an NSP of its own beside the game's
+        Nup n = Nup.open(holder);
         Nup.Pkg p = n.find(sel);
         if (p != null && p.romfsDir == Nup.NONE && sel.startsWith("update/")) {   // an update without a RomFS of its own: the base's (DumpLayout)
             sel = DumpLayout.selector(game, p.version, true);
+            holder = Nup.holder(game, sel);
+            n = Nup.open(holder);
             p = n.find(sel);
         }
         if (p == null || p.romfsDir == Nup.NONE) return null;
-        return Nup.spec(game, sel, "romfs");
+        return Nup.spec(holder, sel, "romfs");
     }
 
     /**
@@ -285,6 +347,7 @@ final class Pack {
      * identical code, so the pack plays it as it is; another build is not found here, and BuildCheck refuses it
      */
     String gameVersion(File game) {
+        if (program > 0) return programSelector();   // a program pack: its program/<n> folder (BuildCheck.module reads it), not one of program 0's versions
         long v = DumpLayout.versionWith(game, BuildCheck.builds(this));
         return v >= 0 ? String.valueOf(v) : version;
     }
@@ -359,6 +422,9 @@ final class Pack {
                 continue;
             }
             File target = hasAddon(game, e.getKey()) ? game.getAbsoluteFile() : null;
+            if (target == null) {   // an NSP game's DLC are NSPs beside it: any of them that holds the add-on
+                for (Nup c : Nup.companions(game)) if (hasAddon(c.file, e.getKey())) { target = c.file.getAbsoluteFile(); break; }
+            }
             if (target == null) {
                 try {
                     Nup.Ref r = Nup.parse(e.getValue());
@@ -368,7 +434,7 @@ final class Pack {
                     // not a .nup name: only the game's own, which has not got it
                 }
             }
-            if (target != null) out.put(e.getKey() + ".nup", target.getPath());
+            if (target != null) out.put(e.getKey() + (target.getName().endsWith(Nup.EXT_NSP) ? Nup.EXT_NSP : Nup.EXT), target.getPath());
             else if (skipped != null) skipped.add("add-on " + e.getKey() + " (pack.tsv aoc row " + e.getValue() + ") is in neither " + game.getName() + " nor the .nup the row names: the game runs without it");
         }
         return out;

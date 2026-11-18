@@ -10,6 +10,7 @@
 #ifndef VKA_MEMU_ORDER_H
 #define VKA_MEMU_ORDER_H
 #include <stddef.h>
+#include <stdint.h>
 
 enum { VKA_MEMU_ORDER_MAX = 128 };
 typedef struct { const void *p[VKA_MEMU_ORDER_MAX]; int n, next; } vka_memu_order;   // the records in walk order; next: the replay's cursor
@@ -21,4 +22,11 @@ static inline int vka_memu_order_add(vka_memu_order *o, const void *p) { if (o->
 static inline int vka_memu_order_find(const vka_memu_order *o, const void *p) { for (int i = o->next; i < o->n; i++) if (o->p[i] == p) return i; return -1; }
 // The same, taken: the cursor moves past it (entries before it that the replay did not meet are passed over). -1 none, the cursor unchanged
 static inline int vka_memu_order_take(vka_memu_order *o, const void *p) { int i = vka_memu_order_find(o, p); if (i >= 0) o->next = i + 1; return i; }
+// The look-ahead crosses game barriers: bar[i], the barriers entry i's draw came after (not decreasing in walk order). At a barrier the replay did not take inside the
+// pass, having taken bars before it, the entries past it go (their draws look ahead again). The entries dropped
+static inline int vka_memu_order_cut(vka_memu_order *o, const uint16_t *bar, int bars) {
+    int n = o->n; while (n > 0 && bar[n - 1] > bars) n--;
+    int d = o->n - n; o->n = n; if (o->next > n) o->next = n;
+    return d;
+}
 #endif

@@ -105,6 +105,22 @@ final class Outputs {
     }
 
     /** Deletes a folder and what is in it (a link goes, never what it points to); a marker of these outputs in a folder goes before the rest of it */
+    /**
+     * The shaders step's results (vk_android_build.py DMSH_VK_RESULTS: a file a shader, kept across pauses, kills and reboots until the job is done) of the job in
+     * jobDir: own/xlate/&lt;title ID&gt;, own the app's own storage (getNoBackupFilesDir), as the split's kept scan results. Beside the job on shared storage each file
+     * was written, synced and renamed through FUSE, and MediaProvider took each new name, in one folder that grew to the profile's whole count: Mario Tennis
+     * Fever's 35,045 took over two hours on an Odin 3, its cores mostly idle. A job an earlier app began with its results beside it (jobDir/xlate) finishes there
+     */
+    static File results(File jobDir, File own, String titleId) {
+        File old = new File(jobDir, "xlate");
+        return old.isDirectory() ? old : new File(own, "xlate/" + titleId);
+    }
+
+    /** Every folder results() may have used for the job: what goes when the results are no longer needed or are made again */
+    static java.util.List<File> resultFolders(File jobDir, File own, String titleId) {
+        return java.util.Arrays.asList(new File(jobDir, "xlate"), new File(own, "xlate/" + titleId));
+    }
+
     static void deleteTree(File f) {
         if (!Files.isSymbolicLink(f.toPath())) new File(f, MARKER).delete();
         File[] kids = Files.isSymbolicLink(f.toPath()) ? null : f.listFiles();

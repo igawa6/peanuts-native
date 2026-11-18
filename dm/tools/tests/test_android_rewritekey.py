@@ -170,7 +170,7 @@ class Folder(unittest.TestCase):
         d = REPO / 'dm/tools/rewriter_equiv'
         for p in d.iterdir():
             m = re.fullmatch(r'(.+)\.([0-9a-f]{7,40})', p.name)
-            self.assertIsNotNone(m, f'{p.name}: not <REWRITER file>.<commit>')
+            assert m is not None, f'{p.name}: not <REWRITER file>.<commit>'   # PEANUTS(upstream-candidate): require filename parts.
             self.assertIn(m.group(1), pack_android.REWRITER, p.name)
             self.assertNotEqual(p.read_bytes(), (REPO / 'dm/tools' / m.group(1)).read_bytes(), f'{p.name} is the current file')
             r = subprocess.run(['git', '-C', str(REPO), 'show', f'{m.group(2)}:dm/tools/{m.group(1)}'], capture_output=True)

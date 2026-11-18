@@ -36,6 +36,15 @@ final class Nup {
     static final int BASE = 0, UPDATE = 1, ADDON = 2;
     static final long NONE = 0xFFFFFFFFL;
     static final String EXT = ".nup";
+    /** A plaintext NSP (NSP Box) is read as a NUP file too: {@link Nsp} makes its TOC, its files are extents of it */
+    static final String EXT_NSP = ".nsp";
+
+    /** The container extension a file name ends with (".nup" or ".nsp", lower case, with something before it), else null */
+    static String extOf(String name) {
+        if (name == null) return null;
+        for (String e : new String[] {EXT, EXT_NSP}) if (name.endsWith(e) && name.length() > e.length()) return e;
+        return null;
+    }
 
     /** One package record */
     static final class Pkg {
@@ -152,6 +161,7 @@ final class Nup {
     final long fileSize, tocOffset, tocSize, blobOffset, dirCount, fileCount, poolOff, poolSize;
     final List<Pkg> packages;
     private final long offDir, offFile, offKids;
+    private byte[] synth;   // an NSP's TOC (Nsp.build); null for a .nup, whose TOC is read from the file
 
     private Nup(File file, String identity, long fileSize, long tocOffset, long tocSize, long blobOffset, long dirCount, long fileCount, long poolOff, long poolSize,
                 List<Pkg> packages) {
@@ -172,10 +182,10 @@ final class Nup {
     }
 
     /** Whether a path is a .nup file by its name (ends with ".nup", lower case, as the host's and the tools' split at ".nup:" needs) */
-    static boolean isNup(File f) { return f != null && f.getName().endsWith(EXT) && f.getName().length() > EXT.length() && !f.isDirectory(); }
+    static boolean isNup(File f) { return f != null && extOf(f.getName()) != null && !f.isDirectory(); }
 
     /** A .nup named with another case of the extension: the tools and the host would not take it */
-    static boolean wrongCase(File f) { return f != null && !f.getName().endsWith(EXT) && f.getName().toLowerCase(Locale.ROOT).endsWith(EXT) && f.isFile(); }
+    static boolean wrongCase(File f) { return f != null && extOf(f.getName()) == null && extOf(f.getName().toLowerCase(Locale.ROOT)) != null && f.isFile(); }
 
     // ---- Naming ----
 
@@ -193,8 +203,8 @@ final class Nup {
     /** null when the name has no ".nup:" and does not end with ".nup"; IllegalArgumentException for a bad selector */
     static Ref parse(String spec) {
         if (spec == null) return null;
-        int k = spec.lastIndexOf(EXT + ":");
-        if (k < 0) return spec.endsWith(EXT) && spec.length() > EXT.length() ? new Ref(spec, null, "") : null;
+        int k = Math.max(spec.lastIndexOf(EXT + ":"), spec.lastIndexOf(EXT_NSP + ":"));   // both are 4 characters
+        if (k < 0) return extOf(spec) != null ? new Ref(spec, null, "") : null;
         String path = spec.substring(0, k + EXT.length()), rest = spec.substring(k + EXT.length() + 1);
         if (rest.isEmpty()) return new Ref(path, null, "");
         Matcher m = SEL.matcher(rest);
@@ -217,7 +227,7 @@ final class Nup {
 
     // ---- Opening ----
 
-    private static final Map<String, Nup> cache = new LinkedHashMap<>();
+    private static final Map<String, Nup> cache = new LinkedHashMap<>(16, 0.75f, true);   // least recently used first: an NSP's companions are opened beside it
 
     /** The .nup checked (superblock, TOC SHA-256); cached by path (or picked document), size and time, so a card's checks do not hash the TOC again */
     static Nup open(File f) throws IOException {
@@ -233,13 +243,14 @@ final class Nup {
         }
         synchronized (cache) {
             cache.put(key, n);
-            while (cache.size() > 4) cache.remove(cache.keySet().iterator().next());
+            while (cache.size() > 8) cache.remove(cache.keySet().iterator().next());
         }
         return n;
     }
 
     /** Only the superblock and the package records, TOC not hashed: quick, for the UI's "is it a dump" (never for what is read from it) */
     static Nup peek(File f) throws IOException {
+        if (f.getName().endsWith(EXT_NSP)) return open(f);   // an NSP's TOC is made from it: kept, as open keeps it
         try (Source src = source(f)) {
             return read(f, src, false);
         }
@@ -248,10 +259,18 @@ final class Nup {
     private static Nup read(File f, Source r, boolean verify) throws IOException {
         {
             long len = r.size;
-            if (len < 0x80) throw new IOException(f.getName() + " is too short for a .nup");
+            boolean nsp = f.getName().endsWith(EXT_NSP);
+            if (len < 0x80) throw nsp ? new Nsp.Refused(Nsp.NOT_NSP, f.getName() + " is too short for an NSP") : new IOException(f.getName() + " is too short for a .nup");
             byte[] sb = new byte[0x80];
             r.read(0, sb, 0, sb.length);
-            if (sb[0] != 'N' || sb[1] != 'U' || sb[2] != 'P') throw new IOException(f.getName() + " is not a .nup (no NUP magic)");
+            if (sb[0] == 'P' && sb[1] == 'F' && sb[2] == 'S' && sb[3] == '0') {   // a plaintext NSP (Nsp): its TOC is made from it and kept in memory
+                Nsp.Built bt = Nsp.build(r, f.getName());
+                Nup n = new Nup(f, r.key, len, 0, bt.toc.length, 0, bt.dirs, bt.files, bt.poolOff, bt.poolSize, bt.packages);
+                n.synth = bt.toc;
+                return n;
+            }
+            if (sb[0] != 'N' || sb[1] != 'U' || sb[2] != 'P')
+                throw nsp ? new Nsp.Refused(Nsp.NOT_NSP, f.getName() + " is not an NSP (no PFS0 header)") : new IOException(f.getName() + " is not a .nup (no NUP magic)");
             if (sb[3] != 1) throw new IOException(f.getName() + " is .nup format " + (sb[3] & 0xff) + "; this app reads format 1");
             int headerSize = u16(sb, 4);
             long tocOff = u64(sb, 8), tocSize = u64(sb, 0x10), blob = u64(sb, 0x38), size = u64(sb, 0x40);
@@ -304,6 +323,59 @@ final class Nup {
             if (bases > 1) throw new IOException(f.getName() + " has " + bases + " base packages");
             return new Nup(f, r.key, len, tocOff, tocSize, blob, dirs, files, poolOff, poolSize, pk);
         }
+    }
+
+    // ---- NSPs beside an NSP ----
+
+    /**
+     * The other NSPs in an NSP game's folder that are of the same game (NSP Box writes each version of a game and each DLC as an NSP of its own), found by what they
+     * hold, whatever they are called: a game snapshot with the same program ID, a DLC whose title ID is the game's plus 0x1000 plus an index of 1 to 2000. Sorted by
+     * path. Empty for a .nup (it holds its own updates and add-ons), for an NSP that is a DLC itself, and for one that cannot be read; a sibling that cannot be read is
+     * left out
+     */
+    static List<Nup> companions(File game) {
+        List<Nup> out = new ArrayList<>();
+        if (game == null || !game.getName().endsWith(EXT_NSP)) return out;
+        File parent = game.getAbsoluteFile().getParentFile();
+        File[] l = parent == null ? null : parent.listFiles(f -> f.isFile() && f.getName().endsWith(EXT_NSP) && !f.getName().startsWith("."));
+        if (l == null) return out;
+        long app;
+        try {
+            Nup me = open(game);
+            if (me.base() == null && me.newest() == null) return out;
+            app = Long.parseUnsignedLong(me.programId(), 16);
+        } catch (IOException | RuntimeException e) {
+            return out;
+        }
+        Arrays.sort(l);
+        for (File f : l) {
+            if (f.getAbsoluteFile().equals(game.getAbsoluteFile())) continue;
+            try {
+                Nup n = open(f);
+                boolean mine = false;
+                for (Pkg p : n.packages) {
+                    long idx = p.titleId - app - 0x1000;
+                    if (p.kind == ADDON && idx > 0 && idx <= 2000) mine = true;
+                    else if ((p.kind == BASE || p.kind == UPDATE) && p.titleId == app) mine = true;
+                }
+                if (mine) out.add(n);
+            } catch (IOException | RuntimeException e) {
+                // not a plaintext NSP of this game
+            }
+        }
+        return out;
+    }
+
+    /** The file that holds a package of a game: the game's own, else the companion NSP that has it (null selector: the game's own) */
+    static File holder(File game, String selector) {
+        if (selector == null || !game.getName().endsWith(EXT_NSP)) return game;
+        try {
+            if (open(game).find(selector) != null) return game;
+        } catch (IOException e) {
+            return game;
+        }
+        for (Nup n : companions(game)) if (n.find(selector) != null) return n.file;
+        return game;
     }
 
     // ---- Packages ----
@@ -372,6 +444,7 @@ final class Nup {
 
     private byte[] toc(Source r, long off, int n) throws IOException {
         if (off + n > tocSize) throw new IOException(file.getName() + ": a TOC read past its end");
+        if (synth != null) return Arrays.copyOfRange(synth, (int) off, (int) off + n);
         byte[] b = new byte[n];
         r.read(tocOffset + off, b, 0, n);
         return b;
@@ -448,7 +521,7 @@ final class Nup {
         } catch (IOException e) {
             throw new IOException(file.getName() + ": " + f.name + ": " + e.getMessage(), e);
         }
-        if (!Arrays.equals(sha256().digest(out), f.sha256)) throw new IOException(file.getName() + ": " + f.name + " does not match its SHA-256: the file is damaged");
+        if (synth == null && !Arrays.equals(sha256().digest(out), f.sha256)) throw new IOException(file.getName() + ": " + f.name + " does not match its SHA-256: the file is damaged");
         return out;
     }
 
@@ -494,7 +567,7 @@ final class Nup {
         } catch (IOException e) {
             throw new IOException(file.getName() + ": " + f.name + ": " + e.getMessage(), e);
         }
-        if (!Arrays.equals(own.digest(), f.sha256)) throw new IOException(file.getName() + ": " + f.name + " does not match its SHA-256: the file is damaged");
+        if (synth == null && !Arrays.equals(own.digest(), f.sha256)) throw new IOException(file.getName() + ": " + f.name + " does not match its SHA-256: the file is damaged");
     }
 
     // ---- Little-endian fields ----

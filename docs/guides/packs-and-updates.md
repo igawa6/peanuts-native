@@ -32,8 +32,8 @@ A new version of the app may come with new shaders. What happens depends on what
 - **Some shaders changed:** the game's card says **Ready · updating shaders …** with the count and the time left. Only
   the changed shaders are translated, in the background, from your dump on the phone, and you can keep playing with the
   old shaders meanwhile. When the update is done, the game uses the new ones.
-- **The app cannot update them by itself:** the card says so (for example **Ready · new shaders: ⋯ › Prepare to update
-  them**) or its button reads **Prepare shaders**. Tap it, or the game's ⋯ button › **Prepare again**. A pack made on a
+- **The app cannot update them by itself:** the card says **Ready · update** and the game plays as before. Open the game's page: a **Shader update available**
+  card at the top has an **Update shaders** button (or its button reads **Prepare shaders**, or **Storage › Prepare again**). The update is optional. A pack made on a
   computer can be made again there and imported instead.
 
 The app's in-app updates (Settings › **Check for updates**) download new versions from the project's

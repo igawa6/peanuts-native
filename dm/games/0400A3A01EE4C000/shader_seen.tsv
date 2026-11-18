@@ -1,6 +1,7 @@
 # The shader keys (column 4 of shader_map.tsv) in the library of the Mac playtest (chain 38df94307792, 2026-11-03): the shaders its runs from the language screen to walking asked for, with their pixel shaders.
 # A partial build of these alone: docs/development.md, Building selected Mac shaders. Rows: key<TAB>stage.
 # Added later: four Pokédex avatar shaders (vertex 36b7f49db42c771b, b639e7c91c3eacfe; pixel a09599043ae63349, a3305c931b85d38a) that play reaches after the playtest's runs; a player's phone logged them as not in the library (GitHub issue #35).
+# Added later: 13 shaders (vertex 948ec7720ee97a68, 40077aca1c28938e, 62c1df0a19987dd8, 83316f31c59d9c6b, 9b4ee2ee97e5de3c, f8bd2f25afeef8e2; pixel 3c4a765e80566895, 53ef58cdd54ec9b7, 70e7593e763cd881, 882b0002876c7f6d, 983880428d478e0c, 9f017de907009627, dbb018b85fd4b6b1) that play reaches and the playtest did not: Carkol drew invisible and a player's phone logged them as not in the library (issue 313).
 key	stage
 000274aec30d28fb	pixel
 000443f25501673e	pixel
@@ -8163,3 +8164,16 @@ ffe7b7bbefa6047b	vertex
 ffed5f0b2bd0a54d	pixel
 fff6928f38e1d35a	vertex
 fff86c33487ede97	pixel
+948ec7720ee97a68	vertex
+40077aca1c28938e	vertex
+62c1df0a19987dd8	vertex
+83316f31c59d9c6b	vertex
+9b4ee2ee97e5de3c	vertex
+f8bd2f25afeef8e2	vertex
+3c4a765e80566895	pixel
+53ef58cdd54ec9b7	pixel
+70e7593e763cd881	pixel
+882b0002876c7f6d	pixel
+983880428d478e0c	pixel
+9f017de907009627	pixel
+dbb018b85fd4b6b1	pixel

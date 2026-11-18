@@ -21,6 +21,10 @@ final class Prefs {
     static boolean overlay(Context c) { return of(c).getBoolean("overlay", true); }
     static void overlay(Context c, boolean on) { of(c).edit().putBoolean("overlay", on).commit(); }
 
+    /** The bananas popped on the launcher's background (BananaBackgroundView), all time; shown in Settings › About */
+    static long bananasPopped(Context c) { return of(c).getLong("bananas_popped", 0); }
+    static long addBananaPopped(Context c) { long n = bananasPopped(c) + 1; of(c).edit().putLong("bananas_popped", n).commit(); return n; }
+
     /** One item of the overlay (Overlay.ITEMS); all on by default, shown only while the overlay is on */
     static boolean overlayItem(Context c, String key) { return of(c).getBoolean("overlay_" + key, true); }
     static void overlayItem(Context c, String key, boolean on) { of(c).edit().putBoolean("overlay_" + key, on).commit(); }
@@ -107,6 +111,12 @@ final class Prefs {
     /** Games whose speed follows the measured frame rate (their profile has fps_decouple sead: the host's sead_rate) get a frame limit instead of 60 / 30 / 20 locking.
      *  The limit is one of PACE_CAPS: 0 = 60 fps (the game's fastest rate, where the measured rate is clamped), or at most that many frames a second (paceOf) */
     static final int[] PACE_CAPS = {0, 45, 40, 30, 20};   // saved as the rate itself (fps_cap), not an index: 20 was added last, the others keep their meaning
+    static int paceMax(String titleId) { Profile p = Profile.of(titleId); return p == null || p.decoupled || p.fpsLimit <= 0 ? 60 : p.fpsLimitMax; }
+    static int[] paceCaps(String titleId) {
+        Profile p = Profile.of(titleId);
+        if (p != null && !p.fpsModes.isEmpty()) return p.fpsModeCaps();
+        return p != null && (p.steps && !p.fpsLocker.contains(",time_ratio_f32,") && !p.fpsLockerPlan.contains(",clock,-,1") || p.fpsLocker.contains(",vsync_u32,")) ? new int[] {FrameRateCaps.GAME_OWNED, 0, 30, 20} : FrameRateCaps.rates(paceMax(titleId), p == null ? 20 : p.fpsLimitMin);
+    }
     static boolean paced(String titleId) { Profile p = Profile.of(titleId); return p != null && p.decoupled; }
     /** Games the host's frame limiter caps (hle_fpslock.c fps_limit_wait, DM_FPS_LIMIT): the paced ones, and those whose profile sets a default limit (game.tsv fps_limit, a game
      *  with no limiter of its own the host can write). Both get a frame limit (PACE_CAPS) in place of 60 / 30 / 20 locking */
@@ -115,7 +125,7 @@ final class Prefs {
     static boolean decouple(Context c, String titleId) { return of(c).getBoolean(gameKey("decouple", titleId), true); }
     static void decouple(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("decouple", titleId), on).commit(); }
     /** Games whose framework runs whole fixed steps a frame that the host holds (game.tsv fps_steps: hle_fpslock.c steps_tick), as Mario Kart World's */
-    static boolean steps(String titleId) { Profile p = Profile.of(titleId); return p != null && p.steps; }
+    static boolean steps(String titleId) { Profile p = Profile.of(titleId); return p != null && p.steps && !p.fpsLocker.contains(",time_ratio_f32,") && !p.fpsLockerPlan.contains(",clock,-,1"); }
     /** Hold 60 fps (per game, default off), for steps games at the cap of 60: one step a frame always, where the game's own mode runs two (30 fps) after a frame its work
      *  overran. A frame that runs long then plays a little slower instead of dropping to 30 (DM_FPS_HOLD60=1 at start, Native.hold60Set while it runs) */
     static boolean fullVegetation(Context c, String titleId) { return of(c).getBoolean(gameKey("full_vegetation", titleId), Recommend.bool(rec(c, titleId, Recommend.VEGETATION), true)); }
@@ -137,17 +147,20 @@ final class Prefs {
     /** A saved cap as one of PACE_CAPS: the highest at or below it, 20 below that (the main screen's 15 for the other games). Since 20 was added a saved 20 or 15 (only the main
      *  screen's default can be one) is 20 fps here, where it was 30 */
     static int paceOf(int v) { return v <= 0 || v >= 60 ? 0 : v >= 45 ? 45 : v >= 40 ? 40 : v >= 30 ? 30 : 20; }
-    static String paceLabel(int v) { return (v <= 0 ? 60 : v) + " fps"; }   // 0 is 60: the game's own fastest rate, where the decoupling's rate is clamped
+    static String paceLabel(int v) { return v == FrameRateCaps.GAME_OWNED ? "Game owned" : (v <= 0 ? 60 : v) + " fps" + (v > 60 ? " (experimental)" : ""); }   // saved 0 remains 60
     /** A limited game's cap as saved, without capOf (which turns 45 and 40 into 30 for the other games): its own, else its profile's fps_limit, else the main screen's default, as one of PACE_CAPS */
     static int paceCap(Context c, String titleId) {
         int pl = profileLimit(titleId);
         Integer r = recCap(c, titleId);   // the recommended limit comes before the profile's and the main screen's (Recommend.effective)
-        return paceOf(of(c).getInt(gameKey("fps_cap", titleId), r != null ? r : pl > 0 ? pl : of(c).getInt("fps_cap", -1)));
+        int v = FrameRateCaps.normalize(of(c).getInt(gameKey("fps_cap", titleId), r != null ? r : pl > 0 ? pl : of(c).getInt("fps_cap", -1)), paceMax(titleId));
+        Profile p = Profile.of(titleId);
+        if (p != null && !p.fpsModes.isEmpty()) return p.fpsMode(v);
+        return v > 0 && p != null && v < p.fpsLimitMin ? p.fpsLimitMin : v;
     }
     /** The recommended frame rate cap as the launcher stores it (Recommend.cap), null for none */
     static Integer recCap(Context c, String titleId) { return Recommend.cap(rec(c, titleId, Recommend.FPS_CAP), limited(titleId)); }
     /** Game settings › Reset to defaults: every choice of the game's own back to the main screen's default (Extra environment's lines stay) */
-    static final String[] GAME_SETTINGS = {"window", "render_pct", "gfx_quality", "fps_cap", "gpu_driver", "gpu_ts", "pause_return", "ndsr_choice2", "ndsr_sharp", "drs2", "ram_saver", "decouple", "hold60", "full_vegetation", "gsr2_clarity", "dlss_sharp", "dlss_mode", "scene_res", "res_preset", "aspect", "console_mode", "res_scale"};   // PEANUTS: console_mode (ScreenMode), res_scale (ResScale)
+    static final String[] GAME_SETTINGS = {"window", "render_pct", "gfx_quality", "fps_cap", "gpu_driver", "gpu_ts", "pause_return", "ndsr_choice2", "ndsr_sharp", "drs2", "ram_saver", "decouple", "hold60", "full_vegetation", "gsr2_clarity", "dlss_sharp", "dlss_mode", "scene_res", "res_preset", "aspect", "cheats", "console_mode", "res_scale"};   // PEANUTS: console_mode (ScreenMode), res_scale (ResScale)
     static void resetGame(Context c, String titleId) {
         SharedPreferences.Editor e = of(c).edit();
         for (String k : GAME_SETTINGS) e.remove(gameKey(k, titleId));
@@ -395,7 +408,7 @@ final class Prefs {
         for (int k : FPS_CAPS) if (k > 0 && k <= v && k > best) best = k;
         return best;
     }
-    static int fpsCap(Context c) { return capOf(of(c).getInt("fps_cap", -1)); }
+    static int fpsCap(Context c) { return capOf(of(c).getInt("fps_cap", 60)); }
     static void fpsCap(Context c, int v) { of(c).edit().putInt("fps_cap", v).commit(); }
     /** The game's cap: its own (set in its Game settings or its in-game panel), else the recommended one, else the default */
     static int fpsCap(Context c, String titleId) { Integer r = limited(titleId) ? null : recCap(c, titleId); return capOf(of(c).getInt(gameKey("fps_cap", titleId), r != null ? r : fpsCap(c))); }
@@ -406,7 +419,7 @@ final class Prefs {
      * Whether the host found that this game picks its own frame rate (its cap status reports no rate it can hold: Native.fpsCapStatus rates 0), as the last run
      * saw it: its Game settings and its in-game panel then show no cap choices, which would do nothing. Written by GameActivity and the panel while the game runs.
      */
-    static boolean ownRate(Context c, String titleId) { return of(c).getBoolean(gameKey("own_rate", titleId), false); }
+    static boolean ownRate(Context c, String titleId) { return !limited(titleId) && !steps(titleId) && of(c).getBoolean(gameKey("own_rate", titleId), false); }
     static void ownRate(Context c, String titleId, boolean v) { if (ownRate(c, titleId) != v) of(c).edit().putBoolean(gameKey("own_rate", titleId), v).commit(); }
     /** null: back to the default */
     static void fpsCap(Context c, String titleId, Integer v) {
@@ -416,6 +429,23 @@ final class Prefs {
     static boolean ownFpsCap(Context c, String titleId) { return of(c).contains(gameKey("fps_cap", titleId)); }
 
     /** Pause on return (per game, on by default): the game's screen coming back from the background shows it paused, suspended until a tap (GameActivity.onStart) */
+    /** Game settings › Controls › Motion sensitivity: how far the phone's gyro turns the game's aim, a step of MOTION_PCT (100 % = the real turn, as on a console); DM_MOTION_SENS, always
+     *  passed (default 50 %: a held phone is heavier and less steady than a Switch); stored as the percentage, so the steps can change */
+    static final int[] MOTION_PCT = {10, 20, 30, 40, 50, 60, 75, 100, 125, 150};
+    static final String[] MOTION_NAMES = {"10%", "20%", "30%", "40%", "50%", "60%", "75%", "100%", "125%", "150%"};
+    static final int MOTION_DEFAULT = 4;
+    static boolean ownMotionSens(Context c, String titleId) { return of(c).contains(gameKey("motion_pct", titleId)); }
+    static int motionSens(Context c, String titleId) {
+        int pct = of(c).getInt(gameKey("motion_pct", titleId), MOTION_PCT[MOTION_DEFAULT]);
+        int best = MOTION_DEFAULT;
+        for (int i = 0; i < MOTION_PCT.length; i++) if (Math.abs(MOTION_PCT[i] - pct) < Math.abs(MOTION_PCT[best] - pct)) best = i;
+        return best;
+    }
+    static float motionFactor(Context c, String titleId) { return MOTION_PCT[motionSens(c, titleId)] / 100f; }
+    /** null removes the game's own choice */
+    static void motionSens(Context c, String titleId, Integer v) {
+        if (v == null) of(c).edit().remove(gameKey("motion_pct", titleId)).commit(); else of(c).edit().putInt(gameKey("motion_pct", titleId), MOTION_PCT[v]).commit();
+    }
     static boolean pauseOnReturn(Context c, String titleId) { return of(c).getBoolean(gameKey("pause_return", titleId), true); }
     static void pauseOnReturn(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("pause_return", titleId), on).commit(); }
     /** Game settings › Speedhack: Turn off hidden layers (experimental), for a game whose profile names such layers (game.tsv skip_layers): draws of those pixel shaders are
@@ -424,6 +454,19 @@ final class Prefs {
     static String skipLayersKeys(String titleId) { Profile p = Profile.of(titleId); return p == null ? "" : p.skipLayers; }
     static boolean skipLayers(Context c, String titleId) { return of(c).getBoolean(gameKey("vk_skip_layers", titleId), Recommend.bool(rec(c, titleId, Recommend.SKIP_LAYERS), false)); }
     static void skipLayers(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vk_skip_layers", titleId), on).commit(); }
+    /** Game settings › Cheats (Experimental), for a game whose profile has cheat files (Profile.cheats): off by default; while off the launcher passes no DM_CHEATS and the
+     *  in-game panel has no Cheats section (Cheats.env, Cheats.panel). Reset to defaults turns it off; the toggles below stay */
+    static boolean cheatsGame(String titleId) { Profile p = Profile.of(titleId); return p != null && p.cheats; }
+    static boolean cheats(Context c, String titleId) { return cheatsGame(titleId) && of(c).getBoolean(gameKey("cheats", titleId), false); }
+    static void cheats(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("cheats", titleId), on).commit(); }
+    /** The cheats turned on in the in-game panel, by key (Cheats.Entry.key), kept per game and written into &lt;build&gt;.enabled before each start (Cheats.install) */
+    static java.util.Set<String> cheatsOn(Context c, String titleId) { return Cheats.decodeOn(of(c).getString(gameKey("cheats_on", titleId), "")); }
+    static void cheatsOn(Context c, String titleId, java.util.Set<String> on) { of(c).edit().putString(gameKey("cheats_on", titleId), Cheats.encodeOn(on)).commit(); }
+    static void cheatOn(Context c, String titleId, String key, boolean on) {
+        java.util.Set<String> s = cheatsOn(c, titleId);
+        if (on) s.add(key); else s.remove(key);
+        cheatsOn(c, titleId, s);
+    }
     /** Game settings › Instanced draws (DM_VK_INSTANCE): runs of draws that repeat one mesh drawn as one instanced draw. Off by default (a GPU loss on Adreno 830 with Turnip, open) */
     static boolean instancedDraws(Context c, String titleId) { return of(c).getBoolean(gameKey("vk_instance", titleId), false); }
     static void instancedDraws(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vk_instance", titleId), on).commit(); }
@@ -472,6 +515,13 @@ final class Prefs {
         if (v == null) of(c).edit().remove(key).commit();
         else of(c).edit().putString(key, v).commit();
     }
+
+    /**
+     * The user clock the next game start gets: "YYYY-MM-DDTHH:MM[:SS]" (the host's DM_TIME), "" = the phone's clock. A DM_TIME or
+     * DM_TIME_OFFSET line in env.txt still wins for a run; DM_FIXED_TIME= overrides both (deterministic replays).
+     */
+    static String timeOverride(Context c) { return of(c).getString("time_override", ""); }
+    static void timeOverride(Context c, String v) { put(c, "time_override", v == null || v.isEmpty() ? null : v); }
 
     /**
      * Folders the user picked (main screen, Folders…), as /storage paths; null = the default. Kept in the app's preferences, so an APK update keeps them (an

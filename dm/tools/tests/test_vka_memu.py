@@ -1,7 +1,7 @@
 """Mesh draws through compute (dm/gfx/vk_android/vka_memu*.c; docs/reference/rendering.md "Mesh draws through compute"): the generated headers are what their sources give
 (the helper passes' SPIR-V from memu/*.comp, the test fixtures from dm/host/tests/memu/*.spvasm; skipped without glslangValidator / spirv-as), the record words the C header and
 the GLSL passes share are one set, and the switches are documented. The SPIR-V conversion itself is checked by dm/host/tests t_android_memu."""
-import os
+# PEANUTS(upstream-candidate): omit the unused os import.
 import re
 import shutil
 import subprocess

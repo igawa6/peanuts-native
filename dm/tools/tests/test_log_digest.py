@@ -177,6 +177,19 @@ class Verdicts(Base):
         self.assertEqual(h['switches'], ['DM_VK_DRIVER=Mainline_Turnip_v32', 'DM_WATCH_STALL=25'])
         self.assertEqual(d['errors']['groups'], []); self.assertEqual(d['errors']['expected_stubs'], {'lines': 1, 'groups': 1})
 
+    def test_settings_changed_block(self):
+        adv = ['[nxlaunch] [adv] DM_VK_PIPELINE_CACHE=0 (Advanced, game)', '[nxlaunch] [adv] DM_FOO=<path> (env.txt)']
+        d = self.digest(start()[:3] + adv + start()[3:] + frames(1))
+        self.assertEqual(d['adv'], ['DM_VK_PIPELINE_CACHE=0 (Advanced, game)', 'DM_FOO=<path> (env.txt)'])
+        t = L.render(d)
+        self.assertIn('-- Settings changed from the defaults (2)\n  DM_VK_PIPELINE_CACHE=0 (Advanced, game)\n  DM_FOO=<path> (env.txt)\n', t)
+        self.assertLess(t.index('Settings changed'), t.index('-- verdict'))
+        d = self.digest(start() + ['[nxlaunch] [adv] none: no Advanced row is set'])
+        self.assertEqual(d['adv'], [])
+        self.assertEqual(L.render(d).count('Settings changed from the defaults: none'), 1)
+        d = self.digest(start())   # an older log has no [adv] lines: no block
+        self.assertIsNone(d['adv']); self.assertNotIn('Settings changed', L.render(d))
+
     def test_graphics_section(self):
         g = ['[dm] [vk] mesh draws through compute: 10 draws in 5 batches (2.0 a batch), 3 render passes split for one, 0 not prepared',
              '[dm] [vk] lower vegetation detail: 1 mesh draws omitted',
@@ -269,8 +282,9 @@ class Inputs(Base):
 
 class Redaction(Base):
     def test_paths_and_keys(self):
+        # PEANUTS(upstream-candidate): keep the split redaction fixture explicit.
         lines = start() + [f'title_key = {KEY}', f'master_key_00 : {KEY}{KEY}', f'[dm] [RED] something odd with {KEY}{KEY} in it',
-                           '[dm] [RED] cannot read /Us' 'ers/somebody/Games/x and /home/other/y']
+                           '[dm] [RED] cannot read /Us' + 'ers/somebody/Games/x and /home/other/y']
         d = self.digest(lines, tail=40)
         text = L.render(d) + json.dumps(d)
         self.assertNotIn(KEY, text)

@@ -40,6 +40,7 @@
 #include "vka_fd_alias.h"
 #include "vka_fileback.h"
 #include "vka_holes.h"   // PEANUTS: ranges given back inside a placed segment
+#include "../../host/plat/plat_guestmap.h"
 
 static void fb_placed(uintptr_t lo, uintptr_t hi);           // File-backed pools (below): a placement took [lo, hi) from the file
 static void fb_gone(uintptr_t lo, uintptr_t hi, int back);   // a pool's range finalized (back 1: its pieces go back to anonymous memory) or released (0: dropped)
@@ -102,11 +103,16 @@ static uint64_t g_sw_reads;   // g_snap_reads at the swap's start (under g_swmu)
 static void swap_nomark_begin(void);
 // The swap's hooks go in before nvn_dirty's (hooks run in the order they were registered): mtl_pool_add registers them, and hle_nvn.c tracks a pool only after mtl_pool_add.
 // A pool is no longer placed at mtl_pool_add (DM_VK_PLACE_LAZY), so the first swap can come long after the tracker's hooks
-static void swap_hooks_once(void) { dm_fault_hook_register(swap_fault); dm_guest_write_prep_register(swap_prep); }
+// The last swaps for the crash report (fault_explain): range, end time and the function that ran it (under g_swmu; read without a lock by the crash report only)
+enum { NHIST = 64 };
+static struct { uintptr_t lo, hi; uint64_t end; void *by; } g_swhist[NHIST]; static unsigned g_nswhist; static void *g_sw_by;
+static void fault_explain(void *addr);
+static void swap_hooks_once(void) { dm_fault_hook_register(swap_fault); dm_guest_write_prep_register(swap_prep); dm_fault_explain_register(fault_explain); }
 static void swap_hooks(void) { static pthread_once_t o = PTHREAD_ONCE_INIT; pthread_once(&o, swap_hooks_once); }   // (every caller returns after they are in)
-static void swap_begin(uintptr_t lo, uintptr_t hi) {
+static __attribute__((noinline)) void swap_begin(uintptr_t lo, uintptr_t hi) {
     swap_hooks();
     pthread_mutex_lock(&g_swmu); atomic_store(&g_sw_hi, 0); atomic_store(&g_sw_lo, lo); atomic_store(&g_sw_owner, (long)gettid()); atomic_store(&g_sw_hi, hi);
+    g_sw_by = __builtin_return_address(0);
     swap_nomark_begin();
 }
 static void swap_nomark_end(uintptr_t lo, uintptr_t hi, int exact);
@@ -114,8 +120,28 @@ static void swap_end_ok(int exact) { swap_nomark_end(atomic_load(&g_sw_lo), atom
 static void swap_end(void) {
     unsigned k = atomic_fetch_add(&g_nrecent, 1) % NRECENT;
     atomic_store(&g_recent[k].end, 0); atomic_store(&g_recent[k].lo, atomic_load(&g_sw_lo)); atomic_store(&g_recent[k].hi, atomic_load(&g_sw_hi)); atomic_store(&g_recent[k].end, mono_ns());
+    { unsigned h = g_nswhist++ % NHIST; g_swhist[h].lo = atomic_load(&g_sw_lo); g_swhist[h].hi = atomic_load(&g_sw_hi); g_swhist[h].end = mono_ns(); g_swhist[h].by = g_sw_by; }
     atomic_store(&g_sw_hi, 0); atomic_store(&g_sw_lo, 0); atomic_store(&g_sw_owner, 0);
     pthread_mutex_unlock(&g_swmu);
+}
+// For the crash report: the placed segment holding the address, and the recorded swaps over it (newest first), each with the function that ran it as an offset in this
+// library (llvm-addr2line on libnxhost_<title ID>.so names it). Read without locks: the process is ending
+#include <dlfcn.h>
+static void fault_explain(void *addr) {
+    uintptr_t a = (uintptr_t)addr; int k = sg_find(a);
+    if (k >= 0 && a < g_sg[k].hi) fprintf(stderr, "[dm] fault placed: segment %#lx-%#lx (%.1f MiB), %d references%s; %d segments\n", (unsigned long)g_sg[k].lo, (unsigned long)g_sg[k].hi,
+                                          (g_sg[k].hi - g_sg[k].lo) / 1048576.0, g_sg[k].refs, g_sg[k].fd_alias ? ", exported alias" : "", g_nsg);
+    else fprintf(stderr, "[dm] fault placed: in no placed segment (%d segments)\n", g_nsg);
+    uint64_t now = mono_ns(); unsigned n = g_nswhist, shown = 0;
+    for (unsigned i = 0; i < NHIST && i < n; i++) {
+        unsigned h = (n - 1 - i) % NHIST;
+        if (a < g_swhist[h].lo || a >= g_swhist[h].hi) continue;
+        Dl_info di; uintptr_t off = 0; if (g_swhist[h].by && dladdr(g_swhist[h].by, &di) && di.dli_fbase) off = (uintptr_t)g_swhist[h].by - (uintptr_t)di.dli_fbase;
+        fprintf(stderr, "[dm] fault placed: swap %u of the last %u over it: %#lx-%#lx, %.1f s ago, run from libnxhost+%#lx\n", i + 1, n < NHIST ? n : NHIST,
+                (unsigned long)g_swhist[h].lo, (unsigned long)g_swhist[h].hi, (now - g_swhist[h].end) / 1e9, (unsigned long)off);
+        if (++shown >= 6) break;
+    }
+    if (!shown) fprintf(stderr, "[dm] fault placed: none of the last %u swaps (of %u) covered it\n", n < NHIST ? n : NHIST, n);
 }
 
 // The protection of [lo, hi) page by page as /proc/self/maps has it: runs of one protection, -1 for unmapped. 0 = could not read it.
@@ -151,7 +177,9 @@ static void prot_mark(uintptr_t a, size_t n) {   // async-signal-safe (the dirty
 // marks its range at its end
 static int g_sw_fail;
 static long sw_mprotect(uintptr_t a, size_t n, int prot) { long r = syscall(__NR_mprotect, a, n, prot); if (r) g_sw_fail = 1; return r; }
-static void *sw_mmap_fixed(uintptr_t a, size_t n) { long r = syscall(__NR_mmap, a, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0); if (r == -1 || r != (long)a) { g_sw_fail = 1; return MAP_FAILED; } plat_mem_name_guest((void *)r, n); return (void *)r; }   // (named as the guest block: it merges with its neighbours)
+// Anonymous pages over [a, a + n) of the guest block with the block's flags and name (plat_guestmap.h): they merge with their neighbours. Without MAP_NORESERVE the map had
+// VM_ACCOUNT and no VM_NORESERVE, so every give-back left a mapping of its own for the process's life
+static void *sw_mmap_fixed(uintptr_t a, size_t n) { long r = syscall(__NR_mmap, a, n, PROT_READ | PROT_WRITE, PLAT_GUEST_MAP | MAP_FIXED, -1, 0); if (r == -1 || r != (long)a) { g_sw_fail = 1; return MAP_FAILED; } plat_mem_name_guest((void *)r, n); return (void *)r; }
 static int prot_runs_text(uintptr_t lo, uintptr_t hi, prun *out, int max);
 #ifndef MAP_FIXED_NOREPLACE
 #define MAP_FIXED_NOREPLACE 0x100000
@@ -376,6 +404,12 @@ static VkBuffer seg_buffer(VkDeviceSize n) {
     return r ? VK_NULL_HANDLE : b;
 }
 static void unmap_placed(VkDeviceMemory m) { VkMemoryUnmapInfoKHR ui = {VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO_KHR, .flags = V.unmap_reserve ? VK_MEMORY_UNMAP_RESERVE_BIT_EXT : 0, .memory = m}; vk.vkUnmapMemory2KHR(V.dev, &ui); }
+// Diagnostic for the maps outside the guest block (issue #265: on Qualcomm's driver its /dev/kgsl maps there grew to 16,700, about what placed memory holds in bytes,
+// several times its segments in count): whether the driver keeps the CPU map of a memory (the one a placement or a join copies through, made where the driver likes)
+// after vkUnmapMemory. Its first page still mapped (msync answers 0, ENOMEM when nothing is mapped there) counts as kept. Counted, never changed: a map the driver keeps
+// is the driver's to reuse. Reported in the maps thread's line ("CPU maps kept after vkUnmapMemory K of N")
+static _Atomic uint64_t g_um_n, g_um_kept;
+static void unmap_note(const void *p) { if (!p) return; atomic_fetch_add(&g_um_n, 1); if (!msync((void *)((uintptr_t)p & ~(uintptr_t)4095), 4096, MS_ASYNC)) atomic_fetch_add(&g_um_kept, 1); }
 static void copy_readable(uint8_t *to, uintptr_t lo, const prun *r, int n) {   // the readable runs of [lo, ...) into to; the rest zero
     for (int i = 0; i < n; i++) { uint8_t *d = to + (r[i].lo - lo); size_t k = r[i].hi - r[i].lo; if (r[i].prot >= 0 && (r[i].prot & PROT_READ)) memcpy(d, (const void *)r[i].lo, k); else memset(d, 0, k); }
 }
@@ -404,6 +438,61 @@ static void prefault(uintptr_t lo, uintptr_t hi) {
     g_pf_ns += mono_ns() - t0; g_pf_bytes += hi - lo; g_pf_nlog++;
 }
 
+// The exported alias's GPU coherence, once at the first exported-alias placement (logged): vka_fd_probe checks only that the CPU sees the same bytes through the driver's
+// map and the host's alias. Here the GPU fills a 64 KiB exported buffer and the CPU reads it through an alias, then the CPU writes through the alias and the GPU copies
+// it into a host-visible buffer of the guest kind. A count under 16384 on either side means the alias does not see the GPU's writes (or the GPU the CPU's) without more:
+// Kirby and the Forgotten Land on the Adreno 740's system driver never builds its title background (954 pipelines and 11 compute on Turnip at the title, 140 and 0
+// there), as if a value the GPU writes and the game polls for never arrives (2026-11-13; open)
+static void fd_alias_gpu_probe(void) {
+    static int done; if (done) return; done = 1;
+    const size_t n = 65536, nw = n / 4; vka_fd_memory ex; VkResult r = vka_fd_create(&vk, V.pd, V.dev, &V.memp, n, V.bda, &ex);
+    if (r) { VLOG("exported alias GPU probe: no allocation (%d)", r); return; }
+    volatile uint32_t *al = mmap(NULL, n, PROT_READ | PROT_WRITE, MAP_SHARED, ex.fd, 0);
+    VkBuffer sb = VK_NULL_HANDLE; VkDeviceMemory sm = VK_NULL_HANDLE; volatile uint32_t *sp = NULL; VkCommandPool cp = VK_NULL_HANDLE; VkCommandBuffer cb = VK_NULL_HANDLE; VkFence fe = VK_NULL_HANDLE;
+    int gpu_seen = -1, drv_seen = -1, cpu_seen = -1;
+    if (al == MAP_FAILED) { VLOG("exported alias GPU probe: alias mmap failed (errno %d)", errno); vka_fd_destroy(&vk, V.dev, &ex); return; }
+    VkBufferCreateInfo bi = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = n, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+    r = vk.vkCreateBuffer(V.dev, &bi, NULL, &sb);
+    VkMemoryRequirements mr = {0}; if (!r) vk.vkGetBufferMemoryRequirements(V.dev, sb, &mr);
+    uint32_t t = vka_mem_type(mr.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0);
+    VkMemoryAllocateInfo ai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = mr.size, .memoryTypeIndex = t};
+    if (!r && t == UINT32_MAX) r = VK_ERROR_FEATURE_NOT_PRESENT;
+    if (!r) r = vk.vkAllocateMemory(V.dev, &ai, NULL, &sm);
+    if (!r) r = vk.vkBindBufferMemory(V.dev, sb, sm, 0);
+    void *spv = NULL; if (!r) r = vk.vkMapMemory(V.dev, sm, 0, VK_WHOLE_SIZE, 0, &spv); sp = spv;
+    VkCommandPoolCreateInfo pi = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, .queueFamilyIndex = V.qf};
+    if (!r) r = vk.vkCreateCommandPool(V.dev, &pi, NULL, &cp);
+    VkCommandBufferAllocateInfo ca = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = cp, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1};
+    if (!r) r = vk.vkAllocateCommandBuffers(V.dev, &ca, &cb);
+    VkFenceCreateInfo fi = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    if (!r) r = vk.vkCreateFence(V.dev, &fi, NULL, &fe);
+    for (int pass = 0; pass < 2 && !r; pass++) {   // 0: the GPU fills, the CPU reads through the alias; 1: the CPU writes through the alias, the GPU copies
+        if (pass == 0) for (size_t i = 0; i < nw; i++) al[i] = 0;
+        else for (size_t i = 0; i < nw; i++) { al[i] = (uint32_t)i ^ 0x3c3c5a5au; sp[i] = 0; }
+        VkCommandBufferBeginInfo cbi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+        vk.vkResetCommandBuffer(cb, 0); vk.vkBeginCommandBuffer(cb, &cbi);
+        if (pass == 0) vk.vkCmdFillBuffer(cb, ex.buf, 0, n, 0xa5a5a5a5u);
+        else { VkBufferCopy c = {0, 0, n}; vk.vkCmdCopyBuffer(cb, ex.buf, sb, 1, &c); }
+        VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+        vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+        vk.vkEndCommandBuffer(cb);
+        VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cb};
+        vk.vkResetFences(V.dev, 1, &fe);
+        pthread_mutex_lock(&V.qmu); r = vk.vkQueueSubmit(V.q, 1, &si, fe); pthread_mutex_unlock(&V.qmu);
+        if (!r) r = vk.vkWaitForFences(V.dev, 1, &fe, VK_TRUE, 2000000000ull);
+        if (r) break;
+        if (pass == 0) { gpu_seen = drv_seen = 0; const volatile uint32_t *dm = ex.mapped; for (size_t i = 0; i < nw; i++) { gpu_seen += al[i] == 0xa5a5a5a5u; drv_seen += dm[i] == 0xa5a5a5a5u; } }
+        else { cpu_seen = 0; for (size_t i = 0; i < nw; i++) cpu_seen += sp[i] == ((uint32_t)i ^ 0x3c3c5a5au); }
+    }
+    if (r) VLOG("exported alias GPU probe: failed (%d)", r);
+    else if (gpu_seen == (int)nw && cpu_seen == (int)nw) VLOG("exported alias GPU probe: coherent both ways (the GPU's writes seen through the alias, the CPU's through the alias seen by the GPU; %zu words)", nw);
+    else VRED("exported alias GPU probe: NOT coherent: the GPU's writes seen through the alias in %d of %zu words (through the driver's own map %d), the CPU's writes through the alias seen by the GPU in %d",
+              gpu_seen, nw, drv_seen, cpu_seen);
+    if (fe) vk.vkDestroyFence(V.dev, fe, NULL);
+    if (sb) vk.vkDestroyBuffer(V.dev, sb, NULL);
+    if (sm) vk.vkFreeMemory(V.dev, sm, NULL);
+    munmap((void *)al, n); vka_fd_destroy(&vk, V.dev, &ex);   // (the pool and its command buffer stay: one of each for the run)
+}
 // Place [lo, hi) (no segment overlaps it; caller holds g_pl, and g_rw for writing only under DM_VK_MEM_LOCK_WHOLE). 1 = placed, 0 = failed with the range as it was; *grow = the size the driver wants when it is larger than the range
 // Where a placement's time goes (logged every 256 placements): buffer and allocation, the protections read, the copy, the maps, the prefault, the protections put back
 static uint64_t g_ph[6], g_ph_n;
@@ -412,6 +501,7 @@ static int place(uintptr_t lo, uintptr_t hi, VkDeviceSize *grow) {
     VkDeviceSize n = hi - lo; seg_t s = {lo, hi, .refs = 1}; VkResult r; uint64_t p0 = mono_ns(), p1, p2, p3, p4, p5;
     vka_fd_memory exported = {.fd = -1};
     if (V.fd_alias) {
+        fd_alias_gpu_probe();
         r = vka_fd_create(&vk, V.pd, V.dev, &V.memp, n, V.bda, &exported);
         if (r) { VRED("pool memory %#lx+%#llx: exported allocation %d", (unsigned long)lo, (unsigned long long)n, r); return 0; }
         s.buf = exported.buf; s.mem = exported.mem; s.fd_alias = 1;
@@ -447,7 +537,7 @@ static int place(uintptr_t lo, uintptr_t hi, VkDeviceSize *grow) {
             ok = q == (void *)lo; r = ok ? VK_SUCCESS : VK_ERROR_MEMORY_MAP_FAILED;
             if (!ok) { sw_hole_check(lo, n, 0, "exported pool memory"); if (sw_mmap_fixed(lo, n) != MAP_FAILED) memcpy((void *)lo, p, n); }
         } else {
-            vk.vkUnmapMemory(V.dev, s.mem);
+            vk.vkUnmapMemory(V.dev, s.mem); unmap_note(p);
             VkMemoryMapPlacedInfoEXT pi = {VK_STRUCTURE_TYPE_MEMORY_MAP_PLACED_INFO_EXT, .pPlacedAddress = (void *)lo};
             VkMemoryMapInfoKHR mi = {VK_STRUCTURE_TYPE_MEMORY_MAP_INFO_KHR, .pNext = &pi, .flags = VK_MEMORY_MAP_PLACED_BIT_EXT, .memory = s.mem, .offset = 0, .size = V.placed_range ? n : VK_WHOLE_SIZE};
             void *q = NULL;
@@ -531,7 +621,9 @@ static void detach(int i, segvec *v) {   // caller holds g_pl, and g_rw for writ
 // read-only: the completion thread writes events and counter reports into pools, and one that faults on this range would wait for the swap while the swap waits for it.
 // Memory the GPU is not known to be done with (the wait ran into the hang time, or a GPU hang was declared) is never freed: it stays allocated (leaked) behind the anonymous pages,
 // since a free under work the GPU still runs faults the GPU (freed anyway after 2 s before, on the way to a system restart on the phone)
+_Atomic uint32_t vka_seg_gen;   // bumped whenever a segment's buffer is destroyed: views made over segment buffers (vka_tbuf.c) are made again
 static void seg_free(const seg_t *s, int waited, uint64_t fence) {
+    atomic_fetch_add(&vka_seg_gen, 1);
     if (waited) { if (s->fd_alias) vk.vkUnmapMemory(V.dev, s->mem); vk.vkDestroyBuffer(V.dev, s->buf, NULL); vk.vkFreeMemory(V.dev, s->mem, NULL); return; }
     static _Atomic int nk; if (atomic_fetch_add(&nk, 1) < 8) VRED("giving back pool memory %#lx+%#zx: the GPU is not known to be done with it (fence %llu%s): its Vulkan memory is kept, not freed",
                                                                (unsigned long)s->lo, (size_t)(s->hi - s->lo), (unsigned long long)fence, vka_hung() ? ", GPU hang" : " not reached in the hang time");
@@ -1113,6 +1205,7 @@ void mtl_pool_del(const void *mem) {
 }
 // Joining parts (see above). Segments k0..k1 (end to end, held by this pool alone: l) into one: a new allocation of the guest type mapped placed over their range with
 // their bytes. Caller holds g_pl, on the replay thread at a submission's start with the queue idle (vka_mem_join_due). 1 = joined, 0 = not (the parts as they were)
+static void join_finish(seg_t *sp, seg_t *old, int cnt, seglist *l);
 static int join(int k0, int k1, seglist *l) {
     uintptr_t lo = g_sg[k0].lo, hi = g_sg[k1].hi; size_t n = hi - lo; int cnt = k1 - k0 + 1;
     seg_t s = {lo, hi, .refs = 1}; VkMemoryRequirements mr; VkResult r; void *p = NULL;
@@ -1144,9 +1237,10 @@ static int join(int k0, int k1, seglist *l) {
     prot_readonly(pr, npr);   // writers wait in the fault hook from here
     for (int i = 0; i < npr; i++) if (!(pr[i].prot & PROT_READ)) sw_mprotect(pr[i].lo, pr[i].hi - pr[i].lo, PROT_READ);   // (a page with no access: its bytes are the GPU's too)
     memcpy(p, (const void *)lo, n);
-    vk.vkUnmapMemory(V.dev, s.mem);
+    vk.vkUnmapMemory(V.dev, s.mem); unmap_note(p);
     // The old memory freed before the new is mapped over its range: the Adreno driver's vkFreeMemory takes the placed range down even after an unmap with
     // VK_MEMORY_UNMAP_RESERVE_BIT_EXT (unplace), so freed later it would take the new map down. The queue is idle: nothing on the GPU uses it
+    atomic_fetch_add(&vka_seg_gen, 1);   // (views over the old buffers are made again, vka_tbuf.c)
     for (int i = 0; i < cnt; i++) { unmap_placed(old[i].mem); vk.vkDestroyBuffer(V.dev, old[i].buf, NULL); vk.vkFreeMemory(V.dev, old[i].mem, NULL); }
     sw_hole_check(lo, n, 1, "joining pool memory");
     int ok = 0;
@@ -1165,6 +1259,12 @@ static int join(int k0, int k1, seglist *l) {
     swap_end();
     nvn_dirty_unhold();
     prefault_line();
+    join_finish(&s, old, cnt, l);
+    return 1;
+}
+// The table and the pools' lists after a join: the new segment in, every pool that referenced a part referencing it instead (caller holds g_pl; frees old)
+static void join_finish(seg_t *sp, seg_t *old, int cnt, seglist *l) {
+    seg_t s = *sp; uintptr_t lo = s.lo;
     if (V.bda) { VkBufferDeviceAddressInfo bai = {VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = s.buf}; s.bda = vk.vkGetBufferDeviceAddress(V.dev, &bai); }
     pthread_mutex_lock(&g_pmu);
     int nrefs = 0;
@@ -1187,9 +1287,59 @@ static int join(int k0, int k1, seglist *l) {
         l->n = w; sl_add(l, lo);
     }
     free(old);
+}
+// Joining parts on a driver without placed maps (the exported alias, vka_fd_alias.h: the host maps the memory's fd at the guest address itself): one new exported
+// allocation over the range, the bytes copied into its driver map, its fd mapped over the range (MAP_FIXED replaces the parts' own maps), then the parts freed (their
+// driver maps live elsewhere, so freeing them takes nothing in the guest range down). The swap as in join. Before this, a range the GPU is given across two parts of a
+// pool placed by parts stayed apart on such a driver: Kirby and the Forgotten Land on the Adreno 740's system driver skipped the draws of textures in its 1.4 GiB pool
+// that lie across a 16 MiB part's end (missing background textures; `which are not joined (a part is an exported alias)`, 2026-11-13)
+static int join_alias(int k0, int k1, seglist *l) {
+    uintptr_t lo = g_sg[k0].lo, hi = g_sg[k1].hi; size_t n = hi - lo; int cnt = k1 - k0 + 1;
+    vka_fd_memory ex; VkResult r = vka_fd_create(&vk, V.pd, V.dev, &V.memp, n, V.bda, &ex);
+    if (r) { VRED("joining pool memory %#lx+%#zx (exported alias): no allocation for it (%d; %.2f GiB placed): its %d parts stay apart", (unsigned long)lo, n, r, g_placed_bytes / 1073741824.0, cnt); return 0; }
+    seg_t s = {lo, hi, .mem = ex.mem, .buf = ex.buf, .refs = 1, .fd_alias = 1};
+    seg_t *old = malloc((size_t)cnt * sizeof *old); if (!old) { vka_fd_destroy(&vk, V.dev, &ex); return 0; }
+    memcpy(old, &g_sg[k0], (size_t)cnt * sizeof *old);
+    nvn_dirty_hold((const void *)lo, n);
+    prun pr[MAXRUN]; int npr = prot_runs(lo, hi, pr, MAXRUN);
+    if (!prot_known(pr, &npr, lo, hi)) {
+        nvn_dirty_unhold(); free(old); vka_fd_destroy(&vk, V.dev, &ex);
+        VRED("joining pool memory %#lx+%#zx (exported alias): its protections could not be read: its %d parts stay apart", (unsigned long)lo, n, cnt); return 0;
+    }
+    pthread_rwlock_wrlock(&g_rw);
+    atomic_fetch_add(&g_sg_gen, 1);
+    memmove(&g_sg[k0], &g_sg[k1 + 1], (size_t)(g_nsg - k1 - 1) * sizeof *g_sg); g_nsg -= cnt;
+    pthread_rwlock_unlock(&g_rw);
+    swap_begin(lo, hi);
+    prot_readonly(pr, npr);   // writers wait in the fault hook from here
+    for (int i = 0; i < npr; i++) if (!(pr[i].prot & PROT_READ)) sw_mprotect(pr[i].lo, pr[i].hi - pr[i].lo, PROT_READ);
+    memcpy(ex.mapped, (const void *)lo, n);
+    void *q = (void *)syscall(__NR_mmap, lo, n, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, ex.fd, 0);
+    // A failed MAP_FIXED may have taken the parts' maps down already, and the bytes are in the new memory only: as join, the host stops rather than lose them
+    if (q != (void *)lo) die("joining pool memory %#lx+%#zx (exported alias): the map of the new memory over the range failed (errno %d)", (unsigned long)lo, n, errno);
+    close(ex.fd);
+    for (int i = 0; i < cnt; i++) seg_free(&old[i], 1, 0);   // (the queue is idle: vka_mem_join_due)
+    prefault(lo, hi);
+    prot_apply(pr, npr);
+    swap_end_ok(0);
+    swap_end();
+    nvn_dirty_unhold();
+    prefault_line();
+    join_finish(&s, old, cnt, l);
     return 1;
 }
+// Contiguous segments are joined only under memory-map pressure: the process's maps at the last count (maps_tick) at DM_VK_COALESCE_PCT (default 40, the share where
+// the dirty tracker starts coarsening) of vm.max_map_count or more; 0 = always, as before. A join saves one map a segment and costs a copy of all its bytes on the
+// replay thread with the queue idle: Kirby and the Forgotten Land places its 1.4 GiB pool in 16 MiB parts as the player walks, and joining them (up to 256 MiB, 32 a
+// submission) held the frame 100-700 ms at the same two spots of the first path at 7 % of the limit (130,000-770,000 page faults on the replay thread, 2026-11-13).
+// Ocarina of Time's thousands of small pools, which the joins are for, pass the share long before the 75 % budget. Not counted yet (the first count, DM_VK_MAPS=0): no joins
+static int coalesce_pressure(void) {
+    int pct = VKA_ENV("DM_VK_COALESCE_PCT", 40); if (pct <= 0) return 1;
+    int n = atomic_load(&g_maps_n), mx = atomic_load(&g_maps_max);
+    return n > 0 && mx > 0 && (int64_t)n * 100 >= (int64_t)mx * pct;
+}
 static int contiguous_segs_due(void) {
+    if (!coalesce_pressure()) return 0;
     pthread_rwlock_rdlock(&g_rw);
     int due = 0;
     for (int i = 0; i < g_nsg - 1; i++) {
@@ -1238,27 +1388,33 @@ void vka_mem_join_due(void) {
         typeof(g_join[0]) q = g_join[r]; g_join[r] = g_join[--g_njoin]; atomic_store(&g_join_n, g_njoin);
         pool_ent pe = g_pool[pi]; g_pool[pi].lazy = 2;   // (as a placement: mtl_pool_need and mtl_pool_del wait for it)
         pthread_mutex_unlock(&g_pmu);
-        seglist l = pe.segs; uintptr_t jlo = 0, jhi = 0; int k0 = 0, k1 = 0, c, done = 0, shared = 0; uint64_t tj = mono_ns();
+        seglist l = pe.segs; uintptr_t jlo = 0, jhi = 0; int k0 = 0, k1 = 0, c, done = 0, shared = 0, across = 0, alias = 0; uint64_t tj = mono_ns();
         pthread_mutex_lock(&g_pl);
         _Static_assert(sizeof(uintptr_t) == 8 && offsetof(seg_t, lo) == 0 && offsetof(seg_t, hi) == 8, "vkp_join reads a segment's bounds as two uint64_t");
         c = vkp_join(g_sg, sizeof *g_sg, g_nsg, q.a, q.e, &k0, &k1);
         if (c > 1) {
             jlo = g_sg[k0].lo; jhi = g_sg[k1].hi;
-            for (int k = k0; k <= k1; k++) if (g_sg[k].refs != 1 || g_sg[k].fd_alias || !sl_has(&l, g_sg[k].lo)) shared = 1;
-            if (!shared && jhi - jlo <= join_cap() && (!V.max_alloc || jhi - jlo <= V.max_alloc)) done = join(k0, k1, &l);
+            int nalias = 0; for (int k = k0; k <= k1; k++) { nalias += g_sg[k].fd_alias; if (g_sg[k].refs != 1 || !sl_has(&l, g_sg[k].lo)) shared = 1; }
+            alias = nalias && nalias != c;   // (placed and exported-alias parts mixed: not joined)
+            int fits = jhi - jlo <= join_cap() && (!V.max_alloc || jhi - jlo <= V.max_alloc);
+            // A part shared with another pool is joined as the contiguous joins do (join with no list: every pool that references the parts takes the new segment),
+            // since the range is one the GPU is given now. These were left to the contiguous joins at each submission's start, which ran whatever the memory-map count
+            // and are now kept for map pressure (DM_VK_COALESCE_PCT): without this, Kirby and the Forgotten Land's textures in a shader-code pool that lie across a
+            // part shared with another pool were skipped (missing textures, `which are not joined (a part is shared with another pool)`, 2026-11-13)
+            if (!alias && fits) { seglist *lp = shared ? NULL : &l; done = nalias ? join_alias(k0, k1, lp) : join(k0, k1, lp); across = done && shared; }
         }
         pthread_mutex_unlock(&g_pl);
         pthread_mutex_lock(&g_pmu);
-        for (int i = 0; i < g_npool; i++) if (g_pool[i].id == pe.id) { g_pool[i].segs = l; g_pool[i].lazy = 1; break; }
+        for (int i = 0; i < g_npool; i++) if (g_pool[i].id == pe.id) { if (!across) g_pool[i].segs = l; g_pool[i].lazy = 1; break; }   // (a join across pools updated every pool's list itself)
         pthread_cond_broadcast(&g_lzcv);
         pthread_mutex_unlock(&g_pmu);
         static uint64_t nj; static _Atomic int nred;
-        if (done) { if (++nj <= 16 || !(nj & 63)) VLOG("memory pool %#lx+%#llx: %d parts joined into one, %#lx+%#lx, for %#lx+%#lx (%s; queue idle %.1f ms, join %.1f ms; %llu joins)", (unsigned long)pe.mem, (unsigned long long)pe.size, c,
-                                                      (unsigned long)jlo, (unsigned long)(jhi - jlo), (unsigned long)q.a, (unsigned long)(q.e - q.a), q.why, (t1 - t0) / 1e6, (mono_ns() - tj) / 1e6, (unsigned long long)nj); }
+        if (done) { if (++nj <= 16 || !(nj & 63)) VLOG("memory pool %#lx+%#llx: %d parts joined into one%s, %#lx+%#lx, for %#lx+%#lx (%s; queue idle %.1f ms, join %.1f ms; %llu joins)", (unsigned long)pe.mem, (unsigned long long)pe.size, c,
+                                                      across ? " with the other pools that share them" : "", (unsigned long)jlo, (unsigned long)(jhi - jlo), (unsigned long)q.a, (unsigned long)(q.e - q.a), q.why, (t1 - t0) / 1e6, (mono_ns() - tj) / 1e6, (unsigned long long)nj); }
         else if (c > 1 && atomic_fetch_add(&nred, 1) < 8)
             VRED("memory pool %#lx+%#llx: %#lx+%#lx (%s) lies across %d of its parts, %#lx+%#lx, which are not joined (%s): lookups over the whole range fail (draws that need it in one piece are skipped)",
                  (unsigned long)pe.mem, (unsigned long long)pe.size, (unsigned long)q.a, (unsigned long)(q.e - q.a), q.why, c, (unsigned long)jlo, (unsigned long)(jhi - jlo),
-                 shared ? "a part is shared with another pool" : jhi - jlo > join_cap() ? "more than DM_VK_PLACE_JOIN_MB" : (V.max_alloc && jhi - jlo > V.max_alloc) ? "more than one allocation can be" : "the join failed");
+                 alias ? "placed and exported-alias parts mixed" : jhi - jlo > join_cap() ? "more than DM_VK_PLACE_JOIN_MB" : (V.max_alloc && jhi - jlo > V.max_alloc) ? "more than one allocation can be" : "the join failed");
     }
     if (contiguous_segs_due()) {
         pthread_mutex_lock(&g_pl);
@@ -1468,9 +1624,10 @@ static void maps_tick(int *line_due) {
     }
     uint64_t now = mono_ns();
     if (*line_due || act || step != last_step || now - last_line_ns >= 60000000000ull) {
-        VLOG("memory maps: %ld of %d (vm.max_map_count, %d %%): placed memory %ld in %d segments (%d split, %ld pieces more than one each), guest block anonymous %ld, outside the guest block %ld (%ld of them kgsl); dirty tracking by %s%zu KiB; read in %.1f ms (DM_VK_MAPS)",
+        VLOG("memory maps: %ld of %d (vm.max_map_count, %d %%): placed memory %ld in %d segments (%d split, %ld pieces more than one each), guest block anonymous %ld, outside the guest block %ld (%ld of them kgsl); dirty tracking by %s%zu KiB; read in %.1f ms (DM_VK_MAPS); the driver's CPU maps kept after vkUnmapMemory %llu of %llu",
              m.total, mx, pct, m.placed, nseg, npieced, inseg, m.guest - m.placed, m.total - m.guest, m.out_kgsl,
-             nvn_dirty_block_bytes() ? "blocks of " : "pages of ", nvn_dirty_block_bytes() ? nvn_dirty_block_bytes() >> 10 : (size_t)getpagesize() >> 10, scan_ms);
+             nvn_dirty_block_bytes() ? "blocks of " : "pages of ", nvn_dirty_block_bytes() ? nvn_dirty_block_bytes() >> 10 : (size_t)getpagesize() >> 10, scan_ms,
+             (unsigned long long)atomic_load(&g_um_kept), (unsigned long long)atomic_load(&g_um_n));
         last_line_ns = now; last_step = step; *line_due = 0;
     }
     maps_hist_log(&m, pct, step, hist_pct, now);

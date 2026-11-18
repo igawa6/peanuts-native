@@ -87,7 +87,7 @@ class Module:
 
     def interface(self):
         _, k = string_at(self.entry, 3)
-        return self.entry[k:]
+        return self.entry[k:]   # pyright: ignore[reportOptionalSubscript]  # PEANUTS(upstream-candidate): library shaders have the entry point used by interface.
 
     def op(self, ident): return self.types[ident][0] & 0xffff if ident in self.types else None
 
@@ -194,7 +194,7 @@ class Module:
                 if x[0] & 0xffff == OP_MEMBER_DECORATE and x[1] == t and x[3] == DEC_BUILTIN and x[4] == builtin: return vid, x[2]
         return None, None
 
-    def entry_function(self): return self.entry[2]
+    def entry_function(self): return self.entry[2]   # pyright: ignore[reportOptionalSubscript]  # PEANUTS(upstream-candidate): library shaders have the entry point used by entry_function.
 
     def function_range(self, fid):   # (index of OpFunction, index of OpFunctionEnd)
         a = next(k for k, x in enumerate(self.ins) if x[0] & 0xffff == OP_FUNCTION and x[2] == fid)
@@ -438,7 +438,7 @@ def block_rows(m, vid):
             if len(x) < 6: dyn = True; continue
             r = const_int(m, x[5])
             if r is None: dyn = True
-            else: rows.add(r * 16 + (4 * const_int(m, x[6]) if len(x) > 6 and const_int(m, x[6]) is not None else 0))
+            else: rows.add(r * 16 + (4 * const_int(m, x[6]) if len(x) > 6 and const_int(m, x[6]) is not None else 0))   # pyright: ignore[reportOperatorIssue]  # PEANUTS(upstream-candidate): the repeated const_int call is guarded against None.
         elif x[0] & 0xffff == OP_LOAD and x[3] == vid: dyn = True   # the whole block
     return sorted(rows), dyn
 
@@ -936,7 +936,12 @@ OP_MEMORY_BARRIER, OP_COMPOSITE_CONSTRUCT, OP_TYPE_FUNCTION_ = 225, 80, 33
 OP_VECTOR_SHUFFLE, OP_ATOMIC_COMPARE_EXCHANGE, OP_LOOP_MERGE, OP_SELECTION_MERGE, OP_BRANCH, OP_BRANCH_CONDITIONAL, OP_SWITCH = 79, 230, 246, 247, 249, 250, 251
 GLSL_FMA, GLSL_PACK_HALF_2X16, GLSL_UNPACK_HALF_2X16 = 50, 58, 62
 OP_ATOMIC_STORE = 228
-NO_RESULT_OPS = {OP_STORE, OP_CONTROL_BARRIER, OP_MEMORY_BARRIER, OP_RETURN, OP_RETURN_VALUE, 246, 247, 249, 250, 251, 252, OP_FUNCTION_END}
+# Instructions with no result id, so their ids start at operand 1: OpImageWrite (99) was missing, and a promoted load's use as its image or coordinate was
+# not rewritten (promote_locals left 'ID … has not been defined': Orbitals' 189 compute shaders writing a buffer image at a coordinate kept in a local), and
+# its coordinate was taken for an instruction's result. The others with id operands: OpCopyMemory (63), OpCopyMemorySized (64), the geometry stream
+# instructions (218..221), OpAtomicStore (228), OpEmitMeshTasksEXT (5294), OpSetMeshOutputsEXT (5295)
+NO_RESULT_OPS = {OP_STORE, OP_CONTROL_BARRIER, OP_MEMORY_BARRIER, OP_RETURN, OP_RETURN_VALUE, 246, 247, 249, 250, 251, 252, OP_FUNCTION_END,
+                 63, 64, OP_IMAGE_WRITE, 218, 219, 220, 221, 228, 5294, 5295}
 
 
 def _remap_operands(x, remap):
@@ -1040,7 +1045,7 @@ def simplify_helpers(m):
             true_lbl = body[kbr][2]
             km_lbl = next((i for i in range(ksel + 2, len(body)) if (body[i][0] & 0xffff) == OP_LABEL and body[i][1] == merge_lbl), None)
             around = km_lbl is not None and any(body[i][0] & 0xffff == OP_CONVERT_U_TO_PTR for i in range(kbr, km_lbl))   # the branch guards the access
-            if around and km_lbl + 1 < len(body) and (body[km_lbl + 1][0] & 0xffff) in (OP_RETURN, OP_RETURN_VALUE) and gmem_sink(m, body, cond):
+            if around and km_lbl + 1 < len(body) and (body[km_lbl + 1][0] & 0xffff) in (OP_RETURN, OP_RETURN_VALUE) and gmem_sink(m, body, cond):   # pyright: ignore[reportOptionalOperand]  # PEANUTS(upstream-candidate): around implies km_lbl was found.
                 km_lbl = next(i for i in range(ksel + 2, len(body)) if (body[i][0] & 0xffff) == OP_LABEL and body[i][1] == merge_lbl)
                 a, e = m.function_range(f)   # (constants were declared before the functions)
                 ret_true = body[km_lbl - 1]
@@ -1134,10 +1139,10 @@ def loop_pool_search(m):
         at = {x[2]: k for k, x in enumerate(body) if len(x) > 2 and (x[0] & 0xffff) not in NO_RESULT_OPS and x[0] & 0xffff != OP_LABEL}
         def const_of(i): return m.consts[i][1][0] if i in m.consts and len(m.consts[i][1]) == 1 else None
         def step_of(s, prev):   # (index of its IAdd, step) when s = Select(c, prev + step, prev)
-            if s[0] & 0xffff != OP_SELECT or len(s) != 6 or s[5] != prev or s[4] not in at: return None
-            t = body[at[s[4]]]
+            if s[0] & 0xffff != OP_SELECT or len(s) != 6 or s[5] != prev or s[4] not in at: return None   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
+            t = body[at[s[4]]]   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
             if t[0] & 0xffff != OP_IADD or t[3] != prev or const_of(t[4]) is None: return None
-            return at[s[4]], const_of(t[4])
+            return at[s[4]], const_of(t[4])   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
         chain = None
         for k, s in enumerate(body):
             if s[0] & 0xffff != OP_SELECT or len(s) != 6 or const_of(s[5]) != 0: continue
@@ -1148,11 +1153,11 @@ def loop_pool_search(m):
                 nxt = next((j for j in range(ch[-1][1] + 1, len(body)) if body[j][0] & 0xffff == OP_SELECT and body[j][5] == body[ch[-1][1]][2]), None)
                 st = step_of(body[nxt], body[ch[-1][1]][2]) if nxt is not None else None
                 if st is None: break
-                ch.append((st[0], nxt, st[1]))
+                ch.append((st[0], nxt, st[1]))   # pyright: ignore[reportArgumentType]  # PEANUTS(upstream-candidate): the successful step has an index and a constant distance.
             if len(ch) >= 2: chain = ch; break
         if chain is None: continue
         n = len(chain); ity = body[chain[0][1]][1]
-        if [c[2] for c in chain] != [chain[0][2] >> k for k in range(n)] or chain[-1][2] != 1: continue
+        if [c[2] for c in chain] != [chain[0][2] >> k for k in range(n)] or chain[-1][2] != 1: continue   # pyright: ignore[reportOptionalOperand]  # PEANUTS(upstream-candidate): successful search steps carry constant distances.
         if any(chain[k + 1][0] != chain[k][1] + 1 for k in range(n - 1)): continue   # the steps follow each other
         lo_k, hi_k = chain[0][0], chain[-1][1]
         if any(body[j][0] & 0xffff in (OP_LABEL, OP_STORE, OP_FUNCTION_CALL) or (body[j][0] & 0xffff) in NO_RESULT_OPS for j in range(lo_k, hi_k + 1)): continue
@@ -1277,21 +1282,21 @@ def cache_raw_loads(m, tables):
         body = m.ins[a:e + 1]
         defs = {x[2]: x for x in body if len(x) > 2 and (x[0] & 0xffff) not in NO_RESULT_OPS and x[0] & 0xffff != OP_LABEL}
         def root(v):
-            while v in defs and defs[v][0] & 0xffff in (OP_BITCAST, OP_COPY_OBJECT): v = defs[v][3]
+            while v in defs and defs[v][0] & 0xffff in (OP_BITCAST, OP_COPY_OBJECT): v = defs[v][3]   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
             return v
         def cval(v):
             v = root(v)
             return m.consts[v][1][0] if v in m.consts and len(m.consts[v][1]) == 1 else None
         def addr(lo, hi):   # (B, H, c): the address is (H:B) + c, c a 32-bit constant, the high word with the translator's carry (B + c < B)
-            x = defs.get(root(lo))
+            x = defs.get(root(lo))   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
             if x is not None and x[0] & 0xffff == OP_IADD and (cval(x[3]) is not None) != (cval(x[4]) is not None):
                 b, c = (root(x[4]), cval(x[3])) if cval(x[3]) is not None else (root(x[3]), cval(x[4]))
-                y = defs.get(root(hi))
+                y = defs.get(root(hi))   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
                 if y is None or y[0] & 0xffff != OP_IADD: return (b, root(hi), c) if c == 0 else None
                 for h, s in ((y[3], y[4]), (y[4], y[3])):
-                    s = defs.get(root(s))
+                    s = defs.get(root(s))   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
                     if s is None or s[0] & 0xffff != OP_SELECT or cval(s[4]) != 1 or cval(s[5]) != 0: continue
-                    lt = defs.get(root(s[3]))
+                    lt = defs.get(root(s[3]))   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
                     if lt is not None and lt[0] & 0xffff == OP_ULESS_THAN and root(lt[3]) == root(lo) and root(lt[4]) == b: return (b, root(h), c)
                 return None
             return (root(lo), root(hi), 0)
@@ -1300,7 +1305,7 @@ def cache_raw_loads(m, tables):
             op = x[0] & 0xffff
             if op == OP_FUNCTION_CALL and x[3] in helpers and len(x) == 6:
                 ad = addr(x[4], x[5])
-                if (cur and ad is not None and cur[-1][2] is not None and x[3] == cur[-1][1][3] and ad[:2] == cur[-1][2][:2] and ad[2] == cur[-1][2][2] + 4
+                if (cur and ad is not None and cur[-1][2] is not None and x[3] == cur[-1][1][3] and ad[:2] == cur[-1][2][:2] and ad[2] == cur[-1][2][2] + 4   # pyright: ignore[reportOptionalOperand]  # PEANUTS(upstream-candidate): cval was checked before constructing this address.
                         and len(cur) < GMEM_RUN_WORDS):
                     cur.append((k, x, ad)); continue
                 if cur: runs.append((f, cur))
@@ -1560,7 +1565,7 @@ def lower_sample_offsets(m):
             if mask & bit: pos[bit] = cur; cur += cnt
         pre = []
         def em(o, ty, *ops):
-            r = m.new_id(); pre.append([(3 + len(ops)) << 16 | o, ty, r, *ops]); return r
+            r = m.new_id(); pre.append([(3 + len(ops)) << 16 | o, ty, r, *ops]); return r   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
         img = em(100, img_t, si)   # OpImage
         if 0x02 in pos: lv = x[pos[0x02]]
         elif 0x04 in pos: lv = None
@@ -1795,12 +1800,12 @@ def hmma_lds(m, keep=None):
             for q in ks: uses.setdefault(q, []).append(i)
         out = []; V = BlockValues(m); cache = {}; ci = 0
         def em(op, ty, *ops):
-            r = m.new_id(); out.append([(3 + len(ops)) << 16 | op, ty, r, *ops]); return r
-        def I(op, p, q): return em(op, i32, p, q)
+            r = m.new_id(); out.append([(3 + len(ops)) << 16 | op, ty, r, *ops]); return r   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
+        def I(op, p, q): return em(op, i32, p, q)   # noqa: E743  # PEANUTS(upstream-candidate): I names the local integer instruction emitter.
         def cvt(w):   # a row's 8 words in k order → (lo, hi) f32 pairs
             u = [em(OP_EXT_INST, v2f, glsl, GLSL_UNPACK_HALF_2X16, x) for x in w]
             return [(em(OP_COMPOSITE_EXTRACT, f32, v, 0), em(OP_COMPOSITE_EXTRACT, f32, v, 1)) for v in u]
-        def next_use(q, i): return next((j for j in uses[q] if j > i), None)
+        def next_use(q, i): return next((j for j in uses[q] if j > i), None)   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
         for x in m.ins[a:e + 1]:
             op = x[0] & 0xffff
             if op == OP_LABEL: cache = {}
@@ -1813,11 +1818,11 @@ def hmma_lds(m, keep=None):
                 g = I(OP_SHR_LOGICAL, lane, CI[2]); t = I(OP_BITWISE_AND, lane, CI[3])
                 b4 = I(OP_SHR_LOGICAL, bse, CI[2])   # the warp's block in uvec4s: A rows at 2 r, B rows at 32 + 2 n
                 vi = I(OP_SHR_LOGICAL, t, CI[1]); c0 = em(OP_BITCAST, u32, I(OP_SHL_LOGICAL, I(OP_BITWISE_AND, t, CI[1]), CI[1])); c1 = em(OP_IADD, u32, c0, CU[1])
-                rowA = lambda r: I(OP_IADD, b4, I(OP_SHL_LOGICAL, r, CI[1]))
-                rowB = lambda c: I(OP_IADD, b4, I(OP_IADD, CI[32], I(OP_SHL_LOGICAL, c, CI[1])))
+                rowA = lambda r: I(OP_IADD, b4, I(OP_SHL_LOGICAL, r, CI[1]))   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
+                rowB = lambda c: I(OP_IADD, b4, I(OP_IADD, CI[32], I(OP_SHL_LOGICAL, c, CI[1])))   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
                 def st(row, w0, w1):   # the lane's k-words t and t + 4 of a row: components 2 (t & 1) and + 1 of its uvec4 t / 2
-                    v4 = I(OP_IADD, row, vi)
-                    for c, w in ((c0, w0), (c1, w1)): out.append([3 << 16 | OP_STORE, em(OP_ACCESS_CHAIN, p_u, scratch, v4, c), em(OP_BITCAST, u32, w)])
+                    v4 = I(OP_IADD, row, vi)   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
+                    for c, w in ((c0, w0), (c1, w1)): out.append([3 << 16 | OP_STORE, em(OP_ACCESS_CHAIN, p_u, scratch, v4, c), em(OP_BITCAST, u32, w)])   # noqa: B023  # PEANUTS(upstream-candidate): this helper is consumed before the enclosing loop advances.
                 g8 = I(OP_IADD, g, CI[8])
                 if kA in need:
                     st(rowA(g), em(OP_LOAD, i32, args[2]), em(OP_LOAD, i32, args[4]))
@@ -1848,7 +1853,7 @@ def hmma_lds(m, keep=None):
             out.append(st_out); V.see(st_out)
             out.append([4 << 16 | OP_COPY_OBJECT, i32, x[2], d[0]])
             nu = {q: next_use(q, ci) for q in cache}   # tiles kept for later calls: at most `keep`, those needed soonest (the others are gathered again)
-            cache = {q: v for q, v in cache.items() if nu[q] is not None and q in sorted((q for q in nu if nu[q] is not None), key=nu.get)[:keep]}
+            cache = {q: v for q, v in cache.items() if nu[q] is not None and q in sorted((q for q in nu if nu[q] is not None), key=nu.get)[:keep]}   # pyright: ignore[reportArgumentType, reportCallIssue]  # PEANUTS(upstream-candidate): only entries with a non-None next use enter this sort.
             calls += 1; ci += 1
         m.ins[a:e + 1] = out
     a, e = m.function_range(fid)   # the helper, no longer called

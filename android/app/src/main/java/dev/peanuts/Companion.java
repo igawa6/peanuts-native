@@ -138,10 +138,33 @@ public final class Companion {
     /** The first display that is not the game's own: the Thor lists its Screen-2 only under DISPLAY_CATEGORY_PRESENTATION, an emulator's overlay only in the plain list, so both are read. */
     static Display secondDisplay(Activity game, DisplayManager dm) {
         int own = game.getDisplay() != null ? game.getDisplay().getDisplayId() : Display.DEFAULT_DISPLAY;
+        for (Display d : displays(dm)) if (d.getDisplayId() != own && d.getDisplayId() != Display.DEFAULT_DISPLAY && d.isValid()) return d;
+        return null;
+    }
+
+    private static java.util.Collection<Display> displays(DisplayManager dm) {
         Map<Integer, Display> all = new LinkedHashMap<>();
         for (Display d : dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)) all.put(d.getDisplayId(), d);
         for (Display d : dm.getDisplays()) all.put(d.getDisplayId(), d);
-        for (Display d : all.values()) if (d.getDisplayId() != own && d.getDisplayId() != Display.DEFAULT_DISPLAY && d.isValid()) return d;
-        return null;
+        return all.values();
+    }
+
+    /** Whether the device has a second display now (any valid display besides the default one, read as {@link #secondDisplay}): what a title's companion settings
+     * default to while the user has not chosen (CompanionSection.secondScreen, PeanutsPrefs.installCompanion). True when the displays cannot be read: the old default */
+    public static boolean hasSecondDisplay(android.content.Context c) {
+        try {
+            DisplayManager dm = (DisplayManager) c.getSystemService(android.content.Context.DISPLAY_SERVICE);
+            if (dm == null) return true;
+            for (Display d : displays(dm)) if (d.getDisplayId() != Display.DEFAULT_DISPLAY && d.isValid()) return true;
+            return false;
+        } catch (RuntimeException e) { return true; }
+    }
+
+    /** The game's launch environment: PN_COMPANION=off when the title's Second screen is Off (chosen, or the default on a device without a second display), so the
+     * host loads no companion at all (dm/peanuts/peanuts.c rt_start) instead of running one that has nowhere to show */
+    public static void env(android.content.Context c, String titleId, java.util.List<String> env) {
+        if (!CompanionSection.secondScreen(c, titleId).equals(CompanionSection.OFF)) return;
+        for (String s : env) if (s.startsWith("PN_COMPANION=")) return;
+        env.add("PN_COMPANION=off");
     }
 }

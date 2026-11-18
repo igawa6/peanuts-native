@@ -55,3 +55,14 @@ pad_layout	full
 # (two 16-byte literals in main's code, uepak.py code_keys): the engine's global shaders and the game's material shaders
 shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
 shader_note	DRAGON QUEST III HD-2D Remake shaders
+
+present_interval	display
+
+fps_limit	60
+
+fps_limit_max	120
+
+# Reviewed FPSLocker Warehouse v4 memory writes for this exact main; no executable patch or arbitrary YAML evaluation.
+fpslocker	a6bd61cfb142e663f59f4d92b4ed0474	zero_i32	0x5ab93e8	2	0
+fpslocker	a6bd61cfb142e663f59f4d92b4ed0474	frame_ms_f32	0x62a5e28	2	0
+fpslocker	a6bd61cfb142e663f59f4d92b4ed0474	target_f32	0x62d3b68	2	0

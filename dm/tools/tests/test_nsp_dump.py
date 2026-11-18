@@ -1,7 +1,7 @@
 """NSP script with a dump folder (scripts/pack_dump.py), its only input: the folder's layout is read and packed into what the script's later steps read.
 The run stops at the prerequisite check; no game files or Xcode needed."""
 import importlib.util
-import io
+# PEANUTS(upstream-candidate): omit the unused io import.
 from pathlib import Path
 import shutil
 import struct
@@ -83,7 +83,7 @@ class Scan(Base):
         (d / 'base/program/1/romfs').mkdir(parents=True)
         with self.assertRaisesRegex(pack_dump.Error, 'expected one RomFS folder'): pack_dump.scan(self.dump)
 
-    def test_ouncecake_game(self):   # OunceCake's unflattened layout: each version's package at program/0/; a Switch 2 Edition's program/1 is not read
+    def test_ouncecake_game(self):   # OunceCake's unflattened layout: each version's package at program/0/; a Switch 2 Edition's program/1 is not program 0's
         d = self.dump.parent / 'ounce'
         version(d / 'base/program/0', marker='old')
         version(d / f'updates/{VER}/program/0', main=b'new code', marker='new')
@@ -99,6 +99,36 @@ class Scan(Base):
         e = self.dump.parent / 'ounce-data'; version(e / 'base/program/0/program')   # a program and a data content at one index
         self.assertEqual(pack_dump.scan(e)[0], TID)
         self.assertEqual(pack_dump.base_dir(e), e / 'base/program/0/program')
+
+    def test_program_1(self):   # a Switch 2 Edition's program 1 (pack_dump.program_dir): the newest version that has it, its own ID; the add-ons stay the application's
+        d = self.dump.parent / 'edition'
+        version(d / 'base/program/0', marker='old')
+        version(d / f'updates/{VER}/program/0', main=b'new code', marker='new')
+        self.assertIsNone(pack_dump.program_dir(d, 1))
+        version(d / 'updates/65536/program/1', tid=TID + 1, main=b'older switch 2 code')
+        version(d / f'updates/{VER}/program/1', tid=TID + 1, main=b'switch 2 code')
+        self.assertEqual(pack_dump.program_dir(d, 1), (VER, d / f'updates/{VER}/program/1'))
+        self.assertEqual(pack_dump.program_id(pack_dump.program_dir(d, 1)[1] / 'exefs/main.npdm'), TID + 1)
+        self.assertEqual(pack_dump.scan(d)[0], TID)   # the dump is still the game's (program 0)
+        f = self.dump.parent / 'edition-flat'   # the flattened layout: program 0 in the version folder, program 1 at program1/
+        version(f / 'base'); version(f / f'updates/{VER}', main=b'new code'); version(f / f'updates/{VER}/program1', tid=TID + 1, main=b'switch 2 code')
+        self.assertEqual(pack_dump.program_dir(f, 1), (VER, f / f'updates/{VER}/program1'))
+        self.assertEqual(pack_dump.scan(f)[1], {VER: f / f'updates/{VER}'})
+        z = self.dump.parent / 'edition-zeros'; version(z / 'base'); version(z / 'base/program01', tid=TID + 1)   # leading zeros, in the base
+        self.assertEqual(pack_dump.program_dir(z, 1), (0, z / 'base/program01'))
+        y = self.dump.parent / 'edition-yoink'   # Yoink's: program 1 at switch2/base/ and switch2/updates/<version>/, flattened
+        version(y / 'base'); version(y / f'updates/{VER}', main=b'new code')
+        version(y / 'switch2/base', tid=TID + 1); version(y / f'switch2/updates/{VER}', tid=TID + 1, main=b'switch 2 code')
+        self.assertEqual(pack_dump.program_dir(y, 1), (VER, y / f'switch2/updates/{VER}'))
+        self.assertIsNone(pack_dump.program_dir(y, 2))
+
+    def test_yoink_data_patch(self):   # Yoink files an add-on's data patch as its own dlc/<data patch ID>/<version>/ (ID + 0x800): its RomFS, the patched tree, is the add-on's
+        (self.dump / 'dlc/040074a01bf13801/131072/romfs').mkdir(parents=True)
+        (self.dump / 'addons/040074a01bf13002/0/romfs').mkdir(parents=True)   # add-ons under addons/ too
+        dlc = pack_dump.scan(self.dump)[2]
+        self.assertEqual(dlc, {TID + 0x1001: self.dump / 'dlc/040074a01bf13801/131072/romfs', TID + 0x1002: self.dump / 'addons/040074a01bf13002/0/romfs'})
+        self.assertEqual(pack_dump.dlc_index(0x010074A01BF13001, TID + 1), 1)   # an add-on keeps the application's 01… and relates to it without the program index
+        self.assertEqual(pack_dump.dlc_index(TID + 0x1002, TID), 2)
 
     def test_content_meta_records(self):   # the records in meta/ (the layout of Super Mario Bros. Wonder's add-on and data patch records): checked, and their version needs read
         d = self.dump / 'dlc/040074a01bf13002/0'
@@ -172,6 +202,30 @@ class Layout(Base):
     def test_both_layouts_refused(self):
         (self.dump / 'base/program/0/exefs').mkdir(parents=True)
         with self.assertRaisesRegex(dump_layout.Error, 'both layouts'): dump_layout.plan(self.dump)
+
+    def test_yoink(self):   # Yoink's: program 1 at switch2/updates/<version>/, a data patch as dlc/<data patch ID>/<version>/, an add-on under addons/
+        shutil.rmtree(self.dump / f'updates/{VER}/program1')
+        version(self.dump / f'switch2/updates/{VER}', tid=TID + 1, main=b'switch 2 code')
+        (self.dump / 'dlc/040074a01bf13801/131072/romfs').mkdir(parents=True); (self.dump / 'dlc/040074a01bf13801/131072/romfs/patched').write_text('p')
+        (self.dump / 'addons/040074a01bf13002/0/romfs').mkdir(parents=True); (self.dump / 'addons/040074a01bf13002/0/romfs/f').write_text('a')
+        before = dump_layout.read(self.dump)
+        assert before is not None and before[3] is not None   # PEANUTS(upstream-candidate): the synthetic dump has an update.
+        self.assertEqual(before[3][0], VER)   # program 1 found in switch2/
+        self.assertEqual(self.run_layout('--apply'), 0)
+        for p in (f'updates/{VER}/program/1/exefs/main', 'dlc/040074a01bf13001/0/updates/131072/program/0/romfs/patched',
+                  'dlc/040074a01bf13001/0/base/program/0/romfs/dlcfile', 'dlc/040074a01bf13002/0/base/program/0/romfs/f'):
+            self.assertTrue((self.dump / p).is_file(), p)
+        self.assertFalse((self.dump / 'switch2').exists() or (self.dump / 'addons').exists() or (self.dump / 'dlc/040074a01bf13801').exists())
+        self.assertEqual(dump_layout.read(self.dump), before)
+        self.assertEqual(self.run_layout('--undo'), 0)
+        self.assertTrue((self.dump / f'switch2/updates/{VER}/exefs/main').is_file() and (self.dump / 'dlc/040074a01bf13801/131072/romfs/patched').is_file())
+
+    def test_one_version_folder(self):   # exefs/, romfs/ and program1/ in the dump folder itself: the base
+        d = self.dump.parent / 'one'; version(d); version(d / 'program1', tid=TID + 1)
+        with mock.patch('builtins.print'): self.assertEqual(dump_layout.main([str(d), '--apply']), 0)
+        self.assertTrue((d / 'base/program/0/exefs/main').is_file() and (d / 'base/program/1/exefs/main').is_file())
+        self.assertEqual(pack_dump.program_dir(d, 1), (0, d / 'base/program/1'))
+        self.assertEqual(pack_dump.scan(d)[0], TID)
 
     def test_nup_writer_reads_both(self):   # dm/tools/nup_pack.py finds the same packages in either layout
         def packages():

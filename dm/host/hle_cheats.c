@@ -40,9 +40,13 @@
 //   - "X - on" / "X - off" entries (or a meta pair) form one switch: turning it off runs the off entry (the restore) for one
 //     pass; whatever <build>.enabled says is kept as it is
 //   - a dry run (dm_cheat_preview) describes what a cheat would write right now and writes nothing
-//   - a master switch (the folder's .cheats-off-<title> file) and a safe mode (not on iOS): a run that ended without a
+//   - a master switch (the folder's .cheats-off-<title> file) and a safe mode (the Mac only): a run that ended without a
 //     clean exit while cheats were on leaves the folder's .cheats-running-<title> file behind, and the next launch starts
-//     with every cheat off (masters too) until the player restores the saved toggles or turns a cheat on (which restores them)
+//     with every cheat off (masters too) until the player restores the saved toggles or turns a cheat on (which restores them).
+//     Not on iOS or Android: their apps usually end killed (swiped away, force-stopped, suspended), so nearly every launch
+//     would start in safe mode, and the Android launcher keeps the toggles itself (its Game settings › Cheats switch is the
+//     player's way to start without cheats; it writes <build>.enabled before each start)
+//   - a cheat set on or off by its key while the game runs (dm_cheat_set; the Android in-game panel through nxhost_cheat_set)
 //   - <build>.enabled names a duplicate name's later entries "Name #2", "Name #3", ...; a compiled file (one with a meta
 //     file) of a build without <build>.enabled takes its toggles from the newest other build's compiled from the same source
 //   - a load report (dm_cheats_report): counts, duplicate names, skipped lines, Atmosphère's size limits
@@ -1091,7 +1095,7 @@ static void running_write(void *p) {
     free(j->path); free(j->build); free(j);
 }
 static void running_update(void) {
-#if PLAT_IOS
+#if !PLAT_MAC   // the Mac alone keeps safe mode (the header: iOS and Android apps usually end killed)
     return;
 #endif
     if (!g_dir[0] || atomic_load(&g_exiting)) return;
@@ -1795,6 +1799,7 @@ static void load_all(void) {
         alias_setup();
         if (g_alias) LOG("cheats: writable alias of main mapped");
         else if (PLAT_IOS) LOG("cheats: the iPhone's code pages are signed: cheats write data only");
+        else if (PLAT_ANDROID) LOG("cheats: no writable alias of main on Android yet (plat_mem_alias, android/PORTING.md): cheats write data only");
         else LOG("[RED] cheats: no writable alias of main (mach_vm_remap failed): cheats write data only");
     }
     if (g_alias) changed_load();   // which text words a code write must leave alone (only where code can be written at all)
@@ -1827,7 +1832,7 @@ static void folder_flags(void) {
     char p[1100];
     flag_file(p, sizeof p, "off");
     atomic_store(&g_master, access(p, F_OK) != 0);
-#if !PLAT_IOS   // iOS keeps no safe mode (running_update)
+#if PLAT_MAC   // iOS and Android keep no safe mode (running_update)
     flag_file(p, sizeof p, "running");
     g_safe = access(p, F_OK) == 0;
 #endif
@@ -1879,7 +1884,7 @@ void dm_cheats_exit(void) {
     unlink(p);
 }
 
-// ---------- the Mac cheats menu and panel (callers: front_mac.m; nothing else uses these) ----------
+// ---------- the Mac cheats menu and panel (callers: front_mac.m), and the Android in-game panel's dm_cheat_set ----------
 // Cheap accessors read straight from the shared state: the list itself is rebuilt only from the main thread (this
 // menu's own actions, and init on the Mac's main thread), and a VM pass mutates only its own cheat's dead / why / fails /
 // noted fields, the on / restore_once flags of a one-pass cheat, the never-decrease state, and (through the files queue)
@@ -1937,11 +1942,9 @@ int dm_cheat_on_at(int i) { return i >= 0 && i < g_ncheat ? g_cheat[i].on != 0 :
 // restore) for one pass, turning the on half on turns the off half off, and turning the off half on turns the on half off.
 // Turning a cheat on ends safe mode (the player chose: the saved toggles come back too) and starts a never-decrease from
 // the value there now
-void dm_cheat_toggle(int i) {
-    if (i < 0 || i >= g_ncheat) return;
-    pthread_mutex_lock(&g_lock);
-    cheat_t *c = &g_cheat[i];
-    if (!c->master && !c->broken && !c->dead && !c->label) {
+static int toggles(const cheat_t *c) { return !c->master && !c->broken && !c->dead && !c->label; }   // a plain row: the player may flip it
+static void toggle_locked(cheat_t *c) {
+    if (toggles(c)) {
         int now = !c->on;
         if (now && g_safe) { g_safe = 0; states_load(); }   // the player turns a cheat on in safe mode: the saved toggles come back first
         c->on = (uint8_t)now;
@@ -1955,8 +1958,36 @@ void dm_cheat_toggle(int i) {
         }
         states_save();
     }
+}
+void dm_cheat_toggle(int i) {
+    if (i < 0 || i >= g_ncheat) return;
+    pthread_mutex_lock(&g_lock);
+    toggle_locked(&g_cheat[i]);
     pthread_mutex_unlock(&g_lock);
 }
+
+// A cheat set on or off by its key, the name <build>.enabled keeps ("Name", "Name #2" for a duplicate's second entry),
+// compared case-insensitively as DM_CHEATS_ON's names: the Android in-game panel's toggles, live (nxhost_cheat_set). The
+// same switch as the menu's toggle (a pair moves as one, <build>.enabled is rewritten), taken only when the state
+// differs. 1: the cheat is now in that state; 0: it is no plain cheat (a master, a label, broken or turned off at run
+// time), nothing changed; -1: no entry has that key (no file loaded, another build's file, a renamed cheat)
+int dm_cheat_set(const char *key, int on) {
+    if (!key || !*key) return -1;
+    pthread_mutex_lock(&g_lock);
+    int r = -1;
+    for (int i = 0; i < g_ncheat && r < 0; i++) {
+        cheat_t *c = &g_cheat[i];
+        char k[CHEAT_NAME_MAX + 16]; cheat_key(c, k, sizeof k);
+        if (strcasecmp(k, key)) continue;
+        if (!toggles(c)) { r = 0; break; }
+        if (!c->on != !on) toggle_locked(c);
+        r = !c->on == !on;
+    }
+    pthread_mutex_unlock(&g_lock);
+    if (r < 0) LOG("[RED] cheats: no cheat \"%s\" in %s to turn %s", key, g_path[0] ? g_path : "the cheats folder (no file loaded)", on ? "on" : "off");
+    return r;
+}
+__attribute__((visibility("default"))) int nxhost_cheat_set(const char *key, int on) { return dm_cheat_set(key, on); }
 
 // "Reload cheats": re-read the file (the same path), so edits during play do not need a re-launch
 void dm_cheats_reload(void) {

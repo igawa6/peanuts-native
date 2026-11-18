@@ -4,13 +4,14 @@
 
 [tool.pyright]
 include = ["scripts", "dm/tools", "dm/gfx/tools", "dm/games/game.py", "dm/games/profile_guess.py", "dm/games/settings.py", "dm/ios/tools", "dm/mac"]
-extraPaths = ["dm/tools", "dm/gfx/tools", "dm/games", "dm/ios/tools", "dm/mac", "dm/tools/fuzz"]
+extraPaths = ["dm/tools", "dm/gfx/tools", "dm/games", "dm/ios/tools", "dm/mac", "dm/tools/fuzz", "scripts"]
+# PEANUTS(upstream-candidate): scripts/ is on the tools' and fixtures' runtime import path.
 typeCheckingMode = "basic"
 pythonVersion = "3.14"
 pythonPlatform = "Darwin"
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py312"   # PEANUTS(upstream-candidate): documented minimum for the image/packing tools; CI runs Python 3.14
 include = ["scripts/**/*.py", "dm/tools/**/*.py", "dm/gfx/tools/**/*.py", "dm/games/*.py", "dm/ios/tools/**/*.py", "dm/mac/**/*.py"]
 
 # Rules that find bugs (pyflakes, syntax, bugbear, pylint's errors and warnings, a few of ruff's own), not style: the code's dense layout (several statements on a

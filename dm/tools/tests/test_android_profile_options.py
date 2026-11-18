@@ -1,6 +1,6 @@
 """Profile option rows and environment variable generation (Profile.java with android/app/src/jvmtest's
 ProfileOptionsJvmTest, and build.gradle's optionsOf). The JVM part is skipped without a JDK."""
-import re
+# PEANUTS(upstream-candidate): omit the unused re import.
 import shutil
 import subprocess
 import tempfile

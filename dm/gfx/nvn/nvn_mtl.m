@@ -7151,21 +7151,24 @@ static uint64_t gmem_map_gpu(void) {
 }
 // Where those stores land is known only once the GPU has run them, while the host's uniform shadows and its CPU reads of guest memory must not miss a GPU write (sbw / gw). Counted as a
 // write anywhere, they refused every shadow of the submission and of the next ones: Donkey Kong Bananza's tunnel ran at 70 ms a frame, 4,533 passes a frame ended to land deferred updates.
-// So each store also puts its guest page in a write log (DMSH_KIND_GMEM_LOG, a set of pages), each draw or dispatch with such stores gets its own log from a small pool, and the host
-// learns the memory pools holding those pages: until the learned set has stayed the same over GML_STABLE logs in a row (a log that overflowed counts as a change), the stores count as
+// So each store also marks the pool table entry it went through in a write log (DMSH_KIND_GMEM_LOG, a bitmap of the entries), each draw or dispatch with such stores gets its own log from a small pool, and the host
+// learns the memory pools holding those pages: until the learned set has stayed the same over GML_STABLE logs in a row, the stores count as
 // a write anywhere; then as writes over the learned pools. A log read on completion that shows a page in no learned pool adds that pool (before the set has settled, it starts the count again); if that submission
 // had used the prediction, the shadows that relied on it are checked against the pages it missed (g_gsr): [RED] only when one covers such a page. The missed pools are old ones
 // the stores reach for the first time as the level streams in, not new ones (Donkey Kong Bananza: added 3.5-294 s before; no shadow covered a missed page in 7 misses). Pools, not pages: the game allocates new records as the level streams in, in the same pools
 // (learned page by page, Donkey Kong Bananza's tunnel still met a new page 213 logs in)
 // GML_STABLE: 2 logs. While the set is learned every geometry draw after the stores waits for the GPU (geo_cpu_hazard): 8 logs gave Donkey Kong Bananza 9 frames of 300-540 ms
 // when gameplay began. A pool found later is checked against the shadows that relied on it (g_gsr), and none of about 20 such misses so far was under one
-enum { GML_SLOTS = 1 << DMSH_GMEM_LOG_LOG2, GML_BYTES = 4 * (1 + GML_SLOTS), GML_MAX = 4096, GML_STABLE = 2 };
+// The log's layout (dmsh_abi.h, Ryujinx GlobalToStorage.GmemLogCbOffset): a bitmap of the entries of the pool table bound beside it, bit i in 32-bit word i / 32, so it cannot
+// run out of slots. It was a hash set of 1 << 10 guest pages (DMSH_GMEM_LOG_LOG2, word 0 an overflow flag) until the translator changed it for the Vulkan replay (vka_gml.h),
+// which left this reader on the old layout and the Mac host without that constant. An entry names a range of the table the draw was encoded with (gml_take keeps it with the log)
+enum { GML_BYTES = DMSH_GMEM_MAP_ENTRIES / 8, GML_MAX = 4096, GML_STABLE = 2 };
 static pthread_mutex_t g_gml_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t g_gml_lo[GML_MAX], g_gml_hi[GML_MAX]; static int g_gml_n, g_gml_stable, g_gml_over;   // the learned pools' ranges; over: the set filled: a write anywhere from then on
-static uint64_t g_gml_logs, g_gml_miss, g_gml_full;
+static uint64_t g_gml_logs, g_gml_miss;
 static NSMutableArray<id<MTLBuffer>> *g_gml_free;
-static void gml_read(id<MTLBuffer> b, int predicted, uint64_t fence) {
-    const uint32_t *w = (const uint32_t *)b.contents; int full = w[0] != 0;
+static void gml_read(id<MTLBuffer> b, id<MTLBuffer> map, int predicted, uint64_t fence) {
+    const uint32_t *w = (const uint32_t *)b.contents; const uint8_t *t = (const uint8_t *)map.contents;
     int added = 0, mpages = 0, mshadowed = 0; double age_lo = 1e30, age_hi = -1;
     uint64_t now = clock_gettime_nsec_np(CLOCK_MONOTONIC);
     int nr = 0, unchecked = 0; static uint64_t rlo[GSR_N], rhi[GSR_N];   // the shadows that relied on this submission's writes (completion handlers run one at a time)
@@ -7175,35 +7178,39 @@ static void gml_read(id<MTLBuffer> b, int predicted, uint64_t fence) {
         for (uint64_t i = first; i < n; i++) if (g_gsr[i % GSR_N].fence >= fence) { rlo[nr] = g_gsr[i % GSR_N].lo; rhi[nr++] = g_gsr[i % GSR_N].hi; }
         pthread_mutex_unlock(&g_gsr_mu); }
     pthread_mutex_lock(&g_gml_mu);
-    g_gml_logs++; g_gml_full += full;
+    g_gml_logs++;
     int n0 = g_gml_n;   // the set this log's submission predicted with
-    for (int i = 1; i <= GML_SLOTS && !g_gml_over; i++) {
-        uint64_t a = (uint64_t)w[i] << 12; int known = !w[i];
-        for (int k = 0; k < n0 && !known; k++) known = a >= g_gml_lo[k] && a < g_gml_hi[k];
-        if (!known && predicted) { mpages++; for (int j = 0; j < nr; j++) if (a < rhi[j] && rlo[j] < a + 4096) { mshadowed++; break; } }   // a page the prediction left out, under a shadow?
-        for (int k = n0; k < g_gml_n && !known; k++) known = a >= g_gml_lo[k] && a < g_gml_hi[k];
-        if (known) continue;
-        if (g_gml_n == GML_MAX) { g_gml_over = 1; break; }
-        uint64_t lo = a, hi = a + 4096;   // the pool holding the page (it was in one: the shader's table found it), else the page alone
-        pthread_mutex_lock(&g_mu); int p = pool_find(a, 1); double age = -1;
-        if (p >= 0) { lo = g_pools[p].lo; hi = g_pools[p].hi; age = (double)(now - g_pools[p].born) / 1e6; } pthread_mutex_unlock(&g_mu);
-        if (age >= 0) { if (age < age_lo) age_lo = age; if (age > age_hi) age_hi = age; }
-        g_gml_lo[g_gml_n] = lo; g_gml_hi[g_gml_n++] = hi; added++;
-    }
+    for (int wi = 0; wi < DMSH_GMEM_MAP_ENTRIES / 32 && !g_gml_over; wi++)
+        for (uint32_t bits = w[wi]; bits && !g_gml_over; bits &= bits - 1) {
+            int i = wi * 32 + __builtin_ctz(bits);
+            if (!i) continue;   // entry 0 is empty
+            const uint64_t *e = (const uint64_t *)(t + (size_t)i * DMSH_GMEM_MAP_ENTRY); uint64_t a = e[0], ae = e[1];   // the range the stores wrote in
+            if (a >= ae) continue;
+            int known = 0;
+            for (int k = 0; k < n0 && !known; k++) known = a >= g_gml_lo[k] && a < g_gml_hi[k];
+            if (!known && predicted) { mpages++; for (int j = 0; j < nr; j++) if (a < rhi[j] && rlo[j] < ae) { mshadowed++; break; } }   // a range the prediction left out, under a shadow?
+            for (int k = n0; k < g_gml_n && !known; k++) known = a >= g_gml_lo[k] && a < g_gml_hi[k];
+            if (known) continue;
+            if (g_gml_n == GML_MAX) { g_gml_over = 1; break; }
+            uint64_t lo = a, hi = ae;   // the pool holding the range (the table's entry may be its part past an earlier pool's end), else the range alone
+            pthread_mutex_lock(&g_mu); int p = pool_find(a, 1); double age = -1;
+            if (p >= 0) { lo = g_pools[p].lo; hi = g_pools[p].hi; age = (double)(now - g_pools[p].born) / 1e6; } pthread_mutex_unlock(&g_mu);
+            if (age >= 0) { if (age < age_lo) age_lo = age; if (age > age_hi) age_hi = age; }
+            g_gml_lo[g_gml_n] = lo; g_gml_hi[g_gml_n++] = hi; added++;
+        }
     // Once the prediction has begun, a pool found late is added and the prediction goes on: going back to a write anywhere until more logs agreed (8 then) made every geometry draw
     // after the stores wait for the GPU (geo_cpu_hazard), 400-2,000 ms frames for a second or more after each miss in Donkey Kong Bananza, and bought nothing, as the next late
-    // pool is missed the same way and every miss is checked (g_gsr). Only a log that ran out of slots, whose pages are not all known, starts the learning again
-    if (full || (added && g_gml_stable < GML_STABLE)) g_gml_stable = 0; else if (g_gml_stable < INT_MAX) g_gml_stable++;
+    // pool is missed the same way and every miss is checked (g_gsr)
+    if (added && g_gml_stable < GML_STABLE) g_gml_stable = 0; else if (g_gml_stable < INT_MAX) g_gml_stable++;
     if (predicted && added) g_gml_miss += added;
-    uint64_t logs = g_gml_logs, miss = g_gml_miss, fulls = g_gml_full; int learned = g_gml_n, over = g_gml_over;
+    uint64_t logs = g_gml_logs, miss = g_gml_miss; int learned = g_gml_n, over = g_gml_over;
     [g_gml_free addObject:b];
     pthread_mutex_unlock(&g_gml_mu);
     if (over) RED_ONCE(141, "raw global memory: the stores wrote in more than %d pools: they count as a write anywhere from now on", GML_MAX);
-    if (full) { static int lines; if (lines++ < 4) MLOG("[RED] raw global memory: a write log ran out of slots (%llu of %llu logs so far): its stores count as a write anywhere until the pages are learned", (unsigned long long)fulls, (unsigned long long)logs); }
-    if (predicted && added) {   // learned after the fact: harmful only if a shadow that relied on this submission's writes covers a page they missed
+    if (predicted && added) {   // learned after the fact: harmful only if a shadow that relied on this submission's writes covers a range they missed
         static int lines; int bad = mshadowed || unchecked;
         if (bad || lines++ < 8) MLOG("%sraw global memory: the stores wrote in %d pool(s) the host had not learned (log %llu, %llu such pools so far, %d learned; the pools were added %.0f-%.0f ms before): "
-            "%d page(s) outside the prediction, %d of them under the %d uniform shadows taken from that submission on%s", bad ? "[RED] " : "", added, (unsigned long long)logs,
+            "%d table range(s) outside the prediction, %d of them under the %d uniform shadows taken from that submission on%s", bad ? "[RED] " : "", added, (unsigned long long)logs,
             (unsigned long long)miss, learned, age_lo < 1e30 ? age_lo : -1.0, age_hi, mpages, mshadowed, nr,
             mshadowed ? ": those shadows may have missed the write" : unchecked ? "; the shadow record had already wrapped, so not all could be checked" : ""); }
 }
@@ -7218,8 +7225,9 @@ static uint64_t gml_take(void) {
     if (!predict) sbw_note(0, 0, SBW_GPU);
     if (!b) { b = [g_dev newBufferWithLength:GML_BYTES options:MTLResourceStorageModeShared]; res_add(b); res_commit(); }
     memset(b.contents, 0, GML_BYTES);
+    (void)gmem_map_gpu(); id<MTLBuffer> map = g_gmem_buf;   // the pool table this draw is encoded with: the log's bits name its entries (the block keeps it alive)
     g_gml_on = 1; uint64_t fence = g_fence + 1;   // this submission's fence (mtl_sub_commit)
-    [g_commit_blocks addObject:^{ gml_read(b, predict, fence); }];
+    [g_commit_blocks addObject:^{ gml_read(b, map, predict, fence); }];
     return b.gpuAddress;
 }
 static id<MTLBuffer> zero_bank(void) { static __strong id<MTLBuffer> b; if (!b) { b = [g_dev newBufferWithLength:65536 options:MTLResourceStorageModeShared]; res_add(b); } return b; }
@@ -11796,6 +11804,8 @@ static void ext_wait(uint64_t v) { if (v && g_ext_ev) [g_q4 waitForEvent:g_ext_e
 static void snap_commit_wait(uint64_t v);
 static pq_item g_pq[PQ];
 static uint64_t g_pq_in;
+// The present tickets queued and handed on (the layer's frame history, hle_vi.c ListFrameHistory)
+void mtl_present_progress(uint64_t *queued, uint64_t *done) { pthread_mutex_lock(&g_pq_mu); *queued = g_pq_in; *done = g_pq_done; pthread_mutex_unlock(&g_pq_mu); }
 static int present_now(const tex_t *, double, uint64_t, uint64_t, const int[4], id<CAMetalDrawable>, double);
 static double g_link_vperiod, g_link_vhalf;   // virtual ticks (link_range): seconds per counted tick (0 = every callback is a tick) and half a refresh of the screen
 

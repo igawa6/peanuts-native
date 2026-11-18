@@ -274,7 +274,7 @@ public final class Ctl {
         boolean own = id != null;
         if (own && !Up.hasProfile(id)) throw new Request.Bad("unknown_title", "This app has no game " + id + ".");
         boolean paced = own && Up.prefsBool("limited", id);
-        Settings.Change ch = Settings.parse(r.need("key"), r.need("value"), own, own ? Up.caps(paced) : null, paced);
+        Settings.Change ch = Settings.parse(r.need("key"), r.need("value"), own, own ? (!paced && Up.prefsBool(app, "ownRate", id) ? new int[] {0} : Up.caps(paced, id)) : null, paced);
         String missing = own ? Up.rowMissing(app, ch.key, id) : null;
         if (missing != null) throw new Request.Bad("not_for_this_game", "The game's settings have no such row: " + missing + ".");
         Up.apply(app, ch, id);
@@ -409,7 +409,7 @@ public final class Ctl {
         }
     }
 
-    /** Settings is one scrolling page: the heading with this text (Library, Updates, Game defaults, System, Help, About) is scrolled to the top */
+    /** Settings is one scrolling page: the heading with this text (Library, Updates, Display, Controls, Performance and picture, System, Help, About) is scrolled to the top */
     private static boolean scrollTo(Activity a, String heading) {
         TextView t = findText(a.getWindow().getDecorView(), heading);
         if (t == null) return false;

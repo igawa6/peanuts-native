@@ -13,6 +13,7 @@
 #include <stdatomic.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include "plat_guestmap.h"
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -97,7 +98,7 @@ size_t plat_page_size(void) { return (size_t)getpagesize(); }
 #define GUEST_VA_END (1ull << 39)
 #define GUEST_ALIGN 0x200000ull
 static void *reserve_at(uint64_t at, size_t size) {
-    void *p = mmap((void *)(uintptr_t)at, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+    void *p = mmap((void *)(uintptr_t)at, size, PROT_NONE, PLAT_GUEST_MAP | MAP_FIXED_NOREPLACE, -1, 0);
     if (p == MAP_FAILED) return NULL;
     if ((uint64_t)(uintptr_t)p != at) { munmap(p, size); return NULL; }   // a kernel without MAP_FIXED_NOREPLACE takes the address as a hint only
     return p;
@@ -110,7 +111,7 @@ void *plat_mem_reserve(size_t size) {
     for (uint64_t a = want; !p && a + size <= GUEST_VA_END; a += step) if ((p = reserve_at(a, size))) at = a;
     for (uint64_t a = want & ~(step - 1); !p && a >= 2 * step; a -= step) if ((p = reserve_at(a - step, size))) at = a - step;
     if (!p) {
-        uint8_t *raw = mmap(NULL, size + GUEST_ALIGN, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        uint8_t *raw = mmap(NULL, size + GUEST_ALIGN, PROT_NONE, PLAT_GUEST_MAP, -1, 0);
         if (raw == MAP_FAILED) return NULL;
         p = (void *)(((uintptr_t)raw + GUEST_ALIGN - 1) & ~(uintptr_t)(GUEST_ALIGN - 1));
         if ((uint8_t *)p > raw) munmap(raw, (size_t)((uint8_t *)p - raw));
@@ -123,7 +124,7 @@ void *plat_mem_reserve(size_t size) {
 }
 // Its name in /proc/self/maps (fails quietly where the kernel has no anonymous VMA names). The kernel merges two neighbouring anonymous mappings only when their names are
 // the same, so a fixed map inside the block (guest_release, the Vulkan replay's give-back) is named again: unnamed, every such map stayed a mapping of its own beside the
-// named rest, and the alias region's map and unmap churn left thousands of them (vm.max_map_count, docs/reference/memory.md)
+// named rest, and the alias region's map and unmap churn left thousands of them (vm.max_map_count, docs/reference/memory.md). The flags must match as well (plat_guestmap.h)
 void plat_mem_name_guest(void *p, size_t n) { prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, p, n, "nxnative guest"); }
 // Lines of /proc/self/maps, counted in a stack buffer (no allocation: at the limit malloc may need a new mapping itself); vm.max_map_count read once
 int plat_maps_count(int *max) {

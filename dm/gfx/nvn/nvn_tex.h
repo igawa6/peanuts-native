@@ -16,6 +16,13 @@ typedef struct {
 
 void nvn_tex_layout(const nvn_texdesc *d, nvn_texlayout *o);
 uint64_t nvn_tex_level_offset(const nvn_texdesc *d, unsigned level);
+// A texture over the mip levels of another: on the Switch textures over the same pool memory are one storage, so a texture whose storage starts at level k of a larger one's
+// (a shadow map's level drawn through a texture of its own: Mario Tennis Fever's 3584x3584 depth texture over level 1 of its 7168x7168 one) reads and writes those levels.
+// 1 and *k (>= 1) when every level j of c is level k + j of p, its storage starting off bytes into p's: the same format, texel size, offset from c's start, block height,
+// block depth and GOB width, and no more bytes than p's level holds. Single-layer, single-sample, block-linear 2D textures only; else 0
+int nvn_tex_level_of(const nvn_texdesc *p, const nvn_texdesc *c, uint64_t off, unsigned *k);
+// Where level k starts in a texture of c's shape 2^k times larger (c's levels and k more): a candidate for nvn_tex_level_of lies that many bytes before c's storage. 0: none
+uint64_t nvn_tex_parent_off(const nvn_texdesc *c, unsigned k);
 uint32_t nvn_tex_level_gobs(const nvn_texdesc *d, unsigned level);   // GOB columns level `level` is laid out with (its width in GOBs; padded to whole 64 KB tiles in a sparse texture's tiled levels)
 int nvn_fmt_bpb(int format, int *bw, int *bh);   // Bytes per block (0 = unknown format), block width and height
 // Block height / block depth actually used by level `level` (log2 of the GOB count): the per-level block height shrinks with that level's row count (block rows), and deswizzling uses it level by level

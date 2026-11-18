@@ -83,12 +83,14 @@ void *objmap_del(const void *key) {
 void *dm_guest_thread_spawn(void (*fn)(void *), void *arg, int prio, size_t stack) {
     (void)fn; (void)arg; (void)prio; (void)stack; starts++; return (void *)1;
 }
+static int join_slot;   // PEANUTS(upstream-candidate): nxnative 18b435ac38 / a334797d12, more than one audio renderer (the slot of the renderer being closed)
 void dm_guest_thread_join(void *tt) {
-    assert(tt == (void *)1 && !atomic_load(&g_open));
+    assert(tt == (void *)1 && !atomic_load(&g_ar[join_slot].open));   // PEANUTS
     assert(((uint8_t *)sdk_work)[SDK_WORK - 1] == 0x5a);   // storage also survives the render thread
     joins++;
 }
 uint64_t now_ns(void) { return 0; }
+module_t *module_of(const void *p) { (void)p; return NULL; }   // PEANUTS: ar_open names the call site
 __thread _Atomic int dm_host_work;   // PEANUTS: dm.h's host-work count (hle_thread.c), which the render lock's waiters raise
 void *dm_pcmout_open(int ch) { (void)ch; return NULL; }
 void dm_pcmout_close(void *k) { (void)k; }
@@ -177,7 +179,7 @@ int main(void) {
         assert(!memcmp(param, saved, sizeof param));
         if (route) {
             assert((uint8_t *)sdk_event >= (uint8_t *)g_rev && (uint8_t *)sdk_event < (uint8_t *)(g_rev + 4));
-            assert(g_handle[1] == (event_in_handle ? sdk_event : (uint8_t *)sdk_work + 0x80));
+            assert(g_ar[0].handle[1] == (event_in_handle ? sdk_event : (uint8_t *)sdk_work + 0x80));   // PEANUTS: the renderer's slot
             memset(event, 0xee, sizeof event);   // the game may reuse its object at once (LEGO Star Wars: on its stack; Little Nightmares): nothing refers to it
         }
         int d = event_destroys;
@@ -211,7 +213,21 @@ int main(void) {
         assert(handle[0] == work && allocations == a && !map_key);
         h_ar_Close(handle[0], handle[1]);
     }
+    // PEANUTS: two renderers open at once (the port of nxnative 18b435ac38; this case is this fork's). Each gets a slot and a render thread, Close ends its own and frees its slot
+    // for the next open, and the other renderer goes on
+    void *work2, *handle2[2]; assert(!posix_memalign(&work2, WORK_PAGE, SDK_WORK));
+    s = starts; int j = joins;
+    assert(!h_ar_Open0(handle, param, work, SDK_WORK) && !h_ar_Open0(handle2, param, work2, SDK_WORK));
+    assert(starts == s + 2 && g_ar[0].handle[0] == work && g_ar[1].handle[0] == work2 && atomic_load(&g_ar[0].open) && atomic_load(&g_ar[1].open));
+    sdk_work = work; join_slot = 0; h_ar_Close(handle[0], handle[1]);
+    assert(joins == j + 1 && !g_ar[0].handle[0] && g_ar[1].handle[0] == work2 && atomic_load(&g_ar[1].open));
+    assert(!h_ar_Open0(handle, param, work, SDK_WORK) && starts == s + 3 && g_ar[0].handle[0] == work && atomic_load(&g_ar[0].open));
+    sdk_work = work2; join_slot = 1; h_ar_Close(handle2[0], handle2[1]);
+    assert(joins == j + 2 && !g_ar[1].handle[0] && atomic_load(&g_ar[0].open));
+    sdk_work = work; join_slot = 0; h_ar_Close(handle[0], handle[1]);
+    assert(joins == j + 3 && !g_ar[0].handle[0] && allocations == a && !map_key);
+    free(work2);
     free(work);
-    puts("audren work buffer: Horizon sizing fixtures, both opens, nested open, failures and close lifetime passed");
+    puts("audren work buffer: Horizon sizing fixtures, both opens, nested open, failures, close lifetime and two renderers at once passed");   // PEANUTS
     return 0;
 }

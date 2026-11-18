@@ -49,7 +49,7 @@ typedef struct {
     uint64_t addr, size;
 } vka_res;
 
-// Reads guest memory for handles kept in uniform buffers (TEX_UBO, SAMP_UBO, SBUF_UBO): 1 = read, 0 = not readable (the value reads as 0)
+// Reads guest memory for handles kept in uniform buffers (TEX_UBO, SAMP_UBO, SBUF_UBO, IMG_UBO): 1 = read, 0 = not readable (the value reads as 0)
 typedef int (*vka_read_fn)(void *ctx, uint64_t addr, void *out, size_t n);
 
 #define VKA_WALK_REFUSE (-1)

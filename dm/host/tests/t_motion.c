@@ -68,6 +68,18 @@ int main(void) {
         CHECK(near(s.R[2][axis] * sign, -1, 1e-5f), "first sample: gravity points down in every starting pose");
     }
 
+    // the player's tuning: a dead zone zeroes a held phone's tremor and takes nothing off a real turn's edge; sensitivity scales the rate
+    { float w[3] = {0.004f, -0.003f, 0.002f}; motion_shape(w, 2, 0.0087f);
+      CHECK(w[0] == 0 && w[1] == 0 && w[2] == 0, "dead zone: tremor reads zero"); }
+    { float w[3] = {0, 0, 1.0087f}; motion_shape(w, 1, 0.0087f); CHECK(near(w[2], 1, 1e-5f), "dead zone: a turn loses only the dead zone"); }
+    { float w[3] = {0, 0, 1}; motion_shape(w, 2.5f, 0); CHECK(near(w[2], 2.5f, 1e-5f), "sensitivity scales the rate"); }
+    // linear acceleration (|acc| 1.14 G) does not pull the pitch: the correction weight is 0 there
+    motion_reset(&s);
+    run(&s, &id, 0, 0, -1, 0, 0, 0, 0.1f, 0.5f);
+    run(&s, &id, 0, -0.7f, -0.9f, 0, 0, 0, 5, 0.5f);   // |acc| = 1.14
+    motion_fill(&s, acc, gyro, ang, dir);
+    CHECK(near(dir[5], 0, 0.01f), "a hand's acceleration (|acc| 1.14 G) does not tilt the orientation");
+
     // a frame map: Apple reports rotation about its y where the Switch has z (map "x,-z,y": switch y = -apple z, switch z = apple y)
     motion_map fm; motion_map_parse(&fm, "x,-z,y");
     motion_reset(&s);

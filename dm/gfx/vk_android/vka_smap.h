@@ -4,7 +4,7 @@
 // into a tombstone counted too, a delete never took one off), so the table doubled with the serials ever registered and map_del_im's scan of it grew with the session.
 // Now: a probe runs past tombstones to the key or an empty slot; a new key goes into the first tombstone seen only after the chain proved it absent; live entries and tombstones
 // are counted apart; the table is made again at the same size when tombstones filled it, and grows only when live entries need it.
-// The includer defines VKA_SMAP_IM as the image type. Not thread-safe: the includer's lock (g_tmu). Tested by dm/host/tests/t_android_smap.c
+// The includer defines VKA_SMAP_IM as the image type (PEANUTS: with a uint32_t smap_n field, zero at first: its entries in the map). Not thread-safe: the includer's lock (g_tmu). Tested by dm/host/tests/t_android_smap.c
 #ifndef VKA_SMAP_H
 #define VKA_SMAP_H
 #include <stddef.h>
@@ -33,7 +33,7 @@ static int vksm_rebuild(vksm *m, size_t cap) {
 // s -> im. 0: the table could not take a new key (no memory): s is not in it
 static int vksm_put(vksm *m, uint64_t s, VKA_SMAP_IM *im) {
     smap_ent *e = vksm_get(m, s);
-    if (e) { e->im = im; return 1; }
+    if (e) { if (e->im) e->im->smap_n--; if (im) im->smap_n++; e->im = im; return 1; }   // PEANUTS: the images' entry counts (vksm_del_im)
     if ((m->live + m->tomb + 1) * 2 > m->cap) {   // full of live entries and tombstones: grown when live entries are the cause (room for a quarter of the table before the next), else only cleaned
         size_t c = m->cap ? m->cap : 1024; while ((m->live + 1) * 4 > c) c *= 2;
         if (!vksm_rebuild(m, c) && m->live + m->tomb + 1 >= m->cap) return 0;   // (without memory the old table serves while it keeps an empty slot)
@@ -41,14 +41,17 @@ static int vksm_put(vksm *m, uint64_t s, VKA_SMAP_IM *im) {
     size_t i = vksm_hslot(s, m->cap);
     while (m->e[i].serial && m->e[i].serial != VKSM_TOMB) i = (i + 1) & (m->cap - 1);   // (s is absent: the first free slot, a tombstone or the empty one)
     if (m->e[i].serial == VKSM_TOMB) m->tomb--;
-    m->e[i] = (smap_ent){s, im}; m->live++; return 1;
+    m->e[i] = (smap_ent){s, im}; m->live++; if (im) im->smap_n++; return 1;   // PEANUTS: (smap_n)
 }
-static void vksm_del_ent(vksm *m, smap_ent *e) { e->serial = VKSM_TOMB; e->im = NULL; m->live--; m->tomb++; }
+static void vksm_del_ent(vksm *m, smap_ent *e) { if (e->im) e->im->smap_n--; e->serial = VKSM_TOMB; e->im = NULL; m->live--; m->tomb++; }   // PEANUTS: (smap_n)
 static int vksm_del(vksm *m, uint64_t s) { smap_ent *e = vksm_get(m, s); if (e) vksm_del_ent(m, e); return e != NULL; }
-// Every entry of im out; how many
-static int vksm_del_im(vksm *m, const VKA_SMAP_IM *im) {
-    int n = 0;
-    for (size_t i = 0; i < m->cap; i++) if (m->e[i].serial && m->e[i].serial != VKSM_TOMB && m->e[i].im == im) { vksm_del_ent(m, &m->e[i]); n++; }
+// Every entry of im out; how many.
+// PEANUTS: the image counts its entries (smap_n, a field of VKA_SMAP_IM kept by put and del; one map an image type), so an image with none costs nothing and the scan
+// ends at its last entry. Before, every image let go scanned the whole table under the includer's lock: Breath of the Wild streaming terrain textures (Thor, 2026-11-18,
+// 30 s profile) spent 3.2 s of CPU here in nvnTextureFinalize on the game's threads while the replay thread waited 5.5 s for the lock (stalls of 50-140 ms)
+static int vksm_del_im(vksm *m, VKA_SMAP_IM *im) {
+    int n = 0; uint32_t want = im->smap_n;
+    for (size_t i = 0; n < (int)want && i < m->cap; i++) if (m->e[i].serial && m->e[i].serial != VKSM_TOMB && m->e[i].im == im) { vksm_del_ent(m, &m->e[i]); n++; }
     return n;
 }
 #endif

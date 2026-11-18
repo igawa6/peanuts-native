@@ -80,6 +80,11 @@ modules	main subsdk2 sdk
 romfs_marker	Fs.bin.zst
 zip_store	.zst:.mp4:.webm:.metallib
 
+# ---- Cheats ----
+# Atmosphère-format cheat file of main build db93b012, named by the first 16 hex digits of the build ID as dmnt and the host's cheat engine pick it (hle_cheats.c): Prepare copies
+# it into the pack, and the launcher's Game settings › Cheats (off by default) passes it to the host; the in-game panel then lists its cheats (README.md "Cheats")
+cheats	cheats/DB93B0125F485060.txt
+
 # ---- Memory ----
 # The Switch 2 leaves games 9 GB of its 12 GB (Donkey Kong Bananza's figure, not measured here). The NPDM declares 64 MB of system resource, so virtual address memory is on.
 # 256 MB in front + alias region + 256 MB stack region + heap region: Splatoon Raiders' split as a starting point, to be measured

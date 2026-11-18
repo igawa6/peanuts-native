@@ -61,11 +61,16 @@ final class Up {
     static boolean isMain(Activity a) { return a != null && a.getClass().getName().equals(PKG + "MainActivity"); }
     static Intent mainIntent(Context c) throws ClassNotFoundException { return new Intent(c, k("MainActivity")); }
 
-    /** Home (false) or Settings (true): MainActivity.page */
-    static void page(Activity main, boolean settings) throws ReflectiveOperationException { call(k("MainActivity"), main, "page", new Class<?>[] {boolean.class}, settings); }
+    /** Home (false) or Settings (true): MainActivity.page. The Advanced page (upstream's, open over Settings or a game's page) is closed first: page() alone only
+     *  clears its flag when the page under it is the one asked for, and the screen went on showing Advanced */
+    static void page(Activity main, boolean settings) throws ReflectiveOperationException {
+        if (Boolean.TRUE.equals(get(k("MainActivity"), main, "advancedOpen"))) call(k("MainActivity"), main, "closeAdvanced", new Class<?>[0]);
+        call(k("MainActivity"), main, "page", new Class<?>[] {boolean.class}, settings);
+    }
 
-    /** home, settings or game: the page MainActivity shows */
+    /** home, settings, game or advanced: the page MainActivity shows (advanced: upstream's Advanced page, over Settings or over a game's page) */
     static String pageOf(Activity main) throws ReflectiveOperationException {
+        if (Boolean.TRUE.equals(get(k("MainActivity"), main, "advancedOpen"))) return "advanced";
         if (get(k("MainActivity"), main, "settingsGame") != null) return "game";
         return Boolean.TRUE.equals(get(k("MainActivity"), main, "settingsPage")) ? "settings" : "home";
     }
@@ -189,6 +194,9 @@ final class Up {
     }
 
     static int[] caps(boolean paced) throws ReflectiveOperationException { return ((int[]) get(k("Prefs"), null, paced ? "PACE_CAPS" : "FPS_CAPS")).clone(); }
+    static int[] caps(boolean paced, String titleId) throws ReflectiveOperationException {
+        return paced ? (int[]) call(k("Prefs"), null, "paceCaps", new Class<?>[] {String.class}, titleId) : caps(false);
+    }
 
     /** The game's own environment lines (its Game settings) */
     static String gameEnv(Context c, String titleId) throws ReflectiveOperationException {
@@ -208,7 +216,7 @@ final class Up {
                 if (prefsBool("dlssGame", titleId)) return "this game's Upscaler row is the DLSS stand-in's";
                 return prefsBool(c, "simpleRes", titleId) ? "this game's Resolution presets set the upscaler (Tester settings shows the row)" : null;
             case "fps_cap":
-                return prefsBool(c, "ownRate", titleId) ? "this game picks its own frame rate" : null;
+                return null;   // Game owned remains selectable; the allowed-cap list rejects unavailable rates
             default: return null;
         }
     }

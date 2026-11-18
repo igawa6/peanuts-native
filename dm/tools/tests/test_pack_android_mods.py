@@ -15,7 +15,7 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'scripts'))
 sys.path.insert(0, str(REPO / 'dm/tools'))
 import pack_android as pa   # noqa: E402
-import ips, nso, patch_ips   # noqa: E402
+import ips, nso   # noqa: E402  # PEANUTS(upstream-candidate): patch_ips is exercised through the packer.
 
 TEXT, RO, DATA = bytes(range(256)) * 20, b'read-only ' * 300, b'\x01\x02' * 0x900
 

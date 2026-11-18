@@ -51,9 +51,9 @@ static void mq_push_(uint32_t m) {
     pthread_cond_broadcast(&g_mq_cond);
     pthread_mutex_unlock(&g_mq_lock);
 }
-static void oe_state_set(int m, int scale);   // with the graphics scale, below
+static void oe_state_set(int m, int scale, int64_t size);   // with the graphics scale and size, below
 // Called by the front end (overheat downgrade etc.): change the state and push 30 / 31 (and 300 when the scale follows the mode) according to the switches the game has turned on
-void dm_set_opmode(int m) { oe_state_set(m, -2); }
+void dm_set_opmode(int m) { oe_state_set(m, -2, -1); }
 // FocusState: 1 InFocus, 2 OutOfFocus, 3 Background. The front end calls dm_focus_set (iOS lifecycle / Mac window losing focus)
 static _Atomic int g_focus = 1; static _Atomic uint64_t g_focus_in_ns;   // the front end's state; time of its most recent entry into InFocus
 // Focus handling mode the game set (-1: none). The SDK's oe::SetFocusHandlingMode (SDK 18 sdk+0x3c5770) turns it into am's SetFocusHandlingMode(notify, ?, suspend) and
@@ -190,13 +190,16 @@ HLE_FORCE("_ZN2nn2oe42SetGraphicsScaleChangedNotificationEnabledEb", "graphics s
 static void *g_defres_ev[DEFRES_EV]; static _Atomic int g_defres_n;
 // Operation mode and graphics scale changes, as the console makes them (docking, the system's graphics settings): the whole new state first, then one notification per query
 // whose answer changed (30 and 31 for the mode, 300 for the scale), each only when the game turned it on, so a game that re-queries on the first one already sees all of it.
-// m -1 keeps the mode; scale -2 keeps the setting, 3 follows the mode, 0-2 holds that scale in every mode
+// m -1 keeps the mode; scale -2 keeps the setting, 3 follows the mode, 0-2 holds that scale in every mode; size -1 keeps the graphics size, else w << 16 | h (0: the game's own).
+// A size change posts 300 like a scale change, once with it: the panel's switch from 540p to 1080p changes both, and two notifications made the game draw 720p in between
+static int gfx_size_store(int64_t v);   // below: 1 when the size changed
 __attribute__((weak)) void dm_hid_opmode_changed(void) {}   // PEANUTS: hle_hid.c; the weak default is for builds without it (the unit tests that include this file)
 static pthread_mutex_t g_state_lock = PTHREAD_MUTEX_INITIALIZER;   // two producers (the panel, an overheat downgrade) do not interleave their read and store
-static void oe_state_set(int m, int scale) {
+static void oe_state_set(int m, int scale, int64_t size) {
     pthread_mutex_lock(&g_state_lock);
     int om = opmode(), os = gfx_setting(), nm = m < 0 ? om : m, ns = scale == -2 ? os : scale < 0 || scale > 2 ? 3 : scale;
     int scale_changed = gfx_scale_of(ns, nm) != gfx_scale_of(os, om);
+    int size_changed = size >= 0 && gfx_size_store(size);
     g_opmode = nm; g_gfx_scale = ns;
     pthread_mutex_unlock(&g_state_lock);
     if (nm != om) LOG("oe operation mode %d → %d", om, nm);
@@ -207,15 +210,46 @@ static void oe_state_set(int m, int scale) {
         int n = atomic_load(&g_defres_n); for (int i = 0; i < n; i++) hle_signal_system_event(g_defres_ev[i]);
         dm_hid_opmode_changed();   // PEANUTS: player 1's controller moves between No1 and Handheld with the mode: the style events fire, as on the console
     }
-    if (scale_changed && g_ntf_gfxscale) mq_push(MSG_GFXSCALE);
+    if ((scale_changed || size_changed) && g_ntf_gfxscale) mq_push(MSG_GFXSCALE);
 }
-// The launcher's in-game panel (Game resolution while the game runs, Native.graphicsModeSet): the graphics scale and operation mode of the choice's graphics_scale row
-// (Profile.resolutionLive). scale -1 follows the mode and m -1 is the profile's op_mode: both -1 is what a start without the lines gives (Original without a row)
+// The launcher's in-game panel (Game resolution while the game runs, Native.graphicsSet): the graphics scale, operation mode and graphics size of the choice's graphics_scale row
+// (Profile.resolutionLive), set together with one round of notifications. scale -1 follows the mode and m -1 is the profile's op_mode: both -1 is what a start without the lines
+// gives (Original without a row); a size of 0x0 is the game's own. nxhost_graphics_mode_set keeps the size (a launcher built before the size)
 // hle_render.c: a render setting changed while the game runs; the game reads it in GetPerformanceMode, which notification 31 asks for
 void dm_oe_perfmode_notify(void) { if (g_ntf_perfmode) mq_push(MSG_PERFMODE); }
 __attribute__((visibility("default"))) void nxhost_graphics_mode_set(int scale, int m) {
     LOG("main: Game resolution from the launcher's in-game panel: graphics scale %d, operation mode %d (-1: the game's own)", scale, m);
-    oe_state_set(m < 0 ? DM_GAME_OPMODE : m, scale < 0 ? 3 : scale);
+    oe_state_set(m < 0 ? DM_GAME_OPMODE : m, scale < 0 ? 3 : scale, -1);
+}
+__attribute__((visibility("default"))) void nxhost_graphics_set(int scale, int m, int w, int h) {
+    LOG("main: Game resolution from the launcher's in-game panel: graphics scale %d, operation mode %d (-1: the game's own), graphics size %dx%d", scale, m, w, h);
+    oe_state_set(m < 0 ? DM_GAME_OPMODE : m, scale < 0 ? 3 : scale, w > 0 && h > 0 ? (int64_t)w << 16 | h : 0);
+}
+// The size the player chose for a game that draws below what its graphics scales give (DM_GRAPHICS_SIZE=<w>x<h>: the launcher passes its graphics_scale row's size; the in-game
+// panel sets it live with the scale, nxhost_graphics_set). No Horizon query answers it: only a game's own size gate reads it (android/mtf_size.c), and the gate never goes above the size the
+// game picked itself. 0x0: the game's own. A change while the game runs posts 300 (the scale changed), which the game answers by sizing its scenes again
+static _Atomic uint32_t g_gfx_size = UINT32_MAX;   // w << 16 | h; UINT32_MAX not read yet
+static uint32_t gfx_size_parse(const char *e) {
+    unsigned w, h; char end;
+    if (!e || !*e) return 0;
+    if (sscanf(e, "%ux%u%c", &w, &h, &end) != 2 || w < 64 || h < 64 || w > 7680 || h > 4320) { LOG("[RED] DM_GRAPHICS_SIZE=%s: must be <w>x<h> (64x64 to 7680x4320); the game's own size", e); return 0; }
+    return w << 16 | h;
+}
+void dm_graphics_size(int *w, int *h) {
+    uint32_t v = g_gfx_size;
+    if (v == UINT32_MAX) {
+        uint32_t want = gfx_size_parse(getenv("DM_GRAPHICS_SIZE")), exp = UINT32_MAX;
+        if (want) LOG("oe: graphics size %ux%u for a game's size gate (DM_GRAPHICS_SIZE)", want >> 16, want & 0xffff);
+        atomic_compare_exchange_strong(&g_gfx_size, &exp, want); v = g_gfx_size;
+    }
+    *w = (int)(v >> 16); *h = (int)(v & 0xffff);
+}
+static int gfx_size_store(int64_t v) {   // under g_state_lock (oe_state_set)
+    int ow, oh; dm_graphics_size(&ow, &oh);
+    if ((uint32_t)v == ((uint32_t)ow << 16 | (uint32_t)oh)) return 0;
+    g_gfx_size = (uint32_t)v;
+    LOG("oe: graphics size %dx%d → %ux%u (0x0: the game's own)", ow, oh, (unsigned)(v >> 16), (unsigned)(v & 0xffff));
+    return 1;
 }
 // The frame length the game aims at (Switch 2 SDKs): oe::SetGraphicsTargetFrameRate maps up to 59 fps to mode 1, up to 119 to mode 2 and above to mode 3, SetGraphicsTargetFrameRateAuto
 // to mode 0, and both call this, which locks the gs graphics server's context and sends it the mode. The host has no graphics server (nv::InitializeGraphics), so the context is null and
@@ -270,10 +304,11 @@ static void *oe_script(void *arg) {
         if (due > now) usleep((useconds_t)((due - now) / 1000));
         if (!strcmp(key, "focus")) dm_focus_set(v);
         else if (!strcmp(key, "opmode")) dm_set_opmode(v);
-        else if (!strcmp(key, "gscale")) oe_state_set(-1, v < 0 ? 3 : v);   // 0-2, or -1: follow the operation mode again
+        else if (!strcmp(key, "gscale")) oe_state_set(-1, v < 0 ? 3 : v, -1);   // 0-2, or -1: follow the operation mode again
+        else if (!strcmp(key, "gsize")) oe_state_set(-1, -2, v > 0 ? (int64_t)(v * 16 / 9) << 16 | v : 0);   // a 16:9 graphics size by its height, 0: the game's own
         else if (!strcmp(key, "bg")) script_bg(v);
         else if (dm_render_script(key, v)) {}   // outh / rscale / quality: a render_cfg game's output height, render scale and graphics quality (hle_render.c)
-        else die("DM_OE_SCRIPT unknown key '%s' (focus / opmode / gscale / bg / outh / rscale / quality)", key);
+        else die("DM_OE_SCRIPT unknown key '%s' (focus / opmode / gscale / gsize / bg / outh / rscale / quality)", key);
     }
     return NULL;
 }

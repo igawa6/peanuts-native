@@ -21,7 +21,8 @@ TURNIP = {**QCOM, 'driver': 'turnip Mesa driver 26.0.0', 'driver_kind': 'custom 
 PANVK = {**QCOM, 'gpu': 'Mali-G710 MC7, Vulkan 1.3', 'driver': 'Mesa 25.1 PanVK', 'driver_kind': 'custom (DM_VK_DRIVER PanVK_v1.1)'}
 
 
-def log(source, rule='gpu-hang', doc='docs/reference/rendering.md#x', header=None, symptoms=(), poster='alice', link='https://example.test/i/1#c2'):
+# PEANUTS(upstream-candidate): tests also exercise a digest without a matched rule.
+def log(source, rule: str | None = 'gpu-hang', doc='docs/reference/rendering.md#x', header=None, symptoms=(), poster='alice', link='https://example.test/i/1#c2'):
     return {'file': '/tmp/x/issue-a.log', 'source': source, 'poster': poster, 'link': link, 'digest': {
         'header': header if header is not None else QCOM, 'stage': {'number': 8, 'name': 'frame loop'}, 'perf': {'fps_game': {'median': 30.1}},
         'symptoms': [{'heading': hd, 'doc': dc} for hd, dc in symptoms],
@@ -33,12 +34,28 @@ class Body(unittest.TestCase):
     def render(self, text):
         return unittest.mock.patch.object(I.log_digest, 'render', lambda d: text)
 
+    def test_settings_changed_near_the_top(self):
+        lg = log('attached in issue: A.log'); lg['digest']['adv'] = ['DM_X=1 (Advanced, global)']
+        with self.render('== log digest\n'):
+            b = C.body(82, {'logs': [lg]})
+        # PEANUTS(upstream-candidate): a supplied log must produce a comment before inspecting its text.
+        assert b is not None
+        self.assertIn('**Settings changed from the defaults**\n\n- `DM_X=1 (Advanced, global)`', b)
+        self.assertLess(b.index('Settings changed'), b.index('What you can try'))
+        lg['digest']['adv'] = []
+        with self.render('x'):
+            # PEANUTS(upstream-candidate): an empty settings list still produces a comment for this log.
+            b = C.body(82, {'logs': [lg]})
+            assert b is not None
+            self.assertIn('**Settings changed from the defaults**\n\n- none', b)
+
     def test_no_log_no_comment(self):
         self.assertIsNone(C.body(1, {'logs': []}))
 
     def test_mark_summary_and_link(self):
         with self.render('== log digest\n-- verdict\n'):
             b = C.body(82, {'logs': [log('attached in issue: A.log')]})
+            assert b is not None   # PEANUTS(upstream-candidate): this supplied log produces a comment.
         self.assertTrue(b.startswith(I.BOT_MARK))
         self.assertIn('- **alice** · [A.log](https://example.test/i/1#c2) · Banana Native 0.3.14 · Xiaomi 23049PCD8G (Android 17), Adreno 725 · '
                       'Qualcomm system driver · The Legend of Zelda: Ocarina of Time (`0400486024DEC000`)\n'
@@ -51,6 +68,7 @@ class Body(unittest.TestCase):
     def test_same_ending_said_once(self):
         with self.render('x\n'):
             b = C.body(1, {'logs': [log('attached in issue: A.log'), log('attached in c1: B.log')]})
+            assert b is not None   # PEANUTS(upstream-candidate): this supplied log produces a comment.
         self.assertIn('Both logs end the same way: **driver lost**.', b)
         self.assertEqual(b.count('- Try another GPU driver.'), 1)
         self.assertEqual(b.count('rendering.md#x)'), 1)
@@ -60,8 +78,11 @@ class Body(unittest.TestCase):
         sym = [('A geometry shader that emits nothing hangs Qualcomm\'s driver (Android)', 'docs/reference/rendering.md#qc')]
         with self.render('x\n'):
             qc = C.body(1, {'logs': [log('pasted in issue', doc=turnip_doc, symptoms=sym)]})
+            assert qc is not None   # PEANUTS(upstream-candidate): this supplied log produces a comment.
             tu = C.body(1, {'logs': [log('pasted in issue', doc=turnip_doc, symptoms=sym, header=TURNIP)]})
+            assert tu is not None   # PEANUTS(upstream-candidate): this supplied log produces a comment.
             pv = C.body(1, {'logs': [log('pasted in issue', doc=turnip_doc, header=PANVK)]})
+            assert pv is not None   # PEANUTS(upstream-candidate): this supplied log produces a comment.
         self.assertNotIn('turnip-hangs', qc); self.assertIn('rendering.md#qc)', qc)
         self.assertIn('turnip-hangs', tu); self.assertNotIn('rendering.md#qc)', tu)
         self.assertNotIn('turnip-hangs', pv)
@@ -71,11 +92,13 @@ class Body(unittest.TestCase):
     def test_fence_outlasts_backticks(self):
         with self.render('line ```` four\n'):
             b = C.body(1, {'logs': [log('pasted in issue', rule=None)]})
+            assert b is not None   # PEANUTS(upstream-candidate): this supplied log produces a comment.
         self.assertIn('`````text\n', b); self.assertNotIn('What you can try', b)
 
     def test_cut_to_limit(self):
         with self.render('x' * 50 + '\n' + ('y' * 99 + '\n') * 2000):
             b = C.body(1, {'logs': [log('attached in issue: A.log'), log('attached in c1: B.log')]})
+            assert b is not None   # PEANUTS(upstream-candidate): this supplied log produces a comment.
         self.assertLess(len(b), 65535)
         self.assertEqual(b.count('[… cut to fit the comment]'), 2)
 

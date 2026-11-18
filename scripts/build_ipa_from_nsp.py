@@ -473,6 +473,12 @@ def check_versions_aarch64(dirs, logs, g, name):   # every extracted version of 
                       f'; game profile {g.id} registers {", ".join(other)}: pack {"that version" if len(other) == 1 else "one of those versions"} (-p / PACKAGE) with its update in the folder' if other else '')
 
 
+def survey_nros(folder):
+    """PEANUTS(upstream-candidate): {name: path} of the NRO files the survey's manifest pass copied into folder. Files only: The Binding of Isaac: Afterbirth+ keeps its
+    two NROs in a RomFS folder that is itself named `.nro`, which rglob('*.nro') matches too, and the survey then read a folder as a module (IsADirectoryError)"""
+    return {p.name: p for p in sorted(Path(folder).rglob('*.nro')) if p.is_file()}
+
+
 def survey(dump, app, fam, repo, py, env):
     """What a game with no profile is: its newest version's code modules and RomFS headers (<dump folder>/<title ID>_survey/extract: ExeFS/, romfs_manifest.tsv and the RomFS's
     NRO modules in romfs_nro/, the layout profile_guess.py --check reads) → survey.md beside it, and the facts the provisional profile is guessed from"""
@@ -534,7 +540,7 @@ def survey(dump, app, fam, repo, py, env):
     # What it means for a port
     G = pg.guess(F)   # the provisional profile's keys (write_profile writes the same)
     keep = G['modules'][0].split()   # how the build will get the shaders (decided again from the extraction at build time; the survey has only a RomFS manifest, so Unreal paks are guessed from main's markers)
-    nros = {p.name: p for p in sorted((ex / 'romfs_nro').rglob('*.nro'))}   # the manifest pass writes the NROs (their imports decide the API and the modules: Portal 2's main is SDL with EGL, its Source engine NROs draw with NVN)
+    nros = survey_nros(ex / 'romfs_nro')   # PEANUTS(upstream-candidate): files only (survey_nros); the manifest pass writes the NROs (their imports decide the API and the modules: Portal 2's main is SDL with EGL, its Source engine NROs draw with NVN)
     nro_add = pg.nro_modules(ex / 'ExeFS', nros, keep) if nros else {}
     S = pg.shader_sources(mods['main']['imports'], F['glsl_src'], [m for m in sorted({*keep, *nro_add}, key=pg.load_order) if 'glslcCompile' in mods[m]['exports']], rom['mags']['SPIR-V'],
                           rom['exts'].get('.pak', 0) if F.get('main_markers', set()) & {'Unreal', 'Unreal 4'} else 0, rom['mags']['Trinity pack'], gl_names=F.get('gl_names', 0),
@@ -922,7 +928,9 @@ def collect_nros(py, repo, romfs, dst, env, logs):
     if not nrrs:
         rmtree(dst); rmtree(kf)   # an update can remove its NRRs: do not carry the previous manifest into the rewrite
         return {}
-    key = fingerprint(('files', nrrs + [repo / f for f in ('dm/tools/nro_collect.py', 'dm/tools/nso_syms.py', 'dm/gfx/tools/smash_arc.py', 'dm/tools/romfs.py')]), ('tree', romfs))
+    exefs = [p for p in sorted(romfs.parent.iterdir()) if p.name.lower() == 'exefs' and p.is_dir()]   # a boot stub there may pack an NRO (boot_nro.py)
+    key = fingerprint(('files', nrrs + [repo / f for f in ('dm/tools/nro_collect.py', 'dm/tools/nso_syms.py', 'dm/gfx/tools/smash_arc.py', 'dm/tools/romfs.py', 'dm/tools/boot_nro.py', 'dm/gfx/tools/cra.py')]
+                              + [p for d in exefs for p in sorted(d.iterdir()) if p.is_file()]), ('tree', romfs))
     if not ((dst / 'nro.tsv').is_file() and reused(kf, key) is not None):
         tmp = dst.with_name(dst.name + '.partial'); rmtree(tmp)
         PROG.set(step=f'finding the NROs {len(nrrs)} NRR files register')
@@ -1341,6 +1349,12 @@ def heap_checked(g):   # the heap check's stamp in the profile ("# heap check: .
     return any(l.startswith('# heap check: ') for l in (g.dir / 'game.tsv').read_text(encoding='utf-8').splitlines())
 
 
+def check_aoc(work):   # the DLC the build packed (pack_dlc, <id>_build/aoc/<index>.img) for the heap and region checks' boots, as the IPA's run has it: a game that mounts
+    # its add-on at boot stops without it (Super Mario Bros. Wonder's program 1 mounts aocup, its Switch 2 content, and crashed in the sdk when the index did not exist)
+    a = work / 'aoc'
+    return {'DM_AOC_DIR': str(a)} if a.is_dir() and any(a.glob('*.img')) else {}
+
+
 def heap_check(repo, d, patched, work, env, logs, g):
     """The heap check of a provisional profile whose game has virtual address memory (an NPDM system resource) and sets a heap (dm/games/profile_guess.py heap_check_needed):
     its heap request decides the alias / heap split of the guest block, and only a run shows it (Wonder asks for 1.44 GB, Tears of the Kingdom for 2.09 GB, which Engage's split
@@ -1352,7 +1366,7 @@ def heap_check(repo, d, patched, work, env, logs, g):
     rmtree(rd)
     for x in ('save', 'temp', 'msl'): (rd / x).mkdir(parents=True)
     # a fresh save and temporary storage, no shader libraries (only the heap request matters), the profile's shader map
-    henv = dict(env, DM_ROMFS=str(rfs.source(d)), DM_SAVE=str(rd / 'save'), DM_TEMP=str(rd / 'temp'), DM_MSL_DIR=str(rd / 'msl'), DM_NVN_SHMAP=str(g.table('shader_map.tsv')))
+    henv = dict(env, DM_ROMFS=str(rfs.source(d)), DM_SAVE=str(rd / 'save'), DM_TEMP=str(rd / 'temp'), DM_MSL_DIR=str(rd / 'msl'), DM_NVN_SHMAP=str(g.table('shader_map.tsv')), **check_aoc(work))
     PROG.set(step='booting the game')
     t0, seen = time.time(), {}
     def done():   # the first heap request answered (or refused for good), or nnMain running for a while without one
@@ -1407,7 +1421,7 @@ def region_check(repo, d, patched, work, env, logs, g):
     rmtree(rd); table.unlink(missing_ok=True)
     for x in ('save', 'temp', 'msl'): (rd / x).mkdir(parents=True)
     henv = dict(env, DM_ROMFS=str(rfs.source(d)), DM_SAVE=str(rd / 'save'), DM_TEMP=str(rd / 'temp'), DM_MSL_DIR=str(rd / 'msl'), DM_NVN_SHMAP=str(g.table('shader_map.tsv')),
-                DM_ALIAS_SIZE=f'{SWITCH_ALIAS:#x}', DM_REGIONS=str(table))
+                DM_ALIAS_SIZE=f'{SWITCH_ALIAS:#x}', DM_REGIONS=str(table), **check_aoc(work))
     PROG.set(step='booting the game')
     t0, seen = time.time(), {}
     def done():

@@ -1,0 +1,53 @@
+# Provisional game profile of My Time at Sandrock (Switch, update 1.4.2.0 = v851968 over the base game), Unity 2021.3.26f1 IL2CPP, SDK 16.2.0, NVN, Wwise.
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Written from a survey of the game files (dm/games/profile_guess.py); packed on a PC, not run on a device. Every key marked "guess" follows a rule or a sibling
+# profile and is not measured. README.md beside this file.
+# Format: see dm/games/README.md
+
+# ---- Identity ----
+title_id	0100B63016916000
+program_id	0100B63016916000
+
+# ---- App ----
+name	My Time at Sandrock
+ipa	MyTimeAtSandrock.ipa
+app_category	public.app-category.games
+# guess: a 3D game with a free camera; the 3D layout has the right stick. Nothing in the files decides it
+pad_layout	full
+
+# ---- Versions ----
+# 1.4.2.0: the update's control data (control.nacp +0x3060); the base package says 1.0.2 and has no main of its own
+build	v851968	1.4.2.0	main=b74dfd27fc9da1b4e19d06e3d40dd370	subsdk0=ff0149d0b5e882b87c2f06a981302b13	sdk=3053b22935e32ddf15ef81997603e5c2
+package	v851968
+shader_versions	v851968
+
+# ---- Files ----
+# every module main imports from; subsdk0 is NintendoSDK_movie
+modules	main subsdk0 sdk
+# the file every Unity player has (as the other Unity profiles); profile_guess.py's rule would name the largest file, an asset bundle
+romfs_marker	Data/globalgamemanagers
+zip_store	.1:.2:.5:.assets:.autumn:.dat:.h:.json:.ress:.spring:.summer:.winter:.xml:.metallib
+
+# ---- Memory ----
+# The borrowed 1.5 GB pool fills during character creation on Android/Turnip: MapPhysicalMemory is refused at 1.43 GB mapped, then main+0x52b780 writes an
+# allocator header into uncommitted memory. Restore the standard application pool and grow the alias region and reserve together: nninitStartup reserves
+# pool-minus-used as one address region, so raising the pool alone would take address space Unity also needs (Sea of Stars, same SDK).
+# Keep the existing 256 MB stack and 384 MB heap partitions. These sizes pass the opening character scene; later gameplay remains unverified.
+mem_reserve	0x200000000
+mem_alias	0x1d8000000
+mem_stack	0x10000000
+app_pool	0xcd500000
+# the NPDM declares 6 MB of system resource
+sys_resource	0x600000
+# Frame rate: FPSLocker Warehouse lists this exact build as needing no code patch above 30. Follow display ticks so the host's cap can select 30 or 60;
+# use the requested 60 fps default. Higher targets depend on the scene and device. No fixed-step or engine-memory patch is used.
+present_interval	display
+fps_limit	60
+fps_limit_max	120
+# No mem_used: for a game with a system resource the NSP script leaves it to the heap check (refine_after_rewrite). The rewritten modules are 155 MB, more than
+# the default 64 MB: if the first run logs "[mem] SetHeapSize ... + modules ... > app pool" and no heap after it, the key is mem_used 0x9e98000
+# (profile_guess.mem_used on the pack). Sea of Stars runs without the key
+
+# ---- Shader split (shader_split.py; Unity Shader objects, read by unityfs.py) ----
+shader_groups	/Data/=data
+shader_note	My Time at Sandrock shaders (provisional profile)

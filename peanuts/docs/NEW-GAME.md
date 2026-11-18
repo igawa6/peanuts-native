@@ -57,13 +57,26 @@ python scripts/build_ipa_from_nsp.py "<work dir>/dump" --survey-only
 
 Read `<work dir>/dump/<TITLE ID>_survey/survey.md`: modules and build IDs, SDK, engine, shader containers, `[RED]` lines. A 32-bit game stops here and cannot run. Then compare it with a profile of the same engine or SDK: `grep` the notes in `dm/games/*/README.md` for the engine name and the SDK.
 
+**When the dump does not fit on the disk.** A dump is as large as the `.nup`, on top of it, and a `.nup` with an update can be much larger than the game's files (Diablo III: 17.9 GB of `.nsp` files, a 29.9 GiB `.nup`; the importer prints the total in its first progress lines, so stop it there if it will not fit). The survey reads little of the RomFS: each file's path, its size and its first 32 bytes, and the NRO files whole. `--heads` makes a folder with exactly that, a few MB plus the code modules:
+
+```sh
+python peanuts/scripts/nup-extract.py "<work dir>/<Name>.nup" "<work dir>/heads" --heads
+python scripts/build_ipa_from_nsp.py "<work dir>/heads" --survey-only
+```
+
+It is not a dump. The survey and the provisional profile ([step 3](#3-the-provisional-profile-and-the-shader-split)) may read it; the shader split must read the game itself, and it reads a `.nup` in place: give it `"<Name>.nup:update/<version>/romfs"` and `"<Name>.nup:update/<version>/exefs/main"` (`:base/…` for a game without an update) where the commands below have the dump's folders. The pack step reads the `.nup` as well, so such a game needs no dump at all. In zsh, write `"${N}:update/…"` when the path is in a variable: `"$N:update"` is zsh's upper-case modifier and gives a path that does not exist.
+
 ## 3. The provisional profile and the shader split
 
 ```sh
 python scripts/build_ipa_from_nsp.py "<work dir>/dump" --platform mac
 ```
 
-This writes `<work dir>/dump/<TITLE ID>_build/profile/<TITLE ID>/game.tsv`. Without Xcode's Metal toolchain it then stops with `the Metal compiler does not run`, which is fine here. Then split the shaders into that profile. This is the command `build_ipa_from_nsp.py` runs (`split_shaders`); for a game with updates, `<romfs>` and `<main>` are comma-separated lists, one per version:
+This writes `<work dir>/dump/<TITLE ID>_build/profile/<TITLE ID>/game.tsv`. Without Xcode's Metal toolchain it then stops with `the Metal compiler does not run`, which is fine here.
+
+**On Linux, leave `--platform mac` out.** With it the script stops before the survey: `--platform mac runs the game in the Mac host … it needs a Mac with Apple silicon`. Without it the script surveys, writes the same provisional profile, and then stops at the first thing an iPhone build needs and the PC lacks, which is fine too. On the PC this was written on that was `the current Python … is missing modules: fontTools`; with `fonttools` installed the next stop is the check for Xcode's tools (not run here). Either way the profile is there before the stop, with header-only shader tables, and the heap check that would correct its memory keys does not run: on Linux the memory keys stay the survey's guess, so take them from the closest profile of the same engine when its note says the guess failed there.
+
+Then split the shaders into that profile. This is the command `build_ipa_from_nsp.py` runs (`split_shaders`); for a game with updates, `<romfs>` and `<main>` are comma-separated lists, one per version:
 
 ```sh
 P="<work dir>/dump/<TITLE ID>_build/profile/<TITLE ID>"
@@ -73,6 +86,24 @@ python dm/gfx/tools/shader_split.py "<work dir>/dump/base/romfs" "<work dir>/dum
 ```
 
 Its last line counts the shaders (`shaders: 47099 (compute 62, pixel 32861, vertex 14176); …`). Zero means the game keeps its shaders in a form `shader_split.py` does not read yet ([04-graphics.md](../../docs/agents/04-graphics.md)).
+
+### Games the PC split cannot read
+
+Three kinds were met, and each shows within minutes, before any long step. Such a game is not readable by the PC split: it needs a provisional pack that boots, plus a run on the device that saves what the files do not give (`DM_NVN_SHDUMP=<folder>` or `DM_GLSLC_CAPTURE=<folder>`), before its shader tables can be written. Until then a profile for it does not go into the repository (Farming Simulator's draft profile was taken out again for that reason); write down what you found instead.
+
+| Kind | How it shows | Seen on |
+|---|---|---|
+| The shaders are in an archive format that has no reader | The split ends with `shaders: 0`, or with only the handful in `main` (`sources main 12`), and the survey's RomFS table is a few very large files of one extension with no known header magic. Look at the first bytes of the largest one: `head -c 16 <file> \| xxd` on the `--heads` folder is enough | Diablo III: 23 `.cpk` files of Blizzard's own format (magic `d4 c3 b2 a1`, not CRI's `CPK `). Crash Team Racing Nitro-Fueled was one: 401 `.pak` files of the Alchemy engine (magic `IGA\x1a`), until `shader_split.py` got a reader for them (`iga_shaders`: 1,933 shaders in `shaders_nx.pak`). Farming Simulator before them |
+| The game compiles its shaders while it runs | The survey lists a `GLSLC` module (`subsdk0`), `main` imports `glslcCompile`, and the split prints `[RED] main holds GLSL sources and imports glslcCompile, but there are no captured GLSLC outputs in …/glslc_capture` | Crash Team Racing Nitro-Fueled (5 GLSL sources in `main`). The Binding of Isaac: Afterbirth+ is the same with no warning line: its GLSL is in two NRO files and in `.vs` / `.fs` RomFS files, which the survey's rule does not count, so only the zero says so |
+| No shader anywhere in the files | `shaders: 0 ()`, no `[RED]` line, and the pack step refuses: `[RED] the profile … has no shader in its shader_map.tsv, and does not say that the game has none` | The Binding of Isaac: Afterbirth+. Before taking a zero for this kind, rule out the two above |
+
+What such a game needs, none of which was done for these three:
+
+1. A provisional pack of the code alone (`pack_android.py … --no-shaders`), and an app built with the provisional profile. The game has to boot far enough with no shader library to hand its shaders to NVN.
+2. A run on the device with the capture switch in the game's environment. `DM_NVN_SHDUMP=<folder>`: the host saves the control section and the code of every shader the game asks for that the library does not have (`dm/gfx/vk_android/vka_shader.c`, `<key>.ctl` and `<key>.code`), which is every shader, wherever the game keeps it. `DM_GLSLC_CAPTURE=<folder>`: the host saves each output of the game's own GLSLC (`dm/host/hle_glslc.c`), for a game that compiles at run time.
+3. The split again with those folders: it reads `nvn_shdump/` and `glslc_capture/` beside the RomFS (or `DM_NVN_SHDUMP_DIR` / `DM_GLSLC_CAPTURE`; `shader_split.py` `nvn_dumps`), and the map gets rows for them. A profile with `/glslc_capture/` rows is Fire Emblem: Three Houses' (`shader_groups … /glslc_capture/=runtime`): the PC builder refuses such a game unless the folder is given, and Build in the app runs the capture itself ([BUILDER.md](BUILDER.md#games-the-builder-refuses)). A dump holds only the shaders of the scenes that were played, so it is a start, not a full table; [04-graphics.md](../../docs/agents/04-graphics.md) uses it to find the container that was missed.
+
+A stop inside a reader is a fourth case, and the usual one for an engine the tools do read: the message names the file and the reason. Two were met on My Time at Sandrock (Unity 2021.3.26f1) and are fixed. `no bundle has a Shader type tree of the same hash to borrow`: a Unity release whose stripped files need a layout in `dm/gfx/tools/unityfs.py` `KNOWN_TREES`. Write it from that release's type tree (AssetRipper's TypeTreeDumps, `StructsDump/release/<version>.dump`), check it node for node, and check on the game that every Shader object reads to its exact end and that each blob's entries are all code or parameter entries. And a `[RED] <file>: error: … (its shaders are left out)` line: one object the reader could not take costs the whole file, so the count is too low rather than zero. Compare the count with what the engine's other games have.
 
 ## 4. The profile in the repository
 

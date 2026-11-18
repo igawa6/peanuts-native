@@ -105,23 +105,31 @@ public final class LauncherJvmTest {
                 && sc4.resolutionEnv("960x540").equals(List.of("DM_GRAPHICS_SCALE=2", "DM_OPMODE=0")), "four rows: " + sc4.resolutionEnv("960x540"));
         check(Profile.parse("0400C3F00006E000\tM\t0\tx\t\t\t\t\t\tscale:original=1/console").get(0).resolutionEnv("original").equals(List.of("DM_GRAPHICS_SCALE=1", "DM_OPMODE=1")), "console");
         // While the game runs (the in-game panel, Native.graphicsModeSet): the same row as {scale, mode}; Original without a row {-1, -1}, the game's own; none for window games
-        check(sc.resolutionLive() && java.util.Arrays.equals(sc.resolutionLive("1280x720"), new int[] {2, 0}) && java.util.Arrays.equals(sc.resolutionLive("2560x1440"), new int[] {0, 0})
-                && java.util.Arrays.equals(sc.resolutionLive("848x480"), new int[] {2, 0}) && java.util.Arrays.equals(sc.resolutionLive("original"), new int[] {-1, -1}),
+        check(sc.resolutionLive() && java.util.Arrays.equals(sc.resolutionLive("1280x720"), new int[] {2, 0, 0, 0}) && java.util.Arrays.equals(sc.resolutionLive("2560x1440"), new int[] {0, 0, 0, 0})
+                && java.util.Arrays.equals(sc.resolutionLive("848x480"), new int[] {2, 0, 0, 0}) && java.util.Arrays.equals(sc.resolutionLive("original"), new int[] {-1, -1, 0, 0}),
                 "live graphics_scale rows: " + java.util.Arrays.toString(sc.resolutionLive("original")));
-        check(java.util.Arrays.equals(sc4.resolutionLive("original"), new int[] {1, 1}) && java.util.Arrays.equals(sc4.resolutionLive("1920x1080"), new int[] {0, 0}), "live, four rows");
+        check(java.util.Arrays.equals(sc4.resolutionLive("original"), new int[] {1, 1, 0, 0}) && java.util.Arrays.equals(sc4.resolutionLive("1920x1080"), new int[] {0, 0, 0, 0}), "live, four rows");
+        // A row whose scale and mode a larger row also has: a size the scales do not give, passed as DM_GRAPHICS_SIZE for the game's size gate (Mario Tennis Fever's 960x540)
+        Profile mtf = Profile.parse("0400D4201C6EA000\tT\t0\tx\t\t\t\t\t\tscale:original=1/console,2560x1440=1/console,1920x1080=0/handheld,1280x720=2/handheld,960x540=2/handheld").get(0);
+        check(mtf.resolutionEnv("960x540").equals(List.of("DM_GRAPHICS_SCALE=2", "DM_OPMODE=0", "DM_GRAPHICS_SIZE=960x540"))
+                && mtf.resolutionEnv("848x480").equals(List.of("DM_GRAPHICS_SCALE=2", "DM_OPMODE=0", "DM_GRAPHICS_SIZE=960x540")), "540p's size: " + mtf.resolutionEnv("960x540"));
+        check(mtf.resolutionEnv("1280x720").equals(List.of("DM_GRAPHICS_SCALE=2", "DM_OPMODE=0")) && mtf.resolutionEnv("2560x1440").equals(List.of("DM_GRAPHICS_SCALE=1", "DM_OPMODE=1"))
+                && mtf.resolutionEnv("original").equals(List.of("DM_GRAPHICS_SCALE=1", "DM_OPMODE=1")), "the larger rows pass no size: " + mtf.resolutionEnv("1280x720"));
+        check(java.util.Arrays.equals(mtf.resolutionLive("960x540"), new int[] {2, 0, 960, 540}) && java.util.Arrays.equals(mtf.resolutionLive("1280x720"), new int[] {2, 0, 0, 0}),
+                "live 540p: " + java.util.Arrays.toString(mtf.resolutionLive("960x540")));
         // The two-choice form (Profile.modes): one console row and one handheld row, both sizes, give Docked and Handheld; any other set of rows keeps the phone sizes
         Profile fe = Profile.parse("04007EF01F8AE000\tF\t0\tx\t\t\t\t\t\tscale:2048x1152=1/console,1920x1080=0/handheld").get(0);
         check(java.util.Arrays.equals(fe.modes(), new String[] {"2048x1152", "1920x1080"}) && fe.modeLabel(0).equals("Docked (1152p)") && fe.modeLabel(1).equals("Handheld (1080p)"),
                 "two rows, docked and handheld: " + java.util.Arrays.toString(fe.modes()));
         check(fe.resolutionEnv(fe.modes()[0]).equals(List.of("DM_GRAPHICS_SCALE=1", "DM_OPMODE=1")) && fe.resolutionEnv(fe.modes()[1]).equals(List.of("DM_GRAPHICS_SCALE=0", "DM_OPMODE=0"))
-                && java.util.Arrays.equals(fe.resolutionLive(fe.modes()[0]), new int[] {1, 1}) && java.util.Arrays.equals(fe.resolutionLive(fe.modes()[1]), new int[] {0, 0}),
+                && java.util.Arrays.equals(fe.resolutionLive(fe.modes()[0]), new int[] {1, 1, 0, 0}) && java.util.Arrays.equals(fe.resolutionLive(fe.modes()[1]), new int[] {0, 0, 0, 0}),
                 "each choice takes its own row, at start and live: " + fe.resolutionEnv(fe.modes()[0]));
         check(fe.modeOf("2048x1152") == 0 && fe.modeOf("2560x1440") == 0 && fe.modeOf("1920x1080") == 1 && fe.modeOf("1280x720") == 1 && fe.modeOf("original") == 0,
                 "an older phone-size choice shows the row it takes; Original shows as Docked: " + fe.modeOf("original"));
         // Original stored, then Docked, Handheld and Docked again: each pick stores its row's size, shows as that choice and takes that row at start and live
         String stored = "original";
-        check(fe.resolutionEnv(stored).isEmpty() && java.util.Arrays.equals(fe.resolutionLive(stored), new int[] {-1, -1}), "Original itself still sets nothing (the profile's op_mode)");
-        int[][] live = {{1, 1}, {0, 0}, {1, 1}};
+        check(fe.resolutionEnv(stored).isEmpty() && java.util.Arrays.equals(fe.resolutionLive(stored), new int[] {-1, -1, 0, 0}), "Original itself still sets nothing (the profile's op_mode)");
+        int[][] live = {{1, 1, 0, 0}, {0, 0, 0, 0}, {1, 1, 0, 0}};
         int[] picks = {0, 1, 0};
         for (int k = 0; k < picks.length; k++) {
             stored = fe.modes()[picks[k]];

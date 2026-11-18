@@ -18,3 +18,17 @@ No `patches.py`.
 ## Open
 
 - Luminescent Platinum for Shining Pearl and the other code mods have not been tried on this build: a mod's hooks are keyed to `main`'s build.
+
+## Android community FPS timing corrections
+
+Android uses the corresponding reviewed Fl4sh9174 timing corrections for 1.3.0, with this game's own main build and separate hook/cave addresses. The method and bounded water phase are described in [Brilliant Diamond](../0100000011D90000/README.md#android-community-fps-timing-corrections).
+
+WaterInteraction's type 4332, 26 fields, 0x120 allocation, last instance bool at 0x118 and spare word at 0x11c were independently checked against this build's metadata and registrations. Every patch word is exact-build and expected-byte checked. Choices are 30/40/45/60/90/120 plus Game owned, default 60; 20 is unavailable because the correction cannot sustain 30 Hz NPC/water activity below 30 rendered FPS. High rates remain experimental.
+
+Both builds passed the 2,192-check actual ARM64 CPU fixture. A bounded Turnip town route reached about 118–119 FPS at the 120 target. Broader physics, water/snow interactions and later areas remain unvalidated.
+
+Source: [Fl4sh9174 Switch emulator mods](https://github.com/Fl4sh9174/Switch-Emulator-Ultrawide-FPS-Mods), reviewed commit `5eed21701e8091389e2e746f073f694ea2ad4ec6`. These community timing patches are separate from FPSLocker Warehouse configs.
+
+## Found on this game
+
+- [Reviewed community FPS timing plans on Android](../../../docs/reference/frame-rate.md#reviewed-community-fps-timing-plans-on-android): exact-build clock and activity corrections, including Game owned and supported target bounds.

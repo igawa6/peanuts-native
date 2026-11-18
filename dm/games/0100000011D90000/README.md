@@ -12,7 +12,7 @@ Update 1.3.0 (v393216) over the base game. Unity 2019.4.27f1 IL2CPP, SDK 11.4.3,
 | `sys_resource 0x1000000` | `game.tsv` | the NPDM's 16 MB system resource selects virtual address memory |
 | `fps_target 60`, `present_interval display` | `game.tsv`, build-gated engine limiter | raises Unity's own cap and the interval-2 present cap; see [Frame rate](#frame-rate) |
 
-No game-specific code cuts. `DM_FPS_TARGET=30 DM_PRESENT_INTERVAL=game` restores the original 30 fps.
+The original Mac/iOS FPS method uses no game-specific code cuts. `DM_FPS_TARGET=30 DM_PRESENT_INTERVAL=game` restores its original 30 fps. Android now uses the reviewed timing corrections described below; choose Game owned and restart to restore its original path.
 
 ## Memory
 
@@ -59,9 +59,23 @@ Build with `scripts/build_ipa_from_nsp.py <dump folder> --platform mac`; its fin
 - [AudioOut stop releases pending buffers](../../../docs/reference/audio.md#stopping-an-audioout-releases-its-pending-buffers), reported on 1.0.0 in PR #190.
 - [Unity's integer target frame rate](../../../docs/reference/frame-rate.md#unitys-integer-target-frame-rate).
 
+- [Reviewed community FPS timing plans on Android](../../../docs/reference/frame-rate.md#reviewed-community-fps-timing-plans-on-android): exact-build clock and activity corrections, including Game owned and supported target bounds.
+
 ## Open
 
 - [FPSLocker Warehouse](https://github.com/masagrator/FPSLocker-Warehouse/blob/v4/README.md#L847) flags physics issues above 30 fps for this exact build. A short movement check cannot rule out every physics issue in later areas.
 - First battle and later areas remain untested.
 - User testing on iOS remains required.
 - Recheck the intermittent Core Audio callback stalls during a long run on the final host build.
+
+## Android community FPS timing corrections
+
+Android uses reviewed Fl4sh9174 corrections for 1.3.0: water/snow scheduling at 30 updates per second, non-player movement scaled by deltaTime, and NPC AI action probability adjusted for frame rate. The player intentionally bypasses NPC movement correction. A guarded integer targetFrameRate write and host NVN interval mode supply the cap; the SDK binary cut is omitted.
+
+The accumulator at object +0x11c is verified padding inside WaterInteraction's 0x120-byte allocation. The exact metadata type 4332, field-offset table and type-size registration identify the last instance field as a bool at 0x118; later fields are static. No declared descendant was found in the matching metadata. Every original code/cave word is checked before any mapped-memory write; pack files stay unchanged.
+
+The spare accumulator is explicitly zeroed on first update. The source scheduler was adjusted to discard missed whole water updates while retaining fractional phase after a stall, avoiding unbounded debt and a catch-up burst. Below 30 actual rendered FPS it still cannot execute 30 whole updates per second. Accordingly 20 FPS is unavailable; choices are 30/40/45/60/90/120 plus Game owned, default 60. High rates remain experimental.
+
+Actual ARM64 fixtures for both builds passed 2,192 checks: checked 76-word transactions, Game owned omission, integer cap writes, 30 Hz water at every supported target, first-update/replay behavior, stall recovery, NPC/player/null-pointer paths and AI random/threshold handling. A bounded Turnip run reached Twinleaf Town at about 59 FPS. CPU fixtures and short town checks do not establish full-game correctness.
+
+Source: [Fl4sh9174 Switch emulator mods](https://github.com/Fl4sh9174/Switch-Emulator-Ultrawide-FPS-Mods), reviewed commit `5eed21701e8091389e2e746f073f694ea2ad4ec6`. These community timing patches are separate from FPSLocker Warehouse configs.

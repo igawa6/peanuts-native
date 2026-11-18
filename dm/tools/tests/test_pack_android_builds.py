@@ -4,15 +4,20 @@ import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, Callable   # PEANUTS(upstream-candidate): independently loaded fixture module and optional profile hook.
 
 REPO = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('pack_android', REPO / 'scripts/pack_android.py')
-pa = importlib.util.module_from_spec(spec); spec.loader.exec_module(pa)
+assert spec is not None and spec.loader is not None   # PEANUTS(upstream-candidate): required fixture loader.
+pa: Any = importlib.util.module_from_spec(spec); spec.loader.exec_module(pa)
 
 A, B, C, D = ('%032x' % n for n in (1, 2, 3, 4))   # build IDs
 
 
 class Profile:   # what dump_modules asks of a game profile
+    # PEANUTS(upstream-candidate): attributes supplied by individual synthetic profiles.
+    id: str
+    get: Callable[..., str | None]
     dir = Path('.')
     def __init__(self, modules, builds): self._m, self._b = modules, builds
     def words(self, key): return self._m.split()
@@ -153,7 +158,11 @@ class SplitAbsent(unittest.TestCase):
         self.assertEqual(len(pa.other_version_keys(g, 1441792)), 135)
         self.assertEqual(len(pa.map_keys(g.dir / 'shader_map.tsv')), 29785)
         self.assertEqual(pa.other_version_keys(g, 1507328), set(), 'what 4.0.1 dropped of 4.0.0 is not in the tags')
-        self.assertFalse((g.dir / 'shader_optional.tsv').exists())
+        # ... so shader_optional.tsv names it: 134 effect shaders of 4.0.0's common.ptcl that 4.0.1's rebuilt file no longer has (a 4.0.1 dump packs)
+        named = {l.split('\t')[0] for l in (g.dir / 'shader_optional.tsv').read_text().splitlines() if l and not l.startswith('#')}
+        self.assertEqual(len(named), 134)
+        self.assertTrue(named <= pa.map_keys(g.dir / 'shader_map.tsv'))
+        self.assertFalse(named & pa.other_version_keys(g, 1441792), 'none of them is one of 4.0.1\'s own')
 
     def test_super_mario_bros_wonder_names_both_sides(self):   # its shader_optional.tsv already names each version's own keys: the tags agree with it
         g = pa.game.load('010015100B514000')

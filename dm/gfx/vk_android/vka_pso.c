@@ -238,6 +238,17 @@ static void pc_open_once(void) {
     pw_start();
 }
 static void pc_open(void) { static pthread_once_t once = PTHREAD_ONCE_INIT; pthread_once(&once, pc_open_once); }   // (the prewarm threads it starts call it too: they wait for it)
+// PEANUTS(upstream-candidate): fclose consumes the stream even on failure; close once before renaming, and retain the old file on any failure.
+static int pc_write_atomic(const char *path, const char *tmp, const void *data, size_t len) {
+    FILE *f = data ? fopen(tmp, "wb") : NULL;
+    if (f) {
+        int ok = fwrite(data, 1, len, f) == len;
+        if (fclose(f)) ok = 0;
+        if (ok && !rename(tmp, path)) return 1;
+    }
+    unlink(tmp);
+    return 0;
+}
 // The cache and the prewarm list to their files. vkGetPipelineCacheData runs without g_mu (the cache is internally synchronized): holding it there kept the replay thread's
 // pipeline lookups waiting for a 17 MB copy once a minute
 static void save_now(void) {
@@ -256,19 +267,17 @@ static void save_now(void) {
         if (gr != VK_SUCCESS) { free(d); d = NULL; n = 0; static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VRED("pipeline cache not saved: vkGetPipelineCacheData %d after 3 tries (pipelines being added meanwhile); the next save tries again", (int)gr); }
         if (d) {
             char tmp[1100]; snprintf(tmp, sizeof tmp, "%s.tmp", g_pc_path);
-            FILE *f = fopen(tmp, "wb");
-            if (f && fwrite(d, 1, n, f) == n && !fclose(f) && !rename(tmp, g_pc_path)) {
+            if (pc_write_atomic(g_pc_path, tmp, d, n)) {   // PEANUTS(upstream-candidate): one close on every save path
                 g_saved_at = made;
                 // Its stamp after it: the shaders it was read with that this library keeps, and those this run made. Written whole or not at all (a stamp that
                 // cannot be written is removed, and the next run starts empty)
                 char sp[1100], st[1200]; snprintf(sp, sizeof sp, "%s.lib", g_pc_path); snprintf(st, sizeof st, "%s.lib.tmp", g_pc_path);
                 size_t nr = 0, tl = 0; vka_pck_ent *run = g_pc_lib ? vka_shader_made(&nr) : NULL;
                 char *txt = g_pc_lib ? vka_pck_format(g_pc_lib, g_pck.dead, g_pck.ent, g_pck.n, run, nr, &tl) : NULL; free(run);
-                FILE *sf = txt ? fopen(st, "wb") : NULL;
-                if (!(sf && fwrite(txt, 1, tl, sf) == tl && !fclose(sf) && !rename(st, sp))) { if (sf) fclose(sf); unlink(st); unlink(sp); }
+                if (!pc_write_atomic(sp, st, txt, tl)) unlink(sp);   // PEANUTS(upstream-candidate): a failed stamp invalidates the newly replaced cache
                 free(txt);
             }
-            else { if (f) fclose(f); unlink(tmp); static _Atomic int k; if (atomic_fetch_add(&k, 1) < 2) VRED("pipeline cache not written to %s", g_pc_path); d = NULL; n = 0; }
+            else { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 2) VRED("pipeline cache not written to %s", g_pc_path); free(d); d = NULL; n = 0; }   // PEANUTS(upstream-candidate): retain neither the failed blob nor a closed stream
         }
     }
     int keys = pw_save();
@@ -1027,9 +1036,8 @@ static int pw_save(void) {   // the saver thread or a forced save: the list when
     pthread_mutex_unlock(&g_pw_mu);
     pwhdr2 h; memset(&h, 0, sizeof h); memcpy(h.magic, VKA_PW_MAGIC2, 8); h.gkey_size = sizeof(vka_gkey); h.n = n; h.layout = vka_pw_layout(); memcpy(out, &h, sizeof h);
     char tmp[1200]; snprintf(tmp, sizeof tmp, "%s.tmp", g_pw_path);
-    FILE *f = fopen(tmp, "wb");
-    int ok = f && fwrite(out, 1, sizeof h + len, f) == sizeof h + len && !fclose(f) && !rename(tmp, g_pw_path);
-    if (!ok) { if (f) fclose(f); unlink(tmp); static _Atomic int k; if (atomic_fetch_add(&k, 1) < 2) VRED("prewarm list not written to %s", g_pw_path); pthread_mutex_lock(&g_pw_mu); g_pw_dirty = 1; pthread_mutex_unlock(&g_pw_mu); }
+    int ok = pc_write_atomic(g_pw_path, tmp, out, sizeof h + len);   // PEANUTS(upstream-candidate): the prewarm list uses the same close-once transaction
+    if (!ok) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 2) VRED("prewarm list not written to %s", g_pw_path); pthread_mutex_lock(&g_pw_mu); g_pw_dirty = 1; pthread_mutex_unlock(&g_pw_mu); }   // PEANUTS(upstream-candidate): failed writes stay dirty for retry
     free(out);
     return ok ? (int)n : -1;
 }
@@ -1076,7 +1084,7 @@ static void pw_explain(int kind, vka_shader *const sh[5], const vka_gkey *k, uin
               ms, linked ? ", linked" : "", same_sh, d[0] ? d : "nothing: the same key (the prewarm threads had not reached it yet)");
 }
 static gval *gfx_obtain(const gkey_full *fk, uint64_t h, size_t len, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k, int prewarm, int *made);
-static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, int *made, uint64_t umask, uint64_t smask);
+static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, int *made, uint64_t umask, uint64_t smask, int frame);
 // MemAvailable in MiB (/proc/meminfo; 0 = not known)
 static uint64_t mem_avail_mb(void) {
     FILE *f = fopen("/proc/meminfo", "r"); char line[128]; uint64_t kb = 0;
@@ -1153,7 +1161,7 @@ static void *pw_main(void *a) {
         }
         int made = 0;
         if (bad) { atomic_fetch_add(&g_pw_bad, 1); pw_mark_bad(offs[i]); }
-        else if (r.kind == VKA_PW_CS) { cs_obtain(sh[5], &lay, 1, &made, 0, 0); }
+        else if (r.kind == VKA_PW_CS) { cs_obtain(sh[5], &lay, 1, &made, 0, 0, 0); }
         else {
             vka_gkey k; memset(&k, 0, sizeof k); memcpy(&k, kb, r.klen < sizeof k ? r.klen : sizeof k);
             if (k.vin_static != (uint32_t)!V.vin_dyn) { atomic_fetch_add(&g_pw_bad, 1); }   // a list from a device with the other vertex input (not this one's keys)
@@ -1207,8 +1215,9 @@ static void busy_wait(gval *g) {
 // libraries in 77-213 ms, 96 pipelines and 13.7 s of frame waits in 40 s of wall punching). The frame path still makes the cache-only try (a fraction of a millisecond when
 // the pipeline cache has it); on a miss the entry is made on one of N background threads (at most 4) and its draws are skipped until it is there, as Eden's asynchronous
 // shaders do. A skipped draw is missing from that frame only, except where the game keeps what it drew (a texture drawn once and reused): that stays wrong until redrawn.
-// Compute and mesh pipelines are still made on the frame path. Open: the cause, slow library compiles on Turnip, is not addressed
-typedef struct as_job { struct as_job *next; gval *g; size_t len; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; uint64_t t0, cost; } as_job;
+// Mesh pipelines are still made on the frame path; compute pipelines go through the same queue (DM_VK_CS_ASYNC, cs_obtain). Open: the cause, slow library compiles on
+// Turnip, is not addressed. cs: a compute job (sh[5] its shader, g an entry of g_cs; len, k unused)
+typedef struct as_job { struct as_job *next; gval *g; size_t len; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; uint64_t t0, cost; int cs; } as_job;
 static as_job *g_as_head, **g_as_tail = &g_as_head; static pthread_mutex_t g_as_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_as_cv = PTHREAD_COND_INITIALIZER;
 static _Atomic uint64_t g_as_queued, g_as_made, g_as_skips, g_as_ns, g_as_lat_max_ns; static _Atomic int g_as_depth, g_as_depth_max;
 // The queue's order (vka_psogate.h vkpg_take_oldest): the job of least predicted cost first, the oldest in its turn. DM_VK_PSO_ORDER=0 (restart): arrival order, as
@@ -1230,6 +1239,7 @@ static uint64_t as_cost(vka_shader *const sh[VKA_NSTAGE]) {
     return c;
 }
 static void gfx_build(gval *g, size_t len, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k, int prewarm, int async, uint64_t t_make);
+static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderModule csm, uint64_t umask, uint64_t smask, int prewarm, int async);
 static void *as_main(void *a) {
     (void)a; pthread_setname_np(pthread_self(), "vk-psoasync"); vka_fp_host("vk-psoasync");
     setpriority(PRIO_PROCESS, 0, 10);   // under the game's threads, as the prewarm threads: no frame waits for these builds (their draws are skipped instead)
@@ -1246,13 +1256,14 @@ static void *as_main(void *a) {
         as_job *j = *pp; *pp = j->next;
         if (g_as_tail == &j->next) g_as_tail = pp;
         pthread_mutex_unlock(&g_as_mu);
-        const vka_shader *pre = j->sh[7] ? j->sh[7] : j->sh[0];
+        const vka_shader *pre = j->cs ? j->sh[5] : j->sh[7] ? j->sh[7] : j->sh[0];
         uint64_t key = pre ? pre->key : (j->sh[1] ? j->sh[1]->key : 0);
         pthread_mutex_lock(&g_mu); j->g->tid = gettid(); pthread_mutex_unlock(&g_mu);   // PEANUTS: a draw that is not skipped may wait for this build and raise this thread (vka_gfx_pipeline_now)
-        int tok = gate_enter(1, gate_heavy(pre, j->sh[1]));   // the frame's: its draws are skipped until it is made, so it goes before the speculative ones
+        int tok = gate_enter(1, gate_heavy(pre, j->cs ? NULL : j->sh[1]));   // the frame's: its draws (dispatches) are skipped until it is made, so it goes before the speculative ones
         gate_hold(tok, key);
         uint64_t t0 = now_ns();
-        gfx_build(j->g, j->len, j->sh, &j->lay, &j->k, 0, 1, j->t0);
+        if (j->cs) cs_build(j->g, j->sh[5], &j->lay, vka_shader_cs_module(j->sh[5]), 0, 0, 0, 1);
+        else gfx_build(j->g, j->len, j->sh, &j->lay, &j->k, 0, 1, j->t0);
         gate_leave(tok);
         setpriority(PRIO_PROCESS, 0, 10);   // PEANUTS: back under the game's threads if a waiting draw raised it (vka_gfx_pipeline_now)
         uint64_t t1 = now_ns(), lat = t1 - j->t0, cur = atomic_load(&g_as_lat_max_ns);
@@ -1277,7 +1288,7 @@ static int as_threads(void) { static pthread_once_t once = PTHREAD_ONCE_INIT; pt
 static void as_queue(gval *g, size_t len, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k, uint64_t t0) {
     as_job *j = malloc(sizeof *j);
     if (!j) { gfx_build(g, len, sh, lay, k, 0, 0, t0); return; }
-    j->next = NULL; j->g = g; j->len = len; memcpy(j->sh, sh, sizeof j->sh); j->lay = *lay; j->k = *k; j->t0 = t0; j->cost = as_cost(sh);
+    j->next = NULL; j->g = g; j->len = len; memcpy(j->sh, sh, sizeof j->sh); j->lay = *lay; j->k = *k; j->t0 = t0; j->cost = as_cost(sh); j->cs = 0;
     int d = atomic_fetch_add(&g_as_depth, 1) + 1, m = atomic_load(&g_as_depth_max);
     while (d > m && !atomic_compare_exchange_weak(&g_as_depth_max, &m, d)) {}
     atomic_fetch_add(&g_as_queued, 1);
@@ -1455,22 +1466,75 @@ VkPipeline vka_gfx_pipeline_now(vka_shader *const sh[VKA_NSTAGE], int why, long 
 // ---------- Compute pipelines ----------
 typedef struct { vka_shader *cs; VkPipelineLayout layout; uint64_t umask, smask; } ckey;   // masks: storage images retyped for integer textures (vka_shader_img_module)
 static kmap g_cs = {.klen = sizeof(ckey)};
-static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, int *made, uint64_t umask, uint64_t smask) {
+// DM_VK_CS_ASYNC (live; default 1, effective only with DM_VK_PSO_ASYNC threads; 0 = the frame waits): a compute pipeline a dispatch needs and the map lacks is made on the
+// asynchronous threads (as_main, the graphics misses' queue and its order: least predicted cost first, a .heavy shader last, DM_VK_PSO_ORDER), its dispatches skipped until
+// it is there, as the graphics misses' draws are. With pipelineCreationCacheControl the frame path first asks the pipeline cache alone (FAIL_ON_PIPELINE_COMPILE_REQUIRED):
+// a pipeline an earlier run made costs no skip. Until 2026-11-15 compute pipelines were always made on the frame path: Ocarina of Time's effect shaders (3,587 compute
+// programs in cs_effect.bin, too many to prewarm them all) took 3.5-4.4 s each on Qualcomm's driver the first time an effect appeared (9e52219432f52a98, the Deku Seed
+// shot: a 3.7 s frame mid-play). A skipped dispatch leaves its outputs as they were: a particle effect is missing or frozen for those frames; work the game keeps (a
+// buffer written once, indirect arguments) stays stale until dispatched again. Pipelines with retyped images (umask / smask) stay on the frame path (the base pipeline in
+// their place would read the integer texels as floats)
+static int cs_async_on(void) { return VKA_ENV("DM_VK_CS_ASYNC", 1) && as_threads() > 0; }
+static void cs_queue(gval *g, vka_shader *cs, const vka_layout *lay) {
+    as_job *j = calloc(1, sizeof *j);
+    if (!j) { cs_build(g, cs, lay, vka_shader_cs_module(cs), 0, 0, 0, 0); return; }
+    j->g = g; j->sh[5] = cs; j->lay = *lay; j->t0 = now_ns(); j->cost = as_cost(j->sh); j->cs = 1;
+    int d = atomic_fetch_add(&g_as_depth, 1) + 1, m = atomic_load(&g_as_depth_max);
+    while (d > m && !atomic_compare_exchange_weak(&g_as_depth_max, &m, d)) {}
+    atomic_fetch_add(&g_as_queued, 1);
+    pthread_mutex_lock(&g_as_mu); *g_as_tail = j; g_as_tail = &j->next; pthread_cond_signal(&g_as_cv); pthread_mutex_unlock(&g_as_mu);
+}
+static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, int *made, uint64_t umask, uint64_t smask, int frame) {
     *made = 0;
     if (VKA_ENV("DM_VK_SKIP_NDVE", 1) && vka_is_ndve_key(cs->key)) return VK_NULL_HANDLE;
     VkShaderModule csm = umask | smask ? vka_shader_img_module(cs, umask, smask) : vka_shader_cs_module(cs);
     if (!csm) return VK_NULL_HANDLE;   // (a retyped module that cannot be made: the caller takes the base pipeline)
     ckey k; memset(&k, 0, sizeof k); k.cs = cs; k.layout = lay->layout; k.umask = umask; k.smask = smask;
     uint64_t h = fnv(&k, sizeof k, 1469598103934665603ull);
+    int async = frame && !prewarm && !(umask | smask) && cs_async_on();
     pthread_mutex_lock(&g_mu);
     gval *g = km_get(&g_cs, &k, h);
     if (g) {
-        if (g->busy && prewarm) { pthread_mutex_unlock(&g_mu); return VK_NULL_HANDLE; }
+        if (g->busy && (prewarm || async)) {   // (a frame dispatch: skipped while another thread makes it)
+            pthread_mutex_unlock(&g_mu);
+            if (async) atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed);
+            return VK_NULL_HANDLE;
+        }
         if (g->busy) busy_wait(g);
         VkPipeline p = g->p; pthread_mutex_unlock(&g_mu); return p;
     }
     g = calloc(1, sizeof *g); g->busy = 1; g->pw = (uint8_t)(prewarm != 0); g->tid = prewarm ? gettid() : 0; km_put(&g_cs, &k, h, g);
     pthread_mutex_unlock(&g_mu);
+    *made = 1;
+    if (async) {
+        pc_open();
+        uint32_t smax = V.props.limits.maxComputeSharedMemorySize;
+        if (V.cache_ctl && !(smax && cs->e->shared > smax)) {   // the cache-only try (one over the shared memory limit: cs_build says why it is not made)
+            uint32_t pin = (cs->e->flags & DMSH_VK_F_SUBGROUP) ? vka_shader_sg_pin(DMSH_VK_STAGE_CS) : 0;
+            VkPipelineShaderStageRequiredSubgroupSizeCreateInfo rsg = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO, .requiredSubgroupSize = pin};
+            int spill = 0; for (unsigned i = 0; i < cs->e->bind_count; i++) if (cs->b[i].kind == DMSH_VK_KIND_SHARED_SPILL) spill = 1;
+            VkComputePipelineCreateInfo ci = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .flags = (spill ? VK_PIPELINE_CREATE_DISPATCH_BASE_BIT : 0) | VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT,
+                .layout = lay->layout, .stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .pNext = pin ? &rsg : NULL, .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = csm, .pName = "main"}};
+            VkPipeline p = VK_NULL_HANDLE; uint64_t t0 = now_ns();
+            VkResult r = vk.vkCreateComputePipelines(V.dev, g_pc, 1, &ci, NULL, &p);
+            uint64_t dns = now_ns() - t0;
+            if (r != VK_SUCCESS) p = VK_NULL_HANDLE;
+            pthread_mutex_lock(&g_mu);
+            g_create_ns += dns;
+            if (p) { g_ncs++; g_made++; g_frame_made++; g_probe_hit++; g_create_ms += dns / 1e6; g->p = p; g->busy = 0; pthread_cond_broadcast(&g_busy_cv); }
+            else { g_probe_miss++; g_probe_miss_ns += dns; }
+            pthread_mutex_unlock(&g_mu);
+            if (p) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(VKA_PW_CS, s5, "", 0); return p; }
+        }
+        cs_queue(g, cs, lay);
+        atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed);
+        return VK_NULL_HANDLE;
+    }
+    cs_build(g, cs, lay, csm, umask, smask, prewarm, 0);
+    return __atomic_load_n(&g->p, __ATOMIC_ACQUIRE);
+}
+// A new compute entry g (busy) made and published. async: a frame-path miss made on an asynchronous thread (cs_queue), its time not the frame's
+static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderModule csm, uint64_t umask, uint64_t smask, int prewarm, int async) {
     pc_open();
     uint64_t t0 = now_ns();
     uint32_t pin = (cs->e->flags & DMSH_VK_F_SUBGROUP) ? vka_shader_sg_pin(DMSH_VK_STAGE_CS) : 0;
@@ -1488,19 +1552,20 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, 
     if (smax && cs->e->shared > smax && !VKA_ENV("DM_VK_CS_SHARED_OVER", 0)) {
         r = VK_ERROR_FEATURE_NOT_PRESENT; over = 1;
         static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("compute program %016llx takes %u bytes of shared memory, the device at most %u: not made, its dispatches are skipped (the first 16 are logged; the count is in the pipeline line)", (unsigned long long)cs->key, cs->e->shared, smax);
-    } else { int bs = build_begin("compute pipeline", cs->key, 0); r = vk.vkCreateComputePipelines(V.dev, g_pc, 1, &ci, NULL, &p); build_end(bs); }
+    } else if (!csm) { r = VK_ERROR_INITIALIZATION_FAILED; }
+    else { int bs = build_begin("compute pipeline", cs->key, 0); r = vk.vkCreateComputePipelines(V.dev, g_pc, 1, &ci, NULL, &p); build_end(bs); }
     pthread_mutex_lock(&g_mu);
-    if (over) { p = VK_NULL_HANDLE; g_ncs_over++; } else if (r) { p = VK_NULL_HANDLE; g_nfail++; } else { g_ncs++; g_made++; if (!prewarm) g_frame_made++; }
-    { uint64_t dns = now_ns() - t0; g_create_ms += dns / 1e6; if (!prewarm) g_create_ns += dns; }
-    g->p = p; g->busy = 0; pthread_cond_broadcast(&g_busy_cv);
+    if (over) { p = VK_NULL_HANDLE; g_ncs_over++; } else if (r) { p = VK_NULL_HANDLE; g_nfail++; } else { g_ncs++; g_made++; if (!prewarm && !async) g_frame_made++; }
+    { uint64_t dns = now_ns() - t0; g_create_ms += dns / 1e6; if (!prewarm && !async) g_create_ns += dns; }
+    __atomic_store_n(&g->p, p, __ATOMIC_RELEASE); __atomic_store_n(&g->busy, 0, __ATOMIC_RELEASE); pthread_cond_broadcast(&g_busy_cv);
     pthread_mutex_unlock(&g_mu);
     if (r && !over) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("compute pipeline %016llx: %d; its dispatches are skipped", (unsigned long long)cs->key, r); }
-    { double ms_ = (now_ns() - t0) / 1e6; static _Atomic int n; if (!r && ms_ > 50 && atomic_fetch_add(&n, 1) < 200) VLOG("compute pipeline %016llx took %.0f ms%s", (unsigned long long)cs->key, ms_, prewarm ? " (prewarm)" : "");
+    { double ms_ = (now_ns() - t0) / 1e6; static _Atomic int n; if (!r && ms_ > 50 && atomic_fetch_add(&n, 1) < 200) VLOG("compute pipeline %016llx took %.0f ms%s", (unsigned long long)cs->key, ms_, prewarm ? " (prewarm)" : async ? " in the background (asynchronous)" : "");
+      // (noted before the save, so the save that follows a long one has its key: until 2026-11-15 the save came first and the key waited for the next one)
+      if (!prewarm && !over && !(umask | smask)) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(VKA_PW_CS, s5, "", 0); }   // (one not made stays out of the prewarm list)
       if (!prewarm && !r && ms_ > 1000) vka_pso_save(2); }
-    if (!prewarm && !over && !(umask | smask)) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(VKA_PW_CS, s5, "", 0); }   // (one not made stays out of the prewarm list)
-    *made = 1;
-    return p;
 }
-VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0); }
-VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask) { int made; return cs_obtain(cs, lay, 0, &made, umask, smask); }
+VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 0); }
+VkPipeline vka_cs_pipeline_frame(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 1); }
+VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask) { int made; return cs_obtain(cs, lay, 0, &made, umask, smask, 0); }
 #endif

@@ -129,8 +129,11 @@ public final class PeanutsPrefs {
     public static String companion(Context c, String titleId) { return of(c).getString(key(titleId, "companion"), null); }
     public static void companion(Context c, String titleId, String packageName) { put(c, key(titleId, "companion"), packageName); }
 
-    /** "Install the companion after the build" (the sheet's checkbox; on by default when the catalog has one) */
-    public static boolean installCompanion(Context c, String titleId) { return of(c).getBoolean(key(titleId, "install_companion"), true); }
+    /** "Install the companion after the build" (the sheet's checkbox; on by default when the catalog has one and the device has a second display to show it on) */
+    public static boolean installCompanion(Context c, String titleId) {
+        String k = key(titleId, "install_companion");
+        return of(c).contains(k) ? of(c).getBoolean(k, true) : Companion.hasSecondDisplay(c);
+    }
     public static void installCompanion(Context c, String titleId, boolean on) { of(c).edit().putBoolean(key(titleId, "install_companion"), on).apply(); }
 
     // (Removed: a dead, unread duplicate of the "second screen physical/off" pref - dev.peanuts.settings.CompanionSection.secondScreen() is the one

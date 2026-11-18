@@ -34,7 +34,7 @@ final class PickedPath {
 
     /** The key of a stand-in path, null when f is not one (not in picked/&lt;16 hex digits&gt;/, or not a .nup name) */
     static String keyOf(File appRoot, File f) {
-        if (f == null || !f.getName().endsWith(Nup.EXT)) return null;
+        if (f == null || Nup.extOf(f.getName()) == null) return null;
         File k = f.getAbsoluteFile().getParentFile();
         if (k == null || k.getParentFile() == null || !k.getParentFile().equals(root(appRoot).getAbsoluteFile())) return null;
         return k.getName().matches("[0-9a-f]{16}") ? k.getName() : null;
@@ -47,9 +47,9 @@ final class PickedPath {
     static String nameProblem(String name) {
         if (name == null) return "The file picker gave no name for that file. Pick it from the phone's storage.";
         if (CopyPlan.safeName(name) == null) return "That file's name cannot be used (" + name + ").";
-        if (!name.endsWith(Nup.EXT) && name.toLowerCase(Locale.ROOT).endsWith(Nup.EXT)) return name + ": rename it so that its name ends in \".nup\" (lower case), then pick it again.";
-        if (!name.endsWith(Nup.EXT) || name.length() <= Nup.EXT.length()) return name + " is not a .nup file. Pick a .nup, or copy a dump folder into the app.";
-        if (name.contains(".nup:")) return name + ": a name with \".nup:\" inside it cannot be told from a package name. Rename it.";
+        if (Nup.extOf(name) == null && Nup.extOf(name.toLowerCase(Locale.ROOT)) != null) return name + ": rename it so that its name ends in \".nup\" or \".nsp\" (lower case), then pick it again.";
+        if (Nup.extOf(name) == null) return name + " is not a .nup or .nsp file. Pick a .nup (or an NSP Box .nsp), or copy a dump folder into the app.";
+        if (name.contains(".nup:") || name.contains(".nsp:")) return name + ": a name with \".nup:\" or \".nsp:\" inside it cannot be told from a package name. Rename it.";
         return null;
     }
 

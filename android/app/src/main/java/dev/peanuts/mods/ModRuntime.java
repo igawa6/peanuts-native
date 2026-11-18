@@ -82,6 +82,10 @@ public final class ModRuntime {
      */
     public static String cheatsEnv(Context c, File gameHome, String titleId) { return cheatsEnv(c, gameHome, titleId, null); }
 
+    /** The enabled mods' cheats folders for a start of packDir, first mod first: what the launcher merges into upstream's cheat list when the game has one
+     *  (dev.nxnative.android.ModCheats), in place of the staged folder below */
+    public static List<File> cheatsDirs(File gameHome, String titleId, File packDir) { return ModStore.enabledCheatsDirs(forStart(gameHome, titleId, packDir)); }
+
     /** As above for a start of packDir: a code mod's cheats only with its build ({@link #forStart}) */
     public static String cheatsEnv(Context c, File gameHome, String titleId, File packDir) {
         List<File> dirs = ModStore.enabledCheatsDirs(forStart(gameHome, titleId, packDir));

@@ -29,17 +29,23 @@
 
 __attribute__((weak)) void dm_guest_frame_tick(void) {}
 __attribute__((weak)) void peanuts_tick(void);   // PEANUTS: absent in a build without dm/peanuts
+__attribute__((weak)) int peanuts_ovl_corner(int slot, int dflt);   // PEANUTS: the stats block's corner chosen in the launcher (dm/peanuts/peanuts_graph.c); absent in a build without dm/peanuts
 
 // ---------- The window ----------
 static pthread_mutex_t g_pmu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_pcv = PTHREAD_COND_INITIALIZER;
 static ANativeWindow *g_win_new; static uint64_t g_win_gen, g_win_ack;   // set by nxhost_set_window; the present thread takes it and acknowledges the generation
 static int g_thread_up;
+// PEANUTS(upstream-candidate): Display.getPresentationDeadlineNanos(), updated by the game window on the UI thread.
+static _Atomic uint64_t g_presentation_deadline;
+void nxhost_presentation_deadline_set(uint64_t ns) { atomic_store_explicit(&g_presentation_deadline, ns, memory_order_relaxed); }
 static void *selftest_main(void *arg);
 void nxhost_set_window(ANativeWindow *w) {
     static int first = 1;
     if (w) ANativeWindow_acquire(w);
-    vka_init();
+    // No vka_init() here: this runs on the launcher's UI thread (Native.start, surfaceCreated), and creating the device inside the driver can take over 10 s
+    // (issue 251: Exynos Xclipse RADV, ioctl in vkCreateDevice), which Android reports as an ANR. The host thread's first Vulkan call makes the device; the present
+    // thread starts with it and takes the window from g_win_new (window_take), so a window that came first waits there.
     pthread_mutex_lock(&g_pmu);
     if (g_win_new) ANativeWindow_release(g_win_new);   // never taken by the present thread
     g_win_new = w; uint64_t gen = ++g_win_gen;
@@ -530,7 +536,7 @@ static void ovl_draw(VkCommandBuffer cb, unsigned k, uint32_t idx) {
     int ew = (int)(rot_quarter(g_pre) ? g_ext.height : g_ext.width), eh = (int)(rot_quarter(g_pre) ? g_ext.width : g_ext.height);   // the display, as the user sees it
     vko_draw d[OVL_SLOTS]; int nd = 0, x0 = INT32_MAX, y0 = INT32_MAX, x1 = 0, y1 = 0;
     for (int s = 0; s < OVL_SLOTS; s++)
-        if (vko_place((int)g_pre, (int)g_ext.width, (int)g_ext.height, ew, eh, g_ocorner[s], g_ovl.w_[s], g_ovl.h_[s], (int)g_ovl.w, (int)g_ovl.h, g_ovl.y[s], &d[nd])) {
+        if (vko_place((int)g_pre, (int)g_ext.width, (int)g_ext.height, ew, eh, (peanuts_ovl_corner ? peanuts_ovl_corner(s, g_ocorner[s]) : g_ocorner[s]) /* PEANUTS: the launcher's corner for the stats block */, g_ovl.w_[s], g_ovl.h_[s], (int)g_ovl.w, (int)g_ovl.h, g_ovl.y[s], &d[nd])) {
             if (d[nd].x < x0) x0 = d[nd].x;
             if (d[nd].y < y0) y0 = d[nd].y;
             if (d[nd].x + d[nd].w > x1) x1 = d[nd].x + d[nd].w;
@@ -661,6 +667,11 @@ static void timing_poll(void) {
     VkPastPresentationTimingGOOGLE pt[16]; uint32_t n = 16;
     if (vk.vkGetPastPresentationTimingGOOGLE(V.dev, g_swap, &n, pt) < 0) return;
     for (uint32_t i = 0; i < n; i++) pres_note(pt[i].presentID, pt[i].actualPresentTime / 1e9);
+    // PEANUTS: raw driver feedback, correlated by present ID with the request below and SurfaceFlinger frame history. Disabled outside diagnosis.
+    if (VKA_ENV("DM_VK_PRESENT_TRACE", 0)) for (uint32_t i = 0; i < n; i++)
+        VLOG("present trace shown id=%u desired=%llu actual=%llu earliest=%llu margin=%llu poll=%llu",
+             pt[i].presentID, (unsigned long long)pt[i].desiredPresentTime, (unsigned long long)pt[i].actualPresentTime,
+             (unsigned long long)pt[i].earliestPresentTime, (unsigned long long)pt[i].presentMargin, (unsigned long long)now_ns());
     // PEANUTS: every actual present time (generated frames too) also feeds the estimate of the panel's refresh period and phase (vka_panel.h). When the estimate is
     // dropped (readings off the grid: the panel changed its mode on its own) the driver's refresh period is read again, as after a window frame rate change
     vkpanel_seed(&g_panel, g_refresh_ns);
@@ -829,35 +840,15 @@ static int present_one(const pq_item *it) {
     VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, .pNext = &ti, .waitSemaphoreCount = it->fence ? 2 : 1, .pWaitSemaphores = ws, .pWaitDstStageMask = st,
                        .commandBufferCount = 1, .pCommandBuffers = &cb, .signalSemaphoreCount = 1, .pSignalSemaphores = &g_sdone[idx]};
     if (!it->fence) ti.waitSemaphoreValueCount = 1;
-    frame_rate(it->period); refresh_poll();
-    uint64_t want = 0, period = (uint64_t)((it->hold > 0 ? it->hold : it->period) * 1e9);
-    // With frame generation every image gets a time too, at least one refresh after the one before: a game frame and its generated frames are handed over back to back,
-    // and with their hold under 1.5 refreshes (4x at 25 fps: 10 ms) they went out untimed, two landed in one refresh and the compositor dropped one (on the Portal
-    // about 48 of 105 a second, mostly generated frames, so the screen showed little more than the game's own rate)
-    if (g_fg_on && g_refresh_ns && period < g_refresh_ns) period = g_refresh_ns;
-    // PEANUTS: DM_VK_PRESENT_GRID (live, default 1): without frame generation every game frame whose period is a whole number of the panel's measured refreshes gets
-    // a desired present time on the measured grid, one hold after the last (vka_panel.h vkgrid_next). The period is never shorter than the host's frame limit allows,
-    // as in vka_fg_frame: a game on the host's 120 Hz tick held to 60 fps declares 8.3 ms, went out untimed and landed 1 and 3 refreshes apart. The lines below
-    // remain for frame generation, for periods that are no whole number of refreshes, and until the grid is measured
-    uint64_t grid = 0;
-    if (!g_fg_on && it->ticket && g_panel.period && VKA_ENV("DM_VK_PRESENT_GRID", 1)) {
+    // PEANUTS begin (upstream-candidate): the content-rate hint follows the effective cap; frame generation keeps its output rate.
+    double vote_period = it->period;
+    if (!g_fg_on) {
         int nxhost_fps_limit_get(void) __attribute__((weak));
-        int lim = &nxhost_fps_limit_get ? nxhost_fps_limit_get() : 0, late = 0; uint64_t per = period;
-        if (lim > 0 && per < 1000000000ull / (uint64_t)lim) per = 1000000000ull / (uint64_t)lim;
-        grid = vkgrid_next(&g_grid, g_panel.last, g_panel.period, per, now_ns(), &late);
-        if (grid) { want = grid - g_panel.period / 2; g_last_desired = 0; atomic_fetch_add_explicit(&g_grid_timed, 1, memory_order_relaxed); if (late) atomic_fetch_add_explicit(&g_grid_late, 1, memory_order_relaxed); }
-    } else g_grid.last = 0;
-    if (it->ticket) atomic_fetch_add_explicit(&g_grid_presents, 1, memory_order_relaxed);
-    if (grid) { }   // PEANUTS: timed above
-    else
-    if (g_refresh_ns && (period > g_refresh_ns * 3 / 2 || g_fg_on)) {   // hold each image for its present period: the panel refreshes faster than the game presents
-        uint64_t now = now_ns(); want = g_last_desired ? g_last_desired + period : now;
-        if (want < now) want = now;
-        g_last_desired = want; want -= g_refresh_ns / 2;
-    } else g_last_desired = 0;
-    VkPresentTimeGOOGLE pt = {(uint32_t)it->ticket, want};
-    VkPresentTimesInfoGOOGLE ptv = {VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE, .swapchainCount = 1, .pTimes = &pt};
-    VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, .pNext = V.display_timing ? &ptv : NULL, .waitSemaphoreCount = 1, .pWaitSemaphores = &g_sdone[idx], .swapchainCount = 1, .pSwapchains = &g_swap, .pImageIndices = &idx};
+        int lim = &nxhost_fps_limit_get ? nxhost_fps_limit_get() : 0;
+        if (lim > 0 && vote_period < 1.0 / lim) vote_period = 1.0 / lim;
+    }
+    frame_rate(vote_period); refresh_poll();
+    // PEANUTS end
     // The frame done on the GPU before the queue lock is taken: a submission that waits for a timeline value still pending can block inside vkQueueSubmit until it is
     // signalled (Turnip on KGSL emulates timeline semaphores: 25-35 ms a frame with the lock held, so every replay submission behind it waited; Ocarina of Time's note).
     // The copy cannot start before the frame ends anyway; only a value already handed to the queue is waited for here (a later one is handled under the lock below)
@@ -892,7 +883,49 @@ static int present_one(const pq_item *it) {
     void vka_qhold_add(int k, uint64_t ns); uint64_t th0 = now_ns();
     r = vka_hung() ? VK_ERROR_DEVICE_LOST : vk.vkQueueSubmit(V.q, 1, &si, g_fr[k].fence);
     uint64_t th1 = now_ns();
-    VkResult pr = r ? r : vk.vkQueuePresentKHR(V.q, &pi);
+    VkResult pr = r;
+    if (!r) {
+        // PEANUTS: choose the deadline after GPU/gate/queue waits and submission. A time chosen before them could already be past at QueuePresent,
+        // while grid_late still reported an on-time frame. This samples readiness without adding a wait or changing the queue's submission order.
+        uint64_t want = 0, period = (uint64_t)((it->hold > 0 ? it->hold : it->period) * 1e9);
+        // With frame generation every image gets a time too, at least one refresh after the one before: a game frame and its generated frames are handed over back to back,
+        // and with their hold under 1.5 refreshes (4x at 25 fps: 10 ms) they went out untimed, two landed in one refresh and the compositor dropped one (on the Portal
+        // about 48 of 105 a second, mostly generated frames, so the screen showed little more than the game's own rate)
+        if (g_fg_on && g_refresh_ns && period < g_refresh_ns) period = g_refresh_ns;
+        // PEANUTS: DM_VK_PRESENT_GRID (live, default 1): without frame generation every game frame whose period is a whole number of the panel's measured refreshes gets
+        // a desired present time on the measured grid, one hold after the last (vka_panel.h vkgrid_next). The period is never shorter than the host's frame limit allows,
+        // as in vka_fg_frame: a game on the host's 120 Hz tick held to 60 fps declares 8.3 ms, went out untimed and landed 1 and 3 refreshes apart. The lines below
+        // remain for frame generation, for periods that are no whole number of refreshes, and until the grid is measured
+        uint64_t grid = 0;
+        if (!g_fg_on && it->ticket && g_panel.period && VKA_ENV("DM_VK_PRESENT_GRID", 1)) {
+            int nxhost_fps_limit_get(void) __attribute__((weak));
+            int lim = &nxhost_fps_limit_get ? nxhost_fps_limit_get() : 0, late = 0; uint64_t per = period;
+            if (lim > 0 && per < 1000000000ull / (uint64_t)lim) per = 1000000000ull / (uint64_t)lim;
+            // PEANUTS(upstream-candidate): honor the compositor queue deadline, not merely a future desired-present timestamp.
+            uint64_t lead = VKA_ENV("DM_VK_PRESENT_DEADLINE", 1) ? atomic_load_explicit(&g_presentation_deadline, memory_order_relaxed) : 0;
+            grid = vkgrid_next_deadline(&g_grid, g_panel.last, g_panel.period, per, now_ns(), lead, &late);
+            if (grid) { want = grid - g_panel.period / 2; g_last_desired = 0; atomic_fetch_add_explicit(&g_grid_timed, 1, memory_order_relaxed); if (late) atomic_fetch_add_explicit(&g_grid_late, 1, memory_order_relaxed); }
+        } else g_grid.last = 0;
+        if (it->ticket) atomic_fetch_add_explicit(&g_grid_presents, 1, memory_order_relaxed);
+        if (grid) { }   // PEANUTS: timed above
+        else
+        if (g_refresh_ns && (period > g_refresh_ns * 3 / 2 || g_fg_on)) {   // hold each image for its present period: the panel refreshes faster than the game presents
+            uint64_t now = now_ns(); want = g_last_desired ? g_last_desired + period : now;
+            if (want < now) want = now;
+            g_last_desired = want; want -= g_refresh_ns / 2;
+        } else g_last_desired = 0;
+        VkPresentTimeGOOGLE pt = {(uint32_t)it->ticket, want};
+        VkPresentTimesInfoGOOGLE ptv = {VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE, .swapchainCount = 1, .pTimes = &pt};
+        VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, .pNext = V.display_timing ? &ptv : NULL, .waitSemaphoreCount = 1, .pWaitSemaphores = &g_sdone[idx], .swapchainCount = 1, .pSwapchains = &g_swap, .pImageIndices = &idx};
+        // PEANUTS: trace the original target as well as the API timestamp; a midpoint request and a missed GPU deadline are different failures.
+        int trace = VKA_ENV("DM_VK_PRESENT_TRACE", 0);
+        if (trace) VLOG("present trace queue id=%u at=%llu want=%llu grid=%llu panel=%llu period=%llu submit=%llu lead=%llu",
+                        pt.presentID, (unsigned long long)now_ns(), (unsigned long long)want, (unsigned long long)grid,
+                        (unsigned long long)g_panel.period, (unsigned long long)period, (unsigned long long)(th1 - th0),
+                        (unsigned long long)atomic_load_explicit(&g_presentation_deadline, memory_order_relaxed));
+        pr = vk.vkQueuePresentKHR(V.q, &pi);
+        if (trace) VLOG("present trace return id=%u at=%llu result=%d", pt.presentID, (unsigned long long)now_ns(), pr);
+    }
     vka_qhold_add(0, th1 - th0); vka_qhold_add(1, now_ns() - th1);
     pthread_mutex_unlock(&V.qmu);
     g_fr[k].held = im;
@@ -979,6 +1012,8 @@ void mtl_present_flush(void) { pthread_mutex_lock(&g_pmu); uint64_t h = g_pq_in;
 // game wait for its own last frame at each acquire: Donkey Kong Bananza's level blocked ~64 ms a frame in SyncWait, recording (~45 ms) and GPU (~30 ms) one after the other
 uint64_t mtl_acquire_fence(uint64_t presented) { return presented; }
 double mtl_presented_time(uint64_t n) { return g_pres[n % PRING].n == n ? g_pres[n % PRING].t : 0; }
+// The present tickets reserved and shown (the layer's frame history, hle_vi.c ListFrameHistory, as nvn_mtl.m's)
+void mtl_present_progress(uint64_t *queued, uint64_t *done) { pthread_mutex_lock(&g_pmu); *queued = g_pq_in; *done = g_pq_done; pthread_mutex_unlock(&g_pmu); }
 int mtl_has_window(void) { return g_surf != VK_NULL_HANDLE; }
 int mtl_display_hz(void) { return !g_surf ? 0 : g_refresh_ns ? (int)(1e9 / g_refresh_ns + 0.5) : 60; }
 uint64_t vka_refresh_ns(void) { return g_refresh_ns; }   // the panel's refresh period (display timing; 0 = not known). Present thread
@@ -994,7 +1029,7 @@ int mtl_link_wait_tick(int vsyncs, uint64_t timeout_ns) { (void)vsyncs; (void)ti
 int mtl_link_wait_ticks(int ticks, uint64_t timeout_ns) { (void)ticks; (void)timeout_ns; return 0; }
 // PEANUTS begin: the panel's measured refresh for the host's pacing clocks, and the statistics line (vka_panel.h)
 // A pacing period in whole refreshes of the panel (DM_VK_PACE_PANEL, live, default 1): the acquire pacer's slot period (hle_nvn.c), the frame limiter's (hle_fpslock.c)
-// and the vi vsync event's (hle_sdk16.c). The period as given when the switch is off, nothing is measured yet, or it is no whole number of refreshes within 1 %.
+// and the vi vsync event's (hle_sdk16.c). The period as given when the switch is off, nothing is measured yet, or it is no whole number of refreshes within 2 %.
 // Any thread
 uint64_t vka_panel_tick(uint64_t period_ns) {
     uint64_t p = atomic_load_explicit(&g_panel_ns, memory_order_relaxed);

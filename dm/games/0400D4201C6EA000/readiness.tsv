@@ -1,0 +1,18 @@
+# What this game needs of an Android phone, for the launcher's readiness check (android/README.md "Readiness check"; the format in dm/games/README.md "Readiness rows").
+# A status row also marks the game as supported on Android: gradle.properties' nxGames builds every such profile into the APK (dm/tools/tests/test_android_games.py).
+
+# Experimental: boots and plays on an Odin 3 (Adreno 830; pull request 268): a whole tournament at 60 fps on Turnip v32, GPU stalls and dark patches on Qualcomm's own driver
+# (the note). No memory row until a phone run measures it.
+status	bring-up
+
+# The shader library's needs (dm/tools/library_caps.py on the library of VK chain 65883461079b: 35,045 modules): 104 geometry shader modules, every vertex module (6,915) takes draw
+# parameters, 4 modules write and 3 read storage images without a format, 2 hull and 2 domain modules use tessellation; the largest compute shared memory is 1 KiB, no mesh programs.
+# What a phone without a feature leaves out is not measured for this game: the rows follow the Donkey Kong Bananza ones for the same features (open)
+required	feature.geometryShader	1	Geometry shaders: 104 of the game's shader modules use them; without them those draws are skipped
+required	feature.shaderDrawParameters	1	Shader draw parameters: every vertex shader of the game reads them
+degraded	feature.shaderStorageImageWriteWithoutFormat	1	Storage image writes without a format: 4 of the game's shaders use them
+degraded	feature.shaderStorageImageReadWithoutFormat	1	Storage image reads without a format: 3 of the game's shaders use them
+degraded	feature.tessellationShader	1	Tessellation shaders: 4 of the game's shader modules (2 hull, 2 domain) use them
+
+# Not yet: the memory the game needs (no resident-memory run measured on a phone yet; the author's runs used a 12 GB-class phone's headroom, not recorded) and the texture
+# formats (BC / ASTC rows come from a run's texture log, not from the library)

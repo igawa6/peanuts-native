@@ -1,8 +1,10 @@
 // Donkey Kong Bananza camera and UI callback (android/dkb_wide.c): opt-in and build gates, Hor+ / Vert+ on the scene camera's updater, repeated callbacks, a game that writes 16:9 back,
 // objects that are no 16:9 lens, and the layout system's perspective projection squeezed into the middle 16:9 (orthographic and other shapes, scaled ones and null pointers untouched). Every case runs in its own process
-// (the picture shape is read once).
+// (the picture shape is read once). The layouts' panes: full-screen picture panes made as tall as the canvas and panes near the top and bottom moved to its edges, for shapes narrower
+// than 16:9 only, on pane trees linked as the game links them (groups kept whole, parts, origins, rotation and scale, trees the walk refuses, repeats).
 #include "../android/dkb_wide.c"
 #include <assert.h>
+#include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -131,6 +133,183 @@ static void ui_check(int which) {   // 0..2 no change (unset, 16:9, another buil
     assert(!memcmp(once, d, sizeof d));
 }
 
+// ---- The layouts' panes (kinds 2 and 3) ----
+// Panes as the game lays them out, 0x100 bytes each: own node at +0x8 (prev, next), parent +0x18, child list head +0x20 (prev, next), translate +0x30, rotate +0x3c, scale +0x48,
+// size +0x50, flags +0x58, origin byte +0x5b, name +0xb0. Children are linked as AppendChild (main+0x148394) links them
+#define NP 2048
+static uint8_t (*P)[0x100];
+static int np;
+static uint64_t A(uint8_t *p) { return (uintptr_t)p; }
+static void put64(uint8_t *p, int off, uint64_t v) { memcpy(p + off, &v, 8); }
+static uint64_t get64(uint8_t *p, int off) { uint64_t v; memcpy(&v, p + off, 8); return v; }
+static uint8_t *mk(const char *nm, uint8_t *parent, float tx, float ty, float w, float h) {
+    assert(np < NP);
+    uint8_t *p = P[np++];
+    memset(p, 0, 0x100);
+    put64(p, 8, A(p) + 8); put64(p, 0x10, A(p) + 8); put64(p, 0x20, A(p) + 0x20); put64(p, 0x28, A(p) + 0x20);
+    float v[10] = {tx, ty, 0, 0, 0, 0, 1, 1, w, h};
+    memcpy(p + 0x30, v, sizeof v); p[0x58] = 0x01; strncpy((char *)p + 0xb0, nm, 24);
+    if (parent) {   // the child's node goes before the parent's head, at the tail
+        uint64_t node = A(p) + 8, head = A(parent) + 0x20, tail = get64(parent, 0x20);
+        put64(p, 8, tail); put64(p, 0x10, head); memcpy((void *)(uintptr_t)(tail + 8), &node, 8); put64(parent, 0x20, node); put64(p, 0x18, A(parent));
+    }
+    return p;
+}
+static float ty_of(uint8_t *p) { return ws_rdf(A(p) + 0x34); }
+static float h_of(uint8_t *p) { return ws_rdf(A(p) + 0x54); }
+static void setf(uint8_t *p, int off, float v) { ws_wrf(A(p) + off, v); }
+static int near(float a, float b) { return fabsf(a - b) < 1e-2f; }
+static void built(uint8_t *root) {   // the layout gate: x19 the layout, its root pane at +0x18
+    static _Alignas(8) uint8_t layout[0x40];
+    uint64_t r[31] = {0};
+    memset(layout, 0, sizeof layout); put64(layout, 0x18, root ? A(root) : 0);
+    r[19] = A(layout);
+    callbacks[OBS_DKB_WIDE](r, 3 << 5);
+}
+static void sized(uint8_t *pane, const char *tag) {   // the pane gate: x19 the pane, x23 its record (the section tag first)
+    _Alignas(8) uint8_t rec[0x60] = {0};
+    uint64_t r[31] = {0};
+    memcpy(rec, tag, 4);
+    r[19] = A(pane); r[23] = A(rec);
+    callbacks[OBS_DKB_WIDE](r, 2 << 5);
+}
+// the screens the rules were written for: a menu with bands at the 16:9 edges and a list in the middle, a HUD corner under a centred group
+static uint8_t *root, *all, *head, *foot, *bg, *list, *row, *hud_g, *heart, *icon, *at119, *at120, *side, *sidekid;
+static void screen(void) {
+    np = 0;
+    root = mk("RootPane", NULL, 0, 0, 1920, 1080); all = mk("N_All", root, 0, 0, 1920, 1080);
+    head = mk("P_HeaderBg_00", all, 0, 483, 1920, 290); foot = mk("P_FooterBg_00", all, 0, -498, 1920, 290); bg = mk("P_Bg_00", all, 0, 0, 1920, 1080);
+    list = mk("N_List_00", all, 0, 65, 1920, 550); row = mk("L_Row_00", list, 0, 200, 1500, 80);
+    hud_g = mk("N_Hud_00", root, 0, 0, 1920, 1080); heart = mk("N_Life_00", hud_g, -800, 450, 300, 80); icon = mk("P_Heart_00", heart, 0, 300, 60, 60);
+    at119 = mk("N_At119", all, 0, 119, 10, 10); at120 = mk("N_At120", all, 0, -120, 10, 10);
+    side = mk("N_Side_00", all, 700, 0, 100, 100); sidekid = mk("P_SideKid", side, 0, 400, 10, 10);
+}
+static void pane_check(int which) {   // 0..5 nothing changes; 6..9 the shapes narrower than 16:9
+    static const char *env[] = {NULL, "16:9", "21:9", "4:3", "4:3", "4:3", "4:3", "1:1", "16:10", "153:116"};
+    static const char *panes[] = {NULL, NULL, NULL, NULL, "0", "on", NULL, NULL, "1", "log"};
+    P = calloc(NP, 0x100);
+    assert(P);
+    setup(env[which], which == 3 ? "0000" : DKB_MAIN_BUILD);
+    if (panes[which]) setenv("DM_DKB_PANES", panes[which], 1); else unsetenv("DM_DKB_PANES");
+    screen();
+    built(root); sized(bg, "pic1");
+    if (which < 6) {   // unset, 16:9, wider, another build, DM_DKB_PANES=0, an invalid DM_DKB_PANES: every pane as authored
+        assert(ty_of(head) == 483 && ty_of(foot) == -498 && ty_of(heart) == 450 && ty_of(at120) == -120 && ty_of(sidekid) == 400 && h_of(bg) == 1080);
+        assert(!(head[0x58] & 0x10));
+        return;
+    }
+    double a = which == 6 ? 4.0 / 3 : which == 7 ? 1.0 : which == 8 ? 1.6 : 153.0 / 116, k = K169 / a;
+    float by = (float)(540 * (k - 1));
+    if (which == 6) assert(near(by, 180));
+    if (which == 8) assert(near(by, 60));
+    // the edge rule
+    assert(near(ty_of(head), 483 + by) && (head[0x58] & 0x10) && (head[0x58] & 0x01));   // a header band, with the matrix-dirty bit set and the visible bit kept
+    assert(near(ty_of(foot), -498 - by));
+    assert(ty_of(bg) == 0 && ty_of(list) == 65 && ty_of(row) == 200);   // a centred backdrop, and a list 65 off the line with its row
+    assert(near(ty_of(heart), 450 + by) && ty_of(icon) == 300);            // a HUD corner under a centred group; nothing under a moved pane moves again
+    assert(ty_of(at119) == 119 && near(ty_of(at120), -120 - by));
+    assert(ty_of(side) == 0 && near(ty_of(sidekid), 400 + by));             // a pane beside the centre is on the line: its child moves
+    // both build ends see the same tree, and the gate may fire again: nothing moves twice
+    for (int i = 0; i < 50; i++) built(root);
+    assert(near(ty_of(head), 483 + by) && near(ty_of(heart), 450 + by));
+    // the tree built again with its authored values is moved again
+    setf(head, 0x34, 483); setf(foot, 0x34, -498); setf(heart, 0x34, 450); setf(at120, 0x34, -120); setf(sidekid, 0x34, 400);
+    built(root);
+    assert(near(ty_of(head), 483 + by) && near(ty_of(heart), 450 + by));
+    // the tall rule: a picture pane of the layout's size at its centre covers the canvas; once
+    assert(near(h_of(bg), (float)(1080 * k)));
+    sized(bg, "pic1");
+    assert(near(h_of(bg), (float)(1080 * k)));
+    { uint8_t *x;
+      x = mk("P_Bg_01", NULL, 0, 0, 1920, 1080); sized(x, "pan1"); assert(h_of(x) == 1080);                 // not a picture pane (a null pane, a window, a text box)
+      x = mk("P_Bg_02", NULL, 0, 0, 1900, 1080); sized(x, "pic1"); assert(h_of(x) == 1080);                 // narrower than the layout
+      x = mk("P_Bg_03", NULL, 0, 0, 1920, 1440); sized(x, "pic1"); assert(h_of(x) == 1440);                 // taller already
+      x = mk("P_Bg_04", NULL, 0, 30, 1920, 1080); sized(x, "pic1"); assert(h_of(x) == 1080);                // off the centre
+      x = mk("P_Bg_05", NULL, 0, 0, 1920, NAN); sized(x, "pic1"); assert(isnan(h_of(x)));
+      x = mk("P_Fade_00", NULL, 1, -1, 1922, 1078); sized(x, "pic1"); assert(near(h_of(x), (float)(1078 * k)));   // within the tolerance
+      uint64_t r[31] = {0}; r[19] = A(x); callbacks[OBS_DKB_WIDE](r, 2 << 5); r[19] = 0; r[23] = A(x); callbacks[OBS_DKB_WIDE](r, 2 << 5);   // no record, no pane
+      r[19] = A(x) + 1; callbacks[OBS_DKB_WIDE](r, 2 << 5);
+      assert(near(h_of(x), (float)(1078 * k))); }
+    // rotation, scale and the parent-relative origin
+    np = 0; root = mk("RootPane", NULL, 0, 0, 1920, 1080);
+    { uint8_t *sc = mk("N_Thumb_00", root, 0, 0, 1920, 1080), *k1 = mk("P_In", sc, 0, 400, 10, 10); setf(sc, 0x48, 0.6f); setf(sc, 0x4c, 0.6f);
+      uint8_t *ro = mk("N_Rot_00", root, 0, 0, 100, 100), *k2 = mk("P_In2", ro, 0, 400, 10, 10); setf(ro, 0x44, 90);
+      uint8_t *top = mk("N_FromTop", root, 0, -57, 100, 100), *bot = mk("N_FromBottom", root, 0, 40, 100, 100), *mid = mk("N_NotEdge", root, 0, 500, 100, 100);
+      top[0x5b] = 1 << 6; bot[0x5b] = 2 << 6; mid[0x5b] = 2 << 6;
+      built(root);
+      assert(ty_of(k1) == 400 && ty_of(k2) == 400);         // nothing moves under a scaled or a rotated pane
+      assert(near(ty_of(top), -57 + by));                    // origin at the parent's top: y -57 + 540, moved up
+      assert(near(ty_of(bot), 40 - by));                     // origin at the parent's bottom: y 40 - 540, moved down
+      assert(ty_of(mid) == 500); }                           // 500 from the parent's bottom is 40 below the centre
+    // a part's layout (its root has a parent) is left to the outer build
+    np = 0;
+    { uint8_t *outer = mk("L_Btn_00", NULL, 0, 0, 100, 100), *proot = mk("L_Part_00", outer, 0, 0, 1720, 1033), *key = mk("P_Key", proot, 0, -480, 100, 40);
+      built(proot); assert(ty_of(key) == -480);
+      built(outer); assert(near(ty_of(key), -480 - by)); }
+    // a group whose pieces belong together stays whole, with everything under it, except the child named free for it; its neighbours move
+    np = 0; root = mk("RootPane", NULL, 0, 0, 1920, 1080);
+    { uint8_t *dia = mk("N_1PBothLine_00", root, 0, 0, 1920, 1080), *l1 = mk("P_Line_00", dia, 0, 290, 400, 4), *l2 = mk("P_Line_01", dia, 0, -310, 400, 4);
+      uint8_t *card = mk("N_Lake_00", root, 0, 320, 600, 300), *f2 = mk("P_FooterBg_00", root, 0, -498, 1920, 290);
+      uint8_t *all = mk("N_All", root, 0, 0, 1920, 1080), *gd = mk("N_Guide_00", all, 0, 0, 1920, 1080), *g1 = mk("T_Guide_04", gd, 0, -395, 600, 40);
+      uint8_t *hint = mk("A_Guide_00", gd, 0, 485, 300, 40), *h1 = mk("T_Hint_00", hint, 0, 130, 100, 20), *g2 = mk("T_Head_00", gd, 0, 430, 600, 40);
+      uint8_t *far = mk("N_Guide_00", root, 0, 200, 600, 300), *fh = mk("A_Guide_00", far, 0, 285, 300, 40);   // a kept group off the line is not opened
+      uint8_t *other = mk("N_InOut_00", root, 0, 0, 1920, 1080), *oh = mk("A_Guide_00", other, 0, 485, 300, 40);   // free for N_Guide_00 only
+      built(root);
+      assert(ty_of(l1) == 290 && ty_of(l2) == -310 && ty_of(card) == 320 && near(ty_of(f2), -498 - by));
+      assert(near(ty_of(hint), 485 + by) && ty_of(h1) == 130 && ty_of(g1) == -395 && ty_of(g2) == 430 && ty_of(gd) == 0);
+      assert(ty_of(far) == 200 && ty_of(fh) == 285 && ty_of(oh) == 485); }
+    // trees the walk refuses: nothing in them moves
+    np = 0; root = mk("RootPane", NULL, 0, 0, 1920, 1080);
+    { uint8_t *x = mk("P_A", root, 0, 483, 10, 10), *y = mk("P_B", root, 0, 483, 10, 10); put64(y, 0x18, A(x)); built(root); assert(ty_of(x) == 483 && ty_of(y) == 483); }   // a child whose parent is another pane
+    np = 0; root = mk("RootPane", NULL, 0, 0, 1920, 1080);
+    { uint8_t *c = root, *leaf; for (int i = 0; i < 60; i++) c = mk("N_Deep", c, 0, 0, 10, 10);
+      leaf = mk("P_Leaf", c, 0, 483, 10, 10); uint8_t *x = mk("P_A", root, 0, 483, 10, 10); built(root); assert(ty_of(leaf) == 483 && ty_of(x) == 483); }                 // deeper than the walk follows
+    np = 0; root = mk("RootPane", NULL, 0, 0, 1920, 1080);
+    { uint8_t *last = NULL; for (int i = 0; i < 600; i++) last = mk("P_Many", root, (float)i, 483, 10, 10); built(root); assert(ty_of(last) == 483); }                    // more moves than one walk makes
+    np = 0; root = mk("RootPane", NULL, 0, 0, 1920, 1080);
+    { uint8_t *x = mk("P_A", root, 0, 483, 10, 10); put64(root, 0x28, 0x10); built(root); assert(ty_of(x) == 483); }                                                    // a child link that is no pane
+    if (which == 6) {
+        np = 0;
+        root = mk("RootPane", NULL, 0, 0, 1920, 1080);
+        uint8_t *first = mk("P_A", root, 0, 483, 10, 10);
+        put64(first, 0x10, 0x1000);
+        built(root);
+        assert(ty_of(first) == 483 && first[P_FLAGS] == 1);
+        sized((uint8_t *)(uintptr_t)0x1000, "pic1");
+
+        // The last pane's y is writable, but its flags start on a read-only page.
+        size_t page = (size_t)sysconf(_SC_PAGESIZE);
+        uint8_t *pages = mmap(NULL, 2 * page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        assert(pages != MAP_FAILED);
+        uint8_t (*saved)[0x100] = P;
+        P = (void *)(pages + page - 0x258);
+        np = 0;
+        root = mk("RootPane", NULL, 0, 0, 1920, 1080);
+        first = mk("P_A", root, 0, 483, 10, 10);
+        uint8_t *last = mk("P_B", root, 0, -483, 10, 10);
+        assert(last + P_FLAGS == pages + page);
+        assert(mprotect(pages + page, page, PROT_READ) == 0);
+        built(root);
+        assert(ty_of(first) == 483 && first[P_FLAGS] == 1);
+        assert(ty_of(last) == -483 && last[P_FLAGS] == 1);
+        assert(mprotect(pages + page, page, PROT_READ | PROT_WRITE) == 0);
+        built(root);
+        assert(near(ty_of(first), 483 + by) && near(ty_of(last), -483 - by));
+        assert(munmap(pages, 2 * page) == 0);
+        P = saved;
+    }
+    if (which != 9) {   // (not with DM_DKB_PANES=log: 400 lines)
+    np = 0; root = mk("RootPane", NULL, 0, 0, 1920, 1080);
+    { uint8_t *first = mk("P_0", root, 0, 483, 10, 10), *last = NULL; for (int i = 1; i < 400; i++) last = mk("P_N", root, 0, i & 1 ? 483.f : -483.f, 10, 10);
+      built(root); assert(near(ty_of(first), 483 + by) && near(ty_of(last), 483 + by)); }                                                                               // 400 edge panes under one root all move
+    }
+    np = 0; root = mk("RootPane", NULL, 0, 30, 1920, 1080); { uint8_t *x = mk("P_A", root, 0, 483, 10, 10); built(root); assert(ty_of(x) == 483); }                        // a root off the line
+    np = 0; root = mk("RootPane", NULL, 0, 0, 1920, 1080); built(root);                                                                                                    // no children
+    built(NULL);                                                                                                                                                         // a layout without a root
+    { uint64_t r[31] = {0}; callbacks[OBS_DKB_WIDE](r, 3 << 5); r[19] = 1; callbacks[OBS_DKB_WIDE](r, 3 << 5); }                                                           // no layout, an unaligned one
+    assert(edge_shift(NAN, 180) == 0 && edge_shift(120, 180) == 180 && edge_shift(-120, 180) == -180 && edge_shift(119.9f, 180) == 0);
+}
+
 int main(void) {
     for (int i = 0; i < 6; i++) {
         pid_t child = fork();
@@ -150,5 +329,14 @@ int main(void) {
         if (!WIFEXITED(status) || WEXITSTATUS(status)) { fprintf(stderr, "dkb wide case %d failed\n", i); return 1; }
     }
     puts("dkb wide: 21 opt-in, build, Hor+, Vert+ and repeat cases passed");
+    for (int i = 0; i < 10; i++) {
+        pid_t child = fork();
+        assert(child >= 0);
+        if (!child) { pane_check(i); _exit(0); }
+        int status;
+        assert(waitpid(child, &status, 0) == child);
+        if (!WIFEXITED(status) || WEXITSTATUS(status)) { fprintf(stderr, "dkb wide pane case %d failed\n", i); return 1; }
+    }
+    puts("dkb wide: 10 layout pane cases passed (off, 16:9, wider, another build, switched off; full-screen and edge panes at 4:3, 1:1, 16:10 and 153:116)");
     return 0;
 }

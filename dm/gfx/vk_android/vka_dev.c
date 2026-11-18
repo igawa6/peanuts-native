@@ -9,7 +9,22 @@
 #include <string.h>
 #include <time.h>
 #include "vka_fd_alias.h"
+#include "../../peanuts/peanuts_memory_probe.h"   // PEANUTS: guest-buffer remap probe (#47)
 #include "vka_tlsig.h"
+#include "vka_auto.h"
+_Static_assert(VKA_DRV_QCOM == VK_DRIVER_ID_QUALCOMM_PROPRIETARY && VKA_DRV_TURNIP == VK_DRIVER_ID_MESA_TURNIP, "vka_auto.h driver IDs");
+
+// One "[auto] KEY=value because driver_id=N (name)" line for each automatic default by driver this device takes (vka_auto.h), once per run at device creation; a switch
+// that is set (env.txt, the launcher, live control before this point) prints nothing: its value is the player's
+static void auto_log(const vka_auto_in *in, const char *name) {
+    vka_auto_rule r[16]; int n = vka_auto_rules(in, r, 16);
+    for (int i = 0; i < n; i++) {
+        char v[64], b[256];
+        if (vka_env_str(r[i].key, v, sizeof v)) continue;
+        vka_auto_line(b, sizeof b, &r[i], in->driver_id, name);
+        LOG("%s", b);
+    }
+}
 
 // One placed map of a 64 KiB host-visible allocation at an address reserved for it (vka_dev.c, unadvertised placed maps): 1 when the driver maps it exactly there and
 // the memory reads back what was written through it
@@ -74,19 +89,42 @@ uint64_t vka_fp_host(const char *who) {
 }
 // The calls of vk.* that compile go through these, so they compile with the host's FPCR on whatever thread calls them (the replay, presents, the NaN scan, NDSR,
 // a replay run inline on the game's thread), and the caller's FPCR is put back afterwards
+// PEANUTS begin: optional driver-call tracing also covers helper pipelines and shader variants outside vka_pso.c.
+static int g_compile_trace;
+static void compile_trace(const char *kind, uint64_t begin, uint64_t end, VkResult result, uint32_t count, size_t bytes) {
+    VLOG("compile trace kind=%s start=%llu end=%llu duration=%llu tid=%ld result=%d count=%u bytes=%zu", kind,
+         (unsigned long long)begin, (unsigned long long)end, (unsigned long long)(end - begin), (long)gettid(), (int)result, count, bytes);
+}
 static PFN_vkCreateShaderModule g_csm; static PFN_vkCreateGraphicsPipelines g_cgp; static PFN_vkCreateComputePipelines g_ccp;
 static VkResult VKAPI_CALL fp_csm(VkDevice d, const VkShaderModuleCreateInfo *ci, const VkAllocationCallbacks *a, VkShaderModule *m) {
-    uint64_t f = vka_fp_host(NULL); VkResult r = g_csm(d, ci, a, m); vka_fp_back(f); return r; }
+    uint64_t f = vka_fp_host(NULL), begin = g_compile_trace ? now_ns() : 0;
+    VkResult r = g_csm(d, ci, a, m); uint64_t end = g_compile_trace ? now_ns() : 0;
+    vka_fp_back(f);
+    if (g_compile_trace) compile_trace("shader-module", begin, end, r, 1, ci ? ci->codeSize : 0);
+    return r;
+}
 static VkResult VKAPI_CALL fp_cgp(VkDevice d, VkPipelineCache c, uint32_t n, const VkGraphicsPipelineCreateInfo *ci, const VkAllocationCallbacks *a, VkPipeline *p) {
-    uint64_t f = vka_fp_host(NULL); VkResult r = g_cgp(d, c, n, ci, a, p); vka_fp_back(f); return r; }
+    uint64_t f = vka_fp_host(NULL), begin = g_compile_trace ? now_ns() : 0;
+    VkResult r = g_cgp(d, c, n, ci, a, p); uint64_t end = g_compile_trace ? now_ns() : 0;
+    vka_fp_back(f);
+    if (g_compile_trace) compile_trace("graphics-pipeline", begin, end, r, n, 0);
+    return r;
+}
 static VkResult VKAPI_CALL fp_ccp(VkDevice d, VkPipelineCache c, uint32_t n, const VkComputePipelineCreateInfo *ci, const VkAllocationCallbacks *a, VkPipeline *p) {
-    uint64_t f = vka_fp_host(NULL); VkResult r = g_ccp(d, c, n, ci, a, p); vka_fp_back(f); return r; }
+    uint64_t f = vka_fp_host(NULL), begin = g_compile_trace ? now_ns() : 0;
+    VkResult r = g_ccp(d, c, n, ci, a, p); uint64_t end = g_compile_trace ? now_ns() : 0;
+    vka_fp_back(f);
+    if (g_compile_trace) compile_trace("compute-pipeline", begin, end, r, n, 0);
+    return r;
+}
 static void fp_wrap_compiles(void) {
-    if (vka_fp_guest()) return;
+    const char *trace = getenv("DM_VK_COMPILE_TRACE"); g_compile_trace = trace && !strcmp(trace, "1");
+    if (vka_fp_guest() && !g_compile_trace) return;
     if ((g_csm = vk.vkCreateShaderModule)) vk.vkCreateShaderModule = fp_csm;
     if ((g_cgp = vk.vkCreateGraphicsPipelines)) vk.vkCreateGraphicsPipelines = fp_cgp;
     if ((g_ccp = vk.vkCreateComputePipelines)) vk.vkCreateComputePipelines = fp_ccp;
 }
+// PEANUTS end
 static int init_once(void) {
     void *lib = vka_driver_open();   // DM_VK_DRIVER: a custom driver through libadrenotools (vka_driver.c); NULL = the system's
     if (!lib) lib = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
@@ -224,6 +262,7 @@ static int init_once(void) {
     fxfb.geometryStreams = VK_FALSE; V.xfb = x_xfb && fxfb.transformFeedback;   // PEANUTS: transform feedback (vka_tf.c): captures of stream 0 only
     V.imageless = f12.imagelessFramebuffer;   // (enabled with the rest of f12)
     V.draw_count = f12.drawIndirectCount;
+    V.minmax = f12.samplerFilterMinmax;   // (enabled with the rest of f12)
     V.bda = f12.bufferDeviceAddress; V.uab = f12.descriptorBindingSampledImageUpdateAfterBind && f12.descriptorBindingPartiallyBound && f12.runtimeDescriptorArray;
     V.placed = placed && fmp.memoryMapPlaced; V.placed_range = placed && fmp.memoryMapRangePlaced; V.unmap_reserve = placed && fmp.memoryUnmapReserve;
     float prio = 1.f;
@@ -297,6 +336,7 @@ static int init_once(void) {
     V.fp16_exact = VKA_ENV("DM_VK_FP16_EXACT", !p12.shaderDenormPreserveFloat16);
     VLOG("fp16 subnormals: %s", V.fp16_exact ? (p12.shaderDenormPreserveFloat16 ? "half conversions made exact for them (DM_VK_FP16_EXACT=1)" : "the device cannot preserve them: half conversions made exact for them (DM_VK_FP16_EXACT=0: as built)")
                                              : p12.shaderDenormPreserveFloat16 ? "preserved by the device" : "the device cannot preserve them; half conversions as built (DM_VK_FP16_EXACT=0)");
+    V.cache_ctl = f13.pipelineCreationCacheControl;
     V.subgroup_req_stages = f13.subgroupSizeControl ? p13.requiredSubgroupSizeStages : 0;
     V.subgroup_size = p11.subgroupSize; V.subgroup_min = p13.minSubgroupSize ? p13.minSubgroupSize : p11.subgroupSize; V.subgroup_max = p13.maxSubgroupSize ? p13.maxSubgroupSize : p11.subgroupSize;
     if (!vk.vkCmdPushDescriptorSetKHR) vk.vkCmdPushDescriptorSetKHR = (PFN_vkCmdPushDescriptorSetKHR)vk.vkGetDeviceProcAddr(V.dev, "vkCmdPushDescriptorSet");   // core in 1.4
@@ -307,11 +347,14 @@ static int init_once(void) {
     // characters as long spikes with the vertex input set per draw (vkCmdSetVertexInputEXT); 512.800 (Adreno 830), 512.863 and Turnip draw them correctly, and so
     // does 512.676 with the vertex input in the pipeline (the path of a device without the extension), which it gets here. DM_VK_VIN_DYN (restart only): 0 off, 1 on
     // wherever the device has it, unset as above
+    int vin_dyn_ext = V.vin_dyn;
     if (V.vin_dyn) {
         const char *e = getenv("DM_VK_VIN_DYN");
         if (e && *e) V.vin_dyn = strcmp(e, "0") != 0; else if (V.qcom_old) V.vin_dyn = 0;
         if (!V.vin_dyn) VLOG("vertex input dynamic state: off (%s; DM_VK_VIN_DYN=1: on), the vertex input goes into the pipeline", e && *e ? "DM_VK_VIN_DYN=0" : "Qualcomm driver before 512.800");
     }
+    auto_log(&(vka_auto_in){.driver_id = V.driver_id, .qcom_old = V.qcom_old, .mesh_ext = mesh_ext, .memu = V.memu, .vin_dyn_ext = vin_dyn_ext,
+                            .prof_one_lane = DM_GAME_NSUBGROUP_ONE_LANE, .prof_prepass_cut = DM_GAME_NMESH_PREPASS_CUT, .prof_oq_split = DM_GAME_OCCLUSION_SPLIT_PASS}, pdr.driverName);
     vka_enc_install();
     vka_gbar_install();   // on top of the encoder: sees every work command the replay records (vka_gbar.c)
     const VkPhysicalDeviceLimits *lim = &V.props.limits;
@@ -323,6 +366,16 @@ static int init_once(void) {
     V.guest_type = vka_mem_type(~0u, HV | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, 0);
     if (V.guest_type == UINT32_MAX) V.guest_type = vka_mem_type(~0u, HV | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, 0);
     if (V.guest_type == UINT32_MAX) V.guest_type = vka_mem_type(~0u, HV, 0);
+    // PEANUTS begin: an advertised placed-map feature can still reject guest pool remaps (#47, PanVK).
+    if (placed && V.placed) {
+        char why[160]; V.placed = peanuts_placed_probe(&vk, V.dev, V.guest_type, V.bda, V.placed_align, why, sizeof why);
+        VLOG("guest placed memory: %s", why);
+        if (!V.placed) {
+            V.placed_range = V.unmap_reserve = 0;
+            if (x_fd && vka_fd_enabled()) { V.fd_alias = vka_fd_probe(&vk, V.pd, V.dev, &V.memp, V.bda, why, sizeof why); VLOG("exported guest memory alias: %s (%s)", V.fd_alias ? "on" : "unavailable", why); }
+        }
+    }
+    // PEANUTS end
     V.upload_type = V.guest_type;
     V.local_type = vka_mem_type(~0u, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
 
@@ -501,12 +554,17 @@ static VkResult submit_x(VkCommandBuffer cb, uint64_t signal, uint32_t nwait, co
     if (r == VK_ERROR_DEVICE_LOST) vka_device_lost("a submission");
     return r;
 }
-// The queue idle, bounded by the hang time: the timeline up to the last value handed to it (the present's copies wait for no more), then vkQueueWaitIdle for the rest
+// The queue idle, bounded by the hang time: the timeline up to the last value handed to it (the present's copies wait for no more), then vkQueueWaitIdle for the rest.
+// A CPU wait on that value (vka_worker_cpu_wait): a gate the GPU is held at with nothing before it opens (the GPU would wait for this thread), as for any CPU fence wait.
+// Frame generation's teardown waited with vkQueueWaitIdle on the present thread while a gate held the queue and vka_gate_host_stall kept the gate's time from running:
+// Super Mario Bros. Wonder's program 1 hung when frame generation was switched on and off (the submission behind the gate never ran, the present never came back)
 int vka_queue_idle(void) {
     if (vka_hung()) return 0;
     uint64_t q = vka_fence_queued();
     VkSemaphoreWaitInfo wi = {VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, .semaphoreCount = 1, .pSemaphores = &V.tl, .pValues = &q};
+    int cw = q ? vka_worker_cpu_wait(q) : 0;
     VkResult r = q ? vk.vkWaitSemaphores(V.dev, &wi, vka_hang_ns()) : VK_SUCCESS;
+    vka_worker_cpu_wait_end(cw);
     if (r) { VRED("queue idle: fence %llu not reached in %.1f s (%d): not waited for", (unsigned long long)q, vka_hang_ns() / 1e9, r); return 0; }
     pthread_mutex_lock(&V.qmu); vk.vkQueueWaitIdle(V.q); pthread_mutex_unlock(&V.qmu);
     return 1;
@@ -530,6 +588,11 @@ uint64_t vka_fence_next(void) { pthread_mutex_lock(&g_fmu); uint64_t f = ++g_fen
 void vka_fence_post(uint64_t fence, void *ops, int n, void (*run)(void *, int)) {
     pthread_mutex_lock(&g_fmu);
     while (g_post[fence % POST_RING].fence && g_post[fence % POST_RING].fence != fence) pthread_cond_wait(&g_fcv, &g_fmu);   // that slot's earlier fence has not completed yet
+    {   // (diagnostic) a second record for one fence replaces the first; a record for a fence already done never runs
+        static _Atomic int k; post_rec *o = &g_post[fence % POST_RING];
+        if (o->fence == fence && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu: a second set of completion effects (%d ops) replaces the first (%d ops, %p)", (unsigned long long)fence, n, o->n, o->ops);
+        else if (fence <= g_done && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu: completion effects (%d ops) posted after the fence was done (done %llu): they never run", (unsigned long long)fence, n, (unsigned long long)g_done);
+    }
     g_post[fence % POST_RING] = (post_rec){fence, ops, n, run};
     if (fence > g_submitted) g_submitted = fence;
     pthread_cond_broadcast(&g_scv); pthread_mutex_unlock(&g_fmu);
@@ -537,6 +600,11 @@ void vka_fence_post(uint64_t fence, void *ops, int n, void (*run)(void *, int)) 
 void vka_fence_cpu(uint64_t fence, void *ops, int n, void (*run)(void *, int)) {
     if (run) run(ops, n); else free(ops);
     pthread_mutex_lock(&g_fmu);
+    {   // (diagnostic) done jumps past fences whose GPU work and effects may still be pending: their effects then never run, or run beside these
+        static _Atomic int k; uint64_t pend = 0;
+        for (uint64_t f = g_done + 1; f < fence && f <= g_submitted; f++) if (g_post[f % POST_RING].fence == f) pend++;
+        if (pend && atomic_fetch_add(&k, 1) < 8) VRED("fence %llu done on the CPU while %llu earlier fences' effects are pending (done %llu, submitted %llu)", (unsigned long long)fence, (unsigned long long)pend, (unsigned long long)g_done, (unsigned long long)g_submitted);
+    }
     if (fence > g_submitted) g_submitted = fence;
     if (fence > g_done) __atomic_store_n(&g_done, fence, __ATOMIC_RELEASE);
     pthread_cond_broadcast(&g_fcv); pthread_mutex_unlock(&g_fmu);
@@ -583,6 +651,7 @@ static const volatile uint32_t *g_gban[NGBAN]; static int g_ngban;
 static pthread_mutex_t g_gmu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_gcv = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t g_gidle = PTHREAD_COND_INITIALIZER; static _Atomic int g_gate_pend;   // signaled at each opening; gates added and not yet opened (vka_gate_drain)
 static _Atomic uint64_t g_gate_nw, g_gate_nc, g_gate_nt, g_gate_ns;
+static _Atomic int g_gate_hold;   // the host's own stalls of the present path under way (vka_gate_host_stall, below)
 static int gate_pred(uint32_t cur, uint32_t mode, uint32_t target) { return mode == 0 ? cur == target : (uint32_t)(cur - target) < 0x80000000u; }
 VkSemaphore vka_gate_sem(void) { return g_gate_up > 0 ? g_gate_sem : VK_NULL_HANDLE; }
 static void gate_ban_locked(const volatile uint32_t *w) {
@@ -617,6 +686,9 @@ static void gate_poll_locked(void) {
             if (!x->t_cpu) x->t_cpu = now_ns();
             else if (now_ns() - x->t_cpu >= 2000000) { gate_open_locked(1); continue; }
         } else x->t_cpu = 0;
+        // The host holds the CPU (vka_gate_host_stall): its time stands still and starts again after. Only the time: a CPU wait above still opens it (the host's own
+        // waits for the queue during the stall are such waits, vka_queue_idle), which a stop placed before that rule turned into a deadlock
+        if (atomic_load(&g_gate_hold) > 0) { if (x->t_idle) x->t_idle = now_ns(); break; }
         if (x->park && x->t_idle && now_ns() - x->t_idle > x->park) {
             VRED("a GPU wait for the CPU (event %p: wants %s %u, holds %u; submission %llu) waited %.0f ms with the GPU idle (%.0f ms in all): opened, and its event parks the replay from now on",
                  (const void *)x->w, x->mode ? ">=" : "==", x->value, *x->w, (unsigned long long)x->fence, (now_ns() - x->t_idle) / 1e6, (now_ns() - x->t0) / 1e6);
@@ -625,6 +697,11 @@ static void gate_poll_locked(void) {
         break;
     }
 }
+// The host's own stalls of the present path (vka_gate_host_stall): the game's thread waits for the present thread (vka_present_reserve, 8 frames in flight), so while
+// that thread does long work of the host's (frame generation's chain, vka_framegen.c rebuild: 327 ms at 2560x1440 on the Adreno 740) the CPU cannot reach the signal a
+// gate waits for. Super Mario Bros. Wonder's program 1 turned frame generation on mid-run: a gate waited 200 ms with the GPU idle, opened by its time and banned its event
+// for the rest of the run, though the CPU was only held by the host. While a stall lasts a gate's time does not run; it starts again when the stall ends
+void vka_gate_host_stall(int on) { atomic_fetch_add(&g_gate_hold, on ? 1 : -1); }
 static void *gate_main(void *arg) {
     (void)arg; pthread_setname_np(pthread_self(), "vk-gate"); vka_fp_host("vk-gate");
     pthread_mutex_lock(&g_gmu);
@@ -802,7 +879,11 @@ static void *completion_main(void *arg) {
         if (v > sub) v = sub;
         for (uint64_t f = done + 1; f <= v; f++) {
             post_rec *p = &g_post[f % POST_RING];
-            if (p->fence == f) { if (p->run) p->run(p->ops, p->n); else free(p->ops); }
+            if (p->fence == f) {
+                // PEANUTS: post_run frees ops. The next submission may legitimately allocate the same address;
+                // comparing it with the previous, freed address cannot diagnose a repeated completion.
+                if (p->run) p->run(p->ops, p->n); else free(p->ops);
+            }
         }
         pthread_mutex_lock(&g_fmu);
         for (uint64_t f = done + 1; f <= v; f++) if (g_post[f % POST_RING].fence == f) g_post[f % POST_RING].fence = 0;

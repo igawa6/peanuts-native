@@ -183,6 +183,7 @@ final class LogDigest {
         String docUrl() { return doc == null || doc.isEmpty() ? null : DOCS_BASE + doc; }
     }
 
+    static final int HEAD_BYTES = 1 << 16;
     final List<Row> rules, noise;
     String name = "";
     long bytes;
@@ -195,6 +196,12 @@ final class LogDigest {
     final Map<Integer, Hit> hits = new HashMap<>();
     Crash crash;
     Java java;
+    /** The player's overrides: the run log's [adv] lines (GameActivity, AdvancedSettings.notes); advSeen without entries means "none" */
+    final List<String> adv = new ArrayList<>();
+    boolean advSeen;
+    static final Pattern ADV_RX = Pattern.compile("^(?:\\[nxlaunch\\] )*\\[adv\\] (.*)$");
+    static final int MAX_ADV = 300;
+    static final String ADV_TITLE = "Settings changed from the defaults";
 
     LogDigest(List<Row> rules, List<Row> noise) { this.rules = rules; this.noise = noise; }
 
@@ -204,6 +211,7 @@ final class LogDigest {
         String line = rstripNl(raw);
         if (keyLike(line)) { droppedKeys++; return; }
         if (crashWait > 0) crashMore(line);
+        advLine(line);
         for (int i = 0; i < STAGES.length; i++) if (!stage[i] && STAGES[i].matcher(line).lookingAt()) stage[i] = true;
         if (line.contains("graceful exit")) graceful++;
         int r = search(rules, line);
@@ -221,6 +229,15 @@ final class LogDigest {
             java.trace.add(redact(line.substring(line.indexOf("[RED] crash: ") + 13)));
         before.addLast(new Object[] {ln, line});
         if (before.size() > 12) before.removeFirst();
+    }
+
+    /** An [adv] line of the log: kept (redacted) unless it says none; a log without any has no block */
+    private void advLine(String line) {
+        if (!line.contains("[adv] ")) return;
+        Matcher m = ADV_RX.matcher(line);
+        if (!m.find()) return;
+        advSeen = true;
+        if (!m.group(1).startsWith("none") && adv.size() < MAX_ADV) adv.add(redact(m.group(1)));
     }
 
     private void error(int ln, String line) {
@@ -354,6 +371,13 @@ final class LogDigest {
     String render(Verdict v) {
         StringBuilder o = new StringBuilder();
         o.append("== log digest: ").append(name).append(" (").append(n).append(" lines, ").append(String.format(Locale.ROOT, "%.1f", bytes / 1e6)).append(" MB)\n");
+        if (advSeen) {
+            if (adv.isEmpty()) o.append("-- ").append(ADV_TITLE).append(": none\n");
+            else {
+                o.append("-- ").append(ADV_TITLE).append(" (").append(adv.size()).append(")\n");
+                for (String a : adv) o.append("  ").append(a).append('\n');
+            }
+        }
         o.append("-- verdict\n");
         o.append("  ").append(v.label).append(v.sentence != null ? ": " + v.sentence : "").append('\n');
         if (v.rule != null)
@@ -434,6 +458,13 @@ final class LogDigest {
             r.readFully(b);
         }
         n = from > 0 ? countNewlines(log, from) : 0;
+        if (from > 0) {   // the [adv] lines are at the log's start: read them from there when the tail does not reach it
+            byte[] h = new byte[(int) Math.min(HEAD_BYTES, from)];
+            try (RandomAccessFile r = new RandomAccessFile(log, "r")) { r.readFully(h); }
+            String head = new String(h, StandardCharsets.UTF_8);
+            head = head.substring(0, head.lastIndexOf('\n') + 1);
+            for (String l : head.split("\n")) advLine(rstripNl(l));
+        }
         feedText(new String(b, StandardCharsets.UTF_8));
     }
 

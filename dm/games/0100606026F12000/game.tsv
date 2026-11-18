@@ -63,3 +63,14 @@ tex_dyn_slots	on
 # shaders per draw from its pipeline state, so every vertex shader is made to link with any pixel shader (shader_split.py separable_pairs)
 shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
 shader_note	FINAL FANTASY RESONANCE shaders
+
+present_interval	display
+
+fps_limit	60
+
+fps_limit_max	120
+
+# Reviewed FPSLocker Warehouse v4 memory writes for this exact main; no executable patch or arbitrary YAML evaluation.
+fpslocker	84e182f72ee1da4f477804bd05b54c15	frame_ms2_f32	0x8be8128	2	0
+fpslocker	84e182f72ee1da4f477804bd05b54c15	zero_i32	0x7c13290	2	0
+fpslocker	84e182f72ee1da4f477804bd05b54c15	target_f32	0x8c29b00	2	0

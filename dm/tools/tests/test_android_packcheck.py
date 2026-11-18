@@ -58,7 +58,7 @@ class Jvm(unittest.TestCase):
         cls.td = tempfile.TemporaryDirectory(prefix='packcheck_')
         cls.t = Path(cls.td.name).resolve()
         (cls.t / 'BuildConfig.java').write_text(test_nup.Launcher.STUB)
-        mods = ('Nup', 'Zstd', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Profile', 'ShaderLibs', 'PickedPath', 'CopyPlan', 'Verdict', 'GameList', 'Frontend')
+        mods = ('Nup', 'Nsp', 'Zstd', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Profile', 'ShaderLibs', 'PickedPath', 'CopyPlan', 'Verdict', 'GameList', 'Frontend')
         subprocess.run(['javac', '-Xlint:all', '-Xlint:-deprecation', '-d', str(cls.t / 'classes')] + [str(SRC / f'{c}.java') for c in mods] + [str(TEST), str(cls.t / 'BuildConfig.java')],
                        check=True, capture_output=True, text=True)
 
@@ -115,10 +115,12 @@ class Jvm(unittest.TestCase):
             elif k == 2: data += rnd.randbytes(rnd.randint(1, 400))
             else: data += b'the quick brown fox %d ' % rnd.randint(0, 50) * rnd.randint(1, 40)
         data = bytes(data[:3_000_000])
+        assert pyzstd is not None   # PEANUTS(upstream-candidate): this fixture is skipped without zstd.
         P = pyzstd.CompressionParameter
         for name, opts in {'l1': {P.compression_level: 1}, 'l3': {P.compression_level: 3}, 'l19': {P.compression_level: 19}, 'l3-wlog10': {P.compression_level: 3, P.window_log: 10},
                            'l19-wlog10': {P.compression_level: 19, P.window_log: 10}, 'l1-wlog14-nocheck': {P.compression_level: 1, P.window_log: 14, P.checksum_flag: 0}}.items():
-            (f / f'{name}.zst').write_bytes(pyzstd.compress(data, options=opts)); (f / f'{name}.raw').write_bytes(data)
+            # PEANUTS(upstream-candidate): the compression API takes integer option keys.
+            (f / f'{name}.zst').write_bytes(pyzstd.compress(data, options={int(k): v for k, v in opts.items()})); (f / f'{name}.raw').write_bytes(data)
         (f / 'small.zst').write_bytes(pyzstd.compress(b'tiny single segment frame ' * 5)); (f / 'small.raw').write_bytes(b'tiny single segment frame ' * 5)
         self.java('frames', f, xmx='64m')
 

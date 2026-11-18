@@ -54,6 +54,13 @@ else()
   enable_testing()
   add_test(NAME crypto_test COMMAND crypto_test)
   add_test(NAME lz4_test COMMAND lz4_test)
+  if(NOT WIN32)
+    add_executable(font_test ${CMAKE_CURRENT_SOURCE_DIR}/tests/font_test.c ${NXIMPORT_SOURCES})
+    target_include_directories(font_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(font_test PRIVATE Threads::Threads ZLIB::ZLIB)
+    target_compile_options(font_test PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation)
+    add_test(NAME font_test COMMAND font_test)
+  endif()
   # The RomFS read straight from dumps at run time (dm/peanuts/peanuts_nsp.c; peanuts/docs/NSP-DIRECT.md), on x86-64 Linux:
   #   nsp_test     no game data: dumps written by the test with made-up keys (tests/nsp_fixture.h), read through the importer, through the host's file system
   #                (dm/host/hle_fs.c, the file as it is) beside the .nup the importer makes of them, and through the companion runtime's provider

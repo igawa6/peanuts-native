@@ -23,6 +23,57 @@ static uint64_t run(vkpanel *p, uint64_t t, uint64_t r, int frames, int *lost) {
     return t;
 }
 
+// PEANUTS: exercise the compositor's actual queue deadline, including a producer stall and metadata-free fallback.
+static void deadline_grid_cases(uint64_t r, uint64_t deadline, const char *mode) {
+    const uint64_t anchor = 11000000000ull, period = vkpanel_fit(33333333, r);
+    const uint64_t hold = vkpanel_hold(33333333, r);
+    uint64_t now = anchor + 1000000;
+    vkgrid old = {0}, aware = {0}; int late;
+    uint64_t target = vkgrid_next(&old, anchor, r, 33333333, now, &late);
+    CHECK(target > now && target < now + deadline, "%s: the old future target misses the compositor deadline", mode);
+    target = vkgrid_next_deadline(&aware, anchor, r, 33333333, now, deadline, &late);
+    CHECK(target >= now + deadline && !late && (target - anchor) % r == 0,
+          "%s: the first reachable target is on the measured grid", mode);
+
+    aware.last = 0;
+    uint64_t prev = 0; int wrong_hold = 0, early = 0, nlate = 0;
+    for (int i = 0; i < 2000; i++) {
+        target = vkgrid_next_deadline(&aware, anchor, r, 33333333, now, deadline, &late);
+        wrong_hold += prev && target - prev != hold * r;
+        early += target < now + deadline;
+        nlate += late; prev = target; now += period;
+    }
+    CHECK(!wrong_hold && !early && !nlate, "%s: 2000 steady frames: %d wrong holds, %d too early, %d late",
+          mode, wrong_hold, early, nlate);
+
+    aware.last = 0; prev = 0; now = anchor + 1000000;
+    wrong_hold = early = nlate = 0;
+    for (int i = 0; i < 2000; i++) {
+        // One delayed producer reaches QueuePresent just after the next target's deadline.
+        // The producer then recovers its old cadence; presentation must retain the new phase.
+        uint64_t ready = i == 1000 ? prev + hold * r - deadline + 1 : now;
+        target = vkgrid_next_deadline(&aware, anchor, r, 33333333, ready, deadline, &late);
+        if (i == 1000) CHECK(late && target - prev == (hold + 1) * r,
+                             "%s: missed deadline moves one refresh once", mode);
+        else wrong_hold += prev && target - prev != hold * r;
+        early += target < ready + deadline;
+        nlate += late; prev = target; now += period;
+    }
+    CHECK(nlate == 1 && !wrong_hold && !early, "%s: producer delay: %d late, %d short/long catch-up holds, %d too early",
+          mode, nlate, wrong_hold, early);
+
+    old.last = aware.last = 0; now = anchor + 1000000;
+    for (int i = 0; i < 2000; i++) {
+        if (i == 1000) now += 7 * r;
+        int old_late, new_late;
+        uint64_t fallback = vkgrid_next(&old, anchor, r, 33333333, now, &old_late);
+        target = vkgrid_next_deadline(&aware, anchor, r, 33333333, now, 0, &new_late);
+        CHECK(target == fallback && aware.last == old.last && new_late == old_late,
+              "%s: zero deadline preserves fallback at frame %d", mode, i);
+        now += period;
+    }
+}
+
 int main(void) {
     // ---- the estimate ----
     vkpanel p = {0}; int lost = 0;
@@ -80,7 +131,29 @@ int main(void) {
     CHECK(vkpanel_fit(22222222, THOR) == 22222222 && vkpanel_fit(25000000, THOR) == 25000000, "45 and 40 on 59.83 Hz stay");
     CHECK(vkpanel_fit(SIXTY, 11111111) == SIXTY && vkpanel_fit(8333333, THOR) == 8333333, "60 on 90 Hz, 120 on 60 Hz stay");
     CHECK(vkpanel_fit(SIXTY, 0) == SIXTY && vkpanel_fit(0, THOR) == 0, "nothing measured, no pacing");
-    CHECK(vkpanel_fit(SIXTY, 16400000) == SIXTY, "over 1 %% off (60.98 Hz) stays");
+    // PEANUTS: nominal display modes can differ from the measured panel by more than 1 %.
+    // Thor's 120 Hz mode measures 8.4375 ms (118.52 Hz). Producer clocks and the four-refresh
+    // present grid must share that period; 33.333 ms against 33.75 ms accumulates phase error.
+    { const uint64_t r = 8437500, nominal = 8333333;
+      vkpanel measured = {0}; vkpanel_seed(&measured, nominal);
+      uint64_t stamp = 1000000000ull;
+      for (int i = 0; i < 300; i++) { stamp += 4 * r; vkpanel_sample(&measured, stamp); }
+      CHECK(measured.period == r, "nominal 120 Hz measures 118.52 Hz: %llu", (unsigned long long)measured.period);
+      CHECK(vkpanel_fit(nominal, r) == r && vkpanel_fit(SIXTY, r) == 2 * r &&
+            vkpanel_fit(25000000, r) == 3 * r && vkpanel_fit(33333333, r) == 4 * r,
+            "120 / 60 / 40 / 30 Hz producer clocks follow measured 118.52 Hz refreshes");
+      vkgrid g = {0}; uint64_t now = stamp + 1000000, prev = 0; int late, bad = 0, nlate = 0;
+      const uint64_t producer = vkpanel_fit(33333333, measured.period);
+      for (int i = 0; i < 2000; i++) {
+          uint64_t tg = vkgrid_next(&g, stamp, r, 33333333, now, &late);
+          if (prev && tg - prev != 4 * r) bad++;
+          nlate += late; prev = tg; now += producer;
+      }
+      CHECK(!bad && !nlate, "30 Hz producer and grid keep one phase over 2000 frames: %d wrong holds, %d late", bad, nlate);
+    }
+    CHECK(vkpanel_fit(10000000, 10200000) == 10200000 && vkpanel_fit(10000000, 9800000) == 9800000, "2 %% fit boundary in both directions");
+    CHECK(vkpanel_fit(10000000, 10200001) == 10000000 && vkpanel_fit(10000000, 9799999) == 10000000, "outside 2 %% retains the requested clock");
+    CHECK(vkpanel_fit(SIXTY, 16000000) == SIXTY, "60 on a 62.5 Hz panel stays");
 
     // ---- the grid ----
     CHECK(vkpanel_near(1000, 100, 1049) == 1000 && vkpanel_near(1000, 100, 1050) == 1100 && vkpanel_near(1000, 100, 940) == 900 && vkpanel_near(1000, 100, 951) == 1000, "nearest");
@@ -133,6 +206,10 @@ int main(void) {
       // the clock far behind the chain (a stale chain after a long stop is over eight holds ahead of what a frame can have): starts again
       uint64_t tg = vkgrid_next(&g, a, THOR, SIXTY, a + 1000, &late); g.last = tg + 100 * THOR;
       CHECK(vkgrid_next(&g, a, THOR, SIXTY, a + THOR, &late) == vkpanel_up(a, THOR, a + THOR + THOR / 2) && late, "a chain too far ahead starts again"); }
+
+    // PEANUTS: the measured Thor grids and Android-reported queue deadlines at nominal 120/60 Hz.
+    deadline_grid_cases(8437500, 11333333, "Thor 118.52 Hz");
+    deadline_grid_cases(16710000, 16666666, "Thor 59.84 Hz");
 
     printf(fails ? "t_android_panel: %d FAILED\n" : "t_android_panel: all passed\n", fails);
     return fails != 0;

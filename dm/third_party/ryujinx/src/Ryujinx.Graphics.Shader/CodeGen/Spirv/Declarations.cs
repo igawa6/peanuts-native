@@ -12,6 +12,9 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
 {
     static class Declarations
     {
+        // nxnative: where LDTRAM's per-vertex inputs start (UserDefinedPerVertex), past every attribute location (32)
+        public const int PerVertexLocationBase = 64;
+
         public static void DeclareParameters(CodeGenContext context, StructuredFunction function)
         {
             DeclareParameters(context, function.InArguments, 0);
@@ -116,7 +119,11 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                 }
 
                 StorageClass memoryStorage = SharedStorageClass(storage, memory);
-                SpvInstruction type = context.GetType(memory.Type, memory.ArrayLength);
+                // nxnative: an array type of its own. The generator reuses an identical type, so a memory of 8 words took the support buffer's uint[8], which carries
+                // ArrayStride 16, and Workgroup / Private memory may have no explicit layout (Vulkan's VUID-StandaloneSpirv-None-10684: Orbitals, 24 compute shaders)
+                SpvInstruction type = (memory.Type & AggregateType.Array) != 0 && memory.ArrayLength > 0
+                    ? context.TypeArray(context.GetType(memory.Type & ~AggregateType.Array), context.Constant(context.TypeU32(), memory.ArrayLength), forceIdAllocation: true)
+                    : context.GetType(memory.Type, memory.ArrayLength);
                 SpvInstruction pointerType = context.TypePointer(memoryStorage, type);
                 SpvInstruction variable = context.Variable(pointerType, memoryStorage, memory.ZeroInit ? context.ConstantNull(type) : null);
 
@@ -289,11 +296,20 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
 
         private static void DeclareImages(CodeGenContext context, IEnumerable<TextureDefinition> images)
         {
+            bool extendedFormats = false;
+
             foreach (TextureDefinition image in images)
             {
                 int setIndex = context.TargetApi == TargetApi.Vulkan ? image.Set : 0;
 
                 Dim dim = GetDim(image.Type);
+
+                // nxnative: the rg32ui image of a 64-bit image atomic (Instructions.GenerateImageAtomic) is an extended storage format in SPIR-V (PR #1801)
+                if (context.HostCapabilities.MetalImageAtomics && image.Format == TextureFormat.R32G32Uint && !extendedFormats)
+                {
+                    extendedFormats = true;
+                    context.AddCapability(Capability.StorageImageExtendedFormats);
+                }
 
                 SpvInstruction imageType = context.TypeImage(
                     context.GetType(image.Format.GetComponentType()),
@@ -421,6 +437,10 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                     if (ioVariable == IoVariable.UserDefined)
                     {
                         iq = context.Definitions.ImapTypes[ioDefinition.Location].GetFirstUsedType();
+                    }
+                    else if (ioVariable == IoVariable.UserDefinedPerVertex)
+                    {
+                        iq = PixelImap.Constant;   // nxnative: a vertex's own word, not interpolated (LDTRAM)
                     }
                     else
                     {
@@ -562,6 +582,11 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                 varType = context.Definitions.GetUserDefinedType(ioDefinition.Location, isOutput);
                 isBuiltIn = false;
             }
+            else if (ioVariable == IoVariable.UserDefinedPerVertex)   // nxnative: LDTRAM's inputs, the words of a vec4 (an attribute's four words are untyped)
+            {
+                varType = AggregateType.Vector4 | AggregateType.FP32;
+                isBuiltIn = false;
+            }
             else if (ioVariable == IoVariable.FragmentOutputColor)
             {
                 varType = context.Definitions.GetFragmentOutputColorType(ioDefinition.Location);
@@ -664,6 +689,13 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                 {
                     context.Decorate(spvVar, Decoration.PassthroughNV);
                 }
+            }
+            else if (ioVariable == IoVariable.UserDefinedPerVertex)
+            {
+                // nxnative: one input for each vertex of the attribute, at locations past the attributes' own, named for dmsh_rewrite.per_vertex (SPIRV-Cross has no MSL
+                // form of PerVertexKHR): it makes the three of location L one vertex_value<float4> at user(locnL), the vertex shader's output there
+                context.Decorate(spvVar, Decoration.Location, (LiteralInteger)(PerVertexLocationBase + ioDefinition.Location));
+                context.Name(spvVar, $"dm_pv{ioDefinition.Location / 3}_{ioDefinition.Location % 3}");
             }
             else if (ioVariable == IoVariable.FragmentOutputColor)
             {

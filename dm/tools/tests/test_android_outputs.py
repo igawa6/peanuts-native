@@ -57,5 +57,22 @@ class OutputsThatWent(unittest.TestCase):
         self.assertIn('".android.key"', fake, 'the simulated rewrite writes the key the check looks for')
 
 
+
+class ShaderResultsInAppStorage(unittest.TestCase):
+    """The shaders step's results (DMSH_VK_RESULTS) are a file a shader. Beside the job on shared storage each was written, synced and renamed through FUSE,
+    the folder grew to the profile's whole count, and Mario Tennis Fever's 35,045 took over two hours on an Odin 3, its cores mostly idle. They go where
+    the split's kept scan results are, in the app's own storage (Outputs.results; OutputsJvmTest checks the rule)"""
+    def test_wired(self):
+        s = PACK_SERVICE.read_text(encoding='utf-8')
+        self.assertNotIn('new File(od, "xlate")', s)
+        self.assertNotIn('new File(j.dir(), "xlate")', s)
+        self.assertIn('xlate = j.results(this)', s)
+        self.assertIn('PackEngine.setenv("DMSH_VK_RESULTS", xlate.getPath())', s)
+        job = (SRC.parent / 'Job.java').read_text(encoding='utf-8')
+        self.assertIn('Outputs.results(dir(), c.getNoBackupFilesDir(), titleId())', job)
+        ondevice = (SRC.parent / 'Ondevice.java').read_text(encoding='utf-8')
+        self.assertIn('j.deleteResults(a)', ondevice, "Delete working files deletes them too")
+
+
 if __name__ == '__main__':
     unittest.main()

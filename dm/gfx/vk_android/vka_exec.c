@@ -8,6 +8,8 @@
 #include "../nvn/nvn_mtl.h"
 #include "../nvn/nvn_timestamp.h"
 #include "vka_present_rot.h"
+#include "vka_depthcopy_spv.h"
+#include "vka_t2tpath.h"
 #include "vka_qsched.h"
 #include "vka_skipwarn.h"
 #include <math.h>
@@ -130,6 +132,7 @@ void mtl_set_frame(uint64_t f) {
           { char rb[1400]; vka_rs_stats(rb, sizeof rb, n); if (rb[0]) VLOG("%s", rb); }   // PEANUTS: DM_RES_SCALE (vka_resscale.inc)
           { void vka_drv_memo_stats(char *b, size_t n); vka_drv_memo_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
           vka_memu_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb);
+          { void vka_memu_stop_stats(char *b, size_t n, double frames); vka_memu_stop_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb); }
           { void vka_draw_unplaced(char *b, size_t n); vka_draw_unplaced(pb, sizeof pb); if (pb[0]) VRED("%s", pb); } }   // PEANUTS: draws and buffers lost to memory that is not placed, while the counts move (vka_draw.c)
         { static uint64_t fc; if (f - fc >= 1800) { vka_disp_census(f); fc = f; } }   // (every 1,800 frames)
         vka_dobj_census(f);   // DM_VK_DISP_OBJ (its own interval)
@@ -324,6 +327,11 @@ static uint64_t sh_get(uint32_t qi, uint32_t use, PFN_vkGetQueryPoolResults get)
 }
 static void post_run(void *ops_, int n) {   // the completion thread, in submission order, before the fence reads as done
     pop *ops = ops_;
+    for (int i = 0; i < n; i++) if (ops[i].kind < 1 || ops[i].kind > 6) {   // (diagnostic: an op array that is not one, see vka_dev.c's checks of the post records)
+        static _Atomic int k; if (atomic_fetch_add(&k, 1) < 8) VRED("completion effects: op %d of %d has kind %d (address %#llx): not an op array (freed or overwritten); its effects are dropped (not freed)",
+                                                                   i, n, ops[i].kind, (unsigned long long)ops[i].addr);
+        return;
+    }
     uint64_t g = guest_ns(); if (!g) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); g = (uint64_t)t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec; }
     uint64_t ticks = nvn_timestamp_from_ns(g);
     uint64_t gq[SEGQ], tmax = 0; int nq = 0;   // segment timestamps: each report's GPU time, the latest of them
@@ -687,6 +695,10 @@ uint64_t vka_rp_sub_commit(uint64_t reserved) { uint64_t t0 = now_ns(), f = sub_
 uint64_t vka_rp_sub_commit_sig(uint64_t reserved, uint64_t signal) { uint64_t t0 = now_ns(), f = sub_commit(reserved, 1, signal); g_t_commit += now_ns() - t0; return f; }
 static uint64_t sub_commit(uint64_t reserved, int has_sig, uint64_t signal) {
     uint64_t fence = reserved ? reserved : vka_fence_next(); g_cur_fence = 0;
+    {   // (diagnostic) g_post and g_carry have no lock: one thread commits
+        static _Atomic(void *) tp; void *me = __builtin_thread_pointer(), *was = NULL;
+        if (!atomic_compare_exchange_strong(&tp, &was, me) && was != me) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VRED("submission commit on another thread than the first (fence %llu, signal %llu)", (unsigned long long)fence, (unsigned long long)signal); atomic_store(&tp, me); }
+    }
     if (!has_sig) signal = fence;
     if (g_rc_rec) { g_rc_subf[g_n_sub % 64].sub = g_n_sub; g_rc_subf[g_n_sub % 64].fence = fence; g_rc_rec = 0; }   // (rc_sub_done)
     vka_draw_peek_commit(fence);   // DM_VK_SB_PEEK: this submission's storage buffers, read again once it has completed
@@ -1076,6 +1088,84 @@ static VkImage sconv_image_not(VkFormat f, uint32_t w, uint32_t h, VkImage not) 
 }
 static VkImage sconv_image(VkFormat f, uint32_t w, uint32_t h) { return sconv_image_not(f, w, h, VK_NULL_HANDLE); }
 
+// A scaled or mirrored depth copy into a format the driver has no blit destination for (vka_t2tpath.h T2T_DEPTH_DRAW): per layer, a full-viewport triangle over the destination
+// rectangle (the present's rot.vert, its texture coordinates an affine map onto the source rectangle, so a mirror is a negative scale) whose fragment shader samples the source
+// level (nearest, as the blit) and writes gl_FragDepth, the depth test ALWAYS. One pipeline per depth format. Mario Tennis Fever fills its 7168x7168 static shadow map's level 1
+// with a scaled copy of level 0 (into a 3584x3584 texture over level 1); blitted on a driver without BLIT_DST for D32, that level stayed unwritten and shadows beyond about 50 units were lost
+static struct { VkFormat f; VkPipeline p; } g_dcp[8]; static int g_ndcp;
+static VkPipelineLayout g_dcp_lay; static VkDescriptorSetLayout g_dcp_dsl; static VkShaderModule g_dcp_vs, g_dcp_fs; static VkSampler g_dcp_smp;
+static VkPipeline dcp_pipeline(VkFormat f) {
+    for (int i = 0; i < g_ndcp; i++) if (g_dcp[i].f == f) return g_dcp[i].p;
+    if (g_ndcp == 8 || !V.push_desc) return VK_NULL_HANDLE;
+    VkResult r = 0;
+    if (!g_dcp_lay) {
+        VkDescriptorSetLayoutBinding b = {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL};
+        VkDescriptorSetLayoutCreateInfo dl = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR, .bindingCount = 1, .pBindings = &b};
+        VkPushConstantRange pc = {VK_SHADER_STAGE_VERTEX_BIT, 0, 6 * sizeof(float)};
+        VkShaderModuleCreateInfo mv = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = sizeof vka_rot_vert, .pCode = vka_rot_vert};
+        VkShaderModuleCreateInfo mf = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = sizeof vka_depthcopy_frag, .pCode = vka_depthcopy_frag};
+        VkSamplerCreateInfo si = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .magFilter = VK_FILTER_NEAREST, .minFilter = VK_FILTER_NEAREST, .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                  .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+        if (!(r = vk.vkCreateDescriptorSetLayout(V.dev, &dl, NULL, &g_dcp_dsl))) {
+            VkPipelineLayoutCreateInfo li = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &g_dcp_dsl, .pushConstantRangeCount = 1, .pPushConstantRanges = &pc};
+            r = vk.vkCreatePipelineLayout(V.dev, &li, NULL, &g_dcp_lay);
+        }
+        if (!r) r = vk.vkCreateShaderModule(V.dev, &mv, NULL, &g_dcp_vs);
+        if (!r) r = vk.vkCreateShaderModule(V.dev, &mf, NULL, &g_dcp_fs);
+        if (!r) r = vk.vkCreateSampler(V.dev, &si, NULL, &g_dcp_smp);
+        if (r) { VRED("scaled depth copy: layout / shaders / sampler %d", r); g_ndcp = 8; return VK_NULL_HANDLE; }
+    }
+    VkPipelineShaderStageCreateInfo st[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = g_dcp_vs, .pName = "main"},
+                                             {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = g_dcp_fs, .pName = "main"}};
+    VkPipelineVertexInputStateCreateInfo vi = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    VkPipelineInputAssemblyStateCreateInfo ia = {VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+    VkPipelineViewportStateCreateInfo vp = {VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
+    VkPipelineRasterizationStateCreateInfo rs = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, .polygonMode = VK_POLYGON_MODE_FILL, .cullMode = VK_CULL_MODE_NONE, .lineWidth = 1};
+    VkPipelineMultisampleStateCreateInfo ms = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+    VkPipelineDepthStencilStateCreateInfo dss = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO, .depthTestEnable = VK_TRUE, .depthWriteEnable = VK_TRUE, .depthCompareOp = VK_COMPARE_OP_ALWAYS};
+    VkPipelineColorBlendStateCreateInfo cb = {VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    VkDynamicState dyn[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo ds = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, .dynamicStateCount = 2, .pDynamicStates = dyn};
+    VkPipelineRenderingCreateInfo rci = {VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO, .depthAttachmentFormat = f};
+    VkGraphicsPipelineCreateInfo gi = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &rci, .stageCount = 2, .pStages = st, .pVertexInputState = &vi, .pInputAssemblyState = &ia,
+        .pViewportState = &vp, .pRasterizationState = &rs, .pMultisampleState = &ms, .pDepthStencilState = &dss, .pColorBlendState = &cb, .pDynamicState = &ds, .layout = g_dcp_lay};
+    VkPipeline p = VK_NULL_HANDLE;
+    if ((r = vk.vkCreateGraphicsPipelines(V.dev, VK_NULL_HANDLE, 1, &gi, NULL, &p))) { VRED_ONCE("scaled depth copy pipeline (format %d): %d", f, r); return VK_NULL_HANDLE; }
+    g_dcp[g_ndcp++] = (typeof(g_dcp[0])){f, p};
+    return p;
+}
+// ss, ds: the copy's subresources (image levels); x0..y1: the source rectangle (swapped for a mirror); dr: the destination rectangle. 0 = not done
+static int t2t_depth_draw(vka_img *s, vka_img *d, VkImageSubresourceLayers ss, VkImageSubresourceLayers ds, int x0, int y0, int x1, int y1, VkRect2D dr) {
+    if (!(s->usage & VK_IMAGE_USAGE_SAMPLED_BIT) || !(d->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) || s->depth > 1 || d->depth > 1) {
+        VRED_ONCE("scaled depth copy (serial %llu → %llu): the source cannot be sampled or the destination cannot be a depth attachment: not done", (unsigned long long)s->serial, (unsigned long long)d->serial); return 0; }
+    if (s->img == d->img && ss.mipLevel == ds.mipLevel) { VRED_ONCE("scaled depth copy within one level of one image: not done"); return 0; }
+    VkPipeline p = dcp_pipeline(d->f.vk);
+    if (!p) { VRED_ONCE("scaled depth copy (format %d): no pipeline (push descriptors: %d): not done", d->f.vk, V.push_desc); return 0; }
+    uint32_t sw, sh; level_size(s, ss.mipLevel, &sw, &sh);
+    float pc[6] = {(float)(x1 - x0) / sw, 0, 0, (float)(y1 - y0) / sh, (float)x0 / sw, (float)y0 / sh};   // uv = m * p + t, p = 0..1 over the viewport
+    VkViewport v = {(float)dr.offset.x, (float)dr.offset.y, (float)dr.extent.width, (float)dr.extent.height, 0, 1};
+    vka_barrier(g_cb);
+    for (uint32_t i = 0; i < ds.layerCount; i++) {
+        VkImageView sv = vka_view(s, s->f.view ? s->f.view : s->f.vk, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_DEPTH_BIT, ss.mipLevel, 1, ss.baseArrayLayer + i, 1, NULL);
+        VkImageView dv = vka_view(d, d->f.vk, VK_IMAGE_VIEW_TYPE_2D, d->aspect, ds.mipLevel, 1, ds.baseArrayLayer + i, 1, NULL);
+        if (!sv || !dv) return 0;
+        VkRenderingAttachmentInfo a = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = dv, .imageLayout = VK_IMAGE_LAYOUT_GENERAL, .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD, .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
+        VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = dr, .layerCount = 1, .pDepthAttachment = &a};
+        VkDescriptorImageInfo ii = {g_dcp_smp, sv, VK_IMAGE_LAYOUT_GENERAL};
+        VkWriteDescriptorSet wr = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii};
+        vk.vkCmdBeginRendering(g_cb, &ri);
+        vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+        vk.vkCmdPushDescriptorSetKHR(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_dcp_lay, 0, 1, &wr);
+        vk.vkCmdPushConstants(g_cb, g_dcp_lay, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof pc, pc);
+        vk.vkCmdSetViewport(g_cb, 0, 1, &v); vk.vkCmdSetScissor(g_cb, 0, 1, &dr);
+        vk.vkCmdDraw(g_cb, 3, 1, 0, 0);
+        vk.vkCmdEndRendering(g_cb);
+    }
+    vka_dyn_invalidate();   // its pipeline replaced the draws' state
+    static _Atomic int n; if (!atomic_exchange(&n, 1)) VLOG("scaled depth copy drawn (format %d has no BLIT_DST): serial %llu level %u → serial %llu level %u, %ux%u", d->f.vk,
+                                                            (unsigned long long)s->serial, ss.mipLevel, (unsigned long long)d->serial, ds.mipLevel, dr.extent.width, dr.extent.height);
+    return 1;
+}
 static void copy_t2t(const p_copy_t2t *c) {
     if (!c->src || !c->dst) return;
     vka_img *s = vka_tex_get(c->src, g_cb), *d = vka_tex_get(c->dst, g_cb);
@@ -1136,12 +1226,22 @@ static void copy_t2t(const p_copy_t2t *c) {
         static _Atomic int noted_; if (tsf.vk != tdf.vk && !atomic_exchange(&noted_, 1)) VLOG("texture copy between formats of one size, %#x → %#x (Vulkan %u → %u): copied as bits, not converted", c->src->d.format, c->dst->d.format, s->f.vk, d->f.vk);   // PEANUTS: tsf / tdf (above)
         VkImageCopy r = {ss, {c->sr.xoffset, c->sr.yoffset, s3 ? c->sr.zoffset : 0}, ds, {c->dr.xoffset, c->dr.yoffset, d3 ? c->dr.zoffset : 0}, {(uint32_t)c->sr.width, (uint32_t)c->sr.height, s3 ? (uint32_t)nz : 1}};
         vk.vkCmdCopyImage(g_cb, s->img, VK_IMAGE_LAYOUT_GENERAL, d->img, VK_IMAGE_LAYOUT_GENERAL, 1, &r);
-    } else {   // a scaled, mirrored or format-changing copy: a blit (filtered with LINEAR_FILTER)
-        if (tsf.kind != tdf.kind || (tsf.kind && tsf.kind < 3) || tsf.bw > 1 || tdf.bw > 1 || s->samples > 1 || d->samples > 1) {   // PEANUTS: tsf / tdf (above)
-            VRED_ONCE("texture copy %#x → %#x needs a draw (integer, compressed, multisampled or depth with scaling)", c->src->d.format, c->dst->d.format); return; }
+    } else {   // a scaled, mirrored or format-changing copy: a blit (filtered with LINEAR_FILTER), or a draw into a depth format that is no blit destination (vka_t2tpath.h)
+        // PEANUTS: the format the blit writes, which is asked for BLIT_DST: the destination's image, or the scratch image of the destination texture's format the copy
+        // goes through below (a texture whose image has another format, or an sRGB destination of a linear source: sconv_image, one layer of a 2D colour texture)
+        VkFormat bdf = d->f.vk;
+        if (sa == VK_IMAGE_ASPECT_COLOR_BIT && !s3 && !d3 && nz == 1 && (fd || (tsf.srgb != tdf.srgb && tdf.srgb))) bdf = tdf.srgb ? tdf.view : tdf.vk;
+        VkFormatProperties dp; vk.vkGetPhysicalDeviceFormatProperties(V.pd, bdf, &dp);   // PEANUTS: bdf (upstream: d->f.vk)
+        int path = t2t_path(0, tsf.kind, tdf.kind, tsf.bw > 1 || tdf.bw > 1, s->samples > 1 || d->samples > 1, (dp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT) != 0);   // PEANUTS: tsf / tdf (above), the textures' formats where upstream asks the images'
+        if (path == T2T_NONE) {
+            VRED_ONCE("texture copy %#x → %#x needs a draw (integer, compressed, multisampled, stencil, or into a format that is no blit destination, VkFormat %d)", c->src->d.format, c->dst->d.format, bdf); return; }   // PEANUTS: bdf
         int x0 = c->sr.xoffset, x1 = x0 + c->sr.width, y0 = c->sr.yoffset, y1 = y0 + c->sr.height, t;
         if (c->flags & NVN_COPY_FLAGS_MIRROR_X_BIT) { t = x0; x0 = x1; x1 = t; }
         if (c->flags & NVN_COPY_FLAGS_MIRROR_Y_BIT) { t = y0; y0 = y1; y1 = t; }
+        if (path == T2T_DEPTH_DRAW) {
+            if (!t2t_depth_draw(s, d, ss, ds, x0, y0, x1, y1, (VkRect2D){{c->dr.xoffset, c->dr.yoffset}, {(uint32_t)c->dr.width, (uint32_t)c->dr.height}})) return;
+            vka_img_written(d); g_stat_ops++; vka_barrier(g_cb); return;
+        }
         VkImageBlit r = {ss, {{x0, y0, 0}, {x1, y1, 1}}, ds, {{c->dr.xoffset, c->dr.yoffset, 0}, {c->dr.xoffset + c->dr.width, c->dr.yoffset + c->dr.height, 1}}};
         VkFormatProperties fp; vk.vkGetPhysicalDeviceFormatProperties(V.pd, tsf.vk, &fp);   // PEANUTS: tsf (above)
         VkFilter fl = (c->flags & NVN_COPY_FLAGS_LINEAR_FILTER_BIT) && sa == VK_IMAGE_ASPECT_COLOR_BIT && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
@@ -1209,6 +1309,13 @@ static void copy_t2t(const p_copy_t2t *c) {
                     goto done;
                 }
             }
+        }
+        // PEANUTS: the blit goes into the destination's image after all (no scratch image was to be had, or none was needed for these two): BLIT_DST was asked
+        // of the scratch image's format above, so it is asked of the image's here, and a format that is no blit destination is left as the rule above leaves it
+        if (bdf != d->f.vk) {
+            VkFormatProperties ip; vk.vkGetPhysicalDeviceFormatProperties(V.pd, d->f.vk, &ip);
+            if (!(ip.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
+                VRED_ONCE("texture copy %#x → %#x: no scratch image for the conversion, and the destination's image (VkFormat %d) is no blit destination: not done", c->src->d.format, c->dst->d.format, d->f.vk); return; }
         }
         vk.vkCmdBlitImage(g_cb, s->img, VK_IMAGE_LAYOUT_GENERAL, d->img, VK_IMAGE_LAYOUT_GENERAL, 1, &r, fl);
     }
@@ -1437,10 +1544,40 @@ int vka_mdx_args(uint64_t ind, VkBuffer *b, VkDeviceSize *o) {
 // compute work there, before the pass: three walks of those records with the state as it will be at each draw (vka_state_op on a copy of the replay's). A mesh draw met
 // in an open pass that no look-ahead reached ends the pass first (a split, counted). g_memu_cover: a look-ahead reached past the record being replayed (cleared by any
 // record it stops at, and by a new submission)
+// Game barriers (DM_VK_MESH_EMU_BAR=1, live; default 1, with DM_VK_BAR_KEEP): the look-ahead goes on past one, as most are taken inside the pass (vka_rp_game_barrier),
+// so a mesh draw after a barrier between the draws of one pass no longer ends that pass (OoT: about 80 such barriers and 27 split passes a frame on an Adreno 740, Forgejo
+// #249). A draw past a barrier is taken when its task and mesh shaders write no memory and sample no texture (vka_memu_draw.inc memu_hoistable); otherwise the look-ahead
+// stops there. A barrier the replay does not take inside the pass (a draw before it wrote memory, or no pass open) drops the entries past it (vka_memu_bar_met)
+// Why a look-ahead stopped (the replay statistics' "look-ahead stops" part): the record kind, by op; MEMU_STOP_LIMIT the batch's 128 draws, _HOIST a draw past a barrier
 enum { MEMU_BEGIN, MEMU_ADD, MEMU_SETUP, MEMU_TASK, MEMU_DIST, MEMU_MESH, MEMU_END };
-void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint8_t *p, int idx);
-int vka_memu_on(void); int vka_memu_has(const uint8_t *p); void vka_memu_cur(const uint8_t *p);
+int vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint8_t *p, int idx, int bars);
+int vka_memu_on(void); int vka_memu_has(const uint8_t *p); void vka_memu_cur(const uint8_t *p); void vka_memu_bar_met(int kept);
 static int g_memu_cover; static uint64_t g_memu_sub = ~0ull; static vka_dstate g_memu_st;
+enum { MEMU_STOP_BARRIER, MEMU_STOP_UB, MEMU_STOP_RT, MEMU_STOP_DISPATCH, MEMU_STOP_COPY, MEMU_STOP_WAIT, MEMU_STOP_COND, MEMU_STOP_OTHER, MEMU_STOP_LIMIT, MEMU_STOP_HOIST, MEMU_STOP_N };
+static uint64_t g_memu_stop[MEMU_STOP_N];
+static int memu_cross(void) { return VKA_ENV("DM_VK_MESH_EMU_BAR", 1) && VKA_ENV("DM_VK_BAR_KEEP", 1); }
+static int memu_stop_kind(uint32_t op) {
+    switch (op) {
+    case OP_BARRIER: return MEMU_STOP_BARRIER;
+    case OP_UPDATE_UB: return MEMU_STOP_UB;
+    case OP_SET_RT: return MEMU_STOP_RT;
+    case OP_DISPATCH: return MEMU_STOP_DISPATCH;
+    case OP_CLEAR_BUF: case OP_CLEAR_TEX: case OP_COPY_B2B: case OP_COPY_B2T: case OP_COPY_T2B: case OP_COPY_T2T: return MEMU_STOP_COPY;
+    case OP_WAIT_EVENT: case OP_WAIT_SYNC: case OP_SIGNAL_EVENT: return MEMU_STOP_WAIT;
+    case OP_RENDER_COND: return MEMU_STOP_COND;
+    default: return MEMU_STOP_OTHER;
+    }
+}
+// The replay statistics' part: per frame, the look-ahead's stops that ended a walk with mesh draws, by what stopped it
+void vka_memu_stop_stats(char *b, size_t n, double frames) {
+    static uint64_t s0[MEMU_STOP_N]; uint64_t t = 0; for (int i = 0; i < MEMU_STOP_N; i++) t += g_memu_stop[i] - s0[i];
+    if (frames <= 0 || !t) { if (n) b[0] = 0; memcpy(s0, g_memu_stop, sizeof s0); return; }
+    static const char *const nm[MEMU_STOP_N] = {"barrier", "inline update", "render targets", "dispatch", "copy / clear", "wait / event", "render condition", "other", "128 draws", "a draw past a barrier"};
+    size_t o = (size_t)snprintf(b, n, "mesh look-ahead stops per frame:");
+    for (int i = 0; i < MEMU_STOP_N && o < n; i++) if (g_memu_stop[i] != s0[i]) o += (size_t)snprintf(b + o, n - o, " %s %.1f,", nm[i], (g_memu_stop[i] - s0[i]) / frames);
+    if (o < n && o && b[o - 1] == ',') b[o - 1] = 0;
+    memcpy(s0, g_memu_stop, sizeof s0);
+}
 static int memu_allowed(uint32_t op) {
     switch (op) {
     case OP_END: case OP_JUMP: case OP_BEGIN: case OP_CALL: case OP_DRAW: case OP_DRAW_IDX: case OP_SCISSOR: case OP_COPY_STRIDE: case OP_CLEAR_COLOR: case OP_CLEAR_DS:
@@ -1451,33 +1588,40 @@ static int memu_allowed(uint32_t op) {
     default: return 0;
     }
 }
-// One walk from record p; phase MEMU_ADD counts the mesh draws it hands over (the later walks meet the same ones in the same order); phase -1 only says whether there is one, without the state
+// One walk from record p; phase MEMU_ADD counts the mesh draws it hands over (the later walks meet the same ones in the same order, and pass over those MEMU_ADD did not
+// take); phase -1 only says whether there is one, without the state. Game barriers are crossed when memu_cross (counted: each draw's entry keeps how many it crossed)
 static int memu_walk(const uint8_t *p, int phase) {
-    const uint8_t *ret[17]; int nret = g_nxret, n = 0; memcpy(ret, g_xret, sizeof(ret[0]) * (size_t)nret);
+    const uint8_t *ret[17]; int nret = g_nxret, n = 0, bars = 0, cross = memu_cross(), stop = -1; memcpy(ret, g_xret, sizeof(ret[0]) * (size_t)nret);
     if (phase >= 0) memcpy(&g_memu_st, &S.d, sizeof g_memu_st);
     for (int guard = 0; guard < 200000; guard++) {
         op_hdr h; memcpy(&h, p, sizeof h); const void *a = p + 8;
         if (h.op == OP_END) { if (!nret) break; p = ret[--nret]; continue; }
         if (h.op == OP_JUMP) { memcpy(&p, a, 8); continue; }
         if (h.op == OP_CALL) { if (nret == 17) break; ret[nret++] = p + h.size; memcpy(&p, a, 8); continue; }
-        if (!memu_allowed(h.op) || h.size < 8) break;
+        if (h.op == OP_BARRIER && cross && h.size >= 8) { bars++; p += h.size; continue; }
+        if (!memu_allowed(h.op) || h.size < 8) { stop = memu_stop_kind(h.op); break; }
         if (h.op == OP_DRAW) { p_draw t; const p_draw *d = draw_rec(a, h.size, &t);
-            if (d->prim == NVN_PRIM_MESH && !d->mdi_cnt) { if (n == 128) break; if (phase < 0) return 1; vka_memu_batch(phase, &g_memu_st, d, p, n); n++; } }
+            if (d->prim == NVN_PRIM_MESH && !d->mdi_cnt) {
+                if (n == 128) { stop = MEMU_STOP_LIMIT; break; }
+                if (phase < 0) return 1;
+                if (!vka_memu_batch(phase, &g_memu_st, d, p, n, bars)) { stop = MEMU_STOP_HOIST; break; }
+                n++; } }
         else if (h.op != OP_DRAW_IDX && phase >= 0) vka_state_op(&g_memu_st, h.op, a);
         p += h.size;
     }
+    if (phase == MEMU_ADD && n && stop >= 0) g_memu_stop[stop]++;
     return n;
 }
 static void memu_scan(const uint8_t *p) {
     g_memu_cover = 1;
+    vka_memu_batch(MEMU_BEGIN, NULL, NULL, NULL, 0, 0);   // (also with no mesh draw ahead: an entry of the last batch the replay passed over is not taken later)
     if (S.rc_skip || !memu_walk(p, -1)) return;   // (most passes have no mesh draw: no state copied for them)
-    vka_memu_batch(MEMU_BEGIN, NULL, NULL, NULL, 0);
     if (!memu_walk(p, MEMU_ADD)) return;
-    vka_memu_batch(MEMU_SETUP, NULL, NULL, NULL, 0);
+    vka_memu_batch(MEMU_SETUP, NULL, NULL, NULL, 0, 0);
     memu_walk(p, MEMU_TASK);
-    vka_memu_batch(MEMU_DIST, NULL, NULL, NULL, 0);
+    vka_memu_batch(MEMU_DIST, NULL, NULL, NULL, 0, 0);
     memu_walk(p, MEMU_MESH);
-    vka_memu_batch(MEMU_END, NULL, NULL, NULL, 0);
+    vka_memu_batch(MEMU_END, NULL, NULL, NULL, 0, 0);
 }
 static void memu_before_draw(const uint8_t *p, const p_draw *d) {
     if (!vka_memu_on()) return;
@@ -1505,7 +1649,7 @@ static int exec(const uint8_t *p, int depth) {   // 1: parked at a wait (g_pk ho
         op_hdr h; memcpy(&h, p, sizeof h);
         const void *a = p + 8;
         if ((h.op == OP_DRAW || h.op == OP_DRAW_IDX) && h.size >= 8 && mdi_rest(h.op, a, h.size)) { p += h.size; continue; }
-        if (g_memu_cover && !memu_allowed(h.op)) g_memu_cover = 0;   // (mesh draws through compute: the look-ahead stopped here)
+        if (g_memu_cover && !memu_allowed(h.op) && !(h.op == OP_BARRIER && memu_cross())) g_memu_cover = 0;   // (mesh draws through compute: the look-ahead stopped here)
         int bar_kept = 0;   // a game barrier taken inside the open pass (vka_rp_game_barrier): no pass end, no full barrier
         switch (h.op) {   // GPU work other than a dispatch: after the barrier the dispatches before it left pending (vka_draw.c "Dispatch order"), and before a part ends at a draw
         case OP_DRAW: case OP_DRAW_IDX: case OP_DRAW_TEX: case OP_CLEAR_COLOR: case OP_CLEAR_DS: case OP_CLEAR_TEX: case OP_CLEAR_BUF: case OP_COPY_B2B: case OP_COPY_B2T:
@@ -1517,7 +1661,9 @@ static int exec(const uint8_t *p, int depth) {   // 1: parked at a wait (g_pk ho
         case OP_END: case OP_BEGIN: case OP_JUMP: case OP_CALL: case OP_SIGNAL_EVENT: case OP_REPORT_COUNTER: case OP_FENCE_SYNC: case OP_RENDER_COND: case OP_RESET_COUNTER: case OP_WAIT_EVENT: case OP_WAIT_SYNC:
         case OP_SCISSOR: case OP_COPY_STRIDE: case OP_UPDATE_UB: case OP_DRAW: case OP_DRAW_IDX: break;
         case OP_SET_RT: if (g_cb && !vka_pass_keep()) vka_rp_end(); else if (g_cb) vka_rp_set_rt((const p_set_rt *)a); break;
-        case OP_BARRIER: if (g_cb) { int32_t bits; memcpy(&bits, a, 4); bar_kept = vka_rp_game_barrier((uint32_t)bits); if (!bar_kept) vka_rp_end(); } break;
+        case OP_BARRIER: if (g_cb) { int32_t bits; memcpy(&bits, a, 4); bar_kept = vka_rp_game_barrier((uint32_t)bits); if (!bar_kept) vka_rp_end(); }
+                         if (vka_memu_on()) { vka_memu_bar_met(bar_kept); if (!bar_kept) g_memu_cover = 0; }   // (the batch's entries past a barrier not taken in the pass go: vka_memu_draw.inc)
+                         break;
         case OP_CLEAR_COLOR: case OP_CLEAR_DS: break;   // the pass is ended by the next draw over other targets, or the clear (vka_rp_clear)
         default: if (g_cb && !vka_state_op(&S.d, h.op, a)) vka_rp_end(); else if (!g_cb) vka_state_op(&S.d, h.op, a); break;
         }

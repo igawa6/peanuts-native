@@ -158,5 +158,62 @@ class TxqComponents(unittest.TestCase):
             self.assertEqual(spv.txq_extra_components(spv.Module(m.data())), 0)
 
 
+PROMOTE = '''
+               OpCapability Shader
+               OpCapability ImageBuffer
+               OpCapability StorageImageWriteWithoutFormat
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main" %buf %ix
+               OpExecutionMode %main LocalSize 1 1 1
+               OpDecorate %buf DescriptorSet 0
+               OpDecorate %buf Binding 0
+               OpDecorate %buf NonReadable
+               OpDecorate %ix BuiltIn LocalInvocationIndex
+       %void = OpTypeVoid
+         %fn = OpTypeFunction %void
+      %float = OpTypeFloat 32
+       %uint = OpTypeInt 32 0
+        %int = OpTypeInt 32 1
+        %v4f = OpTypeVector %float 4
+        %img = OpTypeImage %float Buffer 0 0 0 2 Unknown
+       %pimg = OpTypePointer UniformConstant %img
+      %pfint = OpTypePointer Function %int
+       %puin = OpTypePointer Input %uint
+         %f1 = OpConstant %float 1
+        %buf = OpVariable %pimg UniformConstant
+         %ix = OpVariable %puin Input
+       %main = OpFunction %void None %fn
+          %l = OpLabel
+      %coord = OpVariable %pfint Function
+          %u = OpLoad %uint %ix
+          %c = OpBitcast %int %u
+               OpStore %coord %c
+          %i = OpLoad %img %buf
+         %cl = OpLoad %int %coord
+          %v = OpCompositeConstruct %v4f %f1 %f1 %f1 %f1
+               OpImageWrite %i %cl %v
+               OpReturn
+               OpFunctionEnd
+'''
+
+
+@unittest.skipUnless(shutil.which('spirv-as') and shutil.which('spirv-val'), 'needs SPIRV-Tools')
+class PromoteImageWrite(unittest.TestCase):
+    def test_a_promoted_coordinate_of_an_image_write(self):   # Orbitals' 189 compute shaders: OpImageWrite has no result, so its image and coordinate are operands 1 and 2
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d); (d / 'a.spvasm').write_text(PROMOTE)
+            subprocess.run(['spirv-as', '--target-env', 'vulkan1.3', str(d / 'a.spvasm'), '-o', str(d / 'a.spv')], check=True)
+            m = spv.Module((d / 'a.spv').read_bytes())
+            spv.promote_locals(m)
+            (d / 'b.spv').write_bytes(m.data())
+            r = subprocess.run(['spirv-val', '--target-env', 'vulkan1.3', str(d / 'b.spv')], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            ops = [x[0] & 0xffff for x in m.ins]
+            self.assertNotIn(spv.OP_VARIABLE, ops[ops.index(spv.OP_FUNCTION):], 'the local is promoted')
+            write = next(x for x in m.ins if x[0] & 0xffff == spv.OP_IMAGE_WRITE)
+            bitcast = next(x for x in m.ins if x[0] & 0xffff == 124)   # OpBitcast: the stored value
+            self.assertEqual(write[2], bitcast[2])
+
+
 if __name__ == '__main__':
     unittest.main()
