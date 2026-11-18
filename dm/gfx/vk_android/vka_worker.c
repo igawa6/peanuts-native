@@ -185,7 +185,7 @@ static void qs_note_cb(void *c, int what, const qs_sub *s) {
 static int qs_run_cb(void *c, qs_sub *s) {
     (void)c;
     vka_rp_queue_activate(s->serial); vka_rp_set_queue_origin(s->origin_ll);
-    vka_gp_sub_frame(s->frame); vka_exec_sub_frame(s->frame); vka_rp_sub_cont(s->resumed || s->hi > 0); vka_rp_sub_begin();
+    vka_gp_sub_frame(s->frame); vka_exec_sub_frame(s->frame); vka_rp_sub_cont(s->resumed || s->hi > 0); vka_rp_sub_begin(s->fence);   // PEANUTS: the texture prepare's GPU work belongs to this fence
     int parked = 0;
     while (s->hi < s->nh) {
         int r = s->resumed ? vka_rp_resume(&s->cont, s->fence, &s->cont) : vka_rp_exec_pk(s->h[s->hi], s->fence, &s->cont);
@@ -317,7 +317,7 @@ static void *worker_main(void *arg) {
             qs_submit(&g_qs, q); qs_poll(&g_qs); qs_publish();
         } else if (j.kind == J_SUB) {
             vka_rp_queue_activate(j.serial); vka_rp_set_queue_origin(j.origin_ll);
-            vka_gp_sub_frame(j.frame); vka_exec_sub_frame(j.frame); vka_rp_sub_begin();
+            vka_gp_sub_frame(j.frame); vka_exec_sub_frame(j.frame); vka_rp_sub_begin(j.fence);   // PEANUTS: pass the reserved fence before any commands are recorded
             for (int i = 0; i < j.nh; i++) vka_rp_exec(j.h[i], j.fence);
             vka_rp_sub_commit(j.fence);
             free(j.h); free(j.ws);
@@ -399,7 +399,7 @@ void mtl_set_queue_origin_lower_left(int on) { if (up()) g_pend_origin = on != 0
 void mtl_queue_forget(uint64_t serial) { if (up()) { job_t j = {J_FORGET}; j.serial = serial; push(&j); } else { uint64_t f = vka_fp_host(NULL); vka_rp_queue_forget(serial); vka_fp_back(f); } }
 void mtl_prog_forget(const prog_t *p) { if (up()) { job_t j = {J_PROG_FORGET}; j.serial = (uint64_t)(uintptr_t)p; push(&j); } else { uint64_t f = vka_fp_host(NULL); vka_rp_prog_forget(p); vka_fp_back(f); } }
 void mtl_sub_begin(void) {
-    if (!up()) { uint64_t f = vka_fp_host(NULL); vka_rp_sub_begin(); vka_fp_back(f); return; }
+    if (!up()) { uint64_t f = vka_fp_host(NULL); vka_rp_sub_begin(0); vka_fp_back(f); return; }   // PEANUTS: inline reserves at commit
     g_in_sub = 1; g_cur.nh = 0;
 }
 void mtl_exec(const uint8_t *handle) {

@@ -23,4 +23,8 @@ static inline int vto_release(nvn_hmap *m, uint64_t serial, const void *obj, vto
     nvn_hm_del(m, &serial);
     return 1;
 }
+
+// PEANUTS: last_use (the texture's explicit use stamp) need not include a recorded transfer or memoized binding.
+// When retiring its image also cover every submission that has begun recording. A parked queue can resume an older fence.
+static inline uint64_t vto_retire_fence(uint64_t last_use, uint64_t recorded) { return last_use > recorded ? last_use : recorded; }
 #endif

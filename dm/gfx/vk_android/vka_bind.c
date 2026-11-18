@@ -59,7 +59,7 @@ int vka_walk(const vka_bstate *s, int st, const dmsh_vk_entry *e, const dmsh_vk_
     for (unsigned i = 0; i < e->bind_count; i++) {
         const dmsh_vk_bind *b = &bs[i];
         if (b->kind == DMSH_VK_KIND_UNKNOWN) return refuse(why, whyn, "binding %u has no placed kind", b->binding);
-        if (b->set == DMSH_VK_SET_POOL || b->kind == DMSH_VK_KIND_TEX_POOL || b->kind == DMSH_VK_KIND_SAMP_POOL) { if (uses_pool) *uses_pool |= VKA_POOL_READS; continue; }   // PEANUTS: a bit (vka_bind.h)
+        if (vka_bind_reads_pool(b)) { if (uses_pool) *uses_pool |= VKA_POOL_READS; continue; }
         unsigned cnt = b->count ? b->count : 1;
         for (unsigned k = 0; k < cnt; k++) {
             if (n >= max) return refuse(why, whyn, "more than %d descriptors", max);

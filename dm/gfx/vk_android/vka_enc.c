@@ -24,7 +24,7 @@
     X(vkCmdPipelineBarrier) X(vkCmdCopyBuffer) X(vkCmdUpdateBuffer) X(vkCmdFillBuffer) X(vkCmdCopyBufferToImage) X(vkCmdCopyImageToBuffer) \
     X(vkCmdCopyImage) X(vkCmdBlitImage) X(vkCmdResolveImage) X(vkCmdClearColorImage) X(vkCmdClearDepthStencilImage) X(vkCmdClearAttachments) \
     X(vkCmdBeginRendering) X(vkCmdEndRendering) X(vkCmdBeginRenderPass) X(vkCmdEndRenderPass) \
-    X(vkCmdBindPipeline) X(vkCmdBindDescriptorSets) X(vkCmdBindVertexBuffers2) X(vkCmdBindIndexBuffer) \
+    X(vkCmdBindPipeline) X(vkCmdBindDescriptorSets) X(vkCmdBindVertexBuffers2) X(vkCmdBindIndexBuffer) X(vkCmdBindIndexBuffer2KHR) \
     X(vkCmdDraw) X(vkCmdDrawIndexed) X(vkCmdDrawIndirect) X(vkCmdDrawIndexedIndirect) X(vkCmdDispatch) X(vkCmdDispatchIndirect) X(vkCmdDispatchBase) \
     X(vkCmdSetViewport) X(vkCmdSetScissor) X(vkCmdSetCullMode) X(vkCmdSetFrontFace) X(vkCmdSetPrimitiveTopology) \
     X(vkCmdSetDepthTestEnable) X(vkCmdSetDepthWriteEnable) X(vkCmdSetDepthCompareOp) X(vkCmdSetDepthBoundsTestEnable) X(vkCmdSetStencilTestEnable) X(vkCmdSetStencilOp) \
@@ -138,6 +138,7 @@ typedef struct { CB_FIELD VkPipelineBindPoint bp; VkPipeline p; } r_pipe;
 typedef struct { CB_FIELD VkPipelineBindPoint bp; VkPipelineLayout l; uint32_t first, n, nd; const VkDescriptorSet *s; const uint32_t *d; } r_sets;
 typedef struct { CB_FIELD uint32_t first, n; const VkBuffer *b; const VkDeviceSize *o, *sz, *st; } r_vb;
 typedef struct { CB_FIELD VkBuffer b; VkDeviceSize o; VkIndexType t; } r_ib;
+typedef struct { CB_FIELD VkBuffer b; VkDeviceSize o, size; VkIndexType t; } r_ib2;
 typedef struct { CB_FIELD uint32_t a, b, c, d; int32_t e; uint32_t f; } r_draw;   // draw (a count, b instances, c first, d first instance), indexed (e vertex offset, f first instance), dispatch (vkCmdDispatchBase: base a b c, groups d f e)
 typedef struct { CB_FIELD VkBuffer b; VkDeviceSize o; uint32_t n, st; } r_ind;
 typedef struct { CB_FIELD VkBuffer b, cb2; VkDeviceSize o, o2; uint32_t n, st; } r_indc;   // an indirect-count draw: the records, the count, at most n records st bytes apart
@@ -255,6 +256,9 @@ static void VKAPI_CALL e_vkCmdBindVertexBuffers2(VkCommandBuffer cb, uint32_t fi
 }
 static void VKAPI_CALL e_vkCmdBindIndexBuffer(VkCommandBuffer cb, VkBuffer b, VkDeviceSize o, VkIndexType t) {
     DIRECT(vkCmdBindIndexBuffer, cb, b, o, t); BEGIN(r_ib, E_vkCmdBindIndexBuffer, 0); r->b = b; r->o = o; r->t = t; END();
+}
+static void VKAPI_CALL e_vkCmdBindIndexBuffer2KHR(VkCommandBuffer cb, VkBuffer b, VkDeviceSize o, VkDeviceSize size, VkIndexType t) {
+    DIRECT(vkCmdBindIndexBuffer2KHR, cb, b, o, size, t); BEGIN(r_ib2, E_vkCmdBindIndexBuffer2KHR, 0); r->b = b; r->o = o; r->size = size; r->t = t; END();
 }
 static void VKAPI_CALL e_vkCmdDraw(VkCommandBuffer cb, uint32_t n, uint32_t i, uint32_t f, uint32_t fi) {
     DIRECT(vkCmdDraw, cb, n, i, f, fi); BEGIN(r_draw, E_vkCmdDraw, 0); r->a = n; r->b = i; r->c = f; r->d = fi; END();
@@ -374,6 +378,7 @@ static void run(const hdr *h) {
     case E_vkCmdBindDescriptorSets: { C(r_sets); R.vkCmdBindDescriptorSets(r->cb, r->bp, r->l, r->first, r->n, r->s, r->nd, r->d); break; }
     case E_vkCmdBindVertexBuffers2: { C(r_vb); R.vkCmdBindVertexBuffers2(r->cb, r->first, r->n, r->b, r->o, r->sz, r->st); break; }
     case E_vkCmdBindIndexBuffer: { C(r_ib); R.vkCmdBindIndexBuffer(r->cb, r->b, r->o, r->t); break; }
+    case E_vkCmdBindIndexBuffer2KHR: { C(r_ib2); R.vkCmdBindIndexBuffer2KHR(r->cb, r->b, r->o, r->size, r->t); break; }
     case E_vkCmdDraw: { C(r_draw); R.vkCmdDraw(r->cb, r->a, r->b, r->c, r->d); break; }
     case E_vkCmdDrawIndexed: { C(r_draw); R.vkCmdDrawIndexed(r->cb, r->a, r->b, r->c, r->e, r->f); break; }
     case E_vkCmdDrawIndirect: { C(r_ind); R.vkCmdDrawIndirect(r->cb, r->b, r->o, r->n, r->st); break; }
@@ -528,7 +533,7 @@ void vka_enc_pace(char *b, size_t n, double frames) {
         uint64_t kn = __atomic_load_n(&g_kn[i], __ATOMIC_RELAXED), kt = __atomic_load_n(&g_kt[i], __ATOMIC_RELAXED), ktn = __atomic_load_n(&g_ktn[i], __ATOMIC_RELAXED);
         uint64_t dn = kn - ln[i], dt = kt - lt[i], dtn = ktn - ltn[i]; ln[i] = kn; lt[i] = kt; ltn[i] = ktn;
         int g = i == E_vkCmdPushDescriptorSetKHR ? G_PUSH : i == E_vkCmdDraw || i == E_vkCmdDrawIndexed || i == E_vkCmdDrawIndirect || i == E_vkCmdDrawIndexedIndirect || i == E_vkCmdDrawIndirectCount || i == E_vkCmdDrawIndexedIndirectCount || i == E_vkCmdDrawMeshTasksEXT ? G_DRAW
-              : i == E_vkCmdBindPipeline ? G_PIPE : i == E_vkCmdBindVertexBuffers2 || i == E_vkCmdBindIndexBuffer || i == E_vkCmdSetVertexInputEXT ? G_VTX
+              : i == E_vkCmdBindPipeline ? G_PIPE : i == E_vkCmdBindVertexBuffers2 || i == E_vkCmdBindIndexBuffer || i == E_vkCmdBindIndexBuffer2KHR || i == E_vkCmdSetVertexInputEXT ? G_VTX
               : i == E_vkCmdBindDescriptorSets || i == E_vkCmdPushConstants ? G_SETS
               : i == E_vkCmdBeginRendering || i == E_vkCmdEndRendering || i == E_vkCmdBeginRenderPass || i == E_vkCmdEndRenderPass || i == E_vkCmdClearAttachments ? G_PASS
               : i == E_vkCmdPipelineBarrier ? G_BAR : i == E_vkCmdDispatch || i == E_vkCmdDispatchBase || i == E_vkCmdDispatchIndirect ? G_DISP : i == E_CALL ? G_OWN

@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include "../../gfx/vk_android/vka_texown.h"
 
 typedef struct node { struct node *next; } node;   // an image view (vka_view's list)
 typedef struct img { int refs, holds, rw_pend; struct img *zold; node *views; uint64_t linger, last_frame, last_fence; int gpu, pool, key, scaled; } img;
@@ -21,6 +22,7 @@ static img *g_map[NSER]; static struct { int alive, key, pool; } T[NSER];   // s
 static img *g_live[NLIVE]; static int g_nlive;
 static img *g_linger[LINGER_MAX]; static int g_nlinger;
 static uint64_t g_frame = 1, g_last = 1, g_done;                             // the frame, the last fence reserved, the last fence done
+static uint64_t g_recorded;   // PEANUTS: a command buffer can still refer to an image last bound several submissions ago
 static struct { uint64_t f; img *im; } A[NAFTER]; static int nA;             // vka_after(img_destroy)
 static int pool_alive[3] = {1, 1, 1};
 static img *RW[NRW]; static int nRW;                                         // queued region writes
@@ -43,7 +45,7 @@ static void unref(img *im) {
     if (--im->refs) return;
     if (im->linger) { for (int i = 0; i < g_nlinger; i++) if (g_linger[i] == im) { g_linger[i] = g_linger[--g_nlinger]; break; } im->linger = 0; }
     map_del_im(im); live_del(im);
-    after(im->last_fence ? im->last_fence : g_last + 1, im);
+    after(fixed ? vto_retire_fence(im->last_fence, g_recorded) : (im->last_fence ? im->last_fence : g_last + 1), im);
 }
 static void unhold(img *im) { if (im->holds > 0) im->holds--; if (!im->holds && im->zold) { after(g_last + 1, im->zold); im->zold = NULL; } }
 static void linger_drop_at(int i) { img *im = g_linger[i]; g_linger[i] = g_linger[--g_nlinger]; im->linger = 0; unref(im); }
@@ -86,13 +88,30 @@ static void swap(img *im, int self, int with_prune) {   // the image made again 
 }
 static void release(int s) { T[s].alive = 0; img *im = g_map[s]; g_map[s] = NULL; if (im && !linger_keep(im)) unref(im); }   // mtl_tex_release
 
+// WriteTexels holds an image last bound at an already-complete fence. Finalize releases the serial, then
+// prepare records the queued copy and drops its last reference. That copy must finish before destruction.
+static void upload_then_release(int worker) {
+    uint64_t previous = g_last, upload = previous + 1;
+    complete(previous);
+    T[0].alive = 1;
+    img *im = get(0); im->refs++; im->rw_pend++;
+    release(0);
+    if (worker) g_last = upload;   // the worker's job already reserved its fence
+    g_recorded = vto_retire_fence(g_recorded, upload);
+    im->rw_pend--; unref(im);
+    if (nA != 1 || A[0].im != im || A[0].f != upload) { fputs("FAIL: image retired before its region copy\n", stderr); exit(1); }
+    if (!worker) g_last = upload;   // an inline submit reserves only at commit
+    complete(upload);
+    if (nA) { fputs("FAIL: image kept past the final commit\n", stderr); exit(1); }
+}
+
 static void run(unsigned seed, long steps) {
     srand(seed);
     img *held[3] = {0}; int heldn = 0;
     for (long it = 0; it < steps; it++) {
         int op = rand() % 100, s = rand() % NSER;
         if (op < 6) g_frame++;
-        else if (op < 14) g_last++;
+        else if (op < 14) g_recorded = ++g_last;
         else if (op < 24) complete(g_done + 1 + (uint64_t)(rand() % 3));
         else if (op < 34) { if (!T[s].alive) { T[s].alive = 1; T[s].key = rand() % 12; T[s].pool = rand() % 3; pool_alive[T[s].pool] = 1; } }
         else if (op < 58) {   // the recording thread uses a texture: a view, a draw into it, a change of scale, a storage binding's hold with its own swap
@@ -129,6 +148,7 @@ static void run(unsigned seed, long steps) {
 }
 
 int main(int argc, char **argv) {
+    upload_then_release(0); upload_then_release(1);
     if (argc > 1 && !strcmp(argv[1], "old")) fixed = 0;
     if (argc > 1 && !strcmp(argv[1], "poolheld")) pool_held = 1;   // the pool drop as it was: the sanitizer stops at the present's drop of a freed image
     for (unsigned seed = 1; seed <= 12; seed++) run(seed, 60000);
