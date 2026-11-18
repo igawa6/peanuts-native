@@ -181,6 +181,39 @@ static const uint32_t SPV_REMAP_FRAG[] = {
     0x000200f8, 0x00000016, 0x000100fc, 0x000200f8, 0x00000017, 0x0004003d, 0x00000007, 0x0000001c, 0x0000001b, 0x00050041, 0x0000000c, 0x0000001e,
     0x00000009, 0x0000001d, 0x0004003d, 0x00000006, 0x0000001f, 0x0000001e, 0x0005008e, 0x00000007, 0x00000020, 0x0000001c, 0x0000001f, 0x0003003e,
     0x0000001a, 0x00000020, 0x000100fd, 0x00010038};
+// PEANUTS begin: vka_spv_table_pool: glslangValidator -V --target-env vulkan1.1 of a pixel shader that picks a cube map from a 32-element array over a table of handles
+// in a uniform buffer, with the translator's clamp of the index:
+//   layout(set = 0, binding = 1, std140) uniform U { vec4 m[4096]; } u;  layout(set = 0, binding = 2) uniform samplerCube t[32];
+//   layout(location = 0) in vec3 d;  layout(location = 1) flat in uint k;  layout(location = 0) out vec4 o;
+//   void main() { o = textureLod(t[int(min(k, 31u))], d, 0.0) + textureLod(t[int(min(k + 1u, 31u))], d, 0.0).xxxx; }
+static const uint32_t tab_frag[] = {   // glslang 16.6.0, vulkan1.1, of the GLSL in the comment above
+    0x07230203, 0x00010300, 0x0008000b, 0x00000031, 0x00000000, 0x00020011, 0x00000001, 0x0006000b, 0x00000001, 0x4c534c47, 0x6474732e, 0x3035342e,
+    0x00000000, 0x0003000e, 0x00000000, 0x00000001, 0x0008000f, 0x00000004, 0x00000004, 0x6e69616d, 0x00000000, 0x00000009, 0x00000012, 0x0000001d,
+    0x00030010, 0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001c2, 0x00040005, 0x00000004, 0x6e69616d, 0x00000000, 0x00030005, 0x00000009,
+    0x0000006f, 0x00030005, 0x00000010, 0x00000074, 0x00030005, 0x00000012, 0x0000006b, 0x00030005, 0x0000001d, 0x00000064, 0x00030005, 0x0000002e,
+    0x00000055, 0x00040006, 0x0000002e, 0x00000000, 0x0000006d, 0x00030005, 0x00000030, 0x00000075, 0x00040047, 0x00000009, 0x0000001e, 0x00000000,
+    0x00040047, 0x00000010, 0x00000021, 0x00000002, 0x00040047, 0x00000010, 0x00000022, 0x00000000, 0x00030047, 0x00000012, 0x0000000e, 0x00040047,
+    0x00000012, 0x0000001e, 0x00000001, 0x00040047, 0x0000001d, 0x0000001e, 0x00000000, 0x00040047, 0x0000002d, 0x00000006, 0x00000010, 0x00030047,
+    0x0000002e, 0x00000002, 0x00050048, 0x0000002e, 0x00000000, 0x00000023, 0x00000000, 0x00040047, 0x00000030, 0x00000021, 0x00000001, 0x00040047,
+    0x00000030, 0x00000022, 0x00000000, 0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020, 0x00040017,
+    0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008, 0x00000003, 0x00000007, 0x0004003b, 0x00000008, 0x00000009, 0x00000003, 0x00090019,
+    0x0000000a, 0x00000006, 0x00000003, 0x00000000, 0x00000000, 0x00000000, 0x00000001, 0x00000000, 0x0003001b, 0x0000000b, 0x0000000a, 0x00040015,
+    0x0000000c, 0x00000020, 0x00000000, 0x0004002b, 0x0000000c, 0x0000000d, 0x00000020, 0x0004001c, 0x0000000e, 0x0000000b, 0x0000000d, 0x00040020,
+    0x0000000f, 0x00000000, 0x0000000e, 0x0004003b, 0x0000000f, 0x00000010, 0x00000000, 0x00040020, 0x00000011, 0x00000001, 0x0000000c, 0x0004003b,
+    0x00000011, 0x00000012, 0x00000001, 0x0004002b, 0x0000000c, 0x00000014, 0x0000001f, 0x00040015, 0x00000016, 0x00000020, 0x00000001, 0x00040020,
+    0x00000018, 0x00000000, 0x0000000b, 0x00040017, 0x0000001b, 0x00000006, 0x00000003, 0x00040020, 0x0000001c, 0x00000001, 0x0000001b, 0x0004003b,
+    0x0000001c, 0x0000001d, 0x00000001, 0x0004002b, 0x00000006, 0x0000001f, 0x00000000, 0x0004002b, 0x0000000c, 0x00000022, 0x00000001, 0x0004002b,
+    0x0000000c, 0x0000002c, 0x00001000, 0x0004001c, 0x0000002d, 0x00000007, 0x0000002c, 0x0003001e, 0x0000002e, 0x0000002d, 0x00040020, 0x0000002f,
+    0x00000002, 0x0000002e, 0x0004003b, 0x0000002f, 0x00000030, 0x00000002, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 0x000200f8,
+    0x00000005, 0x0004003d, 0x0000000c, 0x00000013, 0x00000012, 0x0007000c, 0x0000000c, 0x00000015, 0x00000001, 0x00000026, 0x00000013, 0x00000014,
+    0x0004007c, 0x00000016, 0x00000017, 0x00000015, 0x00050041, 0x00000018, 0x00000019, 0x00000010, 0x00000017, 0x0004003d, 0x0000000b, 0x0000001a,
+    0x00000019, 0x0004003d, 0x0000001b, 0x0000001e, 0x0000001d, 0x00070058, 0x00000007, 0x00000020, 0x0000001a, 0x0000001e, 0x00000002, 0x0000001f,
+    0x0004003d, 0x0000000c, 0x00000021, 0x00000012, 0x00050080, 0x0000000c, 0x00000023, 0x00000021, 0x00000022, 0x0007000c, 0x0000000c, 0x00000024,
+    0x00000001, 0x00000026, 0x00000023, 0x00000014, 0x0004007c, 0x00000016, 0x00000025, 0x00000024, 0x00050041, 0x00000018, 0x00000026, 0x00000010,
+    0x00000025, 0x0004003d, 0x0000000b, 0x00000027, 0x00000026, 0x0004003d, 0x0000001b, 0x00000028, 0x0000001d, 0x00070058, 0x00000007, 0x00000029,
+    0x00000027, 0x00000028, 0x00000002, 0x0000001f, 0x0009004f, 0x00000007, 0x0000002a, 0x00000029, 0x00000029, 0x00000000, 0x00000000, 0x00000000,
+    0x00000000, 0x00050081, 0x00000007, 0x0000002b, 0x00000020, 0x0000002a, 0x0003003e, 0x00000009, 0x0000002b, 0x000100fd, 0x00010038};
+// PEANUTS end
 // Whether a variable is decorated Location loc (*var: the first one), and a global variable's storage class (-1: none)
 static int loc_of(const uint32_t *w, size_t n, uint32_t loc, uint32_t *var) {
     for (size_t i = 5; i < n && (w[i] >> 16); i += w[i] >> 16) if ((w[i] & 0xffff) == 71 && (w[i] >> 16) >= 4 && w[i + 2] == 30 && w[i + 3] == loc) { if (var) *var = w[i + 1]; return 1; }
@@ -430,6 +463,35 @@ int main(void) {
             free(r); free(x);
         }
     }
+    {   // PEANUTS begin: vka_spv_table_pool: the array at binding 2 over the table at byte 16 of the block at binding 1 becomes a sampler, its two reads go through the pool
+        const vka_tabpool t = {2, 1, 16}; size_t tn = sizeof tab_frag / 4, tout = 0; int sites = 0;
+        uint32_t *x = vka_spv_table_pool(tab_frag, tn, &t, 1, 1, 0, 0xfffff, &tout, &sites, err, sizeof err);
+        CHECK(x && sites == 2, "table array read through the pool: %d reads rewritten (%s)", sites, err);
+        if (x) {
+            uint32_t tv = 0, pool = 0, tvt = 0, samp = 0, rta = 0;
+            for (size_t i = 5; i < tout && (x[i] >> 16); i += x[i] >> 16) {
+                uint32_t op = x[i] & 0xffff;
+                if (op == 71 && x[i + 2] == 33 && x[i + 3] == 2 && !tv) tv = x[i + 1];                    // OpDecorate Binding 2: the array's variable
+                if (op == 71 && x[i + 2] == 34 && x[i + 3] == 1) pool = x[i + 1];                          // OpDecorate DescriptorSet 1: the pool's array
+                if (op == 26) samp = x[i + 1];                                                             // OpTypeSampler
+                if (op == 29) rta = x[i + 1];                                                              // OpTypeRuntimeArray
+                if (op == 59 && x[i + 2] == tv) tvt = x[i + 1];                                            // its OpVariable's pointer type
+            }
+            uint32_t pointee = 0; for (size_t i = 5; i < tout && (x[i] >> 16); i += x[i] >> 16) if ((x[i] & 0xffff) == 32 && x[i + 1] == tvt) pointee = x[i + 3];
+            CHECK(tv && samp && pointee == samp, "the array's variable is one sampler");
+            CHECK(pool && rta, "a runtime array of the pool's images at set 1");
+            CHECK(count_op(x, tout, 86) == 2, "an OpSampledImage per read");
+            int fs = 0, fe = 0; size_t fn = 0; uint32_t *y = vka_spv_pool_fb(x, tout, 1, 0, 2, 0, VKA_PFB_EARLY, 1, &fn, &fs, &fe, err, sizeof err);
+            CHECK(y && fs == 2, "the pool reads take the feedback code: %d (%s)", fs, err);
+            if (val) CHECK(validate(x, tout, "table through the pool"), "valid SPIR-V");
+            if (val && y) CHECK(validate(y, fn, "table through the pool, with feedback"), "valid SPIR-V with the feedback code");
+            free(y); free(x);
+        }
+        const vka_tabpool none = {7, 1, 0}; err[0] = 0;
+        CHECK(!vka_spv_table_pool(tab_frag, tn, &none, 1, 1, 0, 0xfffff, &tout, &sites, err, sizeof err) && !err[0], "a module without the array is left alone, with no error");
+        const vka_tabpool past = {2, 1, 65536};
+        CHECK(!vka_spv_table_pool(tab_frag, tn, &past, 1, 1, 0, 0xfffff, &tout, &sites, err, sizeof err) && err[0], "a table past the end of its block is refused");
+    }   // PEANUTS end
     // DM_VK_PFB_SPV_DIR=<folder of .spv modules>: each one that reads the pool rewritten (vertex-pipeline stores allowed, early tests asked for) and validated
     const char *pd = getenv("DM_VK_PFB_SPV_DIR");
     if (pd) {

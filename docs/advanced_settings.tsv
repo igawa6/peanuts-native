@@ -719,6 +719,8 @@ DM_VK_SUBGROUP_GS	developer	Graphics			text		0 (one-lane geometry subgroups) wit
 DM_VK_SUBGROUP_PIN	developer	Performance			text			both						
 DM_VK_SWAP_RB	developer	Diagnostics			text			both						
 DM_VK_SYNCLOG	developer	Diagnostics			text			both						
+DM_VK_TABLE_POOL	developer	Memory			text			both						
+DM_VK_TABLE_PREMAKE	developer	Graphics			text			both						
 DM_VK_TBUF	developer	Graphics			text			both						
 DM_VK_TBUF_COPY	developer	Graphics			text			both						
 DM_VK_TBUF_GW	developer	Graphics			text			both						

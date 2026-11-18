@@ -1189,6 +1189,18 @@ Beside Round 17's buffer textures: these hunks are all in the texel buffer bindi
 the image a buffer texture is read through (`tbuf_img_gpu`, `vktb_memo`: one answer a draw). `vka_tbuf.h` and `t_android_tbuf` hold both rules. A binding `tbuf_view`
 gives no view now takes `vka_tbuf_view`'s, so a full view table would read as empty only where that has none either; the restart stays.
 
+**Tables of handles read through the texture pool** ([A table of handles longer than the translator's 32-element array](../docs/reference/shaders.md#a-table-of-handles-longer-than-the-translators-32-element-array-android)); no shader-chain file is changed:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_spvpatch.c`, `vka_spvpatch.h` | 1 each | `vka_spv_table_pool` and `vka_tabpool` (up to 16 arrays a module) | `// PEANUTS begin`/`end` |
+| `dm/gfx/vk_android/vka_shader.c` | 3 | `tabpool_plan` / `tabpool_of` (one span); the rewrite in `lib_words`; the shader's records in `vka_shader_make` | `// PEANUTS begin`/`end`, `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_bind.h`, `vka_bind.c` | 1 each | `VKA_BF_TABPOOL`: such a sampler record makes the shader a pool reader | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_tex.c`, `vka.h` | 1 each | `vka_bindless_tex_slots` | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_ctl.c` | 1 | `DM_VK_TABLE_POOL` in the restart-only table | `/* PEANUTS */` |
+| `dm/host/tests/t_android_spvpatch.c` | 2 | the module and its case | `// PEANUTS begin`/`end` |
+| `docs/env_switches.tsv` | 1 row | `DM_VK_TABLE_POOL` | `[PEANUTS]` |
+
 **Hardware Opus decoder** ([audio.md](../docs/reference/audio.md)):
 
 | File | Hunks | Change | Marker |
@@ -1199,4 +1211,19 @@ gives no view now takes `vka_tbuf_view`'s, so a full view table would read as em
 **Docs:** new sections in `docs/reference/rendering.md`, `shaders.md` and `audio.md` (`<!-- PEANUTS -->` each) and their lines in the generated `docs/agents/symptoms.md`.
 
 Checked on the Odin 2 (Turnip) and the AYN Thor with Hogwarts Legacy only, in a build that also carried other pending changes; `t_android_tbuf` and the two
-Python tests pass. Not run: Qualcomm's driver beyond a first look, other games.
+Python tests pass. Not run: Qualcomm's driver beyond a first look, other games. The tables of handles: on the Odin 2 (Turnip) only, with up to 8 arrays a
+module; 16 a module is checked off the device (a 15-array pixel shader of the game rewritten and valid by spirv-val; `t_android_spvpatch` has the one-array case).
+
+**A table's textures made at the draw** ([A table of handles longer than the translator's 32-element array](../docs/reference/shaders.md#a-table-of-handles-longer-than-the-translators-32-element-array-android), its "Also"):
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_bind.h`, `vka_bind.c` | 1 each | `vka_tabpool_record` (the sampler's record keeps the table's uniform slot, offset and length) and `vka_tabpool_ids` (the texture IDs of the table's first entries, each table once) | `// PEANUTS begin`/`end` |
+| `dm/gfx/vk_android/vka_shader.c` | 1 | `tabpool_of` writes its records through `vka_tabpool_record` | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_draw.c` | 2 | `make_images` makes those textures (or gives one made already its pool slot) before the draw; `DM_VK_TABLE_PREMAKE` | `// PEANUTS begin`/`end`, `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_ctl.c` | 1 | `DM_VK_TABLE_PREMAKE` in the live table | `/* PEANUTS */` |
+| `dm/host/tests/t_android_shlib.c` | 1 | the case: two arrays over one table | `// PEANUTS:` |
+| `docs/env_switches.tsv` | 1 row | `DM_VK_TABLE_PREMAKE` | `[PEANUTS]` |
+| `docs/reference/shaders.md` | 2 lines | the entry's "Also" and its check | inside the entry (`<!-- PEANUTS -->`) |
+
+Checked on the AYN Thor (Turnip Gen8 V38) with Hogwarts Legacy only; on the tree before Round 17; on this tree `t_android_shlib` passes (clang with ASan and UBSan) and the app builds, and it has not run on a device yet. Not run: the Odin 2, Qualcomm's driver, other games. No shader-chain file is changed. The switch has its row in `docs/advanced_settings.tsv`.

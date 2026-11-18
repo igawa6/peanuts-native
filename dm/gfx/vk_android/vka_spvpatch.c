@@ -1446,3 +1446,173 @@ fail:
     free(loc); free(ptr_sc); free(ptr_to); free(var_ty); free(kind); free(o.w);
     return NULL;
 }
+
+// PEANUTS begin: vka_spv_table_pool: arrays of sampled images over a table of handles in a uniform buffer, read through the texture pool.
+// The translator turns a texture picked at run time from a table of 64-bit handles in a uniform buffer (Ryujinx BindlessToArray; binding kind TEX_UBO with a count) into
+// a fixed array of 32 combined image samplers and clamps the index to 31 (dmsh_xlate Program.cs QueryTextureArrayLengthFromBuffer), while the game's tables are longer:
+// Hogwarts Legacy's reflection captures have 512 entries (two per capture, handed out in load order), its light probe volumes 784, its shadow maps 640. Every entry past
+// 31 read element 31: another capture's cube map, normalised by the right capture's brightness (stone walls and floors a saturated red and orange in most launches).
+// The table cannot be bound whole per draw (512 descriptors a draw for one binding), so each read goes where the console's goes: the handle is loaded from the table in
+// the uniform buffer (word off / 4 + 2 k of its vec4 array, k clamped to the declared array) and its texture ID (low 20 bits, clamped to max_id) indexes the texture
+// pool's sampled-image table (set pool_set binding pool_binding, one runtime array per image type, aliases of that binding as the library's own pool arrays are); the
+// array's variable becomes its one sampler (every element had the same one), the replay binds a sampler there (vka_shader.c tabpool) and vka_spv_pool_fb gives the pool
+// reads their feedback code as for any pool read. Per table t[j]: its array at set 0 `binding`, the uniform buffer at set 0 `ubo_binding`, element 0's byte offset `off`.
+// Expected of the module: each use of the array is OpAccessChain with one index then OpLoad of the element (the index through GLSL.std.450 UMin with a constant, the
+// translator's clamp, which is dropped). Returns the rewritten module (malloc'd, *out_nw words, *sites the loads rewritten); NULL with err empty when it reads none of the
+// arrays, NULL with the reason in err when it cannot be rewritten (the caller then leaves the module and its binding records as built)
+enum { TP_Capability = 17, TP_Extension = 10, TP_ExtInstImport = 11, TP_TypeSampler = 26, TP_TypeArray = 28, TP_IAdd = 128, TP_UMin = 38,
+       TP_CapShaderNonUniform = 5301, TP_CapRuntimeDescriptorArray = 5302, TP_CapSampledImageArrayNonUniform = 5307, TP_DecNonUniform = 5300, TP_SCUniformConstant = 0, TP_MAX = 16 };   // TP_MAX: tables a module may have (Hogwarts Legacy: up to 15 arrays over one table, one per sampler)
+#define TP_OP(n, op) ((uint32_t)(n) << 16 | (uint32_t)(op))
+uint32_t *vka_spv_table_pool(const uint32_t *w, size_t nw, const vka_tabpool *t, int nt, uint32_t pool_set, uint32_t pool_binding, uint32_t max_id, size_t *out_nw, int *sites, char *err, size_t errn) {
+    vec_t o = {0}; *sites = 0; err[0] = 0;
+#define FAIL(...) do { snprintf(err, errn, __VA_ARGS__); goto fail; } while (0)
+    uint32_t *dset = NULL, *dbind = NULL, *a1 = NULL, *a2 = NULL, *rty = NULL, *cval = NULL; uint16_t *dop = NULL; uint8_t *role = NULL;   // role: 1 + j an array's variable, TP_MAX + 1 + j a chain into it, 2 TP_MAX + 1 + j its loaded element
+    if (nw < 5 || w[0] != 0x07230203) { snprintf(err, errn, "not SPIR-V"); return NULL; }
+    if (nt <= 0) return NULL;
+    if (nt > TP_MAX) nt = TP_MAX;
+    uint32_t bound = w[3];
+    dset = malloc(bound * 4); dbind = malloc(bound * 4); a1 = calloc(bound, 4); a2 = calloc(bound, 4); rty = calloc(bound, 4); cval = calloc(bound, 4); dop = calloc(bound, 2); role = calloc(bound, 1);
+    if (!dset || !dbind || !a1 || !a2 || !rty || !cval || !dop || !role) FAIL("out of memory");
+    memset(dset, 0xff, bound * 4); memset(dbind, 0xff, bound * 4);
+    uint32_t glsl = 0, t_u32 = 0, t_f32 = 0, t_samp = 0, tvar[TP_MAX] = {0}, uvar[TP_MAX] = {0}, timg[TP_MAX] = {0}, tsi[TP_MAX] = {0}, kmax[TP_MAX] = {0};
+    int cap_nu = 0, cap_si = 0, cap_rt = 0, has_ext = 0, nload = 0, found = 0;
+    size_t first_fn = nw, first_annot = nw, caps_end = 0, exts_end = 0;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16; const uint32_t *in = w + i;
+        if (!len || i + len > nw) FAIL("bad instruction at word %zu", i);
+        if (!caps_end && op != TP_Capability) caps_end = i;
+        if (!exts_end && op != TP_Capability && op != TP_Extension) exts_end = i;
+        if (is_annot(op) && first_annot == nw) first_annot = i;
+        if (op == OpFunction && first_fn == nw) first_fn = i;
+        if (first_fn == nw) {   // declarations
+            if (op == TP_Capability && len >= 2) { cap_nu |= in[1] == TP_CapShaderNonUniform; cap_si |= in[1] == TP_CapSampledImageArrayNonUniform; cap_rt |= in[1] == TP_CapRuntimeDescriptorArray; }
+            else if (op == TP_Extension && len >= 8 && !memcmp(in + 1, "SPV_EXT_descriptor_indexing", 28)) has_ext = 1;
+            else if (op == TP_ExtInstImport && len >= 6 && !memcmp(in + 2, "GLSL.std.450", 13)) glsl = in[1];
+            else if (op == OpDecorate && len >= 4 && in[1] < bound) { if (in[2] == DecDescriptorSet) dset[in[1]] = in[3]; else if (in[2] == DecBinding) dbind[in[1]] = in[3]; }
+            else if (op == OpTypeInt && len >= 4 && in[1] < bound) { dop[in[1]] = OpTypeInt; if (in[2] == 32 && !in[3] && !t_u32) t_u32 = in[1]; }
+            else if (op == OpTypeFloat && len >= 3 && in[1] < bound) { dop[in[1]] = OpTypeFloat; if (in[2] == 32 && !t_f32) t_f32 = in[1]; }
+            else if (op == TP_TypeSampler && len >= 2 && !t_samp) t_samp = in[1];
+            else if ((op == OpTypeVector || op == TP_TypeArray) && len >= 4 && in[1] < bound) { dop[in[1]] = (uint16_t)op; a1[in[1]] = in[2]; a2[in[1]] = in[3]; }   // element, count (a vector's literal, an array's constant)
+            else if (op == OpTypeSampledImage && len >= 3 && in[1] < bound) { dop[in[1]] = OpTypeSampledImage; a1[in[1]] = in[2]; }
+            else if (op == OpTypeStruct && len >= 3 && in[1] < bound) { dop[in[1]] = OpTypeStruct; a1[in[1]] = in[2]; }   // its first member
+            else if (op == OpTypePointer && len >= 4 && in[1] < bound) { dop[in[1]] = OpTypePointer; a1[in[1]] = in[3]; a2[in[1]] = in[2]; }   // pointee, storage class
+            else if (op == OpConstant && len >= 4 && in[2] < bound) { dop[in[2]] = OpConstant; rty[in[2]] = in[1]; cval[in[2]] = in[3]; }
+            else if (op == OpVariable && len >= 4 && in[2] < bound && dset[in[2]] == 0) {
+                for (int j = 0; j < nt; j++) {
+                    if (dbind[in[2]] == t[j].binding) {   // UniformConstant pointer to an array of sampled images
+                        uint32_t pt = in[1] < bound && dop[in[1]] == OpTypePointer ? a1[in[1]] : 0, el = pt && pt < bound && dop[pt] == TP_TypeArray ? a1[pt] : 0;
+                        if (!el || el >= bound || dop[el] != OpTypeSampledImage) FAIL("binding %u is no array of sampled images", t[j].binding);
+                        tvar[j] = in[2]; tsi[j] = el; timg[j] = a1[el]; role[in[2]] = (uint8_t)(1 + j); found++;
+                    }
+                    if (dbind[in[2]] == t[j].ubo_binding) {   // Uniform pointer to a struct whose first member is an array of vec4 float
+                        uint32_t st = in[1] < bound && dop[in[1]] == OpTypePointer && a2[in[1]] == SCUniform ? a1[in[1]] : 0, ar = st && st < bound && dop[st] == OpTypeStruct ? a1[st] : 0;
+                        uint32_t v = ar && ar < bound && dop[ar] == TP_TypeArray ? a1[ar] : 0, n = v ? a2[ar] : 0;
+                        if (!v || v >= bound || dop[v] != OpTypeVector || a2[v] != 4 || a1[v] >= bound || dop[a1[v]] != OpTypeFloat || n >= bound || dop[n] != OpConstant) FAIL("binding %u is no uniform block of a vec4 array", t[j].ubo_binding);
+                        if ((t[j].off & 7) || (uint64_t)cval[n] * 16 < (uint64_t)t[j].off + 8) FAIL("a table at byte %u of a block of %u vec4", t[j].off, cval[n]);
+                        uvar[j] = in[2]; kmax[j] = (uint32_t)(((uint64_t)cval[n] * 16 - t[j].off) / 8 - 1);
+                    }
+                }
+            }
+        } else if (op == OpAccessChain && len == 5 && in[3] < bound && role[in[3]] >= 1 && role[in[3]] <= TP_MAX && in[2] < bound) role[in[2]] = (uint8_t)(TP_MAX + role[in[3]]);
+        else if (op == OpLoad && len == 4 && in[3] < bound && role[in[3]] > TP_MAX && role[in[3]] <= 2 * TP_MAX && in[2] < bound) { role[in[2]] = (uint8_t)(TP_MAX + role[in[3]]); nload++; }
+        else {   // any other use of an array or of a chain into one (words 1 and 2 of an instruction with a result are its type and its own id)
+            for (uint32_t k = no_result(op) ? 1 : 3; k < len; k++) if (!pf_lit(op, k) && in[k] < bound && role[in[k]] && role[in[k]] <= 2 * TP_MAX)
+                FAIL("the array at binding %u is used by opcode %u", t[(role[in[k]] - 1) % TP_MAX].binding, op);
+        }
+        i += len;
+    }
+    if (!found || !nload) goto none;   // not declared, or declared and never read: left as it is
+    for (int j = 0; j < nt; j++) if (tvar[j] && !uvar[j]) FAIL("no uniform block at binding %u for the table of binding %u", t[j].ubo_binding, t[j].binding);
+    if (!glsl || !t_u32 || !t_f32 || first_annot == nw || first_fn == nw) FAIL("no GLSL.std.450, 32-bit types, decorations or function");
+    uint32_t nb = bound, mk_samp = 0, p_samp, p_f32, pool[TP_MAX] = {0}, rarr[TP_MAX] = {0}, prarr[TP_MAX] = {0}, pimg[TP_MAX] = {0}, koff[TP_MAX] = {0}, kkmax[TP_MAX] = {0};
+    if (!t_samp) t_samp = mk_samp = nb++;
+    p_samp = nb++; p_f32 = nb++;
+    for (int j = 0; j < nt; j++) {
+        if (!tvar[j]) continue;
+        for (int q = 0; q < j; q++) if (tvar[q] && timg[q] == timg[j]) { pool[j] = pool[q]; pimg[j] = pimg[q]; }
+        if (!pool[j]) { rarr[j] = nb++; prarr[j] = nb++; pool[j] = nb++; pimg[j] = nb++; }
+        kkmax[j] = nb++; if (t[j].off) koff[j] = nb++;
+    }
+    uint32_t k0 = nb, kid, kmaxid, im0; nb += 4; kid = nb++; kmaxid = nb++; im0 = nb; nb += (uint32_t)nload;
+    const uint32_t k1 = k0 + 1, k2 = k0 + 2, k3 = k0 + 3;
+    int li = 0;
+#define EMIT(...) do { const uint32_t x_[] = {__VA_ARGS__}; if (!put_n(&o, x_, sizeof x_ / 4)) goto oom; } while (0)
+    if (!put_n(&o, w, 5)) goto oom;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16; const uint32_t *in = w + i;
+        if (i == caps_end) { if (!cap_nu) EMIT(TP_OP(2, TP_Capability), TP_CapShaderNonUniform); if (!cap_si) EMIT(TP_OP(2, TP_Capability), TP_CapSampledImageArrayNonUniform);
+                             if (!cap_rt) EMIT(TP_OP(2, TP_Capability), TP_CapRuntimeDescriptorArray); }   // (the pool's arrays have no length)
+        if (i == exts_end && !has_ext && w[1] < 0x10500) { uint32_t x[8] = {TP_OP(8, TP_Extension)}; memcpy(x + 1, "SPV_EXT_descriptor_indexing", 28); if (!put_n(&o, x, 8)) goto oom; }
+        if (i == first_annot) {
+            for (int j = 0; j < nt; j++) if (rarr[j]) EMIT(TP_OP(4, OpDecorate), pool[j], DecDescriptorSet, pool_set, TP_OP(4, OpDecorate), pool[j], DecBinding, pool_binding);
+            for (int q = 0; q < nload; q++) EMIT(TP_OP(3, OpDecorate), im0 + (uint32_t)q, TP_DecNonUniform);
+        }
+        if (i == first_fn) {   // the sampler each array becomes, the pool's arrays, the constants
+            if (mk_samp) EMIT(TP_OP(2, TP_TypeSampler), mk_samp);
+            EMIT(TP_OP(4, OpTypePointer), p_samp, TP_SCUniformConstant, t_samp, TP_OP(4, OpTypePointer), p_f32, SCUniform, t_f32);
+            for (uint32_t q = 0; q < 4; q++) EMIT(TP_OP(4, OpConstant), t_u32, k0 + q, q);
+            EMIT(TP_OP(4, OpConstant), t_u32, kid, 0xfffff, TP_OP(4, OpConstant), t_u32, kmaxid, max_id);
+            for (int j = 0; j < nt; j++) {
+                if (!tvar[j]) continue;
+                EMIT(TP_OP(4, OpVariable), p_samp, tvar[j], TP_SCUniformConstant);
+                if (rarr[j]) EMIT(TP_OP(3, OpTypeRuntimeArray), rarr[j], timg[j], TP_OP(4, OpTypePointer), prarr[j], TP_SCUniformConstant, rarr[j],
+                                  TP_OP(4, OpVariable), prarr[j], pool[j], TP_SCUniformConstant, TP_OP(4, OpTypePointer), pimg[j], TP_SCUniformConstant, timg[j]);
+                EMIT(TP_OP(4, OpConstant), t_u32, kkmax[j], kmax[j]);
+                if (koff[j]) EMIT(TP_OP(4, OpConstant), t_u32, koff[j], t[j].off / 4);
+            }
+        }
+        if (i < first_fn) {
+            if (op == OpVariable && len >= 4 && in[2] < bound && role[in[2]] >= 1 && role[in[2]] <= TP_MAX) { i += len; continue; }   // declared again above, as a sampler
+            if (op == OpEntryPoint && w[1] >= 0x10400) {   // (1.4 on: the interface lists every global)
+                uint32_t np = 0; for (int j = 0; j < nt; j++) np += rarr[j] != 0;
+                if (!put(&o, TP_OP(len + np, OpEntryPoint)) || !put_n(&o, in + 1, len - 1)) goto oom;
+                for (int j = 0; j < nt; j++) if (rarr[j] && !put(&o, pool[j])) goto oom;
+                i += len; continue;
+            }
+        } else {
+            if (!no_result(op) && len >= 3 && in[2] < bound && op != OpFunction) {   // what an index is made of: a bit-cast's operand, a UMin's two (cval: it is one)
+                rty[in[2]] = in[1]; dop[in[2]] = (uint16_t)op; a1[in[2]] = len > 3 ? in[3] : 0; a2[in[2]] = 0; cval[in[2]] = 0;
+                if (op == OpExtInst && len == 7 && in[3] == glsl && in[4] == TP_UMin) { a1[in[2]] = in[5]; a2[in[2]] = in[6]; cval[in[2]] = 1; }
+            }
+            if (op == OpAccessChain && len == 5 && in[2] < bound && role[in[2]] > TP_MAX && role[in[2]] <= 2 * TP_MAX) {   // %p = &array[index]: the pool's element of the handle at table entry k
+                int j = role[in[2]] - TP_MAX - 1; uint32_t k = in[4];
+                for (int hop = 0; hop < 4 && k < bound; hop++) {   // the index before the translator's clamp: through bit-casts, then UMin with a constant
+                    if (dop[k] == OpBitcast && a1[k] < bound) k = a1[k];
+                    else if (dop[k] == OpExtInst && cval[k] && a1[k] < bound && a2[k] < bound && (dop[a1[k]] == OpConstant) != (dop[a2[k]] == OpConstant)) { k = dop[a1[k]] == OpConstant ? a2[k] : a1[k]; break; }
+                    else break;
+                }
+                if (k >= bound || !rty[k] || rty[k] >= bound || dop[rty[k]] != OpTypeInt) FAIL("the array at binding %u is indexed by no 32-bit integer", t[j].binding);
+                uint32_t ku = k, kc = nb++, wd = nb++, vi = nb++, ci = nb++, hp = nb++, hf = nb++, hu = nb++, id = nb++, idc = nb++;
+                if (rty[k] != t_u32) { ku = nb++; EMIT(TP_OP(4, OpBitcast), t_u32, ku, k); }
+                EMIT(TP_OP(7, OpExtInst), t_u32, kc, glsl, TP_UMin, ku, kkmax[j]);
+                if (koff[j]) { uint32_t w0 = nb++; EMIT(TP_OP(5, PF_ShiftLeftLogical), t_u32, w0, kc, k1, TP_OP(5, TP_IAdd), t_u32, wd, w0, koff[j]); }
+                else EMIT(TP_OP(5, PF_ShiftLeftLogical), t_u32, wd, kc, k1);
+                EMIT(TP_OP(5, PF_ShiftRightLogical), t_u32, vi, wd, k2, TP_OP(5, PF_BitwiseAnd), t_u32, ci, wd, k3);
+                EMIT(TP_OP(7, OpAccessChain), p_f32, hp, uvar[j], k0, vi, ci, TP_OP(4, OpLoad), t_f32, hf, hp, TP_OP(4, OpBitcast), t_u32, hu, hf);
+                EMIT(TP_OP(5, PF_BitwiseAnd), t_u32, id, hu, kid, TP_OP(7, OpExtInst), t_u32, idc, glsl, TP_UMin, id, kmaxid);
+                EMIT(TP_OP(5, OpAccessChain), pimg[j], in[2], pool[j], idc);
+                i += len; continue;
+            }
+            if (op == OpLoad && len == 4 && in[2] < bound && role[in[2]] > 2 * TP_MAX) {   // %l = the element: the pool's image with the array's sampler
+                int j = role[in[2]] - 2 * TP_MAX - 1; uint32_t im = im0 + (uint32_t)li++, sm = nb++;
+                EMIT(TP_OP(4, OpLoad), timg[j], im, in[3], TP_OP(4, OpLoad), t_samp, sm, tvar[j], TP_OP(5, OpSampledImage), tsi[j], in[2], im, sm);
+                (*sites)++; i += len; continue;
+            }
+        }
+        if (!put_n(&o, in, len)) goto oom;
+        i += len;
+    }
+#undef EMIT
+#undef FAIL
+    o.w[3] = nb;
+    free(dset); free(dbind); free(a1); free(a2); free(rty); free(cval); free(dop); free(role);
+    *out_nw = o.n; return o.w;
+oom:
+    snprintf(err, errn, "out of memory");
+fail:
+none:
+    free(o.w); free(dset); free(dbind); free(a1); free(a2); free(rty); free(cval); free(dop); free(role);
+    return NULL;
+}
+#undef TP_OP
+// PEANUTS end

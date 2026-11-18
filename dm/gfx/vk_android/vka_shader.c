@@ -378,10 +378,71 @@ static void prep_words(const dmsh_vk_entry *e, uint64_t key, uint32_t **w, size_
     gs_fill(key, e->stage, w, nb);
     vka_tf_prep(key, w, nb);   // PEANUTS: a transform feedback capture variant's words get their capture (vka_tf.c; a key of no variant, every library key among them: untouched)
 }
+// PEANUTS begin: tables of texture handles read through the texture pool (vka_spv_table_pool has the why: the translator's 32-element arrays over Hogwarts Legacy's
+// 512-entry reflection capture table). An entry's records of kind TEX_UBO with a count (a combined image sampler array whose element k is the handle at byte off + 8 k of
+// uniform slot reg, all elements with one sampler: skind SAMP, SAMP_TEX or SAMP_ID) are planned once: every module of the entry is rewritten on trial, and when all take it
+// the entry's modules are rewritten whenever their words are read (lib_words) and its shaders get a copy of the records where each such array is its sampler alone
+// (kind = the sampler half's, count 1, VKA_BF_TABPOOL: vka_walk then counts the shader a pool reader, so set 1 is bound and the pool reads' feedback makes the textures).
+// Not when the device has no pool set or no pool read feedback (a texture read only through the pool would never be made), nor with DM_VK_TABLE_POOL=0 (restart)
+typedef struct { const dmsh_vk_entry *e; dmsh_vk_bind *b; vka_tabpool t[16]; int nt; } tp_ent;   // b NULL: left as built
+static tp_ent *g_tp; static size_t g_ntp, g_tpcap; static pthread_mutex_t g_tpmu = PTHREAD_MUTEX_INITIALIZER;
+static _Atomic uint64_t g_tp_on, g_tp_sites, g_tp_refused;
+static int tabpool_plan(const vka_shlib *L, const dmsh_vk_entry *e, vka_tabpool *t, unsigned *rec) {   // up to 16 of each
+    const dmsh_vk_bind *b = vka_shlib_binds(L, e); int n = 0;
+    for (unsigned i = 0; i < e->bind_count && n < 16; i++) {   // (vka_spv_table_pool takes 16)
+        if (b[i].kind != DMSH_VK_KIND_TEX_UBO || b[i].count < 2 || b[i].set != DMSH_VK_SET_DRAW || b[i].desc != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || (b[i].flags & DMSH_VK_BF_NOSLOT) || b[i].reg < 0) continue;
+        if (b[i].skind != DMSH_VK_KIND_SAMP && b[i].skind != DMSH_VK_KIND_SAMP_TEX && b[i].skind != DMSH_VK_KIND_SAMP_ID) continue;   // (SAMP_UBO: a sampler per element, from the same handle)
+        for (unsigned j = 0; j < e->bind_count; j++) if (b[j].kind == DMSH_VK_KIND_CBUF && b[j].set == DMSH_VK_SET_DRAW && b[j].reg == b[i].reg) { t[n] = (vka_tabpool){b[i].binding, b[j].binding, b[i].off}; rec[n++] = i; break; }
+    }
+    return n;
+}
+static const tp_ent *tabpool_of(const vka_shlib *L, const dmsh_vk_entry *e) {
+    static int env = -1; if (env < 0) { const char *q = getenv("DM_VK_TABLE_POOL"); env = !(q && q[0] == '0'); }
+    if (!env || !e) return NULL;
+    pthread_mutex_lock(&g_tpmu);
+    for (size_t i = 0; i < g_ntp; i++) if (g_tp[i].e == e) { const tp_ent *r = g_tp[i].b ? &g_tp[i] : NULL; pthread_mutex_unlock(&g_tpmu); return r; }   // (a linear scan of the entries with such arrays; a map if a game has tens of thousands)
+    pthread_mutex_unlock(&g_tpmu);
+    tp_ent n = {.e = e}; unsigned rec[16]; n.nt = tabpool_plan(L, e, n.t, rec);
+    if (!n.nt) return NULL;   // (not remembered: the plan is a walk of its records)
+    uint32_t slots = vka_bindless_tex_slots(); int sites = 0, ok = slots && vka_tex_pfb_flags(); char err[200] = "";
+    for (int v = 0; ok && v <= DMSH_VK_MOD_SHUFFLE_LDS; v++) {
+        const dmsh_vk_module *m = vka_shlib_module(L, e, v); if (!m) continue;
+        size_t nb = 0, on = 0; int s = 0; char e2[96]; uint32_t *w = vka_shlib_spirv(L, m, &nb, e2, sizeof e2);
+        uint32_t *o = w ? vka_spv_table_pool(w, nb / 4, n.t, n.nt, DMSH_VK_SET_POOL, DMSH_VK_POOL_TEX_BINDING, slots - 1, &on, &s, err, sizeof err) : NULL;
+        free(w); free(o); sites += s;
+        if (err[0]) ok = 0;
+    }
+    if (ok && sites) {
+        const dmsh_vk_bind *b = vka_shlib_binds(L, e);
+        n.b = malloc((e->bind_count ? e->bind_count : 1) * sizeof *n.b);
+        if (n.b) { memcpy(n.b, b, e->bind_count * sizeof *b);
+                   for (int j = 0; j < n.nt; j++) vka_tabpool_record(&n.b[rec[j]]); }   // PEANUTS: (vka_bind.c: the sampler's record, with the table's place kept for the draw)
+    }
+    if (err[0] && atomic_fetch_add(&g_tp_refused, 1) < 8) VRED("shader %016llx: its texture arrays over tables of handles stay 32 long (entries past 31 read element 31): %s", (unsigned long long)e->key, err);
+    pthread_mutex_lock(&g_tpmu);
+    size_t at = g_ntp; for (size_t i = 0; i < g_ntp; i++) if (g_tp[i].e == e) at = i;
+    if (at == g_ntp) {
+        if (g_ntp == g_tpcap) { size_t c = g_tpcap ? 2 * g_tpcap : 256; tp_ent *p = realloc(g_tp, c * sizeof *p); if (p) { g_tp = p; g_tpcap = c; } }
+        if (g_ntp < g_tpcap) { g_tp[g_ntp++] = n;
+            if (n.b) { uint64_t k = atomic_fetch_add(&g_tp_on, 1) + 1; atomic_fetch_add(&g_tp_sites, (uint64_t)sites);
+                       if (k == 1 || !(k & (k - 1))) VLOG("handle tables through the pool: %llu shaders read their texture arrays over tables of handles in uniform buffers through the texture pool (%llu reads; first %016llx, %d table%s; DM_VK_TABLE_POOL=0 off)",
+                                                         (unsigned long long)k, (unsigned long long)atomic_load(&g_tp_sites), (unsigned long long)e->key, n.nt, n.nt == 1 ? "" : "s"); } }
+        else { free(n.b); at = SIZE_MAX; }
+    } else free(n.b);   // another thread planned it meanwhile
+    const tp_ent *r = at != SIZE_MAX && g_tp[at].b ? &g_tp[at] : NULL;   // (entries are never removed; a realloc moves them only under the lock, and callers copy what they need at once)
+    tp_ent copy; if (r) copy = *r;
+    pthread_mutex_unlock(&g_tpmu);
+    if (!r) return NULL;
+    static _Thread_local tp_ent tl; tl = copy; return &tl;
+}
+// PEANUTS end
 // A library module's words. With the mesh draws drawn through compute (V.memu, vka_memu.c), a pixel shader of per-primitive inputs is only ever drawn behind the generated
 // vertex shader: every module of it is made from its words with those inputs flat (vka_memu_fs_flat), so the variants and retypes made from them are too
 static uint32_t *lib_words(const vka_shlib *L, const dmsh_vk_entry *e, const dmsh_vk_module *m, size_t *nb, char *err, size_t errn) {
     uint32_t *w = vka_shlib_spirv(L, m, nb, err, errn);
+    const tp_ent *tp = w ? tabpool_of(L, e) : NULL;   // PEANUTS: its arrays over tables of handles read through the pool (above)
+    if (tp) { size_t on = 0; int s = 0; char e2[200]; uint32_t *o = vka_spv_table_pool(w, *nb / 4, tp->t, tp->nt, DMSH_VK_SET_POOL, DMSH_VK_POOL_TEX_BINDING, vka_bindless_tex_slots() - 1, &on, &s, e2, sizeof e2);
+              if (o) { free(w); w = o; *nb = on * 4; } }
     if (w && V.memu && e && e->stage == DMSH_VK_STAGE_FS && (e->flags & DMSH_VK_F_MESH_PRIM)) {
         size_t on = 0; char e2[160]; uint32_t *o = vka_memu_fs_flat(w, *nb / 4, &on, e2, sizeof e2);
         if (o) { free(w); w = o; *nb = on * 4; }
@@ -710,6 +771,7 @@ vka_shader *vka_shader_make(const vka_shlib *L, uint64_t key) {
     else {
         s->e = e; s->b = vka_shlib_binds(L, e); s->chash = vka_shlib_entry_hash(L, e);
         why = refusal(L, e);
+        { const tp_ent *tp = why ? NULL : tabpool_of(L, e); if (tp) s->b = tp->b; }   // PEANUTS: its arrays over tables of handles as their samplers (tabpool, above)
         const dmsh_vk_module *m = why ? NULL : vka_shlib_module(L, e, DMSH_VK_MOD_BASE);
         if (!why && !m) why = "no base module";
         memset(s->fcomp, 0xf, sizeof s->fcomp);

@@ -62,6 +62,18 @@ extern int vka_texu_elem;
 // device's dev_align refuses the draw. An UNKNOWN record refuses it too. *uses_pool is set when the shader reads set 1 (the texture or sampler pool)
 // PEANUTS: *uses_pool bits: VKA_POOL_READS the shader reads set 1 (pools); VKA_POOL_DYN it has dynamic handle arrays (DMSH_VK_KIND_TEX_DYN / SAMP_DYN), so c2 holds slot indices
 #define VKA_RF_DYN 0x80   // PEANUTS: vka_res.flags: an element of a dynamic handle array (most elements hold nothing the shader reads: nothing is reported for them)
+// PEANUTS: dmsh_vk_bind.flags of a record the replay rewrote (vka_shader.c tabpool): the one sampler of an array over a table of handles in a uniform buffer whose
+// textures the module now reads through the texture pool (vka_spv_table_pool), so the shader reads set 1
+#define VKA_BF_TABPOOL 0x40
+// PEANUTS begin: such a record keeps where its table is, so a draw makes the textures of the table's first entries as the array's bindings did (vka_draw.c make_images).
+// Read only through the pool, a texture was made by the pool reads' feedback, a frame after its first read: Hogwarts Legacy drew a stone slab and ledge plants black for one
+// frame when they first came into view on the cliff path. vka_tabpool_record turns an array's record (TEX_UBO with a count) into its sampler's (kind, reg, off from the
+// sampler half; count 1; VKA_BF_TABPOOL) with the table in fields a sampler record leaves unused: reserved = uniform slot + 1, bytes = element 0's byte offset | count << 16.
+// vka_tabpool_ids gives the texture IDs in those entries (count of them, the translator's array length: entries past it are still made by the feedback alone), each table
+// once however many records read it (Hogwarts Legacy: up to 15 arrays over one table, one per sampler); *dim the first such record's shape. Returns how many (at most max)
+void vka_tabpool_record(dmsh_vk_bind *x);
+int vka_tabpool_ids(const vka_bstate *s, int nvn_stage, const dmsh_vk_entry *e, const dmsh_vk_bind *b, vka_read_fn rd, void *rd_ctx, int *ids, int max, uint8_t *dim);
+// PEANUTS end
 #define VKA_POOL_READS 1
 #define VKA_POOL_DYN 2
 int vka_walk(const vka_bstate *s, int nvn_stage, const dmsh_vk_entry *e, const dmsh_vk_bind *b, uint32_t ssbo_align, uint64_t dev_align, vka_read_fn rd, void *rd_ctx,

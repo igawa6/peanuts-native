@@ -2781,6 +2781,7 @@ static void bindless_init(void) {
     VLOG("bindless tables: %u textures, %u samplers, %u images (update after bind)%s", g_ntex_slots, g_nsamp_slots, g_nimg_slots, pfb ? "; the pool reads' bitmap in a set of its own" : "");
 }
 VkDescriptorSet vka_bindless_set(void) { return g_set; }
+uint32_t vka_bindless_tex_slots(void) { return g_set ? g_ntex_slots : 0; }   // PEANUTS: the sampled table's length (vka_shader.c tabpool clamps the IDs a module loads to it)
 VkDescriptorSetLayout vka_bindless_layout(void) { return g_dsl; }
 VkDescriptorSetLayout vka_pfb_layout(void) { return atomic_load(&g_pfb) > 0 ? g_pfb_dsl : VK_NULL_HANDLE; }
 VkDescriptorSet vka_pfb_set(void) { return atomic_load(&g_pfb) > 0 ? g_pfb_set : VK_NULL_HANDLE; }
