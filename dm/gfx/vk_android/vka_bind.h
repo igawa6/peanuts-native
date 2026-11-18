@@ -64,6 +64,9 @@ extern int vka_texu_elem;
 #define VKA_RF_DYN 0x80   // PEANUTS: vka_res.flags: an element of a dynamic handle array (most elements hold nothing the shader reads: nothing is reported for them)
 #define VKA_POOL_READS 1
 #define VKA_POOL_DYN 2
+static inline int vka_bind_reads_pool(const dmsh_vk_bind *b) {
+    return b->set == DMSH_VK_SET_POOL || b->kind == DMSH_VK_KIND_TEX_POOL || b->kind == DMSH_VK_KIND_SAMP_POOL;
+}
 int vka_walk(const vka_bstate *s, int nvn_stage, const dmsh_vk_entry *e, const dmsh_vk_bind *b, uint32_t ssbo_align, uint64_t dev_align, vka_read_fn rd, void *rd_ctx,
              vka_res *out, int max, int *uses_pool, char *why, size_t whyn);
 // Fills a driver segment as the GPU's driver would (nvn_mtl.m encode_args NVN_RB_DRV0 / DRV2 / PUSH): DMSH_DRV_SIZE bytes for banks 0 and 2, DMSH_PUSH_SIZE for the push bank.

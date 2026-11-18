@@ -125,6 +125,21 @@ static void fp_wrap_compiles(void) {
     if ((g_ccp = vk.vkCreateComputePipelines)) vk.vkCreateComputePipelines = fp_ccp;
 }
 // PEANUTS end
+// PEANUTS(upstream-candidate): opt-in address history for VK_EXT_device_fault, including ranges the driver has already unbound.
+static VKAPI_ATTR VkBool32 VKAPI_CALL addr_binding(VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT type,
+        const VkDebugUtilsMessengerCallbackDataEXT *msg, void *user) {
+    (void)severity; (void)type; (void)user;
+    for (const VkBaseInStructure *p = msg->pNext; p; p = p->pNext) if (p->sType == VK_STRUCTURE_TYPE_DEVICE_ADDRESS_BINDING_CALLBACK_DATA_EXT) {
+        const VkDeviceAddressBindingCallbackDataEXT *d = (const void *)p;
+        for (uint32_t i = 0; i < (msg->objectCount ? msg->objectCount : 1); i++) {
+            const VkDebugUtilsObjectNameInfoEXT *o = msg->objectCount ? &msg->pObjects[i] : NULL;
+            VLOG("address binding: %c %#llx+%#llx object %u:%#llx flags %#x", d->bindingType == VK_DEVICE_ADDRESS_BINDING_TYPE_BIND_EXT ? '+' : '-',
+                 (unsigned long long)d->baseAddress, (unsigned long long)d->size, o ? (unsigned)o->objectType : 0,
+                 (unsigned long long)(o ? o->objectHandle : 0), d->flags);
+        }
+    }
+    return VK_FALSE;
+}
 static int init_once(void) {
     void *lib = vka_driver_open();   // DM_VK_DRIVER: a custom driver through libadrenotools (vka_driver.c); NULL = the system's
     if (!lib) lib = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
@@ -138,6 +153,9 @@ static int init_once(void) {
     VkExtensionProperties *ie = calloc(ne ? ne : 1, sizeof *ie); vk.vkEnumerateInstanceExtensionProperties(NULL, &ne, ie);
     const char *iext[4]; uint32_t niext = 0;
     if (has_ext(ie, ne, VK_KHR_SURFACE_EXTENSION_NAME) && has_ext(ie, ne, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME)) { iext[niext++] = VK_KHR_SURFACE_EXTENSION_NAME; iext[niext++] = VK_KHR_ANDROID_SURFACE_EXTENSION_NAME; V.has_android_surface = 1; }
+    const char *addr_env = getenv("DM_VK_ADDR_REPORT");   // PEANUTS: log address bindings only in diagnostic runs
+    int addr_report = addr_env && atoi(addr_env) && has_ext(ie, ne, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    if (addr_report) iext[niext++] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
     free(ie);
     const char *layer = "VK_LAYER_KHRONOS_validation"; uint32_t nlayer = 0;
     const char *ve = getenv("DM_VK_VALIDATE");
@@ -146,7 +164,8 @@ static int init_once(void) {
         for (uint32_t i = 0; i < nl; i++) if (!strcmp(lp[i].layerName, layer)) nlayer = 1;
         free(lp); VLOG("DM_VK_VALIDATE: validation layer %s", nlayer ? "on" : "not installed");
     }
-    VkApplicationInfo ai = {VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "nxnative", .pEngineName = "nxnative", .apiVersion = VK_API_VERSION_1_3};
+    VkApplicationInfo ai = {VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "nxnative", .pEngineName = "nxnative",
+        .apiVersion = api >= VK_API_VERSION_1_4 ? VK_API_VERSION_1_4 : VK_API_VERSION_1_3};
     VkInstanceCreateInfo ici = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &ai, .enabledExtensionCount = niext, .ppEnabledExtensionNames = iext,
                                 .enabledLayerCount = nlayer, .ppEnabledLayerNames = &layer};
     VkResult r = vk.vkCreateInstance(&ici, NULL, &V.inst);
@@ -154,6 +173,13 @@ static int init_once(void) {
 #define I(f) vk.f = (PFN_##f)vk.vkGetInstanceProcAddr(V.inst, #f);
     VKA_INSTANCE_FNS(I)
 #undef I
+    if (addr_report) {   // PEANUTS: the instance and its messenger live until process exit
+        PFN_vkCreateDebugUtilsMessengerEXT create = (PFN_vkCreateDebugUtilsMessengerEXT)vk.vkGetInstanceProcAddr(V.inst, "vkCreateDebugUtilsMessengerEXT");
+        VkDebugUtilsMessengerCreateInfoEXT mi = {VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT, .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT,
+            .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT, .pfnUserCallback = addr_binding};
+        VkDebugUtilsMessengerEXT messenger;
+        addr_report = create && create(V.inst, &mi, NULL, &messenger) == VK_SUCCESS;
+    }
     uint32_t npd = 1; VkPhysicalDevice pd[1];
     if (vk.vkEnumeratePhysicalDevices(V.inst, &npd, pd) < 0 || !npd) { VRED("no Vulkan physical device"); return 0; }
     V.pd = pd[0];
@@ -185,11 +211,16 @@ static int init_once(void) {
     if (swap) dext[ndext++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
     if (map2) dext[ndext++] = VK_KHR_MAP_MEMORY_2_EXTENSION_NAME;
     if (placed) dext[ndext++] = VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME;
+    // PEANUTS(upstream-candidate): guest D32 textures can contain values outside [0,1]. Permit uploading their actual float bits on devices that support it.
+    if (has_ext(de, nde, VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME)) dext[ndext++] = VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME;
     int x_fd = has_ext(de, nde, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
     if (x_fd) dext[ndext++] = VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME;
     if (V.display_timing) dext[ndext++] = VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME;
     // The draw path (vka_draw.c): each one optional, with a fallback when absent
     int x_push = has_ext(de, nde, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME), x_vin = has_ext(de, nde, VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
+    int core_m5 = ai.apiVersion >= VK_API_VERSION_1_4 && V.props.apiVersion >= VK_API_VERSION_1_4;
+    int x_m5 = !core_m5 && has_ext(de, nde, VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
+    if (x_m5) dext[ndext++] = VK_KHR_MAINTENANCE_5_EXTENSION_NAME;
     const char *x_rob = has_ext(de, nde, VK_KHR_ROBUSTNESS_2_EXTENSION_NAME) ? VK_KHR_ROBUSTNESS_2_EXTENSION_NAME : has_ext(de, nde, VK_EXT_ROBUSTNESS_2_EXTENSION_NAME) ? VK_EXT_ROBUSTNESS_2_EXTENSION_NAME : NULL;
     const char *x_i8 = has_ext(de, nde, VK_KHR_INDEX_TYPE_UINT8_EXTENSION_NAME) ? VK_KHR_INDEX_TYPE_UINT8_EXTENSION_NAME : has_ext(de, nde, VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME) ? VK_EXT_INDEX_TYPE_UINT8_EXTENSION_NAME : NULL;
     const char *x_div = has_ext(de, nde, VK_KHR_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME) ? VK_KHR_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME : has_ext(de, nde, VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME) ? VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME : NULL;
@@ -218,6 +249,9 @@ static int init_once(void) {
     const char *fault_env = getenv("DM_VK_DEVICE_FAULT");
     int x_fault = has_ext(de, nde, VK_EXT_DEVICE_FAULT_EXTENSION_NAME) && !(fault_env && !strcmp(fault_env, "0"));
     if (x_fault) dext[ndext++] = VK_EXT_DEVICE_FAULT_EXTENSION_NAME;
+    // PEANUTS: DM_VK_ADDR_REPORT needs both the debug messenger and the device feature
+    addr_report = addr_report && has_ext(de, nde, VK_EXT_DEVICE_ADDRESS_BINDING_REPORT_EXTENSION_NAME);
+    if (addr_report) dext[ndext++] = VK_EXT_DEVICE_ADDRESS_BINDING_REPORT_EXTENSION_NAME;
     // PEANUTS: VK_EXT_transform_feedback for NVN transform feedback (vka_tf.c). DM_VK_XFB=0 (restart) leaves it off: such draws are then skipped or drawn without capture, as before
     const char *xfb_env = getenv("DM_VK_XFB");
     int x_xfb = has_ext(de, nde, VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME) && !(xfb_env && !strcmp(xfb_env, "0"));
@@ -226,8 +260,9 @@ static int init_once(void) {
     if (V.mem_budget) dext[ndext++] = VK_EXT_MEMORY_BUDGET_EXTENSION_NAME;
     free(de);
 
-    // Every feature the device has, but robustness and capture-replay (they cost and nothing needs them); the shader side takes what it needs from the same device
+    // Query supported features, then trim the ones the replay will not enable before creating the device.
     VkPhysicalDeviceMapMemoryPlacedFeaturesEXT fmp = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_FEATURES_EXT};
+    VkPhysicalDeviceMaintenance5Features fm5 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES};
     VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT fvin = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT};
     VkPhysicalDeviceRobustness2FeaturesKHR frob = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_KHR};
     VkPhysicalDeviceIndexTypeUint8Features fi8 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES};
@@ -240,16 +275,32 @@ static int init_once(void) {
 #define LINK(on, st) if (on) { (st).pNext = chain; chain = &(st); }
     struct { VkStructureType sType; void *pNext; VkBool32 queuePerfHint; } fph = {(VkStructureType)1000302001};   // VkPhysicalDeviceQueuePerfHintFeaturesQCOM (not in the NDK's headers yet)
     LINK(x_vin, fvin) LINK(x_rob, frob) LINK(x_i8, fi8) LINK(x_div, fdiv) LINK(x_ph, fph) LINK(x_gpl, fgpl) LINK(x_mesh, fmesh) LINK(x_fault, ffault)
+    LINK(core_m5 || x_m5, fm5)
     LINK(x_xfb, fxfb)   // PEANUTS: transform feedback (vka_tf.c)
+    VkPhysicalDeviceAddressBindingReportFeaturesEXT fab = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT};   // PEANUTS
+    LINK(addr_report, fab)
 #undef LINK
     VkPhysicalDeviceVulkan13Features f13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, .pNext = chain};
     VkPhysicalDeviceVulkan12Features f12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &f13};
     VkPhysicalDeviceVulkan11Features f11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, .pNext = &f12};
     VkPhysicalDeviceFeatures2 f2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &f11};
     vk.vkGetPhysicalDeviceFeatures2(V.pd, &f2);
-    f2.features.robustBufferAccess = VK_FALSE; f13.robustImageAccess = VK_FALSE;
+    // PEANUTS begin: NVN bounds vertex fetches by the size passed to BindVertexBuffers. vin_bind supplies that size
+    // to vkCmdBindVertexBuffers2, but an out-of-bounds fetch without Vulkan buffer robustness is undefined.
+    // Prefer robustness2's defined out-of-range reads where supported; this does not protect raw device addresses.
+    const char *rob_env = getenv("DM_VK_ROBUST_BUFFERS");   // restart-only diagnostic comparison with the old unbounded path
+    if (rob_env && !strcmp(rob_env, "0")) f2.features.robustBufferAccess = VK_FALSE;
+    if (!f2.features.robustBufferAccess) frob.robustBufferAccess2 = VK_FALSE;
+    // Buffer update-after-bind features can be incompatible with robustBufferAccess. Only images and samplers
+    // are updated after binding (vka_tex.c bindless_init); no buffer or texel-buffer binding uses these features.
+    f12.descriptorBindingUniformBufferUpdateAfterBind = f12.descriptorBindingStorageBufferUpdateAfterBind = VK_FALSE;
+    f12.descriptorBindingUniformTexelBufferUpdateAfterBind = f12.descriptorBindingStorageTexelBufferUpdateAfterBind = VK_FALSE;
+    // Guest image fetches do not grant access to memory beyond the bound image. Keep the supported robust behavior.
+    const char *rob_img = getenv("DM_VK_ROBUST_IMAGES");
+    if (rob_img && !strcmp(rob_img, "0")) f13.robustImageAccess = frob.robustImageAccess2 = VK_FALSE;
+    else if (frob.robustImageAccess2) f13.robustImageAccess = VK_FALSE;   // use the stronger defined result for bad mip levels
+    // PEANUTS end
     f12.bufferDeviceAddressCaptureReplay = VK_FALSE; f12.bufferDeviceAddressMultiDevice = VK_FALSE;
-    frob.robustBufferAccess2 = VK_FALSE; frob.robustImageAccess2 = VK_FALSE;   // only nullDescriptor: unbound slots read a null descriptor
     ffault.deviceFaultVendorBinary = VK_FALSE; g_fault_on = x_fault && ffault.deviceFault;   // (the vendor's binary dump: not read)
     // Mesh shading: the task and mesh stages only (multiview, shading-rate and query support each need more of the device than the replay enables or uses)
     fmesh.multiviewMeshShader = VK_FALSE; fmesh.primitiveFragmentShadingRateMeshShader = VK_FALSE; fmesh.meshShaderQueries = VK_FALSE;
@@ -270,9 +321,15 @@ static int init_once(void) {
     VkDeviceCreateInfo dci = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = &f2, .queueCreateInfoCount = 1, .pQueueCreateInfos = &qci, .enabledExtensionCount = ndext, .ppEnabledExtensionNames = dext};
     void vka_kgsl_before(int has_ext), vka_kgsl_after(int has_hint); vka_kgsl_before(x_ph);   // the kernel contexts the device's queue gets (the KGSL floor below)
     if ((r = vk.vkCreateDevice(V.pd, &dci, NULL, &V.dev))) { VRED("vkCreateDevice %d", r); return 0; }
+    VLOG("buffer robustness: %s", frob.robustBufferAccess2 ? "robustBufferAccess2" : f2.features.robustBufferAccess ? "core robustBufferAccess" :
+         rob_env && !strcmp(rob_env, "0") ? "off (DM_VK_ROBUST_BUFFERS=0)" : "unsupported");   // PEANUTS
+    VLOG("image robustness: %s", frob.robustImageAccess2 ? "robustImageAccess2" : f13.robustImageAccess ? "core robustImageAccess" : "off");   // PEANUTS
 #define D(f) vk.f = (PFN_##f)vk.vkGetDeviceProcAddr(V.dev, #f);
     VKA_DEVICE_FNS(D)
 #undef D
+    if (!fm5.maintenance5) vk.vkCmdBindIndexBuffer2KHR = NULL;
+    else if (core_m5) vk.vkCmdBindIndexBuffer2KHR = (PFN_vkCmdBindIndexBuffer2KHR)vk.vkGetDeviceProcAddr(V.dev, "vkCmdBindIndexBuffer2");
+    VLOG("bounded index buffer bindings: %s", vk.vkCmdBindIndexBuffer2KHR ? (core_m5 ? "core 1.4" : "KHR_maintenance5") : "unavailable");
     if (V.xfb && !(vk.vkCmdBindTransformFeedbackBuffersEXT && vk.vkCmdBeginTransformFeedbackEXT && vk.vkCmdEndTransformFeedbackEXT)) V.xfb = 0;   // PEANUTS: transform feedback (vka_tf.c)
     fp_wrap_compiles();
     vka_shader_pfb_hook();   // (over the FPCR wrapper: the module it makes is the rewritten one)
@@ -910,6 +967,7 @@ static int sblk_idle(const sblk *b, uint64_t done, uint64_t udone) { return b->f
 static sblk *sblk_new(VkDeviceSize n) {
     sblk *b = calloc(1, sizeof *b); b->size = n;
     VkBufferCreateInfo bi = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = n, .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |   // expanded indices and instance tables
                                                                          VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT};   // indirect: the {count, 1, 1} copies of indirect mesh draws (vka_exec.c mdx_copy). PEANUTS: texel: the copy of a buffer texture (vka_draw.c tbuf_view)
     if (vk.vkCreateBuffer(V.dev, &bi, NULL, &b->buf)) { free(b); return NULL; }
     VkMemoryRequirements mr; vk.vkGetBufferMemoryRequirements(V.dev, b->buf, &mr);

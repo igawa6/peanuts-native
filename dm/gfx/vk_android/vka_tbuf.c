@@ -191,12 +191,12 @@ void vka_tbuf_refresh(int id, uint8_t dim, VkCommandBuffer cb) {
                                          is2d ? "2D (16384-texel rows)" : "1D", id, t.elems, t.f.vk);
     pthread_mutex_unlock(&g_mu);
 }
-VkImageView vka_tbuf_image_view(int id, uint8_t dim) {
+VkImageView vka_tbuf_image_view(int id, uint8_t dim, VkFormat *actual) {   // PEANUTS
     tb_t t; int is2d;
     if (!shape(dim, &is2d) || !tb_of(id, &t)) return VK_NULL_HANDLE;
     pthread_mutex_lock(&g_mu);
     timg *x = img_find(&t, is2d); VkImageView v = VK_NULL_HANDLE;
-    if (x && x->copied_frame) { x->last = vka_frame(); v = x->v; }
+    if (x && x->copied_frame) { x->last = vka_frame(); v = x->v; if (actual) *actual = t.f.view; }   // PEANUTS: img_make's VkImageViewCreateInfo::format
     pthread_mutex_unlock(&g_mu);
     return v;
 }

@@ -110,9 +110,7 @@ VkShaderModule vka_shader_cs_module(vka_shader *s) {
 const char *vka_shader_lib_path(void) { return g_lib_path; }
 unsigned vka_shader_lib_differs(void) { return g_lib_state > 0 ? g_lib.differs : 0; }
 
-static int lib_load(void) {
-    if (g_lib_state) return g_lib_state > 0;
-    g_lib_state = -1;
+static int lib_open(int required) {
     char path[1024], err[256]; const char *e = getenv("DM_VK_SHLIB"); const char *dir = dm_module_dir(); dir = dir && *dir ? dir : ".";
     if (e && *e) snprintf(path, sizeof path, "%s", e);
     else snprintf(path, sizeof path, "%s/shaders/" DMSH_VK_DIR_PREFIX "%s/" DMSH_VK_LIB_FILE, dir, DMSH_VK_CHAIN);
@@ -151,17 +149,42 @@ static int lib_load(void) {
             VRED("shader library %s: this host's version %s is %s; playing version %s, made before versioned shader updates (no ABI in its header, this host's is %s): "
                  "it may draw wrong. Update the shaders once in the app; later updates are then partial", path, DMSH_VK_CHAIN, why, v, DMSH_VK_ABI);
             snprintf(path, sizeof path, "%s", old); have = 1;
-        } else { VRED("no shader library at %s (the pack's shaders/" DMSH_VK_DIR_PREFIX "%s: %s) and none of another version with this host's ABI %s: nothing is drawn", path, DMSH_VK_CHAIN, why, DMSH_VK_ABI); return 0; }
+        } else { if (required) VRED("no shader library at %s (the pack's shaders/" DMSH_VK_DIR_PREFIX "%s: %s) and none of another version with this host's ABI %s: nothing is drawn", path, DMSH_VK_CHAIN, why, DMSH_VK_ABI); return 0; }
     }
-    if (!have) { VRED("shader library %s refused: %s; nothing is drawn", path, access(path, R_OK) ? "missing" : err); return 0; }
+    if (!have) { if (required) VRED("shader library %s refused: %s; nothing is drawn", path, access(path, R_OK) ? "missing" : err); return 0; }
     snprintf(g_lib_path, sizeof g_lib_path, "%s", path);
+    return 1;
+}
+
+// Device init decides whether to allocate the pool descriptors before making any module.
+// Open the actual game library once and keep its mapping: base modules and their variants
+// share the entry's bindings. With no known pack (including the standalone selftest) keep
+// the tables; a failed early lookup must not prevent normal lookup at the first draw.
+int vka_shader_lib_may_read_pool(void) {
+    const char *dir = dm_module_dir();
+    if (!dir || !*dir) return 1;
+    int may_read = 1;
+    pthread_mutex_lock(&g_mu);
+    if (g_lib_state >= 0 && (*g_lib_path || lib_open(0))) {
+        may_read = 0;
+        for (uint32_t i = 0; i < g_lib.h->bind_count; i++)
+            if (vka_bind_reads_pool(&g_lib.bind[i])) { may_read = 1; break; }
+    }
+    pthread_mutex_unlock(&g_mu);
+    return may_read;
+}
+
+static int lib_load(void) {
+    if (g_lib_state) return g_lib_state > 0;
+    g_lib_state = -1;
+    if (!*g_lib_path && !lib_open(1)) return 0;
     // The translator's answers in the header against this device: modules built for 64-lane subgroups split ballots and shuffles into 32-lane halves, so they are right on
     // 32 or 64 lanes; storage buffers are bound rounded down to ssbo_align, which the device's alignment must divide (android/SHADERS.md "Translator answers")
     unsigned sg = g_lib.h->subgroup_size ? g_lib.h->subgroup_size : 32, sa = g_lib.h->ssbo_align;
     sg_plan(sg); shuffle_plan();
-    if (sa && (sa % V.sb_align)) { VRED("shader library %s refused: built for storage buffers at %u-byte boundaries, the device needs %llu; nothing is drawn", path, sa, (unsigned long long)V.sb_align); vka_shlib_close(&g_lib); return 0; }
+    if (sa && (sa % V.sb_align)) { VRED("shader library %s refused: built for storage buffers at %u-byte boundaries, the device needs %llu; nothing is drawn", g_lib_path, sa, (unsigned long long)V.sb_align); vka_shlib_close(&g_lib); return 0; }
     char inputs[17]; vka_shlib_str(g_lib.h->inputs, inputs);
-    VLOG("shader library %s: %u shaders, %u modules, %.1f MB (chain %s, Vulkan chain %s, inputs %s; %u-lane subgroups, storage buffers at %u)", path, g_lib.h->entry_count, g_lib.h->mod_count,
+    VLOG("shader library %s: %u shaders, %u modules, %.1f MB (chain %s, Vulkan chain %s, inputs %s; %u-lane subgroups, storage buffers at %u)", g_lib_path, g_lib.h->entry_count, g_lib.h->mod_count,
          g_lib.size / 1e6, DMSH_CHAIN, DMSH_VK_CHAIN, inputs, sg, sa ? sa : 1);
     g_lib_state = 1;
     const char *ck = getenv("DM_VK_SHLIB_CHECK");

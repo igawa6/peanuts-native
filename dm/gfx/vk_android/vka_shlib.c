@@ -1,6 +1,7 @@
 // The Vulkan shader library reader (vka_shlib.h). Every offset in the file is checked once at open, so lookups afterwards index the tables without further checks
 #include "vka_shlib.h"
 #include "vka_abi_compat.h"
+#include "../../peanuts/peanuts_spv_pervertex.h"   // PEANUTS: normalize unused per-vertex distances on the unpacked module, never in the pack
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -156,6 +157,7 @@ uint32_t *vka_shlib_spirv(const vka_shlib *L, const dmsh_vk_module *m, size_t *n
     }
     if (w[0] != 0x07230203u) { fail(err, errn, "not SPIR-V (first word %#x)", w[0]); free(w); return NULL; }
     size_t nb = m->size; w = spv_override(w, &nb);
+    nb = pn_spv_pervertex(w, nb);   // PEANUTS: all runtime variants start with the same valid interface
     if (nbytes) *nbytes = nb;
     return w;
 }
