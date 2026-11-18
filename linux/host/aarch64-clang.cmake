@@ -1,0 +1,10 @@
+# Cross build from x86_64 with clang and an arm64 multiarch sysroot (Debian / Ubuntu: /usr/lib/aarch64-linux-gnu)
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR aarch64)
+set(CMAKE_C_COMPILER clang)
+set(CMAKE_ASM_COMPILER clang)
+set(CMAKE_C_COMPILER_TARGET aarch64-linux-gnu)
+set(CMAKE_ASM_COMPILER_TARGET aarch64-linux-gnu)
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_CXX_COMPILER clang++)   # PEANUTS(linux): the companion runtime (dm/peanuts/rt) is C++
+set(CMAKE_CXX_COMPILER_TARGET aarch64-linux-gnu)   # PEANUTS(linux)

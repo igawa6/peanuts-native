@@ -114,7 +114,7 @@ __attribute__((visibility("default"))) int nxhost_vk_readiness(char *buf, int n)
     if (!buf || n < 64) return -1;
     outbuf o = {buf, n, 0}; buf[0] = 0;
     void *lib = vka_driver_open();   // the custom driver when DM_VK_DRIVER names one (opened once per process: the replay gets the same library)
-    if (!lib) lib = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+    if (!lib) lib = dlopen(VKA_SYSTEM_LOADER, RTLD_NOW | RTLD_LOCAL);   // PEANUTS(linux): Banana Native 0.3.44: libvulkan.so.1 on Linux (vka.h)
     PFN_vkGetInstanceProcAddr gipa = lib ? (PFN_vkGetInstanceProcAddr)dlsym(lib, "vkGetInstanceProcAddr") : NULL;
     if (!gipa) { put(&o, "error=no Vulkan library (libvulkan.so)\n"); return 1; }
     put_str(&o, "driver.custom", vka_driver_tag() ? vka_driver_tag() : "");

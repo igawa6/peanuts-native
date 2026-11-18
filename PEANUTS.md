@@ -83,6 +83,13 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      Readiness check's "Pick a GPU driver" open `dev.peanuts.ui.DriverActivity` instead of `GpuDriver.dialog`, two lines; the page itself and its
      manifest entry are Peanuts-owned. The Game settings row and the system-driver launch warning also open the page with a title ID.
      The activity result refreshes the game settings. Installs still go through `GpuDriver.install`. `peanuts/UPSTREAM-EDITS.md` Round 22.
+   - `dm/gfx/vk_android/vka_dev.c`, `vka_present.c` — (2026-11-18, aarch64 Linux, `peanuts/docs/LINUX.md`) Banana Native 0.3.40's own three `#ifdef NX_LINUX`
+     blocks (its #335: the window's surface extensions and surface from `linux/host/front_sdl.c`; display timing off unless `NX_VK_DISPLAY_TIMING=1`), each marked
+     `PEANUTS(linux)`, same code as upstream's. The Android build never defines `NX_LINUX`. And Banana Native 0.3.44's `VKA_SYSTEM_LOADER` (`vka.h`, one line each in
+     `vka_dev.c` and `vka_readiness.c`): the system loader is `libvulkan.so.1` on Linux, `libvulkan.so` on Android as before.
+   - `linux/` — (2026-11-18) Banana Native v0.3.43's `linux/` (the aarch64 Linux host and its AppImage launcher); files byte-identical to that tag are on
+     `peanuts/upstream-unmarked.txt`. Peanuts' edits there are marked `PEANUTS(linux)`: `linux/host/CMakeLists.txt` (the `dm/peanuts` host sources and
+     runtime, C++, the generic host `GAME=generic`), `aarch64-clang.cmake` (clang++). `.gitignore`: three marked lines.
    - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-21, Back keeps your place) one line each in `onCreate` (after the
      first `build()`), `onSaveInstanceState`, `openAdvanced` (before `build()`) and `closeAdvanced` (after it), and two in `onConfigurationChanged`
      around its `build()`: `dev.peanuts.ui.PagePlace` takes the page's scroll position and focused row and puts them back once the page is built

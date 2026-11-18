@@ -20,3 +20,8 @@ HANDOFF*.md
 ONDEVICE*.md
 STUTTER-TEST*.md
 *.internal.md
+
+# PEANUTS(linux): the aarch64 Linux host's build output and the SDL3 files copied from the device (linux/README.md), as Banana Native 0.3.40 ignores them
+linux/build/
+linux/sysroot/
+dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate-linux
