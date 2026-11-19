@@ -1,0 +1,44 @@
+# Provisional game profile of Moving Out (Switch, update 1.0.6 = v393216 over the base game)
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Written from a survey of the game files (scripts/build_ipa_from_nsp.py with dm/games/profile_guess.py); packed on a PC, not run on a device. The keys below are
+# the survey's guesses, not measured. README.md beside this file.
+# Format: see dm/games/README.md
+# Unity 2018.4.21f1 (IL2CPP) with FMOD, SDK 9.4.1, NVN. Monster Sanctuary's profile (0100A0F00DA68000, Unity 2018.4.23f1, SDK 9.4.1, the same sdk and subsdk0 build IDs) is the reference.
+
+# ---- Identity ----
+title_id	0100C4C00E73E000
+program_id	0100C4C00E73E000
+
+# ---- App ----
+name	Moving Out
+ipa	MovingOut.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+# 1.0.6: the update's NSP name; the dump folder has no control data (the survey's display version is "?")
+build	v393216	1.0.6	main=cb3172ed0c3bc646bfdf0451cba8a178	subsdk0=fbb0b46fb4fdbf4be47b76f2285f53ed	sdk=290c9a04234847a176aa1c375c16af99
+package	v393216
+shader_versions	v393216
+
+# ---- Files ----
+# every module main imports from; subsdk0 is NintendoSDK_movie
+modules	main subsdk0 sdk
+romfs_marker	Data/StreamingAssets/Switch/audio_music_e46dfad91d290d876a47a563915d7e68.abundle
+zip_store	.abundle:.dat:.mp4:.ress:.metallib
+
+# ---- Memory ----
+# guess, not measured: the NPDM declares 16 MB of system resource (virtual address memory) and main sets a heap; the values are Monster Sanctuary's (Unity 2018.4,
+# SDK 9.4.1, the same sdk and subsdk0 builds). The first run's SetHeapSize lines decide the heap region and mem_used.
+mem_reserve	0x140000000
+mem_alias	0x118000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1000000
+
+# ---- Graphics ----
+# PEANUTS: the game calls nvnDeviceSetDepthMode(near = 0) (log: "depth mode near=0", Lenovo TB321FU, 2026-11-19)
+depth_mode	zero
+
+# ---- Shader split (shader_split.py; Unity Shader and ComputeShader objects, read by unityfs.py) ----
+shader_groups	/Data/=data
+shader_note	17,282 shaders: vertex 9,481, pixel 7,732, compute 50, geometry 19; 17,277 from the Unity data, 5 GLSLC outputs in main; split from the update's RomFS, the whole patched tree
