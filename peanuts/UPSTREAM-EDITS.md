@@ -1158,3 +1158,16 @@ version moves. Device state: see the game's note.
 |---|---|---|---|
 | `dm/gfx/tools/shader_split.py` | 3 | `iga_entries`, `iga_member`, `iga_shaders` and their branch in `scan_file_in`: Alchemy's igArchive version 13 (`IGA\x1a`), whose files are LZMA in 0x8000-byte blocks placed by the archive's small / medium / large block tables; every file is decoded and its whole GLSLC outputs taken. The game's split went from 12 shaders (those in `main`) to 1,945. Checked on all 74,311 files of its 401 archives; the large table (a file over 0x7FFF sectors) follows the same rule and was met on no file. nxnative has an open pull request with a reader of its own (#1077), not used here. Test: `test_split_iga.py`. Upstream candidate: yes | `PEANUTS(upstream-candidate)` |
 | `dm/host/hle_audren.c`, `dm/host/tests/t_audren_layout.c`, `dm/host/tests/t_audren_work.c`, `docs/reference/audio.md` | 71 | The host drives up to 4 audio renderers, each with its own state (`ar_t`), PCM blocks, render thread and output; it drove one, and a second `OpenAudioRenderer` logged `[RED] audren: a second renderer` and was never rendered. A hand port of nxnative 18b435ac38 and a334797d12 (MIT) onto this tree's clock pacing, catch-up queue and `DM_AUDREN_WAIT`, which stay, now per renderer. One renderer behaves as before; its log lines now name the renderer (`renderer 0 …`). Tests: the two host tests, built natively with ASan and UBSan, with a case of two renderers open at once. Not run on a device. Upstream candidate: yes (Banana Native 0.3.42 does not have it) | `PEANUTS(upstream-candidate)` on each file's first hunk, `PEANUTS` on the others |
+
+### Round 20, online play on Nextendo Network: the host (2026-11-16)
+
+`dm/peanuts/net` serves the network, ssl, account and friends calls while `PN_ONLINE=1` (`dm/peanuts/net/README.md`), from a hook table of its own
+(`pnforce`): upstream's `swforce` table cannot hold a second entry of a name, so the online hooks are asked first instead.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/loader.c` | 1 | `force_lookup` asks `pn_force_lookup` first, Android's host only (`#if PLAT_ANDROID`); it answers NULL unless `PN_ONLINE=1` | `// PEANUTS:` |
+| `android/host/CMakeLists.txt` | 1 | `dm/peanuts/net/*.c` and Mbed TLS (`dm/peanuts/third_party/mbedtls/library/*.c`, `-O2 -w`) in `HOST_C`, with their include folders and `MBEDTLS_USER_CONFIG_FILE` | `# PEANUTS:` on each line |
+| `android/app/src/main/cpp/nxlaunch.c` | 1 | the env log line prints `(hidden)` for `PN_NEXTENDO_PID` and `PN_NEXTENDO_TOKEN` | `// PEANUTS:` |
+
+Upstream candidate: no (Peanuts' online play).
