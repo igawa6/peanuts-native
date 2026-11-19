@@ -1,0 +1,49 @@
+# Provisional game profile of Moving Out 2 (Switch, update 1.3.315 = v327680 over the base game)
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Written from a survey of the game files (scripts/build_ipa_from_nsp.py with dm/games/profile_guess.py); packed on a PC, not run on a device. The keys below are
+# the survey's guesses, not measured. README.md beside this file.
+# Format: see dm/games/README.md
+# Unity 2021.3.16f1 (IL2CPP) with FMOD, SDK 14.3.1, NVN. Blasphemous 2 (Unity 2021.3.20f1, SDK 15.3.2) and Chained Echoes (SDK 14.3.0) are the closest profiles.
+
+# ---- Identity ----
+title_id	010065D018172000
+program_id	010065D018172000
+
+# ---- App ----
+name	Moving Out 2
+ipa	MovingOut2.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+# 1.3.315: the update's NSP name; the dump folder has no control data (the survey's display version is "?")
+build	v327680	1.3.315	main=c552b6464e7348a7bb261a708b353137	subsdk0=75c83c09e25f9a4e60bd960815722e86	sdk=2587a39ac2547a780ec0e4b77e22afab
+package	v327680
+shader_versions	v327680
+
+# ---- Files ----
+# every module main imports from; subsdk0 is NintendoSDK_movie
+modules	main subsdk0 sdk
+romfs_marker	Data/StreamingAssets/aa/Switch/basecampaignlevels_scenes_all.bundle
+zip_store	.assets:.bank:.bundle:.dat:.json:.ress:.metallib
+
+# ---- Memory ----
+# guess, not measured: the NPDM declares 16 MB of system resource (virtual address memory) and main sets a heap; the 5 GB block and hardware pool are the survey's
+# rule (Blasphemous 2, Unity 2021.3.20f1, SDK 15.3.2; Chained Echoes, SDK 14.3.0). The first run's SetHeapSize lines decide the heap region and mem_used.
+# Measured on the Lenovo TB321FU (2026-11-19): StandardAllocator's region is 3.14 GB and the game's other address regions (Unity's GPU memory, a 16 MB region per
+# render target) filled the 4.375 GB alias region to +4.03 GB of regions with 351 MB of gaps by the tutorial; there the render targets the level makes could not get their
+# regions, Unity left their textures uninitialized and drew every other frame without its colour target (the full-screen flicker, README.md). The block is 6 GB, as Art of
+# Rally's, giving the alias region 1 GB more
+mem_reserve	0x180000000
+mem_alias	0x158000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1000000
+
+# ---- Frame rate ----
+# The game sets present interval 2 (30 fps) in play; Unity times its logic in seconds, so presenting every display tick runs it at 60 fps at normal speed,
+# as The Hong Kong Massacre's profile does (Lenovo TB321FU, Turnip, 2026-11-19)
+present_interval	display
+
+# ---- Shader split (shader_split.py; Unity Shader and ComputeShader objects, read by unityfs.py) ----
+shader_groups	/Data/=data
+shader_note	6,986 shaders: vertex 3,436, pixel 3,440, compute 109, geometry 1; 6,975 from the Unity data, 11 GLSLC outputs in main; split from the update's RomFS, the whole patched tree

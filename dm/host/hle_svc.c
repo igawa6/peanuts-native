@@ -443,9 +443,27 @@ static void guest_caller(const uint64_t *r, char *buf, size_t n, uint64_t *via) 
     if (m) snprintf(buf, n, "%s+%#llx", m->name, (unsigned long long)(lr - (uint64_t)(uintptr_t)m->base));
     else snprintf(buf, n, "%#llx", (unsigned long long)lr);
 }
+// The largest gap between the regions made so far (above the SDK's node area) and the alias region's end; *used: the bytes the regions take (caller holds g_rgn_lock)
+static int rgn_cmp(const void *a, const void *b) { uint64_t x = ((const region_t *)a)->off, y = ((const region_t *)b)->off; return x < y ? -1 : x > y; }
+static uint64_t alias_gap_locked(uint64_t *used) {
+    region_t *s = g_nrgn ? malloc(sizeof *s * (size_t)g_nrgn) : NULL; uint64_t at = 0x3e00000, gap = 0; *used = 0;   // (the node area, as alias_room)
+    if (g_nrgn && !s) return UINT64_MAX;
+    if (s) { memcpy(s, g_rgn, sizeof *s * (size_t)g_nrgn); qsort(s, (size_t)g_nrgn, sizeof *s, rgn_cmp); }
+    for (int i = 0; i < g_nrgn; i++) { if (s[i].off > at && s[i].off - at > gap) gap = s[i].off - at; if (s[i].off + s[i].size > at) at = s[i].off + s[i].size; *used += s[i].size; }
+    if (g_alias_cap > at && g_alias_cap - at > gap) gap = g_alias_cap - at;
+    free(s); return gap;
+}
 static void region_ask(uint64_t *r, int param) {
     (void)param;
     t_rgn_size = r[2]; guest_caller(r, t_rgn_who, sizeof t_rgn_who, &t_rgn_via);
+    // A request no gap of the alias region can hold fails in the SDK (VammManager returns an error, no region), and a game may go on without what it was for: Moving Out 2's Unity
+    // left the render targets of its tutorial without textures and drew every other frame without its colour target (a full-screen flicker) when its regions had filled the
+    // profile's 4.375 GB alias region (a Switch has 64 GB). Logged here, as the SDK reports nothing (docs/reference/memory.md "Address regions that no longer fit")
+    if (!g_nrgn || !t_rgn_size) return;
+    pthread_mutex_lock(&g_rgn_lock); uint64_t used, gap = alias_gap_locked(&used); pthread_mutex_unlock(&g_rgn_lock);
+    if (t_rgn_size > gap) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8)
+        LOG("[RED] [mem] address region of %.1f MB asked, returning to %s: the alias region has no gap that large (largest %.1f MB; regions take %.2f GB of %.2f GB); the request fails (profile keys mem_reserve, mem_alias)",
+            t_rgn_size / 1048576.0, t_rgn_who, gap / 1048576.0, used / 1073741824.0, g_alias_cap / 1073741824.0); }
 }
 static void region_got(uint64_t *r, int param) {
     mem_init();
