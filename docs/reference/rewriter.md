@@ -99,9 +99,9 @@ To enroll a cut for any game's own module:
 ### Zero-guarded complemented jump-table index
 
 - **Symptom:** `jump table 6eea88` or `jump table 6eeac0` assertion in `patch_nso.py` on Return of the Obra Dinn 1.0.1.
-- **Cause:** Unity's IL2CPP output uses `tst w15,#7; b.eq exit; mvn w15,w15; and x15,x15,#7; ldrsw x15,[xB,x15,lsl #2]; add x18,x15,xB; br x18`. The zero test excludes one masked value before complementing it: the reachable indices are 0–6, so the table holds seven entries. Treating the `tst` immediate as a `cmp` bound reads an eighth word from the next table, introducing a target the guest cannot reach through this dispatch.
+- **Cause:** Unity's IL2CPP output uses `tst w15,#7; b.eq exit; mvn w15,w15; and x15,x15,#7; ldrsw x15,[xB,x15,lsl #2]; add x18,x15,xB; br x18`, or the same zero test with the mask written into a scratch register: `and w18,w17,#7; cbz w18,exit; mvn w17,w17; and x17,x17,#7; ldrsw x17,[xB,x17,lsl #2]; add x18,x17,xB; br x18`. Both branch away exactly when the masked index is zero. The zero test excludes one masked value before complementing it: the reachable indices are 0–6, so the table holds seven entries. Treating the `tst` immediate as a `cmp` bound reads an eighth word from the next table, introducing a target the guest cannot reach through this dispatch.
 - **Fix:** the last fallback, `jump_masked_not`, accepts this contiguous guard / complement / low-bit-mask form, reads exactly the mask's number of entries, follows the table base through `copied_base`, and requires decoded instruction targets in the function. It rejects intervening register writes or control flow, direct branches / calls and already resolved tables entering after the guard, and its own table targets bypassing the guard. Earlier recognizers are unchanged.
-- **Found on:** [Return of the Obra Dinn](../../dm/games/010032E00E6E2000/README.md) 1.0.1 (`main` build `9e93a6566aaa27418dd2435d8d5dffe5`), two dispatches in the function at `main+0x6ee8c0`.
+- **Found on:** [Return of the Obra Dinn](../../dm/games/010032E00E6E2000/README.md) 1.0.1 (`main` build `9e93a6566aaa27418dd2435d8d5dffe5`), two dispatches in the function at `main+0x6ee8c0`; [The Hong Kong Massacre](../../dm/games/01001950137D8000/README.md) 1.0.0 (Unity 2019.2.5f1, `main+0xeb37e4`: `and w18,w17,#7; cbz w18`).
 - **Check:** `dm/tools/tests/test_jump_copies.py` exercises the exact seven-entry extent with an invalid next word, mismatched guards / masks / sources, register clobbers, incoming edges, undecodable words and invalid targets. The extracted update's two sites resolve to seven targets each; this is static verification, with gameplay validation recorded in the game note.
 
 ### Offset table base set far back in the function
@@ -178,9 +178,9 @@ To enroll a cut for any game's own module:
 ### Indirect tail calls through x18 in IL2CPP thunks
 
 - **Symptom:** `jump table <addr>` assertion on a `br x18` with no table in front of it.
-- **Cause:** not a jump table but an indirect tail call: an IL2CPP thunk loads the method pointer with `ldr x18, [x0, #0x18]`, moves its stack arguments with every other scratch register (`ldr x16, [sp]`, `ldp x17, x15, [sp, #8]`, …) and ends with `br x18`.
-- **Fix:** when neither table form is found, the last write of `x18` is a plain load and the `br` ends the function, it becomes `x16 = guest x18; br x16` (`tail_call` / `site_br_call`; at a call `x16` / `x17` are free, as for `blr x18`). It is tried only where the rewriter used to stop.
-- **Found on:** [Ace Attorney Investigations Collection](../../dm/games/010005501E68C000/README.md) (Unity 2022.3 IL2CPP): `main+0x1d271bc` and `+0x204ebec`.
+- **Cause:** not a jump table but an indirect tail call: an IL2CPP thunk loads the method pointer with `ldr x18, [x0, #0x18]`, or with `ldp x18, x17, [x17, #0x138]` (the pointer beside a stack argument), moves its stack arguments with every other scratch register (`ldr x16, [sp]`, `ldp x17, x15, [sp, #8]`, …) and ends with `br x18`.
+- **Fix:** when neither table form is found, the last write of `x18` is a plain load and the `br` ends the function, it becomes `x16 = guest x18; br x16` (`tail_call` / `site_br_call`; at a call `x16` / `x17` are free, as for `blr x18`). It is tried only where the rewriter used to stop. `tail_call_at_end` accepts an `ldp` whose pair starts with `x18`, and a `br` followed only by `udf` / `nop` padding: the function's range runs to the next FDE start (`func_of`), so the padding after the jump is in it.
+- **Found on:** [Ace Attorney Investigations Collection](../../dm/games/010005501E68C000/README.md) (Unity 2022.3 IL2CPP): `main+0x1d271bc` and `+0x204ebec`; [Moving Out 2](../../dm/games/010065D018172000/README.md) (Unity 2021.3 IL2CPP): `main+0xd29e68`, the `ldp` form with a trailing `udf`.
 - **Check:** every module the rewriter accepted before comes out byte-identical.
 
 ### Loaded method-pointer tail call before an error block

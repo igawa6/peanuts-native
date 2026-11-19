@@ -215,7 +215,7 @@ elif fps_target_why.startswith('[RED] '): print(f'[RED] {NAME}: {fps_target_why[
 # Its constructor reserves 37 GB of address space for its pools. Its one call is cut, and observation gate OBS_UE_MALLOC goes on it (below), where x0 holds the object: the host gives
 # the object its own allocator's vtable there (dm/host/hle_uemalloc.c), whose place and slot layout the fixups table names (UE_MALLOC_VT, UE_MALLOC_SLOT)
 import ue_malloc
-UE_CALL, UE_VT, UE_SLOT, ue_why = ue_malloc.find(bytes(IMG), TEXT_END, RO_OFF, DATA_OFF)
+UE_CALL, UE_VT, UE_SLOT, UE_GMALLOC, ue_why = ue_malloc.find(bytes(IMG), TEXT_END, RO_OFF, DATA_OFF)
 if UE_CALL is not None:
     cuts.append((UE_CALL, bytes(IMG[UE_CALL:UE_CALL + 4]).hex(), struct.pack('<I', NOP).hex(), f'{ue_why}: the constructor call → nop, gate OBS_UE_MALLOC on it (ue_malloc.py)'))
     struct.pack_into('<I', IMG, UE_CALL, NOP)
@@ -982,7 +982,7 @@ def copied_base(insl, k, rb):
         return None
     return None
 def jump_masked_not(insl, j):
-    """A zero-guarded complemented index: tst wS,#M; b.eq exit; mvn wS,wS; and xI,xS,#M; ldrsw xE,[xB,xI,lsl #2]; add x18,xE,xB; br x18.
+    """A zero-guarded complemented index: tst wS,#M; b.eq exit (or and wT,wS,#M; cbz wT,exit); mvn wS,wS; and xI,xS,#M; ldrsw xE,[xB,xI,lsl #2]; add x18,xE,xB; br x18.
     Return of the Obra Dinn 1.0.1 main+0x6eea88 / +0x6eeac0 (Unity 2017.4) has seven entries, not eight: M is 7, the tst excludes zero, and the complement maps 1..7 to 6..0.
     Read exactly M entries for a contiguous low-bit mask, only after the older recognizers fail. Straight-line data flow and no entry past the guard are required."""
     ctx = insl[max(0, j - 16):j + 1]
@@ -1000,12 +1000,16 @@ def jump_masked_not(insl, j):
     _, src, imm = mask.op_str.split(', '); n = int(imm[1:], 0)
     if not n or n & (n + 1) or n > 0xffffffff: return None
     test, branch, invert = ctx[km - 3:km]
-    if test.mnemonic != 'tst' or test.op_str != f'w{src[1:]}, {imm}' or branch.mnemonic != 'b.eq' or \
-       invert.mnemonic != 'mvn' or invert.op_str != f'w{src[1:]}, w{src[1:]}': return None
+    # PEANUTS(upstream-candidate): the zero guard as tst wS,#M; b.eq, or as and wT,wS,#M; cbz wT into a scratch register (The Hong Kong Massacre main+0xeb37e4, Unity 2019.2:
+    # and w18,w17,#7; cbz w18): both branch away exactly when the masked index is zero
+    tst_guard = test.mnemonic == 'tst' and test.op_str == f'w{src[1:]}, {imm}' and branch.mnemonic == 'b.eq'
+    m_and = re.fullmatch(rf'w(\d+), w{src[1:]}, {re.escape(imm)}', test.op_str) if test.mnemonic == 'and' else None
+    and_guard = bool(m_and) and m_and.group(1) != src[1:] and branch.mnemonic == 'cbz' and branch.op_str.startswith(f'w{m_and.group(1)}, ')
+    if not (tst_guard or and_guard) or invert.mnemonic != 'mvn' or invert.op_str != f'w{src[1:]}, w{src[1:]}': return None
     run = ctx[km - 3:]
     if any(b.address != a.address + 4 for a, b in zip(run, run[1:])): return None
     head, end = test.address, insl[j].address
-    if head <= branch.operands[0].imm <= end: return None
+    if head <= branch.operands[-1].imm <= end: return None
     def writes(p, reg):
         if p.mnemonic in ('cmp', 'cmn', 'tst'): return False
         if p.mnemonic in ('bl', 'blr') and int(reg[1:]) <= 18: return True
@@ -1124,11 +1128,17 @@ def jump_masked_pred(insl, j):
     return t if all(x in addresses for x in t) else None
 def tail_call_at_end(insl, j):
     """The br x18 is an indirect tail call, not a jump table: the last write of x18 before it is a plain pointer load and the br ends the function. Ace Attorney Investigations Collection
-    (Unity 2022.3 IL2CPP) main+0x1d271bc: ldr x18,[x0,#0x18]; ...; ldr x16,[sp]; ...; br x18, a thunk that moves stack arguments and jumps to the method pointer at +0x18"""
-    if j + 1 != len(insl): return False
+    (Unity 2022.3 IL2CPP) main+0x1d271bc: ldr x18,[x0,#0x18]; ...; ldr x16,[sp]; ...; br x18, a thunk that moves stack arguments and jumps to the method pointer at +0x18.
+    Moving Out 2 (Unity 2021.3 IL2CPP) main+0xd29e68: ldp x18,x17,[x17,#0x138] loads the pointer beside a stack argument; the br is the function's last instruction.
+    The function's range runs to the next FDE start, so trailing udf / nop padding may follow the br (func_of). The terminal rule proves no frame, so a function that sets one up
+    (stp x29, x30, [sp, #-...]! or sub sp, sp, #...) is the framed rule's, not this one; and the site must be a br x18 (the padding path can be called with anything at j)."""
+    if j + 1 != len(insl) and not all(p.mnemonic in ('udf', 'nop') for p in insl[j + 1:]): return False
+    if insl[j].mnemonic != 'br' or insl[j].op_str != 'x18': return False
+    if insl[0].mnemonic == 'stp' and insl[0].op_str.startswith('x29, x30, [sp, #-'): return False
+    if insl[0].mnemonic == 'sub' and insl[0].op_str.startswith('sp, sp,'): return False
     for p in reversed(insl[:j]):
         if 'x18' not in [p.reg_name(r) for r in p.regs_access()[1]]: continue
-        return p.mnemonic == 'ldr' and bool(re.fullmatch(r'x18, \[(x\d+|sp)(, #(0x[0-9a-f]+|\d+))?\]', p.op_str))
+        return p.mnemonic in ('ldr', 'ldp') and bool(re.fullmatch(r'x18, (x\d+, )?\[(x\d+|sp)(, #(0x[0-9a-f]+|\d+))?\]', p.op_str))
     return False
 def tail_call(insl, j):
     """Keep the terminal rule, which proves no frame. A br x18 with code after it is a tail call only when the frame is provably gone: a jump inside a function needs that function's frame.
@@ -1137,6 +1147,7 @@ def tail_call(insl, j):
     before the br, the pair saved to and restored from one slot, whose body may branch and call (lazy init, loops) and whose other paths may follow the br. Either way nothing writes sp, x29
     or x30 on the way, no stack store touches the pair, and from the restore to the br every path runs straight"""
     if j + 1 == len(insl): return tail_call_at_end(insl, j)
+    if all(p.mnemonic in ('udf', 'nop') for p in insl[j + 1:]) and tail_call_at_end(insl, j): return True
     if j < 4 or any(b.address != a.address + 4 for a, b in zip(insl, insl[1:])): return False
     writes = lambda p: {p.reg_name(r) for r in p.regs_access()[1]}
     cond = lambda p: p.mnemonic in ('cbz', 'cbnz', 'tbz', 'tbnz') or p.mnemonic.startswith('b.')
@@ -1848,7 +1859,9 @@ with open(P('fixups.tsv'), 'w', encoding='utf-8', newline='\n') as f:
     if TARGET == 'android': f.write('# TARGET_ANDROID\t1\n')   # the slot base of Targets above: an Apple host refuses this module, an Android host every other
     if FS_STATE_OFF: f.write(f'# FPS_STATE_OFF\t{FS_STATE_OFF:#x}\n')   # frame step state page (FRAME_STEP): the loader writes the target fps there
     if OOT_PATCHES: f.write('# OOT_PATCHES\t1\n')
-    if UE_CALL is not None: f.write(f'# UE_MALLOC_VT\t{UE_VT:#x}\n# UE_MALLOC_SLOT\t{UE_SLOT:#x}\n')   # Unreal's FMallocBinned3 (ue_malloc.py): its vtable and the slot of its name getter, which names the slot layout
+    if UE_CALL is not None:
+        f.write(f'# UE_MALLOC_VT\t{UE_VT:#x}\n# UE_MALLOC_SLOT\t{UE_SLOT:#x}\n')   # Unreal's FMallocBinned3 (ue_malloc.py): its vtable and the slot of its name getter, which names the slot layout
+        if UE_GMALLOC: f.write(f'# UE_MALLOC_GMALLOC\t{UE_GMALLOC:#x}\n')   # the GMalloc global its constructor sets, which the cut skips (Unreal Engine 5.7; hle_uemalloc.c)
     if FPS_TARGET_PTR is not None: f.write(f'# FPS_TARGET_PTR\t{FPS_TARGET_PTR:#x}\n# FPS_TARGET_FIELD\t{FPS_TARGET_FIELD:#x}\n')   # a target frame rate the game steps by (fps_target.py)
     for n, o in UE_CVARS.items(): f.write(f'# UE_CVAR:{n}\t{o:#x}\n')   # Unreal console variables (ue_cvar.py): the TAutoConsoleVariable registered under each name
     if RENDER_SCALE: f.write('# RENDER_SCALE\t1\n')   # a render-scale stub reads state +0x10 (the loader ignores the key; dm/games/settings.py offers the setting by it)

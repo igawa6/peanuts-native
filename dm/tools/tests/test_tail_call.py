@@ -10,7 +10,7 @@ from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
 
 TOOLS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TOOLS))
-from nso_asm import STP, STUR, STRX
+from nso_asm import LDP, STP, STUR, STRX
 
 tree = ast.parse((TOOLS / 'patch_nso.py').read_text())
 scope = {'re': re}
@@ -69,6 +69,11 @@ class TailCall(unittest.TestCase):
             ins = decode(words)
             self.assertEqual(self.check(words, len(words) - 1), scope['tail_call_at_end'](ins, len(ins) - 1))
         self.assertTrue(self.check([0xf9400812, 0xb4000081, 0xaa0103e0, 0xd61f0240], 3))
+
+    def test_ldp_pointer_beside_a_stack_argument_with_trailing_padding(self):
+        # Moving Out 2 main+0xd29e68: ldp x18, x17, [x17, #0x138]; br x18, then udf padding (the function range runs to the next FDE start)
+        words = [0xf9400012, LDP(18, 17, 17, 0x138), 0xd61f0240, 0]
+        self.assertTrue(self.check(words, 2))
 
     def test_clobbers_calls_branches_and_traps_rejected(self):
         for word in (0x52800012, 0xaa0003f2, 0x94000400, 0xd63f0000,
@@ -291,9 +296,10 @@ class TailCall(unittest.TestCase):
                 words = GUARDS.copy(); words[5] = word; words[3] = 0xf9400012
                 self.assertFalse(self.check(words, 7))
 
-    def test_terminal_rule_loads_with_ldr_only(self):
-        # The ldp load belongs to the framed rule's proof, not to the terminal one, which proves no frame
-        self.assertFalse(self.check([0xa9400412, 0xd61f0240], 1))
+    def test_terminal_rule_loads_with_ldr_or_ldp(self):
+        # The terminal rule proves no frame; an ldp of the method pointer beside a stack argument is a terminal thunk too (Moving Out 2 main+0xd29e68)
+        self.assertTrue(self.check([0xf9400812, 0xd61f0240], 1))
+        self.assertTrue(self.check([0xa9400412, 0xd61f0240], 1))
 
 
 if __name__ == '__main__':
