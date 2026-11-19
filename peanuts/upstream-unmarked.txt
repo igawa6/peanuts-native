@@ -161,3 +161,8 @@ dm/games/0100C49025D3E000/shader_files.tsv	File inventory emitted by shader_spli
 dm/games/0100C49025D3E000/shader_map.tsv	Shader splitter control-section map. dmsh_chain.py hashes the exact bytes.
 docs/agents/symptoms.md	Generated from reference Symptom bullets by dm/tools/docs_symptoms.py. Its --check compares the full generated document.
 dm/gfx/tools/dmsh_xlate/Program.cs	Embedded verbatim by dmsh_xlate.csproj. Its exact bytes feed xlate_source in dmsh_chain.lock and the shader chain version. A provenance comment would invalidate desktop and on-device translator fingerprints.
+dm/games/01007A2027548000/shader_map.tsv	Generated shader key and offset map. Keep the shader input stamp reproducible.
+dm/games/01007A2027548000/shader_facts.tsv	Generated compute launch dimensions. Keep the shader input stamp reproducible.
+dm/games/01007A2027548000/shader_pairs.tsv	Generated vertex and pixel key pairs. Keep the shader input stamp reproducible.
+dm/games/01007A2027548000/pso_pairs.tsv	Generated supplemental pair list. Keep the shader input stamp reproducible.
+dm/games/01007A2027548000/shader_files.tsv	Generated shader-bearing file inventory for the targeted split.

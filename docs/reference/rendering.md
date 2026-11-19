@@ -1400,6 +1400,10 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Fix:** `chunk_check()` in `vka_exec.c` returns once no part is left, so the rest of the submission stays in its last part and its passes stay open.
 - **Found on:** [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md) on an AYN Odin 3 Ultra (Adreno 830, Turnip T30): the same view before and after, one minute each, at 24,800 draws: 5,050 → 130 render passes, 5,260 → 340 full barriers, recording 42 → 23.4 ms, GPU p50 40 → 25 ms, frame time p50 94 → 50 ms (where the game's own interval then holds it at 20 fps), about 262 → 0 dropped frames in 300.
 
+### PurpleVK T30 undercounts GPU time on Adreno 650
+
+On the Retroid Pocket Flip 2, PurpleVK T30 (`git-62ac221a33`) reports a 33.11 ns timestamp period, but its queries advance at 19.2 MHz (52.08 ns/tick) against `CLOCK_MONOTONIC`. The Vulkan replay corrects the period only for that driver, GPU and reported value. This calibrates GPU timings; it does not change the measured display cadence.
+
 ### Turnip hangs in the first 3D frame of a cold run
 
 - **Symptom:** (Android, Turnip) the device is lost in the first heavy 3D frame of a run without a pipeline cache: `[RED] vk: upload batch N: the wait failed after 0.00 s (-4: the device is lost)`, `part of a submission: -4`, then `GPU hang: vkWaitSemaphores -4 (the device is lost)` and the host exits. Before 2026-11-08 the first line read `upload batch N not done in 60.0 s (-4)`, which looked like the replay's own timeout firing behind slow pipeline compiles: it printed the hang time, not the wait's, and -4 is `VK_ERROR_DEVICE_LOST`, returned at once. Runs with a pipeline cache of the library went on.

@@ -421,9 +421,13 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
         vka_shader *s = sh[order[i]]; if (!s) continue;
         int fs = order[i] == 1, gl = k->gl_depth && order[i] == last_pre && (s->e->flags & DMSH_VK_F_GL_DEPTH);
         uint32_t fu = 0, fsm = 0; if (fs && k->fs_variant == VKA_FS_RETYPE) fout_masks(s, k, &fu, &fsm);
+        int variant = fs ? k->fs_variant : DMSH_VK_MOD_BASE;
+        if (fs && variant == DMSH_VK_MOD_UINT_MIXED && k->samples <= 1 && s->key == UINT64_C(0x8094803e3085cb63) &&
+            V.driver_id == VK_DRIVER_ID_MESA_TURNIP && strstr(V.props.deviceName, "Adreno (TM) 740"))
+            variant = VKA_MOD_TERRAIN_NORMAL;
         VkShaderModule mod = order[i] == 0 && (k->vin_u | k->vin_s) ? vka_shader_vin_module(s, k->vin_u, k->vin_s) : order[i] == 2 && k->gs_fx ? vka_shader_gs_module(s)
                            : fs && k->fs_variant == VKA_FS_RETYPE ? (fu | fsm ? vka_shader_fout_module(s, fu, fsm) : vka_shader_module(s, DMSH_VK_MOD_BASE))
-                           : vka_shader_module(s, fs ? k->fs_variant : DMSH_VK_MOD_BASE);
+                           : vka_shader_module(s, variant);
         if (!mod && order[i] == 2 && k->gs_fx) mod = vka_shader_module(s, DMSH_VK_MOD_BASE);   // no module with the claim (logged): the shader as it is
         if (mod && order[i] == 2 && sh[1]) {   // the pixel shader's inputs the geometry shader does not write, added (vka_shader_gs_link_module); none: the module above
             VkShaderModule lm = vka_shader_gs_link_module(s, sh[0], sh[1], k->gs_fx && mod == vka_shader_gs_module(s));

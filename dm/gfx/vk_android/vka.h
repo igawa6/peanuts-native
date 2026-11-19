@@ -487,10 +487,11 @@ VkSampler vka_samp_default(void);                   // the sampler an unbound sa
 #include "vka_shlib.h"
 #include "vka_bind.h"
 #include "vka_memu.h"
+#define VKA_MOD_TERRAIN_NORMAL 5       // runtime-only single-sample variant; never stored in the shader library or prewarm keys
 typedef struct vka_shader {
     uint64_t key; const dmsh_vk_entry *e; const dmsh_vk_bind *b;
     const vka_shlib *lib;               // the library the entry is in (its header's translator answers; its other modules)
-    VkShaderModule mods[5];             // by DMSH_VK_MOD_* variant, made when a pipeline first asks (the base when the shader is made)
+    VkShaderModule mods[VKA_MOD_TERRAIN_NORMAL + 1]; // library and runtime variants; the base is made when the shader is made
     struct vka_vinmod *vin;             // vertex modules with integer-fed inputs retyped, by masks (vka_shader_vin_module)
     struct vka_vinmod *fout;            // pixel modules with float outputs retyped for integer targets, by masks (vka_shader_fout_module)
     vka_span c1; VkDeviceSize c1_len;   // the c1 bytes in static memory (none when c1_len is 0)

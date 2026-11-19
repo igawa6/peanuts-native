@@ -311,6 +311,13 @@ static int init_once(void) {
     VLOG("driver: %s (%s), driver ID %d, conformance %u.%u.%u.%u, driver version %#x; %s", pdr.driverName, pdr.driverInfo, pdr.driverID, pdr.conformanceVersion.major,
          pdr.conformanceVersion.minor, pdr.conformanceVersion.subminor, pdr.conformanceVersion.patch, V.props.driverVersion, vka_driver_tag() ? "custom (DM_VK_DRIVER)" : "the system's");
     V.driver_id = (int)pdr.driverID;
+    // PurpleVK T30 reports 30.2 MHz on this A650, but its timestamp queries read the 19.2 MHz always-on counter (measured against CLOCK_MONOTONIC).
+    if (V.driver_id == VK_DRIVER_ID_MESA_TURNIP && V.props.driverVersion == 0x06802063 &&
+        strstr(pdr.driverInfo, "git-62ac221a33") && strstr(V.props.deviceName, "Adreno (TM) 650") &&
+        V.props.limits.timestampPeriod == 33.112583160f) {
+        V.props.limits.timestampPeriod = 1000000000.0f / 19200000.0f;
+        VLOG("GPU timestamps: corrected PurpleVK T30 Adreno 650 period to %.2f ns", V.props.limits.timestampPeriod);
+    }
     { const char *e = getenv("DM_VK_GPL"); int want = !(e && !strcmp(e, "0"));   // restart only: the libraries are made with the device's pipelines
       V.gpl = want && x_gpl && fgpl.graphicsPipelineLibrary && pgpl.graphicsPipelineLibraryFastLinking;
       VLOG("graphics pipeline libraries: %s", V.gpl ? "on (a pipeline the cache lacks is linked from stage libraries, the optimized one is made in the background; DM_VK_GPL=0 off)"

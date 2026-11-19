@@ -852,8 +852,18 @@ static int present_one(const pq_item *it) {
     // The frame done on the GPU before the queue lock is taken: a submission that waits for a timeline value still pending can block inside vkQueueSubmit until it is
     // signalled (Turnip on KGSL emulates timeline semaphores: 25-35 ms a frame with the lock held, so every replay submission behind it waited; Ocarina of Time's note).
     // The copy cannot start before the frame ends anyway; only a value already handed to the queue is waited for here (a later one is handled under the lock below)
-    // Test switch DM_VK_PRESENT_PREWAIT=0: no wait here (as before), for A/B runs
-    if (it->fence && !vka_hung() && VKA_ENV("DM_VK_PRESENT_PREWAIT", 1) && it->fence <= __atomic_load_n(&V.tl_queued, __ATOMIC_ACQUIRE)) {
+    // Trails on the tested Turnip T30 build is faster without the CPU wait when the host signals the timeline:
+    // Android otherwise stalls in queueBuffer under the queue lock. The submit below still waits for it->fence.
+    static int prewait = -1;
+    if (prewait < 0) {
+        prewait = 1;
+#ifdef DM_GAME_ID
+        if (V.tl_host && V.driver_id == VK_DRIVER_ID_MESA_TURNIP && V.props.driverVersion == 0x06802063 &&
+            strstr(V.props.deviceName, "Adreno (TM) 650") && !strcmp(DM_GAME_ID, "01007A2027548000"))
+            prewait = 0;
+#endif
+    }
+    if (it->fence && !vka_hung() && VKA_ENV("DM_VK_PRESENT_PREWAIT", prewait || g_fg_on) && it->fence <= __atomic_load_n(&V.tl_queued, __ATOMIC_ACQUIRE)) {
         VkResult vka_tl_wait(VkSemaphore s, uint64_t v, uint64_t timeout_ns); vka_tl_wait(V.tl, it->fence, vka_hang_ns());   // a timeout: the submission below waits as before, and the hang handling sees it
     }
     // No gate pending when the copy goes to the queue (vka_dev.c vka_gate_drain): on Turnip the driver would hold the copy back behind the gated work while Android

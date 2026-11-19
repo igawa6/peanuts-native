@@ -3055,6 +3055,10 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     if (icand && !istart && !RUN.open) { if (inst_snap(&g_ia, p, i_ib, i_io, i_it, di, d)) g_ia.mark = vka_enc_total(); } else g_ia.valid = 0;   // a run may start from this draw
     PT(8);
     if (vka_nan_on() >= 2 && vka_nan_split(R.cim, R.nci)) vka_rp_end();   // DM_VK_NANSCAN=2: a scan inside the game's pass
+    // Trails 2nd Chapter: Turnip intermittently corrupts the D16 tiles if the cached
+    // shadow-depth stitch (ALWAYS) and the casters that depth-test against it share a pass.
+    if (sh[1] && sh[1]->key == UINT64_C(0xeb824d256484ca7f) && V.driver_id == VK_DRIVER_ID_MESA_TURNIP &&
+        R.df == VK_FORMAT_D16_UNORM && !R.nci) vka_rp_end();
 }
 
 int dm_sdk_ounce(void);

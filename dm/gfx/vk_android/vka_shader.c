@@ -389,9 +389,37 @@ static uint32_t *lib_words(const vka_shlib *L, const dmsh_vk_entry *e, const dms
     }
     return w;
 }
-static VkShaderModule spv_module_(const vka_shlib *L, const dmsh_vk_entry *e, const dmsh_vk_module *m, uint64_t key, const char **why, char *err, size_t errn, uint8_t *fcomp) {
+// Turnip/A740 intermittently interpolates the Trails SC terrain normal sideways across 16-pixel squares.
+// In a single-sample pass centroid still uses the pixel's only covered sample. Keep the output at the same location untouched.
+static int terrain_normal_centroid(uint32_t **words, size_t *bytes) {
+    enum { Decorate = 71, Location = 30, Centroid = 16, Variable = 59, Input = 1, Function = 54 };
+    uint32_t *w = *words, ids[2]; size_t at[2], count = 0, nw = *bytes / 4;
+    for (size_t i = 5; i < nw;) {
+        unsigned len = w[i] >> 16, op = w[i] & 0xffff;
+        if (!len || len > nw - i || op == Function) break;
+        if (op == Decorate && len == 4 && w[i+2] == Location && w[i+3] == 1) {
+            if (count == 2) return 0;
+            ids[count] = w[i+1]; at[count++] = i;
+        }
+        if (op == Variable && len >= 4 && w[i+3] == Input) {
+            for (size_t j = 0; j < count; j++) if (ids[j] == w[i+2]) {
+                uint32_t *p = realloc(w, *bytes + 3 * sizeof *p);
+                if (!p) return 0;
+                size_t k = at[j]; memmove(p+k+3, p+k, (nw-k) * sizeof *p);
+                p[k] = (3u << 16) | Decorate; p[k+1] = ids[j]; p[k+2] = Centroid;
+                *words = p; *bytes += 3 * sizeof *p; return 1;
+            }
+        }
+        i += len;
+    }
+    return 0;
+}
+static VkShaderModule spv_module(const vka_shlib *L, const dmsh_vk_entry *e, const dmsh_vk_module *m, uint64_t key, const char **why, char *err, size_t errn, uint8_t *fcomp, int variant) {
     size_t nb = 0; uint32_t *w = lib_words(L, e, m, &nb, err, errn);
     if (!w) { *why = err; return VK_NULL_HANDLE; }
+    if (variant == VKA_MOD_TERRAIN_NORMAL && !terrain_normal_centroid(&w, &nb)) {
+        free(w); *why = "terrain normal centroid variant could not be made"; return VK_NULL_HANDLE;
+    }
     if (fcomp && vka_spv_fout_comps(w, nb / 4, fcomp)) memset(fcomp, 0xf, 8);   // a pixel shader's output components (the colour write mask: vka_draw.c)
     prep_words(e, key, &w, &nb);
     VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = nb, .pCode = w};
@@ -400,7 +428,6 @@ static VkShaderModule spv_module_(const vka_shlib *L, const dmsh_vk_entry *e, co
     if (r) { snprintf(err, errn, "vkCreateShaderModule %d (variant %u of %016llx)", r, m->variant, (unsigned long long)key); *why = err; return VK_NULL_HANDLE; }
     return mod;
 }
-static VkShaderModule spv_module(const vka_shlib *L, const dmsh_vk_entry *e, const dmsh_vk_module *m, uint64_t key, const char **why, char *err, size_t errn) { return spv_module_(L, e, m, key, why, err, errn, NULL); }
 // An instanced variant (vka_draw.c's instanced runs): the base module with the uniform block at `binding` read at data[i + d] (vka_spv_instance), made from the
 // library's SPIR-V; the caller caches it. VK_NULL_HANDLE (the reason logged a few times) when the shader cannot take it
 VkShaderModule vka_shader_inst_module(vka_shader *s, uint32_t binding, uint32_t loc) {
@@ -449,16 +476,17 @@ vka_shader *vka_shader_remap(vka_shader *s, uint64_t map) {
     return v;
 }
 VkShaderModule vka_shader_module(vka_shader *s, int variant) {
-    if (variant < 0 || variant > DMSH_VK_MOD_SHUFFLE_LDS) return VK_NULL_HANDLE;
+    if (variant < 0 || variant > VKA_MOD_TERRAIN_NORMAL) return VK_NULL_HANDLE;
     if (s->mods[variant]) return s->mods[variant];
-    const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, variant);
+    const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, variant == VKA_MOD_TERRAIN_NORMAL ? DMSH_VK_MOD_UINT_MIXED : variant);
     if (!m) return VK_NULL_HANDLE;
     const char *why = NULL; char err[256];
-    VkShaderModule mod = spv_module(s->lib, s->e, m, s->key, &why, err, sizeof err);
+    VkShaderModule mod = spv_module(s->lib, s->e, m, s->key, &why, err, sizeof err, NULL, variant);
     if (!mod) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("shader %016llx variant %d: %s", (unsigned long long)s->key, variant, why); return VK_NULL_HANDLE; }
     pthread_mutex_lock(&g_mu);
     if (s->mods[variant]) { pthread_mutex_unlock(&g_mu); vk.vkDestroyShaderModule(V.dev, mod, NULL); return s->mods[variant]; }
     s->mods[variant] = mod;
+    if (variant == VKA_MOD_TERRAIN_NORMAL) VLOG("single-sample terrain normal: centroid input on %s", V.props.deviceName);
     pthread_mutex_unlock(&g_mu);
     return mod;
 }
@@ -714,7 +742,7 @@ vka_shader *vka_shader_make(const vka_shlib *L, uint64_t key) {
         if (!why && !m) why = "no base module";
         memset(s->fcomp, 0xf, sizeof s->fcomp);
         if (m && V.memu && (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS)) {}   // drawn through compute: its converted modules are made at its first draw (vka_memu.c)
-        else if (m) s->mods[DMSH_VK_MOD_BASE] = spv_module_(L, e, m, key, &why, err, sizeof err, e->stage == DMSH_VK_STAGE_FS && VKA_ENV("DM_VK_FOUT_COMPS", 1) ? s->fcomp : NULL);
+        else if (m) s->mods[DMSH_VK_MOD_BASE] = spv_module(L, e, m, key, &why, err, sizeof err, e->stage == DMSH_VK_STAGE_FS && VKA_ENV("DM_VK_FOUT_COMPS", 1) ? s->fcomp : NULL, DMSH_VK_MOD_BASE);
         if (m && !why && vka_rs_on() && s->mods[DMSH_VK_MOD_BASE]) rs_scan(s, L, e, m);   // PEANUTS: DM_RES_SCALE: its use of the translator's scale code (above)
         if (!why && e->stage == DMSH_VK_STAGE_GS && VKA_ENV("DM_VK_GS_CLAIM", 1)) {   // memory writes: made once per primitive (vka_spv_gs_claim)
             char e2[256] = ""; s->gs_fx = gs_words(s, NULL, NULL, e2, sizeof e2);

@@ -574,6 +574,12 @@ def glslc_shaders(d, label, need=True, skip=(), sink=None):
             if not sec or len(sec) != 1: continue
             (ctl, code), = sec; st = glslc_stage(ctl, code)
             if not st or check(label, st, ctl, code): continue
+        elif st == 'cs' and not code.startswith(CS_MAGIC):
+            # PEANUTS(upstream-candidate): Trails has a longer control section in the header; the shorter offset lands in constant data.
+            sec = glslc_section(d, h, size)
+            if sec and len(sec) == 1:
+                sc, sk = sec[0]
+                if sk.startswith(CS_MAGIC) and sc.startswith(ctl) and not check(label, st, sc, sk): ctl, code = sc, sk
         out.append((f'{label}#GLSLC@{h:#x}', st, ctl, code))
     if not out and need: red(f'{label}: no GLSLC output')
     return out

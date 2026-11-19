@@ -1,0 +1,26 @@
+# PEANUTS: Trails in the Sky 2nd Chapter, Switch update 1.0.3; SDK 21.4.4, NVN.
+title_id	01007A2027548000
+program_id	01007A2027548000
+name	Trails in the Sky 2nd Chapter
+ipa	Trails-in-the-Sky-2nd-Chapter.ipa
+app_category	public.app-category.role-playing-games
+
+build	v327680	1.0.3	main=5ea394e096752ee3d04debfcea6bf911	subsdk0=fc537f0b21c880e89d6f247d22a150ca	sdk=148394139d9d26ca8afd5c9ba5d30601
+package	v327680
+shader_versions	v327680
+
+# main imports NintendoSDK_movie from subsdk0; the host supplies rtld.
+modules	main subsdk0 sdk
+romfs_marker	multilang_resource_list.json
+zip_store	.mp4:.nxopus:.metallib
+
+# The NPDM declares 16 MiB of system resources; main calls SetMemoryHeapSize.
+# PEANUTS: Start-up requests 0x81200000 bytes of heap and reserves an 11.27 GiB sparse allocator region after the SDK's 1 GiB node area.
+mem_reserve	0x4b0000000
+mem_alias	0x400000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1000000
+
+shader_groups	/asset/=asset /scene/=scene /system_nx/=systemnx
+shader_note	Trails in the Sky 2nd Chapter shaders
