@@ -4,6 +4,8 @@ Update 1.0.3 (v131072) over the base game, SDK 20.5.17 (the same SDK generation 
 
 On the Mac: the logos, the title menu (its background is a movie), a new game through the prologue movies into the story, the config pages, save and quick load, at 60 fps with music, voices and movie sound; no red line in 15 minutes of story.
 
+On Android, update 1.0.4 (v196608) has a new main build and keeps the 1.0.3 SDK modules and shader library. On a Pixel 10 with the system driver, the registered update launched from Home and reached the title screen at about 60 fps.
+
 ## What it needs
 
 | Setting | Where | Why |

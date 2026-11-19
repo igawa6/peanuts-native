@@ -22,10 +22,11 @@ ipa	SteinsGateReBoot.ipa
 app_category	public.app-category.adventure-games
 
 # ---- Versions ----
-# only the merged 1.0.3 copy is extracted; the base game's own build IDs are added when needed
+# Switch updates 1.0.3 and 1.0.4 share the shader library.
 build	v131072	1.0.3	main=e9016a42a1b2bfa323bc987215c30af3	subsdk0=ab62fe8edd07a6a293f885d54359e559	sdk=0023a1b06130cd795f7bc4613772af0a
+build	v196608	1.0.4	main=335fbf2ce31c1cd82211e8f74eb639a2	subsdk0=ab62fe8edd07a6a293f885d54359e559	sdk=0023a1b06130cd795f7bc4613772af0a
 package	v131072
-shader_versions	v131072
+shader_versions	v131072 v196608
 
 # ---- Files ----
 # subsdk0 is the SDK's movie library (movie::Extractor runs in it; the host replaces movie::Decoder, hle_movie.c)
