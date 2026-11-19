@@ -113,7 +113,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Batman: Arkham Knight](#batman-arkham-knight) | 8 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
 | [DARK SOULS: REMASTERED](#dark-souls-remastered) | 2 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Donkey Kong Bananza](#donkey-kong-bananza) | 2 | 7 | 0 | 0 | 2 | `build` → `game` ×4, `build` |
-| [EA SPORTS FC 27](#ea-sports-fc-27) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
+| [EA SPORTS FC 27](#ea-sports-fc-27) | 0 | 0 | 0 | 0 | 2 | `build` → `engine` |
 | [FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition](#final-fantasy-crystal-chronicles-remastered-edition) | 8 | 0 | 0 | 0 | 0 | `build` → `engine` |
 | [FINAL FANTASY TACTICS - The Ivalice Chronicles](#final-fantasy-tactics---the-ivalice-chronicles) | 2 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Fire Emblem Engage](#fire-emblem-engage) | 1 | 0 | 0 | 0 | 0 | `build` → `engine` |
@@ -278,7 +278,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 
   </details>
 
-  - host [loader.c:325](../../dm/host/loader.c#L325): build check
+  - host [loader.c:321](../../dm/host/loader.c#L321): build check
 
 ### Batman: Arkham Knight
 
@@ -337,6 +337,8 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 
 - **`build` → `engine`**, frame rate, blocked: one Frostbite game here, judgement: Frostbite's frame regulator at a fixed pointer. Engine code other Frostbite games ship (the simulation's own rate is already set by name)
 
+- **1.8d.f570 `main`** `464512b3…`
+  - host [hle_fpslock.c:139](../../dm/host/hle_fpslock.c#L139): engine frame limit set to fps_target: FIFA frame regulator
 - **1.8d.6523 `main`** `570dc9f1…`
   - host [hle_fpslock.c:135](../../dm/host/hle_fpslock.c#L135): engine frame limit set to fps_target: FIFA frame regulator
 
@@ -542,7 +544,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - cut `+0x9bf4d4`: dynamic resolution: optimal frame cost 32.01 -> 16.005 ms at 60 fps (second load)
   - cut `+0x9bf4f8`: dynamic resolution: good frame cost 30 -> 15 ms at 60 fps
   - launcher capabilities: DYNAMIC_RESOLUTION
-  - host [hle_fpslock.c:222](../../dm/host/hle_fpslock.c#L222): frame interval and dynamic-resolution floor
+  - host [hle_fpslock.c:226](../../dm/host/hle_fpslock.c#L226): frame interval and dynamic-resolution floor
 
 ### NieR:Automata The End of YoRHa Edition (0100B8E016F76000)
 
@@ -561,7 +563,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - cut `+0x9c08e8`: dynamic resolution lower bound follows the selected preset
   - cut `+0x9c08f4`: dynamic resolution lower bound follows the selected preset
   - launcher capabilities: DYNAMIC_RESOLUTION
-  - host [hle_fpslock.c:223](../../dm/host/hle_fpslock.c#L223): frame interval and dynamic-resolution floor
+  - host [hle_fpslock.c:227](../../dm/host/hle_fpslock.c#L227): frame interval and dynamic-resolution floor
 
 ### Paper Mario: The Thousand-Year Door
 
@@ -782,7 +784,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - frame step `+0x3e5638`: scvtf moved into the stub at the load
   - frame step `+0xbe14a8`: swapchain argument 1 when on (FPSLocker)
   - render scale stub (the launcher offers DM_RENDER_SCALE)
-  - host [loader.c:326](../../dm/host/loader.c#L326): build check
+  - host [loader.c:322](../../dm/host/loader.c#L322): build check
 
 ### Xenoblade Chronicles 3
 

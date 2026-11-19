@@ -310,11 +310,7 @@ static void oot_patches_apply(void) {
 // The settings in the state page, written when the game starts (main.c, after host loading): on iOS the loading runs at app launch, before the launcher has set DM_FPS_TARGET and
 // DM_RENDER_SCALE (Launcher.swift), and nothing reads the page before the game runs
 __attribute__((weak)) void dm_fps_step_fold(void) {}   // hle_fpslock.c; tests that link the loader alone have no limiter
-#if PLAT_ANDROID
-static int fpslocker_clock_selected(void);
-#else
-static int fpslocker_clock_selected(void) { return 0; }
-#endif
+static int fpslocker_clock_selected(void);   // PEANUTS: defined below for every platform (the Mac host had a second definition here)
 void dm_fps_state_apply(void) {
     oot_patches_apply();
     if (!dm_fps_state) return;

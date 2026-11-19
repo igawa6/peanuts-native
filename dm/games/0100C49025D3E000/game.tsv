@@ -13,8 +13,9 @@ app_category	public.app-category.sports-games
 # ---- Versions ----
 # PEANUTS: Exact build ID for the 1.8d.6523 regulator.
 build	v458752	1.8d.6523	main=570dc9f1750fa7ea9df20b95b482d039	sdk=fed212d6e0963706f9f4b16ea5d65879
+build	v524288	1.8d.f570	main=464512b32a94dd3b6517a5b5d711d0d0	sdk=fed212d6e0963706f9f4b16ea5d65879
 package	v458752
-shader_versions	v458752
+shader_versions	v458752 v524288
 
 # ---- Files ----
 # every module main imports from (the renderer NRO is loaded at run time, nro_collect.py)
