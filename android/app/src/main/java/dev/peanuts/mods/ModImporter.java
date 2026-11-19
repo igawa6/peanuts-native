@@ -8,7 +8,11 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -16,19 +20,19 @@ import java.util.Map;
 /**
  * The layout normalizer (DESIGN-MODS.md "a Mods section per game", this task's step 1): given a plain folder on disk that already holds a copy of
  * whatever the player picked (a folder tree, or an extracted zip — the Android-side copy/extract into that staging folder is {@code ModImportUi}'s job,
- * not this class's), works out which of the three common mod layouts it is, and moves the right pieces into
+ * not this class's), finds one or more mod roots at any depth, and moves each root's files into
  * {@code <modsRoot>/<modName>/} (the game's own mods folder) with a fresh {@code mod.json}. Plain Java (no {@code android.*}) so
  * {@code peanuts/tests/test_mod_importer.py} can drive it directly with javac/java on a real temp directory, the same way
  * {@code dev.peanuts.build.RuntimeShaderMap} is tested.
  * <p>
- * Layouts recognized, in this order:
+ * Layouts recognized:
  * <ol>
  * <li><b>Atmosphère</b>: {@code atmosphere/contents/<TITLEID>/{romfs,exefs}} and {@code atmosphere/exefs_patches/<name>/*.ips}. The title ID folder
  *     under {@code contents} must match the game this import is for (case-insensitive 16 hex digits) — a mismatch is rejected with the title ID it
  *     actually found, never silently imported under the wrong game.</li>
- * <li><b>Yuzu/Eden "load" layout</b>: the staging root holds exactly one subfolder (ignoring {@code atmosphere} and dotfiles/{@code __MACOSX}) that
- *     itself has {@code romfs/} and/or {@code exefs/} directly inside it — that subfolder's name is the mod's name, and its contents are the mod.</li>
- * <li><b>Bare</b>: the staging root itself has {@code romfs/} and/or {@code exefs/} directly inside it (no wrapper folder at all).</li>
+ * <li><b>Yuzu/Eden "load" layout</b>: any folder with {@code romfs/}, {@code exefs/}, {@code cheats/} or supported {@code exefs_patches/} directly inside it.
+ *     Its folder name is the mod's name; multiple such folders in a bundle are installed independently.</li>
+ * <li><b>Bare</b>: the staging root itself has one of those payload folders directly inside it (no wrapper folder).</li>
  * </ol>
  * A {@code cheats/} folder is carried over from whichever level the romfs/exefs pair was found at (the Atmosphère case also accepts
  * {@code atmosphere/contents/<TITLEID>/cheats/}). Nothing is recognized is an error naming what was looked for, not a silent empty mod.
@@ -39,11 +43,18 @@ public final class ModImporter {
     public static final class Result {
         public final boolean ok;
         public final String error;     // null when ok
-        public final String modName;   // the folder name actually used under <modsRoot>/<titleId>/, null when !ok
-        public final String kind;      // ModStore.KIND_FILES / KIND_CODE, null when !ok
-        private Result(boolean ok, String error, String modName, String kind) { this.ok = ok; this.error = error; this.modName = modName; this.kind = kind; }
-        static Result fail(String msg) { return new Result(false, msg, null, null); }
-        static Result ok(String name, String kind) { return new Result(true, null, name, kind); }
+        public final String modName;   // first folder name actually used, retained for single-mod callers
+        public final List<String> modNames; // every folder name actually used
+        public final String kind;      // files, or code when any imported mod contains code
+        public final boolean hasCode;
+        private Result(boolean ok, String error, List<String> names, boolean hasCode) {
+            this.ok = ok; this.error = error; this.modNames = Collections.unmodifiableList(new ArrayList<>(names));
+            this.modName = names.isEmpty() ? null : names.get(0);
+            this.hasCode = hasCode;
+            this.kind = hasCode ? ModStore.KIND_CODE : ok ? ModStore.KIND_FILES : null;
+        }
+        static Result fail(String msg) { return new Result(false, msg, Collections.emptyList(), false); }
+        static Result ok(List<String> names, boolean hasCode) { return new Result(true, null, names, hasCode); }
     }
 
     /** Reports copy progress for the (possibly large, GB-scale) romfs tree; {@code totalBytes} may be 0 when it could not be estimated cheaply */
@@ -69,29 +80,52 @@ public final class ModImporter {
      */
     public static Result importFrom(File staging, File modsRoot, String titleId, String displayName, Map<String, String> gameBuilds, Progress progress) {
         if (progress == null) progress = NONE;
-        File dest = null;   // the mod's folder once it is being written: taken away again when the install does not end well
+        List<String> installed = new ArrayList<>();
         try {
-            Layout layout = detect(staging, titleId);
-            if (layout == null) return Result.fail("No romfs, exefs or cheats folder found. Point to the mod's own folder (with romfs/exefs inside), "
-                    + "an Atmosphère-layout folder (atmosphere/contents/<title ID>/...), or its zip.");
-            if (layout.mismatchedTitleId != null) return Result.fail("This mod is for title ID " + layout.mismatchedTitleId + ", not this game ("
-                    + titleId.toUpperCase(Locale.ROOT) + "). Not imported.");
-            String npdmId = layout.exefs == null ? null : npdmTitleId(new File(layout.exefs, "main.npdm"));
-            if (npdmId != null && !npdmId.equalsIgnoreCase(titleId)) return Result.fail("This mod is for another game: its exefs/main.npdm is for title ID "
-                    + npdmId + ", not this game (" + titleId.toUpperCase(Locale.ROOT) + "). Not installed.");
-            String wrongBuild = buildIdProblem(layout, gameBuilds);
-            if (wrongBuild != null) return Result.fail(wrongBuild);
-            // The Yuzu/Eden "load" layout's wrapper folder name is the mod's real name (that is how those tools organize mods); it wins over whatever
-            // the picked zip/folder was called. The Atmosphère and bare layouts carry no such embedded name, so the player's own name (from the
-            // picked document, usually the zip's own filename) is all there is
-            String preferred = layout.suggestedName != null && !layout.suggestedName.isBlank() ? layout.suggestedName
-                    : displayName != null && !displayName.isBlank() ? displayName : staging.getName();
+            List<Layout> layouts = detect(staging, titleId);
+            if (layouts.isEmpty()) return Result.fail("No mod folders found. Choose a folder with romfs, exefs or cheats, an Atmosphère layout "
+                    + "(atmosphere/contents/<title ID>/...), or a bundle folder or zip containing mod folders.");
+            // Validate every discovered root before copying any part of a bundle.
+            for (Layout layout : layouts) {
+                String problem = layoutProblem(layout, titleId, gameBuilds);
+                if (problem != null) return Result.fail(problem);
+            }
+
+            boolean hasCode = false;
+            for (Layout layout : layouts) {
+                String preferred = layout.suggestedName != null && !layout.suggestedName.isBlank() ? layout.suggestedName
+                        : displayName != null && !displayName.isBlank() ? displayName : staging.getName();
+                Result one = importLayout(layout, modsRoot, titleId, preferred, progress);
+                if (!one.ok) {
+                    rollback(modsRoot, titleId, installed);
+                    return one;
+                }
+                installed.add(one.modName);
+                hasCode |= one.hasCode;
+            }
+            return Result.ok(installed, hasCode);
+        } catch (RuntimeException e) {
+            rollback(modsRoot, titleId, installed);
+            return Result.fail("Could not import the mod: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
+        }
+    }
+
+    private static String layoutProblem(Layout layout, String titleId, Map<String, String> gameBuilds) {
+        if (layout.mismatchedTitleId != null) return "This mod is for title ID " + layout.mismatchedTitleId + ", not this game ("
+                + titleId.toUpperCase(Locale.ROOT) + "). Not imported.";
+        String npdmId = layout.exefs == null ? null : npdmTitleId(new File(layout.exefs, "main.npdm"));
+        if (npdmId != null && !npdmId.equalsIgnoreCase(titleId)) return "This mod is for another game: its exefs/main.npdm is for title ID "
+                + npdmId + ", not this game (" + titleId.toUpperCase(Locale.ROOT) + "). Not installed.";
+        return buildIdProblem(layout, gameBuilds);
+    }
+
+    private static Result importLayout(Layout layout, File modsRoot, String titleId, String preferred, Progress progress) {
+        File dest = null;
+        try {
             String name = ModStore.freeName(modsRoot, titleId, preferred);
-            File made = new File(ModStore.gameDir(modsRoot, titleId), name);
-            if (!made.mkdirs()) throw new IOException("could not create " + made);
-            dest = made;
-            // Marked until it is complete: a process that ends in the middle of the copy (GBs, minutes) leaves a folder no list shows (it has no mod.json yet),
-            // and ModStore.sweepDeleted knows it by this file
+            dest = new File(ModStore.gameDir(modsRoot, titleId), name);
+            if (!dest.mkdirs()) throw new IOException("could not create " + dest);
+            // A process ending mid-copy leaves a folder no list shows, which ModStore.sweepDeleted recognizes.
             Files.write(new File(dest, ModStore.INSTALLING).toPath(), new byte[0]);
             boolean anyCode = false;
             if (layout.romfs != null && layout.romfs.isDirectory()) copyTree(layout.romfs, new File(dest, "romfs"), progress);
@@ -108,29 +142,70 @@ public final class ModImporter {
             ModStore.Mod m = new ModStore.Mod(dest);
             m.name = name;
             m.version = "";
-            m.enabled = true;   // installed on: it applies from the game's next start, and a code mod's build starts by itself (dev.peanuts.settings.ModsSection); a running game reads its mods at its start only
+            m.enabled = true;
             m.order = ModStore.list(modsRoot, titleId).size();
             m.kind = anyCode ? ModStore.KIND_CODE : ModStore.KIND_FILES;
-            Files.deleteIfExists(new File(dest, ModStore.INSTALLING).toPath());   // complete: the manifest below makes it a mod
+            Files.deleteIfExists(new File(dest, ModStore.INSTALLING).toPath());
             ModStore.save(m);
-            return Result.ok(name, m.kind);
+            return Result.ok(Collections.singletonList(name), anyCode);
         } catch (IOException | RuntimeException e) {
-            // RuntimeException too: a file name the file system does not take (InvalidPathException) or a walk that fails (UncheckedIOException) ended the
-            // import's thread without a result, and the section showed "Installing a mod" until the app was closed. What was copied goes: a failed copy
-            // (the storage is full, most often) left GBs in a folder without a manifest, which no list shows and no delete reaches
             if (dest != null) deleteTree(dest);
             return Result.fail("Could not import the mod: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
         }
+    }
+
+    private static void rollback(File modsRoot, String titleId, List<String> installed) {
+        for (String name : installed) deleteTree(new File(ModStore.gameDir(modsRoot, titleId), name));
     }
 
     private static final class Layout {
         File romfs, exefs, exefsPatches, cheats;
         String suggestedName;
         String mismatchedTitleId;   // set only for the Atmosphère case when contents/<TID> doesn't match the game
+        boolean atmosphere;
     }
 
-    private static Layout detect(File staging, String titleId) {
-        File atmosphere = new File(staging, "atmosphere");
+    private static List<Layout> detect(File staging, String titleId) {
+        List<Layout> layouts = new ArrayList<>();
+        if (staging == null || !staging.isDirectory()) return layouts;
+        Deque<File> pending = new ArrayDeque<>();
+        pending.push(staging);
+        while (!pending.isEmpty()) {
+            File dir = pending.pop();
+            Layout layout = detectAt(dir, staging, titleId);
+            if (layout != null) {
+                layouts.add(layout);
+            }
+            enqueueChildren(dir, pending, layout);
+        }
+        return layouts;
+    }
+
+    private static void enqueueChildren(File dir, Deque<File> pending, Layout layout) {
+        File[] kids = dir.listFiles(File::isDirectory);
+        if (kids == null) return;
+        Arrays.sort(kids, java.util.Comparator.comparing(File::getName).reversed());
+        for (File kid : kids) {
+            String name = kid.getName();
+            if (name.startsWith(".") || name.equalsIgnoreCase("__MACOSX") || Files.isSymbolicLink(kid.toPath())) continue;
+            if (layout == null && name.equalsIgnoreCase("atmosphere")) continue;
+            if (layout != null && payloadDirectory(dir, layout, name)) continue;
+            pending.push(kid);
+        }
+    }
+
+    private static boolean payloadDirectory(File dir, Layout layout, String name) {
+        if (layout.atmosphere) {
+            return dir.getName().equalsIgnoreCase("atmosphere")
+                    ? name.equalsIgnoreCase("contents") || name.equalsIgnoreCase("exefs_patches")
+                    : name.equalsIgnoreCase("atmosphere");
+        }
+        return name.equalsIgnoreCase("romfs") || name.equalsIgnoreCase("exefs") || name.equalsIgnoreCase("cheats")
+                || name.equalsIgnoreCase("exefs_patches");
+    }
+
+    private static Layout detectAt(File dir, File staging, String titleId) {
+        File atmosphere = dir.getName().equalsIgnoreCase("atmosphere") ? dir : new File(dir, "atmosphere");
         File contents = new File(atmosphere, "contents");
         if (contents.isDirectory()) {
             File[] tids = contents.listFiles(File::isDirectory);
@@ -142,13 +217,19 @@ public final class ModImporter {
                 }
                 Layout l = new Layout();
                 if (match != null) {
+                    l.atmosphere = true;
                     l.romfs = new File(match, "romfs");
                     l.exefs = new File(match, "exefs");
                     l.cheats = new File(match, "cheats");
                     l.exefsPatches = new File(atmosphere, "exefs_patches");
-                    return l;   // no suggestedName: the Atmosphère layout has no embedded mod name, only a title ID folder
+                    if (!dir.equals(staging)) l.suggestedName = dir.getName();
+                    return l;
                 }
-                if (firstOther != null) { l.mismatchedTitleId = firstOther.getName().toUpperCase(Locale.ROOT); return l; }
+                if (firstOther != null) {
+                    l.atmosphere = true;
+                    l.mismatchedTitleId = firstOther.getName().toUpperCase(Locale.ROOT);
+                    return l;
+                }
             }
         }
         // Atmosphère with patches only (atmosphere/exefs_patches/<set>/<build id>.ips and no contents/: the usual shape of a frame rate or resolution patch).
@@ -156,37 +237,19 @@ public final class ModImporter {
         File atmospherePatches = new File(atmosphere, "exefs_patches");
         if (hasIps(atmospherePatches)) {
             Layout l = new Layout();
+            l.atmosphere = true;
             l.exefsPatches = atmospherePatches;
+            if (!dir.equals(staging)) l.suggestedName = dir.getName();
             return l;
         }
-        // Bare: romfs/ and/or exefs/ directly at the staging root (or exefs_patches/ alone, as above)
-        File romfs = new File(staging, "romfs"), exefs = new File(staging, "exefs"), cheats = new File(staging, "cheats");
-        if (romfs.isDirectory() || (exefs.isDirectory() && hasFiles(exefs)) || (cheats.isDirectory() && hasFiles(cheats)) || hasIps(new File(staging, "exefs_patches"))) {
+        // Bare or Yuzu/Eden "load": a mod root has its payload folders directly inside it.
+        File romfs = new File(dir, "romfs"), exefs = new File(dir, "exefs"), cheats = new File(dir, "cheats");
+        if (romfs.isDirectory() || (exefs.isDirectory() && hasFiles(exefs)) || (cheats.isDirectory() && hasFiles(cheats)) || hasIps(new File(dir, "exefs_patches"))) {
             Layout l = new Layout();
             l.romfs = romfs; l.exefs = exefs; l.cheats = cheats;
-            l.exefsPatches = new File(staging, "exefs_patches");
-            return l;   // no suggestedName: bare layout has no name of its own either, only the picked folder/zip's own name
-        }
-        // Yuzu/Eden "load" layout: exactly one real subfolder (not atmosphere, not a dotfile/__MACOSX) that itself has romfs/ or exefs/
-        File[] kids = staging.listFiles(File::isDirectory);
-        if (kids != null) {
-            File candidate = null;
-            int nCandidates = 0;
-            for (File k : kids) {
-                String n = k.getName();
-                if (n.equalsIgnoreCase("atmosphere") || n.startsWith(".") || n.equalsIgnoreCase("__MACOSX")) continue;
-                File r = new File(k, "romfs"), e = new File(k, "exefs"), ch = new File(k, "cheats");
-                if (r.isDirectory() || (e.isDirectory() && hasFiles(e)) || (ch.isDirectory() && hasFiles(ch)) || hasIps(new File(k, "exefs_patches"))) { candidate = k; nCandidates++; }
-            }
-            if (nCandidates == 1) {
-                Layout l = new Layout();
-                l.romfs = new File(candidate, "romfs");
-                l.exefs = new File(candidate, "exefs");
-                l.cheats = new File(candidate, "cheats");
-                l.exefsPatches = new File(candidate, "exefs_patches");
-                l.suggestedName = candidate.getName();
-                return l;
-            }
+            l.exefsPatches = new File(dir, "exefs_patches");
+            if (!dir.equals(staging)) l.suggestedName = dir.getName();
+            return l;
         }
         return null;
     }

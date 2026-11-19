@@ -651,8 +651,8 @@ Mods are in the game's page, not in the build sheet. The game must be built firs
 
 1. Hold the game's cover. Its page opens.
 2. Open the **Game** tab and find the **Mods** section, above **Companion**.
-3. Tap **Install mod…** and pick the mod's **Folder** or **Zip file**. Atmosphère-layout folders and plain `romfs`/`exefs` folders are recognized.
-4. The mod appears in the list, turned on. The line under its name says what it carries: **Files**, **Cheats** or **Code**. Files and cheats apply at the game's next start. A mod with code is built by itself, see [What is a build with mods?](#what-is-a-build-with-mods)
+3. Tap **Install mod…** and pick the mod's **Folder** or **Zip file**. Atmosphère-layout folders and plain `romfs`/`exefs` folders are recognized, including when nested in a bundle.
+4. If the picked folder or zip contains several mod folders, each is installed as its own option. A merged Atmosphère package remains one mod. Each option appears in the list, turned on; its line says what it carries: **Files**, **Cheats** or **Code**. Files and cheats apply at the game's next start. A mod with code is built by itself, see [What is a build with mods?](#what-is-a-build-with-mods)
 
 A mod made for another game, or for another version of the game, is refused with a message that names the build or title ID it is for. Nothing is installed then.
 

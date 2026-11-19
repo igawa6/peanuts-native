@@ -241,22 +241,27 @@ int main(void) {
         CHECK(h_fs_OpenFile(&h, "rom:/data/b", MODE_READ) == RES_PATH_NOT_FOUND, "a directory does not open as a file");
         CHECK(h_fs_OpenFile(&h, "rom:/data/a", MODE_WRITE) == RES_FAIL && h_fs_CreateFile("rom:/data/a", 1) == RES_PATH_EXISTS, "refuses writes; create answers \"exists\"");
         int32_t t = -1; CHECK(h_fs_GetEntryType(&t, "rom:/data/b") == RES_OK && t == ENT_DIR && h_fs_GetEntryType(&t, "rom:/data/c") == RES_OK && t == ENT_FILE, "entry types");
-        DirectoryEntry de[4]; int64_t cnt = 0;
+        DirectoryEntry de[8]; int64_t cnt = 0;
         CHECK(h_fs_OpenDirectory(&h, "rom:/data", DIRMODE_DIR | DIRMODE_FILE) == RES_OK && h_fs_DirCount(&cnt, h) == RES_OK && cnt == 3, "a directory of 3 entries (%lld)", (long long)cnt);
         CHECK(h_fs_ReadDirectory(&cnt, de, h, 4) == RES_OK && cnt == 3 && !strcmp(de[0].name, "a") && de[0].size == 5 && de[1].type == ENT_DIR && !strcmp(de[2].name, "c"), "lists a, b, c"); h_fs_CloseDirectory(h);
         CHECK(h_fs_OpenDirectory(&h, "rom:/", DIRMODE_FILE) == RES_OK && h_fs_ReadDirectory(&cnt, de, h, 4) == RES_OK && cnt == 0, "the file filter hides directories"); h_fs_CloseDirectory(h);
         CHECK(h_fs_OpenDirectory(&h, "rom:/data/b", DIRMODE_DIR | DIRMODE_FILE) == RES_OK && h_fs_DirCount(&cnt, h) == RES_OK && cnt == 0, "an empty directory"); h_fs_CloseDirectory(h);
         g_nmnt = 0;
-        char ov[1100], ovd[1200]; snprintf(ov, sizeof ov, "%s/imgov", root); snprintf(ovd, sizeof ovd, "%s/data", ov); mkdir(ov, 0755); mkdir(ovd, 0755);
+        char ov[1100], ovd[1200], ov2[1100], ovd2[1200], overlays[2300];
+        snprintf(ov, sizeof ov, "%s/imgov", root); snprintf(ovd, sizeof ovd, "%s/data", ov); mkdir(ov, 0755); mkdir(ovd, 0755);
         snprintf(fn, sizeof fn, "%s/a", ovd); put(fn, "mod"); snprintf(fn, sizeof fn, "%s/new", ovd); put(fn, "added");
-        setenv("DM_ROMFS_OVERLAY", ov, 1); CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK, "mount the image with an overlay folder");
+        snprintf(ov2, sizeof ov2, "%s/imgov2", root); snprintf(ovd2, sizeof ovd2, "%s/data", ov2); mkdir(ov2, 0755); mkdir(ovd2, 0755);
+        snprintf(fn, sizeof fn, "%s/a", ovd2); put(fn, "lower-priority"); snprintf(fn, sizeof fn, "%s/other", ovd2); put(fn, "secondary");
+        snprintf(overlays, sizeof overlays, "%s:%s", ov, ov2);
+        setenv("DM_ROMFS_OVERLAY", overlays, 1); CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK, "mount the image with ordered overlay folders");
         CHECK(read_fs("rom:/data/a", got, sizeof got) && !strcmp(got, "mod"), "the overlay file wins over the image");
-        CHECK(read_fs("rom:/data/c", got, sizeof got) && !strcmp(got, "xy") && read_fs("rom:/data/new", got, sizeof got) && !strcmp(got, "added"), "image files and overlay-only files both read");
-        CHECK(h_fs_OpenDirectory(&h, "rom:/data", DIRMODE_DIR | DIRMODE_FILE) == RES_OK && h_fs_ReadDirectory(&cnt, de, h, 4) == RES_OK && cnt == 4, "the listing merges both, once each (%lld)", (long long)cnt);
-        int seen = 0; for (int i = 0; i < cnt; i++) { if (!strcmp(de[i].name, "a")) seen += de[i].size == 3; if (!strcmp(de[i].name, "b")) seen += de[i].type == ENT_DIR; if (!strcmp(de[i].name, "c")) seen += de[i].size == 2; if (!strcmp(de[i].name, "new")) seen += de[i].size == 5; }
-        CHECK(seen == 4, "with the right types and sizes"); h_fs_CloseDirectory(h);
+        CHECK(read_fs("rom:/data/c", got, sizeof got) && !strcmp(got, "xy") && read_fs("rom:/data/new", got, sizeof got) && !strcmp(got, "added")
+              && read_fs("rom:/data/other", got, sizeof got) && !strcmp(got, "secondary"), "both overlay roots and the image supply files");
+        CHECK(h_fs_OpenDirectory(&h, "rom:/data", DIRMODE_DIR | DIRMODE_FILE) == RES_OK && h_fs_ReadDirectory(&cnt, de, h, 8) == RES_OK && cnt == 5, "the listing merges all layers, once each (%lld)", (long long)cnt);
+        int seen = 0; for (int i = 0; i < cnt; i++) { if (!strcmp(de[i].name, "a")) seen += de[i].size == 3; if (!strcmp(de[i].name, "b")) seen += de[i].type == ENT_DIR; if (!strcmp(de[i].name, "c")) seen += de[i].size == 2; if (!strcmp(de[i].name, "new")) seen += de[i].size == 5; if (!strcmp(de[i].name, "other")) seen += de[i].size == 9; }
+        CHECK(seen == 5, "with the right types and sizes"); h_fs_CloseDirectory(h);
         CHECK(read_fs("rom:\\data\\a", got, sizeof got) && !strcmp(got, "mod") && read_fs("rom:\\data\\c", got, sizeof got) && !strcmp(got, "xy"), "backslash paths reach the overlay folder and the image");
-        h = 0; cnt = -1; CHECK(h_fs_OpenDirectory(&h, "rom:\\data", DIRMODE_DIR | DIRMODE_FILE) == RES_OK && h_fs_DirCount(&cnt, h) == RES_OK && cnt == 4, "and list the merged directory (%lld)", (long long)cnt); h_fs_CloseDirectory(h);
+        h = 0; cnt = -1; CHECK(h_fs_OpenDirectory(&h, "rom:\\data", DIRMODE_DIR | DIRMODE_FILE) == RES_OK && h_fs_DirCount(&cnt, h) == RES_OK && cnt == 5, "and list the merged directory (%lld)", (long long)cnt); h_fs_CloseDirectory(h);
         unsetenv("DM_ROMFS_OVERLAY"); g_nmnt = 0;
         snprintf(fn, sizeof fn, "%s/2.img", root); CHECK(!link(ip, fn), "stage a DLC image"); setenv("DM_AOC_DIR", root, 1);
         size_t cache = 0;

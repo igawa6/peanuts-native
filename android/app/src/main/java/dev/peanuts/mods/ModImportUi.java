@@ -35,7 +35,7 @@ public final class ModImportUi {
         android.widget.LinearLayout box = new android.widget.LinearLayout(a);
         box.setOrientation(android.widget.LinearLayout.VERTICAL);
         android.app.AlertDialog[] d = new android.app.AlertDialog[1];
-        box.addView(textBody(a, "Pick the mod's folder (with romfs/exefs inside, or an Atmosphère-layout folder), or its zip. "
+        box.addView(textBody(a, "Pick a mod folder or zip. If it contains multiple mod folders, each is installed as a separate option you can enable or disable. "
                 + "Nothing is downloaded or checked against a catalog, only files already on this device."));
         box.addView(row(a, "📁", "Folder", v -> { d[0].dismiss(); onFolder.run(); }));
         box.addView(row(a, "🗜️", "Zip file", v -> { d[0].dismiss(); onZip.run(); }));
@@ -146,8 +146,9 @@ public final class ModImportUi {
         ModImporter.Result r = ModImporter.importFrom(staging, modsRoot, titleId, displayName, gameBuilds, throttled(progress));
         if (deleteStagingAfter) ModImporter.deleteTree(staging);
         // installed on (ModImporter); a code mod's build is started by the section that asked for the install, which shows it
-        UI.post(() -> done.onDone(r.ok, r.ok ? "Installed " + r.modName + ". It is on from the game's next start."
-                + (ModStore.KIND_CODE.equals(r.kind) ? " Its code needs a build with mods, which starts by itself: the Mods section shows how far it is." : "") : r.error));
+        String installed = r.modNames.size() == 1 ? "Installed " + r.modName + "." : "Installed " + r.modNames.size() + " mods as separate options.";
+        UI.post(() -> done.onDone(r.ok, r.ok ? installed + " They are on from the game's next start."
+                + (r.hasCode ? " Code mods need a build with mods, which starts by itself: the Mods section shows how far it is." : "") : r.error));
     }
 
     public interface ProgressUi { void onProgress(long bytesDone, long total, String currentFile); }

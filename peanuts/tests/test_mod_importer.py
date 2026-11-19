@@ -1,5 +1,6 @@
-"""ModImporter's layout normalizer (Atmosphere / Yuzu-Eden "load" / bare), plain-Java javac/java, same pattern as test_runtime_shader_map.py."""
+"""ModImporter's layout normalizer and nested bundle discovery, plain-Java javac/java."""
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -31,7 +32,8 @@ public final class ModImporterTest {
         String displayName = args[3];
         ModImporter.Result r = ModImporter.importFrom(staging, modsRoot, titleId, displayName, null);
         if (!r.ok) { System.out.println("error: " + r.error); return; }
-        System.out.println("ok: " + r.modName + " " + r.kind);
+        System.out.println(r.modNames.size() == 1 ? "ok: " + r.modName + " " + r.kind
+                : "ok: " + r.modNames.size() + " mods " + r.kind);
     }
 }
 ''');
@@ -56,6 +58,14 @@ public final class ModImporterTest {
         p = self.staging / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(content)
+
+    def npdm(self):
+        data = bytearray(0xa0)
+        data[:4] = b'META'
+        struct.pack_into('<I', data, 0x70, 0x80)
+        data[0x80:0x84] = b'ACI0'
+        struct.pack_into('<Q', data, 0x90, int(self.title, 16))
+        return bytes(data)
 
     def mod_dir(self, name):
         return self.mods_root / name   # the mods root is per game now (<game home>/mods, no title-ID level)
@@ -94,14 +104,55 @@ public final class ModImporterTest {
         out = self.run_import()
         self.assertEqual(out, 'ok: RaceMod code')
 
+    def test_nested_bundle_imports_each_mod_as_a_separate_option(self):
+        self.write('Release/Modules/Core Module/romfs/config/core.ini')
+        self.write('Release/Modules/Core Module/exefs/main.npdm', self.npdm())
+        self.write('Release/Modules/Core Module/exefs/subsdk6')
+        self.write('Release/Features/Feature One/romfs/config/one.ini')
+        self.write('Release/Features/Feature One/romfs/payload/Another/romfs/not-a-mod.bin')
+        self.write('Release/Features/Feature Two/romfs/config/two.ini')
+        for i in range(3, 8):
+            self.write(f'Release/Features/Feature {i}/romfs/config/settings.ini')
+        self.write('Release/__MACOSX/Hidden Mod/romfs/ignored.bin')
+
+        out = self.run_import('Release')
+
+        self.assertEqual(out, 'ok: 8 mods code')
+        for name in ('Core Module', 'Feature One', 'Feature Two', *(f'Feature {i}' for i in range(3, 8))):
+            self.assertTrue((self.mod_dir(name) / 'mod.json').is_file(), name)
+        self.assertIn('"kind": "code"', (self.mod_dir('Core Module') / 'mod.json').read_text())
+        self.assertIn('"kind": "files"', (self.mod_dir('Feature One') / 'mod.json').read_text())
+        self.assertTrue((self.mod_dir('Core Module') / 'exefs' / 'subsdk6').is_file())
+        self.assertTrue((self.mod_dir('Feature One') / 'romfs' / 'payload' / 'Another' / 'romfs' / 'not-a-mod.bin').is_file())
+        self.assertFalse(self.mod_dir('Another').exists())
+        self.assertFalse(self.mod_dir('Hidden Mod').exists())
+
+    def test_atmosphere_layout_inside_arbitrary_wrapper_is_discovered(self):
+        self.write(f'Release Folder/atmosphere/contents/{self.title}/romfs/Pack01/data.arc')
+        self.write('Release Folder/Other Feature/romfs/feature.ini')
+        out = self.run_import('ignored')
+        self.assertEqual(out, 'ok: 2 mods files')
+        self.assertTrue((self.mod_dir('Release Folder') / 'romfs' / 'Pack01' / 'data.arc').is_file())
+        self.assertTrue((self.mod_dir('Other Feature') / 'romfs' / 'feature.ini').is_file())
+
+    def test_invalid_nested_candidate_prevents_partial_bundle_install(self):
+        self.write('Release/Good Mod/romfs/good.bin')
+        self.write('Release/Wrong Game/atmosphere/contents/0100000000000099/romfs/bad.bin')
+        out = self.run_import('Release')
+        self.assertIn('0100000000000099', out)
+        self.assertFalse(any(self.mods_root.iterdir()))
+
     # ---- Atmosphere layout ----
     def test_atmosphere_matching_title_id(self):
         tid = self.title
         self.write(f'atmosphere/contents/{tid}/romfs/Pack01/data.arc')
+        self.write(f'atmosphere/contents/{tid}/exefs/main.npdm', self.npdm())
+        self.write(f'atmosphere/contents/{tid}/exefs/subsdk6')
         self.write(f'atmosphere/exefs_patches/anti_desync/1.ips')
         out = self.run_import('CTGP-DX')
         self.assertEqual(out, 'ok: CTGP-DX code')
         self.assertTrue((self.mod_dir('CTGP-DX') / 'romfs' / 'Pack01' / 'data.arc').is_file())
+        self.assertTrue((self.mod_dir('CTGP-DX') / 'exefs' / 'subsdk6').is_file())
         self.assertTrue((self.mod_dir('CTGP-DX') / 'exefs_patches' / 'anti_desync' / '1.ips').is_file())
 
     def test_atmosphere_mismatched_title_id_is_rejected(self):
