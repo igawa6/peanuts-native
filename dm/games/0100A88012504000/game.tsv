@@ -1,0 +1,52 @@
+# Game profile of Art of Rally (Switch, update 1.1.9 = v458752)
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Format: see dm/games/README.md
+# Unity 2019.4.40f1 (IL2CPP) with FMOD, SDK 13.3.2, NVN. Began from Subnautica: Below Zero's profile (Unity 2019.4, SDK 13.3.5); the engine generation matches, the SDK and update do not.
+
+# ---- Identity ----
+title_id	0100A88012504000
+program_id	0100A88012504000
+
+# ---- App ----
+name	Art of Rally
+ipa	ArtofRally.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v458752	1.1.9	main=bcaa04faf88eea4a97bbf102cf4878ae	subsdk0=a8cb97803f7f442a3b6cce1c7cd4ee4a	sdk=357efc198e728cb5d55265aff304f03c
+package	v458752
+shader_versions	v458752
+
+# ---- Files ----
+# load order as on Horizon: main, subsdk*, sdk (subsdk0 = NintendoSDK_movie)
+modules	main subsdk0 sdk
+romfs_marker	Data/globalgamemanagers.assets
+zip_store	.assets:.bundle:.dat:.mp4:.resource:.ress:.metallib
+
+# ---- Memory ----
+# The NPDM declares 16 MB of system resource, so IsVirtualAddressMemoryEnabled is true: nninitStartup hands application pool − used memory to
+# StandardAllocator as virtual address memory and never calls SetHeapSize. The 1 GB pool copied from Ace Attorney (measured for that Unity 2022.3
+# game) gave StandardAllocator only a 0.94 GB address region: loading a race used it up, a 2 MB request returned null and the game wrote at
+# null+0xd44b0 (SIGSEGV main+0x7686bc, Lenovo TB321FU, 2026-11-19). The pool is the Switch's hardware 3285 MiB, as most profiles.
+# With it StandardAllocator's region is 3.14 GB (1.01 GB mapped) and the game's other address regions reached +4.25 GB of the 4.375 GB alias
+# region, 0.13 GB short of room for other locations; the block is 6 GB (the iOS reservation limit, as in the 5 GB one), giving the alias region 1 GB more.
+mem_reserve	0x180000000
+mem_alias	0x158000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# The map limit stays on (the default): with the hardware pool the physical alias mappings peaked at 2.00 GB of 3.21 GB, so no map is refused.
+# (With the 1 GB pool they reached 0.94 GB and MapPhysicalMemory was refused, ResultLimitReached, aborting a race at sdk+0x16ba48.)
+sys_resource	0x1000000
+
+# ---- Graphics ----
+# PEANUTS: the game calls nvnDeviceSetDepthMode(near = 0) (log: "depth mode near=0", Lenovo TB321FU, 2026-11-19)
+depth_mode	zero
+
+# ---- Frame rate ----
+# The game sets present interval 1 → 2 (30 fps). Unity times its logic in seconds, so presenting every display tick runs it at 60 fps at normal speed,
+# as Hong Kong Massacre's profile does (checked on the tablet, Turnip)
+present_interval	display
+
+# ---- Shader split (shader_split.py; Unity Shader and ComputeShader objects, read by unityfs.py) ----
+shader_groups	/Data/=data
+shader_note	48,683 shaders: vertex 25,413, pixel 23,207, compute 62, geometry 1; 48,672 from the Unity data, 11 GLSLC outputs in main; split from the update's RomFS, the whole patched tree
