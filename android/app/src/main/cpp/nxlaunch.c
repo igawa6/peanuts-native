@@ -656,3 +656,7 @@ JNIEXPORT jstring JNICALL Java_dev_nxnative_android_Native_skipStatus(JNIEnv *en
     if (nxhost_skip_status) nxhost_skip_status(buf, sizeof buf);
     return (*env)->NewStringUTF(env, buf);
 }
+// PEANUTS: the "Preparing graphics" notice (dev.peanuts.ui.WarmNotice): pipelines still waiting while draws are skipped for them, 0 = none, -1 = this host cannot say
+#pragma weak nxhost_warm_status
+int nxhost_warm_status(void);   // vka_exec.c
+JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_warmStatus(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_warm_status ? nxhost_warm_status() : -1; }

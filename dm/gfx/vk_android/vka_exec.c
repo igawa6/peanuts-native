@@ -12,6 +12,7 @@
 #include "vka_t2tpath.h"
 #include "vka_qsched.h"
 #include "vka_skipwarn.h"
+#include "vka_warmnote.h"   // PEANUTS
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -112,10 +113,20 @@ __attribute__((visibility("default"))) void nxhost_skip_status(char *buf, size_t
     int p = atomic_load_explicit(&g_skipw_pct, memory_order_acquire);
     if (n) { if (p > 0) snprintf(buf, n, "%d %s", p, g_skipw.causes); else buf[0] = 0; }
 }
+// PEANUTS begin: the "Preparing graphics" notice (vka_warmnote.h): nxhost_warm_status is the pipelines still waiting while draws are skipped for them, 0 = no notice
+extern uint64_t vka_draw_warm_skips(void);
+static vkwarm g_warm; static _Atomic int g_warm_n;
+static void warm_frame(uint64_t f) {
+    int on = vkwarm_step(&g_warm, f, vka_draw_warm_skips(), vka_pso_waiting());
+    atomic_store_explicit(&g_warm_n, on ? g_warm.waiting : 0, memory_order_release);
+}
+__attribute__((visibility("default"))) int nxhost_warm_status(void) { return atomic_load_explicit(&g_warm_n, memory_order_acquire); }
+// PEANUTS end
 void mtl_set_frame(uint64_t f) {
     g_frame = f; vka_ctl_frame(f);
     { if (atomic_load_explicit(&vka_synclog_n, memory_order_relaxed) > 0) VLOG("sync frame %llu begins at %.2f ms", (unsigned long long)f, (now_ns() % 1000000000000ull) / 1e6); }
     skipwarn_frame(f);
+    warm_frame(f);   // PEANUTS
     static uint64_t f0, d0, rp0, b0, ub0, s0, r0, o0, pc0, ch0;
     int on = VKA_ENV("DM_VK_STATS", 1) != 0;
     if (on && f - f0 >= 300) {

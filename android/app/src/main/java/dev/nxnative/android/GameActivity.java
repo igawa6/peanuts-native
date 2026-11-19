@@ -325,6 +325,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
     private void skipStart() {
         ui.removeCallbacks(skipRun);
+        warmStart();   // PEANUTS: the "Preparing graphics" notice, started and stopped with this one
         if (!skipShown) ui.postDelayed(skipRun, 30000);
     }
     private void skipShow(int pct) {
@@ -351,6 +352,43 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         h.setOnClickListener(v -> gone.run());
         h.postDelayed(gone, 20000);
     }
+
+    // PEANUTS begin: the "Preparing graphics" notice (dev.peanuts.ui.WarmNotice; vka_warmnote.h). Every second, ask the host how many pipelines its background threads
+    // still make while draws are skipped for them (Native.warmStatus): shown, small, at the top, while that is above 0, with the count; gone when it is 0. A host without
+    // the entry point (-1) is not asked again. Without it a first run looked broken: EA SPORTS FC 27's pitch was black for a minute with no word why on screen
+    private TextView warmView;
+    private final Runnable warmRun = this::warmTick;
+    private void warmStart() { ui.removeCallbacks(warmRun); ui.postDelayed(warmRun, 1000); }
+    private void warmTick() {
+        if (rootView == null) return;
+        int n = stopped || paused ? 0 : Native.warmStatus();
+        if (dev.peanuts.ui.WarmNotice.shown(n)) {
+            if (warmView == null) {
+                warmView = new TextView(this);
+                warmView.setTextColor(Color.WHITE);
+                warmView.setTextSize(13);
+                float dp = getResources().getDisplayMetrics().density;
+                int p = Math.round(8 * dp);
+                warmView.setPadding(p, p, p, p);
+                android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+                bg.setColor(0xCC000000);
+                bg.setCornerRadius(10 * dp);
+                warmView.setBackground(bg);
+                warmView.setMaxWidth(Math.round(460 * dp));
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+                lp.topMargin = Math.round(16 * dp);
+                rootView.addView(warmView, panel != null ? rootView.indexOfChild(panel) : rootView.getChildCount(), lp);
+                Native.note("preparing graphics: notice shown (" + n + " pipelines waiting)");
+            }
+            warmView.setText(dev.peanuts.ui.WarmNotice.text(n));
+        } else if (warmView != null) {
+            rootView.removeView(warmView);
+            warmView = null;
+            Native.note("preparing graphics: notice hidden");
+        }
+        if (dev.peanuts.ui.WarmNotice.poll(n)) ui.postDelayed(warmRun, 1000);
+    }
+    // PEANUTS end
 
     // PEANUTS begin: the active display reports the compositor's required buffer-queue lead, independent of nominal refresh.
     private void presentationDeadlineUpdate() {

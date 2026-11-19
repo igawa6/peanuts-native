@@ -186,4 +186,6 @@ final class Native {
     /** The skipped-work warning (vka_exec.c nxhost_skip_status): "<percent> <causes>" once the replay skipped a large share of the game's draws for causes of the GPU driver, "" before or when it is off; SkipNotice reads it */
     static native String skipStatus();
     static native long prewarmProgress();   // PEANUTS: startup shader progress
+    /** PEANUTS: the "Preparing graphics" notice (vka_exec.c nxhost_warm_status; dev.peanuts.ui.WarmNotice): pipelines still being made while draws are skipped for them, 0 = none, -1 = this host cannot say */
+    static native int warmStatus();
 }

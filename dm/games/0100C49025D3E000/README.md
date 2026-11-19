@@ -57,6 +57,7 @@ On the Mac (2026-10-29): the accessibility settings, the EA SPORTS and FC 27 log
 
 General changes first needed here; each applies to every game on the same path:
 
+- **Resolved: a first run's black pitch blamed on the GPU driver** (Android) → [Background pipeline builds blamed on the GPU driver](../../../docs/reference/rendering.md#background-pipeline-builds-blamed-on-the-gpu-driver-android). <!-- PEANUTS -->
 - **Resolved: a text longer than a branch reaches** (185.6 MB): the rewriter splits the patch area in two → [Two patch areas for a text longer than a branch reaches](../../../docs/reference/rewriter.md#two-patch-areas-for-a-text-longer-than-a-branch-reaches).
 - **Resolved: no shader container found** → [CompiledBytecode resources in Frostbite superbundles](../../../docs/reference/shaders.md#compiledbytecode-resources-in-frostbite-superbundles) (`dm/gfx/tools/frostbite.py`).
 - **Resolved: `vi::CreateLayer` with `LayerCreationSettings` (SDK 22)** → [`vi::CreateLayer` with `LayerCreationSettings` (SDK 22)](../../../docs/reference/services.md#vicreatelayer-with-layercreationsettings-sdk-22).
