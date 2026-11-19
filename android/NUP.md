@@ -101,6 +101,7 @@ works (`/proc/self/fd/<n>` reopened by path is not reliable on every provider). 
 ## App (android/app)
 
 - The extension is lower case: tools and host split at `.nup:`; the app refuses `.NUP` with "rename it to .nup".
+- Library scans recognize a standalone update package (flag 1) as a playable game source when the `.nup` has no base package.
 - Add game asks "a folder" or "a .nup file" (system file picker, turned into its /storage path with All files access; a
   document with no such path, from Recent or Downloads, and every pick without All files access, is used where it is:
   [A .nup used where it is](#a-nup-used-where-it-is)). A picked folder holding `.nup` files (or dump subfolders) adds

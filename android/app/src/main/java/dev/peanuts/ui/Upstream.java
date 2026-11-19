@@ -60,8 +60,16 @@ final class Upstream {
 
     /** One package of a .nup: kind (0 base, 1 update, 2 add-on), its title ID (16 upper-case hex digits) and version */
     static final class NupPkg {
-        final int kind; final String titleId; final long version;
-        NupPkg(int kind, String titleId, long version) { this.kind = kind; this.titleId = titleId; this.version = version; }
+        final int kind, flags;
+        final String titleId;
+        final long version;
+
+        NupPkg(int kind, String titleId, long version, int flags) {
+            this.kind = kind;
+            this.titleId = titleId;
+            this.version = version;
+            this.flags = flags;
+        }
     }
 
     /** The packages of a .nup (Nup.open(f).packages), empty when it cannot be read */
@@ -73,8 +81,8 @@ final class Upstream {
             Object n = open.invoke(null, nup);
             Field pk = k.getDeclaredField("packages"); pk.setAccessible(true);
             Class<?> pkg = Class.forName(P + "Nup$Pkg");
-            Field kind = field(pkg, "kind"), title = field(pkg, "titleId"), ver = field(pkg, "version");
-            for (Object p : (List<?>) pk.get(n)) out.add(new NupPkg(kind.getInt(p), String.format(Locale.ROOT, "%016X", title.getLong(p)), ver.getLong(p)));
+            Field kind = field(pkg, "kind"), title = field(pkg, "titleId"), ver = field(pkg, "version"), flags = field(pkg, "flags");
+            for (Object p : (List<?>) pk.get(n)) out.add(new NupPkg(kind.getInt(p), String.format(Locale.ROOT, "%016X", title.getLong(p)), ver.getLong(p), flags.getInt(p)));
         } catch (Throwable t) { Log.w("peanuts", "nup " + nup + ": " + cause(t)); }
         return out;
     }

@@ -312,11 +312,22 @@ final class LibraryScanner {
         if (l.endsWith(".nup")) {
             List<Source> out = new ArrayList<>();
             String app = Upstream.titleIdOf(f);
+            boolean hasBase = false;
+            long standaloneVersion = -1;
             for (Upstream.NupPkg p : Upstream.nupPackages(f)) {
-                if (app == null && p.kind == BASE) app = p.titleId;
+                if (p.kind == BASE) {
+                    hasBase = true;
+                    if (app == null) app = p.titleId;
+                }
+                // NUP update flag 1 identifies a complete snapshot that does not need the base.
+                if (p.kind == UPDATE && (p.flags & 1) != 0) standaloneVersion = Math.max(standaloneVersion, p.version);
                 out.add(new Source(f, p.kind, p.titleId, app != null ? app : baseOf(p.titleId, p.kind), p.version, "", ""));
             }
-            if (out.isEmpty() && app != null) out.add(new Source(f, BASE, app, app, 0, "", ""));
+            if (app != null && !hasBase && standaloneVersion >= 0) {
+                out.add(new Source(f, BASE, app, app, standaloneVersion, "", ""));
+            } else if (out.isEmpty() && app != null) {
+                out.add(new Source(f, BASE, app, app, 0, "", ""));
+            }
             return out;
         }
         String key = f.getPath() + "|" + f.length() + "|" + f.lastModified();
