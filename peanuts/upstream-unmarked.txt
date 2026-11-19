@@ -149,6 +149,10 @@ dm/games/010051F0207B2000/shader_facts.tsv	Generated translation facts. dmsh_cha
 dm/games/010051F0207B2000/shader_files.tsv	File inventory emitted by shader_split.py. Keep the inventory reproducible from the same input.
 dm/games/010051F0207B2000/shader_map.tsv	Shader splitter control-section map. dmsh_chain.py hashes the exact bytes.
 dm/games/010051F0207B2000/shader_pairs.tsv	Generated vertex/pixel pair list. dmsh_chain.py hashes the exact bytes.
+dm/games/01006AE02236C000/pso_pairs.tsv	Generated supplemental pipeline pair list. dmsh_chain.py hashes the exact bytes.
+dm/games/01006AE02236C000/shader_facts.tsv	Generated translation facts. dmsh_chain.py hashes the exact bytes.
+dm/games/01006AE02236C000/shader_map.tsv	Generated control and code keys. dmsh_chain.py hashes the exact bytes.
+dm/games/01006AE02236C000/shader_pairs.tsv	Generated vertex/pixel pair list. dmsh_chain.py hashes the exact bytes.
 dm/games/01007EF00011E000/pso_pairs.tsv	Generated supplemental pipeline pair list. dmsh_chain.py hashes the exact bytes.
 dm/games/01007EF00011E000/shader_facts.tsv	Generated translation facts. dmsh_chain.py hashes the exact bytes.
 dm/games/01007EF00011E000/shader_map.tsv	Shader splitter control-section map. dmsh_chain.py hashes the exact bytes.

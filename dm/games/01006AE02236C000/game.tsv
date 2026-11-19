@@ -1,0 +1,25 @@
+# PEANUTS: Double Dragon Revive; Unreal Engine 5.4.3, NVN.
+title_id	01006AE02236C000
+program_id	01006AE02236C000
+name	Double Dragon Revive
+ipa	DoubleDragonRevive.ipa
+app_category	public.app-category.games
+
+build	v0	1.0.0	main=e4425ccd2d3252723e5ea90894722c78	subsdk0=98be7d979f987d444eed189dee9c3b4e	sdk=ad9ee4518b1d8ca811fbdf35fc4f26d5
+build	v65536	N1.10	main=dbd5c9ec799e65a9ffedc1c1a94c8657	subsdk0=98be7d979f987d444eed189dee9c3b4e	sdk=ad9ee4518b1d8ca811fbdf35fc4f26d5
+package	v65536
+shader_versions	v0 v65536
+
+modules	main subsdk0 sdk
+romfs_marker	ProjectDD/Content/Paks/ProjectDD-Switch.ucas
+zip_store	.pak:.ucas:.utoc:.metallib
+
+# The same movie module and SDK as Captain Tsubasa 2; use its Android Unreal memory partition.
+mem_reserve	0xF0000000
+mem_alias	0xC8000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1400000
+
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	Double Dragon Revive shaders

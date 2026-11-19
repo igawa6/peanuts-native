@@ -89,6 +89,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Donkey Kong Bananza](040074A01BF12000/README.md) | `040074A01BF12000` | v458752 (Switch 2) | 20.5.19 (Ounce) | Nintendo EPD (sead / agl / gsys) | NVN2 |
 | [Donkey Kong Country Returns HD](01009D901BC56000/README.md) | `01009D901BC56000` | 1.1.0 | 18.3.5 | Unity 6000.0.28f1 IL2CPP | NVN |
 | [Donkey Kong Country: Tropical Freeze](0100C1F0051B6000/README.md) | `0100C1F0051B6000` | 1.0.2 | 4.4.0 | Retro Studios' engine | NVN |
+| [Double Dragon Revive](01006AE02236C000/README.md) | `01006AE02236C000` | 1.0.0, N1.10 | 18.3.1 | Unreal Engine 5.4.3 | NVN <!-- PEANUTS: host bring-up; Android gameplay unverified --> |
 | [DRAGON QUEST I & II HD-2D Remake](0100D7C01F254000/README.md) | `0100D7C01F254000` | 1.0.2 | 18.3.2 | Unreal Engine 4.27.2 | NVN |
 | [DRAGON QUEST III HD-2D Remake](01003E601E324000/README.md) | `01003E601E324000` | 1.1.2 | 16.2.6 | Unreal Engine 4.27 | NVN |
 | [DRAGON QUEST VII Reimagined](0100A9D01C446000/README.md) | `0100A9D01C446000` | 1.2.0 | 19.3.1 | Unreal Engine 4.27 | NVN |

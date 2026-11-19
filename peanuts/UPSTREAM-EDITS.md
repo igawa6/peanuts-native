@@ -1171,6 +1171,10 @@ Added the Peanuts profile and game index entry for `01009720213B0000`. The gener
 
 `dm/host/hle_offline.c` adds the PEANUTS-marked SDK hook for the application server environment enum. [Offline NSD environment query](../docs/reference/services.md#nsd-application-server-environment-query-aborts-during-startup)
 
+## Double Dragon Revive
+
+The [profile](../dm/games/01006AE02236C000/README.md) registers the base and update executables with their decoded IoStore shader tables. `dm/tools/ue_region.py` recognizes their startup size store before an outlined reservation helper; `dm/tools/tests/test_ue_region.py` checks the matching global, ambiguity and the caller-only gate. Neither game build is marked Android-playable on host evidence.
+
 ## DAVE THE DIVER 1.0.6.1267
 
 The Peanuts Android profile registers the updated executable, PC-generated shader tables and a Vulkan startup prewarm seed from Thor. The exact build uses the shared `step_ticks_u32` memory operation to scale Unity's fixed timestep to the 20–120 fps caps. The generated tables and binary seed are listed in `upstream-unmarked.txt`. [Game note](../dm/games/010097F018538000/README.md)
