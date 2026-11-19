@@ -13,9 +13,10 @@
 #   peanuts_build.py "Dump folder" --dry-run --push                                                                    print the commands, write nothing
 # Keys: --keys, else NX_KEYS, else ~/.switch/prod.keys: the importer needs your own prod.keys (the import only; packs need none).
 # Importer: --importer, else NX_IMPORTER, else built into peanuts/.build/nximport (needs cmake and a C compiler).
-# Oodle and Unreal games (PC_DECODE below), on Linux: the Oodle decoding worker unoodle (dm/third_party/ooz, a GPL-3.0-or-later program of its own, built into
-# peanuts/.build/ooz with a C++ compiler and patch) and, for the Unreal ones, the _nxaes module (peanuts/.build/pymod, a C compiler and Python's headers); the pack
-# step then gets DM_OODLE_OOZ and DM_UE_DECODE. Every other game with such a step, and every other system, is refused as before (peanuts/docs/BUILDER.md).
+# Oodle and Unreal games (PC_DECODE below), on Linux and macOS (x86-64 or arm64): the Oodle decoding worker unoodle (dm/third_party/ooz, a GPL-3.0-or-later program
+# of its own, built into peanuts/.build/ooz with a C++ compiler and patch) and, for the Unreal ones on Linux, the _nxaes module (peanuts/.build/pymod, a C compiler
+# and Python's headers; macOS has CommonCrypto); the pack step then gets DM_OODLE_OOZ and DM_UE_DECODE. Every other game with such a step, and Windows, is refused
+# as before (peanuts/docs/BUILDER.md).
 # --any-version packs an update the game's profile (dm/games/<titleID>/game.tsv) has no build row for. --force-nup rebuilds a .nup that is already there.
 # The icon: for .nsp/.xci inputs the title's icon is written beside the .nup as "<the .nup's name without .nup>.png" (the app and push-pack.py use it; a failure only warns).
 # Output: the .nup (beside the first input unless --nup) and the pack (<titleID>-work/android-pack beside the .nup, as pack_android.py writes it).
@@ -35,6 +36,7 @@ NXAES_SRC = REPO / 'dm' / 'peanuts' / 'pack_worker' / 'nxaes.c'
 PYMOD_BUILD = REPO / 'peanuts' / '.build' / 'pymod'
 WINDOWS = sys.platform == 'win32'
 LINUX = sys.platform.startswith('linux')
+MAC = sys.platform == 'darwin'
 GAME_EXTS = ('.nsp', '.xci')
 DEVICE_ROOT = '/sdcard/Peanut Roms'   # the default folder on the phone; push-pack.py's --dest default is the same one (the test compares them)
 ENV = dict(os.environ, PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1')   # the children print UTF-8, unbuffered, on every OS
@@ -236,7 +238,7 @@ STEP_MARKERS = (
 )
 
 
-# The games whose Oodle or Unreal shader step this computer does itself (Linux only), each one checked on a PC against its profile's shader keys
+# The games whose Oodle or Unreal shader step this computer does itself (Linux and macOS, x86-64 and arm64), each one checked on a PC against its profile's shader keys
 # (dm/third_party/ooz/README.md "Checked"). True: it has Oodle streams, which the unoodle worker decodes; False: an Unreal game whose archives need no Oodle decoder.
 PC_DECODE = {
     '01001F5010DFA000': True,    # Pokémon Legends: Arceus (GFPAK entries, Oodle Kraken)
@@ -262,11 +264,11 @@ def stale(out, srcs):
 
 def build_unoodle():
     """-> (peanuts/.build/ooz/unoodle, '') built by dm/third_party/ooz/build.sh when it is missing or older than its sources, or (None, why this computer has none)"""
-    if not LINUX or platform.machine().lower() not in ('x86_64', 'amd64'):
-        return None, ('the Oodle worker (dm/third_party/ooz) is built on x86-64 Linux only: its decoder uses x86 SSE2 intrinsics, '
-                      f'and this is {platform.machine() or "an unknown processor"} on {sys.platform}')
+    if not (LINUX or MAC) or platform.machine().lower() not in ('x86_64', 'amd64', 'arm64', 'aarch64'):
+        return None, ('the Oodle worker (dm/third_party/ooz) is built on Linux and macOS, x86-64 and arm64 (its decoder uses x86 SSE2 intrinsics; ooz_neon.h has them '
+                      f'for arm64), and this is {platform.machine() or "an unknown processor"} on {sys.platform}')
     exe = OOZ_BUILD / 'unoodle'
-    if not stale(exe, [OOZ_SRC / f for f in ('kraken.cpp', 'stdafx.h', 'unoodle.cpp', 'ooz-port.patch', 'ooz-guards.patch', 'build.sh')]): return exe, ''
+    if not stale(exe, [OOZ_SRC / f for f in ('kraken.cpp', 'stdafx.h', 'unoodle.cpp', 'ooz-port.patch', 'ooz-guards.patch', 'ooz-arm64.patch', 'ooz_neon.h', 'build.sh')]): return exe, ''
     cxx = os.environ.get('CXX') or next((c for c in ('g++', 'clang++', 'c++') if shutil.which(c)), None)
     if not cxx: return None, 'the Oodle worker (dm/third_party/ooz) needs a C++ compiler (g++ or clang++) on PATH'
     if not shutil.which('patch'): return None, 'the Oodle worker (dm/third_party/ooz) needs the patch program on PATH'
@@ -301,7 +303,7 @@ def build_nxaes():
 def pc_decode(app, name=None):
     """What this computer does itself for a game whose shaders are Oodle-compressed or in Unreal archives -> the settings its pack step gets ({} = nothing: every
     other game, and whatever check_device_steps then refuses).
-      DM_OODLE_OOZ   the unoodle worker, for a PC_DECODE game with Oodle streams on Linux when the worker builds; one already set (your own worker) is used
+      DM_OODLE_OOZ   the unoodle worker, for a PC_DECODE game with Oodle streams on Linux or macOS when the worker builds; one already set (your own worker) is used
                      for any game. pack_android.py takes that decoder's output only when the split's shader keys are exactly the profile's.
       DM_UE_DECODE   for a game with /ue_shaders/ rows: the split decodes the Unreal archives itself, as the phone's does ('' here; main() names the folder);
                      with PYTHONPATH naming the folder of _nxaes.
@@ -309,7 +311,7 @@ def pc_decode(app, name=None):
     label = f'{name or app} ({app})'
     given = os.environ.get('DM_OODLE_OOZ')
     if given and not Path(given).expanduser().is_file(): die(f'DM_OODLE_OOZ names {given}, which is not a file')
-    if not given and not (LINUX and app in PC_DECODE): return {}
+    if not given and not ((LINUX or MAC) and app in PC_DECODE): return {}
     ue = profile_has(app, '/ue_shaders/')
     env = {}
     if given:
@@ -327,7 +329,9 @@ def pc_decode(app, name=None):
         env['DM_OODLE_OOZ'] = str(exe)
         say(f'{label}: its Oodle streams are decoded here by {exe} (the open-source ooz decoder, not the game\'s own; dm/third_party/ooz); '
             'the pack is made only if every shader key is the profile\'s')
-    if ue and not folder_given('DM_UE_SHADERS', '*.ushaderbytecode'):
+    if ue and not folder_given('DM_UE_SHADERS', '*.ushaderbytecode') and MAC:
+        env['DM_UE_DECODE'] = ''   # uepak.py reads the pak index's AES through macOS's own CommonCrypto: no _nxaes
+    elif ue and not folder_given('DM_UE_SHADERS', '*.ushaderbytecode'):
         pymod, why = build_nxaes()
         if not pymod:
             say(f'[RED] {why}')
