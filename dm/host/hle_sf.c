@@ -34,6 +34,7 @@ static uint32_t sf_new(const char *name, int domain, sf_answer answer) {
 
 // A host session the host hands out itself, not through sm: answered like the served services
 uint32_t dm_sf_host_session(const char *name) { uint32_t h = sf_new(name, 0, NULL); LOG("sf: %s → host session %#x (every request succeeds with zeroed output)", name, h); return h; }
+uint32_t pn_sf_session(const char *name, Result (*answer)(unsigned, uint32_t *)) { return sf_new(name, 0, answer); }   // PEANUTS: a session answered by dm/peanuts code (pn_npns.c)
 
 // The Switch 2's camera (a USB camera, for GameChat's video). nn::camera::sdk::CreateCameraContext asks the graphics system's user session (gsv) for a session to the camera service and
 // gives it to the caller as a UniqueNativeHandle (a 32-bit handle; SDK 22.2.0 sdk+0x2c42c0 writes it), with 0x3af3 when the SDK has no gsv session, which the host never opens. The game then
