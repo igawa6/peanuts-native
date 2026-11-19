@@ -1446,3 +1446,31 @@ fail:
     free(loc); free(ptr_sc); free(ptr_to); free(var_ty); free(kind); free(o.w);
     return NULL;
 }
+uint32_t *vka_spv_frag_depth_invariant(const uint32_t *w, size_t nw, size_t *out_nw) {
+    if (!w || nw < 5 || w[0] != 0x07230203u) return NULL;
+    uint32_t frag_depth_id = 0; size_t insert_at = 0; int is_frag = 0;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
+        if (!len || i + len > nw) return NULL;
+        if (op == OpEntryPoint && len >= 3 && w[i + 1] == PF_Fragment) is_frag = 1;
+        else if (op == OpDecorate && len >= 4 && w[i + 2] == DecBuiltIn && w[i + 3] == PF_BIFragDepth) { frag_depth_id = w[i + 1]; insert_at = i + len; }
+        else if (op == OpFunction) break;
+        i += len;
+    }
+    if (!is_frag || !frag_depth_id) return NULL;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
+        if (op == OpDecorate && len >= 3 && w[i + 1] == frag_depth_id && w[i + 2] == 18u) return NULL;   // already Invariant (DecInvariant = 18)
+        if (op == OpFunction) break;
+        i += len;
+    }
+    uint32_t *o = malloc((nw + 3) * 4);
+    if (!o) return NULL;
+    memcpy(o, w, insert_at * 4);
+    o[insert_at] = 3u << 16 | OpDecorate;
+    o[insert_at + 1] = frag_depth_id;
+    o[insert_at + 2] = 18u;   // DecInvariant
+    memcpy(o + insert_at + 3, w + insert_at, (nw - insert_at) * 4);
+    *out_nw = nw + 3;
+    return o;
+}

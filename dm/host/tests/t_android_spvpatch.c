@@ -452,6 +452,38 @@ int main(void) {
         if (dir) closedir(dir);
         printf("t_android_spvpatch: %d of %d modules in %s read the pool and were rewritten\n", nrw, nmod, pd);
     }
+    {   // vka_spv_frag_depth_invariant: decorates BuiltIn FragDepth Output with Invariant, idempotent, leaves non-FragDepth modules alone
+        static const uint32_t FS_FRAG_DEPTH[] = {
+            0x07230203u, 0x00010000u, 0x00080001u, 9u, 0u,
+            2u << 16 | 17u, 1u,                                     // OpCapability Shader
+            3u << 16 | 14u, 0u, 1u,                                 // OpMemoryModel Logical GLSL450
+            6u << 16 | 15u, 4u, 1u, 0x6e69616du, 0u, 2u,            // OpEntryPoint Fragment %1 "main" %2
+            3u << 16 | 16u, 1u, 7u,                                 // OpExecutionMode %1 OriginUpperLeft
+            3u << 16 | 16u, 1u, 12u,                                // OpExecutionMode %1 DepthReplacing
+            4u << 16 | 71u, 2u, 11u, 22u,                           // OpDecorate %2 BuiltIn FragDepth
+            2u << 16 | 19u, 3u,                                     // OpTypeVoid
+            3u << 16 | 33u, 4u, 3u,                                 // OpTypeFunction %4 %3
+            3u << 16 | 22u, 5u, 32u,                                // OpTypeFloat %5 32
+            4u << 16 | 32u, 6u, 3u, 5u,                             // OpTypePointer %6 Output %5
+            4u << 16 | 59u, 6u, 2u, 3u,                             // OpVariable %6 %2 Output
+            4u << 16 | 43u, 5u, 7u, 0x3f000000u,                    // OpConstant %5 %7 0.5
+            5u << 16 | 54u, 3u, 1u, 0u, 4u,                         // OpFunction %3 %1 None %4
+            2u << 16 | 248u, 8u,                                    // OpLabel %8
+            3u << 16 | 62u, 2u, 7u,                                 // OpStore %2 %7
+            1u << 16 | 253u,                                        // OpReturn
+            1u << 16 | 56u,                                         // OpFunctionEnd
+        };
+        size_t fn = sizeof FS_FRAG_DEPTH / 4, fon = 0;
+        uint32_t *fd = vka_spv_frag_depth_invariant(FS_FRAG_DEPTH, fn, &fon);
+        CHECK(fd && fon == fn + 3, "frag_depth_invariant: added OpDecorate Invariant (%zu -> %zu)", fn, fon);
+        if (fd) {
+            if (val) CHECK(validate(fd, fon, "frag_depth_invariant"), "frag_depth_invariant valid SPIR-V");
+            size_t fon2 = 0;
+            CHECK(!vka_spv_frag_depth_invariant(fd, fon, &fon2), "frag_depth_invariant: idempotent when already Invariant");
+            free(fd);
+        }
+        CHECK(!vka_spv_frag_depth_invariant(SPV_TRI_FRAG, sizeof SPV_TRI_FRAG / 4, &fon), "frag_depth_invariant: non-FragDepth module left alone");
+    }
     printf("t_android_spvpatch: %s%s\n", g_fail ? "FAILED" : "ok", val ? "" : " (no spirv-val: structure only)");
     return g_fail != 0;
 }
