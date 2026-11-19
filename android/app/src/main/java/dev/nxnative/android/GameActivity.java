@@ -778,6 +778,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     "HOME=" + files, "TMPDIR=" + getCacheDir(), "DM_BUILD_COMMIT=" + BuildConfig.NX_COMMIT,
                     "DM_CTL=" + new File(files, "ctl.txt"), "NX_EXIT_RECORD=" + ExitWatch.record(this)));   // live control lines (android/TESTING.md "Live control", android/tools/nxctl.sh); DM_CTL= in env.txt turns it off
             env.addAll(dev.peanuts.build.GenericProfile.envLines(this, id, packDir));   // PEANUTS: packDir: a modded variant's own profile.bin (GenericProfile)   // PEANUTS: -PnxGenericHost=true DM_PROFILE_PATH/DM_PROFILE_SEED; empty list otherwise
+            env.addAll(dev.peanuts.online.Nextendo.envLines(this, Prefs.gameEnv(this, id)));   // PEANUTS: Settings › Online: PN_ONLINE and the Nextendo account for this run, a verified game build's only (dm/peanuts/net)
             env.add(0, "NX_BUILD_TAG=" + Prefs.buildTag(this) + " \u00b7 signer " + Prefs.signerId(this));   // nxlaunch.c writes it as the log's first line; the signer says which key signed the APK (Signer)
             // a program pack (a Switch 2 Edition's program 1): each program index's RomFS for the indexed MountRom (hle_fs.c DM_ROMFS_PROGRAM_<i>; 0 is the game's, "conorig")
             for (Map.Entry<Integer, String> e : pack.romfsProgramPaths(game).entrySet())
