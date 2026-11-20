@@ -172,6 +172,12 @@ public final class Hud {
             r.color = warn(FrameStats.level(p95, target));
             rows.add(r);
         }
+        float p99 = FrameStats.percentileFrameTime(frames, n, 99);
+        if (!Float.isNaN(p99)) {
+            Row r = new Row("P99", String.format(Locale.ROOT, "%.1f ms", p99));
+            r.color = warn(FrameStats.level(p99, target));
+            rows.add(r);
+        }
         float low = FrameStats.onePercentLowFps(frames, n);
         if (!Float.isNaN(low)) {
             Row r = new Row("1%L", String.format(Locale.ROOT, "%.0f", low));

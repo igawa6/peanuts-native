@@ -61,6 +61,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private TextView overlay;
     private TextView tag, fps;   // the build tag (top left) and the frame rate with the other items (top right, Overlay) as views over the game, shown only while the host's present does not draw them (fpsTick)
     private Overlay stats;
+    // PEANUTS MASTER: one low-overhead telemetry session shared across Activity recreation.
+    private static MasterTelemetry masterTelemetry;
     private final dev.peanuts.display.RunningDisplayMode runningDisplayMode = new dev.peanuts.display.RunningDisplayMode();   // PEANUTS: running-cap platform mitigation
     private Overlay.Block tagBlock, fpsBlock;   // the build tag and the items as pixels for the host's present (fpsTick)
     private String fpsShown;   // the text the top-right view has (Overlay.key): set again only when it changes
@@ -370,6 +372,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         else runningDisplayMode.clear(this);
         if (stopped || paused) { ui.postDelayed(this::fpsTick, 2000); return; }   // nothing to show: no readings (thermal, battery, the host's counters) while suspended
         if (started && resumedNow) presentationDeadlineUpdate();   // PEANUTS: reuse the active 500 ms tick, after the mode request
+        // PEANUTS MASTER: diagnostics continue even when the visual overlay is hidden; the sampler is internally rate-limited.
+        if (started && resumedNow && masterTelemetry != null) masterTelemetry.tick();
         boolean on = overlayOn();
         CharSequence t = on ? stats.tick() : null, g = on && Prefs.overlayItem(this, "tag") ? tag.getText() : null;
         boolean host = tagBlock.host(g) & fpsBlock.host(t);   // both every time: a block that is off empties its corner
@@ -908,6 +912,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             String[] args = {"nxhost", packDir.getPath()};
             int r = Native.start(args, env.toArray(new String[0]), log.getPath(), files.getPath());
             if (r != 0) throw new IOException("the host did not start (" + r + (r == -1 ? ": a start was already tried in this process" : "") + ")");
+            // PEANUTS MASTER: collect real game-frame, GPU, process CPU/RAM and Android thermal samples independently of the visible HUD.
+            if (masterTelemetry == null) { masterTelemetry = new MasterTelemetry(this, id, LogProvider.dir(this)); masterTelemetry.start(); }
             // Rumble (Game settings, Settings) once the host has its environment and the log (Native.start): its DM_RUMBLE / DM_RUMBLE_GAIN are read then, and the
             // setup lines reach the game's log. Pads registered before get their vibrator now
             if (Prefs.rumble(this, id)) { rumble = new Rumble(this); if (!rumble.start()) rumble = null; else for (int p : pads) rumble.route(p); }
@@ -1062,6 +1068,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     private void end() {
+        if (masterTelemetry != null) { masterTelemetry.finish(); masterTelemetry = null; }
         ExitWatch.stopped();
         backToFrontend();
         finish();
@@ -1091,7 +1098,18 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (focus != null) audio.abandonAudioFocusRequest(focus);
             if (route != null) { audio.unregisterAudioDeviceCallback(route); route = null; }
         }
+        if (isFinishing() && masterTelemetry != null) { masterTelemetry.finish(); masterTelemetry = null; }
         super.onDestroy();
+    }
+
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (masterTelemetry != null) masterTelemetry.memoryPressure(level);
+    }
+
+    @Override public void onLowMemory() {
+        super.onLowMemory();
+        if (masterTelemetry != null) masterTelemetry.memoryPressure(android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE);
     }
 
     /** Play on another game while this one runs reaches this activity (singleTask, the same :game process): this game stays, and the user is told to stop it first */

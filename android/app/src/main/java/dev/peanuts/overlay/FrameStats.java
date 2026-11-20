@@ -46,12 +46,8 @@ public final class FrameStats {
      * ceil(0.99 * n) is computed as the integer (99n + 99) / 100 to avoid floating-point rounding.
      */
     public static float onePercentLowFps(float[] ms, int n) {
-        if (n < 10) return Float.NaN;
-        float[] c = Arrays.copyOf(ms, n);
-        Arrays.sort(c);
-        int idx = (99 * n + 99) / 100 - 1;
-        float p99 = c[idx];
-        return p99 > 0 ? 1000f / p99 : Float.NaN;
+        float p99 = percentileFrameTime(ms, n, 99);
+        return p99 > 0f ? 1000f / p99 : Float.NaN;
     }
 
     /** The longest DRV value the overlay shows, in chars (the last one is the ellipsis) */
@@ -94,7 +90,7 @@ public final class FrameStats {
     /** The colour of a row's label, by its text (Hud) */
     public static int labelColor(String label) {
         switch (label) {
-            case "FPS": case "THR": case "FT": case "1%L": case "P95": return LABEL_FPS;
+            case "FPS": case "THR": case "FT": case "1%L": case "P95": case "P99": return LABEL_FPS;
             case "GPU": return LABEL_GPU;
             case "CPU": return LABEL_CPU;
             case "SOC": case "BAT": return LABEL_SOC;
