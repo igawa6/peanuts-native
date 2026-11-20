@@ -87,6 +87,26 @@ python dm/gfx/tools/shader_split.py "<work dir>/dump/base/romfs" "<work dir>/dum
 
 Its last line counts the shaders (`shaders: 47099 (compute 62, pixel 32861, vertex 14176); …`). Zero means the game keeps its shaders in a form `shader_split.py` does not read yet ([04-graphics.md](../../docs/agents/04-graphics.md)).
 
+### An Unreal update can change material shaders without changing the global cache
+
+In *Infinity Strash: Dragon Quest The Adventure of Dai* (`01006FA018D40000`), the 1.0.2 update reuses the base game's global shader cache but adds a material with inline shaders. To check the same export in your own base (1.0.0) and mounted update (`v131072`), run this from the repository root with `P` set to the provisional profile folder from step 3:
+
+```sh
+DM_GAME=01006FA018D40000 DM_GAMES_DIR="$(dirname "$P")" PYTHONPATH=dm/gfx/tools python - "<your game>.nup" <<'PY'
+from collections import Counter
+import sys, shader_split, uepak
+for version in ('base', 'update/131072'):
+    pak = uepak.Pak(f'{sys.argv[1]}:{version}/romfs/strash/Content/Paks/pakchunk0-Switch.pak')
+    names = [n for n in pak.files if n.endswith('/M_CaptureView_Origin.uexp')]
+    records = []
+    for name in names:
+        shader_split.ue_inline_shaders(pak.read(name), name, records)
+    print(version, len(names), dict(Counter(stage for _, stage, _, _ in records)))
+PY
+```
+
+The base has no matching export; the update has one with eight pixel records and one vertex record. These are counts for one material, not the game's shader total or proof that its keys occur nowhere else. Split both versions before reusing a shader map; this check does not establish Android playability.
+
 ### Games the PC split cannot read
 
 Three kinds were met, and each shows within minutes, before any long step. Such a game is not readable by the PC split: it needs a provisional pack that boots, plus a run on the device that saves what the files do not give (`DM_NVN_SHDUMP=<folder>` or `DM_GLSLC_CAPTURE=<folder>`), before its shader tables can be written. Until then a profile for it does not go into the repository (Farming Simulator's draft profile was taken out again for that reason); write down what you found instead.
