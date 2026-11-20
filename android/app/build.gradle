@@ -87,7 +87,16 @@ def shaderKeysOf = { String game ->
 }
 def shaderTotalOf = { String game -> shaderKeysOf(game).size() }
 def nxRewriter = { def m = (new File(repo, 'scripts/pack_android.py').text =~ /(?m)^REWRITER = \(([^)]*)\)/); if (!m.find()) throw new GradleException('scripts/pack_android.py has no REWRITER tuple'); (m.group(1) =~ /'([^']+)'/).collect { it[1] }.join(' ') }()
-def shaderInputsOf = { String game -> try { def r = providers.exec { commandLine('python3', new File(repo, 'dm/gfx/tools/dmsh_chain.py').path, '--inputs'); environment('DM_GAME', game); ignoreExitValue = true }.standardOutput.asText.get().trim(); r ==~ /[0-9a-f]{12}/ ? r : 'unknown' } catch (Exception e) { 'unknown' } }
+def shaderInputsOf = { String game ->
+    def banks = tsvRows(game, 'guest_spirv')  // PEANUTS: build-locked guest Vulkan input instead of an NVN shader library
+    if (!banks.isEmpty()) {
+        def c = banks[0].drop(1)
+        if (banks.size() != 1 || c.size() != 4 || !(c[0] ==~ /[0-9a-f]{32}/) || !(c[1] ==~ /[0-9a-f]{1,8}/) || !(c[2] ==~ /[1-9a-f][0-9a-f]{0,7}/) || !(c[3] ==~ /[0-9a-f]{64}/))
+            throw new GradleException("$game: guest_spirv requires main build ID, hex offset and size, SHA-256")
+        return 'spirv:' + c.join(':')
+    }
+    try { def r = providers.exec { commandLine('python3', new File(repo, 'dm/gfx/tools/dmsh_chain.py').path, '--inputs'); environment('DM_GAME', game); ignoreExitValue = true }.standardOutput.asText.get().trim(); r ==~ /[0-9a-f]{12}/ ? r : 'unknown' } catch (Exception e) { 'unknown' }
+}
 // The games' profiles as the launcher reads them (Profile.java): one line per game, tab-separated: title ID, name, the shader count Prepare translates (shaderTotalOf:
 // vk_android_build.py's total), the shader inputs digest (dmsh_chain.py --inputs: a pack's library is current only when its stamp
 // shaders/v-<V>/inputs.tsv names it, as pack_android.py's library_current asks; "unknown" without a Python 3 at build time: the launcher then checks the library's path

@@ -3,6 +3,12 @@
 #include <stdint.h>
 
 struct ANativeWindow;
+// PEANUTS: opt-in guest Vulkan. A WSI call holds its window generation until it returns.
+void *vka_guest_import(const char *name);
+int vka_guest_enabled(void);
+struct ANativeWindow *vka_guest_acquire_window(uint64_t *epoch);
+struct ANativeWindow *vka_guest_begin_wsi(uint64_t epoch);
+void vka_guest_end_wsi(void);
 
 // PEANUTS: Startup pipeline prewarm. Progress is -1 before the phase is decided, 0 after it, or total (high 32 bits) and processed (low 32) while waiting.
 void vka_pso_prepare_launch(void);

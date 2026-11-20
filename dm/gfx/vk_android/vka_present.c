@@ -32,6 +32,8 @@ __attribute__((weak)) void peanuts_tick(void);   // PEANUTS: absent in a build w
 __attribute__((weak)) int peanuts_ovl_corner(int slot, int dflt);   // PEANUTS: the stats block's corner chosen in the launcher (dm/peanuts/peanuts_graph.c); absent in a build without dm/peanuts
 
 // ---------- The window ----------
+#include "vka_guest_wsi.h"  // PEANUTS: the guest swapchain may reference the window without an NVN present thread.
+static guest_window_state g_guest_window;
 static pthread_mutex_t g_pmu = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_pcv = PTHREAD_COND_INITIALIZER;
 static ANativeWindow *g_win_new; static uint64_t g_win_gen, g_win_ack;   // set by nxhost_set_window; the present thread takes it and acknowledges the generation
@@ -47,6 +49,11 @@ void nxhost_set_window(ANativeWindow *w) {
     // (issue 251: Exynos Xclipse RADV, ioctl in vkCreateDevice), which Android reports as an ANR. The host thread's first Vulkan call makes the device; the present
     // thread starts with it and takes the window from g_win_new (window_take), so a window that came first waits there.
     pthread_mutex_lock(&g_pmu);
+    if (w != g_win_new) {  // PEANUTS: never submit against a replaced guest window.
+        guest_window_invalidate(&g_guest_window);
+        while (g_guest_window.users) pthread_cond_wait(&g_pcv, &g_pmu);
+        g_guest_window.available = w != NULL;
+    }
     if (g_win_new) ANativeWindow_release(g_win_new);   // never taken by the present thread
     g_win_new = w; uint64_t gen = ++g_win_gen;
     pthread_cond_broadcast(&g_pcv);
@@ -59,6 +66,29 @@ void nxhost_set_window(ANativeWindow *w) {
     const char *e = getenv("NXHOST_VK_SELFTEST");
     if (first && w && e && atoi(e) > 0) { first = 0; pthread_t th; if (!pthread_create(&th, NULL, selftest_main, (void *)(intptr_t)atoi(e))) pthread_detach(th); }
     if (w) first = 0;
+}
+
+// PEANUTS: guest WSI borrows the window only while NVN does not own presentation.
+ANativeWindow *vka_guest_acquire_window(uint64_t *epoch) {
+    pthread_mutex_lock(&g_pmu);
+    *epoch = g_guest_window.epoch;
+    ANativeWindow *w = !g_thread_up && g_win_new && guest_window_enter(&g_guest_window, *epoch) ? g_win_new : NULL;
+    if (w) ANativeWindow_acquire(w);
+    pthread_mutex_unlock(&g_pmu);
+    return w;
+}
+
+ANativeWindow *vka_guest_begin_wsi(uint64_t epoch) {
+    pthread_mutex_lock(&g_pmu);
+    ANativeWindow *w = !g_thread_up && guest_window_enter(&g_guest_window, epoch) ? g_win_new : NULL;
+    pthread_mutex_unlock(&g_pmu);
+    return w;
+}
+
+void vka_guest_end_wsi(void) {
+    pthread_mutex_lock(&g_pmu);
+    if (!--g_guest_window.users && !g_guest_window.available) pthread_cond_broadcast(&g_pcv);
+    pthread_mutex_unlock(&g_pmu);
 }
 
 // ---------- Swapchain ----------

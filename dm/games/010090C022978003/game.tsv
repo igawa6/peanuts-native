@@ -16,4 +16,5 @@ app_pool	0xCD500000
 # The rounded image charge for main, subsdk1 and sdk is 66 MiB.
 mem_used	0x4200000
 sys_resource	0x0
-shader_note	Direct Vulkan with SPIR-V embedded in main. Android presentation is not implemented for this build.
+guest_spirv	e1bced80ffd14436980f7490b1d3c3e7	41b79c	31e14	cf241a21f5a3f005976ac4ad6f08e65bac776adca22d0905802109b4bd7c5677
+shader_note	Native Vulkan; shader modules come from the verified SPIR-V bank in main.
