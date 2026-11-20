@@ -12,6 +12,13 @@ public final class FrameStatsJvmTest {
         check(Float.isNaN(FrameStats.median(f, 0)), "median empty");
         check(Math.abs(FrameStats.median(new float[] {Float.NaN, -1f, 10f, 20f, 30f}, 5) - 20f) < 1e-4, "median ignores invalid samples");
         check(Float.isNaN(FrameStats.median(new float[] {Float.NaN, -1f, 0f}, 3)), "median has no valid samples");
+        float[] summary = FrameStats.summarize(new float[] {Float.NaN, -1f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f}, 12);
+        check(summary[0] == 20f && summary[1] == 20f && summary[2] == 20f && summary[3] == 50f && summary[4] == 10f,
+                "one-pass summary filters invalid values and returns valid count");
+        float[] shortSummary = FrameStats.summarize(new float[] {16f, 17f, 18f}, 3);
+        check(Math.abs(shortSummary[0] - 17f) < 1e-4 && Float.isNaN(shortSummary[1])
+                && Float.isNaN(shortSummary[2]) && Float.isNaN(shortSummary[3]) && shortSummary[4] == 3f,
+                "one-pass summary keeps median but withholds unstable percentiles");
         check(Math.abs(FrameStats.percentileFrameTime(f, 100, 95) - 33.3f) < 1e-3, "p95 ignores one isolated hitch");
         check(Math.abs(FrameStats.percentileFrameTime(f, 100, 99) - 100f) < 1e-3, "p99 catches one isolated hitch");
         check(Float.isNaN(FrameStats.percentileFrameTime(f, 9, 95)), "p95 needs a stable sample window");
