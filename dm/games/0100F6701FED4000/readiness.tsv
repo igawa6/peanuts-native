@@ -1,0 +1,7 @@
+# PEANUTS: experimental Android profile for the base game.
+status	bring-up
+degraded	feature.tessellationShader	1	The base water materials include five hull and five domain shaders; water rendering is unverified and patch draws are not implemented
+required	feature.shaderDrawParameters	1	All 885 vertex shaders declare DrawParameters
+degraded	feature.shaderStorageImageWriteWithoutFormat	1	Ten shaders declare storage image writes without a format
+degraded	feature.shaderInt64	1	One shader declares 64-bit integers
+degraded	feature.bufferDeviceAddress	1	One shader declares physical storage buffer addresses

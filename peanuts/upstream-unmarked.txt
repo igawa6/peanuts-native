@@ -213,3 +213,8 @@ dm/games/01007A2027548000/shader_facts.tsv	Generated compute launch dimensions. 
 dm/games/01007A2027548000/shader_pairs.tsv	Generated vertex and pixel key pairs. Keep the shader input stamp reproducible.
 dm/games/01007A2027548000/pso_pairs.tsv	Generated supplemental pair list. Keep the shader input stamp reproducible.
 dm/games/01007A2027548000/shader_files.tsv	Generated shader-bearing file inventory for the targeted split.
+dm/games/0100F6701FED4000/shader_files.tsv	Generated shader split metadata; preserve the input digest.
+dm/games/0100F6701FED4000/shader_facts.tsv	Generated shader split metadata; preserve the input digest.
+dm/games/0100F6701FED4000/shader_map.tsv	Generated shader split metadata; preserve the input digest.
+dm/games/0100F6701FED4000/shader_pairs.tsv	Generated shader split metadata; preserve the input digest.
+dm/games/0100F6701FED4000/pso_pairs.tsv	Generated shader split metadata; preserve the input digest.
