@@ -112,6 +112,7 @@ final class MasterTelemetry {
         }
 
         float[] frameSummary = FrameStats.summarize(frameTimes, frameCount);
+        float[] pacing = FrameStats.pacingSummary(frameTimes, frameCount);
         float median = frameSummary[0];
         float p95 = frameSummary[1];
         float p99 = frameSummary[2];
@@ -121,7 +122,7 @@ final class MasterTelemetry {
         String record = String.format(Locale.ROOT,
                 "{\"type\":\"sample\",\"t_ms\":%d,\"native_fps\":%s,\"present_fps\":%s,\"frame_ms\":%s,\"gpu_ms\":%s,"
                         + "\"frame_samples\":%d,\"valid_frame_samples\":%d,\"median_ms\":%s,\"p95_ms\":%s,\"p99_ms\":%s,\"one_percent_low_fps\":%s,"
-                        + "\"frame_generation_state\":%d,\"images_per_game_frame\":%s,\"process_cpu_pct\":%.2f,"
+                        + "\"frame_generation_state\":%d,\"images_per_game_frame\":%s,\"frame_mean_ms\":%s,\"frame_stddev_ms\":%s,\"frame_jitter_ms\":%s,\"stutter_frames\":%d,\"stutter_rate_pct\":%s,\"process_cpu_pct\":%.2f,"
                         + "\"process_pss_kb\":%d,\"system_ram_total_kb\":%d,\"system_ram_available_kb\":%d,"
                         + "\"system_low_memory\":%s,\"system_ram_used_pct\":%.2f,"
                         + "\"java_heap_used_kb\":%d,\"java_heap_committed_kb\":%d,\"java_heap_max_kb\":%d,"
@@ -130,7 +131,8 @@ final class MasterTelemetry {
                 now - startedAt, number(fresh ? nativeRate[0] : Float.NaN), number(fresh ? nativeRate[1] : Float.NaN),
                 number(fresh ? nativeRate[2] : Float.NaN), number(gpuMs), frameCount, validFrameCount, number(median), number(p95),
                 number(p99), number(oneLow), fresh ? (int) nativeRate[3] : -1,
-                number(fresh ? nativeRate[4] : Float.NaN), cpuPct, processMemory.getTotalPss(),
+                number(fresh ? nativeRate[4] : Float.NaN), number(pacing[0]), number(pacing[1]), number(pacing[2]),
+                (int) pacing[3], number(pacing[4]), cpuPct, processMemory.getTotalPss(),
                 systemMemory.totalMem / 1024, systemMemory.availMem / 1024, systemMemory.lowMemory, systemRamUsedPct,
                 javaHeapUsed / 1024, javaHeapCommitted / 1024, javaHeapMax / 1024,
                 nativeHeapAllocated / 1024, nativeHeapSize / 1024, nativeHeapFree / 1024,

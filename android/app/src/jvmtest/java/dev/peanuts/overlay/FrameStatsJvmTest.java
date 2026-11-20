@@ -20,6 +20,16 @@ public final class FrameStatsJvmTest {
                 && Float.isNaN(shortSummary[2]) && Float.isNaN(shortSummary[3]) && shortSummary[4] == 3f,
                 "one-pass summary keeps median but withholds unstable percentiles");
         check(Math.abs(FrameStats.percentileFrameTime(f, 100, 95) - 33.3f) < 1e-3, "p95 ignores one isolated hitch");
+        float[] steadyPacing = FrameStats.pacingSummary(new float[] {16.67f, 16.67f, 16.67f, 16.67f}, 4);
+        check(Math.abs(steadyPacing[0] - 16.67f) < 1e-3 && steadyPacing[1] < 1e-3
+                && steadyPacing[2] < 1e-3 && steadyPacing[3] == 0f && steadyPacing[4] == 0f,
+                "pacing summary: steady frames have no jitter or stutter");
+        float[] hitchPacing = FrameStats.pacingSummary(new float[] {16.67f, 16.67f, Float.NaN, 16.67f, 50f}, 5);
+        check(Math.abs(hitchPacing[0] - 25f) < 1e-2 && hitchPacing[3] == 1f
+                && Math.abs(hitchPacing[4] - 25f) < 1e-2,
+                "pacing summary: one hitch is detected and invalid samples ignored");
+        check(Float.isNaN(FrameStats.pacingSummary(new float[] {Float.NaN, -1f}, 2)[0]),
+                "pacing summary: no valid samples");
         check(Math.abs(FrameStats.percentileFrameTime(f, 100, 99) - 100f) < 1e-3, "p99 catches one isolated hitch");
         check(Float.isNaN(FrameStats.percentileFrameTime(f, 9, 95)), "p95 needs a stable sample window");
         check(Float.isNaN(FrameStats.percentileFrameTime(f, 100, 100)), "p100 is not a percentile request");

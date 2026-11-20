@@ -56,6 +56,48 @@ public final class FrameStats {
     }
 
     /**
+     * Frame-pacing diagnostics over the original sample order. Returns mean frame time,
+     * population standard deviation, mean absolute delta between valid successive frames,
+     * count of frames above 1.5x the median, and that count as a percentage.
+     * Invalid samples are ignored; fewer than two valid samples have no jitter value.
+     */
+    public static float[] pacingSummary(float[] ms, int n) {
+        if (ms == null || n <= 0) return new float[] {Float.NaN, Float.NaN, Float.NaN, 0f, Float.NaN};
+        int limit = Math.min(n, ms.length);
+        float[] valid = new float[limit];
+        int count = 0;
+        double sum = 0.0, sumSquares = 0.0, deltaSum = 0.0;
+        float previous = Float.NaN;
+        int deltas = 0;
+        for (int i = 0; i < limit; i++) {
+            float value = ms[i];
+            if (!Float.isFinite(value) || value <= 0f) continue;
+            valid[count++] = value;
+            sum += value;
+            sumSquares += (double) value * value;
+            if (Float.isFinite(previous)) {
+                deltaSum += Math.abs((double) value - previous);
+                deltas++;
+            }
+            previous = value;
+        }
+        if (count == 0) return new float[] {Float.NaN, Float.NaN, Float.NaN, 0f, Float.NaN};
+        Arrays.sort(valid, 0, count);
+        float median = count % 2 == 1 ? valid[count / 2] : (valid[count / 2 - 1] + valid[count / 2]) / 2f;
+        double mean = sum / count;
+        double variance = Math.max(0.0, sumSquares / count - mean * mean);
+        int stutters = 0;
+        for (int i = 0; i < count; i++) if (valid[i] > median * 1.5f) stutters++;
+        return new float[] {
+                (float) mean,
+                (float) Math.sqrt(variance),
+                deltas > 0 ? (float) (deltaSum / deltas) : Float.NaN,
+                stutters,
+                100f * stutters / count
+        };
+    }
+
+    /**
      * The requested frame-time percentile in ms (1..99). Invalid/non-positive samples are ignored;
      * fewer than 10 valid samples return NaN so the HUD does not present unstable short-window data.
      * The nearest-rank index is ceil(percentile * count / 100) - 1.
