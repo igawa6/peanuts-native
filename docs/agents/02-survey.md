@@ -22,6 +22,9 @@ Fire Emblem Engage, for example, came out as:
 - 27,152 UnityFS bundles holding the shaders;
 - 101 `nn::hid` imports, plus `irsensor`, `ro` and `swkbd`.
 
+<!-- PEANUTS: surveyed build, not a supported-game registration -->
+**Ni no Kuni II: Revenant Kingdom 1.0.0** (`0100BE7013E06000`, base v0, SDK 11.4.3) illustrates why finding all the shaders is not enough. The [VFS3 reader](https://github.com/igawa6/peanuts-native/pull/230) recovers 902 distinct keys, but 11 vertex shaders store constants between their two program parts. The current merger rejects them. The [translation comparison](https://github.com/igawa6/peanuts-native/issues/229#issuecomment-7047704588) identifies those 11 separately from the 891 entries that match unchanged. The reader alone does not supply a game profile or a complete pack.
+
 The tables below are what to check by hand afterwards.
 
 ## Identity and versions
