@@ -334,6 +334,10 @@ static pthread_mutex_t g_frame_mu = PTHREAD_MUTEX_INITIALIZER;
 enum { RD_MAX = 16384 };
 static range_t g_rd[RD_MAX]; static int g_nrd; static _Atomic int64_t g_rd_at_ms;
 static pthread_mutex_t g_rd_mu = PTHREAD_MUTEX_INITIALIZER;
+// A generation lets each runtime worker reuse its last readable range without taking g_rd_mu
+// for every guest point read. The cache is immutable between generations; rt_copy still guards
+// against mappings that disappear after the range check.
+static _Atomic uint64_t g_rd_generation = 1;
 static int64_t mono_ns(void) { struct timespec m; clock_gettime(CLOCK_MONOTONIC, &m); return (int64_t)m.tv_sec * 1000000000 + m.tv_nsec; }
 static int range_cmp(const void *a, const void *b) { uint64_t x = ((const range_t *)a)->a, y = ((const range_t *)b)->a; return x < y ? -1 : x > y; }
 // Adds [a, b) to r[0..n), joined to the entry before it when it begins where that one ends (the lines of /proc/self/maps come in address order)
@@ -364,7 +368,11 @@ static void rt_ranges_refresh(void) {
     int nm = n; n = nm + rt_scan_readable(r + nm, RD_MAX - nm);
     if (n == RD_MAX && !said) { said = 1; __android_log_print(ANDROID_LOG_INFO, "peanuts", "companion: the guest block is in more readable pieces than the read cache holds (%d): reads above them go through the kernel (logged once)", RD_MAX); }
     qsort(r, n, sizeof r[0], range_cmp);
-    pthread_mutex_lock(&g_rd_mu); memcpy(g_rd, r, n * sizeof r[0]); g_nrd = n; pthread_mutex_unlock(&g_rd_mu);
+    pthread_mutex_lock(&g_rd_mu);
+    memcpy(g_rd, r, n * sizeof r[0]);
+    g_nrd = n;
+    atomic_fetch_add_explicit(&g_rd_generation, 1, memory_order_release);
+    pthread_mutex_unlock(&g_rd_mu);
     atomic_store(&g_rd_at_ms, mono_ns() / 1000000);
     pthread_mutex_unlock(&one);
 }
@@ -457,10 +465,38 @@ static uint64_t rt_code_block_find(size_t size) {
     return 0;
 }
 static int rt_range_has(uint64_t addr, size_t len) {   // [addr, addr+len) inside one cached readable range
+    // Runtime workers often read many guest objects from the same mapped block. Reusing the
+    // last range avoids a mutex and binary search on that hot path; a refresh invalidates it.
+    static __thread uint64_t hot_a, hot_b, hot_generation;
+    uint64_t generation = atomic_load_explicit(&g_rd_generation, memory_order_acquire);
+    if (hot_generation == generation && addr >= hot_a && addr <= hot_b && len <= hot_b - addr) return 1;
+
+    uint64_t found_a = 0, found_b = 0, found_generation;
+    int lo, hi, ok = 0;
     pthread_mutex_lock(&g_rd_mu);
-    int lo = 0, hi = g_nrd - 1, ok = 0;
-    while (lo <= hi) { int mid = (lo + hi) / 2; if (g_rd[mid].a > addr) hi = mid - 1; else if (g_rd[mid].b <= addr) lo = mid + 1; else { ok = len <= g_rd[mid].b - addr; break; } }
+    lo = 0; hi = g_nrd - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (g_rd[mid].a > addr) hi = mid - 1;
+        else if (g_rd[mid].b <= addr) lo = mid + 1;
+        else {
+            found_a = g_rd[mid].a;
+            found_b = g_rd[mid].b;
+            ok = len <= found_b - addr;
+            break;
+        }
+    }
+    // Capture the generation while holding the same lock as the table lookup. If a refresh
+    // follows the unlock, the next fast-path check sees a different generation.
+    found_generation = atomic_load_explicit(&g_rd_generation, memory_order_relaxed);
     pthread_mutex_unlock(&g_rd_mu);
+    if (ok) {
+        hot_a = found_a;
+        hot_b = found_b;
+        hot_generation = found_generation;
+    } else {
+        hot_generation = 0;
+    }
     return ok;
 }
 // The cache says what was readable when /proc/self/maps was last read, up to 2 s ago. A range the game unmapped or made inaccessible since (a heap it shrank, a pool it
