@@ -1,0 +1,19 @@
+# PEANUTS: v0 code-rewrite profile for program 3 of collection 010090C022978000.
+title_id	010090C022978003
+program_id	010090C022978003
+name	Kingdom Hearts II Final Mix
+ipa	010090c022978003.ipa
+app_category	public.app-category.games
+build	v0	1.0.0	main=e1bced80ffd14436980f7490b1d3c3e7	subsdk1=99e21f98a397434b534c1459fc38a2b8	sdk=bc204aae7319bab274894f1cc3f5da92
+package	v0
+modules	main subsdk1 sdk
+romfs_marker	kh2_first.pkg
+zip_store	.mp4:.pkg:.metallib
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# The rounded image charge for main, subsdk1 and sdk is 66 MiB.
+mem_used	0x4200000
+sys_resource	0x0
+shader_note	Direct Vulkan with SPIR-V embedded in main. Android presentation is not implemented for this build.
