@@ -1,0 +1,91 @@
+name: Peanuts Native Android Beta
+
+on:
+  push:
+    branches:
+      - codex/performance-foundation-2026-11-20
+    paths:
+      - '.github/workflows/android-beta.yml'
+      - 'android/**'
+      - 'dm/**'
+      - 'peanuts/**'
+      - 'scripts/**'
+      - 'CMakeLists.txt'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: peanuts-android-beta-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build S22-compatible beta APK
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Checkout beta branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up .NET 10 NativeAOT toolchain
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and SDK components
+        shell: bash
+        run: |
+          sdkmanager "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Install native build tools
+        run: brew install cmake ninja
+
+      - name: Build Android native stage
+        shell: zsh {0}
+        run: |
+          zsh android/ondevice/build.sh "$RUNNER_TEMP/peanuts-native-work"
+
+      - name: Build Peanuts Native beta APK for Super Mario Odyssey profile
+        shell: bash
+        run: |
+          cd android/app
+          chmod +x gradlew
+          ./gradlew --no-daemon \
+            -PnxApp=peanuts \
+            -PnxGames=0100000000010000 \
+            -PnxPackStage="$RUNNER_TEMP/peanuts-native-work/stage" \
+            apk
+
+      - name: Locate APK
+        id: apk
+        shell: bash
+        run: |
+          APK="$(find android/app -type f -name '*.apk' -path '*/out/*' | head -n 1)"
+          if [ -z "$APK" ]; then
+            echo "No APK found under android/app/**/out/"
+            find android/app -type f -name '*.apk' -print
+            exit 1
+          fi
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "Found: $APK"
+
+      - name: Upload installable beta APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: peanuts-native-s22-beta
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
