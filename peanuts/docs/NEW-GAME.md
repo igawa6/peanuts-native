@@ -156,6 +156,12 @@ In the test app:
 5. Screenshots: `adb exec-out screencap -p > top.png`, and for the second screen `adb exec-out screencap -d <physical display id> -p > bottom.png` (the ids are in `adb shell dumpsys display | grep uniqueId`, as `local:<id>`).
 6. Force-stop the test app afterwards (`adb shell am force-stop dev.nxnative.android.peanutstest`). Never delete or overwrite a save folder.
 
+### Inazuma Eleven: Victory Road: distinguish the base title screen from gameplay
+
+The 1.0.0 base (`0100B36008F90000`, `v0`, main build ID `cf5743975e884bc071aed96f66b94af3`) has enough content to render the LEVEL5 intro and title screen. On an AYN Thor with Turnip Gen8 V38, a local provisional profile using the [NNDXDHSC reader](https://github.com/igawa6/peanuts-native/pull/243) reached **START GAME** on a fresh save. Pressing A displayed **“Please apply the latest update.”** The measured 30 fps was at the title screen, not in a match.
+
+For a gameplay test, import the base **and** the update, select the updated version in step 5, and check the version and main build ID in the launch log before pressing A. For the surveyed 1.3.0 update these are `v327680` and `f9648f3865c8b1aee71a0be4a46489df`; the base run does not establish that this update boots or removes the prompt. Record the first point of player control in the story or a match before reporting gameplay. [Bring-up scope and hardware observation](https://github.com/igawa6/peanuts-native/issues/242).
+
 ## 8. The pull request
 
 - Revert the local `build.gradle` line. A pull request brings source only: no pack, APK, `.nup`, log with game data, or key.
