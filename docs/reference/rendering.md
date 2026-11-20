@@ -680,6 +680,15 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Fix:** **Open.** Neither setter has been implemented. The opening indoor scene renders and accepts input, but the visual contribution of the missing coverage state has not been isolated. The diagnostic remains visible.
 - **Found on:** [Pokémon Scarlet](../../dm/games/0100A3D008C5C000/README.md#open) (1.0.0, the first playable bedroom).
 
+<!-- PEANUTS(upstream-candidate) begin: depth / stencil state set again in each pass -->
+### Depth and stencil state lost at a new render pass on Qualcomm's driver (Android)
+
+- **Symptom:** (PEANUTS, Android, Qualcomm's driver 512.676.53 on an Adreno 740) lit 3D models draw solid black or not at all while the background, particles and 2D draw; a whole indoor scene can come out black under the 2D interface. The scene's colour target holds 0 in every pixel (`DM_VK_IMG_DUMP`), yet the draws run, their state (`DM_VK_RT_LOG`) and their sampled textures (`DM_VK_TEX_STATS`) are the same as on Turnip, which draws the scene. No `[RED]` line, no failed pipeline. `DM_VK_DYN_FILTER=0` or `=2`, or `DM_VK_TEX_STATS` on one of the scene's pixel shaders (which binds a compute pipeline and so forgets the cached state), brings the picture back.
+- **Cause:** the driver does not carry the depth / stencil dynamic state into a new render pass. The replay sets each dynamic state only when it differs from the command buffer's last value (`DY_SET` in `vka_draw.c`), as Vulkan allows: dynamic state lasts for the life of the command buffer, across passes. When a pass's draws need the same depth state as the pass before (Pokémon: Let's Go's shadow-map pass, then its lit pass, both depth test, depth write, `LESS`), nothing is set inside it and the driver draws with other depth state. Bisected live on the device (a mask of cached states forgotten at each pass begin): forgetting any one of depth test, depth write, depth compare, depth-bounds test, stencil test or stencil ops restores the whole frame (setting one makes the driver emit the block); viewport, scissor, cull, front face, topology, depth bias, rasterizer discard, primitive restart, stencil masks and blend constants do not.
+- **Fix:** general, in the host (`vka_draw.c` `ds_forget`): at each pass begin the cached depth / stencil states (depth test, write, compare, bounds test, stencil test, ops, masks and reference) are forgotten, so the pass's first draw sets them again: about seven calls a pass, on every driver. `DM_VK_DS_PASS=0` (live) turns it off.
+- **Found on:** [Pokémon: Let's Go, Pikachu!](../../dm/games/010003F003A34000/README.md) (title screen, new-game intro, Oak's lab), AYN Thor, 2026-11-20; Turnip T30 was not affected.
+<!-- PEANUTS(upstream-candidate) end -->
+
 ## Vertex input and draws
 
 ### Integer vertex inputs

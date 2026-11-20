@@ -101,6 +101,8 @@ not edited (see table above).
 | `dm/games/0100A0F00DA68000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Monster Sanctuary (provisional: packed on a PC, not run on a device) |
 | `dm/games/0100B63016916000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for My Time at Sandrock (provisional: packed on a PC, not run on a device) |
 | `dm/games/0100DAE01E4C8000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for STORY OF SEASONS: Grand Bazaar |
+| `dm/games/010003F003A34000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Pokémon: Let's Go, Pikachu! |
+| `dm/games/0100187003A36000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Pokémon: Let's Go, Eevee! |
 | `dm/gfx/tools/shader_split.py` | **fixed this pass** (header note + 6 def-site tags covering DM_SPLIT_DIRECT/WORKER, DM_UE_DECODE) | **yes** — the on-device process-pool split and the comment-insensitive table comparison (`table_rows`) are general infra, not game-specific |
 | `dm/gfx/tools/uepak.py` | marked (`_nxaes` off-Mac AES path) | **yes** — lets the packer run without CommonCrypto/OpenSSL, general portability fix |
 | `dm/gfx/vk_android/vka_draw.c` | **fixed this pass** | **yes** — indirect quad/line-loop draws read on CPU instead of being skipped (Three Houses) |
@@ -172,6 +174,7 @@ Also gated, but not `#ifdef`-paired with upstream code (new Peanuts-owned files/
     stops with FileNotFoundError (found packing Link's Awakening from a .nup on an exFAT drive). Both skip an entry that is
     gone. The same file's `peanuts_env` (the phone packer's DM_SPLIT_DIRECT=1 and DMSH_VK_ZSTD_LEVEL=6 for a computer's
     pack) is Peanuts-specific and stays local
+12. `dm/gfx/vk_android/vka_draw.c` — depth / stencil dynamic state set again at each render pass (Qualcomm 512.676 loses it at a new pass)
 
 `dm/host/hle_fpslock.c`'s new `EXTRA_VSYNCS_U8` lock kind is also upstream-worthy infra; its two
 per-game rows (Link's Awakening, Echoes of Wisdom) should instead move to a Peanuts-owned
@@ -1396,3 +1399,16 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `dm/games/0100B8E016F76000/game.tsv`, `dm/games/0100B8E016F76000/README.md` | 2, 1 | NieR:Automata (Asian release) on Android: `depth_mode zero` as the global profile; frame limits 30 to 60 measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/0100B8E016F76000/vk_prewarm.bin` | new | its Turnip prewarm seed (225 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
+
+### Depth and stencil state set again in each render pass (2026-11-20)
+
+Qualcomm's driver 512.676.53 (Adreno 740) loses the depth / stencil dynamic state at a new render pass; a pass that sets none of it because it equals the last pass's draws with other depth state (Pokémon: Let's Go's lit pass after its shadow pass came out black). The replay now forgets the cached depth / stencil states at each pass begin, on every driver ([the entry](../docs/reference/rendering.md#depth-and-stencil-state-lost-at-a-new-render-pass-on-qualcomms-driver-android)).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_draw.c` | 3 | `ds_forget` and its forward declaration; called at each pass begin unless `DM_VK_DS_PASS=0` | `PEANUTS(upstream-candidate)` |
+| `dm/gfx/vk_android/vka_ctl.c` | 1 | `DM_VK_DS_PASS` in the live table | `PEANUTS(upstream-candidate)` |
+| `docs/reference/rendering.md`, `docs/env_switches.tsv`, `docs/agents/symptoms.md` | 1 each | the entry, the switch row, the regenerated symptom index | `PEANUTS(upstream-candidate)` (a span in the reference, in the row's and the index line's text) |
+| `docs/advanced_settings.tsv` | 1 | the switch's row, written by `dm/tools/advanced_switches.py --write` | none: a developer row has no free-text column for one |
+
+Upstream candidate: yes, a general fix with no Peanuts dependency.

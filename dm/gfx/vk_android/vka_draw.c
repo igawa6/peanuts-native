@@ -152,6 +152,7 @@ static int statics(void) {
 enum { NSLOT = 8, MAXPOOLS = 64 };
 static VkDescriptorPool g_dp[NSLOT][MAXPOOLS]; static int g_ndp[NSLOT], g_cur_dp[NSLOT];
 void vka_dyn_invalidate(void);
+static void ds_forget(void);   // PEANUTS(upstream-candidate) (below)
 static void drv_memo_reset(void);
 static void rp_miss_reset(void);   // g_miss_n, below: a submission's draws start the render-area miss count again
 void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot) {
@@ -717,6 +718,7 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const p_scissor *sc, int has
     }
     if (!R.classic) vk.vkCmdBeginRendering(g_cb, &ri);
     R.on = 1; vka_n_rp++; if (g_dyn_filter == 2) vka_dyn_invalidate();   // DM_VK_DYN_FILTER=2: the dynamic state set again at each pass (bisect)
+    else if (VKA_ENV("DM_VK_DS_PASS", 1)) ds_forget();   // PEANUTS(upstream-candidate): the depth / stencil state set again in each pass (ds_forget)
     g_zdir = 0;
     if (dp) { g_zs.npb++; if (dp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) g_zs.nlc++; for (int k = 0; k < nlate; k++) if (late[k]->asp & VK_IMAGE_ASPECT_DEPTH_BIT) g_zs.ncl++; }
     g_rtl_pass = rtl_size(w, h); g_rtl_d = 0;
@@ -2060,6 +2062,14 @@ static void ib_bind(VkBuffer b, VkDeviceSize o, VkIndexType t) {
     vk.vkCmdBindIndexBuffer(g_cb, b, o, t); IB.valid = 1; IB.b = b; IB.o = o; IB.t = t;
 }
 static void inst_reset(void);
+// PEANUTS(upstream-candidate): Qualcomm's driver (512.676.53, Adreno 740) does not carry the depth / stencil dynamic state into a new render pass (vkCmdBeginRendering):
+// a pass whose draws set none of it, because it equals what the pass before left, draws as if with other depth state (Pokémon: Let's Go's lab pass after its shadow pass,
+// both depth test, write, LESS: every lit pixel 0), while Vulkan keeps dynamic state for the life of the command buffer and Turnip draws it right. Setting any one of them
+// in the pass restores the whole frame. So at each pass begin these are forgotten and the pass's first draw sets them again (some 7 calls a pass). DM_VK_DS_PASS=0 (live): as before
+static void ds_forget(void) {
+    DY.dt = DY.dw = DY.dc = DY.dbt = DY.stt = 0xffffffffu;
+    memset(DY.sop, 0xff, sizeof DY.sop); memset(DY.smask, 0xff, sizeof DY.smask);
+}
 void vka_dyn_invalidate(void) { DY.valid = 0; VB.valid = 0; VBC.valid = 0; IB.valid = 0; g_pd[0].n = g_pd[1].n = 0; inst_reset(); }
 #define PT(i) do { if (g_prof) { uint64_t t_ = cntvct(); if ((i) > 0 && g_pt_ph == (i) - 1) g_pt[(i) > 0 ? (i) - 1 : 0] += t_ - g_pt_last; g_pt_last = t_; g_pt_ph = (i); } } while (0)
 // ---------- Instanced runs (DM_VK_INSTANCE) ----------
