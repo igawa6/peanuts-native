@@ -72,12 +72,23 @@ final class MasterTelemetry {
                 + ",\"abi\":\"" + Build.SUPPORTED_ABIS[0] + "\",\"elapsed_ms\":" + startedAt + "}");
     }
 
+    /**
+     * Called from the Activity's lightweight UI tick. Sampling itself is queued on the
+     * telemetry worker so Debug.MemoryInfo, battery/thermal queries, JNI snapshots and
+     * frame-time sorting never run on the game/UI thread.
+     */
     synchronized void tick() {
         if (!started || finished) return;
         long now = SystemClock.elapsedRealtime();
         if (now - lastSampleAt < INTERVAL_MS) return;
         lastSampleAt = now;
+        Handler target = writer;
+        if (target != null) target.post(() -> sample(now));
+    }
 
+    // Runs only on the telemetry writer thread. Records are written directly here to
+    // preserve FIFO ordering with session_start, memory-pressure events and session_end.
+    private void sample(long now) {
         boolean fresh = false;
         try { fresh = Native.fps(nativeRate); } catch (UnsatisfiedLinkError ignored) { }
         int frameCount = 0;
@@ -175,8 +186,10 @@ final class MasterTelemetry {
                 number(batteryPct), number(batteryTempC), batteryVoltageMv, batteryStatus, batteryPlugged,
                 integerProperty(batteryCurrentUa), integerProperty(batteryCurrentAvgUa), integerProperty(batteryChargeUah),
                 powerSave ? "true" : "false", thermal, number(headroom));
-        append(record);
+        writeRecord(record);
         samples++;
+    }
+
     }
 
     synchronized void memoryPressure(int level) {
@@ -188,10 +201,11 @@ final class MasterTelemetry {
     synchronized void finish() {
         if (!started || finished) return;
         finished = true;
-        append("{\"type\":\"session_end\",\"duration_ms\":" + (SystemClock.elapsedRealtime() - startedAt)
-                + ",\"samples\":" + samples + "}");
+        long duration = SystemClock.elapsedRealtime() - startedAt;
         Handler target = writer;
         if (target != null) target.post(() -> {
+            writeRecord("{\"type\":\"session_end\",\"duration_ms\":" + duration
+                    + ",\"samples\":" + samples + "}");
             closeStream();
             if (writerThread != null) writerThread.quitSafely();
         });
