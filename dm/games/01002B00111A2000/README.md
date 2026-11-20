@@ -2,6 +2,8 @@
 
 Update 1.3.0 (v327680) over the base game, with four DLC packages (one is only a licence). SDK 9.6.0. Koei Tecmo's KTGL engine on NVN. Modules `main`, `subsdk0` (Nintendo's movie library, NintendoSDK_movie, as in Metroid Dread) and `sdk`. Plays on the iPhone; 60 fps (30 on the Switch) through the host's frame step. Started from the NSP script's provisional profile.
 
+The standalone base (1.0.0, v0) uses a different `main`; the 1.3.0 frame-step patches are not applied to it. Its 40,287 shader keys are shared with 1.3.0. The remaining 442 entries come from the update and are required only when packing 1.3.0.
+
 ## What it needs
 
 | Setting | Where | Why |

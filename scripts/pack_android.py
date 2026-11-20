@@ -906,12 +906,15 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
     first when there is none and --shader-pkg names none). → the library path in the pack, or None"""
     require_shaders(g)   # PEANUTS: an empty map without the profile's word for it is no library to pack
     v = vk_chain(); name = VK_PREFIX + v
-    cache = (a.shader_cache or work / 'android-shaders' / 'lib').resolve(); lib = cache / name
+    root = work / 'android-shaders'
+    if not (a.shader_cache and a.shader_pkg) and len(shader_versions(g)) > 1:
+        root /= f'v{a.pack_ver}'   # PEANUTS: different versions can require different shader keys
+    cache = (a.shader_cache or root / 'lib').resolve(); lib = cache / name
     dst = out / 'shaders' / name
     stage('checking the shader library')
     if not library_current(lib, g):
         if a.in_process: raise Error(f'no current shader library {lib}: --in-process does not build one yet (vk_android_build.py starts the translator and spirv-val as programs); --no-shaders packs without')
-        pkg = (a.shader_pkg or work / 'android-shaders' / 'pkg').resolve()
+        pkg = (a.shader_pkg or root / 'pkg').resolve()
         if not pkg.is_dir(): split_shaders(a, g, vdir, pkg, parts, aoc, collected_nros(work))   # also into a --shader-pkg folder that is not there yet
         py = shader_python(a.shader_python)
         print(f'shaders: building the Vulkan library {lib} from {pkg} with {py} (J={a.J}; about 10 minutes on DKB)', flush=True)

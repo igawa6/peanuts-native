@@ -40,6 +40,22 @@ class ShaderWork(unittest.TestCase):
         self.assertNotIn("work / 'android-shaders' / 'work'", src)
         self.assertNotIn("work / 'android-shaders' / 'keys.txt'", src)
 
+    def test_default_split_and_library_follow_the_dump_version(self):
+        g = pack_android.game.load('01002B00111A2000')
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d).resolve()
+            for ver in (0, 327680):
+                root = work / 'android-shaders' / f'v{ver}'
+                args = argparse.Namespace(pack_ver=ver, shader_cache=None, shader_pkg=None, in_process=False)
+                with patch.object(pack_android, 'library_current', return_value=False) as current, \
+                     patch.object(pack_android, 'split_shaders', side_effect=RuntimeError('split')) as split:
+                    with self.assertRaisesRegex(RuntimeError, 'split'):
+                        pack_android.pack_shaders(args, g, work, work / 'out', work / 'game')
+                    self.assertEqual(current.call_args.args[0].parent, root / 'lib')
+                    self.assertEqual(split.call_args.args[3], root / 'pkg')
+            self.assertEqual(len(pack_android.other_version_keys(g, 0)), 442)
+            self.assertFalse(pack_android.other_version_keys(g, 327680))
+
     def test_optional_absences_reach_builder_without_relaxing_package_checks(self):  # PEANUTS
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
