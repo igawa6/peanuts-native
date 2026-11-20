@@ -165,6 +165,13 @@ public final class Hud {
         Row h = new Row("", "");
         h.hist = FrameStats.placeholder(frames, n - shown, shown, target);
         rows.add(h);
+        // P95 exposes recurring slow frames before they dominate the 1% low.
+        float p95 = FrameStats.percentileFrameTime(frames, n, 95);
+        if (!Float.isNaN(p95)) {
+            Row r = new Row("P95", String.format(Locale.ROOT, "%.1f ms", p95));
+            r.color = warn(FrameStats.level(p95, target));
+            rows.add(r);
+        }
         float low = FrameStats.onePercentLowFps(frames, n);
         if (!Float.isNaN(low)) {
             Row r = new Row("1%L", String.format(Locale.ROOT, "%.0f", low));
