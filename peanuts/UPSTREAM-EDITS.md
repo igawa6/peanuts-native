@@ -1299,6 +1299,14 @@ The marked `packageRelease` rule requests a full packaging step for Peanuts buil
 
 The environment and Advanced tables document `DMSH_VK_ABSENT_FILE` as an internal packer path. The troubleshooting wiki documents the build-log share action. The Linux fixtures in `test_vk_encoder_wait.py` and `test_romfs_image.py` now compile the current encoder worker and build their synthetic index validator under GCC warning checks.
 
+### NVN sampler builder getters (2026-11-20)
+
+The host implemented the sampler builder's setters and three of its getters; a game that reads the rest back got the `[RED]` stub, which left the outputs unset. Digimon Story Time Stranger reads every builder back (about 6,100 calls before its first scene) and crashed on them (`CRASH sig=11 addr=0 pc=main+0xbc13f0`).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/nvn/hle_nvn.c` | 1 | `nvnSamplerBuilderGet*`: LodBias, Compare, BorderColor (f / i / ui), MaxAnisotropy, ReductionFilter, LodSnap return what the setters stored | `PEANUTS begin(upstream-candidate)` |
+
 ### Targeted shader splits for released games (2026-11-19)
 
 `dm/gfx/tools/shader_split.py` resolves a single registered build's paths in multi-version profiles and recognizes

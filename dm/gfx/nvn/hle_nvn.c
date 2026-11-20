@@ -2799,6 +2799,19 @@ NVN(nvnSamplerGetCompare, void, const NVNsampler *s, NVNcompareMode *m, NVNcompa
 NVN(nvnSamplerGetBorderColor, void, const NVNsampler *s, float *c) { memcpy(c, SP(s)->border, 16); }
 NVN(nvnSamplerGetMaxAnisotropy, float, const NVNsampler *s) { return SP(s)->aniso; }
 NVN(nvnSamplerGetReductionFilter, NVNsamplerReduction, const NVNsampler *s) { return (NVNsamplerReduction)SP(s)->reduction; }
+// PEANUTS begin(upstream-candidate): the builder's getters for the rest of its parameters. Digimon Story Time Stranger reads the whole builder back (about 6,100 calls before its
+// first scene) and used the unset outputs: CRASH addr=0 at main+0xbc13f0. The integer border colours return what SetBorderColori / ui stored (as numbers, see there)
+NVN(nvnSamplerBuilderGetLodBias, float, const NVNsamplerBuilder *b) { return ((const samp_builder_t *)b)->p.lod_bias; }
+NVN(nvnSamplerBuilderGetCompare, void, const NVNsamplerBuilder *b, NVNcompareMode *m, NVNcompareFunc *f) {
+    const samp_par *o = &((const samp_builder_t *)b)->p; *m = (NVNcompareMode)o->cmp_mode; *f = (NVNcompareFunc)o->cmp_func;
+}
+NVN(nvnSamplerBuilderGetBorderColor, void, const NVNsamplerBuilder *b, float *c) { memcpy(c, ((const samp_builder_t *)b)->p.border, 16); }
+NVN(nvnSamplerBuilderGetBorderColori, void, const NVNsamplerBuilder *b, int *c) { for (int i = 0; i < 4; i++) c[i] = (int)((const samp_builder_t *)b)->p.border[i]; }
+NVN(nvnSamplerBuilderGetBorderColorui, void, const NVNsamplerBuilder *b, uint32_t *c) { for (int i = 0; i < 4; i++) c[i] = (uint32_t)((const samp_builder_t *)b)->p.border[i]; }
+NVN(nvnSamplerBuilderGetMaxAnisotropy, float, const NVNsamplerBuilder *b) { return ((const samp_builder_t *)b)->p.aniso; }
+NVN(nvnSamplerBuilderGetReductionFilter, NVNsamplerReduction, const NVNsamplerBuilder *b) { return (NVNsamplerReduction)((const samp_builder_t *)b)->p.reduction; }
+NVN(nvnSamplerBuilderGetLodSnap, float, const NVNsamplerBuilder *b) { (void)b; return 0.f; }   // SetLodSnap is ignored (no Metal or Vulkan equivalent), so the default, 0
+// PEANUTS end
 // whether two samplers have the same state (games use it to deduplicate sampler pool entries)
 NVN(nvnSamplerCompare, NVNboolean, const NVNsampler *a, const NVNsampler *b) {
     const samp_par *x = SP(a), *y = SP(b);
