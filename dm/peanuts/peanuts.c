@@ -313,6 +313,9 @@ void peanuts_tick(void) {
 #include <signal.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 #include "peanuts_nup.h"
 
 static int g_rt_tried;
@@ -877,13 +880,30 @@ static void rt_start(void) {
 // The runtime's publishes arrive here (its redraw thread), whole or as the changed rectangle; the rows are swizzled to the bytes Android's ARGB_8888 bitmaps hold (R, G, B, A)
 // into the page buffer, so the page's poll copies as is and a moving marker costs its rectangle, not the whole page
 static inline uint32_t swz(uint32_t p) { return (p & 0xff00ff00u) | ((p >> 16) & 0xffu) | ((p & 0xffu) << 16); }
+
+// Convert four ARGB8888 pixels to the RGBA byte order Android's bitmap buffer expects.
+// The AArch64 path swaps the red/blue bytes with one NEON table lookup per four pixels;
+// the scalar tail also serves non-ARM host builds.
+static void swz_row(uint32_t *dst, const uint32_t *src, size_t count) {
+    size_t i = 0;
+#if defined(__aarch64__)
+    const uint8x16_t order = {2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15};
+    for (; i + 4 <= count; i += 4) {
+        uint8x16_t pixels = vld1q_u8((const uint8_t *)(src + i));
+        vst1q_u8((uint8_t *)(dst + i), vqtbl1q_u8(pixels, order));
+    }
+#endif
+    for (; i < count; i++) dst[i] = swz(src[i]);
+}
+
 static void rt_ui_rect(uint32_t w, uint32_t h, const uint32_t *px, int x0, int y0, int rw, int rh) {
     pthread_mutex_lock(&g_frame_mu);
     if (w != g_frame_w || h != g_frame_h) { free(g_frame); g_frame = malloc((size_t)w * h * 4); g_frame_w = w; g_frame_h = h; x0 = 0; y0 = 0; rw = (int)w; rh = (int)h; }
     if (g_frame) {
         if (x0 < 0) { rw += x0; x0 = 0; } if (y0 < 0) { rh += y0; y0 = 0; }
         if (x0 + rw > (int)w) rw = (int)w - x0; if (y0 + rh > (int)h) rh = (int)h - y0;
-        for (int y = y0; y < y0 + rh; y++) for (int x = x0; x < x0 + rw; x++) g_frame[(size_t)y * w + x] = swz(px[(size_t)y * w + x]);
+        for (int y = y0; y < y0 + rh; y++)
+            swz_row(g_frame + (size_t)y * w + x0, px + (size_t)y * w + x0, (size_t)rw);
         g_frame_new = 1;
     }
     pthread_mutex_unlock(&g_frame_mu);
