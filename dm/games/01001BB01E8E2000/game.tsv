@@ -15,11 +15,11 @@ romfs_marker	Data/Managed/Metadata/global-metadata.dat
 zip_store	.assets:.config:.contdata:.dat:.lua:.ress:.metallib
 
 # Both builds' nninitStartup reserves pool minus used memory in the alias region.
-# Start with the partition used by the same Unity player and SDK in Banana Rumble.
+# Unity exhausted a 1 GiB pool during fresh-save startup on Android.
 mem_reserve	0x140000000
 mem_alias	0x100000000
 mem_stack	0x28000000
-app_pool	0x40000000
+app_pool	0x80000000
 sys_resource	0x1000000
 
 shader_groups	/Data/=data
