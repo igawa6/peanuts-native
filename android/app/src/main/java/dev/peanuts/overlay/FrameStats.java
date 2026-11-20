@@ -94,7 +94,7 @@ public final class FrameStats {
     /** The colour of a row's label, by its text (Hud) */
     public static int labelColor(String label) {
         switch (label) {
-            case "FPS": case "THR": case "FT": case "1%L": return LABEL_FPS;
+            case "FPS": case "THR": case "FT": case "1%L": case "P95": return LABEL_FPS;
             case "GPU": return LABEL_GPU;
             case "CPU": return LABEL_CPU;
             case "SOC": case "BAT": return LABEL_SOC;
