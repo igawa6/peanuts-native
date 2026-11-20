@@ -14,6 +14,8 @@ ipa	DragonQuestIAndIiHd2dRemake.ipa
 app_category	public.app-category.games
 
 # ---- Versions ----
+build	v0	1.0.0	main=0e24d5febe4a63038d3bfdb70af93378	subsdk0=14765b1d77b12d8654ea87a61c65e2b1	sdk=f118ae1c2e7728471aaf1a0d58484968
+build	v65536	1.0.1	main=94b4fa4f36e01be387d3bfcf358c5b9e	subsdk0=14765b1d77b12d8654ea87a61c65e2b1	sdk=f118ae1c2e7728471aaf1a0d58484968
 build	v131072	1.0.2	main=ddb633241838c09038ff06706f68aecc	subsdk0=14765b1d77b12d8654ea87a61c65e2b1	sdk=f118ae1c2e7728471aaf1a0d58484968
 package	v131072
 shader_versions	v131072

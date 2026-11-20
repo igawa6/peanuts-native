@@ -2,6 +2,8 @@
 
 Update 1.2.0 (v131072) over the base game, SDK 19.3.1. Square Enix / HEXA DRIVE, Unreal Engine 4.27 (PhysX 3.4, so UE4; the source paths say `UEngine/4.27-source`): IoStore containers beside one pak, the desktop renderer with forward shading, NVN, CRIWARE sound (a 6-channel AudioOut) and Sofdec movies (VP9 through the SDK's movie decoder, mode 1, NV12). Modules `main`, `subsdk0` (the movie module, which Sofdec feeds its VP9 video to) and `sdk`. Plays on the iPhone at 30 fps; 60 fps (30 on the Switch) on the Mac by the host's writes of Unreal's frame limits.
 
+The profile also identifies code for 1.0.0 and 1.1.0. Those releases share the same three module build IDs; 1.2.0 changes `main`. The shader tables and gameplay results below are for 1.2.0.
+
 Status: brought up on the Mac: the logos and opening movie with sound, the title, a new adventure log (name entry, settings), the opening cutscene (the well, the night scene with Maribel by the boat) into play at Pilchard Bay with the controls tutorial, and a saved log continued, at 30 fps with saves; the opening cutscene into the first free play (the hero's house) again at 60 fps (`fps_target 60`). No red line at run time apart from the geometry shaders below; about 2.6 GB resident (1.1 GB of Metal allocations) in the cutscene. Playable on an iPhone at 30 fps; 60 fps on an iPhone is not tested yet.
 
 ## What it needs

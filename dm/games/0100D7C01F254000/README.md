@@ -2,6 +2,8 @@
 
 Update 1.0.2 (v131072), SDK 18.3.2. Square Enix / Artdink, Unreal Engine 4.27.2, NVN, CRIWARE sound and Sofdec movies. Modules `main`, `subsdk0` (`NintendoSDK_movie`) and `sdk`.
 
+The profile also identifies code for 1.0.0 and 1.0.1. Each has a distinct `main` build ID; both retain the `subsdk0` and `sdk` IDs of 1.0.2. The shader tables and gameplay results below are for 1.0.2.
+
 Mac gameplay tested on an M4 Pro on 2026-10-31. Both games boot, create adventure logs and resume their autosaves after restarting.
 
 - DQ I reaches free movement in Tantegel Castle after the opening and king's dialogue. Its early test used an incomplete shader subset.
