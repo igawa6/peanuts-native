@@ -49,6 +49,8 @@ jobs:
         run: |
           python -m unittest -v dm/tools/tests/test_android_games.py
           python -m unittest -v dm/tools/tests/test_android_readiness.py
+      - name: Module 1 architecture and compatibility gate
+        run: python3 peanuts/scripts/check-module-01.py
       - name: Profiles, runtime profile and runtime version
         run: |
           sh peanuts/scripts/check-profiles.sh
