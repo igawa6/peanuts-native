@@ -3080,8 +3080,22 @@ NEST = 16   # archives in archives scan_blob opens (SARC, PlatinumGames' DAT): r
             # each counted by what it takes up in its archive, and left[1], what its Yaz0 members expand to. Counting a Yaz0 member by what it expands to in the first budget paid twice
             # for the same bytes, once for the member and once for its members (GitHub issue #640: Mario Kart 8 Deluxe's UI/<lang>/race.sarc, 204 KB, holds one layout archive
             # that expands 9 times, which then added up to 18 times the file)
+def nndx_shader(d, label):
+    """Level-5 NNDXDHSC v1: binding tables, a single stage's code and control sections, then metadata."""
+    version, tag = field(d, '<II', 8, label)
+    st = {1: 'vs', 2: 'ps', 3: 'gs', 6: 'cs'}.get(tag)
+    if version != 1 or not st: red(f'{label}: unknown NNDXDHSC version {version} or stage {tag}')
+    co, cn, so, sn = field(d, '<4I', 0x48, label)
+    if co < 0x80 or cn == 0 or co + cn > so: red(f'{label}: invalid NNDXDHSC code range')
+    code, ctl = span(d, co, cn, label), span(d, so, sn, label)
+    why = check(label, st, ctl, code)
+    if why: red(f'{label}: {why}')
+    if st != 'cs' and sph_stage(code) != st: red(f'{label}: NNDXDHSC stage differs from the graphics header')
+    return (f'{label}#NNDX', st, ctl, code)
+
 def scan_blob(d, label, out, depth=0, left=None):
     if depth > NEST: red(f'{label}: archives nested more than {NEST} deep')
+    if d[:8] == b'NNDXDHSC': out.append(nndx_shader(d, label)); return
     if d[:4] == b'SHN!': out.extend(shn_shaders(d, label)); return
     if d[:8] == SUMO_MUX:
         members = list(sumo_members(d, label))
@@ -3158,7 +3172,7 @@ def pixel_input_cover(shaders):
     return cover
 
 # PEANUTS: Diablo III records contain one stage each.
-SINGLE_STAGE = ('#GLSLC@', '#VIPER', '#UE', '#MTSPK@', '#MGFX@', '#NLG', '#PGSO', '#RAW@', '#TFXO@', '#NEEDLE@', '#SNOWDROP@', '#PHYRE@', '#SUMO@', '#NVNSH@', '#D3@')   # sources whose every shader is a program of one stage: GLSLC outputs, Unreal's shader records, MT Framework's shader package (BNSH variations, Unity programs, MSHD and SDF pair theirs);
+SINGLE_STAGE = ('#GLSLC@', '#VIPER', '#UE', '#MTSPK@', '#MGFX@', '#NLG', '#PGSO', '#NNDX', '#RAW@', '#TFXO@', '#NEEDLE@', '#SNOWDROP@', '#PHYRE@', '#SUMO@', '#NVNSH@', '#D3@')   # sources whose every shader is a program of one stage: GLSLC outputs, Unreal's shader records, MT Framework's shader package (BNSH variations, Unity programs, MSHD and SDF pair theirs);
 # Unreal Engine 3's shader caches (ue3_shaders, '#UE3@'); MonoGame's effects, whose passes may name no vertex shader and keep the one bound (Celeste: 10 of its 13 effects draw through SpriteBatch's vertex shader, which is in main); Next Level Games'
 # archives (Luigi's Mansion 3 makes 5,317 programs of one stage each at boot); PlatinumGames' shader objects (Bayonetta 3: one stage each, pg_shader); control sections loose in main
 # (Advance Wars 1+2: Re-Boot Camp's Bink shaders, raw_shaders), which no file pairs; YEBIS's effect file (tfxo_shaders); and Sumo's Ninty_NX descriptors and NVNsh records, one stage
