@@ -2,6 +2,9 @@ package dev.nxnative.android;
 
 import android.app.ActivityManager;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Debug;
 import android.os.Handler;
@@ -102,6 +105,37 @@ final class MasterTelemetry {
         double systemRamUsedPct = systemMemory.totalMem > 0
                 ? 100.0 * (systemMemory.totalMem - systemMemory.availMem) / systemMemory.totalMem : -1.0;
 
+        // Power context helps separate a rendering regression from battery saver or thermal throttling.
+        // ACTION_BATTERY_CHANGED is sticky; this read-only query runs at the existing 2-second sample rate.
+        int batteryLevel = -1, batteryScale = -1, batteryTempTenthsC = Integer.MIN_VALUE;
+        int batteryVoltageMv = -1, batteryStatus = -1, batteryPlugged = -1;
+        try {
+            Intent battery = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (battery != null) {
+                batteryLevel = battery.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                batteryScale = battery.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                batteryTempTenthsC = battery.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Integer.MIN_VALUE);
+                batteryVoltageMv = battery.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
+                batteryStatus = battery.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                batteryPlugged = battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
+            }
+        } catch (RuntimeException ignored) { }
+        float batteryPct = batteryLevel >= 0 && batteryScale > 0 ? 100f * batteryLevel / batteryScale : Float.NaN;
+        float batteryTempC = batteryTempTenthsC == Integer.MIN_VALUE ? Float.NaN : batteryTempTenthsC / 10f;
+        int batteryCurrentUa = Integer.MIN_VALUE, batteryCurrentAvgUa = Integer.MIN_VALUE;
+        int batteryChargeUah = Integer.MIN_VALUE;
+        try {
+            BatteryManager bm = context.getSystemService(BatteryManager.class);
+            if (bm != null) {
+                batteryCurrentUa = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
+                batteryCurrentAvgUa = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE);
+                batteryChargeUah = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER);
+            }
+        } catch (RuntimeException ignored) { }
+        boolean powerSave = false;
+        try { powerSave = powerManager != null && powerManager.isPowerSaveMode(); }
+        catch (RuntimeException ignored) { }
+
         int thermal = -1;
         float headroom = Float.NaN;
         if (Build.VERSION.SDK_INT >= 29 && powerManager != null) {
@@ -127,6 +161,8 @@ final class MasterTelemetry {
                         + "\"system_low_memory\":%s,\"system_ram_used_pct\":%.2f,"
                         + "\"java_heap_used_kb\":%d,\"java_heap_committed_kb\":%d,\"java_heap_max_kb\":%d,"
                         + "\"native_heap_allocated_kb\":%d,\"native_heap_size_kb\":%d,\"native_heap_free_kb\":%d,"
+                        + "\"battery_pct\":%s,\"battery_temp_c\":%s,\"battery_voltage_mv\":%d,\"battery_status\":%d,\"battery_plugged\":%d,"
+                        + "\"battery_current_now_ua\":%s,\"battery_current_avg_ua\":%s,\"battery_charge_uah\":%s,\"power_save_mode\":%s,"
                         + "\"thermal_status\":%d,\"thermal_headroom\":%s}",
                 now - startedAt, number(fresh ? nativeRate[0] : Float.NaN), number(fresh ? nativeRate[1] : Float.NaN),
                 number(fresh ? nativeRate[2] : Float.NaN), number(gpuMs), frameCount, validFrameCount, number(median), number(p95),
@@ -136,7 +172,9 @@ final class MasterTelemetry {
                 systemMemory.totalMem / 1024, systemMemory.availMem / 1024, systemMemory.lowMemory, systemRamUsedPct,
                 javaHeapUsed / 1024, javaHeapCommitted / 1024, javaHeapMax / 1024,
                 nativeHeapAllocated / 1024, nativeHeapSize / 1024, nativeHeapFree / 1024,
-                thermal, number(headroom));
+                number(batteryPct), number(batteryTempC), batteryVoltageMv, batteryStatus, batteryPlugged,
+                integerProperty(batteryCurrentUa), integerProperty(batteryCurrentAvgUa), integerProperty(batteryChargeUah),
+                powerSave ? "true" : "false", thermal, number(headroom));
         append(record);
         samples++;
     }
@@ -193,5 +231,9 @@ final class MasterTelemetry {
 
     private static String number(float value) {
         return Float.isFinite(value) ? String.format(Locale.ROOT, "%.3f", value) : "null";
+    }
+
+    private static String integerProperty(int value) {
+        return value == Integer.MIN_VALUE ? "null" : Integer.toString(value);
     }
 }
