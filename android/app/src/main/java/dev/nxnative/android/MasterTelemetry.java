@@ -92,6 +92,15 @@ final class MasterTelemetry {
         Debug.getMemoryInfo(processMemory);
         ActivityManager.MemoryInfo systemMemory = new ActivityManager.MemoryInfo();
         if (activityManager != null) activityManager.getMemoryInfo(systemMemory);
+        Runtime runtime = Runtime.getRuntime();
+        long javaHeapUsed = runtime.totalMemory() - runtime.freeMemory();
+        long javaHeapCommitted = runtime.totalMemory();
+        long javaHeapMax = runtime.maxMemory();
+        long nativeHeapAllocated = Debug.getNativeHeapAllocatedSize();
+        long nativeHeapSize = Debug.getNativeHeapSize();
+        long nativeHeapFree = Debug.getNativeHeapFreeSize();
+        double systemRamUsedPct = systemMemory.totalMem > 0
+                ? 100.0 * (systemMemory.totalMem - systemMemory.availMem) / systemMemory.totalMem : -1.0;
 
         int thermal = -1;
         float headroom = Float.NaN;
@@ -112,12 +121,17 @@ final class MasterTelemetry {
                         + "\"frame_samples\":%d,\"median_ms\":%s,\"p95_ms\":%s,\"p99_ms\":%s,\"one_percent_low_fps\":%s,"
                         + "\"frame_generation_state\":%d,\"images_per_game_frame\":%s,\"process_cpu_pct\":%.2f,"
                         + "\"process_pss_kb\":%d,\"system_ram_total_kb\":%d,\"system_ram_available_kb\":%d,"
-                        + "\"system_low_memory\":%s,\"thermal_status\":%d,\"thermal_headroom\":%s}",
+                        + "\"system_low_memory\":%s,\"system_ram_used_pct\":%.2f,"
+                        + "\"java_heap_used_kb\":%d,\"java_heap_committed_kb\":%d,\"java_heap_max_kb\":%d,"
+                        + "\"native_heap_allocated_kb\":%d,\"native_heap_size_kb\":%d,\"native_heap_free_kb\":%d,"
+                        + "\"thermal_status\":%d,\"thermal_headroom\":%s}",
                 now - startedAt, number(fresh ? nativeRate[0] : Float.NaN), number(fresh ? nativeRate[1] : Float.NaN),
                 number(fresh ? nativeRate[2] : Float.NaN), number(gpuMs), frameCount, number(median), number(p95),
                 number(p99), number(oneLow), fresh ? (int) nativeRate[3] : -1,
                 number(fresh ? nativeRate[4] : Float.NaN), cpuPct, processMemory.getTotalPss(),
-                systemMemory.totalMem / 1024, systemMemory.availMem / 1024, systemMemory.lowMemory,
+                systemMemory.totalMem / 1024, systemMemory.availMem / 1024, systemMemory.lowMemory, systemRamUsedPct,
+                javaHeapUsed / 1024, javaHeapCommitted / 1024, javaHeapMax / 1024,
+                nativeHeapAllocated / 1024, nativeHeapSize / 1024, nativeHeapFree / 1024,
                 thermal, number(headroom));
         append(record);
         samples++;
