@@ -181,3 +181,15 @@ HLE_FORCE("_ZN2nn4time18ToPosixTimeFromUtcERKNS0_12CalendarTimeE", "UTC calendar
 HLE_FORCE("localtime", "local time → host localtime (follows the system time zone)", struct tm *, h_localtime, const int64_t *t) { time_t v = (time_t)*t; return localtime(&v); }
 HLE_FORCE("localtime_r", "local time → host localtime_r (follows the system time zone)", struct tm *, h_localtime_r, const int64_t *t, struct tm *out) { time_t v = (time_t)*t; return localtime_r(&v, out); }
 HLE_FORCE("mktime", "local calendar → absolute seconds, host mktime (follows the system time zone)", int64_t, h_mktime, struct tm *tm) { return (int64_t)mktime(tm); }
+// PEANUTS begin: the periodic benefit claim (a game's daily reward check against the user clock). The SDK's own version asks the time service session the host never
+// opens (nn::time::Initialize is taken over above), so NN_SDK_REQUIRES(g_pStaticService) aborted with "Result 0": Xenoblade Chronicles X: Definitive Edition 1.0.2 stopped
+// a minute into play once its save turns the check on (issue #162; caller main+0x13ca180). The claim context lives in the game's save in the SDK's private layout, so it is
+// not touched: the answer is 1, nothing to claim now (the caller acts on 0 only and asks again later). That reward does not trigger; the game plays on
+HLE_FORCE_BIG("_ZN2nn4time39ClaimPeriodicBenefitWithUserSystemClockEPNS0_27PeriodicBenefitClaimContextERKNS0_13ClockSnapshotERKNS_8TimeSpanES8_PKNS0_25CheckCalendarTimeCallbackE",
+              "periodic benefit claim; no time service session on the host, so nothing is claimable (the SDK's version aborts without one)", int, h_time_ClaimBenefit,
+              void *ctx, const void *snapshot, const void *max_error, int64_t interval, const void *check) {
+    (void)ctx; (void)snapshot; (void)max_error; (void)interval; (void)check;
+    static int once; if (!once++) LOG("time: ClaimPeriodicBenefitWithUserSystemClock: nothing claimable on the host (no time service session); the game's periodic reward does not trigger");
+    return 1;
+}
+// PEANUTS end

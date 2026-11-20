@@ -42,12 +42,13 @@ JNIEXPORT jstring JNICALL Java_dev_peanuts_importer_Native_probe(JNIEnv *env, jc
     NxImportInfo *info = calloc(64, sizeof *info); int n = 0; jstring out = NULL;
     if (info && !nximport_probe(p, info, 64, &n)) {
         char *b = NULL; size_t bn = 0, bc = 0; int bad = json_raw(&b, &bn, &bc, "[");
-        char num[64];
+        char num[160];
         for (int i = 0; i < n && i < 64 && !bad; i++) {
             bad |= json_raw(&b, &bn, &bc, i ? ",{\"title_id\":" : "{\"title_id\":") | json_str(&b, &bn, &bc, info[i].title_id);
             bad |= json_raw(&b, &bn, &bc, ",\"app_id\":") | json_str(&b, &bn, &bc, info[i].app_id);
             snprintf(num, sizeof num, ",\"kind\":%d,\"version\":%u,\"name\":", info[i].kind, info[i].version); bad |= json_raw(&b, &bn, &bc, num) | json_str(&b, &bn, &bc, info[i].name);
-            bad |= json_raw(&b, &bn, &bc, ",\"publisher\":") | json_str(&b, &bn, &bc, info[i].publisher) | json_raw(&b, &bn, &bc, "}");
+            bad |= json_raw(&b, &bn, &bc, ",\"publisher\":") | json_str(&b, &bn, &bc, info[i].publisher);
+            snprintf(num, sizeof num, ",\"size\":%llu,\"unpack\":%llu,\"check\":%llu}", info[i].size, info[i].unpack, info[i].check); bad |= json_raw(&b, &bn, &bc, num);
         }
         bad |= json_raw(&b, &bn, &bc, "]");
         if (!bad) out = (*env)->NewStringUTF(env, b);
@@ -94,3 +95,5 @@ JNIEXPORT jstring JNICALL Java_dev_peanuts_importer_Native_lastError(JNIEnv *env
 }
 
 JNIEXPORT void JNICALL Java_dev_peanuts_importer_Native_setThreads(JNIEnv *env, jclass cls, jint n) { nximport_set_threads((int)n); }
+// Stop (issue #149): any thread; writeNup then returns -1 within about a second ("the import was stopped"). on = false before an import starts
+JNIEXPORT void JNICALL Java_dev_peanuts_importer_Native_cancel(JNIEnv *env, jclass cls, jboolean on) { nximport_cancel(on ? 1 : 0); }

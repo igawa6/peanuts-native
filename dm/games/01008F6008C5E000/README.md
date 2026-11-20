@@ -12,10 +12,26 @@ Playable on the Mac: language, look and name selection, the academy settings,
 the opening, the Paldea flyover, getting up in the bedroom, walking, camera
 control, the main menu and autosave, and reloading that save. iPhone testing
 is pending; no IPA has been built yet.
-Only 1.0.0 is registered. The dump folder also holds update 4.0.0
-(`v786432`), so build with `scripts/build_ipa_from_nsp.py <dump folder>
--p v0` (add `--platform mac` for a Mac build); without `-p` the
-builder takes the newest version and derives a profile without these checks.
+<!-- PEANUTS: retain the verified Mac route and record the Android update. -->
+Select the tested Mac 1.0.0 route with
+`scripts/build_ipa_from_nsp.py <dump folder> --platform mac -p v0`.
+
+<!-- PEANUTS begin -->
+## Peanuts Native on Android
+
+- 4.0.0 (`v786432`), main `709bfd66115298640155fcc4979dba15`, SDK 13.3.13,
+  add-on `01008F6008C5F001`. The game reported and mounted the add-on on Thor.
+- The PC split found the same 35,937 shader keys and 28,299 variation pairs
+  as Scarlet 4.0.0. The targeted scan read only `arc/data.trpfs` and matched
+  the full tables. The timing plan uses the same period table as Scarlet,
+  with every original instruction checked against Violet's executable.
+- Violet uses the same allocator reservation and offline BLE behavior as
+  Scarlet. [Violet 4.0.0 bring-up report](https://github.com/seedds/nxnative/issues/207)
+- On AYN Thor with Turnip v26.2.0-R5, language and character setup led to the
+  academy opening. The 23-word timing plan and elapsed-time row both applied.
+  During the final 300-frame interval, frames displayed for two refreshes each
+  at 59.85 Hz. The player selected Stop before the opening reached free movement.
+<!-- PEANUTS end -->
 
 ## What it needs
 
@@ -90,13 +106,11 @@ No `patches.py`.
   been built. Build its iOS shaders with Scarlet's iOS libraries as prefill
   (`DMSH_PREFILL=<Scarlet Mac root>=<Scarlet iOS root>`) when they are on
   disk.
-- Update 4.0.0 (`v786432`) is in the NSP folder but not registered. Scarlet's
-  4.0.0 copy was damaged ([Scarlet, Files and builds](../0100A3D008C5C000/README.md#files-and-builds));
-  whether Violet's is intact has not been checked.
+- <!-- PEANUTS --> On-device timing, cold shader preparation and gameplay on 4.0.0 still need verification.
 - Outdoor exploration and battles have not been validated, as on Scarlet.
-- [The freeze in Trinity's rendezvous](../../../docs/reference/threads.md#trinitys-rendezvous-loses-its-release-on-apple-cores)
-  was reported here too, by its return addresses only. No main of this game is
-  on the drive, so whether its completer matches the rewriter's rule is unchecked.
+- <!-- PEANUTS --> [The freeze in Trinity's rendezvous](../../../docs/reference/threads.md#trinitys-rendezvous-loses-its-release-on-apple-cores)
+  was reported here too, based on return addresses. The match between Violet's
+  completer and the rewriter's barrier rule remains unchecked on affected builds.
 - [Conservative rasterization](../../../docs/reference/rendering.md#conservative-rasterization-remains-unimplemented)
   is unimplemented, as on Scarlet.
 

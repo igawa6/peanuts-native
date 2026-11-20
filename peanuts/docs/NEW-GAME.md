@@ -160,5 +160,5 @@ In the test app:
 
 - Revert the local `build.gradle` line. A pull request brings source only: no pack, APK, `.nup`, log with game data, or key.
 - Run the checks ([CONTRIBUTING.md](CONTRIBUTING.md#testing)): `dm/tools/tests/test_docs.py`, `test_android_games.py`, `test_android_gamefonts.py`, `test_android_gamelist.py`, `peanuts/tests/*.py`, `dm/peanuts/profile/gen_runtime_profile.py check-all`, `peanuts/scripts/check-profiles.sh`, then `peanuts/scripts/check-publish.sh origin/main`.
-- Add the game to the Supported games tables of `README.md` and `peanuts/docs/README.github.md` only once it plays on a device.
+- The Supported games tables of `README.md` and `peanuts/docs/README.github.md` list the games of `peanuts/release-titles.txt`, the release's games, which a game joins once it plays on a device. They and the issue forms follow it on main by themselves (`.github/workflows/catalog.yml`), so never edit the tables by hand. If the profile's name is in capitals, give the game's row in `peanuts/games.tsv` the name players know.
 - The description says what ran on which device and driver, the build ID from the log, the companion's state, and what was not tested (known issues).

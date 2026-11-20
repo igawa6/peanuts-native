@@ -116,6 +116,17 @@ int main(void) {
     assert(fpw_parse(ticks, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &r) == 0);
     assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,step_ticks_u32,@0x750,1,4294967296:1",bid,&r)==-1);
     assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,step_ticks_u32,@0x750,1,141120000.5:1",bid,&r)==-1);
+    // PEANUTS: a measured Trinity step is bounded by the selected cap and the stock ceiling.
+    const char *elapsed_ticks = "9fe60a212cff9b9a3656ab63d4f882e5,step_ticks_u32,%0x0,1,1000000000:83333334";
+    assert(fpw_parse(elapsed_ticks, bid, &r) == 1);
+    const double intervals[] = {0, .01, .02, .2};
+    const uint32_t periods[] = {16666666, 16666666, 20000000, 83333334};
+    for (unsigned i = 0; i < sizeof intervals / sizeof *intervals; i++) {
+      fpw_apply_context(&r,base,base+0xa50,60,intervals[i],read_guest,write_guest);
+      uint32_t period;
+      memcpy(&period,mem+0xa50,4);
+      assert(period == periods[i]);
+    }
     // Halfword governor writes must preserve both neighboring bytes and
     // work at the final two bytes of a readable allocation.
     assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,zero_u16,0x100/0x2,1,0",bid,&r)==1);

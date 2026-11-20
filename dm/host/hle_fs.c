@@ -629,8 +629,20 @@ HLE_FORCE("_ZN2nn2fs17MountAddOnContentEPKciPvm", "fsp-srv; add-on content → D
 // read-only. Any other archive answers "target not found", as for a title that is not installed
 #define SYSDATA_MIIMODEL 0x0100000000000802ull
 int dm_mii_standin(const char *dir);
+// PEANUTS begin: DM_MII_MODEL=<folder> (the Android app: MiiModel extracted from the player's firmware beside its shared fonts, nximport.c font_try_mii): the real
+// MiiModel, mounted as it is, so Mario Kart 8 Deluxe draws Mii heads. The stand-in only when the folder lacks one of the six files the SDK reads whole
+static int sysdata_real_mii(char *dir, size_t n) {
+    static const char *need[] = {"NXTextureLowLinear.dat", "NXTextureLowSRGB.dat", "NXTextureMidLinear.dat", "NXTextureMidSRGB.dat", "ShapeMid.dat", "ShapeHigh.dat"};
+    const char *e = getenv("DM_MII_MODEL"); struct stat st;
+    if (!e || !*e || snprintf(dir, n, "%s", e) >= (int)n) return 0;
+    for (int i = 0; i < 6; i++) { char p[1200]; snprintf(p, sizeof p, "%s/%s", e, need[i]); if (stat(p, &st) || !S_ISREG(st.st_mode) || !st.st_size) return 0; }
+    static int logged; if (!logged++) LOG("mii: MiiModel system data from the firmware in %s (DM_MII_MODEL)", e);
+    return 1;
+}
+// PEANUTS end
 static int sysdata_dir(char *dir, size_t n, uint64_t id) {
     char t[1024];
+    if (id == SYSDATA_MIIMODEL && sysdata_real_mii(dir, n)) return 1;   // PEANUTS: the firmware's MiiModel first
     if (id != SYSDATA_MIIMODEL || snprintf(dir, n, "%s_sysdata/%016llx", envdir("DM_TEMP", "run/platform/temp", t, sizeof t), (unsigned long long)id) >= (int)n) return 0;
     return dm_mii_standin(dir);
 }

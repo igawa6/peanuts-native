@@ -32,6 +32,9 @@ public interface BuildListener {
     /** Prepare stopped because shaders come from files the import does not have and no add-on content (DLC) was imported ({@link AutoRelax}): the card offers
      *  "Import again with DLC" (or where to set the DLC folder) and "Try anyway"; nothing is relaxed for the player here */
     String ADDON_MISSING = "addon_missing";
+    /** A compressed game file (.nsz, .xcz) that does not check out: damaged, cut off, not the player's keys, or compressed with settings the importer cannot
+     *  read ({@link Compressed#failure}, whose words say what to do): the card opens the sheet, with nothing added to the message */
+    String FILE_DAMAGED = "file_damaged";
     /** Anything not categorized above: today's "Retry" */
     String OTHER = "other";
 

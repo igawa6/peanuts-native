@@ -221,6 +221,13 @@ To enroll a cut for any game's own module:
 - **Fix:** a window never spans a second exclusive load.
 - **Found on:** [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md) 1.4.3 `main` (with [Out-of-line retry blocks of atomic updates](#out-of-line-retry-blocks-of-atomic-updates)).
 
+### A local branch inside an exclusive window
+
+- **Symptom:** `retry block overlaps a window` when rewriting Trails in the Sky 2nd Chapter 1.0.3. <!-- PEANUTS(upstream-candidate) -->
+- **Cause:** The zero-value branch goes straight to the same window's store-exclusive. The nonzero path clears the reservation with `clrex` and skips the store. The rewriter classified the local branch as an out-of-line retry.
+- **Fix:** Keep the zero-value branch inside the relocated window. Route the unconditional skip through an exit stub only when no branch can bypass its `clrex`. Outside branches still cannot enter a window midstream except through the existing retry-block rule.
+- **Check:** `test_exclusive_window.py` inspects the emitted Android code for both paths and rejects external entry and branches that bypass `clrex`.
+
 ### adrp inside an exclusive window
 
 - **Symptom:** `AssertionError: 0x…` in `site_window` on an `adrp` inside an exclusive window (`ldaxr x9,[x9]; cmp x9,x25; b.ne out; adrp x10 + add x10` (the same address again, for the store); `mov x18,x26; stlxr w9,x8,[x10]`, then loads and `cbnz w9` back).

@@ -207,7 +207,7 @@ final class Recommend {
     }
     /** A stored cap in a row's words */
     static String capName(int stored, boolean limited) {
-        if (limited) return stored <= 0 ? "60" : String.valueOf(stored);
+        if (limited) return stored == -2 ? "own" : stored <= 0 ? "60" : String.valueOf(stored);   // PEANUTS: -2 = FrameRateCaps.GAME_OWNED (this file builds alone for the JVM test): Game owned is not 60
         return stored == 0 ? "own" : stored < 0 ? "unset" : String.valueOf(stored);
     }
 

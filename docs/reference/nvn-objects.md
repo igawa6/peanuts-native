@@ -542,6 +542,8 @@ Games read this count as a position in their own command memory and size their h
 - **Check:** `t_readback` clears a packaged texture through a render pass, reads the clear colour back from its storage, checks that resolving it does not upload it again, then copies the storage to another address with `memcpy` and reads the colour from a texture created there; without the readback both reads fail. In the log, `render→texture copy into ser=… read back into the storage when the GPU completes`.
 - **Found on:** [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md) on the Mac: meadows lost their grass and went dark within half a minute of loading; with the fix the grass stays through three minutes of standing and walking. Uploads of textures that changed in the pool, same script: 40 before, 449 after, almost all while loading; frame times the same (p50 about 18 ms).
 
+- **Android:** Vulkan copies the rendered mip levels of tracked, single-sample 2D colour textures to staging and packs them back into CPU-accessible, placed pool storage before the submission completes (`vka_tex_writeback`, `block_linear.comp`). It uses NVN’s mip offsets and block geometry for both GOB orders and preserves padding bytes. This path covers the terrain normal maps. `DM_VK_TILED_WB=0` turns it off for comparison. <!-- PEANUTS -->
+
 ### Sampled textures in a sparse pool uploaded through the page table
 
 - **Symptom:** textures that should hold CPU-written data come out magenta (ASTC's error colour) or black.

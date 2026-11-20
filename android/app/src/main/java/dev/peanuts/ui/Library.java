@@ -8,7 +8,6 @@ import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
-import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -397,7 +396,7 @@ public final class Library {
                 if (box != null && box.isAttachedToWindow()) refresh.run(); else render();   // upstream's list again too (Prepare and the add above put games into it)
             });
             for (LibraryScanner.Title x : t) {   // the icons not kept yet (preloadIcons has the others), before anything slow: the catalog and the build ids below
-                if (icons.containsKey(x.titleId)) continue;
+                if (icons.containsKey(x.titleId)) { LibraryScanner.keep(a, x); continue; }   // a .nup without an icon of its own gets this one beside it (issue #158)
                 File f = LibraryScanner.icon(a, x);
                 Bitmap b = f == null ? null : BitmapFactory.decodeFile(f.getPath());
                 if (b == null) continue;
@@ -829,7 +828,7 @@ public final class Library {
         if (hidden > 0) {
             // Found in review: lets the player see and remove a confirmed-missing (or currently unreachable) game themselves, through upstream's
             // own "Game file gone → Remove" dialog, instead of this code ever deleting the record on its own
-            Button hideB = PUi.button(a, hidden + " hidden · " + (showHidden ? "Hide" : "Show"),
+            Button hideB = PUi.button(a, PUi.joined(hidden + " hidden", showHidden ? "Hide" : "Show"),
                     PUi.Kind.QUIET, v -> { Haptics.play(v, Haptics.Word.CLICK); showHidden = !showHidden; render(); });
             hideB.setOnKeyListener(shoulders);
             focusRing(hideB, Color.TRANSPARENT);
@@ -840,7 +839,7 @@ public final class Library {
         }
         chips.addView(chipRow, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         top.addView(chips, PUi.weight());
-        Button findB = PUi.button(a, find.isEmpty() ? "Find" : "Find · " + find, PUi.Kind.QUIET, Haptics.on(Haptics.Word.CLICK, v -> findDialog()));
+        Button findB = PUi.button(a, find.isEmpty() ? "Find" : PUi.joined("Find", find), PUi.Kind.QUIET, Haptics.on(Haptics.Word.CLICK, v -> findDialog()));
         findB.setCompoundDrawablesRelativeWithIntrinsicBounds(PUi.icon(a, R.drawable.ic_search, R.color.bn_accent), null, null, null);
         findB.setCompoundDrawablePadding(PUi.dp(a, 6));
         findB.setOnKeyListener(shoulders);
@@ -854,7 +853,7 @@ public final class Library {
             int n = PeanutsPrefs.roots(a).size();
             note = PUi.add(box, PUi.small(a, "Looking in " + n + (n == 1 ? " folder…" : " folders…")), 8);
         } else if (rows.isEmpty() && pc == null && !setup) {
-            note = PUi.add(box, PUi.small(a, "No games found in " + PeanutsPrefs.gameDir(a) + ". Put NSP, XCI, .nup files or dump folders there, then Rescan (Settings › Library)."), 8);
+            note = PUi.add(box, PUi.small(a, "No games found in " + PeanutsPrefs.gameDir(a) + ". Put NSP, NSZ, XCI, XCZ, .nup files or dump folders there, then Rescan (Settings › Library)."), 8);
         }
         if (note != null && !hadNote) Motion.fadeIn(note);
         hadNote = note != null;
@@ -1206,16 +1205,8 @@ public final class Library {
 
     /** The building cover's 6 dp progress strip along the bottom edge, 8 dp inset: banana deep on 70 % of the screen's colour; indeterminate for upstream's Prepare */
     private ProgressBar strip(boolean indeterminate) {
-        ProgressBar p = new ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal);
+        ProgressBar p = Strip.of(a, (PUi.col(a, R.color.bn_bg) & 0x00FFFFFF) | 0xB3000000, indeterminate);
         p.setMax(100);
-        p.setIndeterminate(indeterminate);
-        int track = (PUi.col(a, R.color.bn_bg) & 0x00FFFFFF) | 0xB3000000;
-        GradientDrawable fill = PUi.round(PUi.col(a, R.color.bn_banana_deep), PUi.dp(a, 3), 0, 0);
-        LayerDrawable ld = new LayerDrawable(new Drawable[] {PUi.round(track, PUi.dp(a, 3), 0, 0), new ClipDrawable(fill, Gravity.START, ClipDrawable.HORIZONTAL)});
-        ld.setId(0, android.R.id.background);
-        ld.setId(1, android.R.id.progress);
-        p.setProgressDrawable(ld);
-        p.setIndeterminateTintList(ColorStateList.valueOf(PUi.col(a, R.color.bn_banana_deep)));
         p.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PUi.dp(a, 6), Gravity.BOTTOM);
         int p8 = PUi.dp(a, 8);
@@ -1412,8 +1403,8 @@ public final class Library {
         n.setMaxLines(2);
         n.setEllipsize(TextUtils.TruncateAt.END);
         info.addView(n);
-        String about = t == null ? "" : t.versionText() + (t.base != null && !t.base.publisher.isEmpty() ? (t.versionText().isEmpty() ? "" : " · ") + t.base.publisher : "");
-        if (!about.isEmpty()) info.addView(PUi.small(a, about));
+        CharSequence about = t == null ? "" : PUi.joined(t.versionText(), t.base != null ? t.base.publisher : null);
+        if (about.length() > 0) info.addView(PUi.small(a, about));
         buildStatus = PUi.status(a, "", R.color.bn_accent);
         buildStatus.setPadding(0, PUi.dp(a, 2), 0, 0);
         info.addView(buildStatus);
@@ -1422,7 +1413,7 @@ public final class Library {
         c.addView(top);
         buildBody = PUi.body(a, "");
         PUi.add(c, buildBody, 12);
-        buildBar = PUi.progress(a);
+        buildBar = Strip.card(a);
         buildBar.setMax(100);
         PUi.add(c, buildBar, 10);
         buildPct = PUi.small(a, "");
@@ -1455,6 +1446,7 @@ public final class Library {
                     break;
                 }
                 case BuildListener.FILE_MISSING:
+                case BuildListener.FILE_DAMAGED:
                 case BuildListener.WRONG_VERSION:
                 case BuildListener.INVALID_DUMP:
                     left = PUi.button(a, "Open the game's sheet", PUi.Kind.TONAL, Haptics.on(Haptics.Word.CLICK, v -> openSheet.run()));
@@ -1506,6 +1498,7 @@ public final class Library {
             String action = b.reimport && b.step.equals("import") && !BuildListener.OUT_OF_SPACE.equals(b.code) ? " Open the game's sheet to import again."
                     : BuildListener.ADDON_MISSING.equals(b.code) ? (btNup && PeanutsPrefs.dlcDir(a) == null && !GameSheet.dlcFound(bt) ? " No DLC folder is set: set it below, then import again."
                             : btNup && GameSheet.dlcFound(bt) ? " DLC for this game was found: Import again with DLC takes it." : " Add the DLC in the game's sheet (its DLC row).")
+                    : BuildListener.FILE_DAMAGED.equals(b.code) ? ""   // its message says what to do (Compressed.failure)
                     : BuildListener.FILE_MISSING.equals(b.code) ? " Open the game's sheet to pick the file again."
                     : BuildListener.WRONG_VERSION.equals(b.code) ? " Open the game's sheet: tap “Build anyway” there if you want to try it, or pick the recommended update."
                     : BuildListener.INVALID_DUMP.equals(b.code) ? " The dump looks incomplete or wrong. Open the game's sheet to check the files, or dump the game again."
@@ -1632,13 +1625,13 @@ public final class Library {
         // Build itself is gated on both (GameSheet, Library.startBuild). Browsing this screen (Show my games, below) still needs only the game folder.
         PUi.add(c, PUi.body(a, LibrarySettings.KEYS_FIRMWARE_GUIDANCE), 12);
         PUi.add(c, new PUi.Setting(a, "🔑", "Keys", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.pickKeys(a)))
-                .value(keys ? "Added: prod.keys is in the app." : "Needed before building. Importing an NSP or XCI needs it; browsing your folders here does not.").chevron(a).view, 16);
+                .value(keys ? "Added: prod.keys is in the app." : "Needed before building. Importing an NSP, NSZ, XCI or XCZ needs it; browsing your folders here does not.").chevron(a).view, 16);
         PUi.add(c, new PUi.Setting(a, "📁", "Game folder", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.pickFolder(a, LibrarySettings.REQ_GAME, "Pick your game folder")))
-                .value(game != null ? game : "Required. Every NSP, XCI, .nup and dump folder inside is shown on this screen.").chevron(a).view, 0);
+                .value(game != null ? game : "Required. Every NSP, NSZ, XCI, XCZ, .nup and dump folder inside is shown on this screen.").chevron(a).view, 0);
         // P5: folded in as its own numbered step, same Setting-row shape as the other three, instead of a quiet text button below the action row
         String updateDir = PeanutsPrefs.updateDir(a), dlcDir = PeanutsPrefs.dlcDir(a);
-        String updDlcValue = updateDir == null && dlcDir == null ? "Point at your update and DLC files if they're not inside the game folder already. Skip if everything's together."
-                : (updateDir != null ? "Update: " + updateDir : "Update: not set") + (dlcDir != null ? " · DLC: " + dlcDir : "");
+        CharSequence updDlcValue = updateDir == null && dlcDir == null ? "Point at your update and DLC files if they're not inside the game folder already. Skip if everything's together."
+                : PUi.joined(updateDir != null ? "Update: " + updateDir : "Update: not set", dlcDir != null ? "DLC: " + dlcDir : null);
         PUi.add(c, new PUi.Setting(a, "⬆️", "Updates & DLC", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.extraFolders(a))).value(updDlcValue).chevron(a).view, 0);
         PUi.add(c, new PUi.Setting(a, "🔤", "Firmware", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.pickFirmwareSource(a)))
                 .value(LibrarySettings.fontsValue(a, "Needed before building. A missing font can crash some games at boot.")).chevron(a).view, 0);

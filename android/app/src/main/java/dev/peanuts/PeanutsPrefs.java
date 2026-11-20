@@ -30,6 +30,8 @@ public final class PeanutsPrefs {
     public static File iconsDir(Context c) { return new File(c.getFilesDir(), "icons"); }
 
     public static boolean hasKeys(Context c) { return keysFile(c).isFile() && keysFile(c).length() > 0; }
+    /** files/firmware/miimodel: the console's MiiModel system data extracted from the user's firmware beside the fonts (nximport.c font_try_mii), for DM_MII_MODEL */
+    public static File miiModelDir(Context c) { return new File(fontsDir(c).getParentFile(), "miimodel"); }
     public static boolean hasFonts(Context c) { return new File(fontsDir(c), "standard.ttf").isFile(); }
 
     public static String firmwareDir(Context c) { return of(c).getString("firmware_dir", null); }

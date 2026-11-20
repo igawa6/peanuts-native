@@ -1,0 +1,39 @@
+# DRAGON BALL: Sparking! ZERO (Unreal Engine 4/5, SDK 14.3.0)
+# PEANUTS: provisional profile generated on Linux
+
+# ---- Identity ----
+title_id	010035F022078000
+program_id	010035F022078000
+
+# ---- App ----
+name	DRAGON BALL: Sparking! ZERO
+ipa	DragonBallSparkingZero.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v0	1.0.0	main=764daf48e0d3500e369c1baffa5159d6	subsdk0=c781dd63daf0ddcdb9975da50a198f93	sdk=2aef2cffb104ee7c9e212fd2f4c731e9
+package	v0
+shader_versions	v0
+
+# ---- Files ----
+modules	main subsdk0 sdk
+romfs_marker	SparkingZERO/Content/Paks/pakchunk0-Switch.ucas
+zip_store	.pak:.ttf:.ucas:.usm:.utoc:.metallib
+
+# ---- Graphics ----
+fps_target	30
+ue_texture_pool	1000
+
+# ---- Memory ----
+mem_reserve	0xF0000000
+mem_alias	0xC8000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1E00000
+
+# ---- Input ----
+pad_layout	full
+
+# ---- Shader split ----
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	DRAGON BALL: Sparking! ZERO shaders

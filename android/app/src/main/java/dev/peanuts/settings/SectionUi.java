@@ -81,12 +81,12 @@ final class SectionUi {
     }
 
     /** A row with its value line; l null: the row does nothing (no chevron) */
-    View setting(String emoji, String title, String value, View.OnClickListener l) { return row(emoji, title, value, l, false, false, null); }
+    View setting(String emoji, String title, CharSequence value, View.OnClickListener l) { return row(emoji, title, value, l, false, false, null); }
 
     /** A row with a switch at its end (a tap anywhere on the row flips it) */
-    View toggle(String emoji, String title, String value, boolean on, CompoundButton.OnCheckedChangeListener l) { return row(emoji, title, value, null, true, on, l); }
+    View toggle(String emoji, String title, CharSequence value, boolean on, CompoundButton.OnCheckedChangeListener l) { return row(emoji, title, value, null, true, on, l); }
 
-    private View row(String emoji, String title, String value, View.OnClickListener l, boolean toggle, boolean on, CompoundButton.OnCheckedChangeListener tl) {
+    private View row(String emoji, String title, CharSequence value, View.OnClickListener l, boolean toggle, boolean on, CompoundButton.OnCheckedChangeListener tl) {
         try {
             Constructor<?> ctor = setting.getDeclaredConstructor(Context.class, String.class, String.class, View.OnClickListener.class);
             ctor.setAccessible(true);
@@ -127,7 +127,7 @@ final class SectionUi {
             v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
             v.setMaxLines(2);
             v.setEllipsize(TextUtils.TruncateAt.END);
-            v.setVisibility(value == null || value.isEmpty() ? View.GONE : View.VISIBLE);
+            v.setVisibility(value == null || value.length() == 0 ? View.GONE : View.VISIBLE);
             col.addView(v);
             row.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             if (toggle) { Switch sw = new Switch(c); sw.setChecked(on); sw.setOnCheckedChangeListener(tl); row.addView(sw); }

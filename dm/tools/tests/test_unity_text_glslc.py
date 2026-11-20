@@ -107,5 +107,29 @@ class UnityTextGlslc(unittest.TestCase):
         self.assertEqual(ss.unity_text_glslc(d, 'resources.assets'), [])
 
 
+class GlslcComputeLayout(unittest.TestCase):
+    def test_use_section_offset_only_when_it_recovers_the_compute_header(self):
+        # PEANUTS(upstream-candidate): a valid section may put code after an extended control area.
+        start, nctl, gap, ncode = 0x120, 0x850, 0x180, 0x120
+        code_at = start + nctl + gap
+        blob = bytearray(code_at + ncode)
+        blob[:4] = GLSLC_MAGIC
+        struct.pack_into('<I', blob, 0x44, len(blob))
+        struct.pack_into('<I', blob, 0x4c, 1)
+        struct.pack_into('<3I', blob, 0x90, len(blob) - start, start, 0)
+        struct.pack_into('<4I', blob, 0xc0, 0, nctl + gap, ncode, nctl + gap)
+        blob[start:start + 4] = ss.CTL_MAGIC
+        struct.pack_into('<I', blob, start + 0x20, nctl)
+        struct.pack_into('<I', blob, start + 0x704, ncode)
+        struct.pack_into('<3I', blob, start + 0x748, 32, 1, 1)
+        for magic, ctl_end in ((ss.CS_MAGIC, code_at), (b'\0' * 4, start + nctl)):
+            with self.subTest(magic=magic.hex()):
+                blob[code_at:code_at + 4] = magic
+                [(source, stage, ctl, code)] = ss.glslc_shaders(bytes(blob), 'program.nvn')
+                self.assertEqual((source, stage), ('program.nvn#GLSLC@0x0', 'cs'))
+                self.assertEqual(ctl, bytes(blob[start:ctl_end]))
+                self.assertEqual(code, bytes(blob[ctl_end:ctl_end + ncode]))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,0 +1,32 @@
+// PEANUTS: Pack a tightly laid-out Vulkan image readback into NVN's 2D block-linear storage.
+#version 450
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0, std430) readonly buffer Linear { uint words[]; } src;
+layout(set = 0, binding = 1, std430) buffer Tiled { uint words[]; } dst;
+layout(push_constant) uniform Geometry {
+    uint srcWord, dstWord, rowBytes, pitchWords, rows, gobsX, tileH, words, switch2;
+} g;
+void main() {
+    uint word = gl_GlobalInvocationID.x;
+    if (word >= g.words) return;
+
+    uint gob = word >> 7;
+    uint block = gob >> g.tileH;
+    uint offset = (word & 127u) << 2;
+    if (g.switch2 != 0)
+        offset = (offset & ~96u) | ((offset & 32u) << 1) | ((offset & 64u) >> 1);
+    uint x = (block % g.gobsX) * 64u + ((offset & 256u) >> 3)
+           + ((offset & 32u) >> 1) + (offset & 15u);
+    uint y = ((block / g.gobsX) << (g.tileH + 3u))
+           + ((gob & ((1u << g.tileH) - 1u)) << 3)
+           + ((offset & 192u) >> 5) + ((offset & 16u) >> 4);
+    if (x >= g.rowBytes || y >= g.rows) return;
+
+    uint value = src.words[g.srcWord + y * g.pitchWords + (x >> 2)];
+    uint count = min(g.rowBytes - x, 4u);
+    if (count < 4u) {
+        uint mask = (1u << (count * 8u)) - 1u;
+        value = (value & mask) | (dst.words[g.dstWord + word] & ~mask);
+    }
+    dst.words[g.dstWord + word] = value;
+}

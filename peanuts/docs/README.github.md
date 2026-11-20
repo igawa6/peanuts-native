@@ -26,7 +26,9 @@ too.
 
 ## Supported games
 
-Peanuts Native 0.1.5 includes 39 games. The Companion column shows whether a game appears in the Eden Duo Companions catalog. Updates are shown as version numbers or numeric update IDs.
+<!-- PEANUTS begin: the Supported games table, written by peanuts/scripts/games_catalog.py from peanuts/games.tsv, peanuts/release-titles.txt and the profiles. Edit peanuts/games.tsv, not this table -->
+
+Peanuts Native 0.1.5 includes 39 games, and 12 more are coming in 0.1.6 (marked in the table). The Companion column shows whether a game appears in the Eden Duo Companions catalog. Updates are shown as version numbers or numeric update IDs.
 
 | Game | Title ID | Game update | Companion |
 |---|---|---|---|
@@ -67,8 +69,22 @@ Peanuts Native 0.1.5 includes 39 games. The Companion column shows whether a gam
 | Monster Sanctuary | `0100A0F00DA68000` | 2.1.0 | Yes |
 | Astral Chain | `01007300020FA000` | 1.0.1 | No |
 | Diablo III: Eternal Collection | `01001B300B9BE000` | 2.7.7.92380 | Yes |
-| EA Sports FC 27 | `0100C49025D3E000` | 1.8d.6523 | No |
+| EA Sports FC 27 | `0100C49025D3E000` | 1.8d.6523, 1.8d.f570 | No |
 | Tomodachi Life: Living the Dream | `010051F0207B2000` | 1.0.4 | No |
+| Unicorn Overlord (coming in 0.1.6) | `010069401ADB8000` | 1.05 | No |
+| Luigi's Mansion 3 (coming in 0.1.6) | `0100DCA0064A6000` | 1.4.0 | No |
+| Pokémon Legends: Z-A (coming in 0.1.6) | `0100F43008C44000` | 2.0.2 | No |
+| STORY OF SEASONS: Grand Bazaar (coming in 0.1.6) | `0100DAE01E4C8000` | v655360 | No |
+| Double Dragon Revive (coming in 0.1.6) | `01006AE02236C000` | 1.0.0, N1.10 | No |
+| Trails in the Sky 2nd Chapter (coming in 0.1.6) | `01007A2027548000` | 1.0.3 | No |
+| DRAGON BALL: Sparking! ZERO (coming in 0.1.6) | `010035F022078000` | 1.0.0 | No |
+| Pokémon Scarlet (coming in 0.1.6) | `0100A3D008C5C000` | 4.0.0 | No |
+| Pokémon Violet (coming in 0.1.6) | `01008F6008C5E000` | 4.0.0 | No |
+| DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET (coming in 0.1.6) | `010051C0134F8000` | 1.70 | No |
+| STEINS;GATE RE:BOOT (coming in 0.1.6) | `01008BC024FDE000` | 1.0.3, 1.0.4 | No |
+| NieR:Automata The End of YoRHa Edition (Asian release) (coming in 0.1.6) | `0100B8E016F76000` | 1.0.3 | No |
+
+<!-- PEANUTS end: the Supported games table -->
 
 On the 0.1.5 verification build, an AYN Thor with Turnip v26.2.0 R5 reached the rooftop fight in Demon Slayer 2 and the opening cave in Tears of the Kingdom. Kirby and the Forgotten Land skipped no draws in the opening walk with either a fresh or a saved shader cache.
 
@@ -79,8 +95,8 @@ On the 0.1.5 verification build, an AYN Thor with Turnip v26.2.0 R5 reached the 
 - Android 13 or later, a Snapdragon GPU with Vulkan 1.3, and 12 GB of RAM or more. A Turnip Vulkan driver is
   recommended; the app can download one.
 - Free storage for the game and its build. Plan for the size of the game plus a few GB.
-- Your own `prod.keys`, your own firmware dump (a folder or a `.zip`) and your own game dump (NSP, XCI or a dump
-  folder), with its update.
+- Your own `prod.keys`, your own firmware dump (a folder or a `.zip`) and your own game dump (NSP, XCI, either compressed
+  as NSZ or XCZ, or a dump folder), with its update.
 
 ## Your keys and games
 
@@ -158,9 +174,13 @@ by seedds (MIT). Some fixes are adapted from [nx2android](https://github.com/shi
 
 The companion runtime and package format come from [Eden Duo](https://github.com/igawa6/eden-duo).
 
-Contributors: the builder for PC, Mac and Linux (`peanuts/docs/BUILDER.md`) is by [intermission88](https://github.com/intermission88)
-(pull request #13), and so are the profile of Kirby's Return to Dream Land Deluxe and the guide for adding a game
-(`peanuts/docs/NEW-GAME.md`, pull request #34). The issue and discussion forms were set right by [ArchOwlen](https://github.com/ArchOwlen) (pull request #5).
+Contributors:
+
+- [intermission88](https://github.com/intermission88): the builder for PC, Mac and Linux (`peanuts/docs/BUILDER.md`, pull request #13), the profiles of Kirby's Return to Dream Land Deluxe, Kirby and the Forgotten Land and Super Mario 3D World + Bowser's Fury (pull requests #34, #84 and #83), the guide for adding a game (`peanuts/docs/NEW-GAME.md`, pull request #34), and fixes to the on-device packer, the release notes popup and the Unreal shader step (pull requests #37, #35 and #71).
+- [davdxpx](https://github.com/davdxpx): the issue and discussion forms rebuilt from the ground up, with a game catalog that also keeps the Supported games table up to date (pull request #175), building from .nsz and .xcz files, the launcher and companion on the second screen, Swap screens, the GPU driver page, Share build log, game icons that outlive their NSP, companion release notes, and many smaller fixes across the app.
+- [elliott-groves](https://github.com/elliott-groves): development builds that install beside the Peanuts Native app (pull request #60).
+- [tapionallanaire](https://github.com/tapionallanaire): building the APK on Windows (pull request #54).
+- [ArchOwlen](https://github.com/ArchOwlen): the first issue and discussion forms (pull request #5).
 
 The project as a whole is licensed GPL-3.0-or-later. Frame generation (ported from Eden and lsfg-vk) and other
 components carry their own licenses; see `android/NOTICE.md` and `dm/third_party/README.md`.

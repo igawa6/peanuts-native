@@ -111,6 +111,9 @@ public final class LibrarySettings {
         companionsRow = new PUi.Setting(a, "🖥️", "Companions", Haptics.on(Haptics.Word.TICK, v -> a.startActivity(new Intent().setClassName(a.getPackageName(), "dev.peanuts.CatalogActivity"))))
                 .chevron(a);
         card.addView(companionsRow.view);
+        // Your own Miis, which games list as the console's (dev.peanuts.mii.MiiActivity, DM_MII_DB)
+        card.addView(new PUi.Setting(a, "🙂", "Miis", Haptics.on(Haptics.Word.TICK, v -> a.startActivity(new Intent().setClassName(a.getPackageName(), "dev.peanuts.mii.MiiActivity"))))
+                .value("Make your own Miis for games").chevron(a).view);
         // Developer-only, no row of its own (PeanutsPrefs.developerReadout): a long press flips whether a title with no companion package shows the raw
         // chains/scan readout on the second display instead of leaving it free for Android's own launcher. The row's own value says so when it's on, so
         // it can't be left on by accident when the device is handed back.
@@ -124,21 +127,21 @@ public final class LibrarySettings {
         refreshRows();
     }
 
-    private static String companionsValue(Activity a) {
+    private static CharSequence companionsValue(Activity a) {
         String base = "The catalog: install, update or remove a game's companion";
-        return PeanutsPrefs.developerReadout(a) ? base + " · developer readout on (long press to turn off)" : base;
+        return PeanutsPrefs.developerReadout(a) ? PUi.joined(base, "developer readout on (long press to turn off)") : base;
     }
 
     private static void refreshRows() {
         Activity a = rowsOf;
         if (a == null || gameRow == null) return;
         String g = PeanutsPrefs.gameDir(a), u = PeanutsPrefs.updateDir(a), d = PeanutsPrefs.dlcDir(a);
-        gameRow.value(g != null ? g : "Not set. Every NSP, XCI, .nup and dump folder inside is shown on Home.");
+        gameRow.value(g != null ? g : "Not set. Every NSP, NSZ, XCI, XCZ, .nup and dump folder inside is shown on Home.");
         List<String> builds = PeanutsPrefs.buildDirs(a);
         buildRow.value(builds.isEmpty() ? "Add a folder on the phone or SD card"
-                : "Default: " + builds.get(0) + (builds.size() > 1 ? " · " + builds.size() + " folders" : ""));
-        updateRow.value(u != null ? u + " · hold to forget" : "Optional. Another folder with update NSPs, matched to their games by title ID.");
-        dlcRow.value(d != null ? d + " · hold to forget" : "Optional. Another folder with DLC NSPs, matched to their games by title ID.");
+                : PUi.joined("Default: " + builds.get(0), builds.size() > 1 ? builds.size() + " folders" : null));
+        updateRow.value(u != null ? PUi.joined(u, "hold to forget") : "Optional. Another folder with updates as NSP or NSZ files, matched to their games by title ID.");
+        dlcRow.value(d != null ? PUi.joined(d, "hold to forget") : "Optional. Another folder with DLC as NSP or NSZ files, matched to their games by title ID.");
         keysRow.value(keysValue(a));
         fontsRow.value(fontsValue(a, "Used by games and companions. Missing characters in Android's fonts can prevent a game from starting."));
         if (companionsRow != null) companionsRow.value(companionsValue(a));
@@ -160,9 +163,9 @@ public final class LibrarySettings {
         }
     }
 
-    static String keysValue(Activity a) {
+    static CharSequence keysValue(Activity a) {
         if (!PeanutsPrefs.hasKeys(a)) return "Needed to build a game (Build asks for them). Tap to pick the prod.keys from your own console.";
-        return "prod.keys is in the app (" + PeanutsPrefs.keysFile(a).length() + " bytes)" + (ImporterPort.get().available() ? "" : " · the importer is not in this build");
+        return PUi.joined("prod.keys is in the app (" + PeanutsPrefs.keysFile(a).length() + " bytes)", ImporterPort.get().available() ? null : "the importer is not in this build");
     }
 
     private static String firmwareTried;   // the firmware path a read was last started for by firmwareAfterAccess: once a path, not at every drawing of the row
@@ -184,12 +187,12 @@ public final class LibrarySettings {
         refreshRows();
     }
 
-    static String fontsValue(Activity a, String none) {
+    static CharSequence fontsValue(Activity a, String none) {
         firmwareAfterAccess(a);
         String fw = PeanutsPrefs.firmwareDir(a);
         if (fontsState != null) return fontsState;
         if (PeanutsPrefs.hasFonts(a)) return "Firmware added" + (fw != null ? " from " + fw : "");
-        return fw != null ? fw + " · not added yet" : none;
+        return fw != null ? PUi.joined(fw, "not added yet") : none;
     }
 
     /** Home's first-run card: the two optional folders in a small sheet */
@@ -418,7 +421,8 @@ public final class LibrarySettings {
         triedMoreFonts = true;
         File d = PeanutsPrefs.fontsDir(a);
         String src = PeanutsPrefs.firmwareDir(a);
-        if (src == null || !new File(d, "standard.ttf").isFile() || new File(d, "cjk_sc.ttf").isFile() || !src.startsWith("/") || !new File(src).exists()) return;
+        boolean haveAll = new File(d, "cjk_sc.ttf").isFile() && new File(PeanutsPrefs.miiModelDir(a), "ShapeHigh.dat").isFile();   // PEANUTS: MiiModel too (the importer writes it beside the fonts)
+        if (src == null || !new File(d, "standard.ttf").isFile() || haveAll || !src.startsWith("/") || !new File(src).exists()) return;
         extractFonts(a, src, null);
     }
 
@@ -469,7 +473,8 @@ public final class LibrarySettings {
     /**
      * Settings › Library › Free up space: the original NSP/XCI of every game already built into a .nup (LibraryScanner.Title.originals), which the game no
      * longer needs to play or to rebuild. Deleted one by one after a confirmation that says what is lost: a later game update needs the original again (its
-     * patch reads the base NCA's raw bytes, which the .nup does not keep). Only a READY title whose .nup is there and not empty, and only plain files.
+     * patch reads the base NCA's raw bytes, which the .nup does not keep). Only a READY title whose .nup is there and not empty, and only plain files. Before an
+     * original goes, the game's icon is made sure of with the .nup (LibraryScanner.icon: inside it, else the PNG beside it), as the original may be its last source.
      */
     static void freeUpSpace(Activity a) {
         java.util.List<LibraryScanner.Title> ready = new java.util.ArrayList<>();
@@ -481,7 +486,7 @@ public final class LibrarySettings {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(PUi.dp(a, 20), PUi.dp(a, 4), PUi.dp(a, 20), 0);
         AlertDialog[] d = new AlertDialog[1];
-        if (ready.isEmpty()) PUi.add(box, PUi.small(a, "Nothing to free: no built game still has its original NSP or XCI in your folders (or the library is still scanning)."), 0);
+        if (ready.isEmpty()) PUi.add(box, PUi.small(a, "Nothing to free: no built game still has its original game files in your folders (or the library is still scanning)."), 0);
         else PUi.add(box, PUi.small(a, "These games are built, so they play and rebuild without their original dump. Keep the original if you will add a later game update: an update can only be applied to the original."), 8);
         for (LibraryScanner.Title t : ready) {
             for (LibraryScanner.Source s : t.originals) {
@@ -491,6 +496,7 @@ public final class LibrarySettings {
                 box.addView(new PUi.Setting(a, "🗑️", t.name.isEmpty() ? t.titleId : t.name, v -> PUi.confirmDanger(a, "Delete the original dump?",
                         f.getName() + " (" + size + ") is deleted. " + (t.name.isEmpty() ? "The game" : t.name) + " keeps playing from its built copy, with its saves. "
                                 + "To add a later game update you will need this file again.", "Delete", () -> new Thread(() -> {
+                            LibraryScanner.icon(a, t);   // the icon with the .nup first, while its source is still there (a .nup made before issue #158 carries none)
                             boolean ok = f.isFile() && t.base.file.isFile() && t.base.file.length() > 0 && f.delete();   // the built copy checked again just before
                             UI.post(() -> {
                                 if (a.isFinishing() || a.isDestroyed()) return;
@@ -499,7 +505,7 @@ public final class LibrarySettings {
                                 Library.rescan(a);
                             });
                         }, "peanuts-free-space").start()))
-                        .value("Original " + size + " · " + f.getName()).view);
+                        .value(PUi.joined("Original " + size, f.getName())).view);
             }
         }
         d[0] = PUi.sheet(a, "Free up space", box).setPositiveButton("Done", null).show();

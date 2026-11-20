@@ -204,6 +204,17 @@ class Targeted(unittest.TestCase):
         self.assertIn('targeted split: its tables match the profile for v327680', log)
         self.same(present, actual)
 
+        # PEANUTS: regular variation pairs between shared shader keys can differ too.
+        with (self.prof / 'shader_pairs.tsv').open('a') as f:
+            f.write(pair)
+        actual, log = self.split('update-with-required-variation', True)
+        self.assertIn("made a shader_pairs.tsv that differs from the profile's", log)
+        self.same(present, actual)
+        (self.prof / 'shader_pairs_optional.tsv').write_text('v327680\t' + pair)
+        actual, log = self.split('update-with-optional-variation', True)
+        self.assertIn('targeted split: its tables match the profile for v327680', log)
+        self.same(present, actual)
+
         mapping.write_text(mapping.read_text().replace('/v65536/Old/', '/Old/'))
         optional = self.prof / 'shader_optional.tsv'
         optional.write_text(''.join(row.split('\t')[3] + '\t1.0.0 (v65536) only\n' for row in old_rows))

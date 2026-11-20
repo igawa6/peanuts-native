@@ -158,8 +158,9 @@ final class Prefs {
         Integer r = recCap(c, titleId);   // the recommended limit comes before the profile's and the main screen's (Recommend.effective)
         Profile p = Profile.of(titleId);
         // PEANUTS: Use game-owned pacing until the player chooses a rate.
-        int defaultCap = p != null && p.optInPresentRate() ? FrameRateCaps.GAME_OWNED : of(c).getInt("fps_cap", -1);
-        int v = FrameRateCaps.normalize(of(c).getInt(gameKey("fps_cap", titleId), r != null ? r : pl > 0 ? pl : defaultCap), paceMax(titleId));
+        boolean owned = p != null && (p.optInPresentRate() || p.ownedByDefault);   // PEANUTS: fps_owned_default: Game owned before the profile's limit
+        int defaultCap = owned ? FrameRateCaps.GAME_OWNED : of(c).getInt("fps_cap", -1);
+        int v = FrameRateCaps.normalize(of(c).getInt(gameKey("fps_cap", titleId), r != null ? r : pl > 0 && !owned ? pl : defaultCap), paceMax(titleId));
         if (p != null && !p.fpsModes.isEmpty()) return p.fpsMode(v);
         return v > 0 && p != null && v < p.fpsLimitMin ? p.fpsLimitMin : v;
     }

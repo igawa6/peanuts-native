@@ -5,6 +5,9 @@ contact_links:
   - name: Install and use
     url: https://github.com/igawa6/peanuts-native
     about: What you need, the games and versions that run, and how to add a game. Questions and ideas have their own form above.
+  - name: A companion shows something wrong   # PEANUTS: companion pages are made in their own repository
+    url: https://github.com/igawa6/eden-duo-companions/issues
+    about: Wrong or missing information on a companion's pages. A companion that does not start or install goes in Setup or app problem above.
   # - name: Questions, ideas and phone reports that work
   #   url: https://github.com/igawa6/peanuts-native/discussions
   #   about: Ask, suggest a game or a feature, or tell which phone and driver it runs on. Issues are for problems, with the form.

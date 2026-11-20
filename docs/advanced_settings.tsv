@@ -151,6 +151,8 @@ DM_MEM_FILEBACK_KINDS	developer	Memory			text			both
 DM_MEM_FILEBACK_MB	developer	Memory			text			both						
 DM_METAL_CAPTURE	internal	Diagnostics			text			both						Mac or iOS only
 DM_METAL_HUD	internal	Game			text			both						Mac or iOS only
+DM_MII_DB	developer	Diagnostics			text			both						
+DM_MII_MODEL	developer	Diagnostics			text			both						
 DM_MODULE_ARENA	developer	Game			text			both						
 DM_MOD_INIT_ARRAY	developer	Diagnostics			text			both						
 DM_MOTION	developer	Input			text			both						
@@ -502,6 +504,7 @@ DM_VK_EVENT_GATE	developer	Graphics			text			both
 DM_VK_EVENT_LOG	developer	Diagnostics			text			both						
 DM_VK_EVENT_PARK_MS	developer	Diagnostics			text			both						
 DM_VK_EVENT_WAIT	developer	Graphics			text			both						
+DM_VK_FB_PIN	developer	Diagnostics			text			both						
 DM_VK_FD_ALIAS	developer	Graphics			text			both						
 DM_VK_FG	developer	Graphics			text			both						
 DM_VK_FG_OWNFMT	developer	Diagnostics			text			both						
@@ -742,6 +745,7 @@ DM_VK_TEX_STATS_DRAWS	developer	Diagnostics			text			both
 DM_VK_TEX_STATS_LINES	developer	Diagnostics			text			both						
 DM_VK_TEX_STATS_TABLE	developer	Diagnostics			text			both						
 DM_VK_TEX_TRACK	developer	Diagnostics			text			both						
+DM_VK_TILED_WB	developer	Diagnostics			text			both						Rendered texture storage A/B test
 DM_VK_TL_HOST	developer	Graphics			text			both						
 DM_VK_TL_POLL	developer	Diagnostics			text			both						
 DM_VK_TS_LOG	developer	Diagnostics			text			both						

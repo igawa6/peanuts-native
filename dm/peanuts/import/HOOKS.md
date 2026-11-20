@@ -31,6 +31,36 @@ transparently (the hash layers before `data_off` stay raw, `nx_sec_read_raw` rea
 Tests: `comp_test` (host build) dumps LZ4 blocks + the importer's bytes, `tests/comp_check.py` compares them with python's `lz4.block`;
 `nximport_cli ivfc` checks a data level against its IVFC hashes (raw, so it holds for compressed sections too).
 
+## Compressed dumps: .nsz and .xcz (nx_ncz.c, issue #149)
+
+An NSZ is a PFS0 and an XCZ an XCI whose program and public-data NCAs are NCZs (`<id>.ncz`): the NCA's first 0x4000 bytes as they are, a table of
+its encrypted ranges with their keys and counters, then its decrypted body as zstd, solid (one stream) or in blocks. The layout is nsz's
+(github.com/nicoboss/nsz, MIT), written in `nx_ncz.c` from its description. An NCZ is a store below the NCA reader (`NxStore` in `nx_internal.h`,
+`nx_nca_open_store`): every byte the reader asks for comes from it as the original NCA has it, so tickets, BKTR, LZ4 sections, the trees and the writer
+are the same for both and the `.nup` is the uncompressed dumps' byte for byte. A CTR range whose key and counter are the reader's own is handed over as
+it was decompressed; anything else is encrypted again first.
+
+- A block NCZ is read where it is: each reader thread keeps its last block (`nx_ncz_thread_done` frees the calling thread's), and the writer's chunks
+  end at block ends so no block is decompressed twice. Block sizes 512 B to 16 MiB.
+- A solid NCZ cannot seek, and the trees and a BKTR update read the base anywhere, so it is decompressed once into a temporary file: `NXIMPORT_TMPDIR`
+  when set, else the hidden folder `.<out file name>.unpack` beside the `.nup`. The file is unlinked as soon as it is open (its space comes back even if
+  the process is killed; on Windows it is deleted when the import ends). The zstd window may be at most 128 MiB (nsz's default level asks for 8 MiB).
+- Every NCZ is checked before the writer starts: the rebuilt NCA's SHA-256 must start with its name and equal its CNMT record (the fixture's CNMT
+  now records real hashes and sizes), its keys must be the ones the ticket or prod.keys give (an NCZ's own keys are never a key source), its size the
+  header's; the title's meta NCA is checked against its name and its control NCA against its record. A solid NCZ is hashed while it is unpacked, a block
+  one in a pass of its own (parallel decompression, one hasher).
+- Progress: steps `unpack/<file name>` and `check/<file name>` come before the writer's, `done`/`total` counting only those bytes.
+- Stop: `nximport_cancel(1)` from any thread ends the unpack, the check and the writer within a second ("the import was stopped"); the flag is cleared
+  when the import returns, and a caller clears it with `nximport_cancel(0)` before starting one.
+- The run-time reader never sets a store: the host still refuses compressed dumps (`peanuts_nsp.c`, `NSP-DIRECT.md`).
+- zstd is `dm/third_party/zstd/zstddeclib.c` (BSD), compiled into the library from this folder's CMakeLists with its functions hidden.
+
+Tests: `ncz_test` (off Windows; ctest) writes the fixture's dumps again as NSZ and XCZ (`tests/ncz_fixture.h`: solid; blocks of 512 B, 4 KiB, 16 KiB,
+64 KiB and 1 MiB; a first range past 0x4000; frames of raw and RLE blocks, and really compressed ones through the system's `libzstd.so.1` when
+there) and compares each `.nup` with the uncompressed dumps' byte for byte: compressed and plain files mixed, a BKTR update over either, an LZ4 base,
+an XCZ, 1 and 8 reader threads. Then damaged, cut-off and unreadable files and Stop: each refused with its reason, no `.nup` and nothing left beside
+it. Run under AddressSanitizer, UBSan and ThreadSanitizer as well (2026-11-19: clean).
+
 ## Java side (this is the class the JNI binds to)
 
 ```java
@@ -39,18 +69,23 @@ public final class Native {
     static { System.loadLibrary("nximport"); }
     public interface Progress { void on(String step, long done, long total); }
     public static native int    keys(String prodKeysPath);
-    public static native String probe(String file);                                  // JSON array: [{"title_id","app_id","kind","version","name","publisher"}], null on failure
+    public static native String probe(String file);                                  // JSON array: [{"title_id","app_id","kind","version","name","publisher","size","unpack","check"}], null on failure
     public static native int    icon(String file, String titleId, String outPng);     // titleId null = the first title with an icon
     public static native int    writeNup(String out, String[] inputs, String baseTitleId, Progress cb);
     public static native int    firmwareFonts(String firmwareDir, String outDir);     // writes <outDir>/standard.ttf and nintendo_ext.ttf
     public static native String lastError();
     public static native void   setThreads(int n);                                    // optional (2026-11-12): writeNup's reader threads, 0 = automatic; see "Speed"
+    public static native void   cancel(boolean on);                                   // optional (issue #149): Stop; false before an import starts
 }
 ```
 
 `writeNup` blocks for the whole write (minutes for a 6 GB game): call it from a worker thread (the foreground service of the build pipeline);
 `Progress.on` is called on that same thread once per MiB with `step` one of `probe`, `base/exefs`, `base/romfs`, `update/<version>/exefs|romfs`,
 `addon/<title id>/romfs`, `toc`, and `done`/`total` in bytes of the whole job (`total` is 0 during `probe`). A failed write removes the partial file.
+With compressed inputs the steps `unpack/<file name>` and `check/<file name>` come first, their `done`/`total` counting only those bytes. `cancel(true)`
+from any thread (the service's Stop) makes `writeNup` return -1 within a second with `lastError()` "the import was stopped"; the caller clears it with
+`cancel(false)` before the next import. The probe's `size` is a title's program and data NCAs as its CNMT records them (the `.nup`'s size, also for a
+compressed file), `unpack` and `check` the bytes of its solid and block NCZs.
 
 ## Speed (2026-11-12)
 

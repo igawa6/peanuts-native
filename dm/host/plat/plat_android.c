@@ -464,6 +464,18 @@ int plat_clone_tree(const char *from, const char *to) {
 }
 static int swap_rm_cb(const char *p, const struct stat *st, int f, struct FTW *w) { (void)st; (void)f; (void)w; return remove(p); }
 static int swap_rm_tree(const char *p) { return nftw(p, swap_rm_cb, 16, FTW_DEPTH | FTW_PHYS); }
+// PEANUTS begin: every file and folder of a tree on the storage (fsync). plat_clone_tree's copy leaves its data in the page cache, so a swap, or the journal marker
+// that rolls it forward, could reach the storage before the files it brings in: a phone that rebooted seconds after a save came back with that save's files empty
+// or zeroed, and the game started over (#195). An error is returned, not skipped: the caller then leaves b as it is
+static int swap_sync_cb(const char *p, const struct stat *st, int f, struct FTW *w) {
+    (void)st; (void)w; if (f != FTW_F && f != FTW_D && f != FTW_DP) return 0;
+    int fd = open(p, O_RDONLY | O_CLOEXEC | (f == FTW_F ? 0 : O_DIRECTORY)); if (fd < 0) return -1;
+    int r = fsync(fd), e = errno; close(fd);
+    if (r && (e == EINVAL || e == EROFS || e == ENOSYS || e == ENOTSUP)) r = 0;   // a filesystem without fsync for this kind of file (nothing more can be done there)
+    errno = e; return r;
+}
+static int swap_sync_tree(const char *p) { return nftw(p, swap_sync_cb, 16, FTW_DEPTH | FTW_PHYS); }
+// PEANUTS end
 // RENAME_EXCHANGE where the filesystem has it (app-private ext4/f2fs). Shared storage (/sdcard, a FUSE mount) answers EINVAL, and renaming a DIRECTORY there costs
 // about 1.2 s each (measured on the phone; a file rename is 10 ms), so three directory renames made a commit take 4 s. There b is brought to a's content by FILE
 // operations under a roll-forward journal instead: marker b.pend1 (holds a's path) is written once a is complete; stage 1 deletes what b has and a lacks; b.pend2
@@ -528,10 +540,12 @@ static int swap_apply(const char *a, const char *b, int stage1) {
     } else if (unlink(m1) && errno != ENOENT) return -1;   // recovery from .pend2: a .pend1 beside it (a stop between writing .pend2 and unlinking .pend1) goes first
     swap_dir_sync(b);
     if (swap_stage2(a, b)) return -1;
-    unlink(m2); return 0;
+    swap_sync_tree(b);   // PEANUTS: stage 2's renames on the storage before .pend2 goes (#195); b is the new version already, so a failure here is not the swap's
+    unlink(m2); swap_dir_sync(b); return 0;   // PEANUTS: and .pend2's unlink
 }
 int plat_rename_swap(const char *a, const char *b) {
-    if (!syscall(SYS_renameat2, AT_FDCWD, a, AT_FDCWD, b, 2 /* RENAME_EXCHANGE */)) return 0;
+    if (swap_sync_tree(a)) return -1;   // PEANUTS: a's files on the storage before anything points at them (#195)
+    if (!syscall(SYS_renameat2, AT_FDCWD, a, AT_FDCWD, b, 2 /* RENAME_EXCHANGE */)) { swap_dir_sync(b); return 0; }   // PEANUTS: the exchange too
     if (errno != EINVAL && errno != ENOSYS && errno != EXDEV && errno != ENOTSUP) return -1;
     char m1[4200]; if (snprintf(m1, sizeof m1, "%s.pend1", b) >= (int)sizeof m1) { errno = ENAMETOOLONG; return -1; }
     if (swap_marker(m1, a)) return -1;                                  // from here on the commit is rolled forward, also after a crash

@@ -17,7 +17,10 @@ struct fpw_row {
     float a;
     uint32_t ticks;
   };
-  float b;
+  union { // PEANUTS: an elapsed tick row has an exact integer ceiling.
+    float b;
+    uint32_t ticks_max;
+  };
 };
 struct fpw_rows {
   struct fpw_row row[FPW_MAX_ROWS];
@@ -117,15 +120,21 @@ static inline int fpw_parse(const char *spec, const char *build,
     if (!r.copies || (r.kind == 13 && r.copies != 1) ||
         (r.kind == 13 && r.direct && (r.offset & 7)))
       return -1;
-    if (r.kind == 17) { // PEANUTS: tick scales are unsigned decimal integers.
+    if (r.kind == 17) { // PEANUTS: ticks per second, then 1 for a fixed step or the maximum elapsed step in ticks.
       size_t digits = strspn(f[4], "0123456789");
-      if (!digits || strcmp(f[4] + digits, ":1"))
+      if (!digits || f[4][digits] != ':')
+        return -1;
+      const char *max = f[4] + digits + 1;
+      if (!*max || max[strspn(max, "0123456789")])
         return -1;
       errno = 0;
       unsigned long long ticks = strtoull(f[4], NULL, 10);
-      if (errno || ticks < 120 || ticks > UINT32_MAX)
+      unsigned long long ceiling = strtoull(max, NULL, 10);
+      if (errno || ticks < 120 || ticks > UINT32_MAX ||
+          (ceiling != 1 && (ceiling < ticks / 15 || ceiling > ticks)))
         return -1;
       r.ticks = (uint32_t)ticks;
+      r.ticks_max = (uint32_t)ceiling;
     } else if ((r.kind >= 6 && r.kind <= 10) || r.kind >= 13) {
       if (!fpw_factors(f[4], &r.a, &r.b) ||
           (r.kind != 10 && r.kind != 14 && r.kind != 16 && r.a == 0))
@@ -280,8 +289,14 @@ static inline unsigned fpw_apply_context_storage(const struct fpw_rows *rows,
     uint32_t value = 0;
     if (r->kind == 14)
       value = (uint32_t)r->a;
-    else if (r->kind == 17) // PEANUTS: integer ticks per frame
+    else if (r->kind == 17) { // PEANUTS: integer ticks per frame
       value = r->ticks / (unsigned)fps;
+      if (r->ticks_max > 1 && isfinite(elapsed) && elapsed > 0) {
+        double measured = elapsed * r->ticks;
+        if (measured > value)
+          value = measured >= r->ticks_max ? r->ticks_max : (uint32_t)(measured + 0.5);
+      }
+    }
     else if (r->kind == 11)
       value = (uint32_t)fps;
     else if (r->kind == 5)

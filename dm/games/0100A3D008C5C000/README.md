@@ -5,14 +5,41 @@ Playable on the Mac: language and character selection, the academy opening,
 the native Bink movie, getting up in the bedroom, walking downstairs and
 through the living room and kitchen, camera control, dialogue and save/reload.
 The unsigned 1.0.0 IPA is built (~7.0 GB); iPhone testing is pending.
-Only 1.0.0 is registered, and the profile's shader tables come from v0.
-When the dump folder also contains updates, build the supported version with
-`scripts/build_ipa_from_nsp.py <dump folder> -p v0` (add
-`--platform mac` for a Mac build). The builder otherwise selects the newest
-supplied version. The supplied 4.0.0 update is damaged and remains unsupported
-(see [Files and builds](#files-and-builds)).
+<!-- PEANUTS: preserve the Mac route and record the new Android build separately. -->
+The Mac route below was tested on 1.0.0. Select it with
+`scripts/build_ipa_from_nsp.py <dump folder> --platform mac -p v0`.
+Peanuts for Android uses 4.0.0 from a later, verified input.
 [Pokémon Violet](../01008F6008C5E000/README.md) is its twin: the same `sdk`
 and `subsdk0` builds and the same shader tables, with a `main` of its own.
+
+<!-- PEANUTS begin -->
+## Peanuts Native on Android
+
+- 4.0.0 (`v786432`), main `421c5411b487eb4d049dd065fec95477`, SDK 13.3.13,
+  add-on `0100A3D008C5D001`. The game reported and mounted this add-on on Thor.
+  Access to its story content still needs a later save.
+- A full PC split found 35,937 shader keys and 28,299 variation pairs. The
+  targeted split reads only `arc/data.trpfs` and matched the full tables for
+  this build. The union retains v0's 3,279 extra keys and identifies the
+  30 v0-only pairs whose two shaders are also present in 4.0.0.
+- The exact-build timing plan redirects six readers to a private copy of
+  Trinity's five-period table. The main frame controller selects the entry
+  updated by the host within the chosen cap and the stock 83.3 ms ceiling.
+  Game owned retains the stock code.
+  [Fl4sh's 4.0.0 timing reference](https://github.com/Fl4sh9174/Switch-Emulator-Ultrawide-FPS-Mods)
+- The alias region accommodates the 12 GiB reservation at startup. Offline
+  BLE replies let the SDK initialize with an empty device list.
+  [nx2android's Scarlet 4.0.0 profile](https://github.com/shirai91/nx2android/tree/91a6a6e4de3e4e522260ef5981f567a786dcdce6/nxnative/dm/games/0100A3D008C5C000)
+- On AYN Thor with Turnip v26.2.0-R5, character setup and the opening led to
+  walking in the bedroom and downstairs. Both AAudio streams ran without
+  sustained underruns. The warm launch loaded the save and returned to the house.
+- At the 60 FPS cap the busier interior ran at about 49 FPS on a 60 Hz panel.
+  A 90-frame sample in the lighter bedroom on the 120 Hz panel reached 59.83 FPS
+  with a 16.74 ms 90th-percentile frame time. A 20 FPS sample on the same panel
+  reached 19.75 FPS. Higher caps are selectable and depend on the scene.
+- The captured 270-key seed finished in 5.5 s before guest entry. The next
+  launch reused 6.6 MB of driver cache and skipped blocking preparation.
+<!-- PEANUTS end -->
 
 ## Memory
 
@@ -64,10 +91,10 @@ game's own Oodle decoder extract them. Chain `157e1b96c8da`, profile inputs
 bindings. The complete build supplies the stamped `c1_full.tsv` and
 `cb_extent.tsv`; no shader override is needed.
 
-The 4.0.0 split aborts on 195 malformed active Trinity packs in the damaged
-input described [below](#files-and-builds). Full 4.0.0 shader coverage and an
-update IPA have not been produced. Its partial startup used the base shader
-libraries and reported missing update shader keys.
+<!-- PEANUTS: the historical failure concerns the earlier input. -->
+The earlier, damaged 4.0.0 input described [below](#files-and-builds) failed
+on 195 malformed Trinity packs. Its partial Mac startup used the base shader
+libraries and reported missing update keys.
 
 ### Pipeline preparation depth
 
@@ -236,8 +263,8 @@ existing [per-depth-mode entry-point mechanism](../../../docs/reference/shaders.
   `main+0x28f872c` sets the flag (+0x14) and reads the state word (+0x28). The
   rewriter now puts a barrier between those two
   ([the mechanism](../../../docs/reference/threads.md#trinitys-rendezvous-loses-its-release-on-apple-cores)).
-  Checked by disassembly and a standalone test, not in the game: no base NSP or
-  4.0.0 files are on the drive. Open until long clean runs of a build that froze.
+  <!-- PEANUTS --> The barrier was checked by disassembly and a standalone test.
+  Long gameplay runs on an affected build are still needed.
 
 ## Open
 

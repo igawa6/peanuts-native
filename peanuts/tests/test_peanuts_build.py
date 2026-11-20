@@ -202,6 +202,36 @@ class Build(unittest.TestCase):
         self.assertEqual((m.group('title'), m.group('app'), m.group('kind'), m.group('version'), m.group('name')),
                          ('01006bb00c6f0800', '01006bb00c6f0000', 'update', '131072', 'A "quoted" name'))
 
+    def test_compressed_inputs(self):
+        """.nsz and .xcz (issue #149): taken like .nsp and .xci; the probe's size line read; an uncompressed copy of the base chosen first; the space said"""
+        with tempfile.TemporaryDirectory() as d:
+            for n in ('g.nsz', 'g.nsp', 'c.xcz', 'note.txt'): Path(d, n).write_text('x')
+            mode, _, files = pb.classify([d])
+            self.assertEqual((mode, sorted(f.name for f in files)), ('nsp', ['c.xcz', 'g.nsp', 'g.nsz']))
+            self.assertEqual(pb.classify([str(Path(d, 'g.nsz'))])[2], [Path(d, 'g.nsz')])
+        m = pb.PROBE_SIZE.match('  size 01006bb00c6f0000  6442450944  unpack 6442434560  check 0')
+        self.assertEqual((m.group('title'), m.group('size'), m.group('unpack'), m.group('check')), ('01006bb00c6f0000', '6442450944', '6442434560', '0'))
+        nsz, nsp = Path('/x/g.nsz'), Path('/x/g.nsp')
+        out = (f'{nsz}  (1 title, 0.10s)\n  title 01006bb00c6f0000  app 01006bb00c6f0000  kind base  version 0  name "G"  publisher "P"\n'
+               '  size 01006bb00c6f0000  6442450944  unpack 6442434560  check 0\n'
+               f'{nsp}  (1 title, 0.10s)\n  title 01006bb00c6f0000  app 01006bb00c6f0000  kind base  version 0  name "G"  publisher "P"\n'
+               '  size 01006bb00c6f0000  6442450944  unpack 0  check 0\n')
+        real = pb.run; pb.SIZES.clear()
+        try:
+            pb.run = lambda cmd, dry, what, capture=False: (0, out)
+            with contextlib.redirect_stdout(io.StringIO()):
+                titles = pb.probe('imp', 'k', [nsz, nsp])
+                A = namedtuple('A', 'update'); plan = pb.choose(titles, A(None))
+        finally: pb.run = real
+        self.assertEqual(pb.SIZES[(nsz, '01006BB00C6F0000')], (6442450944, 6442434560, 0, '01006BB00C6F0000'))
+        self.assertEqual(plan.base_file, nsp)   # the NSP: nothing to unpack, and the .nsz is not passed as well
+        self.assertEqual(plan.dlc_files, [])
+        with tempfile.TemporaryDirectory() as d:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf): pb.say_space(Path(d, 'G.nup'), plan._replace(base_file=nsz), [nsz])
+            self.assertIn('the .nup needs about 6.0 GB, and unpacking the compressed files about 6.0 GB more while it imports', buf.getvalue())
+        pb.SIZES.clear()
+
     def test_pack_done_line(self):
         """pack_android.py's last line, in both of its forms"""
         self.assertEqual(pb.PACK_DONE.match('done: /w/0100-work/android-pack (151.2 MiB); RomFS x and 0 DLC stay in the game folder').group('path'), '/w/0100-work/android-pack')

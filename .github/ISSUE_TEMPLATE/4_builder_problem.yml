@@ -1,0 +1,104 @@
+# Written by peanuts/scripts/issue_forms.py: change that script, then run it.
+name: "Desktop builder problem"
+description: "Building a game on a computer (BUILDER.md) or another tool of the repository fails"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Building on the device? Use **Build problem**. The desktop builder is described in [BUILDER.md](https://github.com/igawa6/peanuts-native/blob/main/peanuts/docs/BUILDER.md).
+        Give paths only as far as they matter, and never attach game files, keys or anything the builder extracted from a game. Write in English if you can; another language is fine too.
+  - type: textarea
+    id: what
+    attributes:
+      label: "What happened"
+      description: "What you ran and what happened."
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: "Computer"
+      options:
+        - "Linux"
+        - "macOS (Apple silicon)"
+        - "macOS (Intel)"
+        - "Windows"
+        - "Windows with WSL"
+        - "Something else"
+    validations:
+      required: true
+  - type: input
+    id: os_version
+    attributes:
+      label: "System version"
+      description: "For example the distribution and its version."
+      placeholder: "Ubuntu 24.04"
+  - type: input
+    id: source
+    attributes:
+      label: "Source"
+      description: "The release or the commit you built from (git rev-parse --short HEAD)."
+      placeholder: "v0.1.5 or 04cad56"
+  - type: input
+    id: command
+    attributes:
+      label: "Command"
+      description: "The command line as you ran it."
+      placeholder: "peanuts/scripts/peanuts-build.sh \"Game.nsp\" \"Game-update.nsp\" --push"
+    validations:
+      required: true
+  - type: input
+    id: tools
+    attributes:
+      label: "Tool versions"
+      description: "Python, .NET and whatever else the failing step uses."
+      placeholder: "Python 3.14.0, .NET 10.0.100"
+  - type: input
+    id: game
+    attributes:
+      label: "Game, if one is involved"
+      description: "Its name, title ID and version."
+      placeholder: "Super Mario Odyssey, 0100000000010000, 1.4.1"
+  - type: dropdown
+    id: device_push
+    attributes:
+      label: "The device, if the build is pushed to one"
+      options:
+        - "No device involved"
+        - "AYN Thor"
+        - "Another device (say which below)"
+  - type: textarea
+    id: output
+    attributes:
+      label: "The output"
+      description: "The whole console output of the failing step, from its start."
+      value: |
+        <details>
+        <summary>Log (click to expand)</summary>
+
+        ```text
+        paste the log here, or delete this block when you attach the file
+        ```
+
+        </details>
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: "Anything else"
+      description: "What you tried, a survey report, anything that differs from BUILDER.md's setup."
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "Before sending"
+      options:
+        - label: "I searched the open issues, and this is not one of them."
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: "Rules"
+      options:
+        - label: "I am not attaching, offering or linking game files, keys, firmware or anything extracted from a game."
+          required: true

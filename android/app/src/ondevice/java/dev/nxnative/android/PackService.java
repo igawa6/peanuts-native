@@ -128,7 +128,9 @@ public final class PackService extends Service {
             boolean running = worker != null && worker.isAlive();
             if (running && !heatOverride) {
                 heatOverride = true;
-                stepLog(job, "going on anyway: the heat pause is lifted (from " + (from != null ? from : "an intent without \"from\"") + "; " + readings() + ")");
+                heatTrusted(false);   // PEANUTS: remembered for this device (#93)
+                stepLog(job, "going on anyway: the heat pause is lifted (from " + (from != null ? from : "an intent without \"from\"") + "; " + readings()
+                        + "); later builds on this device go on through SEVERE too (critical or worse still pauses)");   // PEANUTS
                 policy();
             }
             else if (worker == null) stopSelf(startId);
@@ -189,7 +191,8 @@ public final class PackService extends Service {
             }
         }
         stopReason = null;
-        heatOverride = false;   // asked again for each run of the job
+        heatOverride = !heatTrusted();   // asked again for each run of the job, unless Go on anyway was tapped on this device before (PEANUTS, #93)
+        if (heatOverride) stepLog(j, "heat: Go on anyway was chosen on this device before, so SEVERE does not pause this run (critical or worse still does)");   // PEANUTS
         if (intent != null) j.endedAll();   // the user's Start / Resume / Retry: earlier deaths in a step count no more (only sticky restarts add up)
         // PEANUTS: a build with code mods (Job.modArgs, dev.peanuts.build.Prepare.runModded) is not remembered: Home's panel follows the remembered job
         // and puts a finished one's pack into the game list by title ID, which made the modded pack the game's own (its Play)
@@ -304,6 +307,14 @@ public final class PackService extends Service {
     }
 
     private String readings() { return PackPolicy.readings(batteryPct, charging, thermal, headroom()); }
+
+    // PEANUTS begin: Go on anyway, remembered for the device (#93). Some handhelds' thermal HAL reports SEVERE at ordinary build temperatures (a Retroid Pocket Duo at
+    // 58-77 °C), so every build paused, and the Peanuts build card has no Go on anyway of its own (the notification and the on-device panel do). Once the player has
+    // overridden a heat pause, later runs start overridden; CRITICAL or worse still pauses (PackPolicy). heatTrusted() true: the device's SEVERE is believed (the default)
+    private static final String HEAT_PREFS = "peanuts_heat", HEAT_GO_ON = "go_on_anyway";
+    private boolean heatTrusted() { return !getSharedPreferences(HEAT_PREFS, MODE_PRIVATE).getBoolean(HEAT_GO_ON, false); }
+    private void heatTrusted(boolean trusted) { getSharedPreferences(HEAT_PREFS, MODE_PRIVATE).edit().putBoolean(HEAT_GO_ON, !trusted).apply(); }
+    // PEANUTS end
 
     /** The automatic pause (PackPolicy): below 20 % on battery, or SEVERE heat (until MODERATE or better) unless Go on anyway lifted it */
     private void policy() {

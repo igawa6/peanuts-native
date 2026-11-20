@@ -1,0 +1,64 @@
+# PEANUTS: keeps the game catalog (peanuts/games.json), the Supported games table (README.md, peanuts/docs/README.github.md) and the issue forms
+# (.github/ISSUE_TEMPLATE/<n>_*.yml) up to date. On a push to main that changes what they are made from (the shipped games, a profile,
+# peanuts/games.tsv, the app version, or the two scripts), and once a day for new companion releases, it runs peanuts/scripts/games_catalog.py
+# --refresh and peanuts/scripts/issue_forms.py and commits what changed, so adding or removing a game or a companion needs no step by hand.
+name: catalog
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - peanuts/release-titles.txt
+      - peanuts/VERSION
+      - peanuts/games.tsv
+      - 'dm/games/*/game.tsv'
+      - peanuts/scripts/games_catalog.py
+      - peanuts/scripts/issue_forms.py
+  schedule:
+    - cron: '23 3 * * *'   # companions are released in eden-duo-companions, which pushes nothing here
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: catalog
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+# Actions are pinned to commit SHAs (the tag in the comment), as in peanuts.yml.
+jobs:
+  update:
+    name: Game catalog and issue forms
+    # Only in the project's own repository: a fork's main has its own pace
+    if: github.repository == 'igawa6/peanuts-native'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+      - name: Write the catalog, the tables and the forms
+        env:
+          GITHUB_TOKEN: ${{ github.token }}   # reads eden-duo-companions' releases without the anonymous rate limit
+        run: |
+          python peanuts/scripts/games_catalog.py --refresh
+          python peanuts/scripts/issue_forms.py
+      - name: Commit what changed
+        run: |
+          if git diff --quiet -- peanuts/games.json peanuts/games.tsv README.md peanuts/docs/README.github.md .github/ISSUE_TEMPLATE; then
+            echo "catalog and forms are up to date"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add peanuts/games.json peanuts/games.tsv README.md peanuts/docs/README.github.md .github/ISSUE_TEMPLATE
+          git commit -m "Update the game catalog, the games table and the issue forms" -m "Written by .github/workflows/catalog.yml after ${GITHUB_SHA::12}."
+          git pull --rebase --quiet origin main
+          git push origin HEAD:main

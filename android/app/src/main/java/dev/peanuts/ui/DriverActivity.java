@@ -232,7 +232,7 @@ public final class DriverActivity extends Activity {
         pick.addView(chevron());
         files.addView(pick);
         if (installing) {
-            ProgressBar bar = PUi.progress(this);
+            ProgressBar bar = Strip.card(this);
             bar.setIndeterminate(true);
             PUi.add(content, bar, 12);
         } else if (fileResult != null) {
@@ -346,7 +346,7 @@ public final class DriverActivity extends Activity {
         Read r = READ.get(repo);
         if (r == null || System.currentTimeMillis() - r.at > CACHE_MS) { load(repo); r = null; }
         if (r == null) {
-            ProgressBar bar = PUi.progress(this);
+            ProgressBar bar = Strip.card(this);
             bar.setIndeterminate(true);
             PUi.add(content, bar, 20);
             return;
@@ -435,7 +435,7 @@ public final class DriverActivity extends Activity {
         box.addView(top);
         if (mine) {
             if (!job.finished) {
-                jobBar = PUi.progress(this);
+                jobBar = Strip.card(this);
                 jobText = PUi.small(this, "");
                 PUi.add(box, jobBar, 8);
                 PUi.add(box, jobText, 4);

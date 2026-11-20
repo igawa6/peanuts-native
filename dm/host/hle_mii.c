@@ -29,6 +29,22 @@ typedef struct __attribute__((packed)) {
 } mii_charinfo;
 _Static_assert(sizeof(mii_charinfo) == 0x58, "nn::mii::CharInfo is 0x58 bytes");
 
+// PEANUTS begin: the console's own six default Miis (three men, three women: their hair, skin, eyes and favourite colours), not one Mii six times.
+// Mario Kart 8 Deluxe's Select a Mii showed the host's copies, the first a blank tile (GitHub request: Mii heads from the firmware's MiiModel)
+// The console's six default Miis (nn::mii DefaultMii), as StoreData::BuildDefault turns them into a CharInfo: colours through the Ver3 tables (eyebrow_y as is: a CharInfo keeps it 3 above the StoreData's).
+// From Ryujinx (MIT; via Eden src/core/hle/service/mii/types/raw_data.cpp), generated; PEANUTS
+static const struct mii_def { uint8_t faceline_type, faceline_color, faceline_wrinkle, faceline_make, hair_type, hair_color, hair_flip, eye_type, eye_color, eye_scale, eye_aspect, eye_rotate, eye_x, eye_y,
+    eyebrow_type, eyebrow_color, eyebrow_scale, eyebrow_aspect, eyebrow_rotate, eyebrow_x, eyebrow_y, nose_type, nose_scale, nose_y, mouth_type, mouth_color, mouth_scale, mouth_aspect, mouth_y,
+    mustache_type, beard_type, beard_color, mustache_scale, mustache_y, glass_type, glass_color, glass_scale, glass_y, mole_type, mole_scale, mole_x, mole_y, height, build, gender, favorite_color,
+    region_move, font_region, type; } mii_defs[6] = {
+    {0, 4, 0, 0, 68, 8, 0, 2, 8, 4, 3, 4, 2, 12, 6, 8, 4, 3, 6, 2, 10, 1, 4, 9, 23, 19, 4, 3, 13, 0, 0, 8, 4, 10, 0, 8, 4, 10, 0, 4, 2, 20, 64, 64, 0, 4, 0, 0, 0},
+    {0, 0, 0, 0, 55, 6, 0, 2, 12, 4, 3, 4, 2, 12, 6, 6, 4, 3, 6, 2, 10, 1, 4, 9, 23, 19, 4, 3, 13, 0, 0, 8, 4, 10, 0, 8, 4, 10, 0, 4, 2, 20, 64, 64, 0, 5, 0, 0, 0},
+    {0, 1, 0, 0, 33, 1, 0, 2, 8, 4, 3, 4, 2, 12, 6, 1, 4, 3, 6, 2, 10, 1, 4, 9, 23, 19, 4, 3, 13, 0, 0, 8, 4, 10, 0, 8, 4, 10, 0, 4, 2, 20, 64, 64, 0, 0, 0, 0, 0},
+    {0, 2, 0, 0, 24, 8, 0, 4, 8, 4, 3, 3, 2, 12, 0, 8, 4, 3, 6, 2, 10, 1, 4, 9, 23, 19, 4, 3, 13, 0, 0, 8, 4, 10, 0, 8, 4, 10, 0, 4, 2, 20, 64, 64, 1, 2, 0, 0, 0},
+    {0, 0, 0, 0, 14, 7, 0, 4, 13, 4, 3, 3, 2, 12, 0, 7, 4, 3, 6, 2, 10, 1, 4, 9, 23, 19, 4, 3, 13, 0, 0, 8, 4, 10, 0, 8, 4, 10, 0, 4, 2, 20, 64, 64, 1, 6, 0, 0, 0},
+    {0, 0, 0, 0, 12, 1, 0, 4, 8, 4, 3, 3, 2, 12, 0, 1, 4, 3, 6, 2, 10, 1, 4, 9, 23, 19, 4, 3, 13, 0, 0, 8, 4, 10, 0, 8, 4, 10, 0, 4, 2, 20, 64, 64, 1, 7, 0, 0, 0},
+};
+// PEANUTS end
 // index ≥ 0: default Mii <index> (a fixed create ID, so a game that saved one finds the same Mii again); < 0: a random Mii (a fresh one)
 static void mii_default(mii_charinfo *c, int gender, int index) {
     memset(c, 0, sizeof *c);
@@ -38,6 +54,22 @@ static void mii_default(mii_charinfo *c, int gender, int index) {
     if (index >= 0) c->favorite_color = (uint8_t)(index * 2);   // red, yellow, green, sky blue, purple, white
     static const char name[] = "no name";
     for (size_t i = 0; i < sizeof name - 1; i++) c->nickname[i] = (uint16_t)name[i];
+    if (index >= 0 && index < 6) {   // PEANUTS: a default Mii from the console's table (mii_defs)
+        const struct mii_def *d = &mii_defs[index];
+        c->faceline_type = d->faceline_type; c->faceline_color = d->faceline_color; c->faceline_wrinkle = d->faceline_wrinkle; c->faceline_make = d->faceline_make;
+        c->hair_type = d->hair_type; c->hair_color = d->hair_color; c->hair_flip = d->hair_flip;
+        c->eye_type = d->eye_type; c->eye_color = d->eye_color; c->eye_scale = d->eye_scale; c->eye_aspect = d->eye_aspect; c->eye_rotate = d->eye_rotate; c->eye_x = d->eye_x; c->eye_y = d->eye_y;
+        c->eyebrow_type = d->eyebrow_type; c->eyebrow_color = d->eyebrow_color; c->eyebrow_scale = d->eyebrow_scale; c->eyebrow_aspect = d->eyebrow_aspect; c->eyebrow_rotate = d->eyebrow_rotate;
+        c->eyebrow_x = d->eyebrow_x; c->eyebrow_y = d->eyebrow_y;
+        c->nose_type = d->nose_type; c->nose_scale = d->nose_scale; c->nose_y = d->nose_y;
+        c->mouth_type = d->mouth_type; c->mouth_color = d->mouth_color; c->mouth_scale = d->mouth_scale; c->mouth_aspect = d->mouth_aspect; c->mouth_y = d->mouth_y;
+        c->mustache_type = d->mustache_type; c->beard_type = d->beard_type; c->beard_color = d->beard_color; c->mustache_scale = d->mustache_scale; c->mustache_y = d->mustache_y;
+        c->glass_type = d->glass_type; c->glass_color = d->glass_color; c->glass_scale = d->glass_scale; c->glass_y = d->glass_y;
+        c->mole_type = d->mole_type; c->mole_scale = d->mole_scale; c->mole_x = d->mole_x; c->mole_y = d->mole_y;
+        c->height = d->height; c->build = d->build; c->gender = d->gender; c->favorite_color = d->favorite_color;
+        c->region_move = d->region_move; c->font_region = d->font_region; c->type = d->type;
+        return;
+    }
     c->gender = gender == 1; c->height = 64; c->build = 64;
     c->hair_type = 33; c->hair_color = 1;
     c->eye_type = 2; c->eye_color = 8; c->eye_scale = 4; c->eye_aspect = 3; c->eye_rotate = 4; c->eye_x = 2; c->eye_y = 12;
@@ -57,30 +89,77 @@ HLE_FORCE("_ZN2nn3mii8Database8FinalizeEv", "mii:u service; nothing to release",
 HLE_FORCE("_ZNK2nn3mii8Database11IsAvailableEv", "mii:u service; always available", int, h_mii_Avail, const void *self) { (void)self; return 1; }
 HLE_FORCE("_ZN2nn3mii8Database9IsUpdatedEi", "mii:u service; the empty database never changes", int, h_mii_Updated, void *self, int src) { (void)self; (void)src; return 0; }
 HLE_FORCE("_ZNK2nn3mii8Database14IsFullDatabaseEv", "mii:u service; empty, so not full", int, h_mii_Full, const void *self) { (void)self; return 0; }
+// PEANUTS begin: the player's own Miis, made in the Android app's Settings › Miis (dev.peanuts.mii.MiiStore) and handed over as DM_MII_DB=<file>: "PNMII1\0\0", a u32
+// count, then that many 0x58-byte CharInfo records. They are the console's database (source 1): Database::Get lists them before the six default Miis, GetIndex and
+// UpdateLatest find them by create ID. A record that fails the ranges CharInfoRaw::Verify checks is skipped (a game's CharInfoAccessor::IsValid would refuse it)
+enum { MII_DB_MAX = 100 };
+static mii_charinfo g_mii_db[MII_DB_MAX]; static int g_mii_db_n = -1;
+static int mii_ok(const mii_charinfo *c) {
+    static const struct { uint8_t off, max; } r[] = {
+        {38, 3}, {39, 11}, {40, 1}, {41, 127}, {42, 127}, {43, 1}, {44, 3}, {45, 11}, {46, 9}, {47, 11}, {48, 11}, {49, 131}, {50, 99}, {51, 1},
+        {52, 59}, {53, 99}, {54, 7}, {55, 6}, {56, 7}, {57, 12}, {58, 18}, {59, 23}, {60, 99}, {61, 8}, {62, 6}, {63, 11}, {64, 12},
+        {66, 17}, {67, 8}, {68, 18}, {69, 35}, {70, 99}, {71, 8}, {72, 6}, {73, 18}, {74, 99}, {75, 5}, {76, 5}, {77, 8}, {78, 16},
+        {79, 19}, {80, 99}, {81, 7}, {82, 20}, {83, 1}, {84, 8}, {85, 16}, {86, 30}};
+    const uint8_t *b = (const uint8_t *)c;
+    for (size_t i = 0; i < sizeof r / sizeof r[0]; i++) if (b[r[i].off] > r[i].max) return 0;
+    if (c->eyebrow_y < 3 || c->eyebrow_y - 3 > 15 || !c->nickname[0]) return 0;
+    return 1;
+}
+static int mii_db(void) {
+    if (g_mii_db_n >= 0) return g_mii_db_n;
+    g_mii_db_n = 0;
+    const char *path = getenv("DM_MII_DB"); if (!path || !*path) return 0;
+    FILE *f = fopen(path, "rb"); if (!f) { if (errno != ENOENT) LOG("[RED] mii: cannot open DM_MII_DB %s: %s", path, strerror(errno)); return 0; }   // no file yet: no Miis of the player's
+    uint8_t h[12]; uint32_t n = 0;
+    if (fread(h, 1, 12, f) == 12 && !memcmp(h, "PNMII1\0\0", 8)) {
+        memcpy(&n, h + 8, 4);
+        for (uint32_t i = 0; i < n && g_mii_db_n < MII_DB_MAX; i++) {
+            mii_charinfo c; if (fread(&c, 1, sizeof c, f) != sizeof c) break;
+            if (mii_ok(&c)) g_mii_db[g_mii_db_n++] = c; else LOG("[RED] mii: Mii %u of DM_MII_DB is out of range, skipped", i);
+        }
+    } else LOG("[RED] mii: DM_MII_DB %s is not a Mii file", path);
+    fclose(f);
+    LOG("mii: %d of the player's own Miis (DM_MII_DB)", g_mii_db_n);
+    return g_mii_db_n;
+}
+static int mii_db_find(const void *info) {
+    for (int i = 0; info && i < mii_db(); i++) if (!memcmp(g_mii_db[i].create_id, info, 16)) return i;
+    return -1;
+}
+// PEANUTS end
 // Source flags: 1 the console's database (empty here), 2 the six default Miis every console has. Mario Kart 8 Deluxe asks for the defaults with room for 6 and never reads the count
 // (main+0x81e954): its boot-time list of Mii icons (main+0x419dc8) builds a head for each of the six, and zeroed entries failed the model's CharInfo check
 enum { MII_SRC_DATABASE = 1, MII_SRC_DEFAULT = 2, MII_DEFAULTS = 6 };
 static int mii_get(void *buf, int n, int src, size_t stride) {
     int k = 0;
-    for (; (src & MII_SRC_DEFAULT) && buf && k < n && k < MII_DEFAULTS; k++) {
+    for (int i = 0; (src & MII_SRC_DATABASE) && buf && k < n && i < mii_db(); i++, k++) {   // PEANUTS: the player's own Miis first (source 0 = database)
         uint8_t *e = (uint8_t *)buf + (size_t)k * stride;
-        mii_default((mii_charinfo *)e, k >= 3, k);
+        memcpy(e, &g_mii_db[i], sizeof(mii_charinfo));
+        if (stride > sizeof(mii_charinfo)) { uint32_t source = 0; memcpy(e + sizeof(mii_charinfo), &source, 4); }
+    }
+    for (int d = 0; (src & MII_SRC_DEFAULT) && buf && k < n && d < MII_DEFAULTS; d++, k++) {
+        uint8_t *e = (uint8_t *)buf + (size_t)k * stride;
+        mii_default((mii_charinfo *)e, d >= 3, d);
         if (stride > sizeof(mii_charinfo)) { uint32_t source = 1; memcpy(e + sizeof(mii_charinfo), &source, 4); }   // CharInfoElement: the CharInfo and its source (1 = default)
     }
     return k;
 }
-HLE_FORCE("_ZNK2nn3mii8Database8GetCountEi", "mii:u service; the six default Miis", int, h_mii_Count, const void *self, int src) { (void)self; return src & MII_SRC_DEFAULT ? MII_DEFAULTS : 0; }
+HLE_FORCE("_ZNK2nn3mii8Database8GetCountEi", "mii:u service; the player's Miis and the six default Miis", int, h_mii_Count, const void *self, int src) {
+    (void)self; return (src & MII_SRC_DATABASE ? mii_db() : 0) + (src & MII_SRC_DEFAULT ? MII_DEFAULTS : 0);   // PEANUTS: the player's Miis count too
+}
 HLE_FORCE("_ZN2nn3mii8Database3GetEPiPNS0_15CharInfoElementEii", "mii:u service; the six default Miis", Result, h_mii_GetE, void *self, int *out, void *buf, int n, int src) {
     (void)self; *out = mii_get(buf, n, src, sizeof(mii_charinfo) + 4); return RES_OK;
 }
 HLE_FORCE("_ZN2nn3mii8Database3GetEPiPNS0_8CharInfoEii", "mii:u service; the six default Miis", Result, h_mii_Get, void *self, int *out, void *buf, int n, int src) {
     (void)self; *out = mii_get(buf, n, src, sizeof(mii_charinfo)); return RES_OK;
 }
-HLE_FORCE("_ZNK2nn3mii8Database8GetIndexEPiRKNS0_8CharInfoE", "mii:u service; no Mii is in the database", Result, h_mii_Index, const void *self, int *out, const void *info) {
-    (void)self; (void)info; *out = -1; return MII_RES_NOT_FOUND;
+HLE_FORCE("_ZNK2nn3mii8Database8GetIndexEPiRKNS0_8CharInfoE", "mii:u service; the player's Miis by create ID", Result, h_mii_Index, const void *self, int *out, const void *info) {
+    (void)self; int i = mii_db_find(info); *out = i; return i >= 0 ? RES_OK : MII_RES_NOT_FOUND;   // PEANUTS
 }
-HLE_FORCE("_ZNK2nn3mii8Database12UpdateLatestEPNS0_8CharInfoEi", "mii:u service; no Mii is in the database", Result, h_mii_Latest, const void *self, void *info, int src) {
-    (void)self; (void)info; (void)src; return MII_RES_NOT_FOUND;
+HLE_FORCE("_ZNK2nn3mii8Database12UpdateLatestEPNS0_8CharInfoEi", "mii:u service; the player's Miis by create ID", Result, h_mii_Latest, const void *self, void *info, int src) {
+    (void)self; int i = (src & MII_SRC_DATABASE) ? mii_db_find(info) : -1;   // PEANUTS: a saved Mii of the player's comes back as it is now
+    if (i < 0) return MII_RES_NOT_FOUND;
+    memcpy(info, &g_mii_db[i], sizeof(mii_charinfo)); return RES_OK;
 }
 // RandomDesc {age, gender, race}: gender 0 male, 1 female, 2 either. The host's "random" Mii is the default one of that gender
 HLE_FORCE("_ZN2nn3mii8Database11BuildRandomEPNS0_8CharInfoERKNS0_10RandomDescE", "mii:u service; the default Mii", Result, h_mii_Random, void *self, mii_charinfo *out, const int *desc) {

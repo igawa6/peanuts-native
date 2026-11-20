@@ -63,7 +63,7 @@ public final class Reimport {
         p.freeBytes = freeBytes;
         List<String> gone = new ArrayList<>();
         for (Part f : found) if (f.kind == BASE && f.file != null && f.file.isFile() && p.base == null) p.base = f.file;
-        if (p.base == null) gone.add("the base game's dump (an .nsp or .xci file)");
+        if (p.base == null) gone.add("the base game's dump (an .nsp, .nsz, .xci or .xcz file)");
         // the update: the one picked in the sheet, else the newest found; never older than the one the .nup has
         long had = -1;
         for (Part i : inside) if (i.kind == UPDATE) had = Math.max(had, i.version);

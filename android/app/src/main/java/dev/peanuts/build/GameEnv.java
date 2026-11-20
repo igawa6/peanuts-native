@@ -69,6 +69,10 @@ public final class GameEnv {
             String env = Upstream.gameEnv(c, titleId);
             String out = withDefault(env, "DM_SHARED_FONT", std.getPath());
             if (ext.isFile()) out = withDefault(out, "DM_SHARED_FONT_EXT", ext.getPath());
+            File mii = PeanutsPrefs.miiModelDir(c);   // the console's MiiModel (Mario Kart 8 Deluxe's Mii heads): the host mounts it instead of its empty stand-in
+            if (new File(mii, "ShapeHigh.dat").isFile()) out = withDefault(out, "DM_MII_MODEL", mii.getPath());
+            File own = dev.peanuts.mii.MiiStore.database(c.getFilesDir());   // the player's own Miis (Settings › Miis): games list them as the console's
+            out = withDefault(out, "DM_MII_DB", own.getPath());
             if (!out.equals(env == null ? "" : env)) { Upstream.gameEnv(c, titleId, out); Log.i(TAG, "env " + titleId + ": shared fonts set"); }
         } catch (ReflectiveOperationException e) {
             Log.w(TAG, "env " + titleId + ": " + e);

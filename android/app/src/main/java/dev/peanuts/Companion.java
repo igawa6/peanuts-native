@@ -128,8 +128,8 @@ public final class Companion {
     static boolean screenWanted() { return screenUp && !stopped && !away; }
     private static boolean screenUp;
 
-    /** CompanionScreen is up: its start made the built-in display the focused one, which would leave the controller with no window (its own never takes the
-     *  focus). The game's activity is started again on its own display: it is singleTask, so that only brings it to the front, and an intent with no title ID
+    /** CompanionScreen is up: its start made the built-in display the top one, which would hand the controller to its window (gameKey passes the keys on, but
+     *  the game's own window should have them). The game's activity is started again on its own display: it is singleTask, so that only brings it to the front, and an intent with no title ID
      *  is a no-op in its onNewIntent. Its display, and the controller, are the game's again. */
     static void refocusGame() {
         Activity game = decidingGame;
@@ -140,6 +140,37 @@ public final class Companion {
                             | android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION),
                     android.app.ActivityOptions.makeBasic().setLaunchDisplayId(d.getDisplayId()).toBundle());
         } catch (RuntimeException e) { Log.w(TAG, "the game's display did not take the focus back: " + e); }
+    }
+
+    /** CompanionScreen went away without {@link #away} or {@link #stop}: Home or Recents on its display finished it (noHistory). It is opened again when the game
+     *  comes back to the front ({@link #back}); before, screenUp stayed set and the companion never came back in this run. */
+    static void screenGone() {
+        if (!screenUp) return;
+        screenUp = false;
+        Log.i(TAG, "the companion's screen was closed on its display: it opens again when the game is back in front");
+    }
+
+    /** A controller's key that reached CompanionScreen (its window has the built-in display's focus; ScreenKeys): the game's, as from its own window */
+    static boolean gameKey(android.view.KeyEvent e) {
+        Activity game = decidingGame;
+        return game != null && !stopped && !game.isFinishing() && game.dispatchKeyEvent(e);
+    }
+
+    /** Back on CompanionScreen's display (its navigation bar): what Back does in the game, the in-game panel */
+    @SuppressWarnings("deprecation")
+    static void gameBack() {
+        Activity game = decidingGame;
+        if (game != null && !stopped && !game.isFinishing()) game.onBackPressed();
+    }
+
+    /** Whether each display keeps a focused window of its own (config_perDisplayFocusEnabled; the AYN Thor: yes). Without it only the top display has one, and Back
+     *  from the built-in display's navigation bar finds no window there while the game's display is on top: logged with the companion's start for reports. */
+    private static boolean perDisplayFocus() {
+        try {
+            android.content.res.Resources r = android.content.res.Resources.getSystem();
+            int id = r.getIdentifier("config_perDisplayFocusEnabled", "bool", "android");
+            return id != 0 && r.getBoolean(id);
+        } catch (RuntimeException e) { return false; }
     }
 
     /** Starts the game hold and, once the host has decided whether a companion loaded, shows it (or leaves the display alone). Keeps trying as displays come and go. */
@@ -220,7 +251,7 @@ public final class Companion {
                 game.startActivity(new android.content.Intent(game, CompanionScreen.class).putExtra("name", gameName)
                                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION),
                         android.app.ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY).toBundle());
-                Log.i(TAG, "companion on the built-in display (the game is on another one)");
+                Log.i(TAG, "companion on the built-in display (the game is on another one; per-display focus " + (perDisplayFocus() ? "on" : "off") + ")");
                 wanted = -1;
                 GameScreen.close();
                 tell(game, "shown");

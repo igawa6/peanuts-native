@@ -244,25 +244,46 @@ static void fx_patch(const FxBuf *virt, const FxSeg *seg, int nseg, FxSec *S) {
 // ---- a title in a container: its content NCA (program or data), the meta NCA with its CNMT, a ticket when the content has a title key
 enum { FX_TIK_COMMON = 1, FX_TIK_PERSONAL = 2 };
 // kind: 0 base, 1 update, 2 add-on. ticket: 0, or FX_TIK_*: the content NCA is then encrypted with a title key. ncz: an entry named *.ncz is added (an NSZ).
-// xci: the container is an XCI (a root HFS0 whose "secure" partition holds the files).
-static void fx_title(const FxKeys *k, const char *path, uint64_t tid, uint64_t app, int kind, uint32_t ver, FxNca *content, int ticket, int ncz, int xci) {
-    FxBuf cb = {0}, mb = {0}, cnmt = {0}, pfs = {0}, file = {0}; FxNca meta; FxEnt e[4]; int ne = 0; uint8_t tik[0x2C0] = {0}, h[0x20] = {0}, ext[0x10] = {0}, rec[0x38] = {0};
+// xci: the container is an XCI (a root HFS0 whose "secure" partition holds the files). ctl (fx_title_ctl): the title's control data, NULL for none.
+// A title's control data: the files of its control NCA's RomFS (content type 2; type 3 in the CNMT), control.nacp and the icons. A NULL data leaves the file out
+typedef struct FxCtl { const uint8_t *nacp; size_t nacp_n; struct { const char *name; const uint8_t *data; size_t n; } icon[2]; } FxCtl;
+static void fx_title_ctl(const FxKeys *k, const char *path, uint64_t tid, uint64_t app, int kind, uint32_t ver, FxNca *content, int ticket, int ncz, int xci, const FxCtl *ctl) {
+    FxBuf cb = {0}, mb = {0}, cnmt = {0}, pfs = {0}, file = {0}, ctlb = {0}; FxNca meta, cn; FxEnt e[5]; int ne = 0;
+    uint8_t tik[0x2C0] = {0}, h[0x20] = {0}, ext[0x10] = {0}, rec[0x38] = {0}, crec[0x38] = {0};
     fx_fill(content->id, 16); content->title_id = tid;
     if (ticket) { content->rights = 1; for (int j = 0; j < 8; j++) content->rid[7 - j] = (uint8_t)(tid >> (8 * j)); memset(content->rid + 8, 0, 8); }
     fx_fill(content->key, 16);
     fx_nca(k, content, &cb);
-    fx_w64(h, tid); fx_w32(h + 8, ver); h[0xC] = (uint8_t)(0x80 + kind); fx_w16(h + 0xE, sizeof ext); fx_w16(h + 0x10, 1);
+    { uint8_t sha[32]; nx_sha256(cb.p, cb.n, sha); memcpy(content->id, sha, 16); memcpy(rec, sha, 32); }   // as a console's: the NCA is named by its SHA-256, which the CNMT records
+    if (ctl) {   // the control NCA: one RomFS section (a hash level of 0x200 random bytes, then the image), encrypted with its key area
+        FxFile cf[3]; int ncf = 0; FxBuf img = {0}; memset(cf, 0, sizeof cf); memset(&cn, 0, sizeof cn);
+        if (ctl->nacp) { strcpy(cf[ncf].path, "control.nacp"); cf[ncf].size = ctl->nacp_n; cf[ncf].data = ctl->nacp; cf[ncf++].base = -1; }
+        for (int i = 0; i < 2; i++) if (ctl->icon[i].data) { snprintf(cf[ncf].path, sizeof cf[ncf].path, "%s", ctl->icon[i].name); cf[ncf].size = ctl->icon[i].n; cf[ncf].data = ctl->icon[i].data; cf[ncf++].base = -1; }
+        fx_romfs(cf, ncf, &img);
+        cn.content_type = 2; cn.title_id = tid; fx_fill(cn.id, 16); fx_fill(cn.key, 16);
+        cn.sec[0].present = 1; cn.sec[0].fs_type = NX_FS_ROMFS; cn.sec[0].crypt = 3; cn.sec[0].data_off = 0x200;
+        { uint8_t *hash = fx_bytes(0x200); fx_put(&cn.sec[0].body, hash, 0x200); free(hash); }
+        fx_put(&cn.sec[0].body, img.p, img.n); free(img.p);
+        fx_nca(k, &cn, &ctlb); free(cn.sec[0].body.p);
+        { uint8_t sha[32]; nx_sha256(ctlb.p, ctlb.n, sha); memcpy(cn.id, sha, 16); memcpy(crec, sha, 32); }   // named by its SHA-256 too, which the CNMT records
+        memcpy(crec + 0x20, cn.id, 16); crec[0x36] = 3;
+    }
+    fx_w64(h, tid); fx_w32(h + 8, ver); h[0xC] = (uint8_t)(0x80 + kind); fx_w16(h + 0xE, sizeof ext); fx_w16(h + 0x10, ctl ? 2 : 1);
     fx_w64(ext, kind ? app : 0);
     memcpy(rec + 0x20, content->id, 16); rec[0x36] = kind == 2 ? 2 : 1;   // the content's type in the title: program, or data
+    for (int q = 0; q < 6; q++) rec[0x30 + q] = (uint8_t)((uint64_t)cb.n >> (8 * q));   // its size (6 bytes)
     fx_put(&cnmt, h, sizeof h); fx_put(&cnmt, ext, sizeof ext); fx_put(&cnmt, rec, sizeof rec);
+    if (ctl) fx_put(&cnmt, crec, sizeof crec);
     memset(&meta, 0, sizeof meta); meta.content_type = 1; meta.title_id = tid; fx_fill(meta.id, 16); fx_fill(meta.key, 16);
     meta.sec[0].present = 1; meta.sec[0].fs_type = NX_FS_PFS0; meta.sec[0].crypt = 3; meta.sec[0].data_off = 0x200;
     { uint8_t *hash = fx_bytes(0x200); fx_put(&meta.sec[0].body, hash, 0x200); free(hash);
       FxEnt ce; snprintf(ce.name, sizeof ce.name, "%s_%016llx.cnmt", kind == 0 ? "Application" : kind == 1 ? "Patch" : "AddOnContent", (unsigned long long)tid); ce.p = cnmt.p; ce.n = cnmt.n;
       fx_fs0(&ce, 1, 0, &meta.sec[0].body); }
     fx_nca(k, &meta, &mb);
+    { uint8_t sha[32]; nx_sha256(mb.p, mb.n, sha); memcpy(meta.id, sha, 16); }
     char hex[33]; fx_hex(hex, content->id, 16); snprintf(e[ne].name, sizeof e[ne].name, "%s.nca", hex); e[ne].p = cb.p; e[ne++].n = cb.n;
     fx_hex(hex, meta.id, 16); snprintf(e[ne].name, sizeof e[ne].name, "%s.cnmt.nca", hex); e[ne].p = mb.p; e[ne++].n = mb.n;
+    if (ctl) { fx_hex(hex, cn.id, 16); snprintf(e[ne].name, sizeof e[ne].name, "%s.nca", hex); e[ne].p = ctlb.p; e[ne++].n = ctlb.n; }
     if (ticket) {   // a ticket with an RSA-2048 signature block (0x140): the title key block @+0x40 (the key wrapped with titlekek), the key type @+0x141, the rights ID @+0x160
         NxAes a; nx_aes_init(&a, k->titlekek);
         fx_w32(tik, 0x10004); nx_aes_encrypt_block(&a, content->key, tik + 0x140 + 0x40); tik[0x140 + 0x141] = ticket == FX_TIK_PERSONAL; memcpy(tik + 0x140 + 0x160, content->rid, 16);
@@ -275,7 +296,10 @@ static void fx_title(const FxKeys *k, const char *path, uint64_t tid, uint64_t a
         FxEnt se; strcpy(se.name, "secure"); se.p = pfs.p; se.n = pfs.n; fx_fs0(&se, 1, 1, &file);
     } else fx_put(&file, pfs.p, pfs.n);
     fx_write(path, file.p, file.n);
-    free(cb.p); free(mb.p); free(cnmt.p); free(pfs.p); free(file.p); free(meta.sec[0].body.p);
+    free(cb.p); free(mb.p); free(cnmt.p); free(pfs.p); free(file.p); free(meta.sec[0].body.p); free(ctlb.p);
+}
+static void fx_title(const FxKeys *k, const char *path, uint64_t tid, uint64_t app, int kind, uint32_t ver, FxNca *content, int ticket, int ncz, int xci) {
+    fx_title_ctl(k, path, tid, app, kind, ver, content, ticket, ncz, xci, NULL);
 }
 
 // A program NCA's ExeFS: main (an NSO header with the build ID @0x40) and main.npdm

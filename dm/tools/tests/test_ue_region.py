@@ -74,6 +74,24 @@ class FindTest(unittest.TestCase):
         off, reg, why = find(image(words, called=True))
         self.assertEqual((off, reg), (ENGINE + 16, 1), why)
 
+    def test_shared_reservation_helper_gates_only_the_startup_store(self):
+        # PEANUTS: the helper rounds the same size variable and reserves the region.
+        helper = 0x1800
+        startup = [lambda a: ADRP(19, a, VAR + 8), ADDI(19, 19, (VAR + 8) & 0xfff), LDRX(8, 19),
+                   ADDI(9, 8, 4095), 0xf100011f, MOV_X8_62GB, 0x9274cd29, 0x9a890108,
+                   STRX(8, 19), lambda a: bl(a, helper)]
+        reserve = [0xa9bf7bfd, ADDI(29, 31, 0), lambda a: ADRP(0, a, VAR), ADDI(0, 0, VAR & 0xfff),
+                   LDRX(8, 0, 1), ADDI(8, 8, 4095), 0x9274cd01, STRX(1, 0, 1), lambda a: bl(a, PLT)]
+        img = image(startup + [RET])
+        put(img, helper, *at(helper, reserve))
+        off, reg, why = find(img)
+        self.assertEqual((off, reg), (ENGINE + 32, 8), why)
+        put(img, helper + 12, ADDI(0, 0, (VAR + 16) & 0xfff))
+        self.assertIsNone(find(img)[0])  # valid reservation, but not the startup variable
+        img = image(startup + startup + [RET])
+        put(img, helper, *at(helper, reserve))
+        self.assertIsNone(find(img)[0])  # two candidates: never pick the first
+
     def test_no_option_is_not_red(self):
         off, _, why = find(image(csel(), option=False))
         self.assertIsNone(off)

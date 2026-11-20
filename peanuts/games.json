@@ -1,0 +1,1002 @@
+{
+  "about": "Written by peanuts/scripts/games_catalog.py from peanuts/release-titles.txt, dm/games/<title ID>/game.tsv and peanuts/games.tsv. Do not edit by hand.",
+  "app_version": "0.1.5",
+  "readme_order": [
+    "01006BB00C6F0000",
+    "01008CF01BAAC000",
+    "010055D009F78000",
+    "0100A6301214E000",
+    "010093801237C000",
+    "0100000000010000",
+    "0100152000022000",
+    "01006F8002326000",
+    "01005CA01580E000",
+    "0100BA4026E94000",
+    "01005270232F2000",
+    "0100000011D90000",
+    "010018E011D92000",
+    "0100ABF008968000",
+    "01008DB008C2C000",
+    "01007EF00011E000",
+    "0100F2C0115B6000",
+    "0100606026F12000",
+    "01002DA013484000",
+    "01001F5010DFA000",
+    "010099A00BC1E000",
+    "01004D300C5AE000",
+    "01006B601380E000",
+    "010028600EBDA000",
+    "010015100B514000",
+    "01003E601E324000",
+    "0100C510166F0000",
+    "0100C2901153C000",
+    "0100F9F00C696000",
+    "01009720213B0000",
+    "010097F018538000",
+    "0100AD80208A8000",
+    "0100453019AA8000",
+    "0100B63016916000",
+    "0100A0F00DA68000",
+    "01007300020FA000",
+    "01001B300B9BE000",
+    "0100C49025D3E000",
+    "010051F0207B2000",
+    "010069401ADB8000",
+    "0100DCA0064A6000",
+    "0100F43008C44000",
+    "0100DAE01E4C8000",
+    "01006AE02236C000",
+    "01007A2027548000",
+    "010035F022078000",
+    "0100A3D008C5C000",
+    "01008F6008C5E000",
+    "010051C0134F8000",
+    "01008BC024FDE000",
+    "0100B8E016F76000"
+  ],
+  "games": [
+    {
+      "title_id": "01006F8002326000",
+      "name": "Animal Crossing: New Horizons",
+      "profile_name": "Animal Crossing: New Horizons",
+      "builds": [
+        {
+          "version": "v2228224",
+          "number": 2228224,
+          "display": "3.0.3"
+        }
+      ],
+      "readme_update": "3.0.3",
+      "package": "v2228224",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01006F8002326000/game.tsv",
+      "note": "dm/games/01006F8002326000/README.md"
+    },
+    {
+      "title_id": "01007300020FA000",
+      "name": "Astral Chain",
+      "profile_name": "ASTRAL CHAIN",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.0.1"
+        }
+      ],
+      "readme_update": "1.0.1",
+      "package": "v65536",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/01007300020FA000/game.tsv",
+      "note": "dm/games/01007300020FA000/README.md"
+    },
+    {
+      "title_id": "01009720213B0000",
+      "name": "Captain Tsubasa 2: World Fighters",
+      "profile_name": "CAPTAIN TSUBASA 2: WORLD FIGHTERS",
+      "builds": [
+        {
+          "version": "v327680",
+          "number": 327680,
+          "display": "1.0.6"
+        }
+      ],
+      "readme_update": "1.0.6",
+      "package": "v327680",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/01009720213B0000/game.tsv",
+      "note": "dm/games/01009720213B0000/README.md"
+    },
+    {
+      "title_id": "0100BA4026E94000",
+      "name": "Castlevania: Belmont's Curse",
+      "profile_name": "Castlevania: Belmont's Curse",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.1.0"
+        }
+      ],
+      "readme_update": "1.1.0",
+      "package": "v65536",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100BA4026E94000/game.tsv",
+      "note": "dm/games/0100BA4026E94000/README.md"
+    },
+    {
+      "title_id": "0100C510166F0000",
+      "name": "Chained Echoes",
+      "profile_name": "Chained Echoes",
+      "builds": [
+        {
+          "version": "v1310720",
+          "number": 1310720,
+          "display": "1.41"
+        }
+      ],
+      "readme_update": "1.41",
+      "package": "v1310720",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100C510166F0000/game.tsv",
+      "note": "dm/games/0100C510166F0000/README.md"
+    },
+    {
+      "title_id": "0100F9F00C696000",
+      "name": "Crash Team Racing Nitro-Fueled",
+      "profile_name": "Crash Team Racing Nitro-Fueled",
+      "builds": [
+        {
+          "version": "v983040",
+          "number": 983040,
+          "display": "1.0.15"
+        }
+      ],
+      "readme_update": "1.0.15",
+      "package": "v983040",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100F9F00C696000/game.tsv",
+      "note": "dm/games/0100F9F00C696000/README.md"
+    },
+    {
+      "title_id": "010097F018538000",
+      "name": "DAVE THE DIVER",
+      "profile_name": "DAVE THE DIVER",
+      "builds": [
+        {
+          "version": "v3080192",
+          "number": 3080192,
+          "display": "1.0.6.1267"
+        }
+      ],
+      "readme_update": "1.0.6.1267",
+      "package": "v3080192",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/010097F018538000/game.tsv",
+      "note": "dm/games/010097F018538000/README.md"
+    },
+    {
+      "title_id": "0100AD80208A8000",
+      "name": "Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2",
+      "profile_name": "Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2",
+      "builds": [
+        {
+          "version": "v917504",
+          "number": 917504,
+          "display": "1.80"
+        }
+      ],
+      "readme_update": "1.80",
+      "package": "v917504",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/0100AD80208A8000/game.tsv",
+      "note": "dm/games/0100AD80208A8000/README.md"
+    },
+    {
+      "title_id": "01001B300B9BE000",
+      "name": "Diablo III: Eternal Collection",
+      "profile_name": "Diablo III: Eternal Collection",
+      "builds": [
+        {
+          "version": "v1441792",
+          "number": 1441792,
+          "display": "2.7.7.92380"
+        }
+      ],
+      "readme_update": "2.7.7.92380",
+      "package": "v1441792",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01001B300B9BE000/game.tsv",
+      "note": "dm/games/01001B300B9BE000/README.md"
+    },
+    {
+      "title_id": "01006AE02236C000",
+      "name": "Double Dragon Revive",
+      "profile_name": "Double Dragon Revive",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "N1.10"
+        },
+        {
+          "version": "v0",
+          "number": 0,
+          "display": "1.0.0"
+        }
+      ],
+      "readme_update": "1.0.0, N1.10",
+      "package": "v65536",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/01006AE02236C000/game.tsv",
+      "note": "dm/games/01006AE02236C000/README.md"
+    },
+    {
+      "title_id": "010051C0134F8000",
+      "name": "DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET",
+      "profile_name": "DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET",
+      "builds": [
+        {
+          "version": "v1048576",
+          "number": 1048576,
+          "display": "1.70"
+        }
+      ],
+      "readme_update": "1.70",
+      "package": "v1048576",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/010051C0134F8000/game.tsv",
+      "note": "dm/games/010051C0134F8000/README.md"
+    },
+    {
+      "title_id": "010035F022078000",
+      "name": "DRAGON BALL: Sparking! ZERO",
+      "profile_name": "DRAGON BALL: Sparking! ZERO",
+      "builds": [
+        {
+          "version": "v0",
+          "number": 0,
+          "display": "1.0.0"
+        }
+      ],
+      "readme_update": "1.0.0",
+      "package": "v0",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/010035F022078000/game.tsv",
+      "note": "dm/games/010035F022078000/README.md"
+    },
+    {
+      "title_id": "01003E601E324000",
+      "name": "DRAGON QUEST III HD-2D Remake",
+      "profile_name": "DRAGON QUEST III HD-2D Remake",
+      "builds": [
+        {
+          "version": "v262144",
+          "number": 262144,
+          "display": "1.1.2"
+        }
+      ],
+      "readme_update": "1.1.2",
+      "package": "v262144",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01003E601E324000/game.tsv",
+      "note": "dm/games/01003E601E324000/README.md"
+    },
+    {
+      "title_id": "0100C49025D3E000",
+      "name": "EA Sports FC 27",
+      "profile_name": "EA SPORTS FC 27",
+      "builds": [
+        {
+          "version": "v524288",
+          "number": 524288,
+          "display": "1.8d.f570"
+        },
+        {
+          "version": "v458752",
+          "number": 458752,
+          "display": "1.8d.6523"
+        }
+      ],
+      "readme_update": "1.8d.6523, 1.8d.f570",
+      "package": "v524288",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/0100C49025D3E000/game.tsv",
+      "note": "dm/games/0100C49025D3E000/README.md"
+    },
+    {
+      "title_id": "0100606026F12000",
+      "name": "FINAL FANTASY RESONANCE",
+      "profile_name": "FINAL FANTASY RESONANCE",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.0.1"
+        }
+      ],
+      "readme_update": "1.0.1",
+      "package": "v65536",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/0100606026F12000/game.tsv",
+      "note": "dm/games/0100606026F12000/README.md"
+    },
+    {
+      "title_id": "0100A6301214E000",
+      "name": "Fire Emblem Engage",
+      "profile_name": "Fire Emblem Engage",
+      "builds": [
+        {
+          "version": "v327680",
+          "number": 327680,
+          "display": "2.0.0"
+        }
+      ],
+      "readme_update": "2.0.0",
+      "package": "v327680",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100A6301214E000/game.tsv",
+      "note": "dm/games/0100A6301214E000/README.md"
+    },
+    {
+      "title_id": "010055D009F78000",
+      "name": "Fire Emblem: Three Houses",
+      "profile_name": "Fire Emblem: Three Houses",
+      "builds": [
+        {
+          "version": "v327680",
+          "number": 327680,
+          "display": "1.2.0"
+        }
+      ],
+      "readme_update": "1.2.0",
+      "package": "v327680",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/010055D009F78000/game.tsv",
+      "note": "dm/games/010055D009F78000/README.md"
+    },
+    {
+      "title_id": "01004D300C5AE000",
+      "name": "Kirby and the Forgotten Land",
+      "profile_name": "Kirby and the Forgotten Land",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.1.0"
+        }
+      ],
+      "readme_update": "1.1.0",
+      "package": "v65536",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/01004D300C5AE000/game.tsv",
+      "note": "dm/games/01004D300C5AE000/README.md"
+    },
+    {
+      "title_id": "01006B601380E000",
+      "name": "Kirby's Return to Dream Land Deluxe",
+      "profile_name": "Kirby's Return to Dream Land Deluxe",
+      "builds": [
+        {
+          "version": "v0",
+          "number": 0,
+          "display": "1.0.0"
+        }
+      ],
+      "readme_update": "1.0.0",
+      "package": "v0",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01006B601380E000/game.tsv",
+      "note": "dm/games/01006B601380E000/README.md"
+    },
+    {
+      "title_id": "0100DCA0064A6000",
+      "name": "Luigi's Mansion 3",
+      "profile_name": "Luigi's Mansion 3",
+      "builds": [
+        {
+          "version": "v327680",
+          "number": 327680,
+          "display": "1.4.0"
+        }
+      ],
+      "readme_update": "1.4.0",
+      "package": "v327680",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/0100DCA0064A6000/game.tsv",
+      "note": "dm/games/0100DCA0064A6000/README.md"
+    },
+    {
+      "title_id": "0100152000022000",
+      "name": "Mario Kart 8 Deluxe",
+      "profile_name": "Mario Kart 8 Deluxe",
+      "builds": [
+        {
+          "version": "v1507328",
+          "number": 1507328,
+          "display": "4.0.1"
+        },
+        {
+          "version": "v1441792",
+          "number": 1441792,
+          "display": "4.0.0"
+        }
+      ],
+      "readme_update": "4.0.0, 4.0.1",
+      "package": "v1507328",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100152000022000/game.tsv",
+      "note": "dm/games/0100152000022000/README.md"
+    },
+    {
+      "title_id": "010093801237C000",
+      "name": "Metroid Dread",
+      "profile_name": "Metroid Dread",
+      "builds": [
+        {
+          "version": "v327680",
+          "number": 327680,
+          "display": "2.1.0"
+        }
+      ],
+      "readme_update": "2.1.0",
+      "package": "v327680",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/010093801237C000/game.tsv",
+      "note": "dm/games/010093801237C000/README.md"
+    },
+    {
+      "title_id": "0100A0F00DA68000",
+      "name": "Monster Sanctuary",
+      "profile_name": "Monster Sanctuary",
+      "builds": [
+        {
+          "version": "v524288",
+          "number": 524288,
+          "display": "2.1.0"
+        }
+      ],
+      "readme_update": "2.1.0",
+      "package": "v524288",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100A0F00DA68000/game.tsv",
+      "note": "dm/games/0100A0F00DA68000/README.md"
+    },
+    {
+      "title_id": "0100B63016916000",
+      "name": "My Time at Sandrock",
+      "profile_name": "My Time at Sandrock",
+      "builds": [
+        {
+          "version": "v851968",
+          "number": 851968,
+          "display": "1.4.2.0"
+        }
+      ],
+      "readme_update": "1.4.2.0",
+      "package": "v851968",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100B63016916000/game.tsv",
+      "note": "dm/games/0100B63016916000/README.md"
+    },
+    {
+      "title_id": "0100B8E016F76000",
+      "name": "NieR:Automata The End of YoRHa Edition (Asian release)",
+      "profile_name": "NieR:Automata The End of YoRHa Edition",
+      "builds": [
+        {
+          "version": "v131072",
+          "number": 131072,
+          "display": "1.0.3"
+        }
+      ],
+      "readme_update": "1.0.3",
+      "package": "v131072",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/0100B8E016F76000/game.tsv",
+      "note": "dm/games/0100B8E016F76000/README.md"
+    },
+    {
+      "title_id": "01005270232F2000",
+      "name": "OCTOPATH TRAVELER 0",
+      "profile_name": "OCTOPATH TRAVELER 0",
+      "builds": [
+        {
+          "version": "v327680",
+          "number": 327680,
+          "display": "1.0.5"
+        }
+      ],
+      "readme_update": "1.0.5",
+      "package": "v327680",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01005270232F2000/game.tsv",
+      "note": "dm/games/01005270232F2000/README.md"
+    },
+    {
+      "title_id": "01005CA01580E000",
+      "name": "Persona 5 Royal",
+      "profile_name": "Persona 5 Royal",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.0.2"
+        }
+      ],
+      "readme_update": "1.0.2",
+      "package": "v65536",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01005CA01580E000/game.tsv",
+      "note": "dm/games/01005CA01580E000/README.md"
+    },
+    {
+      "title_id": "0100000011D90000",
+      "name": "Pokémon Brilliant Diamond",
+      "profile_name": "Pokémon Brilliant Diamond",
+      "builds": [
+        {
+          "version": "v393216",
+          "number": 393216,
+          "display": "1.3.0"
+        }
+      ],
+      "readme_update": "1.3.0",
+      "package": "v393216",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100000011D90000/game.tsv",
+      "note": "dm/games/0100000011D90000/README.md"
+    },
+    {
+      "title_id": "01001F5010DFA000",
+      "name": "Pokémon Legends: Arceus",
+      "profile_name": "Pokémon Legends: Arceus",
+      "builds": [
+        {
+          "version": "v262144",
+          "number": 262144,
+          "display": "1.1.1"
+        }
+      ],
+      "readme_update": "1.1.1",
+      "package": "v262144",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/01001F5010DFA000/game.tsv",
+      "note": "dm/games/01001F5010DFA000/README.md"
+    },
+    {
+      "title_id": "0100F43008C44000",
+      "name": "Pokémon Legends: Z-A",
+      "profile_name": "Pokémon Legends: Z-A",
+      "builds": [
+        {
+          "version": "v393216",
+          "number": 393216,
+          "display": "2.0.2"
+        }
+      ],
+      "readme_update": "2.0.2",
+      "package": "v393216",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/0100F43008C44000/game.tsv",
+      "note": "dm/games/0100F43008C44000/README.md"
+    },
+    {
+      "title_id": "0100A3D008C5C000",
+      "name": "Pokémon Scarlet",
+      "profile_name": "Pokémon Scarlet",
+      "builds": [
+        {
+          "version": "v786432",
+          "number": 786432,
+          "display": "4.0.0"
+        }
+      ],
+      "readme_update": "4.0.0",
+      "package": "v786432",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/0100A3D008C5C000/game.tsv",
+      "note": "dm/games/0100A3D008C5C000/README.md"
+    },
+    {
+      "title_id": "01008DB008C2C000",
+      "name": "Pokémon Shield",
+      "profile_name": "Pokémon Shield",
+      "builds": [
+        {
+          "version": "v458752",
+          "number": 458752,
+          "display": "1.3.2"
+        }
+      ],
+      "readme_update": "1.3.2",
+      "package": "v458752",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01008DB008C2C000/game.tsv",
+      "note": "dm/games/01008DB008C2C000/README.md"
+    },
+    {
+      "title_id": "010018E011D92000",
+      "name": "Pokémon Shining Pearl",
+      "profile_name": "Pokémon Shining Pearl",
+      "builds": [
+        {
+          "version": "v393216",
+          "number": 393216,
+          "display": "1.3.0"
+        }
+      ],
+      "readme_update": "1.3.0",
+      "package": "v393216",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/010018E011D92000/game.tsv",
+      "note": "dm/games/010018E011D92000/README.md"
+    },
+    {
+      "title_id": "0100ABF008968000",
+      "name": "Pokémon Sword",
+      "profile_name": "Pokémon Sword",
+      "builds": [
+        {
+          "version": "v458752",
+          "number": 458752,
+          "display": "1.3.2"
+        }
+      ],
+      "readme_update": "1.3.2",
+      "package": "v458752",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100ABF008968000/game.tsv",
+      "note": "dm/games/0100ABF008968000/README.md"
+    },
+    {
+      "title_id": "01008F6008C5E000",
+      "name": "Pokémon Violet",
+      "profile_name": "Pokémon Violet",
+      "builds": [
+        {
+          "version": "v786432",
+          "number": 786432,
+          "display": "4.0.0"
+        }
+      ],
+      "readme_update": "4.0.0",
+      "package": "v786432",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/01008F6008C5E000/game.tsv",
+      "note": "dm/games/01008F6008C5E000/README.md"
+    },
+    {
+      "title_id": "010099A00BC1E000",
+      "name": "Resident Evil 4",
+      "profile_name": "Resident Evil 4",
+      "builds": [
+        {
+          "version": "v131072",
+          "number": 131072,
+          "display": "v131072"
+        }
+      ],
+      "readme_update": "131072",
+      "package": "v131072",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/010099A00BC1E000/game.tsv",
+      "note": "dm/games/010099A00BC1E000/README.md"
+    },
+    {
+      "title_id": "01008BC024FDE000",
+      "name": "STEINS;GATE RE:BOOT",
+      "profile_name": "STEINS;GATE RE:BOOT",
+      "builds": [
+        {
+          "version": "v196608",
+          "number": 196608,
+          "display": "1.0.4"
+        },
+        {
+          "version": "v131072",
+          "number": 131072,
+          "display": "1.0.3"
+        }
+      ],
+      "readme_update": "1.0.3, 1.0.4",
+      "package": "v196608",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/01008BC024FDE000/game.tsv",
+      "note": "dm/games/01008BC024FDE000/README.md"
+    },
+    {
+      "title_id": "0100DAE01E4C8000",
+      "name": "STORY OF SEASONS: Grand Bazaar",
+      "profile_name": "STORY OF SEASONS: Grand Bazaar",
+      "builds": [
+        {
+          "version": "v655360",
+          "number": 655360,
+          "display": null
+        }
+      ],
+      "readme_update": "v655360",
+      "package": "v655360",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/0100DAE01E4C8000/game.tsv",
+      "note": "dm/games/0100DAE01E4C8000/README.md"
+    },
+    {
+      "title_id": "010028600EBDA000",
+      "name": "Super Mario 3D World + Bowser's Fury",
+      "profile_name": "Super Mario 3D World + Bowser's Fury",
+      "builds": [
+        {
+          "version": "v262144",
+          "number": 262144,
+          "display": "1.2.2"
+        }
+      ],
+      "readme_update": "1.2.2",
+      "package": "v262144",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/010028600EBDA000/game.tsv",
+      "note": "dm/games/010028600EBDA000/README.md"
+    },
+    {
+      "title_id": "010015100B514000",
+      "name": "Super Mario Bros. Wonder",
+      "profile_name": "Super Mario Bros. Wonder",
+      "builds": [
+        {
+          "version": "v327680",
+          "number": 327680,
+          "display": "1.2.1"
+        }
+      ],
+      "readme_update": "1.2.1",
+      "package": "v327680",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/010015100B514000/game.tsv",
+      "note": "dm/games/010015100B514000/README.md"
+    },
+    {
+      "title_id": "0100000000010000",
+      "name": "Super Mario Odyssey",
+      "profile_name": "Super Mario Odyssey",
+      "builds": [
+        {
+          "version": "v393216",
+          "number": 393216,
+          "display": "1.4.1"
+        }
+      ],
+      "readme_update": "1.4.1",
+      "package": "v393216",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100000000010000/game.tsv",
+      "note": "dm/games/0100000000010000/README.md"
+    },
+    {
+      "title_id": "01007EF00011E000",
+      "name": "The Legend of Zelda: Breath of the Wild",
+      "profile_name": "The Legend of Zelda: Breath of the Wild",
+      "builds": [
+        {
+          "version": "v1114112",
+          "number": 1114112,
+          "display": "1.9.0"
+        },
+        {
+          "version": "v786432",
+          "number": 786432,
+          "display": "1.6.0"
+        }
+      ],
+      "readme_update": "1.6.0, 1.9.0",
+      "package": "v1114112",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01007EF00011E000/game.tsv",
+      "note": "dm/games/01007EF00011E000/README.md"
+    },
+    {
+      "title_id": "01008CF01BAAC000",
+      "name": "The Legend of Zelda: Echoes of Wisdom",
+      "profile_name": "The Legend of Zelda: Echoes of Wisdom",
+      "builds": [
+        {
+          "version": "v196608",
+          "number": 196608,
+          "display": "1.1.0"
+        }
+      ],
+      "readme_update": "1.1.0",
+      "package": "v196608",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01008CF01BAAC000/game.tsv",
+      "note": "dm/games/01008CF01BAAC000/README.md"
+    },
+    {
+      "title_id": "01006BB00C6F0000",
+      "name": "The Legend of Zelda: Link's Awakening",
+      "profile_name": "The Legend of Zelda: Link's Awakening",
+      "builds": [
+        {
+          "version": "v131072",
+          "number": 131072,
+          "display": "1.1.0"
+        }
+      ],
+      "readme_update": "1.1.0",
+      "package": "v131072",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01006BB00C6F0000/game.tsv",
+      "note": "dm/games/01006BB00C6F0000/README.md"
+    },
+    {
+      "title_id": "01002DA013484000",
+      "name": "The Legend of Zelda: Skyward Sword HD",
+      "profile_name": "The Legend of Zelda: Skyward Sword HD",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.0.1"
+        }
+      ],
+      "readme_update": "1.0.1",
+      "package": "v65536",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/01002DA013484000/game.tsv",
+      "note": "dm/games/01002DA013484000/README.md"
+    },
+    {
+      "title_id": "0100F2C0115B6000",
+      "name": "The Legend of Zelda: Tears of the Kingdom",
+      "profile_name": "The Legend of Zelda: Tears of the Kingdom",
+      "builds": [
+        {
+          "version": "v720896",
+          "number": 720896,
+          "display": "1.4.3"
+        }
+      ],
+      "readme_update": "1.4.3",
+      "package": "v720896",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/0100F2C0115B6000/game.tsv",
+      "note": "dm/games/0100F2C0115B6000/README.md"
+    },
+    {
+      "title_id": "010051F0207B2000",
+      "name": "Tomodachi Life: Living the Dream",
+      "profile_name": "Tomodachi Life: Living the Dream",
+      "builds": [
+        {
+          "version": "v262144",
+          "number": 262144,
+          "display": "1.0.4"
+        }
+      ],
+      "readme_update": "1.0.4",
+      "package": "v262144",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/010051F0207B2000/game.tsv",
+      "note": "dm/games/010051F0207B2000/README.md"
+    },
+    {
+      "title_id": "01007A2027548000",
+      "name": "Trails in the Sky 2nd Chapter",
+      "profile_name": "Trails in the Sky 2nd Chapter",
+      "builds": [
+        {
+          "version": "v327680",
+          "number": 327680,
+          "display": "1.0.3"
+        }
+      ],
+      "readme_update": "1.0.3",
+      "package": "v327680",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/01007A2027548000/game.tsv",
+      "note": "dm/games/01007A2027548000/README.md"
+    },
+    {
+      "title_id": "010069401ADB8000",
+      "name": "Unicorn Overlord",
+      "profile_name": "Unicorn Overlord",
+      "builds": [
+        {
+          "version": "v262144",
+          "number": 262144,
+          "display": "1.05"
+        }
+      ],
+      "readme_update": "1.05",
+      "package": "v262144",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/010069401ADB8000/game.tsv",
+      "note": "dm/games/010069401ADB8000/README.md"
+    },
+    {
+      "title_id": "0100453019AA8000",
+      "name": "Xenoblade Chronicles X: Definitive Edition",
+      "profile_name": "Xenoblade Chronicles X: Definitive Edition",
+      "builds": [
+        {
+          "version": "v131072",
+          "number": 131072,
+          "display": "1.0.2"
+        }
+      ],
+      "readme_update": "1.0.2",
+      "package": "v131072",
+      "companion": false,
+      "since": null,
+      "profile": "dm/games/0100453019AA8000/game.tsv",
+      "note": "dm/games/0100453019AA8000/README.md"
+    },
+    {
+      "title_id": "0100C2901153C000",
+      "name": "Yoru, Tomosu",
+      "profile_name": "Yoru, Tomosu",
+      "builds": [
+        {
+          "version": "v0",
+          "number": 0,
+          "display": "base game"
+        }
+      ],
+      "readme_update": "Base game (v0)",
+      "package": "v0",
+      "companion": true,
+      "since": null,
+      "profile": "dm/games/0100C2901153C000/game.tsv",
+      "note": "dm/games/0100C2901153C000/README.md"
+    }
+  ]
+}

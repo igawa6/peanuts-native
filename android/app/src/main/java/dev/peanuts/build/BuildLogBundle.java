@@ -191,7 +191,8 @@ public final class BuildLogBundle {
     /** Whether a file may go into a bundle at all: a text file (.log, .txt, .json) whose name has nothing of keys, and nothing of a game */
     public static boolean allowed(String name) {
         String n = name.toLowerCase(Locale.ROOT);
-        if (n.contains("key") || n.contains(".nup") || n.contains(".nsp") || n.contains(".xci") || n.contains("save")) return false;
+        if (n.contains("key") || n.contains(".nup") || n.contains(".nsp") || n.contains(".xci") || n.contains(".nsz") || n.contains(".xcz") || n.contains(".ncz")
+                || n.contains(".unpack") || n.contains("save")) return false;
         return n.endsWith(".log") || n.endsWith(".txt") || n.endsWith(".json");
     }
 

@@ -42,6 +42,21 @@ mem_used	0x4600000
 # steps by the time that really passed (the same walk in the lobby ends at the same spot at 30 and 60 fps). The game asks for present interval 2 as well, which display ignores
 fps_target	60
 present_interval	display
+# PEANUTS: PC-staged Android caps. The Android host paces presents and updates this build's NLG limiter.
+fps_limit	30
+fps_limit_max	120
+fps_memory	79e5950ffa85acf63e28c9aec051eac2	frame_ms_f32	@0x13c94dc	1	0
+
+# PEANUTS: Docked resolution changes keep several GPU-written images at one pool offset on Vulkan.
+# Use the full-resolution value at the six references to the docked scale constant in this build.
+option	DM_LM3_FIXED_RES	Fixed docked resolution	Keeps docked rendering at full resolution to reduce memory use from changing render target sizes.	restart
+option_patch	DM_LM3_FIXED_RES	79e5950ffa85acf63e28c9aec051eac2	0x1d0cec	03a945bd	03102e1e
+option_patch	DM_LM3_FIXED_RES	79e5950ffa85acf63e28c9aec051eac2	0x1d1968	03a945bd	03102e1e
+option_patch	DM_LM3_FIXED_RES	79e5950ffa85acf63e28c9aec051eac2	0x86745c	41a945bd	01102e1e
+option_patch	DM_LM3_FIXED_RES	79e5950ffa85acf63e28c9aec051eac2	0x8674c0	61a945bd	01102e1e
+option_patch	DM_LM3_FIXED_RES	79e5950ffa85acf63e28c9aec051eac2	0xb81884	21a945bd	01102e1e
+option_patch	DM_LM3_FIXED_RES	79e5950ffa85acf63e28c9aec051eac2	0xb81bf8	00a945bd	00102e1e
+recommend	driver.id=18	option.DM_LM3_FIXED_RES=on
 
 # ---- Input ----
 # Luigi moves with the left stick and aims with the right; the D-pad calls up the Virtual Boo: the iPhone pad starts in the 3D layout, which has both

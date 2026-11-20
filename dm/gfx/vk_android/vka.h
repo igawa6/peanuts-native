@@ -284,6 +284,7 @@ typedef struct vka_img {
     // Content from guest storage (vka_tex.c storage_mode): track = re-uploaded when the CPU writes its pages (write-protected after each upload, nvn_dirty.c),
     // stamp = the dirty-page generation taken before the last upload, span = the tracked pool range that holds the storage
     int track, wb_pending; uint64_t stamp; const void *span;
+    uint32_t tiled_wb_levels;   // PEANUTS: render-written mips pending block-linear write-back
     uint64_t wb_fence;       // the fence of the submission that holds the last copy of its GPU content back into its storage (vka_tex_writeback; 0: none): vka_wbfollow.h
     int wbf_waiting;         // the prepare's last scan found it waiting for that copy-back; a scan that only runs for waiting images visits just these (wbf_visit)
     int wt;                  // the game writes it through WriteTexels (vka_tex.c mtl_tex_write_region): never tracked again
@@ -379,8 +380,9 @@ vka_img *vka_tex_ref(vka_img *im);                  // one more reference to im 
 void vka_tex_drop_pool(const void *pool);            // drop all images belonging to a finalized memory pool
 // The GPU writes im (render target, clear, copy destination, storage image): its content is the GPU's from now on (no re-upload from storage), and a linear texture's level 0
 // is copied back into its storage when the submission ends (vka_tex_writeback), where the CPU reads it as it would on the Switch
-void vka_img_written_at(vka_img *im, const char *file, int line);
-#define vka_img_written(im) vka_img_written_at(im, __FILE_NAME__, __LINE__)   // (the site is logged for a large image's first write, DM_VK_BIGIMG_MB)
+void vka_img_written_at(vka_img *im, int color_level, const char *file, int line);   // PEANUTS: color_level, the colour target mip written (-1: any other write)
+#define vka_img_written(im) vka_img_written_at(im, -1, __FILE_NAME__, __LINE__)   // (the site is logged for a large image's first write, DM_VK_BIGIMG_MB)
+#define vka_img_color_written(im, lv) vka_img_written_at(im, (int)(lv), __FILE_NAME__, __LINE__)
 // Before a write is recorded into im (an attachment, a clear, a copy destination, a storage image): a zero-shared image gets memory of its own, cleared (vka_tex.c img_own).
 // Call it before taking a view of im for the write. Any thread that records (takes the table lock); no render pass may be open in cb unless upload batches are on
 void vka_tex_own(vka_img *im, VkCommandBuffer cb);
@@ -471,6 +473,7 @@ VkImageView vka_tbuf_image_view(int id, uint8_t dim);   // that image's view (af
 void vka_tbuf_wrote(uint64_t addr, uint64_t n);     // GPU work that writes guest memory [addr, addr+n) was recorded (vka_tex.c gw_add): images of buffer textures over it are copied again at their next use
 int vka_tex_id_pending(int id);                     // texture ID id is registered and its image is not made yet (its first use records commands)
 VkImageView vka_tex_id_view_rec(int id, VkCommandBuffer cb, uint8_t dim, int storage, VkImageLayout *layout);   // the same on the recording thread, through a memo (DM_VK_TEX_MEMO)
+VkImageView vka_tex_id_view_samp_rec(int id, int sid, VkCommandBuffer cb, uint8_t dim, int storage, VkImageLayout *layout);   // PEANUTS(upstream-candidate): the same through sampler ID sid (0: not known), whose pinned level a view of the pass's own target follows (vka_tex.c fb_view_levels)
 VkFormat vka_tex_id_vkfmt(int id);   // the format texture ID id is viewed in, not its (possibly shared) image's (vka_tex.c)
 VkImageView vka_tex_id_view_bits(int id, VkCommandBuffer cb, VkImageLayout *layout);   // a storage view of its image as R32_UINT (4-byte texels), not written into the bindless table (vka_tex.c)
 int vka_tex_id_pending_rec(int id, uint8_t dim);
@@ -488,10 +491,11 @@ VkSampler vka_samp_default(void);                   // the sampler an unbound sa
 #include "vka_shlib.h"
 #include "vka_bind.h"
 #include "vka_memu.h"
+#define VKA_MOD_TERRAIN_NORMAL 5       // PEANUTS (PR #164): runtime-only single-sample variant; never stored in the shader library or prewarm keys
 typedef struct vka_shader {
     uint64_t key; const dmsh_vk_entry *e; const dmsh_vk_bind *b;
     const vka_shlib *lib;               // the library the entry is in (its header's translator answers; its other modules)
-    VkShaderModule mods[5];             // by DMSH_VK_MOD_* variant, made when a pipeline first asks (the base when the shader is made)
+    VkShaderModule mods[VKA_MOD_TERRAIN_NORMAL + 1]; // PEANUTS: library and runtime variants; the base is made when the shader is made
     struct vka_vinmod *vin;             // vertex modules with integer-fed inputs retyped, by masks (vka_shader_vin_module)
     struct vka_vinmod *fout;            // pixel modules with float outputs retyped for integer targets, by masks (vka_shader_fout_module)
     vka_span c1; VkDeviceSize c1_len;   // the c1 bytes in static memory (none when c1_len is 0)

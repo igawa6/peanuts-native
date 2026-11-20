@@ -27,7 +27,11 @@ def matches(directory, lock):
 
 def verify(directory, lock):
     if not matches(directory, lock):
-        raise RuntimeError('desktop translator DLLs do not match dmsh_chain.lock')
+        # Builds of the same SDK version differ in bytes (Microsoft's and a distribution's own build), so a translator built here can miss
+        # the lock while the source matches; the bundled DLLs are the locked build and run anywhere (#161)
+        got = ', '.join(f'{name} {tool_lock.sha16(directory / name) if (directory / name).is_file() else "missing"} / lock {lock[name]}' for name in DLLS)
+        raise RuntimeError(f'desktop translator DLLs do not match dmsh_chain.lock ({got}). The DLLs in dm/gfx/tools/dmsh_xlate_bin are the locked build: '
+                           'restore them from the repository (git checkout -- dm/gfx/tools/dmsh_xlate_bin) instead of building from source')
     command = tool_lock.xlate_command(str(directory / 'dmsh_xlate'))
     result = subprocess.run([*command, '--source-sha'], check=True, capture_output=True, text=True, timeout=60)
     if result.stdout.strip() != lock['xlate_source']:

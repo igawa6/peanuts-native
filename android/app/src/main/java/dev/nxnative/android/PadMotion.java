@@ -21,6 +21,12 @@ import java.util.Map;
  */
 final class PadMotion {
     private static final int PERIOD_US = 5000;
+    // PEANUTS begin: Nintendo's controllers (USB vendor 0x057e: Pro Controller, Joy-Con) through the kernel's hid-nintendo report the controller's own IMU frame (X toward
+    // the triggers, Y to the left, Z up out of the buttons; the driver turns the right Joy-Con to match), which is the six-axis sensor's frame turned half a turn about Z:
+    // yaw was right, pitch and roll came inverted (issue #117). X and Y of both sensors are negated, a rotation, so the accelerometer's gravity stays consistent with the gyro
+    static final int NINTENDO_VENDOR = 0x057e;
+    static boolean halfTurn(int vendorId) { return vendorId == NINTENDO_VENDOR; }
+    // PEANUTS end
     private final Map<Integer, Pad> pads = new HashMap<>();   // main thread only
     private volatile HandlerThread thread;
     private volatile Handler handler;   // read by the sensor thread too
@@ -29,13 +35,14 @@ final class PadMotion {
     /** One pad: its sensors, and the last accelerometer sample (the gyroscope sample is sent with it) */
     private final class Pad implements SensorEventListener {
         final int id; final String name; final SensorManager sm; final Sensor acc, gyro;
+        final float s;   // PEANUTS: -1 turns X and Y half a turn about Z (halfTurn), else 1
         private final float[] a = new float[3]; private boolean haveA, dead;   // handler thread
         private volatile boolean registered;
-        Pad(int id, String name, SensorManager sm, Sensor acc, Sensor gyro) { this.id = id; this.name = name; this.sm = sm; this.acc = acc; this.gyro = gyro; }
+        Pad(int id, String name, SensorManager sm, Sensor acc, Sensor gyro, boolean halfTurn) { this.id = id; this.name = name; this.sm = sm; this.acc = acc; this.gyro = gyro; this.s = halfTurn ? -1f : 1f; }
         @Override public void onSensorChanged(SensorEvent e) {
             if (dead) return;
-            if (e.sensor.getType() == Sensor.TYPE_ACCELEROMETER) { System.arraycopy(e.values, 0, a, 0, 3); haveA = true; }
-            else if (e.sensor.getType() == Sensor.TYPE_GYROSCOPE && haveA && !Native.padMotion(id, a[0], a[1], a[2], e.values[0], e.values[1], e.values[2])) {
+            if (e.sensor.getType() == Sensor.TYPE_ACCELEROMETER) { a[0] = s * e.values[0]; a[1] = s * e.values[1]; a[2] = e.values[2]; haveA = true; }   // PEANUTS: s
+            else if (e.sensor.getType() == Sensor.TYPE_GYROSCOPE && haveA && !Native.padMotion(id, a[0], a[1], a[2], s * e.values[0], s * e.values[1], e.values[2])) {   // PEANUTS: s
                 dead = true;   // the host takes no controller motion: stop asking
                 if (handler != null) handler.post(() -> unregister(this));
             }
@@ -56,9 +63,11 @@ final class PadMotion {
             pads.put(deviceId, null);   // asked once
             return;
         }
-        Pad p = new Pad(deviceId, d.getName(), sm, acc, gyro);
+        boolean turn = halfTurn(d.getVendorId());   // PEANUTS
+        Pad p = new Pad(deviceId, d.getName(), sm, acc, gyro, turn);
         pads.put(deviceId, p);
-        Native.note("padmotion: " + p.name + ": gyroscope " + gyro.getName() + ", accelerometer " + acc.getName());
+        Native.note("padmotion: " + p.name + ": gyroscope " + gyro.getName() + ", accelerometer " + acc.getName()
+                + (turn ? "; Nintendo controller: X and Y turned half a turn about Z (hid-nintendo's frame)" : ""));   // PEANUTS
         if (on) register(p);
     }
 

@@ -9,13 +9,19 @@ cmake_minimum_required(VERSION 3.22)
 project(nximport C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+# zstd's decoder (dm/third_party/zstd, BSD, as vendored for the host): the NCZs of .nsz / .xcz files (nx_ncz.c). Its functions stay inside the library:
+# no default visibility of their own, so -fvisibility=hidden covers them (another library of the app with its own zstd never meets this one)
+get_filename_component(NX_ZSTD ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/zstd/zstddeclib.c ABSOLUTE)
+set_source_files_properties(${NX_ZSTD} PROPERTIES COMPILE_OPTIONS "-w" COMPILE_DEFINITIONS "ZSTDLIB_VISIBLE=;ZSTDERRORLIB_VISIBLE=")
 set(NXIMPORT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_crypto.c
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_lz4.c
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_nca.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/nx_ncz.c
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_icon.c
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_zip.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/nximport.c)
+    ${CMAKE_CURRENT_SOURCE_DIR}/nximport.c
+    ${NX_ZSTD})
 if(ANDROID)
   add_library(nximport SHARED ${NXIMPORT_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/nximport_jni.c)
   target_link_options(nximport PRIVATE -Wl,--no-undefined -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384)
@@ -60,6 +66,20 @@ else()
     target_link_libraries(font_test PRIVATE Threads::Threads ZLIB::ZLIB)
     target_compile_options(font_test PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation)
     add_test(NAME font_test COMMAND font_test)
+    # the meta blocks the .nup writer puts in (issue #158): dumps with control data written by the test (tests/nsp_fixture.h), no game data; also run by
+    # peanuts/tests/test_nup_icon.py, which reads its .nups with dm/tools/nup.py and the launcher's Nup
+    add_executable(nup_meta_test ${CMAKE_CURRENT_SOURCE_DIR}/tests/nup_meta_test.c ${NXIMPORT_SOURCES})
+    target_include_directories(nup_meta_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(nup_meta_test PRIVATE Threads::Threads ZLIB::ZLIB)
+    target_compile_options(nup_meta_test PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation)
+    add_test(NAME nup_meta_test COMMAND nup_meta_test)
+    # .nsz / .xcz (nx_ncz.c): the fixture's dumps written again with NCZs (tests/ncz_fixture.h), every .nup against the uncompressed dumps', damaged
+    # files and Stop; no game data. Really compressed frames through the system's libzstd.so.1 (dlopen) when it is there, else raw and RLE ones
+    add_executable(ncz_test ${CMAKE_CURRENT_SOURCE_DIR}/tests/ncz_test.c ${NXIMPORT_SOURCES})
+    target_include_directories(ncz_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(ncz_test PRIVATE Threads::Threads ZLIB::ZLIB ${CMAKE_DL_LIBS})
+    target_compile_options(ncz_test PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation)
+    add_test(NAME ncz_test COMMAND ncz_test)
   endif()
   # The RomFS read straight from dumps at run time (dm/peanuts/peanuts_nsp.c; peanuts/docs/NSP-DIRECT.md), on x86-64 Linux:
   #   nsp_test     no game data: dumps written by the test with made-up keys (tests/nsp_fixture.h), read through the importer, through the host's file system
@@ -83,11 +103,10 @@ else()
     set_source_files_properties(${NSP_HOST_UNITS} PROPERTIES COMPILE_DEFINITIONS "${NSP_AS_HOST}" COMPILE_OPTIONS "-Wno-unused-function;-Wno-format")
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../peanuts_nup.c PROPERTIES COMPILE_DEFINITIONS "${NSP_AS_HOST};PN_NUP_HOST_TEST" COMPILE_OPTIONS "-Wno-unused-function")
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/../peanuts_nsp.c PROPERTIES COMPILE_DEFINITIONS "DM_NSP_DIRECT" COMPILE_OPTIONS "-Wall;-Wextra;-Wno-unused-function")
-    set_source_files_properties(${NSP_ROOT}/dm/third_party/zstd/zstddeclib.c PROPERTIES COMPILE_OPTIONS "-w")
     add_executable(nsp_test ${CMAKE_CURRENT_SOURCE_DIR}/tests/nsp_test.c ${NSP_GEN}/game_profile.h ${CMAKE_CURRENT_SOURCE_DIR}/../peanuts_nsp.c ${CMAKE_CURRENT_SOURCE_DIR}/../peanuts_nup.c
-                   ${NSP_ROOT}/dm/host/save_sync.c ${NSP_ROOT}/dm/third_party/zstd/zstddeclib.c ${NXIMPORT_SOURCES})
+                   ${NSP_ROOT}/dm/host/save_sync.c ${NXIMPORT_SOURCES})   # NXIMPORT_SOURCES has zstd's decoder
     target_include_directories(nsp_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${NSP_ROOT}/dm/host ${NSP_GEN} ${NSP_ROOT}/dm/games/${NSP_GAME})
-    add_executable(nsp_compare ${CMAKE_CURRENT_SOURCE_DIR}/tests/nsp_compare.c ${CMAKE_CURRENT_SOURCE_DIR}/../peanuts_nsp.c ${NSP_ROOT}/dm/third_party/zstd/zstddeclib.c ${NXIMPORT_SOURCES})
+    add_executable(nsp_compare ${CMAKE_CURRENT_SOURCE_DIR}/tests/nsp_compare.c ${CMAKE_CURRENT_SOURCE_DIR}/../peanuts_nsp.c ${NXIMPORT_SOURCES})
     target_include_directories(nsp_compare PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${NSP_ROOT}/dm/host)
     foreach(t nsp_test nsp_compare)
       target_link_libraries(${t} PRIVATE Threads::Threads ZLIB::ZLIB)

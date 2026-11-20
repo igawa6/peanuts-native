@@ -205,6 +205,8 @@ Before publishing, the fixes were integrated with main's pipeline archive and GP
 
 ## Found on this game
 
+- PEANUTS(upstream-candidate), Android: [Upsample pass reading the level above the one it renders (Android)](../../../docs/reference/rendering.md#upsample-pass-reading-the-level-above-the-one-it-renders-android): the Sheikah glow (the pedestal in the Shrine of Resurrection) low-resolution and blocky on 1.6.0, Peanuts Native GitHub issue #170.
+
 - PEANUTS, Android: [Desired present times chosen before GPU and queue waits](../../../docs/reference/frame-rate.md#desired-present-times-chosen-before-gpu-and-queue-waits-android): stale deadlines and misleading on-time counts are corrected at submission; subsequent outdoor tests still show short/long presentation pairs.
 
 - PEANUTS, Android: [Future presentation targets missed the compositor queue deadline](../../../docs/reference/frame-rate.md#future-presentation-targets-missed-the-compositor-queue-deadline-android): use the active display's declared queue lead when selecting a target; native regressions cover both panel modes.

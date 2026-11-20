@@ -26,6 +26,16 @@ The global profile's keys:
 
 - Current reconciliation: all 1,225 shaders and 96 mesh pairs build for Mac and iOS on chain `a78f966a7b38`, with a separate Asian-profile stamp. The shader inputs match the verified global package. The Asian executable and iPhone runtime were not locally retested for this reconciliation.
 
+## Android (Peanuts Native)
+
+PEANUTS: packed on Linux from 1.0.3 with its DLC (`0100B8E016F77001`): all 1,225 shaders and 1,476 modules valid, a 12.3 MB library; the targeted split reads 1 of 661 RomFS files (1.1 s, against 197 s for the full scan, with the same tables and package hashes). Played on an AYN Thor (Adreno 740) with Turnip v26.2.0 R5, docked mode, 2026-11-20:
+
+- Title, menus, the Downloadable Content page (its items listed from the mounted DLC; their use in play is not checked), save creation, name entry through the Android text dialog, Easy with auto-chips, the opening formation cinematic and the ocean flight with combat: 60 fps, frame time 16.7 ms, GPU 7 to 14 ms, about 1.9 GB. Left stick movement and auto-fire respond. Wwise through AAudio, 48 kHz: no underruns in 56,000 callbacks. A relaunch loads the save. No crash in about 15 minutes over several runs.
+- The system driver (Qualcomm) draws the same scenes right but runs the formation cinematic at 36 to 39 fps (25.6 ms of GPU work a frame, against 13.7 on Turnip).
+- One log line besides the Metal-only statistics: `SetRenderEnableConditional: the host draws anyway for now`. No wrong picture was seen.
+- Frame limits ([`game.tsv`](game.tsv)): the native clock steps by elapsed time in 60 Hz ticks, clamped to one or two a frame. The interval between two subtitles of the opening cinematic took 6.41 s at 60, 6.51 s at 45 and 6.19 s at 30 (correct, within the 0.6 s screenshot timing) and 7.53 s at 20 (slow, past the two-tick clamp). The launcher offers 30, 40, 45 and 60; above 60 the one-tick floor would run the game fast, so 90 and 120 are not offered.
+- Shader seed (`vk_prewarm.bin`, 225 pipeline keys from the title, menus and the opening flight): a cold launch prepares them before the game starts (2.3 s, 142 made, 83 dropped as on every run); the relaunch reads the pipeline cache and prepares nothing.
+
 ## Found on this game
 
 - [Passthrough geometry shaders drawn by the vertex shader](../../../docs/reference/shaders.md#passthrough-geometry-shaders-drawn-by-the-vertex-shader): the lean kernels, their hoisting, and the mesh draws (Resistance Camp on an M1: 21.2 → about 17 ms a frame).

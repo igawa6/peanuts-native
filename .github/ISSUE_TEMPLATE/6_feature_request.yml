@@ -1,0 +1,66 @@
+# Written by peanuts/scripts/issue_forms.py: change that script, then run it.
+name: "Feature request"
+description: "Suggest something the app could do: performance, picture, controls, the second screen, the library, builds, mods, saves and more"
+labels: ["feature-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One idea per post: it is easier to discuss and to close when done. First search the open issues, and add a 👍 to an existing one instead of a new one. Write in English if you can; another language is fine too.
+  - type: dropdown
+    id: area
+    attributes:
+      label: "Area"
+      options:
+        - "Frame rate, speed or frame generation"
+        - "Picture: resolution, upscaling, HDR, effects"
+        - "Controls, gyro, controllers or on-screen layouts"
+        - "The second screen or companions"
+        - "The library, game formats or importing (for example compressed games)"
+        - "Builds: speed, storage, the build folder"
+        - "Mods"
+        - "Saves"
+        - "GPU drivers"
+        - "Online or local multiplayer"
+        - "The app's screens and settings"
+        - "Building on a computer (the desktop builder)"
+        - "Something else"
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: "The idea"
+      description: "What the app should do, as you would use it."
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: "Why"
+      description: "What it would make possible or easier, and for which games or devices."
+  - type: input
+    id: device
+    attributes:
+      label: "Your device"
+      description: "If it matters."
+      placeholder: "AYN Thor Pro"
+  - type: textarea
+    id: extra
+    attributes:
+      label: "Anything else"
+      description: "How another app does it, a sketch or a screenshot, details of how it should behave."
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "Before sending"
+      options:
+        - label: "I searched the open issues, and this is not one of them."
+          required: true
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: "Rules"
+      options:
+        - label: "My post has no game files, keys, firmware or links to them, and doesn't ask for any."
+          required: true

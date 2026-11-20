@@ -220,7 +220,8 @@ final class Prepare {
         }
         p.on(1, STEP_TEXT[0]);
         // 5. progress from job.json (and the service's messages while bound) until the job ends
-        long startedAt = SystemClock.elapsedRealtime(), lastChange = startedAt;
+        // Allow a temporary read failure at any point, not just during the first 30 seconds.
+        long lastChange = SystemClock.elapsedRealtime(), lastReadable = lastChange;
         String lastJson = null;
         while (!cancelled) {
             SystemClock.sleep(1000);
@@ -228,10 +229,11 @@ final class Prepare {
             String fs = fromService;
             if (fs != null && fromServiceAt > lastChange) json = fs;
             if (json == null) {
-                if (SystemClock.elapsedRealtime() - startedAt > 30000) throw new BuildListener.Failure("The job file went missing: " + file, BuildListener.OTHER);
+                if (SystemClock.elapsedRealtime() - lastReadable > 30000) throw new BuildListener.Failure("The job file went missing: " + file, BuildListener.OTHER);
                 continue;
             }
-            if (!json.equals(lastJson)) { lastJson = json; lastChange = SystemClock.elapsedRealtime(); }
+            lastReadable = SystemClock.elapsedRealtime();
+            if (!json.equals(lastJson)) { lastJson = json; lastChange = lastReadable; }
             JSONObject o;
             try { o = new JSONObject(json); } catch (org.json.JSONException e) { continue; }
             String state = o.optString("state"), reason = o.optString("reason"), step = o.optString("step");
@@ -403,7 +405,7 @@ final class Prepare {
             throw new BuildListener.Failure("Android did not let the packer start in the background. The modded build is saved; try again from the game's Mods section (hold the cover, Game tab).", BuildListener.CANCELLED);
         }
         p.on(1, STEP_TEXT[0]);
-        long startedAt = SystemClock.elapsedRealtime(), lastChange = startedAt;
+        long lastChange = SystemClock.elapsedRealtime(), lastReadable = lastChange;
         String lastJson = null;
         while (!cancelled) {
             SystemClock.sleep(1000);
@@ -411,10 +413,11 @@ final class Prepare {
             String fs = fromService;
             if (fs != null && fromServiceAt > lastChange) json = fs;
             if (json == null) {
-                if (SystemClock.elapsedRealtime() - startedAt > 30000) throw new BuildListener.Failure("The modded build's job file went missing: " + file, BuildListener.OTHER);
+                if (SystemClock.elapsedRealtime() - lastReadable > 30000) throw new BuildListener.Failure("The modded build's job file went missing: " + file, BuildListener.OTHER);
                 continue;
             }
-            if (!json.equals(lastJson)) { lastJson = json; lastChange = SystemClock.elapsedRealtime(); }
+            lastReadable = SystemClock.elapsedRealtime();
+            if (!json.equals(lastJson)) { lastJson = json; lastChange = lastReadable; }
             JSONObject o;
             try { o = new JSONObject(json); } catch (org.json.JSONException e) { continue; }
             String state = o.optString("state"), reason = o.optString("reason"), step = o.optString("step");
@@ -463,7 +466,7 @@ final class Prepare {
         switch (r) {
             case "user": return "by you";
             case "battery": return "battery below 20 %: plug in the charger to go on";
-            case "thermal": return "the phone is too hot: it goes on when it has cooled";
+            case "thermal": return "the phone is too hot: it goes on when it has cooled. If it is not hot, tap Go on anyway in the build notification (remembered for this device)";
             case "timeout": return "Android's daily limit for background work";
             case "refused": return "Android did not let it start in the background";
             case "apk": return "the app was updated";

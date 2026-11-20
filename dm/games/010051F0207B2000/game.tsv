@@ -8,9 +8,8 @@ program_id	010051F0207B2000
 name	Tomodachi Life: Living the Dream
 ipa	010051f0207b2000.ipa
 app_category	public.app-category.games
-# Keep the game's original timing by default. The display-paced caps are opt-in.
-fps_limit_present	1
-fps_limit_max	120
+# PEANUTS: the game's own 30 fps timing only (GitHub issue #182). The game steps its logic once a frame, so the display-paced caps (fps_limit_present with
+# fps_limit_max 120, opt-in before) ran it at double speed at 60; they are no longer offered. A cap above 30 needs a reviewed frame-step plan first
 
 # ---- Versions ----
 build	v262144	1.0.4	main=b39fef373fb12154385d012aab3bc99e	sdk=651781821e2c2e0b2bdfe905e8676f56
@@ -36,3 +35,5 @@ sys_resource	0x0
 # ---- Shader split ----
 shader_groups	/Tex/=tex /Icon/=icon /Pack/=pack /Model/=model /Sound/=sound /Parameter/=parameter /Effect/=effect /Layout/=layout /Data/=data /Phive/=phive /MiiNewsParam/=miinewsparam /AnimationEvent/=animationevent /RSDB/=rsdb /FocusLeading/=focusleading /UI/=ui /MapFile/=mapfile /AS/=as /VoiceText/=voicetext /Mii/=mii /MiiTouchCameraParam/=miitouchcamerapa /SoundLeakOutParam/=soundleakoutpara /Mals/=mals /WalkingGrid/=walkinggrid /Editor/=editor
 shader_note	Tomodachi Life: Living the Dream shaders (provisional profile)
+# PEANUTS: conditional rendering (GitHub issue #196 and #182): the game wraps clears and draws of its Mii and scene passes in render conditions
+render_cond	on

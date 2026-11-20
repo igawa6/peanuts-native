@@ -26,7 +26,8 @@ int  nximport_keys(const char *prod_keys_path);                 // 0 ok; loads h
 int  nximport_probe(const char *nsp_or_xci, NxImportInfo *out, int max, int *count);  // every title in the file (an XCI/NSP can hold base+update+dlc)
 int  nximport_icon(const char *file, const char *title_id, const char *out_png);     // the control NACP icon (English or first) → PNG file
 int  nximport_write_nup(const char *out_nup, const char **inputs, int n_inputs, const char *base_title_id,
-                        void (*progress)(void *user, const char *step, long long done, long long total), void *user);  // base + its update + dlcs from the given NSP/XCI files → one .nup
+                        void (*progress)(void *user, const char *step, long long done, long long total), void *user);  // base + its update + dlcs from the given NSP/XCI files → one .nup,
+                        // each base and update package with its meta block (SPEC §5: main.npdm, NACP, display version; the base's icon, title and publisher; issue #158)
 int  nximport_firmware_fonts(const char *firmware_dir, const char *out_dir);   // shared fonts (FontStandard / FontNintendoExtended NCAs, bfttf XOR 0x06186249) → ttf files
 const char *nximport_last_error(void);
 ```
@@ -35,7 +36,7 @@ The `.nup` layout and compression are upstream's (`dm/host/nup_image.h`, `script
 ## Library UI — `dev.peanuts.ui`
 
 - `SetupActivity`: first run (or Settings › Setup): pick `prod.keys` (SAF, copied to `files/keys/`), pick firmware folder (optional; extracts fonts via `Native.firmwareFonts`), pick game folder (required; All files access flow as upstream's `Folders`), optional update folder and DLC folder. Stored in `dev.peanuts` prefs (`PeanutsPrefs`).
-- `LibraryActivity` (the LAUNCHER entry, replacing `CatalogActivity`'s): scans the roots, groups by base title id, shows cards: art (icon from the file via `Native.icon`, or the catalog's GameTDB art later), name, status chip: **Ready** (pack present and fits, per upstream `PackFind`/`Game`), **Build** (needs import and/or Prepare), **No profile** (title not in the APK's `BuildConfig.NX_PROFILES`). Tap: Ready → Play (start `GameActivity` as upstream's `Game`/`FrontendLaunch` does, by title id); else → `GameSheet`.
+- `LibraryActivity` (the LAUNCHER entry, replacing `CatalogActivity`'s): scans the roots, groups by base title id, shows cards: art (`LibraryScanner.icon`, kept in `files/icons/<title ID>.png`: the PNG beside a `.nup`, the icon inside a `.nup`, else `Native.icon` from an NSP/XCI; a `.nup` that carries none gets the icon beside it, `NupIcon.keep`), name, status chip: **Ready** (pack present and fits, per upstream `PackFind`/`Game`), **Build** (needs import and/or Prepare), **No profile** (title not in the APK's `BuildConfig.NX_PROFILES`). Tap: Ready → Play (start `GameActivity` as upstream's `Game`/`FrontendLaunch` does, by title id); else → `GameSheet`.
 - `GameSheet` (bottom sheet / dialog): rows Base (file, version), Update (newest found; "add…" to pick another), DLC (list; add…), Companion (catalog state: not available / available x.y / installed x.y), and **Build**. Build hands off to `BuildPipeline`.
 - Reuse upstream classes read-only through `dev.peanuts.Games` (reflection) where needed; never edit upstream UI.
 

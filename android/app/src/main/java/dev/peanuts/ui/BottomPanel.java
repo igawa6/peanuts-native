@@ -290,7 +290,7 @@ final class BottomPanel extends Presentation {
         card.addView(top);
         buildBody = PUi.body(c, "");
         PUi.add(card, buildBody, 12);
-        buildBar = PUi.progress(c);
+        buildBar = Strip.card(c);
         buildBar.setMax(100);
         PUi.add(card, buildBar, 10);
         buildPct = PUi.small(c, "");

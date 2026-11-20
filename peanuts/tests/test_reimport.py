@@ -204,7 +204,7 @@ class Logic(unittest.TestCase):
         other = self.root / 'gone-dlc'
         p = self.plan(f['game_nup'], 500 * MB, None, [d, other], 'u,0100152000022800,262144,-', 'd,0100152000023001,0,-',
                       'b,0100152000022000,0,' + str(d / 'deleted.nsp'), 'u,0100152000022800,196608,' + str(f['up3_nsp']))
-        self.assertEqual(p['missing'], 'Import again makes the .nup from your dumps, and not all of them were found. Missing: the base game\'s dump (an .nsp or .xci '
+        self.assertEqual(p['missing'], 'Import again makes the .nup from your dumps, and not all of them were found. Missing: the base game\'s dump (an .nsp, .nsz, .xci or .xcz '
                          'file); an update as new as the one the .nup has (v4; up3.nsp is v3); 1 of the DLC the .nup has (0100152000023001). Looked in '
                          f'{d}, {other}, two folders deep, and at the files added in the game\'s sheet. Put the files back, or set their folders in Settings › Library, '
                          'then tap Import again. Nothing was changed.')

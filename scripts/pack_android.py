@@ -765,7 +765,7 @@ def ooz_split_checked(ooz, g, tmp, ver=None):
     check there is. So the split in <tmp> counts only when its keys are exactly the profile's, but for the keys shader_optional.tsv gives to another build; one
     key missing or one key more stops the pack, and nothing of that split is used. (vk_android_build.py then hashes every record against its key again.)"""
     want, have = map_keys(g.dir / 'shader_map.tsv'), map_keys(tmp / 'shader_map.tsv')
-    lost, more = sorted(k for k in want - have if k not in may_lack(g, ver)), sorted(have - want)
+    lost, more = sorted((want - have) - may_lack(g, ver)), sorted(have - want)   # PEANUTS: load the optional-key tables once per split
     if lost or more:
         eg = lambda ks: f' (e.g. {", ".join(ks[:3])})' if ks else ''
         raise Error(f'the shaders decoded with the ooz Oodle decoder ({ooz}, DM_OODLE_OOZ) are not the profile\'s: {len(lost)} of the {len(want)} keys in its shader_map.tsv '
@@ -875,10 +875,11 @@ def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: th
     if (g.dir / 'shader_map.tsv').is_file():
         want, have = map_keys(g.dir / 'shader_map.tsv'), map_keys(tmp / 'shader_map.tsv')
         missing = sorted(want - have)
-        if hard := [k for k in missing if k not in may_lack(g, ver)]:   # PEANUTS: may_lack (was optional_keys): the other listed versions' shaders are checked first
+        other = other_version_keys(g, ver)   # PEANUTS: read the profile's version table once, even when thousands of keys differ
+        if hard := sorted(set(missing) - (optional_keys(g) | other)):   # PEANUTS: keys from other listed versions may be absent
             raise Error(lacking_shaders(g, rd, hard, len(want), getattr(a, 'dlc_count', None), tmp, shader_versions(g) != [f'v{ver}']))   # PEANUTS: names DLC that was not imported as a possible reason, only for tables of this one version
         # PEANUTS: the one plain line for a dump of one of the versions the tables are the union of (the phone's: PackService.splitMatchesProfile)
-        if theirs := [k for k in missing if k in other_version_keys(g, ver)]:
+        if theirs := set(missing) & other:   # PEANUTS: reuse the same version table
             print(f'shaders: {len(theirs):,} of {len(want):,} shaders in this app\'s table belong to other versions of the game ({", ".join(other_versions(g, ver))}): not needed for v{ver}', flush=True)
         for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv'):
             if (g.dir / f).is_file() and table_lines(g.dir / f) != table_lines(tmp / f):   # the comment lines name the game and the split's wording at the time

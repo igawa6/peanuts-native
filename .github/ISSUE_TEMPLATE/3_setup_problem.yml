@@ -1,0 +1,256 @@
+# Written by peanuts/scripts/issue_forms.py: change that script, then run it.
+name: "Setup or app problem"
+description: "Keys, firmware, the game folder and library, storage, a GPU driver, a companion or mod install, saves, the second screen, or the app itself"
+labels: ["bug", "app"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For a game that misbehaves while you play, use **Game problem**; for a build that fails, **Build problem**.
+        Never attach game files, keys, firmware or anything extracted from a game. Logs, saves and screenshots are fine. Write in English if you can; another language is fine too.
+  - type: dropdown
+    id: area
+    attributes:
+      label: "What it is about"
+      options:
+        - "Keys (prod.keys)"
+        - "Firmware"
+        - "The game folder or the library (a game is missing, has no cover, or its base, update or DLC is the wrong one)"
+        - "A cover says Wrong version, File gone or Not Supported Yet"
+        - "Storage (microSD, a USB drive, the build folder, file access)"
+        - "Installing or picking a GPU driver"
+        - "Installing or updating a companion"
+        - "Installing a mod"
+        - "Saves (Back up saves, Restore saves, Import save, or a save from an emulator)"
+        - "The second screen (which display shows what, Swap screens, an add-on screen)"
+        - "A warning that the device is too hot"
+        - "The app itself (it closes, a setting does not stick, the overlay, an app update)"
+        - "Something else"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: "What happened"
+      description: "What you did, step by step, and what you saw."
+    validations:
+      required: true
+  - type: input
+    id: message
+    attributes:
+      label: "The message the app shows"
+      description: "Word for word, for example the text on the Keys or Firmware row."
+      placeholder: "The importer does not accept these keys"
+  - type: dropdown
+    id: often
+    attributes:
+      label: "How often"
+      options:
+        - "Every time"
+        - "Sometimes"
+        - "Once so far"
+    validations:
+      required: true
+  - type: dropdown
+    id: regression
+    attributes:
+      label: "Did it work before?"
+      options:
+        - "It never worked, or this is the first try"
+        - "It worked in an older app version (say which in \"Anything else\")"
+        - "It worked before a game update"
+        - "It worked before I changed a setting, the driver or a mod"
+        - "I don't know"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: "Firmware version, for keys and firmware problems"
+      description: "As the Firmware row shows it."
+      placeholder: "22.5.0"
+  - type: dropdown
+    id: same_console
+    attributes:
+      label: "Keys and firmware, for keys and firmware problems"
+      description: "Keys and firmware have to match: firmware newer than the keys cannot be read."
+      options:
+        - "Both from my console, dumped at the same system version"
+        - "Both from my console, dumped at different times"
+        - "I don't know"
+  - type: dropdown
+    id: storage
+    attributes:
+      label: "Storage involved"
+      description: "Pick all that apply."
+      multiple: true
+      options:
+        - "Internal storage"
+        - "microSD card"
+        - "USB drive or SSD"
+        - "I don't know"
+  - type: input
+    id: game
+    attributes:
+      label: "Game, if one is involved"
+      description: "Its name, title ID and version, as its card or sheet shows them."
+      placeholder: "Super Mario Odyssey, 0100000000010000, 1.4.1"
+  - type: dropdown
+    id: release
+    attributes:
+      label: "Peanuts Native version"
+      description: "Settings › About shows it. In an older version, please try the newest first: many problems are fixed there."
+      options:
+        - "0.1.5 (the newest)"
+        - "0.1.4"
+        - "0.1.3"
+        - "0.1.2 or older"
+        - "A test or development build (say which in \"Anything else\")"
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: "Device"
+      options:
+        - "AYN Thor"
+        - "AYN Odin (2, 3 or another)"
+        - "Retroid Pocket Duo"
+        - "Retroid Pocket with the Dual Screen add-on"
+        - "Another Retroid Pocket"
+        - "AYANEO Pocket DS"
+        - "Another handheld"
+        - "Phone"
+        - "Foldable phone"
+        - "Tablet"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: "Model"
+      description: "The exact model, and for the Thor its variant (Base, Pro or Max)."
+      placeholder: "AYN Thor Max"
+    validations:
+      required: true
+  - type: dropdown
+    id: chip
+    attributes:
+      label: "Chip"
+      description: "The device's settings show it under About phone, or look the model up. The chip, not the GPU alone."
+      options:
+        - "Snapdragon 8 Elite Gen 5 (Adreno 840)"
+        - "Snapdragon 8 Elite (Adreno 830)"
+        - "Snapdragon 8s Gen 4 (Adreno 825)"
+        - "Snapdragon 8 Gen 3 (Adreno 750)"
+        - "Snapdragon 8s Gen 3 (Adreno 735)"
+        - "Snapdragon 8 Gen 2 (Adreno 740), as in the AYN Thor"
+        - "Snapdragon 8 Gen 1 or 8+ Gen 1 (Adreno 730)"
+        - "Snapdragon 888, 870 or 865 (Adreno 660 or 650)"
+        - "Snapdragon 7 series (for example 7+ Gen 2 or 7+ Gen 3)"
+        - "Snapdragon G series (G3x Gen 2, G3 Gen 3, ...)"
+        - "Qualcomm Dragonwing (as in the Retroid Pocket Duo)"
+        - "Snapdragon 6 or 4 series, or older"
+        - "MediaTek Dimensity or Helio (Mali GPU)"
+        - "Samsung Exynos (Xclipse or Mali GPU)"
+        - "Google Tensor"
+        - "Another chip, or I don't know"
+    validations:
+      required: true
+  - type: dropdown
+    id: ram
+    attributes:
+      label: "RAM"
+      options:
+        - "Less than 8 GB"
+        - "8 GB (Android may show 7.x GB)"
+        - "12 GB"
+        - "16 GB"
+        - "24 GB or more"
+    validations:
+      required: true
+  - type: dropdown
+    id: android
+    attributes:
+      label: "Android version"
+      options:
+        - "Android 13"
+        - "Android 14"
+        - "Android 15"
+        - "Android 16"
+        - "Android 17"
+        - "Newer than Android 17"
+        - "Older than Android 13"
+    validations:
+      required: true
+  - type: dropdown
+    id: driver
+    attributes:
+      label: "GPU driver (Settings › GPU driver, or the game's own)"
+      description: "The one the game used: a game can have its own. Its log says which driver it really loaded."
+      options:
+        - "System driver"
+        - "Turnip by Mr. Purple (T-numbers, for example T30)"
+        - "Turnip Gen8 by StevenMXZ (V-numbers, for example V39)"
+        - "Another Turnip (mainline Mesa, TurnipZ, Turnip Duo, ...)"
+        - "PanVK (Mali)"
+        - "RADV (Xclipse)"
+        - "Another custom driver"
+        - "I don't know"
+    validations:
+      required: true
+  - type: input
+    id: driver_version
+    attributes:
+      label: "Driver name and version, if not the system driver"
+      description: "As Settings › GPU driver lists it."
+      placeholder: "Turnip Gen8 V39"
+  - type: dropdown
+    id: readiness
+    attributes:
+      label: "Readiness check (Settings › Readiness check)"
+      description: "Its **Copy report** copies the full text: paste it into \"Anything else\" when it says more than Ready."
+      options:
+        - "Ready"
+        - "Ready, with limits"
+        - "Not ready"
+        - "Not run"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: "Log or screenshots"
+      description: |
+        Settings › **Share log**, or a screenshot of the screen with the message. For storage problems, the folder's path as the app shows it. For the library, the folder tree as text (names only, never the files).
+      placeholder: "Drag the log or screenshots here"
+  - type: textarea
+    id: save
+    attributes:
+      label: "Save zip, for a save problem"
+      description: |
+        When a save does not back up, restore, import or load: the save it is about, so the same steps can be tried with it. A save from a console or an emulator: zip it as you tried to import it, and say where it came from in "What happened".
+        Hold the game's cover › **Saves** › **Back up saves**. If it makes a `.zip`, drag that file into this box. Otherwise zip the newest folder in `Switch2/save-backups/<title ID>/` together with the `.manifest.tsv` beside it (then **Import save** checks every file), and drag the zip in. GitHub takes files up to 25 MB.
+        A save holds your progress, not game data, so it is fine to attach; it can hold the names you gave in the game.
+      placeholder: "Drag the save .zip here"
+  - type: textarea
+    id: extra
+    attributes:
+      label: "Anything else"
+      description: "The readiness report, what you tried, anything that differs from a usual setup (a launcher, a custom ROM, a file manager)."
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "Before sending"
+      options:
+        - label: "I searched the open issues, and this is not one of them."
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: "Rules"
+      description: "Posts that share, offer or ask for game files, keys or links are edited or removed."
+      options:
+        - label: "I play a dump of a game I own, made with my own console."
+          required: true
+        - label: "I am not attaching, offering or linking game files, keys or firmware."
+          required: true

@@ -106,12 +106,12 @@ public final class GameSheet {
     private PUi.Setting companionRow;   // the Companion row of this render: its switch changes its line in place (a rebuild would cut the switch's own animation)
 
     /** The Companion row's line, as the sheet's choice and the disk are now */
-    private String companionLine() {
+    private CharSequence companionLine() {
         String installed = companion == null ? null : CompanionPort.installedVersion(title.companionRoot(), companion.packageName);
         return companion == null ? "No companion in the catalog for this game"
-                : installed == null ? companion.packageName + " " + companion.version + " · " + size(companion.size) + (installCompanion ? " · Install after the build" : " · Not installed after the build")
-                : installed.equals(companion.version) ? "installed " + installed + " · up to date"
-                : "installed " + installed + " · " + companion.version + " " + (installCompanion ? "after the build" : "available");
+                : installed == null ? PUi.joined(companion.packageName + " " + companion.version, size(companion.size), installCompanion ? "Install after the build" : "Not installed after the build")
+                : installed.equals(companion.version) ? PUi.joined("installed " + installed, "up to date")
+                : PUi.joined("installed " + installed, companion.version + " " + (installCompanion ? "after the build" : "available"));
     }
 
     private void render() {
@@ -137,19 +137,19 @@ public final class GameSheet {
         // Base
         LibraryScanner.Source b = title.base;
         boolean baseGone = b != null && !b.file.exists();
-        String baseLine = b == null ? "None found"
+        CharSequence baseLine = b == null ? "None found"
                 : baseGone ? b.file.getName() + " — this file is no longer where the app found it. Rescan, or pick the game folder again (Settings › Library)."
-                : b.file.getName() + (b.version > 0 || !b.isDump() && !b.isNup() ? " · " + versionText(b.version) : "")
-                + " · " + (b.isDump() ? "dump folder" : b.isNup() ? ".nup" : b.file.getName().toLowerCase(Locale.ROOT).endsWith(".xci") ? "XCI, import needed" : "import needed")
-                + (!b.publisher.isEmpty() ? " · " + b.publisher : "");
+                : PUi.joined(b.file.getName(), b.version > 0 || !b.isDump() && !b.isNup() ? versionText(b.version) : null,
+                        b.isDump() ? "dump folder" : b.isNup() ? ".nup" : dev.peanuts.build.Compressed.kind(b.file).isEmpty() ? "import needed" : dev.peanuts.build.Compressed.kind(b.file) + ", import needed",
+                        !b.publisher.isEmpty() ? b.publisher : null);
         PUi.add(box, new PUi.Setting(a, "📀", "Base", null).value(baseLine).view, 12);
         // Update
         LibraryScanner.Source newest = title.updates.isEmpty() ? null : title.updates.get(0);
         boolean updateGone = chosenUpdate != null && !chosenUpdate.file.exists();
-        String up = updateGone ? chosenUpdate.file.getName() + " — this file is no longer where the app found it. Pick it again."
-                : chosenUpdate == null ? (title.updates.isEmpty() ? "None found · Choose…" : "None · Choose…")
-                : chosenUpdate.file.getName() + " · " + versionText(chosenUpdate.version) + (chosenUpdate == newest ? ", the newest found" : "") + " · Choose another…";
-        PUi.add(box, new PUi.Setting(a, "⬆️", "Update", v -> { if (!building) { Haptics.play(v, Haptics.Word.TICK); LibrarySettings.pickFile(a, REQ_UPDATE, "Pick the update (.nsp / .xci)"); } }).value(up).chevron(a).view, 0);
+        CharSequence up = updateGone ? chosenUpdate.file.getName() + " — this file is no longer where the app found it. Pick it again."
+                : chosenUpdate == null ? PUi.joined(title.updates.isEmpty() ? "None found" : "None", "Choose…")
+                : PUi.joined(chosenUpdate.file.getName(), versionText(chosenUpdate.version) + (chosenUpdate == newest ? ", the newest found" : ""), "Choose another…");
+        PUi.add(box, new PUi.Setting(a, "⬆️", "Update", v -> { if (!building) { Haptics.play(v, Haptics.Word.TICK); LibrarySettings.pickFile(a, REQ_UPDATE, "Pick the update (.nsp, .nsz, .xci or .xcz)"); } }).value(up).chevron(a).view, 0);
         // Version (P1): the version the player has vs. what this build's profile supports, read before Build rather than discovered deep into a run
         boolean fileGone = baseGone || updateGone;
         if (!fileGone) renderVersionRow();
@@ -157,8 +157,8 @@ public final class GameSheet {
         List<String> names = new ArrayList<>();
         for (LibraryScanner.Source d : title.dlcs) names.add(d.name.isEmpty() ? d.file.getName() : d.name);
         for (File f : extraDlc) { boolean known = false; for (LibraryScanner.Source d : title.dlcs) if (d.file.equals(f)) known = true; if (!known) names.add(f.getName()); }
-        String dl = names.isEmpty() ? "None found · Add…" : names.size() + (names.size() == 1 ? " found: " : " found: ") + String.join(", ", names) + " · Add…";
-        PUi.add(box, new PUi.Setting(a, "➕", "DLC", v -> { if (!building) { Haptics.play(v, Haptics.Word.TICK); LibrarySettings.pickFile(a, REQ_DLC, "Pick a DLC (.nsp)"); } }).value(dl).chevron(a).view, 0);
+        CharSequence dl = PUi.joined(names.isEmpty() ? "None found" : names.size() + " found: " + String.join(", ", names), "Add…");
+        PUi.add(box, new PUi.Setting(a, "➕", "DLC", v -> { if (!building) { Haptics.play(v, Haptics.Word.TICK); LibrarySettings.pickFile(a, REQ_DLC, "Pick a DLC (.nsp or .nsz)"); } }).value(dl).chevron(a).view, 0);
         if (!extraDlc.isEmpty()) PUi.add(box, PUi.button(a, "Forget the DLC you added", PUi.Kind.QUIET, v -> { Haptics.play(v, Haptics.Word.CLICK); extraDlc.clear(); saveDlc(); render(); }), 0, PUi.wrap());
         // Companion
         File root = title.companionRoot();
@@ -209,7 +209,7 @@ public final class GameSheet {
         String defaultFolder = PeanutsPrefs.buildDir(a);
         PUi.Setting destination = new PUi.Setting(a, "🗂️", "Build destination",
                 Haptics.on(Haptics.Word.TICK, v -> pickBuildFolder())).value(chosenFolder != null ? chosenFolder
-                        : defaultFolder != null ? "Default · " + defaultFolder : "Default location · Tap to choose a folder").chevron(a);
+                        : defaultFolder != null ? PUi.joined("Default", defaultFolder) : "Default location. Tap to choose a folder.").chevron(a);
         destination.view.setEnabled(!building);
         PUi.add(box, destination.view, 12);
         // Space needed (P4/SpaceEstimate, warn-only — never disables Build, the multiplier is uncalibrated)
@@ -393,14 +393,16 @@ public final class GameSheet {
      */
     private void renderSpaceLine() {
         boolean needsImport = title.base != null && title.base.needsImport();
-        List<File> inputs = new ArrayList<>();
+        // the .nup's size from the probe (a compressed file's length is not it), and what unpacking a solid .nsz needs beside it while it imports
+        long importBytes = 0, unpackBytes = 0;
         if (needsImport) {
-            inputs.add(title.base.file);
-            if (chosenUpdate != null && chosenUpdate.needsImport()) inputs.add(chosenUpdate.file);
-            for (LibraryScanner.Source d : title.dlcs) if (d.needsImport()) inputs.add(d.file);
-            for (File f : extraDlc) inputs.add(f);
+            List<LibraryScanner.Source> in = new ArrayList<>();
+            in.add(title.base);
+            if (chosenUpdate != null && chosenUpdate.needsImport()) in.add(chosenUpdate);
+            for (LibraryScanner.Source d : title.dlcs) if (d.needsImport()) in.add(d);
+            for (LibraryScanner.Source s : in) { importBytes += s.importBytes(); unpackBytes += s.unpack; }
+            for (File f : extraDlc) importBytes += f.length();
         }
-        long importBytes = SpaceEstimate.inputBytes(inputs);
         Long cachedBasis = needsImport || title.base == null ? null : ON_DISK_CACHE.get(title.titleId);
         if (!needsImport && title.base != null && cachedBasis == null) {
             PUi.add(box, PUi.small(a, "Checking space…"), 14);
@@ -424,11 +426,11 @@ public final class GameSheet {
         String gameDir = PeanutsPrefs.gameDir(a);
         File importDest = buildGameDir != null ? buildGameDir : (gameDir == null ? null : new File(gameDir));
         File packVolume = buildGameDir != null ? new File(buildGameDir, "pack") : a.getExternalFilesDir(null);
-        String warn = SpaceEstimate.warning(importBytes, packBasis, needsImport, importDest, packVolume);
-        if (warn != null) PUi.add(box, PUi.warnChip(a, "Low disk space", "Low disk space", warn + " Build still works; it may just run out partway through."), 14);
+        String warn = SpaceEstimate.warning(importBytes + unpackBytes, packBasis, needsImport, importDest, packVolume);
+        if (warn != null) PUi.add(box, PUi.warnChip(a, "Low disk space", "Low disk space", warn + SpaceEstimate.unpackSentence(unpackBytes) + " Build still works; it may just run out partway through."), 14);
         else {
-            long need = SpaceEstimate.totalNeeded(importBytes, packBasis, needsImport);
-            PUi.add(box, PUi.small(a, "Needs about " + SpaceEstimate.words(need) + " free (a rough estimate)."), 14);
+            long need = SpaceEstimate.totalNeeded(importBytes + unpackBytes, packBasis, needsImport);
+            PUi.add(box, PUi.small(a, "Needs about " + SpaceEstimate.words(need) + " free (a rough estimate)." + SpaceEstimate.unpackSentence(unpackBytes)), 14);
         }
     }
 
@@ -476,8 +478,8 @@ public final class GameSheet {
     private void pickBuildFolder() {
         if (lib.building(title.titleId)) return;
         List<String> dirs = PeanutsPrefs.buildDirs(a);
-        String[] labels = new String[dirs.size() + 1];
-        labels[0] = dirs.isEmpty() ? "Default location" : "Default · " + dirs.get(0);
+        CharSequence[] labels = new CharSequence[dirs.size() + 1];
+        labels[0] = dirs.isEmpty() ? "Default location" : PUi.joined("Default", dirs.get(0));
         for (int i = 0; i < dirs.size(); i++) labels[i + 1] = dirs.get(i);
         String chosen = PeanutsPrefs.chosenBuildDir(a, title.titleId);
         new AlertDialog.Builder(a).setTitle("Build destination").setSingleChoiceItems(labels, dirs.indexOf(chosen) + 1, (d, w) -> {

@@ -226,7 +226,7 @@ final class Ondevice {
             status = Ui.body(a, "");
             status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);   // what the job does, said when it changes (step, pause, stop)
             Ui.add(card, status, 10);
-            bar = Ui.progress(a);
+            bar = dev.peanuts.ui.Strip.card(a);   // PEANUTS: the app's one progress bar (6 dp, rounded, as the building cover's strip), not upstream's thin one
             bar.setMax(1000);
             Ui.add(card, bar, 10);
             detail = Ui.small(a, "");

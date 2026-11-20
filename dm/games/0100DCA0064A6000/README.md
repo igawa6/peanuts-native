@@ -17,6 +17,9 @@ No `patches.py`.
 
 ## Frame rate
 
+<!-- PEANUTS: Android preparation -->
+- Peanuts Dev offers 20, 30, 40, 45, 60, 90 and 120 FPS, with 30 FPS as the starting cap and Game owned available. The profile applies the existing build's frame-period constant through the Android timing rows and uses display pacing. [FPSLocker Warehouse build listing](https://github.com/masagrator/FPSLocker-Warehouse) · [nx2android port checklist](https://github.com/shirai91/nx2android/blob/main/docs/PORT_CHECKLIST.md)
+- On Thor, 90-frame lobby samples measured 19.94, 29.91 and 39.99 FPS at the 20, 30 and 40 caps. The 60 cap ran near 60 FPS. Measurements for the other caps and Game owned remain open.
 - **Current:** 60 fps (30 on the Switch). At the end of each frame the main thread calls its frame callbacks (`main+0xb7c308`) with the milliseconds since the frame began; the frame limiter among them (`main+0x7a3e70`) runs jobs or sleeps until 33.333 ms have passed, a float in read-only data (`main+0x13c94dc`, read only there), and the game steps by the time that really passed. The host writes the profile's `fps_target` there as a frame time (`hle_fpslock.c`): 16.167 ms at 60, half a millisecond under the vsync so the presents set the pace. At exactly 16.667 the work after the limiter made it 59.6 fps with a frame shown twice every 2.5 s.
 - On the Mac the lobby holds 60.0 fps (display interval p99 16.67 ms); the same 2 s walk and 1.5 s turn from the same save end at the same spot at 30 and 60 fps, and the title's animation matches at time scale 1.00 (`DM_NVN_REGLUM`). `DM_FPS_TARGET=30` keeps the game's 33.333 ms.
 - The limiter also has a phase lock, a nudge of at most 0.05 ms a frame from the layer's frame history, which stays off: the host's `nn::vi::ListFrameHistory` returns no entries.
@@ -46,11 +49,20 @@ A deferred renderer: the scene draws into a G-buffer of two integer targets (R32
 
 ### Texture memory (2026-10-27)
 
+<!-- PEANUTS: AYN Thor bring-up -->
+- On AYN Thor with Turnip v26.2.0 R5, the opening bus cutscene stalled with 8,094 MiB of Vulkan images. A smaller cache budget could not evict the GPU-written images and the hotel arrival still stalled. The Android profile recommends fixed docked resolution on Turnip. For main `79e5950ffa85acf63e28c9aec051eac2`, six build-checked loads now use the full-resolution constant. The opening bus route then stayed around 460 MiB of Vulkan images and reached controllable gameplay in the hotel lobby. Both Multiplayer Pack notices appeared, and the game opened audio output. [Build-matched fixed-resolution reference](https://github.com/OldManKain/Ryujinx-Cheats-Mods-Saves/blob/main/Mods/0100DCA0064A6000/1.4.0/Disable-Dynamic-Resoluiton.rar)
 - **Confirmed:** [#257](https://github.com/seedds/nxnative/issues/257) and [#100](https://github.com/seedds/nxnative/issues/100) identify a real storage-duplication mechanism. An instrumented Mac run at frame 3,300 retained 101 live descriptions at one depth-image address, consuming 1,013.5 MiB across private Metal textures although its largest description needed 10.3 MiB. Several colour-image addresses held 91–99 live descriptions each, using 724–788.7 MiB per address for images whose largest allocation was 8.1 MiB. These are live allocation-table entries, not cumulative allocation events. The descriptions vary gradually from 1769×995 to 1920×1080 (half/quarter-size families too), use `COMPRESSIBLE|IMAGE`, and share their NVN pool and offset. Almost none of this memory was an unreferenced cache entry.
 - **Resolved for these families:** [physical image sharing](../../../docs/reference/rendering.md#live-resolution-variants-share-physical-image-storage) preserves each descriptor and its dimensions while backing compatible variants with one allocation. It is general host behavior; the game profile and shader chain are unchanged.
 - **Mac validation:** M6, 1.4.0, Docked/60, chain `5cddc47253ab`, separate fresh saves, silent output, direct drawable presentation (`DM_PRESENT_LINK=0`), matching shader libraries and frame-number inputs. At frame 3,300 on the same opening route, baseline resident/GPU allocation was 6,095/5,507 MiB; with sharing, 2,749/2,125 MiB. The fixed run continued through the bus ride, arrival and hotel cutscene: 3,067/2,297 MiB at frame 15,000, with the picture checked in captures. A separate seconds-driven opening also passed at approximately 2.9 GiB resident. These are bounded Mac observations, not an iOS process-limit or full-campaign stability claim.
 - **Final build after integration with main:** all 5,317 Mac libraries rebuilt on chain `a4e2088c2e69`; a separate headless hotel-save replay with `DM_NVN_ENC_THREAD=1` reached the playable lobby and frame 4,200, with the lobby picture checked. Its last memory sample (frame 3,600) was 2,780/2,108 MiB resident/GPU. The 318-check image-sharing regression (including a real atomic write through shared integer-image backing) and six existing NVN/clear/copy/ordering/upgrade regressions pass under Metal validation with each encoding mode (1,432 checks total); documentation and shader-chain checks pass too.
 - **Open:** later room-to-room transitions, the reported Floor 4 black floor and iOS memory-limit/long-session acceptance are not established by this route. The black floor has not been attributed to texture allocation.
+
+### Android validation
+
+<!-- PEANUTS: Turnip lobby and PC pack validation -->
+- The Turnip v26.2.0 R5 seed contains 314 pipelines. A fresh cache prepared all 314 in 4.1 seconds before gameplay. The warm relaunch loaded the saved cache and prepared 317 keys in the background.
+- The PC targeted build for update 1.4.0 and both Multiplayer Packs took 69.45 seconds, compared with 165.32 seconds for a full build and 0.69 seconds for an incremental build. The resulting runtime pack payloads matched byte for byte.
+- **Open:** reflections on lamp-lit lobby floors can flicker while Luigi is stationary or moving. An attachment-copy experiment changed no pixels in matched-driver replay. The same captured frame rendered different lighting on two Turnip versions.
 
 ## Files and shaders
 

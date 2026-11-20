@@ -226,6 +226,36 @@ static int storage_of(const uint32_t *w, size_t n, uint32_t var) {
 int main(void) {
     int val = have_val();
     size_t n = sizeof SPV_TRI_VERT / 4, on = 0; char err[200] = "";
+    {   // PEANUTS(upstream-candidate): depth = fma(product, k, product) + k, with a precise product and a separate colour add.
+        static const uint32_t shader[] = {
+            0x07230203, 0x00010000, 0x00070000, 0x00000010, 0x00000000, 0x00020011, 0x00000001, 0x0006000b,
+            0x00000001, 0x4c534c47, 0x6474732e, 0x3035342e, 0x00000000, 0x0003000e, 0x00000000, 0x00000001,
+            0x0007000f, 0x00000004, 0x00000002, 0x6e69616d, 0x00000000, 0x00000003, 0x00000004, 0x00030010,
+            0x00000002, 0x00000007, 0x00030010, 0x00000002, 0x0000000c, 0x00040047, 0x00000003, 0x0000000b,
+            0x00000016, 0x00040047, 0x00000004, 0x0000001e, 0x00000000, 0x00030047, 0x0000000c, 0x0000002a,
+            0x00020013, 0x00000005, 0x00030021, 0x00000006, 0x00000005, 0x00030016, 0x00000007, 0x00000020,
+            0x00040020, 0x00000008, 0x00000003, 0x00000007, 0x0004003b, 0x00000008, 0x00000003, 0x00000003,
+            0x0004003b, 0x00000008, 0x00000004, 0x00000003, 0x0004002b, 0x00000007, 0x00000009, 0x3f000000,
+            0x0004002b, 0x00000007, 0x0000000a, 0x3dfbe76d, 0x00050036, 0x00000005, 0x00000002, 0x00000000,
+            0x00000006, 0x000200f8, 0x0000000b, 0x00050085, 0x00000007, 0x0000000c, 0x00000009, 0x0000000a,
+            0x0008000c, 0x00000007, 0x0000000d, 0x00000001, 0x00000032, 0x0000000c, 0x00000009, 0x0000000c,
+            0x00050081, 0x00000007, 0x0000000e, 0x0000000d, 0x00000009, 0x00050081, 0x00000007, 0x0000000f,
+            0x0000000a, 0x0000000a, 0x0003003e, 0x00000003, 0x0000000e, 0x0003003e, 0x00000004, 0x0000000f,
+            0x000100fd, 0x00010038,
+        };
+        size_t words = sizeof shader / sizeof *shader, patched_words = 0;
+        uint32_t *patched = vka_spv_precise_depth(shader, words, &patched_words);
+        CHECK(patched && patched_words == words + 6, "two new depth precision decorations");
+        if (patched) {
+            unsigned count[16] = {0};
+            for (size_t i = 5; i < patched_words; i += patched[i] >> 16)
+                if (patched[i] == ((3u << 16) | 71u) && patched[i+2] == 42 && patched[i+1] < 16) count[patched[i+1]]++;
+            CHECK(count[12] == 1 && count[13] == 1 && count[14] == 1 && !count[15], "only the depth expression is precise");
+            CHECK(!vka_spv_precise_depth(patched, patched_words, &words), "depth precision is idempotent");
+            if (val) CHECK(validate(patched, patched_words, "precise depth"), "valid precise depth SPIR-V");
+            free(patched);
+        }
+    }
     uint32_t *o = vka_spv_vin_retype(SPV_TRI_VERT, n, 1, 2, &on, err, sizeof err);
     CHECK(o, "selftest vertex shader not rewritten: %s", err);
     if (o) {

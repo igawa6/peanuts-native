@@ -38,8 +38,12 @@ sys_resource	0x0
 # PEANUTS begin: frame limits from 20 to 120
 # Reviewed FPSLocker Warehouse v4 memory writes for this exact main (01004D300C5AE000/A6CE40DC3AEDB1BE.yaml, interval offsets found by Hazerou); no executable patch or
 # arbitrary YAML evaluation. The frame interval set to 0 unlocks the game's own 30 fps pacing and makes it step by the time that passed; the dynamic resolution's GPU
-# frame-time budget (max 1.95, min 1.7 at 30 fps) follows the limit. The host's frame limit picks the rate: 60 by default, the launcher's choices from 20 to 120
+# frame-time budget (max 1.95, min 1.7 at 30 fps) follows the limit. The host's frame limit picks the rate: the launcher's choices from 20 to 120, 60 when chosen
+# without a value. Game owned by default (fps_owned_default, GitHub issue #153): with the interval at 0 an 8+ Gen 1 collapsed to 4 fps in the overworld at the 30
+# and 60 limits alike, every game thread waiting on the others while the GPU idled, and the frames slowed step by step (24, 16, 11, 6, 4 fps); the game's own 30
+# fps pacing held 30 there
 fps_limit	60
+fps_owned_default	1
 fps_limit_max	120
 fpslocker	a6ce40dc3aedb1becacd2f1ff4515307	zero_i32	0xa76728/0x50	1	0
 fpslocker	a6ce40dc3aedb1becacd2f1ff4515307	inverse_f32	0xa767b0/0x140/0x1b0/0x20/0x34	1	30:1.95

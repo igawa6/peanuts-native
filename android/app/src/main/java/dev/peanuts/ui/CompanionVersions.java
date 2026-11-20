@@ -119,7 +119,7 @@ public final class CompanionVersions {
             main.post(() -> {
                 gameName = fname; root = fr; packageName = fpkg2; knownBuildId = fbuild; versions = fv; localVersions = flv; activeVersion = factive; activeVerified = fverified; loadError = ferr;
                 loading = false;
-                if (dialog != null) dialog.setTitle("Versions · " + gameName);
+                if (dialog != null) dialog.setTitle(PUi.joined("Versions", gameName));
                 render();
             });
         }, "peanuts-companion-versions").start();
@@ -158,7 +158,7 @@ public final class CompanionVersions {
         if (loadError != null && versions.isEmpty()) { PUi.add(box, PUi.body(act, "Catalog unavailable: " + loadError), 0); return; }
         if (root == null) { PUi.add(box, PUi.body(act, "Build the game first: a companion goes beside its pack, so there is nowhere to install one yet."), 0); return; }
         if (versions.isEmpty()) { PUi.add(box, PUi.body(act, "No companion in the catalog for this game."), 0); return; }
-        PUi.add(box, PUi.small(act, busy ? busyText : versions.size() + (versions.size() == 1 ? " version" : " versions") + " · newest first"), 0);
+        PUi.add(box, PUi.small(act, busy ? busyText : PUi.joined(versions.size() + (versions.size() == 1 ? " version" : " versions"), "newest first")), 0);
         if (activeVersion != null) {
             LinearLayout actions = PUi.row(act);
             android.widget.Button removeBtn = PUi.button(act, "Remove companion", PUi.Kind.QUIET, v -> removeCompanion());

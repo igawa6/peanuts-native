@@ -1,0 +1,45 @@
+# Written by peanuts/scripts/issue_forms.py: change that script, then run it.
+name: "Question, device report or development topic"
+description: "Ask how something works, tell how a game runs on your device, or discuss how to build or contribute something"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a problem, use **Game problem**, **Build problem**, **Setup or app problem** or **Desktop builder problem**: their logs and details are what a problem is traced with. For a wish, **Game request** or **Feature request**.
+        **No game files, keys, firmware or links to them**: don't share them, offer them or ask where to get them. Peanuts Native works with your own dump of a game you own. Posts that break this are edited or removed. Write in English if you can; another language is fine too.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: "What is this?"
+      options:
+        - "A question about using Peanuts Native"
+        - "A device report: how a game runs on my device"
+        - "A development topic (how to build, change or contribute something)"
+        - "A mistake in the README, the FAQ or the wiki"
+        - "Something else"
+    validations:
+      required: true
+  - type: textarea
+    id: body
+    attributes:
+      label: "Your post"
+      description: "What you want to know or tell, and why. For a device report: the game and its version, the device, the driver, the settings and how it runs. For development, the part of the code you are looking at and what you have read or tried so far."
+    validations:
+      required: true
+  - type: input
+    id: context
+    attributes:
+      label: "Device, app version and game, if they matter"
+      placeholder: "AYN Thor Max, Peanuts Native 0.1.5, Mario Kart 8 Deluxe"
+  - type: textarea
+    id: links
+    attributes:
+      label: "Logs, screenshots or links"
+      description: "Anything that goes with the post."
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: "Rules"
+      options:
+        - label: "My post has no game files, keys, firmware or links to them, and doesn't ask for any."
+          required: true

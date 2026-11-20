@@ -108,6 +108,7 @@ public final class BuildService extends Service {
         if (intent == null) { stopSelf(startId); return START_NOT_STICKY; }
         if (ACTION_CANCEL.equals(intent.getAction())) {
             cancelled = true;
+            Importer.cancel(true);   // an import stops within a second (issue #149; it used to run to its end first)
             Prepare p = prepare;
             if (p != null) p.cancel();
             Thread w = worker;
@@ -285,39 +286,51 @@ public final class BuildService extends Service {
         File replace = r.replaceNup;   // Import again: the .nup to make anew, where it is
         boolean again = replace != null;
         if (!again && buildGameDir == null && r.gameDir == null) throw new IOException("No game folder to write the .nup into (Setup).");
-        // SpaceEstimate's pre-flight (P4): warn-only (found in review — the multiplier is uncalibrated, so it never blocks Build; a real
-        // ENOSPC further down still fails with OUT_OF_SPACE through category()). getExternalFilesDir(null), not getFilesDir(): AppStorage puts the pack there
-        // (found in review). Importing: the pack's basis is the merged .nup's own size (importBytes again), same as the game-folder check
         List<File> inputs = r.inputs();
-        long importNeed = SpaceEstimate.inputBytes(inputs);
         // PEANUTS: both volumes move to the build folder when it is set (the .nup and the pack land under the same <title ID> folder there)
         File importDest = again ? replace.getAbsoluteFile().getParentFile() : buildGameDir != null ? buildGameDir : r.gameDir;
         File packVolume = buildGameDir != null ? new File(buildGameDir, "pack") : getExternalFilesDir(null);
-        String spaceWarn = SpaceEstimate.warning(importNeed, importNeed, true, importDest, packVolume);
-        if (spaceWarn != null) log("space: " + spaceWarn);
         File dir = again ? importDest : buildGameDir != null ? buildGameDir : new File(r.gameDir, r.fileName()), out = again ? replace : new File(dir, r.fileName() + ".nup");
         if (dir == null) throw new IOException("The .nup has no folder: " + out);
         long newest = 0;
         for (File f : inputs) newest = Math.max(newest, f.lastModified());
         if (!again && out.isFile() && out.length() > 0 && out.lastModified() >= newest) { log("import: imported already, the .nup is newer than every input: " + out); progress("import", IMPORT_END, "Imported already: " + out.getName()); return out; }
+        if (!Importer.available()) throw new IOException("This build of the app cannot import NSP, NSZ, XCI or XCZ files yet (no importer). Use a .nup or a dump folder.");
+        File keys = new File(new File(getFilesDir(), "keys"), "prod.keys");
+        if (!keys.isFile()) throw new IOException("No prod.keys: add your keys in Setup first.");
+        // The sizes come from the probe (the keys first): the .nup's from the titles' own records, which a compressed file's length is not, and what
+        // unpacking a solid .nsz needs beside it while it imports (issue #149); a file the probe cannot size counts with its length, as before
+        progress("import", 0, "Loading keys");
+        long[] sized;
+        try {
+            if (Importer.keys(keys) != 0) throw new IOException("Keys: " + Importer.lastError());
+            log("import: keys loaded");
+            sized = Importer.sizes(inputs, r.titleId);
+        } catch (ReflectiveOperationException e) {
+            throw new IOException("The importer does not match this build of the app (" + e.getMessage() + ").");
+        }
+        final long nupBytes = sized[0], unpackBytes = sized[1], checkBytes = sized[2];
+        long importNeed = nupBytes + unpackBytes;   // on the .nup's volume while it imports
+        // SpaceEstimate's pre-flight (P4): warn-only (found in review — the multiplier is uncalibrated, so it never blocks Build; a real
+        // ENOSPC further down still fails with OUT_OF_SPACE through category()). getExternalFilesDir(null), not getFilesDir(): AppStorage puts the pack there
+        // (found in review). Importing: the pack's basis is the merged .nup's own size, the game-folder check's need that and the unpacking
+        String spaceWarn = SpaceEstimate.warning(importNeed, nupBytes, true, importDest, packVolume);
+        if (spaceWarn != null) log("space: " + spaceWarn);
+        if (unpackBytes > 0 || checkBytes > 0)
+            log("import: compressed files: " + BuildLogBundle.size(unpackBytes) + " unpacked into a temporary file beside the .nup, " + BuildLogBundle.size(checkBytes) + " checked in place");
         // Import again: the new file is written beside the old one, so both must fit (the sheet checked the same and asked; this is the last look before the
         // work). Unlike the first import's estimate above this one stops the build: the player chose between freeing space and deleting the old file first
         boolean oldThere = again && out.isFile();
         if (oldThere && !r.deleteOldFirst && SpaceEstimate.freeBytes(dir) < importNeed)
             throw new BuildListener.Failure("Not enough free space to import " + name + " again: the new .nup needs about " + Reimport.size(importNeed) + " beside the old "
-                    + "one, and " + Reimport.size(SpaceEstimate.freeBytes(dir)) + " is free in " + dir + ". Nothing was changed.", BuildListener.OUT_OF_SPACE);
-        if (!Importer.available()) throw new IOException("This build of the app cannot import NSP/XCI files yet (no importer). Use a .nup or a dump folder.");
-        File keys = new File(new File(getFilesDir(), "keys"), "prod.keys");
-        if (!keys.isFile()) throw new IOException("No prod.keys: add your keys in Setup first.");
+                    + "one" + (unpackBytes > 0 ? " while its compressed files are unpacked" : "") + ", and " + Reimport.size(SpaceEstimate.freeBytes(dir)) + " is free in " + dir + ". Nothing was changed.", BuildListener.OUT_OF_SPACE);
         long importStart = System.currentTimeMillis();
-        log("import: " + inputs.size() + " input" + (inputs.size() == 1 ? "" : "s") + ", " + BuildLogBundle.size(importNeed) + ", into " + out + " (" + freeLine(dir) + ")");
+        log("import: " + inputs.size() + " input" + (inputs.size() == 1 ? "" : "s") + ", " + BuildLogBundle.size(nupBytes) + ", into " + out + " (" + freeLine(dir) + ")");
         try {
-            progress("import", 0, "Loading keys");
-            if (Importer.keys(keys) != 0) throw new IOException("Keys: " + Importer.lastError());
-            log("import: keys loaded");
             if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot create " + dir);
             File tmp = new File(dir, out.getName() + ".part");
             tmp.delete();
+            deleteUnpacked(tmp);   // what an import the app did not live to finish left (the importer's own folder for the temporary files)
             // The old .nup stays where it is until the new one is complete, so a failed or stopped import leaves the game as it was. Only the player's own
             // second choice (not enough room for both, Reimport.lowSpace) deletes it first; the pack made from it is marked before the file goes
             boolean deleted = false;
@@ -330,15 +343,26 @@ public final class BuildService extends Service {
             String kept = !again ? "" : deleted ? " The old .nup was deleted first, as you chose: open the game's sheet and tap Build to make it again."
                     : " Nothing was replaced: the game is as it was.";
             final long[] last = {0};
+            final String[] lastStep = {""};
+            Importer.cancel(false);   // a Stop meant for an earlier import does not stop this one; a Stop for this one from here on does (then cancelled is true)
+            if (cancelled) throw new BuildListener.Failure("Build cancelled." + kept, BuildListener.CANCELLED);
             int rc = Importer.writeNup(tmp, inputs, r.titleId, (step, done, total) -> {
                 long now = System.currentTimeMillis();
-                if (now - last[0] < 250 && done < total) return;
+                boolean newStep = !step.equals(lastStep[0]) && (step.startsWith("unpack/") || step.startsWith("check/"));
+                if (newStep) log("import: " + Compressed.stepText(step, 0, 0).toLowerCase(Locale.ROOT));
+                lastStep[0] = step;
+                if (now - last[0] < 250 && done < total && !newStep) return;
                 last[0] = now;
-                int pct = total > 0 ? (int) Math.min(IMPORT_END - 1, done * (IMPORT_END - 1) / Math.max(1, total)) : 0;
-                progress("import", pct, step + (total > 0 ? String.format(Locale.getDefault(), ": %d %%", Math.min(100, done * 100 / total)) : ""));
+                progress("import", Compressed.percent(step, done, total, unpackBytes + checkBytes, nupBytes, IMPORT_END), Compressed.stepText(step, done, total));
             });
-            if (cancelled) { tmp.delete(); throw new BuildListener.Failure("Build cancelled." + kept, BuildListener.CANCELLED); }
-            if (rc != 0) { tmp.delete(); log("import: the importer returned " + rc + ": " + Importer.lastError() + " (after " + (System.currentTimeMillis() - importStart) / 1000 + " s)"); throw new IOException("Import failed: " + Importer.lastError() + (again ? "." + kept : "")); }
+            if (cancelled) { tmp.delete(); deleteUnpacked(tmp); throw new BuildListener.Failure("Build cancelled." + kept, BuildListener.CANCELLED); }
+            if (rc != 0) { tmp.delete();
+                deleteUnpacked(tmp);
+                String why = Importer.lastError(), damaged = Compressed.failure(why, name, !deleted);
+                log("import: the importer returned " + rc + ": " + why + " (after " + (System.currentTimeMillis() - importStart) / 1000 + " s)");
+                if (damaged != null) throw new BuildListener.Failure(damaged + (deleted ? kept : ""), BuildListener.FILE_DAMAGED);
+                throw new IOException("Import failed: " + why + (again ? "." + kept : ""));
+            }
             // A pack made from the file this import replaces (Import again, or inputs newer than the .nup) was made from other game files: marked before the
             // new file takes the old one's place, so no moment has the new file with a pack that counts as up to date (PackNote, Prepare.run0)
             if (out.isFile()) markPacksStale(r, out);
@@ -350,6 +374,16 @@ public final class BuildService extends Service {
         log("import: done in " + took / 1000 + " s, " + BuildLogBundle.size(out.length()) + " (" + BuildLogBundle.size(out.length() * 1000 / took) + "/s)");
         progress("import", IMPORT_END, "Imported " + out.getName());
         return out;
+    }
+
+    /** The importer's folder for the temporary files of solid .nsz files beside a .part (".<name>.unpack", nximport.h): emptied and removed. The importer
+     *  clears it itself, and its files are unlinked as soon as they are open; only a killed import can leave the folder, or on a storage that keeps an open
+     *  file's name, the file */
+    private void deleteUnpacked(File part) {
+        File d = new File(part.getParentFile(), "." + part.getName() + ".unpack");
+        File[] kids = d.listFiles();
+        if (kids != null) for (File k : kids) if (k.getName().endsWith(".body") && !k.delete()) log("import: cannot delete " + k);
+        if (d.isDirectory() && !d.delete()) log("import: cannot delete " + d);
     }
 
     /** The finished import over the file it replaces, in one step where the storage can (the old file is never deleted first here) */

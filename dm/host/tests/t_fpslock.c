@@ -75,9 +75,9 @@ static void check(int which) {
         *(uintptr_t *)(base + 0x7b32690 + 0x10) = (uintptr_t)(object + 16);
         f = (float *)object; f[0] = f[1] = 30;
         sync = (int32_t *)(object + 16); sync[0] = sync[1] = 2;
-    } else if (which == 14) {
-        strcpy(g_mod[0].build_id, "a48c0de3bc353efa0e4d359bde05ef24");
-        *(uintptr_t *)(base + 0xda20e38) = (uintptr_t)object;
+    } else if (which == 14 || which == 22) {   // PEANUTS: 22, EA SPORTS FC 27 1.8d.f570: the regulator behind another global
+        strcpy(g_mod[0].build_id, which == 22 ? "464512b32a94dd3b6517a5b5d711d0d0" : "a48c0de3bc353efa0e4d359bde05ef24");
+        *(uintptr_t *)(base + (which == 22 ? 0xda5d0f8 : 0xda20e38)) = (uintptr_t)object;
         double *d = (double *)(object + 8); d[0] = d[1] = 30;
     } else if (which == 15 || which == 16) {
         strcpy(g_mod[0].build_id, "0123456789abcdef0123456789abcdef");
@@ -97,9 +97,9 @@ static void check(int which) {
     }
     if (which == 17) setenv("DM_FPS_TARGET", "30", 1);
     if (which == 18) setenv("DM_FPS_TARGET", "0", 1);
-    if (which >= 20) { setenv("DM_FPS_TARGET", "0", 1); setenv("DM_FPS_DECOUPLE", "0", 1); setenv("DM_PRESENT_INTERVAL", "display", 1); setenv("DM_FPS_LIMIT", which == 20 ? "60" : "30", 1); g_gate_present = 0; }   // #207's start: Full game speed off, the host's tick, a pack without the gate
+    if (which == 20 || which == 21) { setenv("DM_FPS_TARGET", "0", 1); setenv("DM_FPS_DECOUPLE", "0", 1); setenv("DM_PRESENT_INTERVAL", "display", 1); setenv("DM_FPS_LIMIT", which == 20 ? "60" : "30", 1); g_gate_present = 0; }   // #207's start: Full game speed off, the host's tick, a pack without the gate   // PEANUTS: 20 and 21 only (22 is FC 27)
     if (which == 19) setenv("DM_FPS_TARGET", "15", 1);   // a saved cap the controller cannot hold (4 vsyncs, its maximum 3)
-    int engine = which != 3 && which != 12 && which < 17;   // 17-19: a floor does not fix the rate, so presentation keeps the game's interval   // a limiter the host writes: any but another build's main (3) and a main the rewriter found no Unreal variable in (12)
+    int engine = which != 3 && which != 12 && (which < 17 || which == 22);   // PEANUTS: 22 (FC 27 1.8d.f570)   // 17-19: a floor does not fix the rate, so presentation keeps the game's interval   // a limiter the host writes: any but another build's main (3) and a main the rewriter found no Unreal variable in (12)
     if (which & 1) assert(dm_fps_lock_engine() == engine);   // the graphics layer's present cap may ask before the first present (the acquire)
     dm_fps_lock_tick();
     assert(dm_fps_lock_engine() == engine);
@@ -125,7 +125,7 @@ static void check(int which) {
         sync[0] = sync[1] = 2; dm_fps_lock_tick();
         assert(sync[0] == 1 && sync[1] == 1 && writes == 4);
     } else if (which == 10) assert(sync[0] == 2 && sync[1] == 2 && writes == 2);
-    else if (which == 14) { double *d = (double *)(object + 8); assert(d[0] == 60 && d[1] == 60 && writes == 2); }
+    else if (which == 14 || which == 22) { double *d = (double *)(object + 8); assert(d[0] == 60 && d[1] == 60 && writes == 2); }   // PEANUTS: 22
     else if (which == 15) {
         assert(*(float *)(object + 0x34) == 60 && *(int32_t *)(object + 0x38) == 60 && writes == 2);
         dm_fps_lock_tick(); assert(writes == 2);
@@ -295,7 +295,7 @@ int main(void) {
     sead_rate_check();
     { pid_t p = fork(); assert(p >= 0); if (!p) { step_check(); _exit(0); } int status; assert(waitpid(p, &status, 0) == p); assert(WIFEXITED(status) && WEXITSTATUS(status) == 0); }
     // Each process starts the production one-time initialization with a fresh build and target.
-    for (int i = 0; i < 22; i++) {
+    for (int i = 0; i < 23; i++) {   // PEANUTS: 23 (case 22, FC 27 1.8d.f570)
         pid_t p = fork(); assert(p >= 0);
         if (!p) { check(i); _exit(0); }
         int status; assert(waitpid(p, &status, 0) == p); assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);

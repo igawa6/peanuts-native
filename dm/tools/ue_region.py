@@ -92,6 +92,29 @@ def plt_stubs(img, text_end, name):
         if (d >> 10) & 0xFFF == lo and ((a - 12) & ~0xFFF) + page + lo in slots: out.add(a - 12)
     return out
 
+# PEANUTS: UE 5.4.3 stores the size in startup, then calls a shared reservation helper.
+# Prove the helper rounds that same global and passes it with its adjacent base to the import.
+# Gate the caller's store, not the helper: its other caller must retain the original size.
+def startup_size_store(img, call, helper):
+    from nso_asm import ADDI, LDRX, STRX
+    from ue_malloc import adrp_page, is_adrp
+
+    def address(pc, reg):
+        page, add = struct.unpack_from('<II', img, pc)
+        if is_adrp(page, reg) and add & ~(0xfff << 10) == ADDI(reg, reg, 0):
+            return adrp_page(page, pc) + ((add >> 10) & 0xfff)
+        return None
+
+    # size = previous ? align_up(previous, 4096) : 62 GiB; store immediately before BL.
+    if struct.unpack_from('<7I', img, call - 28) != (LDRX(8, 19), ADDI(9, 8, 4095), 0xf100011f,
+                                                     0xb26113e8, 0x9274cd29, 0x9a890108, STRX(8, 19)):
+        return False
+    # Frame setup; x0 = &base; x1 = align_up(base[1], 4096); base[1] = x1.
+    if struct.unpack_from('<2I', img, helper) != (0xa9bf7bfd, ADDI(29, 31, 0)): return False
+    if struct.unpack_from('<4I', img, helper + 16) != (LDRX(8, 0, 1), ADDI(8, 8, 4095), 0x9274cd01, STRX(1, 0, 1)): return False
+    base = address(helper + 8, 0)
+    return base is not None and address(call - 36, 19) == base + 8
+
 def find(img, text_end, ro_off, data_off):
     """(gate site, size register, the instruction to make mov x1, xS or None, reason) when the chain holds; (None, None, None, why not) otherwise, with why starting '[RED] ' when the
     option is there but the reservation is not found (the engine would ask for its whole default)"""
@@ -121,14 +144,21 @@ def find(img, text_end, ro_off, data_off):
     found, why = [], []
     for start in fns:
         for p in range(start, end(start), 4):
-            if word(p) >> 26 != 0x25 or target(p) not in stubs: continue
+            if word(p) >> 26 != 0x25: continue
+            callee = target(p)
+            if callee not in stubs:
+                # PEANUTS: only one direct helper, calling the imported allocator at +32.
+                if (p - start >= 36 and 0 <= callee <= text_end - 36 and word(callee + 32) >> 26 == 0x25
+                        and target(callee + 32) in stubs and startup_size_store(img, p, callee)):
+                    found.append((callee + 32, start, p - 4, 8, None))
+                continue
             got, no = size_store(img, p, start, md)
             if got: found.append((p, start, *got))
             else: why.append(f'{p:#x}: {no}')
     if len(found) != 1:
         return None, None, None, f'[RED] Unreal\'s engine region: {len(found)} reservations in nninitStartup ({", ".join(f"{f:#x}" for f in fns)})' + ''.join(f'; {x}' for x in why)
     call, start, off, s, x1_mov = found[0]
-    return off, s, x1_mov, f'Unreal\'s engine region: reserved at {call:#x} in nninitStartup\'s {start:#x}, its size stored from x{s} at {off:#x}' + (f', x1 set from it at {x1_mov:#x}' if x1_mov is not None else '')
+    return off, s, x1_mov, f'Unreal\'s engine region: reserved at {call:#x} from nninitStartup\'s {start:#x}, its size stored from x{s} at {off:#x}' + (f', x1 set from it at {x1_mov:#x}' if x1_mov is not None else '')  # PEANUTS: the call can be in a helper
 
 if __name__ == '__main__':
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

@@ -1616,3 +1616,82 @@ none:
 }
 #undef TP_OP
 // PEANUTS end
+
+// PEANUTS(upstream-candidate): a later EQUAL pass may compare this depth with a value calculated by a different shader.
+// Preserve the guest's separate arithmetic instructions as well as its explicit fused multiply-add. Follow the
+// scalar SSA expression feeding a direct FragDepth store. Sampling coordinates and unrelated colour math stay fast.
+uint32_t *vka_spv_precise_depth(const uint32_t *w, size_t nw, size_t *out_count) {
+    enum { ExtInstImport = 11, FNegate = 127, FAdd = 129, FSub = 131, FMul = 133, FDiv = 136,
+           GLSLstd450Fma = 50, NoContraction = 42 };
+    if (nw < 5 || w[0] != 0x07230203 || !w[3] || w[3] > 0x3fffff) return NULL;
+    uint32_t bound = w[3], glsl = 0, depth = 0;
+    size_t insert = 0;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
+        if (!len || len > nw - i) return NULL;
+        if (op == OpFunction) break;
+        if (op == ExtInstImport && len == 6 && !memcmp(w + i + 2, "GLSL.std.450", 13)) glsl = w[i+1];
+        if (op == OpDecorate && len == 4 && w[i+2] == DecBuiltIn && w[i+3] == PF_BIFragDepth) {
+            insert = i;
+            depth = w[i+1];
+        }
+        i += len;
+    }
+    if (!depth || depth >= bound) return NULL;
+    struct expr { size_t offset; unsigned char first, stride, arithmetic, precise, seen; };
+    struct expr *expr = calloc(bound, sizeof *expr);
+    uint32_t *queue = malloc((size_t)bound * sizeof *queue), *out = NULL;
+    size_t size = 0, additions = 0;
+    if (!expr || !queue) goto done;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
+        if (!len || len > nw - i) goto done;
+        if (op == OpDecorate && len == 3 && w[i+2] == NoContraction && w[i+1] < bound)
+            expr[w[i+1]].precise = 1;
+        if (op == OpStore && len >= 3 && w[i+1] == depth && w[i+2] < bound && !expr[w[i+2]].seen) {
+            expr[w[i+2]].seen = 1;
+            queue[size++] = w[i+2];
+        }
+        unsigned first = 0, stride = 1, arithmetic = 0;
+        if ((op == FAdd || op == FSub || op == FMul || op == FDiv) && len == 5) {
+            first = 3; arithmetic = 1;
+        } else if (op == OpExtInst && len == 8 && glsl && w[i+3] == glsl && w[i+4] == GLSLstd450Fma) {
+            first = 5; arithmetic = 1;
+        } else if ((op == FNegate || op == OpCopyObject) && len == 4) first = 3;
+        else if (op == OpSelect && len == 6) first = 4;
+        else if (op == OpPhi && len >= 5) { first = 3; stride = 2; }
+        if (first && w[i+2] < bound) {
+            struct expr *e = &expr[w[i+2]];
+            e->offset = i; e->first = first; e->stride = stride; e->arithmetic = arithmetic;
+        }
+        i += len;
+    }
+    for (size_t q = 0; q < size; q++) {
+        const struct expr *e = &expr[queue[q]];
+        if (!e->first) continue;
+        if (e->arithmetic && !e->precise) additions++;
+        unsigned len = w[e->offset] >> 16;
+        for (unsigned j = e->first; j < len; j += e->stride) {
+            uint32_t id = w[e->offset+j];
+            if (id >= bound || expr[id].seen) continue;
+            expr[id].seen = 1;
+            queue[size++] = id;
+        }
+    }
+    if (!additions || nw > SIZE_MAX / sizeof *out - 3 * additions) goto done;
+    out = malloc((nw + 3 * additions) * sizeof *out);
+    if (!out) goto done;
+    memcpy(out, w, insert * sizeof *out);
+    size_t pos = insert;
+    for (size_t q = 0; q < size; q++) {
+        uint32_t id = queue[q];
+        if (expr[id].arithmetic && !expr[id].precise) {
+            out[pos++] = (3u << 16) | OpDecorate; out[pos++] = id; out[pos++] = NoContraction;
+        }
+    }
+    memcpy(out + pos, w + insert, (nw - insert) * sizeof *out);
+    *out_count = nw + 3 * additions;
+done:
+    free(expr); free(queue);
+    return out;
+}

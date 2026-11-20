@@ -83,6 +83,12 @@ public final class SpaceEstimate {
         return (needsImport ? importBytes : 0) + packBytes(packBasisBytes);
     }
 
+    /** The words for the part of the need a solid .nsz takes only while it imports (issue #149: unpacked into a temporary file beside the .nup, deleted
+     *  at the end), "" without one: " About 6.2 GB of it only while the compressed game is unpacked." */
+    public static String unpackSentence(long unpackBytes) {
+        return unpackBytes <= 0 ? "" : " About " + words(unpackBytes) + " of it only while the compressed game is unpacked.";
+    }
+
     /** A byte count in words, close enough for a warning: "6.2 GB" */
     public static String words(long bytes) {
         if (bytes == Long.MAX_VALUE) return "an unknown amount";

@@ -53,7 +53,7 @@ public final class CatalogActivity extends Activity {
             List<Catalog.Item> it; String err = null;
             try { it = Catalog.fetch(); } catch (Exception e) { it = new ArrayList<>(); err = e.toString(); }
             final List<Catalog.Item> fit = it; final String ferr = err;
-            ui.post(() -> { games = g; items = fit; status.setText(ferr != null ? "Catalog unavailable: " + ferr : fit.size() + " companions in the catalog · " + g.size() + " games in your list"); render(); });
+            ui.post(() -> { games = g; items = fit; status.setText(ferr != null ? "Catalog unavailable: " + ferr : PUi.joined(fit.size() + " companions in the catalog", g.size() + (g.size() == 1 ? " game" : " games") + " in your list")); render(); });
         }, "peanuts-catalog").start();
     }
 
@@ -71,7 +71,7 @@ public final class CatalogActivity extends Activity {
             }
         }
         if (!rest.isEmpty()) {
-            PUi.add(list, PUi.section(this, "Other companions · add the game first"), games.isEmpty() ? 0 : PUi.SECTION_GAP);
+            PUi.add(list, PUi.section(this, "Other companions: add the game first"), games.isEmpty() ? 0 : PUi.SECTION_GAP);
             LinearLayout card = PUi.add(list, PUi.listCard(this), 8);
             for (Catalog.Item i : rest) card.addView(row(null, i));
         }
@@ -82,10 +82,10 @@ public final class CatalogActivity extends Activity {
         String name = g != null ? g.name : item.gameName;
         File root = g != null ? g.companionRoot() : null;
         String installed = root != null && item != null ? Installer.installedVersion(root, item.packageName) : null;
-        String line = item == null ? "No companion in the catalog"
-                    : installed == null ? item.version + " · " + String.format(Locale.US, "%.0f KB", item.size / 1024.0)
-                    : installed.equals(item.version) ? "installed " + installed + " · up to date" : "installed " + installed + " · update " + item.version;
-        if (g != null && root == null) line += " · build the game first";
+        String first = g != null && root == null ? "build the game first" : null;
+        CharSequence line = item == null ? PUi.joined("No companion in the catalog", first)
+                    : installed == null ? PUi.joined(item.version, String.format(Locale.US, "%.0f KB", item.size / 1024.0), first)
+                    : installed.equals(item.version) ? PUi.joined("installed " + installed, "up to date", first) : PUi.joined("installed " + installed, "update " + item.version, first);
         boolean hasVersions = item != null && root != null;
         PUi.Setting s = new PUi.Setting(this, "🖥️", name, !hasVersions ? null : v -> dev.peanuts.ui.CompanionVersions.open(this, item.titleId, this::render)).value(line);
         if (hasVersions) s.chevron(this);

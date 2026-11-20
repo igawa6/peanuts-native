@@ -94,7 +94,7 @@ static int opmode(void) { return dm_opmode(); }
 // Star Fox (SDK 21): the game marks the sections where it shows the player's own photographs (GameChat's camera pictures on screen); the system keeps those out of captures. No captures here
 HLE_FORCE("_ZN2nn2oe32BeginPresentPhotographedContentsEv", "photographed contents on screen: noted nowhere (no capture service)", void, h_oe_PhotoBegin, void) {}
 HLE_FORCE("_ZN2nn2oe30EndPresentPhotographedContentsEv", "photographed contents off screen", void, h_oe_PhotoEnd, void) {}
-HLE_FORCE("_ZN2nn2oe41ExitApplicationAndGoBackToInStoreDemoMenuEv", "the in-store demo's exit: the host runs no demo menu, the call is logged and ignored", void, h_oe_DemoExit, void) {
+HLE_FORCE_BIG("_ZN2nn2oe41ExitApplicationAndGoBackToInStoreDemoMenuEv", "the in-store demo's exit: the host runs no demo menu, the call is logged and ignored", void, h_oe_DemoExit, void) {   // PEANUTS: on the big host stack, as it logs (Resident Evil 4 crashed going to Home: the log line ran a game thread off its stack)
     static int once; if (!once++) LOG("[RED] oe: ExitApplicationAndGoBackToInStoreDemoMenu called: ignored (no in-store demo menu)");
 }
 HLE_FORCE("_ZN2nn2oe17FinishStartupLogoEv", "dismiss the system boot screen (through the am application proxy); the host has no boot screen", void, h_oe_FinishLogo, void) {}   // Metroid Dread calls it at main+0xadfed0
@@ -115,7 +115,7 @@ HLE_FORCE("_ZN2nn2oe21TryPopLaunchParameterEPmPvm", "launch parameter: none", un
 // (null read in applet::GetPreviousProgramIndex right after the window setup); -1 = launched from the home menu
 HLE_FORCE("_ZN2nn2oe23GetPreviousProgramIndexEv", "previous program index: launched from HOME, -1", int, h_oe_PrevProgram, void) { return -1; }
 // Launch another program of a multi-program application (Octopath Traveler 0 imports it); on hardware it does not return. The host has only this program: logged, and the game carries on
-HLE_FORCE("_ZN2nn2oe14ExecuteProgramEiPKvm", "launch another program of the application: the host runs only this one (logged)", void, h_oe_ExecProgram, int index, const void *param, size_t n) {
+HLE_FORCE_BIG("_ZN2nn2oe14ExecuteProgramEiPKvm", "launch another program of the application: the host runs only this one (logged)", void, h_oe_ExecProgram, int index, const void *param, size_t n) {   // PEANUTS: on the big host stack, as it logs (Resident Evil 4 crashed going to Home: the log line ran a game thread off its stack)
     (void)param; LOG("[RED] oe::ExecuteProgram(%d, %zu bytes of parameters): the host runs only this program; the game carries on", index, n);
 }
 HLE_FORCE("_ZN2nn2oe16DisableRecordingEv", "video recording switch; the host has no system recording", void, h_oe_DisableRec, void) {}
@@ -254,14 +254,14 @@ static int gfx_size_store(int64_t v) {   // under g_state_lock (oe_state_set)
 // The frame length the game aims at (Switch 2 SDKs): oe::SetGraphicsTargetFrameRate maps up to 59 fps to mode 1, up to 119 to mode 2 and above to mode 3, SetGraphicsTargetFrameRateAuto
 // to mode 0, and both call this, which locks the gs graphics server's context and sends it the mode. The host has no graphics server (nv::InitializeGraphics), so the context is null and
 // the lock crashed: Hyrule Warriors: Age of Imprisonment sets 60 / its present interval at boot (main+0x1e5d244). The host paces by the window's present interval, so the mode is only noted
-HLE_FORCE("_ZN2nn2gs3sdk26SetGraphicsFrameLengthModeENS1_23GraphicsFrameLengthModeE", "target frame length (Switch 2, gs): noted; the host paces by the present interval",
+HLE_FORCE_BIG("_ZN2nn2gs3sdk26SetGraphicsFrameLengthModeENS1_23GraphicsFrameLengthModeE", "target frame length (Switch 2, gs): noted; the host paces by the present interval",   // PEANUTS: on the big host stack, as it logs (Resident Evil 4 crashed going to Home: the log line ran a game thread off its stack)
           void, h_gs_FrameLength, int mode) {
     static int last = -1; if (mode != last) { LOG("gs: graphics frame length mode %d (0 auto, 1 30 fps, 2 60 fps, 3 120 fps)", mode); last = mode; }
 }
 HLE_FORCE("_ZN2nn2oe27GetDefaultDisplayResolutionEPiS1_", "default display resolution: 1920x1080 docked, 1280x720 handheld", void, h_oe_DefRes, int *w, int *h) {
     int con = opmode() == 1; if (w) *w = con ? 1920 : 1280; if (h) *h = con ? 1080 : 720;
 }
-HLE_FORCE("_ZN2nn2oe38GetDefaultDisplayResolutionChangeEventEPNS_2os11SystemEventE", "default display resolution change event: signalled when the operation mode changes",
+HLE_FORCE_BIG("_ZN2nn2oe38GetDefaultDisplayResolutionChangeEventEPNS_2os11SystemEventE", "default display resolution change event: signalled when the operation mode changes",   // PEANUTS: on the big host stack, as it logs (Resident Evil 4 crashed going to Home: the log line ran a game thread off its stack)
           void, h_oe_DefResEv, void *ev) {
     hle_bind_system_event(ev, 0);
     int n = atomic_load(&g_defres_n);
@@ -281,7 +281,7 @@ HLE_FORCE("_ZN2nn2oe34DisableAlbumImageTakenNotificationEv", "screenshot-taken n
 // As with Disable, there is no producer: the host has no Horizon album captures.
 HLE_FORCE("_ZN2nn2oe33EnableAlbumImageTakenNotificationEv", "screenshot-taken notifications (through am); the host takes no system screenshots", void, h_oe_AlbumNotifyOn, void) {}
 HLE_FORCE("_ZN2nn2oe24IsInStoreDemoModeEnabledEv", "retail store demo mode (through am); never", unsigned, h_oe_StoreDemo, void) { return 0; }
-HLE_FORCE("_ZN2nn2oe27SetPerformanceConfigurationENS0_15PerformanceModeEi", "set the CPU/GPU clock config; the host does not scale clocks", void, h_oe_SetPerfCfg, int mode, int cfg) {
+HLE_FORCE_BIG("_ZN2nn2oe27SetPerformanceConfigurationENS0_15PerformanceModeEi", "set the CPU/GPU clock config; the host does not scale clocks", void, h_oe_SetPerfCfg, int mode, int cfg) {   // PEANUTS: on the big host stack, as it logs (Resident Evil 4 crashed going to Home: the log line ran a game thread off its stack)
     LOG("oe::SetPerformanceConfiguration mode=%d cfg=%#x (ignored)", mode, cfg);
 }
 
@@ -320,12 +320,12 @@ static void oe_script_start(void) {
 static pthread_once_t g_oe_once = PTHREAD_ONCE_INIT;
 
 HLE_FORCE("_ZN2nn2oe20GetCurrentFocusStateEv", "foreground / background state; the front end's dm_focus_set, out of focus while a library applet is open", int, h_oe_GetFocus, void) { return atomic_load(&g_seen); }
-HLE_FORCE("_ZN2nn2oe20SetFocusHandlingModeENS0_17FocusHandlingModeE", "focus handling mode; 1 and 2 get focus notifications, 0 and 3 none (see g_focus_mode)", void, h_oe_SetFocusMode, int m) {
+HLE_FORCE_BIG("_ZN2nn2oe20SetFocusHandlingModeENS0_17FocusHandlingModeE", "focus handling mode; 1 and 2 get focus notifications, 0 and 3 none (see g_focus_mode)", void, h_oe_SetFocusMode, int m) {   // PEANUTS: on the big host stack, as it logs (Resident Evil 4 crashed going to Home: the log line ran a game thread off its stack)
     atomic_store(&g_focus_mode, m); LOG("oe::SetFocusHandlingMode %d (%s)", m, focus_notifies() ? "focus notifications" : "suspended out of focus, no focus notifications");
 }
 
 // Notification: returns bool (w0), the host has no system notifications
-HLE_FORCE("_ZN2nn2oe25TryPopNotificationMessageEPj", "system notification queue; front end state changes are queued", unsigned, h_oe_TryPopMsg, uint32_t *msg) {
+HLE_FORCE_BIG("_ZN2nn2oe25TryPopNotificationMessageEPj", "system notification queue; front end state changes are queued", unsigned, h_oe_TryPopMsg, uint32_t *msg) {   // PEANUTS: on the big host stack, as it logs (Resident Evil 4 crashed going to Home: the log line ran a game thread off its stack)
     pthread_once(&g_oe_once, oe_script_start);
     pthread_mutex_lock(&g_mq_lock);
     int ok = g_mqn > 0;
@@ -337,7 +337,7 @@ HLE_FORCE("_ZN2nn2oe25TryPopNotificationMessageEPj", "system notification queue;
 }
 // The blocking form (Link's Awakening pops on a thread of its own, main+0xfa1ff8): the SDK's version waits on the system event oe::Initialize would have created,
 // and the host's oe::Initialize is a no-op, so it aborted on an uninitialized event. Wait for the host queue instead, then take the message the Try path's way
-HLE_FORCE("_ZN2nn2oe22PopNotificationMessageEv", "system notification queue (blocking); waits on the host queue", uint32_t, h_oe_PopMsg, void) {
+HLE_FORCE_BIG("_ZN2nn2oe22PopNotificationMessageEv", "system notification queue (blocking); waits on the host queue", uint32_t, h_oe_PopMsg, void) {   // PEANUTS: on the big host stack, as it logs (Resident Evil 4 crashed going to Home: the log line ran a game thread off its stack)
     pthread_once(&g_oe_once, oe_script_start);   // DM_OE_SCRIPT also for games that only pop this way (Mario Kart 8 Deluxe): the wait below reaches the Try path only once a notification is queued
     uint32_t m = 0;
     for (;;) {
@@ -419,7 +419,7 @@ HLE_FORCE("_ZN2nn2oe18GetDesiredLanguageEv", "system language query; value from 
 
 // The console's region (Animal Crossing: New Horizons 3.0.3): the SDK asks settings::system::GetRegionCode, which reaches set:sys. A region that fits the language the game is given:
 // 0 Japan, 1 the Americas, 2 Europe, 4 Hong Kong / Taiwan / Korea (nn::settings::system::RegionCode; 3 Australia and 5 China are left out, no language points at them alone)
-HLE_FORCE("_ZN2nn2oe13GetRegionCodeEv", "console region (set:sys); from DM_LANG", int, h_oe_GetRegion, void) {
+HLE_FORCE_BIG("_ZN2nn2oe13GetRegionCodeEv", "console region (set:sys); from DM_LANG", int, h_oe_GetRegion, void) {   // PEANUTS: on the big host stack, as it logs (Resident Evil 4 crashed going to Home: the log line ran a game thread off its stack)
     char e[8]; dm_lang(e);
     int r = !strncmp(e, "ja", 2) ? 0 : !strncmp(e, "ko", 2) || !strncmp(e, "zh", 2) ? 4 : !strcmp(e, "en-US") || !strcmp(e, "fr-CA") || !strcmp(e, "es-419") || !strcmp(e, "pt-BR") ? 1 : 2;
     static int once; if (!once++) LOG("oe::GetRegionCode: %d for language %s", r, e);

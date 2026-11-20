@@ -38,7 +38,7 @@ class SwapScreens(unittest.TestCase):
         self.assertIn('if (own != Display.DEFAULT_DISPLAY) {', src)
         self.assertIn('new android.content.Intent(game, CompanionScreen.class)', src)
         screen = (JAVA / 'dev/peanuts/CompanionScreen.java').read_text(encoding='utf-8')
-        self.assertIn('FLAG_NOT_FOCUSABLE', screen)
+        self.assertIn('TYPE_APPLICATION_PANEL', screen)   # the page never takes the focus: a panel (#183, peanuts/tests/test_companion_screen.py)
         self.assertIn('Companion::refocusGame', screen)
 
     def test_companion_screen_runs_in_the_game_process(self):

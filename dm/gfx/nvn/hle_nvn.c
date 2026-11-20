@@ -1319,9 +1319,29 @@ NVN(nvnCommandBufferEndRecording, NVNcommandHandle, NVNcommandBuffer *c) {
     return (NVNcommandHandle)o->begin;
 }
 NVN(nvnCommandBufferIsRecording, NVNboolean, const NVNcommandBuffer *c) { return ((const cmd_t *)c)->recording != 0; }
+// PEANUTS begin: CopyCommands copies, as in NVN. The game may record over the source's command memory as soon as the copy is made; a CALL into it, read a frame
+// later by the Android replay worker, found other records there (Unicorn Overlord: a record size of pixel data, then a jump into unmapped memory). Inline replay
+// read the CALL at submit time, before the game reused the memory. The source's records are copied into this buffer up to its END, across its JUMPs.
+static void cmd_copy_list(cmd_t *o, const uint8_t *s) {
+    for (unsigned n = 0; s && n < (1u << 22); n++) {
+        op_hdr h; memcpy(&h, s, sizeof h);
+        if (h.op == OP_END) return;
+        if (h.op == OP_JUMP && h.size >= 16) { memcpy(&s, s + 8, 8); continue; }
+        if (h.size < 8 || (h.size & 7) || h.op >= OP_COUNT_) {
+            static int once; if (!once++) LOG("[RED] CopyCommands: record %u of the source list at %p is not a record (op %u, size %u): the copy stops there", n, (const void *)s, h.op, h.size);
+            return;
+        }
+        memcpy(cmd_alloc(o, h.size), s, h.size);
+        s += h.size;
+    }
+}
 NVN(nvnCommandBufferCopyCommands, void, NVNcommandBuffer *c, int n, const NVNcommandHandle *h) {
+    for (int i = 0; i < n; i++) cmd_copy_list(CB(c), (const uint8_t *)(uintptr_t)h[i]);
+}
+static void cmd_call_lists(NVNcommandBuffer *c, int n, const NVNcommandHandle *h) {   // CallCommands: the source stays the game's until the GPU is done with it
     for (int i = 0; i < n; i++) { uint8_t *p = cmd_alloc(CB(c), 16); put_hdr(p, OP_CALL, 16); memcpy(p + 8, &h[i], 8); }
 }
+// PEANUTS end
 NVN(nvnCommandBufferSignalEvent, void, NVNcommandBuffer *c, const NVNevent *e, NVNeventSignalMode m, NVNeventSignalLocation loc, int flags, uint32_t v) {
     (void)loc; (void)flags;
     uint8_t *p = cmd_alloc(CB(c), 24); put_hdr(p, OP_SIGNAL_EVENT, 24);
@@ -2876,6 +2896,7 @@ NVN(nvnTextureBuilderGetHeight, int, const NVNtextureBuilder *b) { return (int)(
 NVN(nvnTextureBuilderGetDepth, int, const NVNtextureBuilder *b) { return (int)((const tex_builder_t *)b)->d.depth; }
 NVN(nvnTextureBuilderGetLevels, int, const NVNtextureBuilder *b) { return (int)((const tex_builder_t *)b)->d.levels; }
 NVN(nvnTextureBuilderGetFormat, NVNformat, const NVNtextureBuilder *b) { return (NVNformat)((const tex_builder_t *)b)->d.format; }
+NVN(nvnTextureBuilderGetDepthStencilMode, NVNtextureDepthStencilMode, const NVNtextureBuilder *b) { return ((const tex_builder_t *)b)->stencil ? NVN_TEXTURE_DEPTH_STENCIL_MODE_STENCIL : NVN_TEXTURE_DEPTH_STENCIL_MODE_DEPTH; }   // PEANUTS: tapionallanaire, PR #164
 NVN(nvnTextureBuilderGetSamples, int, const NVNtextureBuilder *b) { return ((const tex_builder_t *)b)->d.samples; }
 NVN(nvnTextureBuilderGetStride, ptrdiff_t, const NVNtextureBuilder *b) { return (ptrdiff_t)((const tex_builder_t *)b)->d.stride; }
 NVN(nvnTextureViewGetFormat, NVNboolean, const NVNtextureView *v, NVNformat *f) { const view_t *w = (const view_t *)v; if (f) *f = (NVNformat)w->format; return w->set_format; }
@@ -3111,7 +3132,7 @@ NVN_NOPROTO(nvnProgramSetSampleShading, NVNboolean, NVNprogram *p, int mode) { (
 // Singular / combined forms → plural / separate forms; state the replay layer does not have yet (conditional render, depth bounds, ...) is logged once and drawing continues (better to over-draw than to drop).
 #include "../tex/nvn_deswizzle.h"
 
-NVN(nvnCommandBufferCallCommands, void, NVNcommandBuffer *c, int n, const NVNcommandHandle *h) { h_nvnCommandBufferCopyCommands(c, n, h); }   // the replay layer treats CALL and COPY alike
+NVN(nvnCommandBufferCallCommands, void, NVNcommandBuffer *c, int n, const NVNcommandHandle *h) { cmd_call_lists(c, n, h); }   // PEANUTS: a CALL; CopyCommands copies (cmd_copy_list)
 // Combined texture handle (texture id | sampler id << 20) is recorded into the texture slot as is: the replay layer takes the texture from the low 20 bits and the sampler from the high bits (nvn_mtl.m NVN_RB_SAMPT)
 // One combined handle: recorded as the hardware lays the command out, the handle 16 bytes in, where Luigi's Mansion 3 patches it after recording (nvn_obj.h p_bind_tex1)
 NVN(nvnCommandBufferBindTexture, void, NVNcommandBuffer *c, NVNshaderStage st, int i, NVNtextureHandle h) {

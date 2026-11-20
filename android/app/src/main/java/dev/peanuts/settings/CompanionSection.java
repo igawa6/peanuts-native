@@ -160,10 +160,11 @@ public final class CompanionSection {
             if (!installedKnown) refreshInstalled(item);
             String pkg = installedPkg, have = installedVersion;
             boolean update = item != null && have != null && Companions.compareVersions(item.version, have) > 0;
-            String value;
+            CharSequence value;
             if (busy) value = busyText;
-            else if (have != null) value = "Installed: " + Companions.label(pkg, have) + (!installedVerified ? " · unverified" : "") + (item == null ? (catalog == null && catalogError == null ? " · checking the catalog…" : "") : update ? " · update " + item.version + " available" : " · up to date");
-            else if (item != null) value = "Available: " + Companions.label(item.packageName, item.version) + (root == null ? " · build the game first" : "");
+            else if (have != null) value = dev.peanuts.ui.PUi.joined("Installed: " + Companions.label(pkg, have), !installedVerified ? "unverified" : null,
+                    item == null ? (catalog == null && catalogError == null ? "checking the catalog…" : null) : update ? "update " + item.version + " available" : "up to date");
+            else if (item != null) value = dev.peanuts.ui.PUi.joined("Available: " + Companions.label(item.packageName, item.version), root == null ? "build the game first" : null);
             else if (catalog == null && catalogError == null) value = "Checking the catalog…";
             else if (catalogError != null) value = "Catalog unavailable: " + catalogError;
             else value = "No companion in the catalog for this game";

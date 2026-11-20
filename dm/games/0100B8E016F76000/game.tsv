@@ -33,9 +33,16 @@ app_pool	0xCD500000
 sys_resource	0x1000000
 
 # ---- Rendering ----
+# PEANUTS: the global release's engine selects near-zero NVN depth (its README); offline pipeline bases use main0_z, as there.
+depth_mode	zero
 # The native clock measures elapsed time; dynamic-resolution thresholds target 60 fps in patches.py.
 present_interval	display
 fps_target	60
+# PEANUTS: Android frame limits (method A). The native clock steps 60 Hz ticks by elapsed time, clamped to [1, 2] a frame: on the AYN Thor (Turnip) the
+# opening cinematic's subtitle interval took 6.41 s at 60, 6.51 s at 45, 6.19 s at 30 and 7.53 s at 20 (slow, below the two-tick clamp); above 60 the one-tick floor runs it fast.
+fps_limit	60
+fps_limit_min	30
+fps_modes	30,40,45,60
 # The renderer subtracts two raw timestamp reports to measure its GPU cost.
 gpu_timestamps	segment
 # The game fills texture storage on the CPU and publishes it with mapped-range flushes.

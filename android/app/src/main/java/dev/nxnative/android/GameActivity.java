@@ -91,8 +91,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         fitOrientation();
-        setShowWhenLocked(true);
-        setTurnScreenOn(true);
+        // PEANUTS: the game stays behind the lock screen (GitHub issue #198: after the lid closed it was drawn over the lock screen, which then had no way to the PIN
+        // prompt). Only a control command asks for it (--ez show_when_locked true, as Ondevice's), for test runs on a phone that locks
+        boolean onLock = getIntent().getBooleanExtra("show_when_locked", false);
+        setShowWhenLocked(onLock);
+        setTurnScreenOn(onLock);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         // This game's own host (libnxhost_<title ID>.so, with its profile compiled in): a game this APK has no profile for gets a sentence, not a crash
         String id = String.valueOf(getIntent().getStringExtra("title_id"));

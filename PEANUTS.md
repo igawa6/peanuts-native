@@ -37,6 +37,7 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      (split on `"\n"`) to `pack_android.py`'s argv when it is not empty — block-marked, a no-op for a normal job.
      (2026-11-17) shader-map validation and selection call `RuntimeShaderMap.missingRuntime`: a deficit containing only boot-generated shaders is prepared for Build’s internal capture, while missing file-based keys still stop.
    - `android/app/src/main/java/dev/nxnative/android/ExitWatch.java` — game exit notices and on-device pack retries use the same Android exit lookup by process name, PID and timestamp. `Job` saves the pack PID when its service marks a job running.
+   - `android/app/src/ondevice/java/dev/nxnative/android/Ondevice.java` — (2026-11-18) the Prepare card's progress bar is `dev.peanuts.ui.Strip.card` (the app's one bar: 6 dp, rounded, as the building cover's strip), one line.
    - `android/app/src/ondevice/AndroidManifest.xml` — (2026-11-13, code mods) one new `<service>` line, `dev.peanuts.build.ModBuildService`
      (the modded-variant build, the Mods section's "Build with mods"), beside the existing `BuildService` line.
    - `scripts/pack_android.py` — (2026-11-13, code mods) `--modules`/`--mod-exefs`/`--mod-patches`, block-marked (too much logic for a one-line
@@ -168,6 +169,22 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
   never keys, game files, saves or packs. `BuildLogProvider` serves it read-only; the sheet offers Share (the chooser on the app's display) and Save to
   a folder (request 71 through `LibrarySettings.result`). Entry points: Home's stopped build card, the Prepare card and its Manage sheet, the game's
   Storage tab, Settings › Share log, and ctl `share_build_log`. Tests: `dm/tools/tests/test_android_build_log.py` (`BuildLogJvmTest`).
+- 2026-11-19 (game catalog and issue forms): `peanuts/games.json` is the machine-readable list of the games this version ships, written by
+  `peanuts/scripts/games_catalog.py` from `peanuts/release-titles.txt` (which games), each `dm/games/<title ID>/game.tsv` (the builds Android
+  plays, `android_builds` respected, and the package) and `peanuts/games.tsv` (the table's order, the name players know, a display
+  version a profile lacks, the companion). The same script writes the Supported games table of `README.md` and `peanuts/docs/README.github.md`
+  between its `PEANUTS begin` / `end` markers; `--refresh` adds a row for a game that ships without one and sets the companion column from
+  eden-duo-companions' releases. Seven issue forms, written by `peanuts/scripts/issue_forms.py` from one source: **Game problem** (the log
+  of the run required), **Build problem** (the Share build log `.zip` required), **Setup or app problem** (keys, firmware, the library,
+  storage, drivers, companions, mods, saves, the second screen, the app), **Desktop builder problem**, **Game request**, **Feature
+  request**, and **Question, device report or development topic**; `config.yml` links companion content to eden-duo-companions. They ask
+  mostly by picks: the game with its version (one option per catalog build, then another version or another game with a line to write it),
+  the app version (peanuts/VERSION first), device, chip with its GPU, RAM, Android, the driver family, the settings changed, whether it
+  worked before, and a required check that the log is this game's; every form keeps optional text boxes, and Game problem and Setup or app problem take
+  an optional save zip (Back up saves, or the backup folder with its manifest). The fields come from what issues
+  #1-#170 had to ask for again and again. `.github/workflows/catalog.yml` (PEANUTS, own repository only) runs both scripts (the catalog with
+  `--refresh`) on a push to main that touches their inputs and once a day, and commits what changed. `peanuts/tests/test_issue_forms.py` checks the scripts and the forms' structure and
+  only skips, never fails, while the written files are out of date.
 
    - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-17, the launcher on a second display) one line in `buildHome`
      after the header: `dev.peanuts.ui.BottomScreen.home(...)` gets Home's header (it steps aside while the second display shows the launcher's
@@ -193,3 +210,13 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
   up, also from a shortcut or a frontend; without one the second display is Android's, or the game's cover with Settings › Library ›
   **Games without a companion** (`PeanutsPrefs.bottomScreenInGames`). Seen on the emulator (Android 13, a 1240x1080 and a 1920x1080 second display, hot-plugged both ways):
   the logo page, Settings by X and back, the cards of a game to build and of one marked Not Supported Yet, the setting off. Not yet run on the Thor.
+- 2026-11-19 (GitHub issue #170, Breath of the Wild's blocky Sheikah glow): the Android replay's view of a pass's own target follows the draw's sampler. A sampler that pins one level (mip filter, minimum and maximum LOD the same whole number) samples that level alone; any other keeps the levels below the attachment, as before. The glow chain's upsample reads level n + 1 while rendering level n, and the old cut clamped that read to level n - 1. nxnative's `fb_pinned_level` rule (its PR 1073) in `vka_tex.c`, an upstream candidate; `DM_VK_FB_PIN=0` turns it off, live. Test: `dm/tools/tests/test_vka_fb_pinned_level.py`. `peanuts/UPSTREAM-EDITS.md` Round 30.
+- 2026-11-19 (issue #149, compressed game files): `.nsz` and `.xcz` build like `.nsp` and `.xci`. The importer rebuilds each NCZ to the original NCA
+  below its NCA reader (`dm/peanuts/import/nx_ncz.c`, a store under `nx_nca.c`): a block NCZ is read in place, a solid one unpacked once into a temporary
+  file beside the `.nup` (unlinked as soon as it is open); each is checked against its name and its CNMT record before the writer starts, and the
+  `.nup` is the uncompressed files' byte for byte. Stop now ends any import within a second (`nximport_cancel`). The library lists the files, the sheet
+  counts the real size and the temporary space, the build card says Unpacking or Checking, a damaged file gets its own message
+  (`dev.peanuts.build.Compressed`). The desktop builder takes them too (`peanuts_build.py`, `nximport_cli check`). Thor, ACNH 3.0.3 with Happy Home
+  Paradise compressed with nsz 5.0.0: the `.nup` of the NSPs, of a solid set, of a block set and of a mixed set are one file (SHA-256 the same, 11.05
+  GiB); import 30.8 s from the NSPs, 41.7 s from blocks, 64.3 s from solid; peak memory 321 to 403 MiB. A Build in the test app from the solid set ran
+  to Ready in 8 min 4 s; Stop while unpacking left nothing behind. UPSTREAM-EDITS Round 29; HOOKS.md "Compressed dumps".

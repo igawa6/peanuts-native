@@ -24,6 +24,7 @@ typedef struct NxKeys {
 } NxKeys;
 extern NxKeys nx_keys;
 int nx_hex(const char *s, uint8_t *out, size_t n);       // exactly 2n hex digits → bytes; 0 ok
+int nx_hex_prefix(const char *s, uint8_t out[16]);       // the 32 hex digits a name starts with (an NCA id) → bytes; 0 ok
 
 // ---- containers
 typedef struct NxEntry { char name[0x100]; uint64_t off, size; } NxEntry;   // off: in the file
@@ -61,14 +62,29 @@ typedef struct NxSection {
     NxComp *comp;
     NxSparse *sparse;            // PEANUTS: the sparse layer's table (nx_nca_open), below everything else
 } NxSection;
+// An NCA whose bytes come from somewhere else than a plain file (an NCZ, nx_ncz.c): the reader asks it instead of reading fd. Set only by the importer
+// (nximport.c); the run-time reader's copy of this file never has one.
+typedef struct NxStore {
+    uint64_t size;   // the NCA's size
+    // the NCA's bytes [off, off + len) as the original NCA holds them (encrypted where it was): 0 ok
+    int (*raw)(struct NxStore *s, uint64_t off, void *buf, size_t len);
+    // the same range decrypted with AES-CTR key key and counter template tmpl (the counter of position off), when the store holds it so: 1 done,
+    // 0 not held so (the reader then decrypts the raw bytes itself), -1 an error
+    int (*plain)(struct NxStore *s, const uint8_t key[16], const uint8_t tmpl[16], uint64_t off, void *buf, size_t len);
+    // where a read ending at or after off can end without splitting the store's unit (a compressed block), else off
+    uint64_t (*unit_end)(struct NxStore *s, uint64_t off);
+} NxStore;
 typedef struct NxNca {
     int fd; uint64_t base_off, size; char id[0x41];
     uint8_t hdr[0xC00];
     uint64_t title_id; int content_type /* 0 program 1 meta 2 control 3 manual 4 data 5 public data */, key_gen, has_rights;
-    NxAes key; int key_ok; char key_why[160];
+    NxAes key; uint8_t key_raw[16]; int key_ok; char key_why[160];
     NxSection sec[4];
+    NxStore *store;              // not NULL: the NCA's bytes come from it (nx_nca_open_store), fd and base_off are unused
 } NxNca;
 int nx_nca_open(NxNca *n, const NxContainer *c, const NxEntry *e);
+// the same for an NCA whose bytes a store gives (the store outlives the NCA; nx_nca_close does not close it)
+int nx_nca_open_store(NxNca *n, const NxContainer *c, const NxEntry *e, NxStore *store);
 void nx_nca_close(NxNca *n);
 int nx_nca_find_section(const NxNca *n, int fs_type);   // the first section of that type (an ExeFS is the lowest PFS0), -1 none
 int nx_nca_set_base(NxNca *patch, int sec, NxNca *base, int base_sec);   // a BKTR section's base RomFS section; loads the tables
@@ -119,9 +135,29 @@ long nx_lz4_decompress(const uint8_t *src, size_t slen, uint8_t *dst, size_t dle
 typedef struct NxTitle {
     uint64_t title_id, app_id; int kind /* 0 base 1 update 2 dlc */; uint32_t version;
     char program[33], control[33], data[33];   // NCA ids (hex, "" none)
+    uint8_t program_sha[32], control_sha[32], data_sha[32];   // their SHA-256 as the CNMT records it (the whole NCA's)
+    uint64_t program_size, control_size, data_size;           // and their sizes
     const NxContainer *c; const NxEntry *meta;
     char name[256], publisher[256];
 } NxTitle;
 int nx_container_titles(NxContainer *c, NxTitle **out, int *count);   // every CNMT in the container (malloc'd array)
 int nx_title_control(const NxTitle *t, NxNca *control);               // opens the control NCA (-1 none)
+
+// ---- NCZ (nx_ncz.c, the importer only): an NCA compressed by nsz and its kin, the content of an NSZ or XCZ. The first 0x4000 bytes are the NCA's
+// own, the rest its decrypted body as zstd, solid (one stream) or in blocks; with the key and counter of every encrypted range, so the original NCA is
+// rebuilt byte for byte (the bytes encrypted again). A block NCZ is read where it is; a solid one is unpacked once into a temporary file first.
+typedef struct NxNcz NxNcz;
+int nx_ncz_open(NxNcz **out, const NxContainer *c, const NxEntry *e);   // reads and checks the tables; 0 ok
+void nx_ncz_close(NxNcz *z);                                            // also deletes its temporary file
+NxStore *nx_ncz_store(NxNcz *z);
+int nx_ncz_solid(const NxNcz *z);
+uint64_t nx_ncz_body(const NxNcz *z);       // the bytes of its body (what nx_ncz_prepare decompresses)
+int nx_ncz_keys(const NxNcz *z, const uint8_t key[16]);   // 1 when every encrypted range has this key
+// Solid: decompressed into a temporary file in tmp_dir (made when missing), which the store reads from then on. Block: every block read once. Either way
+// sha is the rebuilt NCA's SHA-256. tick(user, bytes) is called on this thread as the body goes by. 0 ok. tmp_dir NULL: a solid NCZ is only hashed (and
+// cannot be read afterwards)
+int nx_ncz_prepare(NxNcz *z, const char *tmp_dir, uint8_t sha[32], void (*tick)(void *user, uint64_t bytes), void *user);
+void nx_ncz_thread_done(void);              // frees this thread's block cache (the writer's threads free theirs when they end)
+// Stop (nximport_cancel): the long loops look at it and fail with "the import was stopped"
+extern _Atomic int nx_stop;
 #endif

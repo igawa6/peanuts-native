@@ -1,6 +1,8 @@
 package dev.peanuts.ui;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.util.Log;
 
 import dev.peanuts.PeanutsPrefs;
@@ -9,6 +11,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -27,7 +30,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The library: every game in the roots (the game folder, then the update and DLC folders; each walked two levels deep) as *.nsp, *.xci, *.nup or a dump folder
+ * The library: every game in the roots (the game folder, then the update and DLC folders; each walked two levels deep) as *.nsp, *.xci, *.nsz, *.xcz, *.nup or a dump folder
  * (base/exefs or exefs present), grouped by the base game's title ID, with a status per title.
  * <p>
  * An NSP/XCI's titles come from the importer's probe (ImporterPort.probe: title id, application id, kind, version, name), kept in files/library-cache.json by
@@ -57,7 +60,7 @@ final class LibraryScanner {
      *  UNKNOWN: no profile, or the reflective read of its builds failed (never blocks Build; the sheet just has nothing extra to say) */
     enum VersionState { NOT_IN_APP, FILE_GONE, UNSUPPORTED, SUPPORTED_OTHER, RECOMMENDED, UNKNOWN }
     private static final Pattern HEX16 = Pattern.compile("(?<![0-9A-Fa-f])([0-9A-Fa-f]{16})(?![0-9A-Fa-f])");
-    private static final Set<String> EXT = new HashSet<>(Arrays.asList(".nsp", ".xci", ".nup"));
+    private static final Set<String> EXT = new HashSet<>(Arrays.asList(".nsp", ".xci", ".nsz", ".xcz", ".nup"));   // .nsz / .xcz: compressed with nsz (issue #149)
 
     /** One title inside a file or folder: a base, an update or a DLC */
     static final class Source {
@@ -65,10 +68,17 @@ final class LibraryScanner {
         Source(File file, int kind, String titleId, String appId, long version, String name, String publisher) {
             this.file = file; this.kind = kind; this.titleId = titleId; this.appId = appId; this.version = version; this.name = name == null ? "" : name; this.publisher = publisher == null ? "" : publisher;
         }
+        /** From the probe (issue #149): the title's content as the .nup will hold it (the CNMT's sizes; -1 unknown: an older cache entry, no keys, a .nup or
+         *  a dump), and of a compressed file what unpacking (solid) and checking (block) it takes */
+        long size = -1, unpack, check;
         boolean isNup() { return file.getName().toLowerCase(Locale.ROOT).endsWith(".nup"); }
         boolean isDump() { return file.isDirectory(); }
-        /** An NSP or XCI: the importer makes the .nup from it */
+        /** An NSP, XCI, NSZ or XCZ: the importer makes the .nup from it */
         boolean needsImport() { return !isNup() && !isDump(); }
+        /** An .nsz or .xcz */
+        boolean isCompressed() { return dev.peanuts.build.Compressed.is(file); }
+        /** What the .nup gets from it: the probe's size, else the file's own length */
+        long importBytes() { return size >= 0 ? size : file.length(); }
     }
 
     /** A game of the library: its base and what belongs to it, where its files live, its status */
@@ -161,13 +171,14 @@ final class LibraryScanner {
     /** Only the base titles, before the user's picks are added (to know which titles have picks) */
     private List<Title> groupPreview(List<Source> sources) { return new ArrayList<>(group(sources).values()); }
 
-    /** Sources → titles by application ID; a base that is a dump or .nup wins over an NSP/XCI of the same title (it needs no import) */
+    /** Sources → titles by application ID; a base that is a dump or .nup wins over an NSP/XCI of the same title (it needs no import), and an uncompressed one
+     *  over a compressed one (nothing to unpack); an update or DLC found both ways is listed once, uncompressed */
     private Map<String, Title> group(List<Source> sources) {
         Map<String, Title> titles = new LinkedHashMap<>();
         for (Source s : sources) {
             if (s.kind != BASE) continue;
             Title t = titles.computeIfAbsent(s.appId, Title::new);
-            if (t.base == null || (s.isNup() || s.isDump()) && t.base.needsImport()) t.base = s;
+            if (t.base == null || (s.isNup() || s.isDump()) && t.base.needsImport() || t.base.isCompressed() && s.needsImport() && !s.isCompressed()) t.base = s;
         }
         for (Source s : sources) {   // a .nup base: the NSPs/XCIs of the same title it was made from (see Title.originals)
             if (s.kind != BASE || !s.needsImport() || !s.file.isFile()) continue;
@@ -179,9 +190,15 @@ final class LibraryScanner {
             Title t = titles.get(s.appId);
             if (t == null) continue;   // an update or DLC without its base: nothing to build
             List<Source> into = s.kind == UPDATE ? t.updates : t.dlcs;
-            boolean dup = false;
-            for (Source x : into) if (x.file.equals(s.file) && x.titleId.equals(s.titleId) && x.version == s.version) dup = true;
-            if (!dup) into.add(s);   // a .nup's own updates/DLC are listed too: the sheet shows what is inside it
+            boolean dup = false; int twin = -1;
+            for (int i = 0; i < into.size(); i++) {
+                Source x = into.get(i);
+                if (x.file.equals(s.file) && x.titleId.equals(s.titleId) && x.version == s.version) dup = true;
+                else if (x.needsImport() && s.needsImport() && x.isCompressed() != s.isCompressed() && x.titleId.equals(s.titleId) && x.version == s.version) twin = i;
+            }
+            if (dup) continue;
+            if (twin < 0) into.add(s);   // a .nup's own updates/DLC are listed too: the sheet shows what is inside it
+            else if (into.get(twin).isCompressed()) into.set(twin, s);   // the same title as .nsp and .nsz: the uncompressed one
         }
         return titles;
     }
@@ -312,11 +329,22 @@ final class LibraryScanner {
         if (l.endsWith(".nup")) {
             List<Source> out = new ArrayList<>();
             String app = Upstream.titleIdOf(f);
+            boolean hasBase = false;
+            long standaloneVersion = -1;
             for (Upstream.NupPkg p : Upstream.nupPackages(f)) {
-                if (app == null && p.kind == BASE) app = p.titleId;
+                if (p.kind == BASE) {
+                    hasBase = true;
+                    if (app == null) app = p.titleId;
+                }
+                // NUP update flag 1 identifies a complete snapshot that does not need the base.
+                if (p.kind == UPDATE && (p.flags & 1) != 0) standaloneVersion = Math.max(standaloneVersion, p.version);
                 out.add(new Source(f, p.kind, p.titleId, app != null ? app : baseOf(p.titleId, p.kind), p.version, "", ""));
             }
-            if (out.isEmpty() && app != null) out.add(new Source(f, BASE, app, app, 0, "", ""));
+            if (app != null && !hasBase && standaloneVersion >= 0) {
+                out.add(new Source(f, BASE, app, app, standaloneVersion, "", ""));
+            } else if (out.isEmpty() && app != null) {
+                out.add(new Source(f, BASE, app, app, 0, "", ""));
+            }
             return out;
         }
         String key = f.getPath() + "|" + f.length() + "|" + f.lastModified();
@@ -336,7 +364,9 @@ final class LibraryScanner {
                 int kind = o.optInt("kind", BASE);
                 String app = o.optString("app_id", "").toUpperCase(Locale.ROOT);
                 if (!app.matches("[0-9A-F]{16}")) app = baseOf(id, kind);
-                out.add(new Source(f, kind, id, app, o.optLong("version", 0), o.optString("name"), o.optString("publisher")));
+                Source s = new Source(f, kind, id, app, o.optLong("version", 0), o.optString("name"), o.optString("publisher"));
+                s.size = o.optLong("size", -1); s.unpack = o.optLong("unpack", 0); s.check = o.optLong("check", 0);
+                out.add(s);
             }
         }
         if (out.isEmpty()) {   // no importer (or a file it could not read): the name's [title ID], its kind by the low bits
@@ -368,52 +398,74 @@ final class LibraryScanner {
 
     // ---- Icons ----
 
-    private static final int NUP_ICON_MAX = 4 << 20;   // a title's icon is a 256x256 picture, some hundred KiB as a PNG; anything larger is not one
-    private static final byte[] PNG_SIGNATURE = { (byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
+    /** The app's copy of a title's icon: files/icons/&lt;title ID&gt;.png (app storage: Clear data and an uninstall empty it, an update keeps it) */
+    private static File iconFile(Context c, Title t) { return new File(PeanutsPrefs.iconsDir(c), t.titleId + ".png"); }
 
     /**
-     * The icon the PC builder wrote beside a .nup ("<the .nup's name without .nup>.png", peanuts/scripts/peanuts_build.py) copied to out; false without one.
-     * The file comes from shared storage, so it is taken only when it is a PNG by its signature and at most NUP_ICON_MAX bytes, and it reaches out by a rename:
-     * a file kept in files/icons is never read again, so half a copy or a file the decoder refuses would hide the game's cover for good.
+     * The title's icon as files/icons/&lt;ID&gt;.png, null without one (off the main thread). In order: the one already there; the PNG beside a .nup of the title
+     * (the PC builder's, or one {@link #keep} put there); the icon inside a .nup of the title (its meta block: the importer's since #158, the nup packer's); the
+     * importer's from an NSP/XCI of the title, the originals of a .nup base among them (before #158 they were not asked, so an original put back did not bring
+     * the icon back). A file kept in files/icons is never read again, so every way in writes a whole PNG the decoder reads, or nothing.
+     * A title whose base is a .nup without an icon of its own gets the one found here beside it ({@link #keep}).
      */
-    private static boolean nupIcon(File nup, File out) {
-        String n = nup.getName();
-        File dir = nup.getParentFile(), to = out.getParentFile();
-        if (dir == null || to == null || n.length() <= 4) return false;
-        File png = new File(dir, n.substring(0, n.length() - 4) + ".png");
-        long len = png.isFile() ? png.length() : 0;
-        if (len < PNG_SIGNATURE.length || len > NUP_ICON_MAX) return false;
-        File tmp = new File(to, out.getName() + ".tmp");
-        try {
-            byte[] b = Files.readAllBytes(png.toPath());
-            if (b.length < PNG_SIGNATURE.length || b.length > NUP_ICON_MAX) return false;   // the file may have grown since length()
-            for (int i = 0; i < PNG_SIGNATURE.length; i++) if (b[i] != PNG_SIGNATURE[i]) return false;
-            to.mkdirs();
-            Files.write(tmp.toPath(), b);
-            if (tmp.renameTo(out)) return true;
-        } catch (Exception e) { Log.w("peanuts", "icon beside " + n + ": " + e); }
-        tmp.delete();
-        return false;
-    }
-
-    /** The title's icon as files/icons/<ID>.png: the one already there, else the PNG beside a .nup of the title (the PC builder's), else the importer's from an
-     *  NSP/XCI of the title (off the main thread); null without one */
     static File icon(Context c, Title t) {
-        File out = new File(PeanutsPrefs.iconsDir(c), t.titleId + ".png");
-        if (out.isFile() && out.length() > 0) return out;
-        List<Source> all = new ArrayList<>();
-        if (t.base != null) all.add(t.base);
-        all.addAll(t.updates);
-        for (Source s : all) if (s.isNup() && nupIcon(s.file, out)) return out;   // a .nup holds no icon
+        File out = iconFile(c, t);
+        if (out.isFile() && out.length() > 0) { keep(c, t); return out; }
+        Set<File> nups = new java.util.LinkedHashSet<>();   // a .nup that holds the base and its update is one file
+        if (t.base != null && t.base.isNup()) nups.add(t.base.file);
+        for (Source s : t.updates) if (s.isNup()) nups.add(s.file);
+        for (File f : nups) {
+            try { if (NupIcon.copyPng(NupIcon.beside(f), out)) return out; } catch (IOException | RuntimeException e) { Log.w("peanuts", "icon beside " + f.getName() + ": " + e); }
+        }
+        for (File f : nups) if (fromInside(f, out)) return out;
         ImporterPort imp = ImporterPort.get();
         if (!imp.available() || !ImporterPort.ensureKeys(c)) return null;
+        List<Source> all = new ArrayList<>();   // the base, else the NSPs/XCIs a .nup base was made from (Title.originals), then the updates
+        if (t.base != null) all.add(t.base);
+        all.addAll(t.originals);
+        all.addAll(t.updates);
         for (Source s : all) {
             if (!s.needsImport()) continue;
             out.getParentFile().mkdirs();
-            if (imp.icon(s.file.getPath(), s.titleId, out.getPath()) == 0 && out.isFile() && out.length() > 0) return out;
+            if (imp.icon(s.file.getPath(), s.titleId, out.getPath()) == 0 && out.isFile() && out.length() > 0) { keep(c, t); return out; }
             out.delete();
         }
         return null;
+    }
+
+    /** The icon inside a .nup (NupIcon.inside: a JPEG or a PNG) as a PNG at out; false when it carries none, or one the decoder does not read */
+    private static boolean fromInside(File nup, File out) {
+        byte[] b;
+        try { b = NupIcon.inside(nup); } catch (IOException | RuntimeException e) { Log.w("peanuts", "icon inside " + nup.getName() + ": " + e); return false; }
+        if (b == null) return false;
+        Bitmap bm = BitmapFactory.decodeByteArray(b, 0, b.length);
+        if (bm == null) { Log.w("peanuts", "icon inside " + nup.getName() + ": " + b.length + " bytes the decoder does not read"); return false; }
+        File tmp = null;
+        try {
+            File dir = out.getParentFile();
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("cannot create " + dir);
+            tmp = File.createTempFile(out.getName() + ".", ".tmp", dir);
+            try (FileOutputStream o = new FileOutputStream(tmp)) { if (!bm.compress(Bitmap.CompressFormat.PNG, 100, o)) throw new IOException("the PNG encoder refused it"); }
+            if (!tmp.renameTo(out)) throw new IOException("cannot rename " + tmp.getName());
+            tmp = null;
+            return true;
+        } catch (IOException | RuntimeException e) {
+            Log.w("peanuts", "icon inside " + nup.getName() + ": " + e);
+            return false;
+        } finally {
+            if (tmp != null) tmp.delete();
+            bm.recycle();
+        }
+    }
+
+    /**
+     * A title whose base is a .nup without an icon of its own gets the app's copy of its icon beside it (NupIcon.keep), once that copy is there: its cover then
+     * outlives files/icons and the NSP or XCI it came from (issue #158). Library calls it for the icons it already had from files/icons; off the main thread
+     */
+    static void keep(Context c, Title t) {
+        if (t.base == null || !t.base.isNup()) return;
+        try { if (NupIcon.keep(t.base.file, iconFile(c, t))) Log.i("peanuts", "icon: kept beside " + t.base.file.getName() + " (it carries none)"); }
+        catch (IOException | RuntimeException e) { Log.w("peanuts", "icon beside " + t.base.file.getName() + ": " + e); }
     }
 
     // ---- The probe cache ----

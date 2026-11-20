@@ -42,3 +42,63 @@ app_pool	0xCD500000
 shader_groups	#arc/system_resource=system #arc/ik_effect=effect #arc/ik_pokemon=pokemon #arc/ui=layout /arc/=arc
 shader_note	Pokémon Legends: Z-A shaders
 # The packs are Oodle Mermaid streams; the shader split decodes them with the game's own OodleLZ_Decompress in the Mac host (dm/host/hle_oodle.c), which the NSP script builds for any game with Trinity packs
+
+# PEANUTS: prefer installed Turnip on the Thor GPU and Qualcomm driver that aborted in the opening.
+recommend	gpu.device=0x43050a01,driver.id=8,driver.version=0x802a4035	driver=18
+
+# PEANUTS begin: use the elapsed SDK tick for Trinity's per-frame nanosecond period.
+# The five-period table is copied to private writable storage. Its four fallback periods stay stock.
+# The first tick uses the selected cap. A long pause is bounded by the slowest stock period.
+present_interval	display
+fps_limit	30
+fps_limit_max	120
+fps_memory	b1f12fd919eae86ab8a978317677e64b	step_ticks_u32	%0x30	1	1000000000:1
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x0	-	u0x3160900
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x4	-	p9:0x0
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x8	-	2a1540f9
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0xc	-	201500f9
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x10	-	0b000acb
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x14	-	2c4e80d2
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x18	-	6b7d0c9b
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x1c	-	8c0180d2
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x20	-	6b09cc9a
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x24	-	2c3140b9
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x28	-	5f0100f1
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x2c	-	8b018b9a
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x30	-	2c1140f9
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x34	-	7f010ceb
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x38	-	6b318c9a
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x3c	-	4b0000b5
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x40	-	2b0080d2
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x44	-	2b0100f9
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x48	-	f4031f2a
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x4c	-	f6031f2a
+fps_plan	b1f12fd919eae86ab8a978317677e64b	c0x50	-	t0x1b296e8
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x1b296d8	3481c039	b0x0
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x1b296f8	682240f9	t0x1b29738
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x11304c	09940190	p9:0x0
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x113050	29813891	1f2003d5
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x113400	09940190	p9:0x0
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x113404	29813891	1f2003d5
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x1015370	e81b01d0	p8:0x0
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x1015374	08813891	1f2003d5
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x1b2a0e4	48c300b0	p8:0x0
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x1b2a0e8	08813891	1f2003d5
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x1b5407c	e8c100f0	p8:0x0
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x1b54080	08813891	1f2003d5
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x29f4214	e84c00f0	p8:0x0
+fps_plan	b1f12fd919eae86ab8a978317677e64b	m0x29f4218	08813891	1f2003d5
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x0	-	2b50fe00
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x4	-	00000000
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x8	-	56a0fc01
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0xc	-	00000000
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x10	-	80f0fa02
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x14	-	00000000
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x18	-	ab40f903
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x1c	-	00000000
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x20	-	d690f704
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x24	-	00000000
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x28	-	00000000
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x2c	-	00000000
+fps_plan	b1f12fd919eae86ab8a978317677e64b	d0x30	-	55a0fc01
+# PEANUTS end

@@ -54,3 +54,6 @@ uint32_t *vka_spv_input_remap(const uint32_t *w, size_t nw, uint64_t map, size_t
 typedef struct { uint32_t binding, ubo_binding, off; } vka_tabpool;
 uint32_t *vka_spv_table_pool(const uint32_t *w, size_t nw, const vka_tabpool *t, int nt, uint32_t pool_set, uint32_t pool_binding, uint32_t max_id, size_t *out_nw, int *sites, char *err, size_t errn);
 // PEANUTS end
+
+// PEANUTS(upstream-candidate): preserve the rounding of arithmetic feeding a translated FragDepth store. NULL if no decorations are needed.
+uint32_t *vka_spv_precise_depth(const uint32_t *words, size_t count, size_t *out_count);

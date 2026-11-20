@@ -574,6 +574,12 @@ def glslc_shaders(d, label, need=True, skip=(), sink=None):
             if not sec or len(sec) != 1: continue
             (ctl, code), = sec; st = glslc_stage(ctl, code)
             if not st or check(label, st, ctl, code): continue
+        elif st == 'cs' and not code.startswith(CS_MAGIC):
+            # PEANUTS(upstream-candidate): Trails has a longer control section in the header; the shorter offset lands in constant data.
+            sec = glslc_section(d, h, size)
+            if sec and len(sec) == 1:
+                sc, sk = sec[0]
+                if sk.startswith(CS_MAGIC) and sc.startswith(ctl) and not check(label, st, sc, sk): ctl, code = sc, sk
         out.append((f'{label}#GLSLC@{h:#x}', st, ctl, code))
     if not out and need: red(f'{label}: no GLSLC output')
     return out
@@ -4176,10 +4182,10 @@ def profile_differs(t, pairsout, psopairsout, version=None):
         p = GAME.table(name)
         if text is None or not os.path.isfile(p): continue
         with open(p, encoding='utf-8', newline='') as f: want = absent_tables(name, f.read(), absent)
-        if version and name == 'pso_pairs.tsv':   # PEANUTS: some pairs exist only in another build even when both shader keys are shared
-            optional_pso = GAME.table('pso_pairs_optional.tsv')
-            if os.path.isfile(optional_pso):
-                with open(optional_pso, encoding='utf-8') as f:
+        if version and name in ('shader_pairs.tsv', 'pso_pairs.tsv'):   # PEANUTS: another build can pair two keys that are both present here
+            optional_pairs = GAME.table(name.removesuffix('.tsv') + '_optional.tsv')
+            if os.path.isfile(optional_pairs):
+                with open(optional_pairs, encoding='utf-8') as f:
                     may_lack = {ln.rstrip('\n').split('\t', 1)[1] for ln in f if ln.startswith(version + '\t')}
                 missing = may_lack.difference(tables_data(text))
                 want = ''.join(ln for ln in want.splitlines(keepends=True) if ln.rstrip('\r\n') not in missing)

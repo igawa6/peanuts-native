@@ -52,7 +52,7 @@ public final class BuildLogUi {
         String shown = name != null && !name.isEmpty() ? name : BuildLogShare.gameName(app, titleId);
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
-        ProgressBar bar = PUi.progress(a);
+        ProgressBar bar = Strip.card(a);
         bar.setIndeterminate(true);
         PUi.add(box, bar, 12);
         TextView text = PUi.body(a, "");

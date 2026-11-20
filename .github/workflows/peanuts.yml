@@ -45,6 +45,12 @@ jobs:
             echo "::endgroup::"
           done
           exit $fail
+      # PEANUTS: the importer's own C tests (ctest), ncz_test (.nsz / .xcz, issue #149) among them; they need cmake, a C compiler and zlib, which the runner has
+      - name: Importer tests (dm/peanuts/import, no game data)
+        run: |
+          cmake -S dm/peanuts/import -B "$RUNNER_TEMP/nximport" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/nximport" -j 4
+          ctest --test-dir "$RUNNER_TEMP/nximport" --output-on-failure
       - name: Profiles, runtime profile and runtime version
         run: |
           sh peanuts/scripts/check-profiles.sh

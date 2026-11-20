@@ -1,0 +1,62 @@
+# PEANUTS: the games players see in the README's Supported games table (README.md and peanuts/docs/README.github.md), in the table's order.
+# peanuts/scripts/games_catalog.py reads it with peanuts/release-titles.txt (which games ship) and each dm/games/<title ID>/game.tsv (the builds
+# Android plays) and writes the two tables and peanuts/games.json; on main, .github/workflows/catalog.yml does that.
+# Columns, tab-separated:
+#   title ID   the game's
+#   name       the name players know (the profile's may be in capitals)
+#   update     the Game update cell, only for a game whose profile has no display version ("?"); empty: the profile's versions
+#   companion  yes or no: whether eden-duo-companions has a release for it. games_catalog.py --refresh sets it from those releases, and adds
+#              a row (the profile's name, at the end) for a game that ships without one
+#   since      optional: the release a game first ships in ("0.1.6"); while peanuts/VERSION is older, the README counts it as coming
+#              in that release and marks its row. Empty: it shipped in an earlier release
+01006BB00C6F0000	The Legend of Zelda: Link's Awakening		yes
+01008CF01BAAC000	The Legend of Zelda: Echoes of Wisdom		yes
+010055D009F78000	Fire Emblem: Three Houses		yes
+0100A6301214E000	Fire Emblem Engage		yes
+010093801237C000	Metroid Dread		yes
+0100000000010000	Super Mario Odyssey		yes
+0100152000022000	Mario Kart 8 Deluxe		yes
+01006F8002326000	Animal Crossing: New Horizons		yes
+01005CA01580E000	Persona 5 Royal		yes
+0100BA4026E94000	Castlevania: Belmont's Curse		yes
+01005270232F2000	OCTOPATH TRAVELER 0		yes
+0100000011D90000	Pokémon Brilliant Diamond		yes
+010018E011D92000	Pokémon Shining Pearl		yes
+0100ABF008968000	Pokémon Sword		yes
+01008DB008C2C000	Pokémon Shield		yes
+01007EF00011E000	The Legend of Zelda: Breath of the Wild		yes
+0100F2C0115B6000	The Legend of Zelda: Tears of the Kingdom		no
+0100606026F12000	FINAL FANTASY RESONANCE		no
+01002DA013484000	The Legend of Zelda: Skyward Sword HD		yes
+01001F5010DFA000	Pokémon Legends: Arceus		no
+010099A00BC1E000	Resident Evil 4	131072	yes
+01004D300C5AE000	Kirby and the Forgotten Land		no
+01006B601380E000	Kirby's Return to Dream Land Deluxe		yes
+010028600EBDA000	Super Mario 3D World + Bowser's Fury		no
+010015100B514000	Super Mario Bros. Wonder		yes
+01003E601E324000	DRAGON QUEST III HD-2D Remake		yes
+0100C510166F0000	Chained Echoes	1.41	yes
+0100C2901153C000	Yoru, Tomosu	Base game (v0)	yes
+0100F9F00C696000	Crash Team Racing Nitro-Fueled		yes
+01009720213B0000	Captain Tsubasa 2: World Fighters		no
+010097F018538000	DAVE THE DIVER		yes
+0100AD80208A8000	Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2		no
+0100453019AA8000	Xenoblade Chronicles X: Definitive Edition		no
+0100B63016916000	My Time at Sandrock		yes
+0100A0F00DA68000	Monster Sanctuary		yes
+01007300020FA000	Astral Chain		no
+01001B300B9BE000	Diablo III: Eternal Collection		yes
+0100C49025D3E000	EA Sports FC 27		no
+010051F0207B2000	Tomodachi Life: Living the Dream		no
+010069401ADB8000	Unicorn Overlord		no	0.1.6
+0100DCA0064A6000	Luigi's Mansion 3		no	0.1.6
+0100F43008C44000	Pokémon Legends: Z-A		no	0.1.6
+0100DAE01E4C8000	STORY OF SEASONS: Grand Bazaar		no	0.1.6
+01006AE02236C000	Double Dragon Revive		no	0.1.6
+01007A2027548000	Trails in the Sky 2nd Chapter		no	0.1.6
+010035F022078000	DRAGON BALL: Sparking! ZERO		no	0.1.6
+0100A3D008C5C000	Pokémon Scarlet		no	0.1.6
+01008F6008C5E000	Pokémon Violet		no	0.1.6
+010051C0134F8000	DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET		no	0.1.6
+01008BC024FDE000	STEINS;GATE RE:BOOT		no	0.1.6
+0100B8E016F76000	NieR:Automata The End of YoRHa Edition (Asian release)		no	0.1.6

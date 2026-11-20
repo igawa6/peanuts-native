@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # Peanuts Native in one command: game files -> a .nup -> a pack for the Android app -> (with --push) the phone.
 #   .nsp / .xci files      nximport_cli (dm/peanuts/import, built here with cmake when it is missing or older than its sources) makes the .nup
+#   .nsz / .xcz files      the same: compressed with nsz, each NCA is rebuilt and checked against its SHA-256 (a solid .nsz is unpacked into a temporary file
+#                          beside the .nup while it imports, about the size of the game; the space this needs is said before the import)
 #   a .nup or a dump       the import is skipped; the pack is made from it as it is
 #   the pack               scripts/pack_android.py (its own options go after --)
 #   --push                 peanuts/scripts/push-pack.py copies the pack and the game to the phone over adb
@@ -17,7 +19,7 @@
 # peanuts/.build/ooz with a C++ compiler and patch) and, for the Unreal ones, the _nxaes module (peanuts/.build/pymod, a C compiler and Python's headers); the pack
 # step then gets DM_OODLE_OOZ and DM_UE_DECODE. Every other game with such a step, and every other system, is refused as before (peanuts/docs/BUILDER.md).
 # --any-version packs an update the game's profile (dm/games/<titleID>/game.tsv) has no build row for. --force-nup rebuilds a .nup that is already there.
-# The icon: for .nsp/.xci inputs the title's icon is written beside the .nup as "<the .nup's name without .nup>.png" (the app and push-pack.py use it; a failure only warns).
+# The icon: for .nsp/.xci/.nsz/.xcz inputs the title's icon is written beside the .nup as "<the .nup's name without .nup>.png" (the app and push-pack.py use it; a failure only warns).
 # Output: the .nup (beside the first input unless --nup) and the pack (<titleID>-work/android-pack beside the .nup, as pack_android.py writes it).
 # --dry-run prints each command instead of importing, packing or pushing; probing and the importer build still run. Errors print [RED] and exit 1.
 import argparse, os, platform, re, shlex, shutil, subprocess, sys, sysconfig, time
@@ -35,7 +37,7 @@ NXAES_SRC = REPO / 'dm' / 'peanuts' / 'pack_worker' / 'nxaes.c'
 PYMOD_BUILD = REPO / 'peanuts' / '.build' / 'pymod'
 WINDOWS = sys.platform == 'win32'
 LINUX = sys.platform.startswith('linux')
-GAME_EXTS = ('.nsp', '.xci')
+GAME_EXTS = ('.nsp', '.xci', '.nsz', '.xcz')
 DEVICE_ROOT = '/sdcard/Peanut Roms'   # the default folder on the phone; push-pack.py's --dest default is the same one (the test compares them)
 ENV = dict(os.environ, PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1')   # the children print UTF-8, unbuffered, on every OS
 
@@ -62,6 +64,7 @@ def with_dotnet(env, prefix=None):
 ENV = with_dotnet(ENV)
 
 PROBE_FILE = re.compile(r'^(?P<path>.+)  \((?P<n>\d+) titles?, [0-9.]+s\)$')
+PROBE_SIZE = re.compile(r'^\s+size (?P<title>[0-9A-Fa-f]{16})\s+(?P<size>\d+)\s+unpack (?P<unpack>\d+)\s+check (?P<check>\d+)\s*$')
 PROBE_TITLE = re.compile(r'^\s+title (?P<title>[0-9A-Fa-f]{16})\s+app (?P<app>[0-9A-Fa-f]{16})\s+kind (?P<kind>\S+)\s+version (?P<version>\d+)\s+name "(?P<name>.*)"\s+publisher ".*"\s*$')
 PACK_DONE = re.compile(r'^done: (?:the modules in )?(?P<path>.*?) \((?:[0-9.]+ MiB|--code-only)')
 NAME_BAD = re.compile(r'[<>:"/\\|?*]')
@@ -69,6 +72,7 @@ TITLE_IN_NAME = re.compile(r'\[([0-9A-Fa-f]{16})\]')
 NAME_TAGS = re.compile(r'\s*\[[^\]]*\]')
 
 Title = namedtuple('Title', 'file title app kind version name')
+SIZES = {}   # (file, title ID) -> (its content's bytes, those of solid NCZs to unpack, those of block NCZs to check, its application ID), from the probe
 Plan = namedtuple('Plan', 'app name base_file version update_file dlc_files')
 
 
@@ -113,7 +117,7 @@ def visible(p):
 
 
 def classify(inputs):
-    """-> (mode, the .nup or dump folder, the .nsp/.xci files). mode: 'nup', 'dump' or 'nsp'"""
+    """-> (mode, the .nup or dump folder, the .nsp/.xci/.nsz/.xcz files). mode: 'nup', 'dump' or 'nsp'"""
     paths = [Path(x).expanduser() for x in inputs]
     for p in paths:
         if not p.exists(): die(f'{p} does not exist')
@@ -126,14 +130,14 @@ def classify(inputs):
         if p.is_dir():
             if is_dump(p): die(f'{p} is a dump folder: give it alone (a dump is packed as it is)')
             found = sorted(f for f in p.iterdir() if f.is_file() and visible(f) and f.suffix.lower() in GAME_EXTS)
-            if not found: die(f'{p} has no .nsp or .xci files (top level only), and is no dump folder (base/exefs)')
+            if not found: die(f'{p} has no .nsp, .xci, .nsz or .xcz files (top level only), and is no dump folder (base/exefs)')
             files += found
         elif p.suffix.lower() == '.nup':
             die(f'{p}: a .nup is given alone')
         elif visible(p) and p.suffix.lower() in GAME_EXTS:
             files.append(p)
         else:
-            die(f'{p} is not a .nsp, .xci, .nup, a folder of them, or a dump folder')
+            die(f'{p} is not a .nsp, .xci, .nsz, .xcz, .nup, a folder of them, or a dump folder')
     unique = []
     for f in files:
         if f not in unique: unique.append(f)
@@ -183,11 +187,15 @@ def probe(importer, keys, files):
     say(f'probing {len(files)} file(s)')
     rc, out = run([str(importer), '--keys', str(keys), 'probe', *map(str, files)], False, 'probe', capture=True)
     if rc: die(f'probe failed (exit code {rc})')
-    titles, with_titles, cur = [], set(), None
+    titles, with_titles, cur, sized = [], set(), None, {}
     for line in out.splitlines():
         m = PROBE_FILE.match(line)
         if m:
             cur = m.group('path')
+            continue
+        m = PROBE_SIZE.match(line)
+        if m and cur is not None:
+            sized[(Path(cur), m.group('title').upper())] = (int(m.group('size')), int(m.group('unpack')), int(m.group('check')))
             continue
         m = PROBE_TITLE.match(line)
         if m and cur is not None:
@@ -195,19 +203,21 @@ def probe(importer, keys, files):
             with_titles.add(cur)
     for f in files:
         if str(f) not in with_titles: die(f'the importer found no title in {f} (its message is above)')
+    for t in titles:
+        if (t.file, t.title) in sized: SIZES[(t.file, t.title)] = sized[(t.file, t.title)] + (t.app,)
     return titles
 
 
 def choose(titles, args):
     bases = [t for t in titles if t.kind == 'base']
-    if not bases: die('no base game among the inputs: an update or DLC needs its base .nsp / .xci with it')
+    if not bases: die('no base game among the inputs: an update or DLC needs its base game\'s file with it')
     names = {}
     for t in bases: names.setdefault(t.app, t.name)
     apps = sorted(names)
     if len(apps) > 1:
         die('several games among the inputs (give one game\'s files): ' + '; '.join(f'{a} "{names[a]}"' for a in apps))
     app, name = apps[0], names[apps[0]]
-    base_file = next(t.file for t in bases)
+    base_file = next(t.file for t in sorted(bases, key=lambda t: t.file.suffix.lower() in ('.nsz', '.xcz')))   # an uncompressed copy first: nothing to unpack
     ups = {}
     for t in titles:
         if t.kind == 'update' and t.app == app: ups.setdefault(t.version, t.file)
@@ -239,6 +249,9 @@ STEP_MARKERS = (
 # The games whose Oodle or Unreal shader step this computer does itself (Linux only), each one checked on a PC against its profile's shader keys
 # (dm/third_party/ooz/README.md "Checked"). True: it has Oodle streams, which the unoodle worker decodes; False: an Unreal game whose archives need no Oodle decoder.
 PC_DECODE = {
+    '010051C0134F8000': True,    # PEANUTS: Kakarot (inline Unreal cooked packages, Oodle)
+    '0100A3D008C5C000': True,    # PEANUTS: Pokémon Scarlet (Trinity packs, Oodle)
+    '01008F6008C5E000': True,    # PEANUTS: Pokémon Violet (Trinity packs, Oodle)
     '01001F5010DFA000': True,    # Pokémon Legends: Arceus (GFPAK entries, Oodle Kraken)
     '01009720213B0000': True,    # Captain Tsubasa 2: World Fighters (Unreal IoStore, Oodle)
     '0100AD80208A8000': True,    # PEANUTS: Demon Slayer 2 (inline Unreal IoStore shaders, Oodle)
@@ -375,12 +388,30 @@ def nup_path(args, plan, first_input):
     return ((given or first_input.resolve().parent) / f'{clean} [{plan.app}][v{plan.version or 0}].nup')
 
 
+def gb(n):
+    return f'{n / 1073741824:.1f} GB'
+
+
+def say_space(nup, plan, inputs):
+    """What the import needs beside the .nup: the game's size, and while a solid .nsz is unpacked that much again (a warning when the folder has less)"""
+    size = unpack = 0
+    for (f, _title), (s, u, _c, app) in SIZES.items():
+        if f in inputs and app == plan.app: size += s; unpack += u   # the game's titles in these files: base, update, add-ons
+    if not size: return
+    try: free = shutil.disk_usage(nup.parent if nup.parent.is_dir() else Path.cwd()).free
+    except OSError: free = None
+    line = f'the .nup needs about {gb(size)}' + (f', and unpacking the compressed files about {gb(unpack)} more while it imports' if unpack else '')
+    say(line + (f' ({gb(free)} free in {nup.parent})' if free is not None else ''))
+    if free is not None and free < size + unpack: say(f'[RED] {nup.parent} may be too small: about {gb(size + unpack)} is needed, {gb(free)} is free')
+
+
 def import_nup(importer, keys, nup, plan, dry, force):
     inputs = [plan.base_file] + ([plan.update_file] if plan.update_file else []) + plan.dlc_files
     if nup.is_file() and not force and nup.stat().st_mtime > max(f.stat().st_mtime for f in inputs):
         say(f'reusing {nup} (newer than its inputs; --force-nup rebuilds it)')
         return
     tmp = Path(str(nup) + '.tmp')
+    say_space(nup, plan, inputs)
     cmd = [str(importer), '--keys', str(keys), 'nup', str(tmp), plan.app.lower(), str(plan.base_file)]
     if plan.update_file: cmd.append(str(plan.update_file))
     cmd += [str(f) for f in plan.dlc_files]
@@ -472,8 +503,8 @@ def main():
     if '--' in argv:
         i = argv.index('--')
         extra, argv = argv[i + 1:], argv[:i]
-    ap = argparse.ArgumentParser(description='Peanuts Native in one command: .nsp/.xci -> .nup -> pack -> (--push) the phone. Words after -- go to pack_android.py.')
-    ap.add_argument('inputs', nargs='+', help='a .nup; a dump folder (base/exefs); a folder of .nsp/.xci files; or .nsp/.xci files')
+    ap = argparse.ArgumentParser(description='Peanuts Native in one command: .nsp/.xci/.nsz/.xcz -> .nup -> pack -> (--push) the phone. Words after -- go to pack_android.py.')
+    ap.add_argument('inputs', nargs='+', help='a .nup; a dump folder (base/exefs); a folder of .nsp/.xci/.nsz/.xcz files; or such files')
     ap.add_argument('--keys', help='prod.keys for the importer (default: NX_KEYS, else ~/.switch/prod.keys)')
     ap.add_argument('--update', help='the update version to use (default the highest); for a dump, passed to pack_android.py as --version')
     ap.add_argument('--nup', help='the .nup to write or reuse; an existing folder: the .nup goes there, named by default (default: beside the first input, "<name> [<titleID>][v<version>].nup")')

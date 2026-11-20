@@ -110,7 +110,8 @@ public final class PUi {
     public static CharSequence joined(CharSequence... parts) {
         android.text.SpannableStringBuilder s = new android.text.SpannableStringBuilder();
         for (int i = 0; i < parts.length; i++) {
-            if (i > 0) {
+            if (parts[i] == null || parts[i].length() == 0) continue;   // an optional part that is not there
+            if (s.length() > 0) {
                 int at = s.length();
                 s.append(' ');   // read as a pause
                 s.setSpan(new Bar(), at, at + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);

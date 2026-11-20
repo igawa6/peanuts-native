@@ -17,6 +17,9 @@ typedef struct NxImportInfo {
     unsigned version;       // the CNMT version (an update's NCM version, e.g. 131072)
     char name[256];         // from the control NACP (English, else the first language); "" when there is no control
     char publisher[256];
+    unsigned long long size;     // the title's content as the .nup will hold it, about: its program and data NCAs' sizes (from the CNMT: the uncompressed size)
+    unsigned long long unpack;   // of that, the bytes of solid NCZs (an .nsz's): unpacked into a temporary file of this size while it imports
+    unsigned long long check;    // and the bytes of block NCZs (an .xcz's mostly): read once more to check them, nothing written
 } NxImportInfo;
 
 // Loads header_key, key_area_key_{application,ocean,system}_NN and titlekek_NN from a prod.keys; a title.keys beside it (rights id = key) is read too when present.
@@ -26,13 +29,22 @@ NXIMPORT_API int nximport_probe(const char *nsp_or_xci, NxImportInfo *out, int m
 // The control NACP's icon (English, else the first) of that title → a PNG file. title_id may be NULL for the first title that has one.
 NXIMPORT_API int nximport_icon(const char *file, const char *title_id, const char *out_png);
 // The base of base_title_id and its updates and add-ons found in the inputs → one .nup (packages base, update/<version>, addon/<title id>).
+// A base or update package gets a meta block (SPEC §5): its main.npdm, its control.nacp and display version, and in the base (else the first package) the
+// icon, title and publisher, so the .nup shows its icon without the dumps it was made from (issue #158). Missing control data only leaves those records out.
 // progress(step, done, total): step is "probe", "base/exefs", "base/romfs", "update/<v>/exefs", "update/<v>/romfs", "addon/<tid>/romfs", "toc"; done/total are bytes of the
 // whole job (files are written in node-id order, so the steps of two packages interleave). A failed write removes the partial file.
+// Compressed inputs (.nsz, .xcz: their .ncz entries) come first: steps "unpack/<file name>" (a solid NCZ, decompressed into a temporary file) and
+// "check/<file name>" (a block NCZ, read once), done/total counting only those bytes; each rebuilt NCA's SHA-256 must match its name and its CNMT record.
+// The temporary files lie in NXIMPORT_TMPDIR when set, else in the hidden folder ".<out file name>.unpack" beside out_nup, and are gone when this returns.
 NXIMPORT_API int nximport_write_nup(const char *out_nup, const char **inputs, int n_inputs, const char *base_title_id,
                         void (*progress)(void *user, const char *step, long long done, long long total), void *user);
 // The writer's reader threads (decrypt + decompress run in parallel; the .nup is the same whatever the count): n <= 0 = automatic (the NXIMPORT_THREADS
 // environment variable if set, else the online CPUs capped at 6). Set before nximport_write_nup; about 256 MiB of buffers are in flight whatever n.
 NXIMPORT_API void nximport_set_threads(int n);
+// Stop: on != 0 makes a running nximport_write_nup end within about a second with -1 ("the import was stopped"), its partial output and temporary files
+// removed; any thread may call it. The flag is cleared when that import returns, and by on = 0 (a caller sets that before an import starts, so a Stop
+// meant for an earlier one does not stop it).
+NXIMPORT_API void nximport_cancel(int on);
 // The shared system fonts out of firmware (FontStandard 0100000000000811 → standard.ttf, FontNintendoExtended 0100000000000810 → nintendo_ext.ttf).
 // firmware_dir is either a folder (*.nca files in it and up to two levels below — Eden's nand/system/Contents/registered layout, or a flat folder;
 // a <id>.nca/00 folder too) or a .zip of the same NCAs flat inside it (nx_zip.c; stored or deflated members, ZIP64 sizes if the zip tool wrote them).

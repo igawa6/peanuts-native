@@ -44,6 +44,33 @@ final class Importer {
         return s == null ? "" : s.toString();
     }
 
+    /** Stop (on), or clear a Stop meant for an earlier import (off, before one starts). An older importer without it: nothing (Stop then waits for the end) */
+    static void cancel(boolean on) {
+        try { dev.peanuts.importer.Native.cancel(on); } catch (Throwable t) { /* no such native method: the import runs to its end, as before */ }
+    }
+
+    /**
+     * What an import of these files takes, from the probe (the importer loaded with keys): {the .nup's bytes (the CNMT's sizes of the titles of appId), the
+     * bytes of solid compressed files it unpacks into a temporary file, the bytes of block ones it reads once more to check}. A file the probe cannot
+     * size (an older importer, no title of appId in it) counts with its own length.
+     */
+    static long[] sizes(List<File> inputs, String appId) {
+        long[] s = new long[3];
+        for (File f : inputs) {
+            long nup = -1;
+            try {
+                org.json.JSONArray a = new org.json.JSONArray(probe(f));
+                for (int i = 0; i < a.length(); i++) {
+                    org.json.JSONObject o = a.getJSONObject(i);
+                    if (!o.has("size") || !appId.equalsIgnoreCase(o.optString("app_id"))) continue;
+                    nup = Math.max(0, nup) + o.optLong("size"); s[1] += o.optLong("unpack"); s[2] += o.optLong("check");
+                }
+            } catch (Throwable t) { /* not sized: its length below */ }
+            s[0] += nup >= 0 ? nup : f.length();
+        }
+        return s;
+    }
+
     static int writeNup(File out, List<File> inputs, String baseTitleId, Progress cb) throws ReflectiveOperationException {
         // A direct call: the callback must be a real class implementing Native.Progress (ART's CheckJNI aborts a CallVoidMethod on a java.lang.reflect.Proxy)
         String[] in = new String[inputs.size()];

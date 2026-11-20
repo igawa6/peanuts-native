@@ -1526,6 +1526,7 @@ public final class MainActivity extends Activity {
         Game.touch(this, g);   // the entry played last is the one kept if the list ever holds this game twice
         Intent intent = new Intent(this, GameActivity.class).putExtra("title_id", g.titleId).putExtra("name", g.name).putExtra("game", g.gameDir).putExtra("pack", g.packDir);
         if (getIntent().getBooleanExtra("no_pause", false)) intent.putExtra("no_pause", true);
+        if (getIntent().getBooleanExtra("show_when_locked", false)) intent.putExtra("show_when_locked", true);   // PEANUTS: a test run over the lock screen (GameActivity, issue #198)
         // PEANUTS begin: the title ID the list holds for this game. A card whose edition switch is on starts program 1 as a game of its own (Edition.forPlay: another
         // title ID, the same game folder), which the list does not hold: a shortcut, the way back to the game and a control command's Play name the list's entry
         String listId = g.titleId;

@@ -50,7 +50,8 @@ public final class ModsSection {
     /** The section "Install mod…" was tapped in, for the picker's result (LibrarySettings.result): the game the pick was for, whatever the page shows by then */
     private static ModsSection pickFor;
     /** The import or the build with mods in progress: the game's title ID and its line; null: none */
-    private static String importTitle, importText, buildTitle, buildText;
+    private static String importTitle, buildTitle, buildText;
+    private static CharSequence importText;
     private static String buildVariant;   // the variant buildTitle is being built as: another set of the same game's code mods waits for it as another game's does
     /** The one build with mods that waits to start by itself ({@link #autoBuild}): its game's section and its variant; null: none. Not kept over a restart of the app */
     private static ModsSection waiting;
@@ -300,13 +301,13 @@ public final class ModsSection {
         if (v instanceof android.view.ViewGroup) for (int i = 0; i < ((android.view.ViewGroup) v).getChildCount(); i++) setEnabledDeep(((android.view.ViewGroup) v).getChildAt(i), on);
     }
 
-    /** What a mod carries, as ModStore knows it: "Files · Cheats", "Code: needs a build with mods" */
-    private static String what(ModStore.Mod m) {
+    /** What a mod carries, as ModStore knows it: "Files" and "Cheats" with PUi.joined's bar between, "Code: needs a build with mods" */
+    private static CharSequence what(ModStore.Mod m) {
         List<String> parts = new ArrayList<>();
         if (m.hasRomfs()) parts.add("Files");
         if (m.hasCheats()) parts.add("Cheats");
         if (m.hasCode()) parts.add("Code: needs a build with mods");
-        return parts.isEmpty() ? "Empty" : String.join(" · ", parts);
+        return parts.isEmpty() ? "Empty" : dev.peanuts.ui.PUi.joined(parts.toArray(new CharSequence[0]));
     }
 
     private void setEnabled(ModStore.Mod m, boolean on) {
@@ -419,7 +420,7 @@ public final class ModsSection {
     }
 
     private static void importProgress(long done, long total, String name) {
-        importText = total > 0 ? (done * 100 / total) + " % · " + name : name;
+        importText = total > 0 ? dev.peanuts.ui.PUi.joined((done * 100 / total) + " %", name) : name;
         renderCurrent();
     }
 

@@ -34,6 +34,7 @@ final class Profile {
     boolean steps;   // game.tsv has fps_steps rows (build.gradle stepsOf): a framework of whole fixed steps a frame, which Hold 60 fps keeps at one (Prefs.steps)
     boolean presentOnly;   // game.tsv fps_limit_present 1 (build.gradle presentOnlyOf): the frame limit only paces the presents, the game's own logic is not known to follow it (Prefs.presentOnly)
     boolean elapsedFrameStep; // PEANUTS: Android hooks derive game time from elapsed time.
+    boolean ownedByDefault;   // PEANUTS: game.tsv fps_owned_default 1: Game owned until the player picks a rate; the frame limits stay offered (Prefs.paceCap)
     int fpsLimit;   // game.tsv fps_limit (build.gradle fpsLimitOf): the host's frame limit by default, frames a second (0 = none); the launcher offers a frame limit for it (Prefs.limited)
     String fpsLockerPlan = "";
     String fpsModes = "";   // explicit supported numeric rates; Game owned is always available
@@ -584,6 +585,7 @@ final class Profile {
             p.fpsModes = c.length > 35 ? c[35] : "";
             p.fpsPlan120 = c.length > 36 ? c[36] : "";
             p.elapsedFrameStep = c.length > 37 && c[37].equals("1"); // PEANUTS: Optional trailing field for older profile tables.
+            p.ownedByDefault = c.length > 38 && c[38].equals("1");   // PEANUTS: fps_owned_default
             out.add(p);
         }
         return Collections.unmodifiableList(out);

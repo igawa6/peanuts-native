@@ -1,5 +1,5 @@
 # Pokémon Scarlet 1.0.0, Game Freak's Trinity engine, SDK 13.3.5.
-# Only 1.0.0 is registered; use -p v0 when the NSP folder also has updates.
+# PEANUTS: Android uses 4.0.0. Select the Mac base build with -p v0.
 
 # ---- Identity ----
 title_id	0100A3D008C5C000
@@ -14,8 +14,11 @@ pad_layout	full
 
 # ---- Versions ----
 build	v0	1.0.0	main=ca44e7dd62e61a2a4e8889b3319ae173	sdk=3644a6760469451cabc99f00c540acc2
-package	v0
-shader_versions	v0
+# PEANUTS: 4.0.0 update build, independently split with the supplied DLC.
+build	v786432	4.0.0	main=421c5411b487eb4d049dd065fec95477	sdk=bb560bdfa85b4a97786ae2c3b7995df6
+package	v786432
+shader_versions	v0 v786432
+android_builds	v786432
 
 # The game calls nvnDeviceSetDepthMode(near=0); prepare the same main0_z bases
 # offline so the first run can use them instead of repeating the full prebuild.
@@ -30,8 +33,9 @@ zip_store	.bk2:.bnk:.pck:.trpfd:.trpfs:.metallib
 # ---- Memory ----
 # The 4 GB allocator reservation (patches.py), 62 MB SDK node area and 32 MB
 # region alignment fit in the alias region. See README.md for the startup probes.
-mem_reserve	0x140000000
-mem_alias	0x118000000
+# PEANUTS: 4.0.0 reserves a 12 GiB StandardAllocator region at startup.
+mem_reserve	0x740000000
+mem_alias	0x718000000
 mem_stack	0x10000000
 app_pool	0xCD500000
 sys_resource	0x1000000
@@ -41,3 +45,36 @@ sys_resource	0x1000000
 # ---- Shader split ----
 shader_groups	#arc/system_resource=system #arc/ik_effect=effect #arc/ik_pokemon=pokemon #arc/ui=layout /arc/=arc
 shader_note	Pokémon Scarlet shaders
+
+# PEANUTS begin: cap-controlled Trinity timing, 4.0.0 only.
+# The main frame controller selects period 0. Six consumers read a private copy of
+# the stock five-period table, with the measured elapsed time in its first entry.
+# Allow slow frames up to the stock 83.3 ms period, and retain the four other periods.
+present_interval	display
+fps_limit	30
+fps_limit_max	120
+fps_memory	421c5411b487eb4d049dd065fec95477	step_ticks_u32	%0x0	1	1000000000:83333334
+fps_plan	421c5411b487eb4d049dd065fec95477	m0x2b7a858	5481c039	f4031f2a
+fps_plan	421c5411b487eb4d049dd065fec95477	m0x92dd20	48ed01f0	p8:0x0
+fps_plan	421c5411b487eb4d049dd065fec95477	m0x92dd24	08e145f9	1f2003d5
+fps_plan	421c5411b487eb4d049dd065fec95477	m0xb83d1c	a8da01b0	p8:0x0
+fps_plan	421c5411b487eb4d049dd065fec95477	m0xb83d24	08e145f9	1f2003d5
+fps_plan	421c5411b487eb4d049dd065fec95477	m0xd96428	08ca01d0	p8:0x0
+fps_plan	421c5411b487eb4d049dd065fec95477	m0xd96430	08e145f9	1f2003d5
+fps_plan	421c5411b487eb4d049dd065fec95477	m0x27b49b8	28f90090	p8:0x0
+fps_plan	421c5411b487eb4d049dd065fec95477	m0x27b49bc	08e145f9	1f2003d5
+fps_plan	421c5411b487eb4d049dd065fec95477	m0x2b7b308	e8da00b0	p8:0x0
+fps_plan	421c5411b487eb4d049dd065fec95477	m0x2b7b30c	08e145f9	1f2003d5
+fps_plan	421c5411b487eb4d049dd065fec95477	m0x2b7b334	e8da00b0	p8:0x0
+fps_plan	421c5411b487eb4d049dd065fec95477	m0x2b7b338	08e145f9	1f2003d5
+fps_plan	421c5411b487eb4d049dd065fec95477	d0x0	-	56a0fc01
+fps_plan	421c5411b487eb4d049dd065fec95477	d0x4	-	00000000
+fps_plan	421c5411b487eb4d049dd065fec95477	d0x8	-	56a0fc01
+fps_plan	421c5411b487eb4d049dd065fec95477	d0xc	-	00000000
+fps_plan	421c5411b487eb4d049dd065fec95477	d0x10	-	80f0fa02
+fps_plan	421c5411b487eb4d049dd065fec95477	d0x14	-	00000000
+fps_plan	421c5411b487eb4d049dd065fec95477	d0x18	-	ab40f903
+fps_plan	421c5411b487eb4d049dd065fec95477	d0x1c	-	00000000
+fps_plan	421c5411b487eb4d049dd065fec95477	d0x20	-	d690f704
+fps_plan	421c5411b487eb4d049dd065fec95477	d0x24	-	00000000
+# PEANUTS end

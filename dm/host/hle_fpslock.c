@@ -133,6 +133,10 @@ static const lock_t k_locks[] = {
     { "a48c0de3bc353efa0e4d359bde05ef24", "FIFA frame regulator", 0xda20e38, 0x8, FPS_F64, 2, 0 },
     // PEANUTS: 1.8d.6523: main+0x5d66b50 loads the regulator and writes both doubles at +0x8; main+0x9a09100 reads its rate from +0x8.
     { "570dc9f1750fa7ea9df20b95b482d039", "FIFA frame regulator", 0xda450d8, 0x8, FPS_F64, 2, 0 },
+    // PEANUTS: EA SPORTS FC 27 1.8d.f570 (v524288): the same regulator behind [main+0xda5d0f8]. Found 2026-11-19 by disassembly of this main (the earlier mains were not at hand
+    // for nso_fnmap.py): the setter main+0x5d75d90 is 1.8d.310c's and 1.8d.6523's (GameRenderSettings.Enable at +0x1f5, fmov v1.2d, #30.0; stur q1, [x9, #8] at main+0x5d75db8), and the tick
+    // main+0x9a1ddc0 reads the rate as ldr d0, [x8, #8] from the same global
+    { "464512b32a94dd3b6517a5b5d711d0d0", "FIFA frame regulator", 0xda5d0f8, 0x8, FPS_F64, 2, 0 },
 };
 #define NLOCKS ((int)(sizeof k_locks / sizeof k_locks[0]))
 // Fixed steps per frame, the profile's fps_steps rows (dm/games/game.py; one per main build): a framework at [main + global] then [that + each member], whose frame function picks

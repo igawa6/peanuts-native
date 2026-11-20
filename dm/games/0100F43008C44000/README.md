@@ -70,6 +70,37 @@ Each item was found from a red line or a pass dump on the way through the langua
 - A save made there continues with `DM_KEYS="f300:A*3/150"` (play from about frame 600), and `LUp~12` then walks along the platform.
 - A 5-minute walk: GPU about 6 ms a frame, no crash.
 
+## Peanuts Native on Android
+
+<!-- PEANUTS begin -->
+The x86-64 Linux builder can pack update 2.0.2 with Mega Dimension (add-on 2). The Oodle worker decoded the Trinity packs and reproduced all 28,603 profile shader keys. The resulting Vulkan library passed SPIR-V validation for all 41,920 modules.
+
+The targeted split reads packs of the resource types recorded in the shader map. Some packs pair shaders whose first appearance was in another pack. Selecting only first appearances missed these pairs. On 2.0.2 the targeted scan read 2,472 of 13,181 packs and reproduced the full scan’s tables, including all 26,051 variation pairs, and all shader package hashes. With eight workers the full split took 19.7 seconds and the targeted split took 13.2 seconds. Fresh builds from the same NUP took 540.2 seconds with the full split and 528.9 seconds through the normal targeted PC route. An incremental rebuild took 1.85 seconds. Both fresh builds produced the same per-file hashes for the runtime pack, including the Vulkan library. Only the two rewriter progress logs differed.
+
+For main build `b1f12fd919eae86ab8a978317677e64b`, the frame controller at `main+0x1b296d8` selects an index in a table of five nanosecond periods. The optional FPS plan redirects its six table readers to a private copy. It measures time between updates with the SDK tick and stores that duration in the first entry. The other four entries keep the stock periods. The host’s selected cap supplies the initial period, and a long pause is bounded at the stock 83.3 ms maximum. Game owned runs the original controller. The build ID, original instructions and the two upstream 2.0.2 timing variants were checked against the executable. [FPSLocker Warehouse](https://github.com/masagrator/FPSLocker-Warehouse/blob/main/OTHER_WAYS.md) · [Fl4sh’s timing mods](https://github.com/Fl4sh9174/Switch-Emulator-Ultrawide-FPS-Mods)
+### AYN Thor, Peanuts Native 0.1.6
+
+Turnip v26.2.0 R5 on the Adreno 740 (Vulkan 1.4.352) rendered character creation, the opening and Lumiose Station. The player walked along the train, approached an NPC with the Talk prompt and continued the station autosave after relaunch. The game reported downloadable content ready at the title screen and mounted Mega Dimension at add-on index 2. The DLC story was outside this route. Stereo audio opened and a 2,000-callback station sample recorded zero underruns.
+
+The Performance panel applied all seven caps live during the same stationary station scene. Frame generation was off. The table uses 90 consecutive renderer intervals per row. The panel reported 59.85–60.00 Hz. The final return to 30 measured 29.9 FPS.
+
+| Requested FPS | Rendered FPS | Median frame (ms) | 95th percentile (ms) |
+|---:|---:|---:|---:|
+| 20 | 19.9 | 50.1 | 50.6 |
+| 30 | 29.9 | 33.4 | 35.0 |
+| 40 | 40.0 | 25.0 | 25.1 |
+| 45 | 41.7 | 23.8 | 25.3 |
+| 60 | 41.8 | 23.8 | 25.2 |
+| 90 | 42.5 | 23.4 | 25.0 |
+| 120 | 42.1 | 23.6 | 24.9 |
+
+Two wall-clock seconds of forward input from the same station autosave brought the player to the same pair of platform NPCs at the 20 and 120 settings. Game owned was separately selected and relaunched. The 30 FPS default was restored.
+
+A cold launch processed all 221 seed records in 7.0 seconds before guest entry. Turnip created all 221 pipelines. The preparation screen, title and controllable station all rendered. Entering the station still created one transform-feedback pipeline on the frame path (34.5 ms). Relaunching read 4,204,637 bytes of driver cache, skipped the blocking preparation screen and finished background prewarm in under 0.1 seconds.
+
+One shared 40-profile dev APK was used for all device runs. Its per-title test environment supplied the corrected first-frame timing value and the captured seed. The release asset merge reproduced the seed byte for byte, and the generated release catalog contained the corrected value and driver recommendation.
+<!-- PEANUTS end -->
+
 ## Build performance
 
 - **Resolved: a chain-only update rebuilt the offline pipeline archive.** The mechanism: [archive reuse across chains](../../../docs/reference/shaders.md#offline-pipeline-archive-rebuilt-after-a-chain-only-update).

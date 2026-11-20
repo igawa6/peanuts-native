@@ -40,6 +40,10 @@ mem_used	0x5c00000
 # without it a thread's ring heap keeps base 0 and the game writes to 0x268 right after the title screen
 alloc_big_align	on
 
+# PEANUTS: Opt-in display pacing for Android bring-up. Default to Game owned.
+fps_limit_max	120
+fps_limit_present	1
+
 # ---- Shader split (shader_split.py: GLSLC outputs in main, each a single-stage program; the program bound per draw combines a vertex and a pixel shader) ----
 shader_groups	/=romfs
 shader_note	Unicorn Overlord shaders

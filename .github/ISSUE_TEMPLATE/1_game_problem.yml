@@ -1,0 +1,374 @@
+# Written by peanuts/scripts/issue_forms.py: change that script, then run it.
+name: "Game problem"
+description: "A game crashes, freezes, shows a black screen, draws wrong, runs slowly, sounds wrong, or its controls or saves misbehave"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Your device is probably not the one this was tested on, so these details are what a problem is traced with. Most fields are a pick from a list.
+        **Adding a game went wrong** (the import, Prepare or the companion)? Use **Build problem**. **Keys, firmware, the library, storage, a driver or companion install, saves import** or the app itself? Use **Setup or app problem**.
+        Never attach game files, keys, firmware or anything extracted from a game. Logs, saves and screenshots are fine. Write in English if you can; another language is fine too.
+  - type: textarea
+    id: what
+    attributes:
+      label: "What happened"
+      description: "What you did and what you saw, and where in the game (a level, a menu, a scene, a race). Text on the screen is worth copying in, word for word."
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: "What goes wrong"
+      description: "Pick all that apply."
+      multiple: true
+      options:
+        - "The game closes or crashes"
+        - "The game freezes (the picture stops; say whether sound goes on)"
+        - "Black or blank screen"
+        - "Objects, characters, water or sky are black, missing or invisible"
+        - "Flicker, glow, particles or effects look wrong"
+        - "Text, menus or videos look wrong"
+        - "It runs slowly, stutters or the frame rate drops"
+        - "The game runs too fast or too slow (its speed, not the frame rate)"
+        - "The device gets hot, or the app says it is too hot"
+        - "Sound (crackling, missing, out of sync)"
+        - "Controls, gyro or touch"
+        - "Saves (not saved, lost, or will not load)"
+        - "The companion on the second screen"
+        - "Something else (say what in \"What happened\")"
+    validations:
+      required: true
+  - type: dropdown
+    id: when
+    attributes:
+      label: "When"
+      options:
+        - "When the game starts, before its title screen"
+        - "In the game's menus"
+        - "While playing"
+        - "After playing for a while (minutes or hours)"
+        - "After coming back to the game (from Home, or closing and opening the lid)"
+        - "Other (say when in \"What happened\")"
+    validations:
+      required: true
+  - type: dropdown
+    id: often
+    attributes:
+      label: "How often"
+      options:
+        - "Every time"
+        - "Sometimes"
+        - "Once so far"
+    validations:
+      required: true
+  - type: dropdown
+    id: regression
+    attributes:
+      label: "Did it work before?"
+      options:
+        - "It never worked, or this is the first try"
+        - "It worked in an older app version (say which in \"Anything else\")"
+        - "It worked before a game update"
+        - "It worked before I changed a setting, the driver or a mod"
+        - "I don't know"
+    validations:
+      required: true
+  - type: dropdown
+    id: game
+    attributes:
+      label: "Game and version"
+      description: "Every game with every update this app version plays: pick the one the game runs with, as its card shows it. Not listed? Pick one of the last two lines and write it below."
+      options:
+        - "Animal Crossing: New Horizons 3.0.3 (01006F8002326000)"
+        - "Astral Chain 1.0.1 (01007300020FA000)"
+        - "Captain Tsubasa 2: World Fighters 1.0.6 (01009720213B0000)"
+        - "Castlevania: Belmont's Curse 1.1.0 (0100BA4026E94000)"
+        - "Chained Echoes 1.41 (0100C510166F0000)"
+        - "Crash Team Racing Nitro-Fueled 1.0.15 (0100F9F00C696000)"
+        - "DAVE THE DIVER 1.0.6.1267 (010097F018538000)"
+        - "Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2 1.80 (0100AD80208A8000)"
+        - "Diablo III: Eternal Collection 2.7.7.92380 (01001B300B9BE000)"
+        - "Double Dragon Revive N1.10 (01006AE02236C000)"
+        - "Double Dragon Revive 1.0.0 (01006AE02236C000)"
+        - "DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET 1.70 (010051C0134F8000)"
+        - "DRAGON BALL: Sparking! ZERO 1.0.0 (010035F022078000)"
+        - "DRAGON QUEST III HD-2D Remake 1.1.2 (01003E601E324000)"
+        - "EA Sports FC 27 1.8d.f570 (0100C49025D3E000)"
+        - "EA Sports FC 27 1.8d.6523 (0100C49025D3E000)"
+        - "FINAL FANTASY RESONANCE 1.0.1 (0100606026F12000)"
+        - "Fire Emblem Engage 2.0.0 (0100A6301214E000)"
+        - "Fire Emblem: Three Houses 1.2.0 (010055D009F78000)"
+        - "Kirby and the Forgotten Land 1.1.0 (01004D300C5AE000)"
+        - "Kirby's Return to Dream Land Deluxe 1.0.0 (01006B601380E000)"
+        - "Luigi's Mansion 3 1.4.0 (0100DCA0064A6000)"
+        - "Mario Kart 8 Deluxe 4.0.1 (0100152000022000)"
+        - "Mario Kart 8 Deluxe 4.0.0 (0100152000022000)"
+        - "Metroid Dread 2.1.0 (010093801237C000)"
+        - "Monster Sanctuary 2.1.0 (0100A0F00DA68000)"
+        - "My Time at Sandrock 1.4.2.0 (0100B63016916000)"
+        - "NieR:Automata The End of YoRHa Edition (Asian release) 1.0.3 (0100B8E016F76000)"
+        - "OCTOPATH TRAVELER 0 1.0.5 (01005270232F2000)"
+        - "Persona 5 Royal 1.0.2 (01005CA01580E000)"
+        - "Pokémon Brilliant Diamond 1.3.0 (0100000011D90000)"
+        - "Pokémon Legends: Arceus 1.1.1 (01001F5010DFA000)"
+        - "Pokémon Legends: Z-A 2.0.2 (0100F43008C44000)"
+        - "Pokémon Scarlet 4.0.0 (0100A3D008C5C000)"
+        - "Pokémon Shield 1.3.2 (01008DB008C2C000)"
+        - "Pokémon Shining Pearl 1.3.0 (010018E011D92000)"
+        - "Pokémon Sword 1.3.2 (0100ABF008968000)"
+        - "Pokémon Violet 4.0.0 (01008F6008C5E000)"
+        - "Resident Evil 4 v131072 (010099A00BC1E000)"
+        - "STEINS;GATE RE:BOOT 1.0.4 (01008BC024FDE000)"
+        - "STEINS;GATE RE:BOOT 1.0.3 (01008BC024FDE000)"
+        - "STORY OF SEASONS: Grand Bazaar update v655360 (0100DAE01E4C8000)"
+        - "Super Mario 3D World + Bowser's Fury 1.2.2 (010028600EBDA000)"
+        - "Super Mario Bros. Wonder 1.2.1 (010015100B514000)"
+        - "Super Mario Odyssey 1.4.1 (0100000000010000)"
+        - "The Legend of Zelda: Breath of the Wild 1.9.0 (01007EF00011E000)"
+        - "The Legend of Zelda: Breath of the Wild 1.6.0 (01007EF00011E000)"
+        - "The Legend of Zelda: Echoes of Wisdom 1.1.0 (01008CF01BAAC000)"
+        - "The Legend of Zelda: Link's Awakening 1.1.0 (01006BB00C6F0000)"
+        - "The Legend of Zelda: Skyward Sword HD 1.0.1 (01002DA013484000)"
+        - "The Legend of Zelda: Tears of the Kingdom 1.4.3 (0100F2C0115B6000)"
+        - "Tomodachi Life: Living the Dream 1.0.4 (010051F0207B2000)"
+        - "Trails in the Sky 2nd Chapter 1.0.3 (01007A2027548000)"
+        - "Unicorn Overlord 1.05 (010069401ADB8000)"
+        - "Xenoblade Chronicles X: Definitive Edition 1.0.2 (0100453019AA8000)"
+        - "Yoru, Tomosu base game (0100C2901153C000)"
+        - "One of these games, but another update or the base game (say which below)"
+        - "Another game (say which below)"
+    validations:
+      required: true
+  - type: input
+    id: game_other
+    attributes:
+      label: "Game and version, if not in the list"
+      description: "The name, the title ID (16 characters, on the game's sheet) and the update, in either form (1.2.2 or v393216)."
+      placeholder: "Super Mario Bros. Wonder, 010015100B514000, 1.2.2"
+  - type: dropdown
+    id: release
+    attributes:
+      label: "Peanuts Native version"
+      description: "Settings › About shows it. In an older version, please try the newest first: many problems are fixed there."
+      options:
+        - "0.1.5 (the newest)"
+        - "0.1.4"
+        - "0.1.3"
+        - "0.1.2 or older"
+        - "A test or development build (say which in \"Anything else\")"
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: "Device"
+      options:
+        - "AYN Thor"
+        - "AYN Odin (2, 3 or another)"
+        - "Retroid Pocket Duo"
+        - "Retroid Pocket with the Dual Screen add-on"
+        - "Another Retroid Pocket"
+        - "AYANEO Pocket DS"
+        - "Another handheld"
+        - "Phone"
+        - "Foldable phone"
+        - "Tablet"
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: "Model"
+      description: "The exact model, and for the Thor its variant (Base, Pro or Max)."
+      placeholder: "AYN Thor Max"
+    validations:
+      required: true
+  - type: dropdown
+    id: chip
+    attributes:
+      label: "Chip"
+      description: "The device's settings show it under About phone, or look the model up. The chip, not the GPU alone."
+      options:
+        - "Snapdragon 8 Elite Gen 5 (Adreno 840)"
+        - "Snapdragon 8 Elite (Adreno 830)"
+        - "Snapdragon 8s Gen 4 (Adreno 825)"
+        - "Snapdragon 8 Gen 3 (Adreno 750)"
+        - "Snapdragon 8s Gen 3 (Adreno 735)"
+        - "Snapdragon 8 Gen 2 (Adreno 740), as in the AYN Thor"
+        - "Snapdragon 8 Gen 1 or 8+ Gen 1 (Adreno 730)"
+        - "Snapdragon 888, 870 or 865 (Adreno 660 or 650)"
+        - "Snapdragon 7 series (for example 7+ Gen 2 or 7+ Gen 3)"
+        - "Snapdragon G series (G3x Gen 2, G3 Gen 3, ...)"
+        - "Qualcomm Dragonwing (as in the Retroid Pocket Duo)"
+        - "Snapdragon 6 or 4 series, or older"
+        - "MediaTek Dimensity or Helio (Mali GPU)"
+        - "Samsung Exynos (Xclipse or Mali GPU)"
+        - "Google Tensor"
+        - "Another chip, or I don't know"
+    validations:
+      required: true
+  - type: dropdown
+    id: ram
+    attributes:
+      label: "RAM"
+      options:
+        - "Less than 8 GB"
+        - "8 GB (Android may show 7.x GB)"
+        - "12 GB"
+        - "16 GB"
+        - "24 GB or more"
+    validations:
+      required: true
+  - type: dropdown
+    id: android
+    attributes:
+      label: "Android version"
+      options:
+        - "Android 13"
+        - "Android 14"
+        - "Android 15"
+        - "Android 16"
+        - "Android 17"
+        - "Newer than Android 17"
+        - "Older than Android 13"
+    validations:
+      required: true
+  - type: dropdown
+    id: driver
+    attributes:
+      label: "GPU driver (Settings › GPU driver, or the game's own)"
+      description: "The one the game used: a game can have its own. Its log says which driver it really loaded."
+      options:
+        - "System driver"
+        - "Turnip by Mr. Purple (T-numbers, for example T30)"
+        - "Turnip Gen8 by StevenMXZ (V-numbers, for example V39)"
+        - "Another Turnip (mainline Mesa, TurnipZ, Turnip Duo, ...)"
+        - "PanVK (Mali)"
+        - "RADV (Xclipse)"
+        - "Another custom driver"
+        - "I don't know"
+    validations:
+      required: true
+  - type: input
+    id: driver_version
+    attributes:
+      label: "Driver name and version, if not the system driver"
+      description: "As Settings › GPU driver lists it."
+      placeholder: "Turnip Gen8 V39"
+  - type: dropdown
+    id: driver_tried
+    attributes:
+      label: "With another driver"
+      options:
+        - "The same problem with another driver"
+        - "Only with this driver"
+        - "Not tried"
+    validations:
+      required: true
+  - type: dropdown
+    id: readiness
+    attributes:
+      label: "Readiness check (Settings › Readiness check)"
+      description: "Its **Copy report** copies the full text: paste it into \"Anything else\" when it says more than Ready."
+      options:
+        - "Ready"
+        - "Ready, with limits"
+        - "Not ready"
+        - "Not run"
+    validations:
+      required: true
+  - type: dropdown
+    id: settings
+    attributes:
+      label: "Settings you changed for this game"
+      description: "Pick all that apply, and give the values in \"Anything else\"."
+      multiple: true
+      options:
+        - "Nothing, all as they came"
+        - "Console mode (docked or handheld)"
+        - "Resolution, its scale, or Dynamic resolution"
+        - "Upscaler or FSR sharpness"
+        - "Frame rate cap (not \"Game owned\")"
+        - "Hold 60 fps"
+        - "Frame generation"
+        - "Use fast cores"
+        - "RAM saver"
+        - "Advanced switches, Tester settings or extra environment"
+        - "Swap screens"
+        - "Mods (say which in \"Anything else\")"
+  - type: dropdown
+    id: controls
+    attributes:
+      label: "Controls used, if the problem is with controls"
+      multiple: true
+      options:
+        - "The device's own buttons"
+        - "A Bluetooth controller (Switch Pro, Xbox, DualSense, ...)"
+        - "A USB controller"
+        - "On-screen controls"
+        - "The device's gyro"
+        - "A controller's gyro"
+  - type: textarea
+    id: log
+    attributes:
+      label: "Log of the run"
+      description: |
+        Right after the problem, before you start the game again: hold the game's cover › **Storage** › **Share log** (that game's newest run), or Settings › **Share log**. After "The game stopped unexpectedly", the dialog's **Share log** works too. Its file name starts with the game's title ID.
+        Best: save the file, zip it and drag the .zip into this box. Or paste the whole log into the block below (it is collapsed in the issue), and keep the `<details>` lines.
+      value: |
+        <details>
+        <summary>Log (click to expand)</summary>
+
+        ```text
+        paste the log here, or delete this block when you attach the file
+        ```
+
+        </details>
+    validations:
+      required: true
+  - type: textarea
+    id: build_log
+    attributes:
+      label: "Build log, if the problem began after a build"
+      description: "When the game ran before and the problem began after it was built, prepared or updated again. Tap **Share build log** on the game's card on Home (it shows while a build has stopped or failed), on the Prepare card, or hold the game's cover › **Storage** › **Share build log**; then **Save to a folder**, and drag that .zip into this box as it is."
+      placeholder: "Drag the build log .zip here"
+  - type: textarea
+    id: save
+    attributes:
+      label: "Save zip, to reproduce it"
+      description: |
+        With your save, the problem can be played on another device instead of guessed at: most of all when it happens at a certain place or point in the game (for a crash before the title screen it is not needed). Back up right where the problem starts.
+        Hold the game's cover › **Saves** › **Back up saves**. If it makes a `.zip`, drag that file into this box. Otherwise zip the newest folder in `Switch2/save-backups/<title ID>/` together with the `.manifest.tsv` beside it (then **Import save** checks every file), and drag the zip in. GitHub takes files up to 25 MB.
+        A save holds your progress, not game data, so it is fine to attach; it can hold the names you gave in the game.
+      placeholder: "Drag the save .zip here"
+  - type: input
+    id: save_from
+    attributes:
+      label: "From the save to the problem"
+      description: "Which slot or file to load and what to do from there. Say so if the save comes from another game version than the one picked above, a console or an emulator."
+      placeholder: "Slot 2: walk north out of the village; it freezes on the bridge"
+  - type: textarea
+    id: extra
+    attributes:
+      label: "Anything else"
+      description: "The values of the settings you changed, the readiness report, a phone cooler or charger, other apps open, screenshots or a short video (a link to YouTube or similar is fine)."
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "Before sending"
+      options:
+        - label: "I searched the open issues, and this is not one of them."
+        - label: "The log is from the run with the problem, of this game (its file name starts with the game's title ID)."
+          required: true
+        - label: "I built the game again after the last app update (hold the cover › Storage › Build again), or it was built with this version."
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: "Rules"
+      description: "Posts that share, offer or ask for game files, keys or links are edited or removed."
+      options:
+        - label: "I play a dump of a game I own, made with my own console."
+          required: true
+        - label: "I am not attaching, offering or linking game files, keys or firmware."
+          required: true

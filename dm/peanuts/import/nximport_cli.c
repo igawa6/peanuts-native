@@ -1,7 +1,8 @@
 // nximport_cli — a test driver for libnximport (not shipped in the APK).
-//   nximport_cli [--keys prod.keys] probe <nsp|xci>...
-//   nximport_cli [--keys prod.keys] icon <nsp|xci> <title id|-> <out.png>
-//   nximport_cli [--keys prod.keys] nup <out.nup> <base title id> <nsp|xci>...
+//   nximport_cli [--keys prod.keys] probe <nsp|xci|nsz|xcz>...
+//   nximport_cli [--keys prod.keys] icon <nsp|xci|nsz|xcz> <title id|-> <out.png>
+//   nximport_cli [--keys prod.keys] nup <out.nup> <base title id> <nsp|xci|nsz|xcz>...   (Ctrl-C stops it: no .nup, nothing left behind)
+//   nximport_cli [--keys prod.keys] check <nsz|xcz>...  (every NCZ rebuilt and checked against its name and its CNMT; nothing is written)
 //   nximport_cli [--keys prod.keys] fonts <firmware dir> <out dir>
 //   nximport_cli verify <file.nup>                 (lists every entry: size, offset, codec)
 //   nximport_cli cat <file.nup> <entry path> <out file>
@@ -9,21 +10,65 @@
 #define _POSIX_C_SOURCE 200809L
 #include "nximport.h"
 #include "nx_internal.h"
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #ifdef _WIN32
 #include <pthread_time.h>   // winpthreads' clock_gettime
+#else
+#include <sys/resource.h>   // getrusage: the peak memory an import took
 #endif
 
 static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec / 1e9; }
 static int die(const char *what) { fprintf(stderr, "%s: %s\n", what, nximport_last_error()); return 1; }
 
-static double t0; static const char *last_step; static long long last_mb = -1;
+static double t0; static const char *last_step; static char last_name[300]; static long long last_mb = -1;
 static void progress(void *u, const char *step, long long done, long long total) {
     (void)u; long long mb = done >> 20;
-    if (step != last_step || mb / 64 != last_mb / 64 || done == total) { fprintf(stderr, "\r  [%6.1fs] %-28s %7lld / %lld MiB", now() - t0, step, mb, total >> 20); fflush(stderr); last_step = step; last_mb = mb; }
+    int other = step != last_step || strcmp(step, last_name);   // a new step (the importer reuses one buffer for the names of the files it unpacks or checks)
+    if (other || mb / 64 != last_mb / 64 || done == total) {
+        if (other && last_step && (!strncmp(last_name, "unpack/", 7) || !strncmp(last_name, "check/", 6))) fprintf(stderr, "\n");   // keep each file's last line
+        fprintf(stderr, "\r  [%6.1fs] %-28s %7lld / %lld MiB", now() - t0, step, mb, total >> 20); fflush(stderr);
+        last_step = step; snprintf(last_name, sizeof last_name, "%s", step); last_mb = mb;
+    }
+}
+static void peak(void) {   // the import's peak memory (resident), for measurements
+#ifndef _WIN32
+    struct rusage ru; if (!getrusage(RUSAGE_SELF, &ru)) printf("peak memory %.0f MiB\n", ru.ru_maxrss / 1024.0);
+#endif
+}
+
+static void on_int(int sig) { (void)sig; nximport_cancel(1); }   // Ctrl-C: the import ends at its next step and cleans up
+
+static void tick(void *u, uint64_t n) { long long *d = u; d[0] += (long long)n; progress(NULL, "check", d[0], d[1]); }
+// every .ncz of a compressed dump rebuilt (a solid one only hashed: no temporary file) and checked as the import checks it → 0 all good
+static int check(const char *path) {
+    NxContainer c; NxTitle *ts = NULL; int nt = 0, bad = 0, seen = 0;
+    if (nx_container_open(&c, path) || nx_container_titles(&c, &ts, &nt)) { fprintf(stderr, "%s: %s\n", path, nximport_last_error()); nx_container_close(&c); return 1; }
+    for (int i = 0; i < c.n; i++) {
+        const NxEntry *e = &c.e[i]; size_t l = strlen(e->name); uint8_t sha[32], id[16]; const uint8_t *want = NULL; NxNcz *z;
+        if (l < 4 || strcmp(e->name + l - 4, ".ncz")) continue;
+        seen++;
+        for (int k = 0; k < nt && !want; k++) {
+            if (!strncmp(ts[k].program, e->name, 32)) want = ts[k].program_sha; else if (!strncmp(ts[k].data, e->name, 32)) want = ts[k].data_sha; else if (!strncmp(ts[k].control, e->name, 32)) want = ts[k].control_sha;
+        }
+        if (nx_ncz_open(&z, &c, e)) { printf("  %s  %s\n", e->name, nximport_last_error()); bad++; continue; }
+        long long d[2] = { 0, (long long)nx_ncz_body(z) }; t0 = now(); last_step = NULL;
+        int rc = nx_ncz_prepare(z, NULL, sha, tick, d), named = !rc && !nx_hex_prefix(e->name, id) && !memcmp(sha, id, 16);
+        fprintf(stderr, "\n");
+        if (rc) printf("  %s  %s\n", e->name, nximport_last_error());
+        else if (!named) printf("  %s  does not match its name: damaged\n", e->name);
+        else if (!want) printf("  %s  ok by its name (no CNMT in the file lists it)\n", e->name);
+        else if (memcmp(sha, want, 32)) printf("  %s  matches its name but not its CNMT record: damaged\n", e->name);
+        else printf("  %s  ok (%s, %.1f GiB, %.1fs)\n", e->name, nx_ncz_solid(z) ? "solid" : "blocks", nx_ncz_body(z) / 1073741824.0, now() - t0);
+        bad += rc || !named || (want && memcmp(sha, want, 32));
+        nx_ncz_close(z);
+    }
+    nx_ncz_thread_done();
+    printf("%s: %d compressed NCA%s, %s\n", path, seen, seen == 1 ? "" : "s", !seen ? "nothing to check (not an NSZ or XCZ)" : bad ? "DAMAGED" : "all good");
+    free(ts); nx_container_close(&c); return bad || !seen;
 }
 
 static int list_cb(void *u, const char *path, unsigned long long size, unsigned long long off, int codec) {
@@ -39,7 +84,7 @@ int main(int argc, char **argv) {
         snprintf(defkeys, sizeof defkeys, "%s/.switch/prod.keys", h ? h : ""); keys = defkeys; }
     int a = 1;
     if (a + 1 < argc && !strcmp(argv[a], "--keys")) { keys = argv[a + 1]; a += 2; }
-    if (a >= argc) { fprintf(stderr, "usage: nximport_cli [--keys prod.keys] probe|icon|nup|fonts|verify|cat ...\n"); return 2; }
+    if (a >= argc) { fprintf(stderr, "usage: nximport_cli [--keys prod.keys] probe|icon|nup|check|fonts|verify|cat ...\n"); return 2; }
     const char *cmd = argv[a++];
     if (strcmp(cmd, "verify") && strcmp(cmd, "cat") && nximport_keys(keys)) return die("keys");
     if (!strcmp(cmd, "probe")) {
@@ -48,6 +93,7 @@ int main(int argc, char **argv) {
             if (nximport_probe(argv[a], info, 32, &n)) { fprintf(stderr, "%s: %s\n", argv[a], nximport_last_error()); continue; }
             printf("%s  (%d title%s, %.2fs)\n", argv[a], n, n == 1 ? "" : "s", now() - t);
             for (int i = 0; i < n && i < 32; i++) printf("  title %s  app %s  kind %s  version %u  name \"%s\"  publisher \"%s\"\n", info[i].title_id, info[i].app_id, info[i].kind == 0 ? "base" : info[i].kind == 1 ? "update" : "dlc", info[i].version, info[i].name, info[i].publisher);
+            for (int i = 0; i < n && i < 32; i++) printf("  size %s  %llu  unpack %llu  check %llu\n", info[i].title_id, info[i].size, info[i].unpack, info[i].check);
         }
         return 0;
     }
@@ -59,9 +105,14 @@ int main(int argc, char **argv) {
     if (!strcmp(cmd, "nup")) {
         if (a + 3 > argc) return 2;
         const char *out = argv[a], *tid = argv[a + 1]; const char **in = (const char **)argv + a + 2; int n = argc - a - 2;
-        t0 = now();
+        t0 = now(); signal(SIGINT, on_int);
         if (nximport_write_nup(out, in, n, tid, progress, NULL)) { fprintf(stderr, "\n"); return die("nup"); }
-        fprintf(stderr, "\n"); printf("wrote %s in %.1fs\n", out, now() - t0); return 0;
+        fprintf(stderr, "\n"); printf("wrote %s in %.1fs\n", out, now() - t0); peak(); return 0;
+    }
+    if (!strcmp(cmd, "check")) {
+        int bad = 0; signal(SIGINT, on_int);
+        for (; a < argc; a++) bad |= check(argv[a]);
+        return bad;
     }
     if (!strcmp(cmd, "fonts")) {
         if (a + 2 > argc) return 2;

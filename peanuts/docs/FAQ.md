@@ -53,9 +53,11 @@ The documented requirement is 12 GB or more. On 8 GB devices, building large gam
 
 Plan for the size of the game plus a few GB. Before a build, the game's sheet shows **Needs about … free (a rough estimate)**, or a **Low disk space** warning. The estimate is rough, and a low-space warning does not block the build.
 
+A game compressed as a solid `.nsz` needs about its size once more while it is imported, for the temporary copy (see [Can I build from NSZ or XCZ files?](#can-i-build-from-nsz-or-xcz-files)). The sheet says how much of the estimate that is.
+
 ### What do I need from my own console?
 
-- Your own game dumps as NSP, XCI, `.nup` files or dump folders, with their updates and DLC if you use them.
+- Your own game dumps as NSP, XCI, `.nup` files or dump folders, with their updates and DLC if you use them. NSP and XCI files compressed with nsz (`.nsz`, `.xcz`) work too.
 - Your own `prod.keys`.
 - Your own firmware dump, as a folder or a `.zip`. The app extracts the fonts from it.
 
@@ -152,7 +154,7 @@ Later, change the folders in Settings › Library. **Rescan** reads them again.
 
 ### Where does the app look for my games?
 
-In the **Game folder**, the **Update folder**, the **DLC folder** and the **Build folder**, each up to two folders deep. It finds `.nsp`, `.xci` and `.nup` files and dump folders. Updates and DLC are matched to their game by title ID, wherever they are in those folders. A file deeper than two folders is not found: move it up, or point the folder setting at it.
+In the **Game folder**, the **Update folder**, the **DLC folder** and the **Build folder**, each up to two folders deep. It finds `.nsp`, `.xci`, `.nsz`, `.xcz` and `.nup` files and dump folders. Updates and DLC are matched to their game by title ID, wherever they are in those folders. A file deeper than two folders is not found: move it up, or point the folder setting at it.
 
 If the home screen says **No games found in …**, put your files in that folder and tap Settings › Library › **Rescan**.
 
@@ -335,6 +337,17 @@ The dumps must still be in their folders. If one is missing, the app names it an
 
 The new file is written beside the old one, so for a while both are on the storage. If there is not enough room, the app says how much is needed. When deleting the old file first would make room, it offers that as a second choice. The risk: if the import then fails or is stopped, the game has no `.nup` and cannot be played until a build from its sheet has made one.
 
+### Can I build from NSZ or XCZ files?
+
+Yes. Files compressed with nsz (`.nsz`, `.xcz`) build like `.nsp` and `.xci`, also mixed with them: a compressed base with an uncompressed update, for example. You do not need to keep an uncompressed copy of the game. The game's `.nup` comes out the same as from the uncompressed files.
+
+- Before anything is written, the app rebuilds every compressed part of the game and checks it against the checksums the game's own files record. A damaged or incomplete file stops the build with its name, and nothing is changed: copy or compress the file again, or build from the uncompressed file.
+- A **solid** `.nsz` (nsz's default for `.nsz`) cannot be read out of order, so the import first unpacks it into a temporary file in a hidden folder beside the `.nup`. That needs about the game's size in extra free space for the length of the import, and it is deleted when the import ends, also when it fails or you tap Stop. The game's sheet counts it in its estimate.
+- A **block** file (nsz's default for `.xcz`, or `nsz -B`) is read where it is and needs no extra space. The check reads it once more, which takes a little longer.
+- When a folder holds both the `.nsp` and the `.nsz` of a game, the app uses the `.nsp`.
+- The app reads files made with nsz's own settings. A file compressed with settings it cannot read stops with a message that says so: compress it again with nsz's defaults.
+- The keys are your own `prod.keys` and the file's ticket, as for an `.nsp`.
+
 ### Can I build on a PC or a Mac instead?
 
 Yes. A script prepares the game on a computer and pushes it to the device over USB debugging. See [BUILDER.md](BUILDER.md). It is tested end to end on macOS and on Linux. Windows is written but not yet tested. Games that make shaders while they run, for example Fire Emblem: Three Houses and Octopath Traveler 0, must be built on the device.
@@ -356,9 +369,15 @@ The build stops there and lets you choose. Its card has two buttons:
 
 Older versions of the app went on without asking here, so a game built by one of them can lack these shaders with no message. **Import again** is the thing to try there too.
 
+### A built game has no cover, only a letter. How do I get it back?
+
+The app puts a game's cover into the `.nup` it makes, so the cover stays when the original NSP or XCI is gone and the app's data is cleared. A `.nup` made by an older version of the app has no cover in it: the app then keeps the cover as a `.png` beside the `.nup`, as soon as it has one.
+
+A game built by an older version whose original was deleted before that, and whose app data was cleared since, has no cover left anywhere. To get it back, put the original NSP or XCI, or one of the game's updates, into your game folder once and tap Settings › Library › **Rescan**. The cover is then kept beside the `.nup`, and you can delete the original again. **Import again** also makes a new `.nup` with the cover in it. The game plays the same either way.
+
 ### How do I free up storage?
 
-- Settings › Library › **Free up space** deletes the original dump of a game that is already built. The game keeps playing from its built copy. Keep the original if you will add a later game update.
+- Settings › Library › **Free up space** deletes the original dump of a game that is already built. The game keeps playing from its built copy, and keeps its cover. Keep the original if you will add a later game update.
 - Settings › **Storage** removes leftovers and old files. It never removes saves.
 
 ## Playing
@@ -734,15 +753,16 @@ Out of memory, typically on an 8 GB device: update to 0.1.1 or later, which buil
 
 ### How do I report a bug well?
 
-Open an issue at https://github.com/igawa6/peanuts-native/issues with:
+Open an issue at https://github.com/igawa6/peanuts-native/issues and pick the form that fits:
 
-- what happened, and what you did just before;
-- the device, its RAM and the Android version;
-- the game, its title ID and its update version;
-- the app version and the GPU driver;
-- the Readiness check report (**Copy report**);
-- the log: hold the game's cover › **Storage** › **Share log**, or Settings › **Share log** for the newest log of any game;
-- for a problem with a build (it fails, stops, never finishes, or the app closes during it): the `.zip` of **Share build log** instead, attached as it is.
+- **Game problem**: a game crashes, freezes, shows a black screen, draws wrong, runs slowly, or its sound, controls or saves misbehave. It asks for the log of that run: hold the game's cover › **Storage** › **Share log** right after the problem, before you start the game again, or Settings › **Share log**. Its file name starts with the game's title ID.
+- **Build problem**: adding a game went wrong (the import, Prepare or the companion fails, stops, never finishes, or the app closes during it). It asks for the `.zip` of **Share build log**, attached as it is.
+- **Setup or app problem**: keys, firmware, the game folder and the library (a missing game, **Wrong version**, **File gone**), storage, installing a driver, a companion or a mod, saves, the second screen, or the app itself.
+- **Desktop builder problem**: building a game on a computer ([BUILDER.md](BUILDER.md)) fails.
+- **Game request** and **Feature request**: one game or one idea per post; search first and add a 👍 to an existing one.
+- A companion's page shows something wrong: that goes to the [companions' own issues](https://github.com/igawa6/eden-duo-companions/issues).
+
+The problem forms ask the rest mostly as picks from a list: the game with its version, the app version, the device, chip, RAM and Android version, the GPU driver, the Readiness check's verdict (its **Copy report** text goes in the last box), the settings you changed and whether it worked before. Before you report, update the app and build the game again (hold the cover › **Storage** › **Build again**): many reports are fixed by that.
 
 A screenshot or a short video helps for a wrong picture. Never attach or link game files, keys or firmware.
 

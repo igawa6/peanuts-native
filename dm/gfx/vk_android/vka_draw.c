@@ -616,7 +616,7 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const p_scissor *sc, int has
         R.cnl[i] = nl; R.cext[i] = (VkExtent2D){lw, lh};
         if (lw < w) w = lw; if (lh < h) h = lh; if (nl < layers) layers = nl;
         if (atomic_load_explicit(&vka_rb_track, memory_order_relaxed) && !im->is_video) vka_rb_color = (uint8_t)(1 + (f.srgb != 0));   // PEANUTS: texture readback: the write noted on the next line is a colour target's, through a view of this format (once a companion has asked: vka_readback.inc)
-        vka_img_written(im);
+        vka_img_color_written(im, lv);
     }
     R.ncolor = (uint32_t)n;
     VkRenderingAttachmentInfo *dp = NULL, *sp = NULL;
@@ -1653,7 +1653,7 @@ static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const
                     VRED("shader %016llx binding %u: buffer texture ID %d bound as a storage image: its stores go into its image of rows, not into the texture's memory (a read of that memory, or through a texel buffer, does not see them)", (unsigned long long)sh->key, r[i].binding, tid); }
                 if (tid && !storage && vka_tex_id_is_buffer(tid) && tbuf_img_gpu(tid, r[i].dim) && vktb_memo_bind_gpu(&g_tig, tid, r[i].dim) && (v = vka_tbuf_image_view(tid, r[i].dim))) tid = 0;
                 // PEANUTS end
-                else if (tid) v = vka_tex_id_view_rec(tid, g_cb, r[i].dim, wbf_view_of_binding(storage, r[i].flags, DMSH_VK_BF_RW), &lay);   // (a shader image only read: not a GPU write)
+                else if (tid) v = vka_tex_id_view_samp_rec(tid, storage ? 0 : r[i].sid, g_cb, r[i].dim, wbf_view_of_binding(storage, r[i].flags, DMSH_VK_BF_RW), &lay);   // (a shader image only read: not a GPU write)   // PEANUTS(upstream-candidate): with the binding's sampler (vka_tex.c fb_view_levels)
                 if (tid && v) class_note(sh, st, &r[i], tid, storage);
                 if (tid) tex_peek(sh->key, st, &r[i], v, storage);
                 if (tid && g_rtl_pass && rtl_room()) {   // PEANUTS: DM_VK_RT_LOG: each draw's textures, in order with its draw lines (the tex peek line is logged once per texture)
@@ -3099,6 +3099,10 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     if (icand && !istart && !RUN.open) { if (inst_snap(&g_ia, p, i_ib, i_io, i_it, di, d)) g_ia.mark = vka_enc_total(); } else g_ia.valid = 0;   // a run may start from this draw
     PT(8);
     if (vka_nan_on() >= 2 && vka_nan_split(R.cim, R.nci)) vka_rp_end();   // DM_VK_NANSCAN=2: a scan inside the game's pass
+    // PEANUTS (PR #164): Trails 2nd Chapter: Turnip intermittently corrupts the D16 tiles if the cached
+    // shadow-depth stitch (ALWAYS) and the casters that depth-test against it share a pass.
+    if (sh[1] && sh[1]->key == UINT64_C(0xeb824d256484ca7f) && V.driver_id == VK_DRIVER_ID_MESA_TURNIP &&
+        R.df == VK_FORMAT_D16_UNORM && !R.nci) vka_rp_end();
 }
 
 int dm_sdk_ounce(void);

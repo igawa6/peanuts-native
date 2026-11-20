@@ -1,0 +1,86 @@
+# Written by peanuts/scripts/issue_forms.py: change that script, then run it.
+name: "Game request"
+description: "Ask for a game the app does not have yet, or another version of a game it has"
+labels: ["new-game"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every game needs a profile in the app, and a new one takes from a day to weeks, so a request is a wish, not a promise. One request per game: first search the open issues, and add a 👍 to an existing request instead of a new one.
+        Want to try it yourself? [NEW-GAME.md](https://github.com/igawa6/peanuts-native/blob/main/peanuts/docs/NEW-GAME.md) says how a profile is made.
+        **No game files, keys, firmware or links to them**, and no asking where to get them. Write in English if you can; another language is fine too.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: "What you ask for"
+      options:
+        - "A game the app does not have yet"
+        - "Another version (update) of a game it has"
+        - "DLC of a game it has"
+        - "A game it has, with a mod that needs another version (for example CTGP)"
+    validations:
+      required: true
+  - type: input
+    id: name
+    attributes:
+      label: "Game"
+      description: "Its name as the Switch shows it."
+      placeholder: "Hyrule Warriors: Definitive Edition"
+    validations:
+      required: true
+  - type: input
+    id: title_id
+    attributes:
+      label: "Title ID"
+      description: "The 16 characters the game's sheet shows (for example under Not Supported Yet)."
+      placeholder: "0100A1B2C3D4E000"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "Version you have"
+      description: "The update you would play it with."
+      placeholder: "1.0.6"
+  - type: dropdown
+    id: runs_elsewhere
+    attributes:
+      label: "Where it runs today"
+      multiple: true
+      options:
+        - "On a Switch emulator (Eden, ...)"
+        - "Only on the console"
+        - "I don't know"
+  - type: textarea
+    id: why
+    attributes:
+      label: "Why this game"
+      description: "What makes it worth adding, for example it runs badly elsewhere, or it has a second-screen use."
+  - type: input
+    id: device
+    attributes:
+      label: "Your device"
+      description: "If it matters, for example a low-RAM device."
+      placeholder: "AYN Thor Base"
+  - type: textarea
+    id: extra
+    attributes:
+      label: "Anything else"
+      description: "Anything that helps: what you know of the game's engine, a test you made, a link to a page about the game (never to files)."
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: "Before sending"
+      options:
+        - label: "I searched the open issues, and there is no request for this game yet."
+          required: true
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: "Rules"
+      description: "Posts that share, offer or ask for game files, keys or links are edited or removed."
+      options:
+        - label: "I play a dump of a game I own, made with my own console."
+          required: true
+        - label: "I am not attaching, offering or linking game files, keys or firmware."
+          required: true
