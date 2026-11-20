@@ -21,6 +21,26 @@ public final class FrameStats {
     }
 
     /**
+     * The requested frame-time percentile in ms (1..99). Invalid/non-positive samples are ignored;
+     * fewer than 10 valid samples return NaN so the HUD does not present unstable short-window data.
+     * The nearest-rank index is ceil(percentile * count / 100) - 1.
+     */
+    public static float percentileFrameTime(float[] ms, int n, int percentile) {
+        if (ms == null || percentile < 1 || percentile > 99 || n < 10) return Float.NaN;
+        int limit = Math.min(n, ms.length);
+        float[] valid = new float[limit];
+        int count = 0;
+        for (int i = 0; i < limit; i++) {
+            float value = ms[i];
+            if (Float.isFinite(value) && value > 0f) valid[count++] = value;
+        }
+        if (count < 10) return Float.NaN;
+        Arrays.sort(valid, 0, count);
+        int index = (percentile * count + 99) / 100 - 1;
+        return valid[index];
+    }
+
+    /**
      * 1000 / the 99th-percentile frame time of ms[0..n) in fps: the value at index ceil(0.99 * n) - 1 of the sorted copy.
      * A percentile, not the mean of the worst 1%, so one long hitch in a 512-frame window does not drag the low down. NaN below 10 frames.
      * ceil(0.99 * n) is computed as the integer (99n + 99) / 100 to avoid floating-point rounding.
