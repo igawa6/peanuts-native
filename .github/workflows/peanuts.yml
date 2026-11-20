@@ -45,6 +45,10 @@ jobs:
             echo "::endgroup::"
           done
           exit $fail
+      - name: Android game inventory and readiness regression tests
+        run: |
+          python -m unittest -v dm/tools/tests/test_android_games.py
+          python -m unittest -v dm/tools/tests/test_android_readiness.py
       - name: Profiles, runtime profile and runtime version
         run: |
           sh peanuts/scripts/check-profiles.sh
