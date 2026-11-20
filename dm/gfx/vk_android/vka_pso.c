@@ -1284,6 +1284,13 @@ static void busy_wait(gval *g) {
 typedef struct as_job { struct as_job *next; gval *g; size_t len; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; uint64_t t0, cost; int cs; } as_job;
 static as_job *g_as_head, **g_as_tail = &g_as_head; static pthread_mutex_t g_as_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_as_cv = PTHREAD_COND_INITIALIZER;
 static _Atomic uint64_t g_as_queued, g_as_made, g_as_skips, g_as_ns, g_as_lat_max_ns; static _Atomic int g_as_depth, g_as_depth_max;
+// PEANUTS begin: whether the frame path's last lookup that returned no pipeline did so because a background thread is to make it, not because the driver refused it
+// (the replay thread's only, as the lookups), and how many pipelines the asynchronous threads have queued or are making: vka_draw.c counts those skips apart from the
+// driver's refusals, and the "Preparing graphics" notice says while they happen (vka_warmnote.h)
+static int g_last_pending;
+int vka_pso_last_pending(void) { return g_last_pending; }
+int vka_pso_waiting(void) { int d = atomic_load_explicit(&g_as_depth, memory_order_relaxed); return d > 0 ? d : 0; }
+// PEANUTS end
 // The queue's order (vka_psogate.h vkpg_take_oldest): the job of least predicted cost first, the oldest in its turn. DM_VK_PSO_ORDER=0 (restart): arrival order, as
 // before 2026-11-11. DM_VK_PSO_FAIR_MS (restart, 2000; 0 never): how long the oldest job waits before it takes turns with the cheapest. Under g_as_mu: g_as_credit (ns)
 // PEANUTS: the draws not skipped (vka_gfx_pipeline_now): their pipelines by reason (vka_psosync.h: a small target, memory written), the frame time they took, and
@@ -1465,10 +1472,11 @@ static void gfx_build(gval *g, size_t len, vka_shader *const sh[VKA_NSTAGE], con
     if (linked) opt_queue(g, sh, lay, k);
 }
 static inline VkPipeline gval_use(gval *g) {
+    g_last_pending = 0;   // PEANUTS
     if (!g) return VK_NULL_HANDLE;
     if (__atomic_load_n(&g->linked, __ATOMIC_ACQUIRE)) atomic_fetch_add_explicit(&g_hy_draws, 1, memory_order_relaxed);
     VkPipeline p = __atomic_load_n(&g->p, __ATOMIC_ACQUIRE);
-    if (!p && __atomic_load_n(&g->busy, __ATOMIC_ACQUIRE)) atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed);
+    if (!p && __atomic_load_n(&g->busy, __ATOMIC_ACQUIRE)) { atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed); g_last_pending = 1; }   // PEANUTS: g_last_pending
     return p;
 }
 static gval *last_g;   // PEANUTS: at file scope (was vka_gfx_pipeline's own): vka_gfx_pipeline_now makes the entry of the last lookup
@@ -1630,6 +1638,11 @@ static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderMod
       if (!prewarm && !r && ms_ > 1000) vka_pso_save(2); }
 }
 VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 0); }
-VkPipeline vka_cs_pipeline_frame(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 1); }
+VkPipeline vka_cs_pipeline_frame(vka_shader *cs, const vka_layout *lay) {   // PEANUTS: g_last_pending, from the skips cs_obtain counted for this dispatch
+    int made; uint64_t s0 = atomic_load_explicit(&g_as_skips, memory_order_relaxed);
+    VkPipeline p = cs_obtain(cs, lay, 0, &made, 0, 0, 1);
+    g_last_pending = !p && atomic_load_explicit(&g_as_skips, memory_order_relaxed) != s0;
+    return p;
+}
 VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask) { int made; return cs_obtain(cs, lay, 0, &made, umask, smask, 0); }
 #endif

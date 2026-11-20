@@ -33,6 +33,7 @@ static int g_vattr_clear = 1;   // DM_VK_VATTR_CLEAR: a BindVertexAttribState re
                                 // 0 = the old merge, where the attributes past its count keep the earlier binds' formats and offsets
 uint64_t vka_n_rp;   // render passes the draws opened (vka_exec.c replay statistics)
 static uint64_t g_draws, g_skipped, g_dispatches;
+static uint64_t g_skip_warm;   // PEANUTS: the skips while a pipeline is made in the background (DM_VK_PSO_ASYNC), not a device cause; also counted in g_skipped (vka_warmnote.h)
 static uint64_t g_skip_dev[VKS_N];   // the skips whose cause is the device or its driver (vka_skipwarn.h), also counted in g_skipped; read by vka_draw_skips
 static uint32_t g_claim_words;   // the draw's claim words (an upper bound of its primitives): 0 = its geometry shader takes no claim
 #define SKIPD(c, ...) do { g_skip_dev[c]++; SKIP(__VA_ARGS__); } while (0)   // (SKIP, counted as a device cause)
@@ -2786,6 +2787,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     if (!mesh) vin_build_kept(d, sh[0], &k);
     PT(4);
     VkPipeline p = vka_gfx_pipeline(sh, &lay, &k);
+    int warm = !p && vka_pso_last_pending();   // PEANUTS: being made in the background, not refused (g_skip_warm)
     // PEANUTS begin: with DM_VK_PSO_ASYNC a pipeline the cache lacks is made in the background and its draws skipped until then. Not the draws whose result the game
     // keeps (vka_psosync.h vkps_why: a draw into a target of at most 64x64 of the game's pixels, a draw that writes memory or runs with the rasterizer off):
     // theirs is made now, on the frame path (Super Mario Odyssey stayed black for a whole first run). Looked at only when a pipeline is missing. A fixed rule, no switch
@@ -2793,10 +2795,10 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
         float rf = R.rsf > 0.f ? R.rsf : 1.f;   // (the target in the game's own pixels: DM_RES_SCALE)
         vkps_draw q = {.writes = d->rast_discard || draw_writes(sh, d), .w = (uint32_t)(R.full_w / rf + 0.5f), .h = (uint32_t)(R.full_h / rf + 0.5f)};
         int why = vkps_why(&q);
-        if (why) p = vka_gfx_pipeline_now(sh, why, ind != 0 || mdi != 0 ? -1 : (long long)(dw ? dw->count : di->count), q.w, q.h);
+        if (why) { p = vka_gfx_pipeline_now(sh, why, ind != 0 || mdi != 0 ? -1 : (long long)(dw ? dw->count : di->count), q.w, q.h); warm = 0; }   // (none now: refused)
     }
     // PEANUTS end
-    if (!p) { g_skipped++; g_skip_dev[VKS_PIPELINE]++; return; }   // the driver refused it (logged when it was made)
+    if (!p) { g_skipped++; if (warm) g_skip_warm++; else g_skip_dev[VKS_PIPELINE]++; return; }   // the driver refused it (logged when it was made); PEANUTS: or a background thread makes it
     // DM_VK_INSTANCE: a direct indexed draw of one instance with only vertex and pixel shaders, their base modules and no retyped inputs may join the open run (its
     // instanced pipeline stays bound) or start one (decided at the sets, below)
     VkBuffer i_ib = VK_NULL_HANDLE; VkDeviceSize i_io = 0; VkIndexType i_it = VK_INDEX_TYPE_UINT16;
@@ -3434,7 +3436,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     vka_layout lay; if (!vka_layout_of(sh, 1, &lay)) SKIP("dispatch skipped: no pipeline layout");
     VkPipeline p = vka_cs_pipeline_frame(sh[5], &lay);   // (VK_NULL_HANDLE while being made in the background, DM_VK_CS_ASYNC: the dispatch skipped)
     if (vka_nan_on()) vka_tex_watch_dispatch(sh[5]->key);
-    if (!p) { g_skipped++; g_skip_dev[VKS_PIPELINE]++; return; }
+    if (!p) { g_skipped++; if (vka_pso_last_pending()) g_skip_warm++; else g_skip_dev[VKS_PIPELINE]++; return; }   // PEANUTS: g_skip_warm
     d->b.dispatch[0] = (uint32_t)dp->x; d->b.dispatch[1] = (uint32_t)dp->y; d->b.dispatch[2] = (uint32_t)dp->z; d->b.nvn2 = (uint32_t)vka_nvn2();
     VkBuffer ib = VK_NULL_HANDLE; VkDeviceSize io = 0;
     if (dp->ind && (!vka_addr(dp->ind, 12, &ib, &io, NULL) || (io & 3))) SKIPU(UNP_INDIRECT, dp->ind, /* PEANUTS: counted */ "indirect dispatch arguments at %#llx are not in placed guest RAM: skipped", (unsigned long long)dp->ind);
@@ -3594,6 +3596,7 @@ void vka_draw_unplaced(char *b, size_t n) {
 }
 // PEANUTS end
 // The device-caused skips by cause, the draws and dispatches that ran and every other skip (vka_skipwarn.h), for the skipped-work warning (vka_exec.c mtl_set_frame)
+uint64_t vka_draw_warm_skips(void) { return g_skip_warm; }   // PEANUTS: for the "Preparing graphics" notice (vka_exec.c, vka_warmnote.h)
 void vka_draw_skips(uint64_t dev[VKS_N], uint64_t *work, uint64_t *other) {
     uint64_t t = 0; for (int i = 0; i < VKS_N; i++) { dev[i] = g_skip_dev[i]; t += dev[i]; }
     *work = g_draws + g_dispatches; *other = g_skipped > t ? g_skipped - t : 0;
