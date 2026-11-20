@@ -205,6 +205,13 @@ public final class GameSheet {
         if (title.base == null) PUi.add(box, PUi.body(a, "No base game found. Only an update or DLC is in the folder."), 14);
         if (fileGone) PUi.add(box, PUi.body(a, "Pick the file again above before building."), 14);
         if (building) PUi.add(box, PUi.small(a, "Building now: the progress is on the game's card."), 14);
+        String chosenFolder = PeanutsPrefs.chosenBuildDir(a, title.titleId);
+        String defaultFolder = PeanutsPrefs.buildDir(a);
+        PUi.Setting destination = new PUi.Setting(a, "🗂️", "Build destination",
+                Haptics.on(Haptics.Word.TICK, v -> pickBuildFolder())).value(chosenFolder != null ? chosenFolder
+                        : defaultFolder != null ? "Default · " + defaultFolder : "Default location · Tap to choose a folder").chevron(a);
+        destination.view.setEnabled(!building);
+        PUi.add(box, destination.view, 12);
         // Space needed (P4/SpaceEstimate, warn-only — never disables Build, the multiplier is uncalibrated)
         renderSpaceLine();
         boolean unsupported = chosenVersionState() == LibraryScanner.VersionState.UNSUPPORTED;
@@ -412,7 +419,8 @@ public final class GameSheet {
         long packBasis = needsImport ? importBytes : (cachedBasis != null ? cachedBasis : 0L);
         // A build folder (Settings - Library - Build folder), when set, is where this title's .nup and pack both go instead: measure its volume, not the
         // game folder's / the app's own storage
-        File buildGameDir = PeanutsPrefs.buildGameDir(a, title.titleId);
+        String root = PeanutsPrefs.chosenBuildDir(a, title.titleId);
+        File buildGameDir = root == null ? PeanutsPrefs.buildGameDir(a, title.titleId) : PeanutsPrefs.buildGameDir(root, title.titleId);
         String gameDir = PeanutsPrefs.gameDir(a);
         File importDest = buildGameDir != null ? buildGameDir : (gameDir == null ? null : new File(gameDir));
         File packVolume = buildGameDir != null ? new File(buildGameDir, "pack") : a.getExternalFilesDir(null);
@@ -463,6 +471,24 @@ public final class GameSheet {
         // buildAnyway stays false: a job that already needed it is already marked tryAnyway in its own job.json (Prepare.run0 reads that, not this request's
         // consent, once a job exists), and a job that never needed it does not care
         return s;
+    }
+
+    private void pickBuildFolder() {
+        if (lib.building(title.titleId)) return;
+        List<String> dirs = PeanutsPrefs.buildDirs(a);
+        String[] labels = new String[dirs.size() + 1];
+        labels[0] = dirs.isEmpty() ? "Default location" : "Default · " + dirs.get(0);
+        for (int i = 0; i < dirs.size(); i++) labels[i + 1] = dirs.get(i);
+        String chosen = PeanutsPrefs.chosenBuildDir(a, title.titleId);
+        new AlertDialog.Builder(a).setTitle("Build destination").setSingleChoiceItems(labels, dirs.indexOf(chosen) + 1, (d, w) -> {
+            d.dismiss();
+            chooseBuildFolder(w == 0 ? null : dirs.get(w - 1));
+        }).setPositiveButton("Add folder…", (d, w) -> LibrarySettings.addBuildFolder(a)).setNegativeButton("Cancel", null).show();
+    }
+
+    void chooseBuildFolder(String path) {
+        PeanutsPrefs.chosenBuildDir(a, title.titleId, path);
+        render();
     }
 
     /**

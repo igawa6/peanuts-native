@@ -17,6 +17,7 @@ Update 1.0.1 (v65536) over the base game. PlatinumGames' engine, SDK 6.4.0, NVN,
 - 82 PKZ archives, version `0x10000`, holding 8,556 Zstandard-compressed entries, alongside Bink 2 movies (`.bk2`) and Wwise banks and streams. The PKZ directory and name-table layout matches version `0x20000`; every entry's bounds were checked and one entry per archive was decoded before extending the reader.
 - `root.pkz` contains PlatinumGames DAT shader archives. The full split finds 1,348 distinct shaders: 540 vertex, 738 pixel, 70 compute. Single-stage programs produce 1,620 cover pairs. All 1,348 compile for Mac and iOS, with zero undecoded bindings and zero unfillable driver-bank reads.
 - GPU code versions in the root shader archives include 1.9, 1.12 and 1.15, despite the linked SDK being 6.4.0. The game sets upper-left window origin, near-zero depth, a 1600×900 swap chain and present interval 2.
+- Android bundles 186 Vulkan pipeline keys recorded on Thor. With Turnip Gen8 V39 and an empty cache, “Preparing shaders” built 163 pipelines in 3.4 seconds. The next launch reused the cache and skipped the progress screen. [Cold startup](../../../docs/reference/rendering.md#a-draw-skipped-for-its-pipeline-left-a-result-the-game-kept-android) <!-- PEANUTS -->
 
 ## Services and SDK
 
@@ -34,6 +35,8 @@ Update 1.0.1 (v65536) over the base game. PlatinumGames' engine, SDK 6.4.0, NVN,
 ## Frame rate
 
 **Current: 60 fps gameplay target on 1.0.1**, main build `4b159f0f7a360669738390ee8657b4f0`. The profile uses the host's frame step and pacing instead of simply overriding present interval 2. `DM_FPS_TARGET=30` selects a 30 fps cap with the same timing; `DM_FPS_TARGET=0` executes the original instructions at every hook.
+
+The Android frame-rate menu offers 20, 30, 40, 45, 60, 90 and 120 fps. The clock uses measured frame time for gameplay and the original 30 Hz step for fixed-step cinematics. The timing tests execute the emitted ARM64 stubs and check fractional timer carry at every cap. On the AYN Thor with Turnip Gen8 V39, a 120 fps cap reached about 119 fps during character setup, about 30 fps in the opening cinematic and roughly 55–77 fps while firing, steering and evading in the motorcycle tutorial. <!-- PEANUTS -->
 
 **Resolved: half-frame steps stop integer timers.** The earlier four-cut [FPSLocker experiment](https://github.com/masagrator/FPSLocker-Warehouse/blob/v4/SaltySD/plugins/FPSLocker/patches/01007300020FA000/4B159F0F7A360669.yaml) raised the title frame rate, but `main+0x48be14` and `main+0x57e7e0` truncated the half-frame step to zero. The new clock stores the floating 30 Hz step at clock `+0xd0`, carries fractional ticks at `+0xd4` and publishes whole ticks at `+0xd8`. Both 60 half-step updates and 30 full-step updates advance integer timers by 30 ticks. Action/input windows, hit-stop, pad repeat and rumble counters consume those whole ticks; camera interpolation uses elapsed-time decay.
 

@@ -147,7 +147,7 @@ def fpsLimitMaxOf = { String game ->
 def fpsLockerOf = { String game ->
     // PEANUTS: reviewed typed rows include dynamic elapsed FPS and full-width state caps.
     (tsvRows(game, 'fpslocker') + tsvRows(game, 'fps_memory')).collect { c ->
-        if (c.size() != 6 || !(c[1] ==~ /[0-9a-f]{32}/) || !(c[2] in ['zero_i32','target_f32','frame_ms_f32','frame_ms2_f32','vsync_u32','inverse_f32','frame_scaled_f32','target_scaled_f32','time_ratio_f32','flag_cap_u8','target_i32','zero_u16','time_step_pair_f32','constant_i32','elapsed_fps_f32','flag_cap_u32_gt']) || !(c[3] ==~ /[@%]?0x[0-9a-f]+(\/0x[0-9a-f]+){0,3}/) || !(c[4] in ['1','2']))
+        if (c.size() != 6 || !(c[1] ==~ /[0-9a-f]{32}/) || !(c[2] in ['zero_i32','target_f32','frame_ms_f32','frame_ms2_f32','vsync_u32','inverse_f32','frame_scaled_f32','target_scaled_f32','time_ratio_f32','flag_cap_u8','target_i32','zero_u16','time_step_pair_f32','constant_i32','elapsed_fps_f32','flag_cap_u32_gt','step_ticks_u32']) || !(c[3] ==~ /[@%]?0x[0-9a-f]+(\/0x[0-9a-f]+){0,4}/) || !(c[4] in ['1','2'])) // PEANUTS: integer fixed-step ticks and four-offset chains
             throw new GradleException("$game: invalid reviewed fpslocker row")
         c[1..5].join(',')
     }.join(';')
@@ -290,7 +290,8 @@ def handheldGames = nxGames.findAll { g -> tsvRows(g, 'op_mode').any { it.size()
 // Whether the game has cheat files (game.tsv cheats rows: pack_android.py place_cheats copies them into the pack): "1", or empty. The launcher then offers Game settings › Cheats (Cheats.java)
 def cheatsOf = { String game -> tsvRows(game, 'cheats').isEmpty() ? '' : '1' }
 def timeOfDayOf = { String game -> tsvRows(game, 'time_of_day').any { it.size() > 1 && it[1].trim() == '1' } ? '1' : '' }   // the Game tab's Time of day row only for profiles whose day/night cycle follows the user clock
-def nxProfiles = nxGames.collect { g -> [g, nameOf(g).replaceAll(/[\t\n\\"]/, ' '), shaderTotalOf(g), shaderInputsOf(g), buildsOf(g), reqsOf(g), statusOf(g), deltaOf(g), stampOf(g), resolutionOf(g), romfsChecksOf(g), gpuTsOf(g), windowOf(g), decoupleOf(g), drsOf(g), fpsLimitOf(g), dlssOf(g), presentOnlyOf(g), stepsOf(g), tsvRows(g, 'mesh_vegetation_cut').isEmpty() ? '' : '1', optionsOf(g), sceneOf(g), presetsOf(g), skipLayersOf(g), recommendOf(g), variantsOf(g), presetFromOf(g), linkPlayOf(g), aspectsOf(g), timeOfDayOf(g), cheatsOf(g), fpsLimitMaxOf(g), fpsLockerOf(g), fpsLockerPlanOf(g), fpsLimitMinOf(g), fpsModesOf(g), fpsPlan120Of(g)].join('\\t') }.join('\\n')
+// PEANUTS: include each game's supported options in the launcher profile.
+def nxProfiles = nxGames.collect { g -> [g, nameOf(g).replaceAll(/[\t\n\\"]/, ' '), shaderTotalOf(g), shaderInputsOf(g), buildsOf(g), reqsOf(g), statusOf(g), deltaOf(g), stampOf(g), resolutionOf(g), romfsChecksOf(g), gpuTsOf(g), windowOf(g), decoupleOf(g), drsOf(g), fpsLimitOf(g), dlssOf(g), presentOnlyOf(g), stepsOf(g), tsvRows(g, 'mesh_vegetation_cut').isEmpty() ? '' : '1', optionsOf(g), sceneOf(g), presetsOf(g), skipLayersOf(g), recommendOf(g), variantsOf(g), presetFromOf(g), linkPlayOf(g), aspectsOf(g), timeOfDayOf(g), cheatsOf(g), fpsLimitMaxOf(g), fpsLockerOf(g), fpsLockerPlanOf(g), fpsLimitMinOf(g), fpsModesOf(g), fpsPlan120Of(g), tsvRows(g, 'fps_step_elapsed').isEmpty() ? '' : '1'].join('\\t') }.join('\\n')
 def lockOf = { String key -> def f = new File(repo, 'dm/gfx/tools/dmsh_chain.lock'); f.isFile() ? (f.readLines().find { it.startsWith(key + '\t') }?.split('\t')?.getAt(1) ?: 'unknown') : 'unknown' }
 
 android {
@@ -443,6 +444,10 @@ android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/nxext
 tasks.named('preBuild') { dependsOn nxFont }
 
 // ./gradlew apk → out/nxnative-android.apk (-PnxPlay=true: nxnative-android-play.apk; -PnxApp=<suffix>: nxnative-android-<suffix>.apk)
+if (nxApp == 'peanuts') {
+    // PEANUTS: an incremental package can retain an entire replaced tools.zip as dead space. Recreate the final archive from its built inputs.
+    tasks.matching { it.name == 'packageRelease' }.configureEach { outputs.upToDateWhen { false } }
+}
 tasks.register('apk', Copy) {
     dependsOn 'assembleRelease'
     from(layout.buildDirectory.dir('outputs/apk/release')) { include '*.apk' }
@@ -505,6 +510,8 @@ if (nxPackEngine == 'native') {
             include 'dm/peanuts/profile/gen_runtime_profile.py'   // PEANUTS: a build with a code mod that adds a module writes its own profile.bin with it (pack_android.py --modules); without the file every such build stopped at "Rewriting the game's code"
             include 'dm/tools/rewriter_equiv/*'   // earlier rewriter files of identical output: their pack keys still count (pack_android.py EQUIV, RewriteKey)
             nxGames.each { include "dm/games/$it/**" }   // the profile of each game the APK runs
+            // PEANUTS: the phone packer needs neither the development notes nor the host's prewarm seeds (assets/profiles or compiled into the host).
+            exclude 'dm/games/*/README.md', 'dm/games/*/vk_prewarm.bin'
             include 'dm/games/*/patches.py'   // every profile's rewriter patches: patch_nso.py lists them all in build_src.sha256, as on the Mac
             include 'dm/gfx/tools/*.py', 'dm/gfx/tools/*.lock', 'dm/gfx/tools/*.metal', 'dm/gfx/tools/*.tsv', 'dm/gfx/tools/dmsh_xlate/Program.cs', 'dm/gfx/tools/dmsh_xlate/*.csproj'
             // the other files DMSH_CHAIN hashes (dmsh_chain.py FILES): vk_android_build.py recomputes the version on the phone
@@ -561,6 +568,20 @@ if (nxGenericHost) {
         def seeds = nxGames.collect { new File(repo, "dm/games/$it/vk_prewarm.bin") }.findAll { it.isFile() }
         inputs.property('seeds', seeds.collect { it.parentFile.name }.join(','))
         inputs.files(seeds)
+        // PEANUTS: release seeds captured on the device are private build inputs.
+        def manifest = new File(repo, 'peanuts/prewarm-sha256.tsv')
+        def seedDir = providers.environmentVariable('PN_PREWARM_SEEDS').getOrElse('')
+        def expectedSeeds = manifest.readLines('UTF-8').collectEntries { line ->
+            def fields = line.split('\t')
+            [(fields[0]): fields[1]]
+        }
+        def releaseSeeds = nxGames.findAll { expectedSeeds.containsKey(it) }.collectEntries { title ->
+            def seed = seedDir ? new File(seedDir, "${title}.seed") : new File(repo, "dm/games/$title/vk_prewarm.bin")
+            [(title): seed]
+        }
+        inputs.file(manifest)
+        inputs.property('requireReleaseSeeds', nxRelease || !seedDir.isEmpty())
+        inputs.files(releaseSeeds.values().findAll { it.isFile() })
         outputs.dir(genDir)
         doLast {
             def run = { List<String> args ->
@@ -576,7 +597,19 @@ if (nxGenericHost) {
             project.delete(o); o.mkdirs()
             nxGames.each { g ->
                 run(['profile', g, new File(o, "${g}.profile.bin").path])
-                run(['seed', g, new File(o, "${g}.seed").path])
+                // PEANUTS: check the actual bytes written, including on a same-version rebuild.
+                def output = new File(o, "${g}.seed")
+                def seed = releaseSeeds[g]
+                if (seed?.isFile()) {
+                    def bytes = seed.bytes
+                    def digest = java.security.MessageDigest.getInstance('SHA-256').digest(bytes).encodeHex().toString()
+                    if (digest != expectedSeeds[g]) throw new GradleException("Prewarm seed for $g has SHA-256 $digest, expected ${expectedSeeds[g]}")
+                    output.bytes = bytes
+                } else if (seed != null && (nxRelease || seedDir)) {
+                    throw new GradleException("Missing release prewarm seed for $g. Set PN_PREWARM_SEEDS to the folder containing ${g}.seed")
+                } else {
+                    run(['seed', g, output.path])
+                }
             }
         }
     }

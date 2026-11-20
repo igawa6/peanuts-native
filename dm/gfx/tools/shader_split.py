@@ -1107,6 +1107,43 @@ def cpk_shaders(path, rel, ents, out):
             print(f'[RED] /{rel}/{e[0]}: {x}; not scanned', flush=True); continue
         scan_blob(d, f'/{rel}/{e[0]}', out)
 
+# PEANUTS: Split Diablo III packages by byte range.
+D3CPK = b'D3CPK'   # job tag of a Diablo III package's byte range (d3cpk_jobs)
+def d3cpk_jobs(files, parts=64):
+    """Diablo III's console packages (d3cpk.py; .cpk like CRI's, another format) in byte ranges of about equal length: Diablo III: Eternal Collection 2.7.7 has 37, 16 GB.
+    → ([(path, rel, (D3CPK, start, end)), …], the package paths)"""
+    import d3cpk
+    ds = []
+    for p, r in files:
+        if not p.lower().endswith('.cpk'): continue
+        with open(p, 'rb') as f: h = f.read(8)
+        if d3cpk.is_d3cpk(h): ds.append((p, r, os.path.getsize(p)))
+    step = max(sum(n for *_, n in ds) // parts, 1 << 24)
+    return [(p, r, (D3CPK, a, min(a + step, n))) for p, r, n in ds for a in range(0, n, step)], {p for p, _, _ in ds}
+
+def d3cpk_shaders(path, rel, start, end, out):
+    """A byte range of a Diablo III package (d3cpk_jobs): every zlib stream whose record starts in it (d3cpk.streams), searched for control sections each directly followed by its code area
+    (control +0x704 bytes), as the game's shader SNO assets hold them (2.7.7: a control section of 0x850 bytes; the programs the game draws the title with are in ClientCommon.cpk). Each is a
+    program of one stage (separable_pairs). A control section of a plausible length (0x760 to 0x880 bytes, as tfxo_shaders) not followed by its code area in the same stream is counted and named:
+    in ClientCommon.cpk none is (3,528 control sections), so a stream that splits a file would show here"""
+    import d3cpk
+    with open(path, 'rb') as f:
+        f.seek(start); d = f.read(end - start + d3cpk.SPAN)
+    lost = []
+    for p, _, x in d3cpk.streams(d, 0, end - start, start):
+        label = f'/{rel}@{start + p:#x}'
+        for m in re.finditer(re.escape(CTL_MAGIC), x):
+            c = m.start()
+            if c + 0x708 > len(x): continue
+            n, k = struct.unpack_from('<I', x, c + 0x20)[0], struct.unpack_from('<I', x, c + 0x704)[0]
+            if not 0x760 <= n <= 0x880: continue   # the magic in other data
+            ctl, code = x[c:c + n], x[c + n:c + n + k]
+            st = glslc_stage(ctl, code) if len(code) == k else None
+            if st and not check(label, st, ctl, code): out.append((f'{label}#D3@{c:#x}', st, ctl, code))
+            else: lost.append(f'{label}+{c:#x}')
+    if lost: print(f'[RED] /{rel} {start:#x}..{end:#x}: {len(lost)} control section(s) not followed by their code area in the same stream, left out (first: {lost[0]})', flush=True)
+
+
 def runtime_nros(romfs, mainnso):
     """[(name, bytes)] the NROs the game runs that no RomFS file holds, read like main: DM_NRO_DIR's *.nro when it is set (the desktop packer's collection, the NSP script's
     capture), else the NROs a boot stub packs into main (dm/tools/boot_nro.py) that the RomFS's NRRs register (Mario Tennis Fever's whole game code). The phone's Prepare
@@ -2187,7 +2224,17 @@ def raw_shaders(d, label, known=()):
     if not ctls: return []
     rel, code_of, cset = rel_targets(d), {}, set(ctls)
     for s, c in rel.items():
-        if c in cset and s - 8 in rel and c not in code_of and struct.unpack_from('<I', d, s + 8)[0] == struct.unpack_from('<I', d, c + 0x704)[0]: code_of[c] = rel[s - 8]
+        if c not in cset or c in code_of: continue
+        code_len = struct.unpack_from('<I', d, c + 0x704)[0]
+        if s - 8 in rel and struct.unpack_from('<I', d, s + 8)[0] == code_len:
+            code_of[c] = rel[s - 8]
+        # PEANUTS(upstream-candidate): Tomodachi Life's offline compute records
+        # hold {control pointer, code pointer, reserved, u64 control length, u64 code length}.
+        elif s + 40 <= len(d) and s + 8 in rel:
+            control_len = struct.unpack_from('<I', d, c + 0x20)[0]
+            code = rel[s + 8]
+            if struct.unpack_from('<QQQ', d, s + 16) == (0, control_len, code_len) and d[code:code + 4] == CS_MAGIC and code + code_len <= len(d):
+                code_of[c] = code
     built = adrp_targets(d, min(ctls) - 0x100000, max(ctls) + 0x100000) if any(c not in code_of for c in ctls) else {}
     out = []
     for c in ctls:
@@ -3104,7 +3151,8 @@ def pixel_input_cover(shaders):
         k = min(ins, key=lambda k: (-len(ins[k] & left), k)); cover.append(k); left -= ins[k]
     return cover
 
-SINGLE_STAGE = ('#GLSLC@', '#VIPER', '#UE', '#MTSPK@', '#MGFX@', '#NLG', '#PGSO', '#RAW@', '#TFXO@', '#NEEDLE@', '#SNOWDROP@', '#PHYRE@', '#SUMO@', '#NVNSH@')   # sources whose every shader is a program of one stage: GLSLC outputs, Unreal's shader records, MT Framework's shader package (BNSH variations, Unity programs, MSHD and SDF pair theirs);
+# PEANUTS: Diablo III records contain one stage each.
+SINGLE_STAGE = ('#GLSLC@', '#VIPER', '#UE', '#MTSPK@', '#MGFX@', '#NLG', '#PGSO', '#RAW@', '#TFXO@', '#NEEDLE@', '#SNOWDROP@', '#PHYRE@', '#SUMO@', '#NVNSH@', '#D3@')   # sources whose every shader is a program of one stage: GLSLC outputs, Unreal's shader records, MT Framework's shader package (BNSH variations, Unity programs, MSHD and SDF pair theirs);
 # Unreal Engine 3's shader caches (ue3_shaders, '#UE3@'); MonoGame's effects, whose passes may name no vertex shader and keep the one bound (Celeste: 10 of its 13 effects draw through SpriteBatch's vertex shader, which is in main); Next Level Games'
 # archives (Luigi's Mansion 3 makes 5,317 programs of one stage each at boot); PlatinumGames' shader objects (Bayonetta 3: one stage each, pg_shader); control sections loose in main
 # (Advance Wars 1+2: Re-Boot Camp's Bink shaders, raw_shaders), which no file pairs; YEBIS's effect file (tfxo_shaders); and Sumo's Ninty_NX descriptors and NVNsh records, one stage
@@ -3418,6 +3466,10 @@ def scan_file_in(args):
     if len(args) > 2 and head[:4] == CRA:   # files of Camelot's archive (cra_jobs)
         cra_shaders(path, rel, args[2], found)
         return rel, uniq_keys(found), var_pairs(found), trees
+    # PEANUTS: Scan only the assigned Diablo III package range.
+    if len(args) > 2 and args[2][0] == D3CPK:   # a byte range of a Diablo III package (d3cpk_jobs)
+        d3cpk_shaders(path, rel, args[2][1], args[2][2], found)
+        return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and head[:4] == CPK:   # entries of a CRI CPK (cpk_jobs)
         cpk_shaders(path, rel, args[2], found)
         return rel, uniq_keys(found), var_pairs(found), trees
@@ -3550,6 +3602,8 @@ DIRECT_FORMS = re.compile(r'#BNSH@(0x[0-9a-f]+)#var[0-9]+$|#BAHS@(0x[0-9a-f]+)$|
 
 def source_file(s, rels):
     """The RomFS file of a map source (without its leading '/'): the shortest prefix ending at a '/', '#' or ':' or the end that is a file of the dump (rels), or None"""
+    # PEANUTS: Recover the source package from the shader record.
+    if '#D3@' in s: s = s.split('#D3@', 1)[0].rsplit('@', 1)[0]   # d3cpk_shaders names the archive followed by the stream offset
     return next((s[:i] for i in [i for i, ch in enumerate(s) if ch in '/#:'] + [len(s)] if s[:i] in rels), None)   # ':' a Unity bundle's member (profile_files)
 
 # PEANUTS: on-device split support (see file header)
@@ -3925,14 +3979,16 @@ def main():
         # Unreal Engine shader code archives decoded on the Mac (uepak.py): <version dir>/ue_shaders, or DM_UE_SHADERS; needed when the RomFS has Unreal paks
         ued = os.environ.get('DM_UE_SHADERS') or os.path.join(os.path.dirname(os.path.abspath(romfs)), 'ue_shaders')
         names = sorted(f for f in os.listdir(ued) if f.endswith('.ushaderbytecode') and not f.startswith('._')) if os.path.isdir(ued) else []   # PEANUTS(upstream-candidate): AppleDouble metadata, not decoded shader archives
-        def ue_paks(romfs=romfs, mainnso=mainnso):   # PEANUTS: bind this version; uepak.unreal_paks with the mains reads an encrypted index, off the Mac with the builder's _nxaes module: a Python without it stopped with a traceback
-            try: return uepak.unreal_paks(romfs, inline=False, mains=[mainnso])
+        if not names:
+            # PEANUTS: test for the archive itself. IoStore can hold a library beside a pak containing only other assets.
+            try: needs_archives = uepak.unreal_paks(romfs, inline=False, mains=[mainnso]) or uepak.io_shader_tocs(romfs)
             except ImportError as e: red(f'the RomFS has Unreal paks whose index is encrypted, and this Python has no AES to read it with ({e}): the Peanuts builder makes the module (peanuts-build, peanuts/docs/BUILDER.md); pack_android.py run by hand needs its folder in PYTHONPATH')
-        if not names and os.environ.get('DM_UE_DECODE') and ue_paks():   # PEANUTS: the phone decodes them here (ue_ondevice.py; the Mac's NSP script did)
-            import ue_ondevice
-            ued = ue_ondevice.decode(romfs, mainnso, os.environ['DM_UE_DECODE'])
-            names = sorted(f for f in os.listdir(ued) if f.endswith('.ushaderbytecode') and not f.startswith('._'))   # PEANUTS
-        if not names and ue_paks(): red(f'the RomFS has Unreal paks, but there are no decoded shader code archives in {ued} (the NSP script writes them)')
+            if needs_archives and os.environ.get('DM_UE_DECODE'):
+                import ue_ondevice
+                ued = ue_ondevice.decode(romfs, mainnso, os.environ['DM_UE_DECODE'])
+                names = sorted(f for f in os.listdir(ued) if f.endswith('.ushaderbytecode') and not f.startswith('._'))
+            if needs_archives and not names:
+                red(f'the RomFS has Unreal shader archives, but there are no decoded shader code archives in {ued} (the NSP script writes them)')
         for nm in names: found += ue_shaders(open(os.path.join(ued, nm), 'rb').read(), f'/ue_shaders/{nm}')
         results.append(('main', last_entries(found), var_pairs(found), {}))
     for romfs in dlc_v:
@@ -3947,7 +4003,8 @@ def main():
     targeted = os.environ.get('DM_SPLIT_TARGETED') == '1'
     out = None
     if targeted:
-        want, why = profile_files(files, main_v)
+        version = single_shader_version(main_v)   # PEANUTS: a profile can combine several builds while Prepare splits just one
+        want, why = profile_files(files, main_v, version)   # PEANUTS: use the active version's unprefixed RomFS paths
         if rd:   # PEANUTS: on-device split support (see file header) — the direct, the targeted and the full scan keep their results apart, so a scan the one before fell back to resumes as that scan
             os.makedirs(rd, exist_ok=True)
             for f in os.listdir(rd):
@@ -3970,9 +4027,11 @@ def main():
                 try:
                     out = split_tables(list(results), big, todo, dumps, J, common, zdicts, ScanCache(os.path.join(rd, mode), mdg) if rd else None, targeted=True, direct=direct)
                     stage('comparing the shaders found with the app\'s list')
-                    why = profile_differs(out, pairsout, psopairsout)
+                    why = profile_differs(out, pairsout, psopairsout, version)   # PEANUTS: compare with the profile's active version
                 except Fallback as e: why = str(e)
-                if not why: print(f'{mode} split: its tables are the profile\'s, byte for byte', flush=True); break   # PEANUTS: the direct, then the targeted mode (DM_SPLIT_DIRECT)
+                if not why:   # PEANUTS: a single version can reorder the union profile's records and relocate their sources
+                    agreement = f'its tables match the profile for {version}' if version else "its tables are the profile's, byte for byte"   # PEANUTS
+                    print(f'{mode} split: {agreement}', flush=True); break   # PEANUTS
                 out = None; why = f'the {mode} scan ' + why
                 if failed:
                     with open(failed, 'w') as f: f.write(mdg + '\n')
@@ -4002,7 +4061,55 @@ def build_id(path):
 
 NOT_ROMFS = ('/glslc_capture/', '/ue_shaders/', '/nvn_shdump')   # map sources that are no RomFS file (main's have no leading '/'): main() reads them on every run
 
-def profile_files(files, main_v):
+# PEANUTS begin: the source prefixes of a multi-version profile name versions of the dump, not its folders.
+def single_shader_version(mains):
+    versions = GAME.words('shader_versions', '')
+    if len(mains) != 1 or len(versions) < 2:
+        return None
+    build = build_id(mains[0])
+    match = [v for v, modules in GAME.builds().items() if modules.get('main') == build and v in versions]
+    return match[0] if len(match) == 1 else None
+
+
+def profile_source_version(source):
+    m = re.match(r'(?:/|main@)(v[0-9]+)(?:/|#|$)', source)
+    if not m and source.startswith('main#'):
+        # PEANUTS: Breath of the Wild's combined map appends the version to the variation label.
+        m = re.search(r'@(v[0-9]+)$', source)
+    return m[1] if m else None
+
+
+def source_for_version(source, version):
+    if version and source.startswith(f'/{version}/'):
+        return source[len(version) + 1:]
+    return source
+
+
+def version_map_rows(text):
+    # The key already hashes the shader record. Its package index and source location can differ between the union scan and a single build.
+    rows = []
+    for line in tables_data(text):
+        c = line.split('\t')
+        rows.append('\t'.join(c[:1] + c[2:4] + c[5:]) if len(c) > 4 and c[0].endswith('.bin') else line)
+    return sorted(rows)
+
+
+def optional_in_other_versions(others):
+    path = GAME.table('shader_optional.tsv')
+    if not others or not os.path.isfile(path):
+        return set()
+    keys = set()
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            key, _, note = line.strip().partition('\t')
+            m = re.search(r'\((v[0-9]+)\) only$', note)
+            if m and m[1] in others:
+                keys.add(key)
+    return keys
+# PEANUTS end
+
+
+def profile_files(files, main_v, version=None):
     """DM_SPLIT_TARGETED=1 (the phone's split, pack_android.py's): the RomFS files that hold the shaders of the profile's shader_map.tsv, when each main's build is one
     of the profile's build rows. A map row's source names where its key first appears: a RomFS file, or a member inside one ('/Lib/agl/agl_resource.sarc.zs/agl_technique_pfx.sharcb#BAHS@...'
     is in the RomFS file Lib/agl/agl_resource.sarc.zs), with the scan's version tags (v327680/..., aoc/...). Its file is the prefix of the source, ending at a '/' or '#'
@@ -4010,49 +4117,84 @@ def profile_files(files, main_v):
     targeted scan is not taken)"""
     m = GAME.table('shader_map.tsv')
     if not os.path.isfile(m): return None, 'the profile has no shader_map.tsv'
-    builds = {b.get('main') for b in GAME.builds().values()} - {None}
+    # PEANUTS: an executable can be registered for rewriting without its RomFS having contributed to the shader map.
+    builds = GAME.builds()
+    versions = set(GAME.words('shader_versions', ''))
+    known = {b['main'] for b in builds.values() if 'main' in b}
+    unprofiled = {b['main'] for v, b in builds.items() if versions and v not in versions and 'main' in b}
     for p in main_v:
         b = build_id(p)
-        if b not in builds: return None, f'main\'s build {b} is not one the profile was made from ({", ".join(sorted(builds)) or "it has no build rows"})'
-    srcs = set()
+        if b not in known: return None, f'main\'s build {b} is not one the profile was made from ({", ".join(sorted(known)) or "it has no build rows"})'
+        if b in unprofiled: return None, f'main\'s build {b} belongs to a version outside the profile\'s shader_versions'
+    # PEANUTS begin: resolve the active version's paths without treating a missing required shader as optional.
+    other_versions = versions - {version} if version else set()
+    optional = optional_in_other_versions(other_versions)
+    required_sources = {}
     with open(m, encoding='utf-8') as f:
         for ln in f:
             c = ln.rstrip('\n').split('\t')
-            if len(c) > 4 and c[0].endswith('.bin') and c[4].startswith('/') and not c[4].startswith(NOT_ROMFS): srcs.add(c[4][1:])
+            if len(c) > 4 and c[0].endswith('.bin') and c[4].startswith('/') and not c[4].startswith(NOT_ROMFS):
+                required_sources[c[4]] = required_sources.get(c[4], False) or c[3] not in optional
     rels, want = {r for _, r in files}, set()
-    for s in srcs:
-        r = next((s[:i] for i in [i for i, ch in enumerate(s) if ch in '/#:'] + [len(s)] if s[:i] in rels), None)   # PEANUTS: ':' too, a Unity bundle's member (/Data/data.unity3d:Resources/...: Engage, Castlevania, Brilliant Diamond fell back to the full scan)
-        if r is None: return None, f'the profile\'s shader_map.tsv names /{s}, and the dump has no such file'
+    for source, required in required_sources.items():
+        s = source_for_version(source, version)[1:]
+        # Unity names a member after ':' and Diablo III records a CPK entry's offset as '@0x...'.
+        boundaries = [m.start() for m in re.finditer(r'[/#:]|@0x[0-9a-f]+', s)] + [len(s)]
+        r = next((s[:i] for i in reversed(boundaries) if s[:i] in rels), None)
+        if r is None:
+            if profile_source_version(source) in other_versions or not required:
+                continue
+            return None, f'the profile\'s shader_map.tsv names {source}, and the dump has no such file'
         want.add(r)
+    # PEANUTS end
     # the files that hold only copies of shaders found earlier name no row's source, but their variations can pair them anew (Donkey Kong Bananza: 42 of its 15,576
     # pairs): the profile's shader_files.tsv (a full split's, DM_SPLIT_FILES) lists every file a shader was found in. One it names that the dump lacks is passed over:
     # the comparison with the profile's tables decides
     fl = GAME.table('shader_files.tsv')
     if os.path.isfile(fl):
-        with open(fl, encoding='utf-8') as f: want |= {r for ln in f if not ln.startswith('#') and (r := ln.rstrip('\n')) in rels}
+        with open(fl, encoding='utf-8') as f: want |= {r for ln in f if not ln.startswith('#') and (r := source_for_version('/' + ln.rstrip('\n'), version)[1:]) in rels}   # PEANUTS: the full split's file list uses the map's version prefixes
     return want, None
 
-def profile_differs(t, pairsout, psopairsout):
+def profile_differs(t, pairsout, psopairsout, version=None):
     """None when each table the targeted scan made is the profile's byte for byte (the profile's tables are a full scan's of the same build), else which is not.
     A file that holds only shaders found earlier is named in no row's source, but its variations can still pair them (var_pairs, mesh_facts): unless the profile's
     shader_files.tsv lists it, the targeted scan leaves it out, and this comparison sends such a dump to the full scan. A table the profile does not have is not compared.
     A registered build may lack keys of the map (shader_optional.tsv: Mario Kart World 1.8.0 as update 917504 lacks one agl compute program). The targeted scan reads the
     file each such key's row names, so a key it did not find is not in the dump: the profile's tables less those keys (absent_tables) are what a full scan of it makes"""
-    have = {r[3] for r in t['rows']}
-    absent = optional_keys() & (map_keys(GAME.table('shader_map.tsv')) - have)
+    # PEANUTS: most profiles have no optional keys. Only read their map for comparison below.
+    absent = set()
+    optional = optional_keys()
+    other_versions = set(GAME.words('shader_versions')) - {version} if version else set()
+    if optional or other_versions:
+        have = {r[3] for r in t['rows']}
+        with open(GAME.table('shader_map.tsv'), encoding='utf-8') as f:
+            for line in f:
+                c = line.split('\t')
+                if len(c) > 4 and c[0].endswith('.bin') and c[3] not in have and (c[3] in optional or profile_source_version(c[4]) in other_versions):
+                    absent.add(c[3])
     for name, text in (('shader_map.tsv', t['map']), ('shader_facts.tsv', t['facts']), ('shader_pairs.tsv', t['pairs'] if pairsout else None), ('pso_pairs.tsv', t['pso'] if psopairsout else None)):
         p = GAME.table(name)
         if text is None or not os.path.isfile(p): continue
         with open(p, encoding='utf-8', newline='') as f: want = absent_tables(name, f.read(), absent)
+        if version and name == 'pso_pairs.tsv':   # PEANUTS: some pairs exist only in another build even when both shader keys are shared
+            optional_pso = GAME.table('pso_pairs_optional.tsv')
+            if os.path.isfile(optional_pso):
+                with open(optional_pso, encoding='utf-8') as f:
+                    may_lack = {ln.rstrip('\n').split('\t', 1)[1] for ln in f if ln.startswith(version + '\t')}
+                missing = may_lack.difference(tables_data(text))
+                want = ''.join(ln for ln in want.splitlines(keepends=True) if ln.rstrip('\r\n') not in missing)
+        compare = version_map_rows if version and name == 'shader_map.tsv' else tables_data   # PEANUTS: compare records by key even if this version's source order differs
         # the comment lines are left out: they name the game and the split's wording at the time, which a newer split or a renamed profile changes
         # (Orbitals Deluxe Edition: its map's first line named the title ID, the split now writes the game's name, and every file was scanned in full)
-        if tables_data(want) != tables_data(text):
+        if compare(want) != compare(text):   # PEANUTS: exact table comparison except a union map's record locations
             if d := os.environ.get('DM_SPLIT_DIFF_DIR'):   # PEANUTS: the targeted table and the profile's as compared, to see why a title falls back to the full scan
                 os.makedirs(d, exist_ok=True)
                 with open(os.path.join(d, 'targeted.' + name), 'w', encoding='utf-8', newline='') as f: f.write(text)   # PEANUTS
                 with open(os.path.join(d, 'profile.' + name), 'w', encoding='utf-8', newline='') as f: f.write(want)   # PEANUTS
             return f'made a {name} that differs from the profile\'s'
-    if absent: print(f'targeted split: compared with the profile\'s tables less the {len(absent)} shader(s) of shader_optional.tsv this dump does not have ({", ".join(sorted(absent)[:3])})', flush=True)
+    if absent:
+        kinds = 'the other listed builds' if version else 'shader_optional.tsv'   # PEANUTS: a multi-version profile also records version tags in its map
+        print(f'targeted split: compared with the profile\'s tables less the {len(absent)} shader(s) of {kinds} this dump does not have ({", ".join(sorted(absent)[:3])})', flush=True)
     return None
 
 def tables_data(text):   # a table's lines less its comment lines ('#')
@@ -4064,10 +4206,7 @@ def optional_keys():
     if not os.path.isfile(p): return set()
     with open(p, encoding='utf-8') as f: return {ln.split('\t')[0] for ln in f.read().splitlines() if ln and not ln.startswith('#')}
 
-def map_keys(path):
-    """The keys of a shader_map.tsv's package rows (column 4)"""
-    with open(path, encoding='utf-8') as f: return {c[3] for c in (ln.rstrip('\n').split('\t') for ln in f) if len(c) > 4 and c[0].endswith('.bin')}
-
+# PEANUTS: profile_differs collects the absent keys once for all four tables.
 def absent_tables(name, text, absent):
     """A profile table as the split of a dump without the keys absent writes it: their rows left out, and in shader_map.tsv the later rows of each package
     renumbered (split_tables counts a package's rows as it writes them). The comment and header lines stay"""
@@ -4098,13 +4237,16 @@ def scan_jobs(files, want=None, mains=(), nros=()):
     # file it is given: only the wanted ones, since none of them needs another file (Mario Kart World's 206,326 RomFS files took 29 s here on a Mac and minutes on a
     # Windows PC before the targeted scan had printed anything)
     by_head = files if want is None else [f for f in files if f[1] in want]
+    # PEANUTS: Plan parallel jobs for selected Diablo III packages.
+    d3_jobs, d3s = d3cpk_jobs(by_head)
     cr_jobs, cras = cra_jobs(by_head, nros=nros)
     zp_jobs, zips = zip_jobs(by_head)
     ah_jobs, arhs = arh_jobs(files)   # Monolith's ARH1/ARD archives and embedded XBC1/HCPS programs
     fb_jobs, fbs = frostbite_jobs(files)   # EA SPORTS FC 27's Frostbite bundles, Oodle Leviathan decoded by the game's own decoder in the Mac host
     pd_jobs, pdats = pdat_jobs(by_head)
-    big += pak_jobs + tr_jobs + ue_jobs + bd_jobs + arc_jobs + pz_jobs + ck_jobs + cr_jobs + zp_jobs + ah_jobs + fb_jobs + pd_jobs
-    files = [(p, r) for p, r in files if not linkdata_jobs(p, r) and p not in paks and p not in trp and p not in uep and p not in bdts and p not in arcs and p not in pkzs and p not in cpks and p not in cras and p not in zips and p not in arhs and p not in fbs and p not in pdats]
+    # PEANUTS: Schedule package ranges alongside other split jobs.
+    big += pak_jobs + tr_jobs + ue_jobs + bd_jobs + arc_jobs + pz_jobs + ck_jobs + d3_jobs + cr_jobs + zp_jobs + ah_jobs + fb_jobs + pd_jobs
+    files = [(p, r) for p, r in files if not linkdata_jobs(p, r) and p not in paks and p not in trp and p not in uep and p not in bdts and p not in arcs and p not in pkzs and p not in cpks and p not in d3s and p not in cras and p not in zips and p not in arhs and p not in fbs and p not in pdats]
     if want is not None: big, files = [j for j in big if j[1] in want], [f for f in files if f[1] in want]
     return big, files
 

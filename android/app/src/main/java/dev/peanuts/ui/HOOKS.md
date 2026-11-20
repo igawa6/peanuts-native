@@ -22,9 +22,9 @@ call `Haptics` themselves, and both would play.
 
 ## Pieces
 
-- `Library` — Home's game box (SPEC3): the filter row (All · Building · Ready · Build needed · Not in this app version, Find; Building only while a build or
+- `Library` — Home's game box (SPEC3): the filter row (All · Building · Ready · Build needed · Not Supported Yet, Find; Building only while a build or
   upstream's Prepare runs, its count in banana), then one cover grid (PUi.tile at cell size with the NACP icon, four columns on a handheld, the state on the cover,
-  the name under it; Building → Ready by last played → Build needed A–Z → Not in this app version A–Z, no sections). Tap = Play (`Upstream.launch`, Banana's
+  the name under it; Building → Ready by last played → Build needed A–Z → Not Supported Yet A–Z, no sections). Tap = Play (`Upstream.launch`, Banana's
   `MainActivity.launch` by reflection) for a ready listed game, the sheet otherwise; long press / Y = Banana's Manage (listed) or the sheet (scanned); L/R shoulders
   = previous/next filter. The Building filter holds the full cards (the build card, upstream's Ondevice card) two per row; in All the building game is a cover with
   a progress strip and a `Building · N %` chip that opens that filter. The first-run card when no game folder is set; the scan (`LibraryScanner`) and the catalog

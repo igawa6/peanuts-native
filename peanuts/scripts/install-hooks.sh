@@ -1,7 +1,7 @@
 #!/bin/sh
 # install-hooks.sh : installs this clone's git hooks for the publishing rules (peanuts/scripts/check-publish.sh):
 #   commit-msg  refuses a message with an AI trailer (Co-Authored-By / Generated with ... Claude, Codex, Copilot, ...)
-#   pre-push    runs check-publish.sh against the merge base with upstream/android and refuses the push when it fails
+#   pre-push    runs check-publish.sh against the merge base with upstream/android (upstream/main in a contributor's clone) and refuses the push when it fails
 # Run once per clone (hooks are not versioned by git). Existing hooks of the same name are kept as <hook>.local and still run first.
 set -eu
 top=$(git rev-parse --show-toplevel)

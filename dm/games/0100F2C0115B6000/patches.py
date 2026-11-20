@@ -5,7 +5,8 @@ from nso_asm import ADRP, B, NOP, STP_PRE
 
 # Tears of the Kingdom picks a present interval each frame (main+0x2db174: 2 = 30 fps, 3 under load) and steps its game time by 60 / fps (int fps at timing +0x50, read at main+0x2daa54
 # and main+0x3e562c). The stub replaces that logic: int fps = 60 / step, and the float fps (timing +0x24, unused, per masagrator's FPSLocker config for this build, which found the
-# sites) the same, which the consumers read. Until the host has decided a step (the first frames) the step is the measured frame time (timing frame +0xd8, 19.2 MHz
+# sites) the same, which the consumers read. Android follows FPSLocker's elapsed-time path at every rate. Other hosts use it until they have a whole-vsync step.
+# PEANUTS: The measured frame time is at timing frame +0xd8 (19.2 MHz
 # ticks), clamped to [1 / cap, 1 / 15 s]; game time that ran ahead after a short frame (the "lead", at most 0.25 s; totk-mobile) is paid back by later frames. Prerendered movies hold 30 (the host's movie flag, state +4, hle_movie.c
 # dm_movie_playing), the D-pad menu fade starts at full rate (FPSLocker's fix at main+0x1fbc80) and the swapchain argument at main+0xbe14a8 becomes 1 as in FPSLocker
 def frame_step(ctx):
@@ -15,7 +16,9 @@ def frame_step(ctx):
     start = here(); emit(ADRP(16, here(), FS_STATE_OFF))
     for w in (0xbd400200,   # ldr s0,[x16]           target fps
               0x1e202008,   # fcmp s0,#0.0
-              0x54000640,   # b.eq off (+50)        target 0: original path
+              0x54000680,   # b.eq off (+52)        target 0: original path
+              0xb9403e02,   # PEANUTS: ldr w2,[x16,#0x3c]   elapsed-time mode
+              0x350001e2,   # cbnz w2,elapsed (+15)
               0xb9402202,   # ldr w2,[x16,#0x20]     step in vsyncs
               0x340001a2,   # cbz w2,elapsed (+13)   not decided yet: by the measured frame time
               0x1e230041,   # ucvtf s1,w2
@@ -68,7 +71,7 @@ def frame_step(ctx):
         emit(w)
     emit(B(here(), 0x2db284))                                       # the original epilogue
     emit(0x39416009); emit(B(here(), 0x2db190))                     # off: ldrb w9,[x0,#0x58]; back
-    fs_put(0x2db18c, [B(0x2db18c, start)], 'frame step from the host in whole vsyncs, by elapsed time until it has decided one (state page target fps; 0 = original interval logic)')
+    fs_put(0x2db18c, [B(0x2db18c, start)], 'frame step by elapsed time on Android or until the host decides a whole-vsync step (0 = original interval logic)')  # PEANUTS: Install the clock hook for this build.
     # the two readers of the integer fps: float fps when on; the scvtf a few instructions later moves into the stub (s0 is not touched in between)
     for site, cvt, r in ((0x2daa54, 0x2daa6c, 19), (0x3e562c, 0x3e5638, 22)):
         fs_site(site, struct.pack('<I', 0xbd425000 | r << 5).hex()); fs_site(cvt, '00d8215e')

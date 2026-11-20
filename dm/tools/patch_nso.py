@@ -438,9 +438,21 @@ def site_br_call(ins):
     emit_tp(16); emit_slot_addr(16, 17, 'K18'); emit(LDRX(16, 16)); emit(BR(16))
     return start
 
+def site_sysreg_x18(ins, source, dest):
+    """PEANUTS: move between virtual slots when an MRS/MSR names guest x18."""
+    value, addr, key = 16, 17, 15
+    start = here()
+    emit(STP(value, addr, 31, -16)); emit(STUR(key, 31, -24))
+    emit_tp(addr); emit_slot_addr(addr, key, source); emit(LDRX(value, addr))
+    emit_tp(addr); emit_slot_addr(addr, key, dest); emit(STRX(value, addr))
+    emit(LDUR(key, 31, -24)); emit(LDP(value, addr, 31, -16))
+    emit(B(here(), ins.address + 4))
+    return start
+
 def site_sysreg_read(ins, kind):
     """mrs xN, tpidr_el0 / tpidrro_el0 → xN = thread slot value."""
     N = ins.bytes[0] & 31
+    if N == 18: return site_sysreg_x18(ins, kind, 'K18')   # PEANUTS: live x18 is reserved by the host
     tmp = 16 if N != 16 else 17
     start = here()
     emit(STUR(tmp, 31, -16)); emit_tp(N); emit_slot_addr(N, tmp, kind); emit(LDRX(N, N)); emit(LDUR(tmp, 31, -16))   # tmp is saved by borrowing the red zone
@@ -449,6 +461,7 @@ def site_sysreg_read(ins, kind):
 
 def site_tpidr_write(ins):
     N = struct.unpack('<I', ins.bytes)[0] & 31
+    if N == 18: return site_sysreg_x18(ins, 'K18', 'KTLS')   # PEANUTS: read the guest slot, not the live host register
     (T,) = pick({N}, 1)
     start = here()
     emit(0xF81F0000 | (31 << 5) | T)           # stur xT,[sp,#-16]

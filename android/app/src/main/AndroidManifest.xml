@@ -26,7 +26,9 @@
         android:appCategory="game"
         android:hasFragileUserData="true">
         <service android:name="dev.peanuts.GameHold" android:exported="false" android:process=":game" android:foregroundServiceType="mediaPlayback" />   <!-- PEANUTS: keeps the game's process in the foreground group while the Thor's lid is closed -->
+        <activity android:name="dev.peanuts.CompanionScreen" android:exported="false" android:process=":game" android:taskAffinity="dev.peanuts.companion" android:launchMode="singleInstance" android:excludeFromRecents="true" android:noHistory="true" android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density" />   <!-- PEANUTS: the companion on the built-in display while Swap screens moved the game (dev.peanuts.Screens, #131) -->
         <activity android:name="dev.peanuts.CatalogActivity" android:label="Peanuts Companions" android:exported="false" android:theme="@style/Theme.Banana" />   <!-- PEANUTS: the companion catalog (Settings › Library › Companions) -->
+        <activity android:name="dev.peanuts.ui.DriverActivity" android:label="GPU driver" android:exported="false" android:theme="@style/Theme.Banana" />   <!-- PEANUTS: Settings › GPU driver (dev.peanuts.ui.DriverActivity) -->
         <!-- PEANUTS: the adb control interface's one door (peanuts/docs/CONTROL.md). Exported, and guarded by android.permission.DUMP: Android checks it against
              whoever starts the activity; adb's shell holds it, an ordinary app cannot. A real activity, not an alias, so the guard is this component's own.
              It draws nothing and finishes at once -->
@@ -114,5 +116,12 @@
             android:authorities="${applicationId}.logs"
             android:exported="false"
             android:grantUriPermissions="true" />
+        <!-- PEANUTS begin: Share build log's bundles, read-only (dev.peanuts.build.BuildLogProvider) -->
+        <provider
+            android:name="dev.peanuts.build.BuildLogProvider"
+            android:authorities="${applicationId}.buildlog"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <!-- PEANUTS end -->
     </application>
 </manifest>

@@ -112,6 +112,8 @@ Game-specific findings; the general host changes they led to are listed under [F
 
 ## Found on this game
 
+- [Version-specific pixel shaders in an Android build](../../../docs/reference/shaders.md#other-versions-pixel-shaders-return-during-android-translation). <!-- PEANUTS -->
+
 - **Resolved: button icons as "?" on Android** ("Press ? + ? to start"): [Button icons drawn as "?" on Android](../../../docs/reference/services.md#button-icons-drawn-as--on-android).
 - **One save file only:** its save files are per user, and a new one is made for a user the user selector offers without a save; the host had one user. [More than one user, each with a save of its own](../../../docs/reference/services.md#more-than-one-user-each-with-a-save-of-its-own) (the launcher's Settings › Users); not yet checked in the game.
 

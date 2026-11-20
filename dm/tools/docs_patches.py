@@ -68,6 +68,12 @@ def payoff(gap):   # the Gaps order: open gaps, then blocked, kept and unreviewe
 
 # The host's build-keyed rows: (table, the start of the row's label ('' = any), main build ('' = any), entry); the first that fits classifies a row
 HOST_BINDING = [
+    # PEANUTS: Document the two exact builds with reviewed clock hooks.
+    ('', '', '4b159f0f7a360669738390ee8657b4f0', {'what': 'ASTRAL CHAIN elapsed-time step on Android', 'now': 'build', 'goal': 'game', 'purpose': 'frame rate',
+     'why': 'the elapsed-time hook and its cinematic flag are verified for this build', 'blocked': 'a new build needs its clock and timer hooks checked'}),
+    ('', '', '277178b7dba1b6d4949a84778d4abc58', {'what': 'Tears of the Kingdom elapsed-time step on Android', 'now': 'build', 'goal': 'game', 'purpose': 'frame rate',
+     'why': 'the FPSLocker frame-step sites and the elapsed tick field are specific to this build', 'blocked': 'a new build needs its timing hooks checked',
+     'checked': 'Thor cave tests at the 20, 30, 60 and 120 FPS caps, 2026-11-18'}),
     ('', '', 'e0f3ccfaf50065ae4ea01eb5aeb13b1a', {'what': 'Ocarina of Time camera and 2D layer aspect callback in main v131072', 'now': 'build', 'goal': 'game', 'purpose': 'rendering',
      'why': "the callback reads sead's PerspectiveProjection fields, the same in every title of this engine, but its eight gates (five cameras, the HUD canvas, the movie viewport and the save picture) are fixed addresses of this build",
      'blocked': 'one build on hand; the projection reads are plain sead code a function fingerprint could find'}),
@@ -182,6 +188,8 @@ SWITCH_BINDING = [
     ('fps_hold', '', {'what': 'no frame held past the cap', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': "the game's pacing"}),
     ('fps_target', '', {'what': 'frame rate target', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'a choice per game'}),
     ('fps_modes', '', {'what': 'reviewed supported frame rates', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'restrict the launcher to rates reviewed for this game'}),
+    # PEANUTS: Document the opt-in profile switch for elapsed game time.
+    ('fps_step_elapsed', '', {'what': 'launch with elapsed-time frame-step hooks enabled', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'keep the game clock active while display pacing selects the frame rate'}),
     ('fps_limit', '', {'what': "the host's frame limit by default (Android)", 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'a choice per game: steady frames and less heat where its own rate wanders below 60'}),
     ('ue_fps_cvar', '', {'what': "the game's own Unreal frame-limit variable", 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': "the game's own variable, which its settings apply to t.MaxFPS; the rewriter finds it by name (ue_cvar.py)"}),
     ('perf_mode', '', {'what': 'Boost whatever the operation mode', 'now': 'game', 'goal': 'game', 'purpose': 'runtime', 'why': 'a combination a Switch 1 never reports: a choice per game'}),

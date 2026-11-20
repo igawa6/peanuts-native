@@ -93,6 +93,15 @@ def child_env(**kw):
 def peanuts_env(step):
     """step 'split': DM_SPLIT_DIRECT=1 (the targeted split reads a file's recorded containers only); 'shaders': DMSH_VK_ZSTD_LEVEL=6 (the phone's level)"""
     kw = dict(DM_SPLIT_DIRECT='1') if step == 'split' else dict(DMSH_VK_ZSTD_LEVEL='6')
+    # PEANUTS: a desktop checkout can build the locked translator. The phone has its own native one.
+    helper = REPO / 'peanuts/scripts'
+    if step == 'shaders' and 'XLATE' not in os.environ and (helper / 'prepare_pc_translator.py').is_file():
+        sys.path.insert(0, str(helper))
+        import prepare_pc_translator
+        try:
+            kw['XLATE'] = str(prepare_pc_translator.resolve())
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            raise Error(f'desktop translator: {error}') from error
     return {k: v for k, v in kw.items() if k not in os.environ}
 # PEANUTS end
 
@@ -912,13 +921,15 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
         if keys is not None:
             if not keys: raise Error('the profile\'s shader_seen.tsv names none of the shaders of its shader_map.tsv')   # PEANUTS(upstream-candidate): no substitutions.
             print(f'shaders: the profile selects {len(keys):,} shaders (shader_seen.tsv) and the pixel shaders paired with them, as the phone builds', flush=True)
-        if absent := absent_optional(g, pkg, getattr(a, 'pack_ver', None)):   # a registered build without some of the map's shaders (shader_optional.tsv; PEANUTS: or another listed version's own, may_lack): the library is built without them
-            print(f'shaders: {len(absent)} of the profile\'s shaders are not in this build of the game (shader_optional.tsv); the library leaves them out '
-                  '(the [RED] "not in the package" line below counts them)', flush=True)
-            env['DMSH_VK_REQUIRE_ALL'] = '0'
-            if keys is not None: keys = [k for k in keys if k not in absent]
-        # PEANUTS(upstream-candidate): each child owns its selection file, even with sibling caches and concurrent builds.
+        absent = absent_optional(g, pkg, getattr(a, 'pack_ver', None))
+        # PEANUTS: pass the validated keys to each child, so pair expansion cannot restore them.
         with tempfile.TemporaryDirectory(prefix='selection-', dir=swork) as selection_dir:
+            env.pop('DMSH_VK_ABSENT_FILE', None)
+            if absent:
+                excluded = Path(selection_dir) / 'absent.tsv'
+                write_lf(excluded, ''.join(k + '\n' for k in sorted(absent)))
+                env['DMSH_VK_ABSENT_FILE'] = str(excluded)
+                print(f'shaders: excluding {len(absent):,} validated missing shaders from this build', flush=True)
             args = []
             if keys:   # on Windows a file the wrapper reads (vk_android_win.py "@<file>"): thousands of keys pass a command line's 32,767 characters there
                 if WINDOWS:

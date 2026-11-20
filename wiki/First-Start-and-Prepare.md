@@ -40,7 +40,7 @@ The game's ... button > **Export pack...** writes one `.zip` you can keep or mov
 
 ## Version warnings
 
-If your dump is another version than the one the game was tested with, the card says it is untested; it may still work and the app asks before it starts. If a game is "Not in this app version", your app does not include it (Settings > **About** lists the games).
+If your dump is another version than the one the game was tested with, the card says it is untested; it may still work and the app asks before it starts. If a game is "Not Supported Yet", your app does not include it (Settings > **About** lists the games). <!-- PEANUTS -->
 
 <!-- TODO screenshot: the Prepare progress card -->
 

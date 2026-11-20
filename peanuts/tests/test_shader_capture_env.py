@@ -16,11 +16,11 @@ class ShaderCaptureEnvTest(unittest.TestCase):
         harness = '''
 import java.util.*;
 public class CaptureEnvTest {
- static final String SAVE="save",DIR="capture";
+ static final String SAVE="save",DIR="capture",KEYS="keys";
  static class Activity {
-  boolean capture; Activity(boolean c){capture=c;}
+  boolean capture; String keys=""; Activity(boolean c){capture=c;} Activity(boolean c,String k){capture=c;keys=k;}
   Activity getIntent(){return this;}
-  String getStringExtra(String k){return k.equals(SAVE)?"/isolated-save":"/captured";}
+  String getStringExtra(String k){return k.equals(SAVE)?"/isolated-save":k.equals(KEYS)?keys:"/captured";}
  }
  static boolean active(Activity a){return a.capture;}
  HOOK
@@ -33,6 +33,11 @@ public class CaptureEnvTest {
   for(String key:List.of("DM_SAVE=","DM_AUDIO=","PN_COMPANION=","DM_GLSLC_CAPTURE="))
    if(capture.stream().filter(s->s.startsWith(key)).count()!=1)throw new AssertionError(capture);
   if(!capture.containsAll(List.of("DM_SAVE=/isolated-save","DM_AUDIO=0","PN_COMPANION=off","DM_GLSLC_CAPTURE=/captured","DM_VK_DRIVER=/driver")))throw new AssertionError(capture);
+  // a profile's capture_keys are the boot's only scripted input: the player's own DM_KEYS never is (issue #111)
+  List<String> keyed=new ArrayList<>(player);environment(new Activity(true,"8:A*45/3"),keyed);
+  if(keyed.stream().filter(s->s.startsWith("DM_KEYS=")).count()!=1||!keyed.contains("DM_KEYS=8:A*45/3"))throw new AssertionError(keyed);
+  List<String> unkeyed=new ArrayList<>(player);environment(new Activity(true,null),unkeyed);
+  if(unkeyed.stream().anyMatch(s->s.startsWith("DM_KEYS=")))throw new AssertionError(unkeyed);
  }
 }
 '''.replace('HOOK', hook)

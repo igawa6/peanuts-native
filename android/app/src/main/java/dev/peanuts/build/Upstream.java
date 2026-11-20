@@ -181,6 +181,25 @@ final class Upstream {
         return false;
     }
 
+    /** The launcher's list rows of one title: {name, gameDir, packDir} each (Share build log finds the game's work folders from them) */
+    static List<String[]> listedGames(Context c, String titleId) throws ReflectiveOperationException {
+        List<String[]> out = new java.util.ArrayList<>();
+        Class<?> game = k("Game");
+        for (Object g : (List<?>) call(game, null, "load", new Class<?>[] {Context.class}, c))
+            if (titleId.equalsIgnoreCase(str(get(g, "titleId")))) out.add(new String[] {str(get(g, "name")), str(get(g, "gameDir")), str(get(g, "packDir"))});
+        return out;
+    }
+
+    /** Prefs.buildTag(c): the build tag Home's header and every log's first line show */
+    static String buildTag(Context c) {
+        try { return str(call(k("Prefs"), null, "buildTag", new Class<?>[] {Context.class}, c)); } catch (ReflectiveOperationException | RuntimeException e) { return "?"; }
+    }
+
+    /** CpuCores.shaderWorkers(): the packer's worker count by cores (an APK without the on-device packer: 4) */
+    static int cpuWorkers() {
+        try { return ((Number) call(k("CpuCores"), null, "shaderWorkers", new Class<?>[0])).intValue(); } catch (ReflectiveOperationException | RuntimeException e) { return 4; }
+    }
+
     static boolean samePath(String a, String b) {
         try {
             return (Boolean) call(k("GameList"), null, "samePath", new Class<?>[] {String.class, String.class}, a, b);

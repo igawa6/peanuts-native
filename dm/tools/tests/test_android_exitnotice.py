@@ -34,6 +34,14 @@ class ExitNotice(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout.rstrip('\n').split(' ', 1)[1]
 
+    def test_worker_reduction_requires_a_matching_memory_exit(self):   # PEANUTS
+        for reason, status, reports, expected in (
+            (LOW_MEMORY, 0, True, True), (SIGNALED, 9, False, True), (SIGNALED, 9, True, False),
+            (NONE, 0, False, False), (CRASH_NATIVE, 11, True, False), (USER_REQUESTED, 0, True, False),
+        ):
+            with self.subTest(reason=reason, status=status, reports=reports):
+                self.assertEqual(self.java('workers', reason, status, str(reports).lower()), str(expected).lower())
+
     def file(self, text):
         if text is None: return '-'
         type(self).n += 1

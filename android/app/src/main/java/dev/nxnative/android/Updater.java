@@ -112,7 +112,7 @@ final class Updater {
         if (BuildConfig.NX_LIVE) return UpdateCheck.SOURCES;
         java.util.Map<String, String> o = override(c);
         List<UpdateCheck.Source> l = new ArrayList<>();
-        if (o.isEmpty() && BuildConfig.APPLICATION_ID.endsWith(".peanuts")) { l.add(UpdateCheck.github(PEANUTS_REPO)); return l; }   // PEANUTS: the Peanuts app's own releases, not Banana Native's
+        if (o.isEmpty() && !BuildConfig.NX_PEANUTS_ID.isEmpty() && BuildConfig.APPLICATION_ID.equals("dev.nxnative.android.peanuts")) { l.add(UpdateCheck.github(PEANUTS_REPO)); return l; }   // PEANUTS: official APKs update the standard package; side-by-side builds need update.txt
         if (o.containsKey("repo")) l.add(UpdateCheck.github(o.get("repo")));
         if (o.containsKey("forgejo")) l.add(UpdateCheck.forgejo(o.get("forgejo")));
         if (o.containsKey("url")) {

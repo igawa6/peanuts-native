@@ -182,6 +182,7 @@ final class Job {
     synchronized String name() { return o.optString("name"); }
     synchronized String titleId() { return o.optString("title_id"); }
     synchronized long version() { return o.optLong("version"); }
+    synchronized int packPid() { return o.optInt("pack_pid"); }   // PEANUTS: 0 for jobs saved before the worker PID was recorded
     synchronized long updated() { return o.optLong("updated"); }
     synchronized long created() { return o.optLong("created"); }
     synchronized File dump() { return new File(o.optString("dump")); }
@@ -215,6 +216,7 @@ final class Job {
     synchronized void state(String state, String reason, String error) {
         try {
             o.put("state", state).put("reason", reason == null ? "" : reason).put("error", error == null ? "" : error);
+            if ("running".equals(state)) o.put("pack_pid", android.os.Process.myPid());   // PEANUTS: only PackService marks a job running
             o.remove("reason_detail");
             o.remove("go_on");
             o.remove("error_detail");
@@ -270,6 +272,11 @@ final class Job {
     /** What a failed job's card offers (PrepareText.FIX_*): an older job, which had no "fix", gets Retry */
     synchronized String fix() { return o.optString("fix", PrepareText.FIX_RETRY); }
 
+    // PEANUTS: a concise diagnostic for the foreground card. Notifications still use statusText.
+    synchronized String failureSummary() {
+        return PrepareText.failureSummary(STEP_TEXT[current()], error(), o.optString("error_detail"));
+    }
+
     /** Details of a failed job: the technical part of why (an older job's whole message), and the game, version and folders */
     synchronized String errorDetail() {
         String d = "failed".equals(state()) ? PrepareText.failedDetail(error(), o.optString("error_detail"), o.has("fix")) : "";
@@ -300,6 +307,15 @@ final class Job {
     synchronized void shadersMissing(long n, long of) {
         try {
             o.put("shaders_missing", new JSONArray().put(n).put(of));
+        } catch (JSONException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** PEANUTS: keep the failed and total shader counts for the final build message. */
+    synchronized void shadersFailed(long n, long of) {
+        try {
+            o.put("shaders_failed", new JSONArray().put(n).put(of));
         } catch (JSONException e) {
             throw new IllegalStateException(e);
         }

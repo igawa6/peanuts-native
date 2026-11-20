@@ -579,6 +579,7 @@ static void cpu_line(const char *what) {
     memcpy(g_cpu, cur, (size_t)n * sizeof cur[0]); g_ncpu = n; g_cpu_at = now;
 }
 __attribute__((weak)) void peanuts_lifecycle(int suspended);   // PEANUTS: dm/peanuts/peanuts.c; absent in a build without it
+void vka_pso_pause(int on);   // PEANUTS: resume can precede the first guest frame
 static void suspend_apply(const char *why) {
     int want = g_bg || g_pause;
     if (want == g_susp) return;
@@ -591,6 +592,7 @@ static void suspend_apply(const char *why) {
         cpu_line(why);
         if (peanuts_lifecycle) peanuts_lifecycle(0);   // PEANUTS: and of the resume before the game runs again, the order Eden Duo's Pause and Run keep
         crash_watch_hold(0); dm_guest_suspend(0); dm_gfx_suspend(0); guest_clock_freeze_for(1, 0); audio_apply(); dm_focus_set(2);
+        vka_pso_pause(0);   // PEANUTS: let shader preparation finish so the guest can start
         if (g_resumed) dm_focus_set(1);
     }
 }

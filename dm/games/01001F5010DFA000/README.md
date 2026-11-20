@@ -53,6 +53,8 @@ PEANUTS: built on the device and played on an AYN Thor (Adreno 740, Turnip) thro
 - The device's shader split could not decode the 678 GFPAK archives (Oodle Kraken): it now runs the game's own decoder in the app's host library, as it does for an Unreal game's shader archives (`shader_split.py` `oodle`, `ue_ondevice.py`).
 - People and Pokémon were not drawn: the game skins them with transform feedback (vertex shader `3374449f919e50db` captures three outputs into buffers of stride 12 / 4 / 4), which the Vulkan replay skipped. It captures now (`dm/gfx/vk_android/vka_tf.c`, `VK_EXT_transform_feedback`; `DM_VK_XFB=0` turns it off).
 
+<!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) for 1.1.1 uses [the observed file list](shader_files.tsv). With the Linux Oodle decoder, it read 1,874 of 19,095 RomFS files and reproduced all 12,851 shader records by package SHA-256.
+
 ## Android community FPS timing corrections
 
 Android defaults to 60 with a reviewed port of Fl4sh9174's 1.1.1 Dynamic FPS clock. It measures elapsed time through the game's system-tick import, bounds a simulation step to 1/15 second, and replaces two former 1/30-second constants. The game's nanosecond frame period follows the selected target. The source mod's fixed 60 FPS minimum period is replaced by the live cap; 90/120 remain experimental.

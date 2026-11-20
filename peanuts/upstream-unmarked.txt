@@ -81,6 +81,8 @@ dm/games/01005270232F2000/vk_prewarm.bin	a prewarm seed list made by dm/tools/vk
 dm/games/0100606026F12000/vk_prewarm.bin	a prewarm seed list made by dm/tools/vk_prewarm.py seed from this fork's runs on an AYN Thor (Turnip), 2026-11-15: binary, and tied to this host's pipeline key layout, so upstream's own seed for the game (it has none today) would replace it
 dm/games/01006BB00C6F0000/vk_prewarm.bin	a prewarm seed list made by dm/tools/vk_prewarm.py seed from this fork's runs on an AYN Thor (Turnip), 2026-11-15: binary, and tied to this host's pipeline key layout, so upstream's own seed for the game (it has none today) would replace it
 dm/games/01008DB008C2C000/vk_prewarm.bin	a prewarm seed list made by dm/tools/vk_prewarm.py seed from this fork's runs on an AYN Thor (Turnip), 2026-11-15: binary, and tied to this host's pipeline key layout, so upstream's own seed for the game (it has none today) would replace it
+dm/games/01009720213B0000/vk_prewarm.bin	a prewarm seed made by dm/tools/vk_prewarm.py from the Captain Tsubasa 2 1.0.6 intro, menus and an offline match on AYN Thor (Turnip), 2026-11-18; binary, tied to this host's key layout
+dm/games/010097F018538000/vk_prewarm.bin	a prewarm seed made by dm/tools/vk_prewarm.py from DAVE THE DIVER 1.0.6.1267 startup and the first dive on AYN Thor, 2026-11-18; binary, tied to this host's key layout
 dm/games/010099A00BC1E000/vk_prewarm.bin	a prewarm seed list made by dm/tools/vk_prewarm.py seed from this fork's runs on an AYN Thor (Turnip), 2026-11-15: binary, and tied to this host's pipeline key layout, so upstream's own seed for the game (it has none today) would replace it
 dm/games/01006B601380E000/shader_map.tsv	Kirby's Return to Dream Land Deluxe's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 01006B601380E000); a marker comment would change the profile's shader inputs digest and with it every built library's stamp
 dm/games/01006B601380E000/shader_map.tsv.conflicts.tsv	Kirby's Return to Dream Land Deluxe's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 01006B601380E000); a marker comment would change the profile's shader inputs digest and with it every built library's stamp
@@ -120,11 +122,42 @@ dm/games/0100F9F00C696000/shader_pairs.tsv	Crash Team Racing Nitro-Fueled's gene
 dm/games/0100F9F00C696000/pso_pairs.tsv	Crash Team Racing Nitro-Fueled's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 0100F9F00C696000); a marker comment would change the profile's shader inputs digest and with it every built library
 dm/games/0100F9F00C696000/pso_manifest.tsv	Crash Team Racing Nitro-Fueled's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 0100F9F00C696000); a marker comment would change the profile's shader inputs digest and with it every built library
 dm/games/0100F9F00C696000/bf_want.tsv	Crash Team Racing Nitro-Fueled's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 0100F9F00C696000); a marker comment would change the profile's shader inputs digest and with it every built library
-dm/games/0100F7E00C70E000/shader_map.tsv	Hogwarts Legacy's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 0100F7E00C70E000); a marker comment would change the profile's shader inputs digest and with it every built library's stamp
-dm/games/0100F7E00C70E000/shader_map.tsv.conflicts.tsv	Hogwarts Legacy's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 0100F7E00C70E000); a marker comment would change the profile's shader inputs digest and with it every built library's stamp
-dm/games/0100F7E00C70E000/shader_facts.tsv	Hogwarts Legacy's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 0100F7E00C70E000); a marker comment would change the profile's shader inputs digest and with it every built library's stamp
-dm/games/0100F7E00C70E000/shader_pairs.tsv	Hogwarts Legacy's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 0100F7E00C70E000); a marker comment would change the profile's shader inputs digest and with it every built library's stamp
-dm/games/0100F7E00C70E000/pso_pairs.tsv	Hogwarts Legacy's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 0100F7E00C70E000); a marker comment would change the profile's shader inputs digest and with it every built library's stamp
-dm/games/0100F7E00C70E000/pso_manifest.tsv	Hogwarts Legacy's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 0100F7E00C70E000); a marker comment would change the profile's shader inputs digest and with it every built library's stamp
-dm/games/0100F7E00C70E000/bf_want.tsv	Hogwarts Legacy's generated table (shader_split.py / dmsh_build.py), new in Peanuts Native (Banana Native has no profile for 0100F7E00C70E000); a marker comment would change the profile's shader inputs digest and with it every built library's stamp
-docs/agents/symptoms.md	generated by dm/tools/docs_symptoms.py from the Symptom bullets of docs/reference (dm/tools/tests/test_docs.py checks it is current); a fork entry adds its line wherever its entry sits, and a marker would be dropped by the next run: the entries themselves are marked
+dm/games/01009720213B0000/bf_want.tsv	Captain Tsubasa 2 1.0.6 generated shader table kept byte for byte so the profile's shader inputs digest matches the build.
+dm/games/01009720213B0000/pso_manifest.tsv	Captain Tsubasa 2 1.0.6 generated shader table kept byte for byte so the profile's shader inputs digest matches the build.
+dm/games/01009720213B0000/pso_pairs.tsv	Captain Tsubasa 2 1.0.6 generated shader table kept byte for byte so the profile's shader inputs digest matches the build.
+dm/games/01009720213B0000/shader_facts.tsv	Captain Tsubasa 2 1.0.6 generated shader table kept byte for byte so the profile's shader inputs digest matches the build.
+dm/games/01009720213B0000/shader_map.tsv	Captain Tsubasa 2 1.0.6 generated shader table kept byte for byte so the profile's shader inputs digest matches the build.
+dm/games/01009720213B0000/shader_map.tsv.conflicts.tsv	Captain Tsubasa 2 1.0.6 generated shader table kept byte for byte so the profile's shader inputs digest matches the build.
+dm/games/01009720213B0000/shader_pairs.tsv	Captain Tsubasa 2 1.0.6 generated shader table kept byte for byte so the profile's shader inputs digest matches the build.
+dm/games/010097F018538000/bf_want.tsv	DAVE THE DIVER 1.0.6.1267 generated profile table kept byte for byte for the shader inputs digest.
+dm/games/010097F018538000/pso_manifest.tsv	DAVE THE DIVER 1.0.6.1267 generated profile table kept byte for byte for the shader inputs digest.
+dm/games/010097F018538000/pso_pairs.tsv	DAVE THE DIVER 1.0.6.1267 generated profile table kept byte for byte for the shader inputs digest.
+dm/games/010097F018538000/shader_facts.tsv	DAVE THE DIVER 1.0.6.1267 generated profile table kept byte for byte for the shader inputs digest.
+dm/games/010097F018538000/shader_map.tsv	DAVE THE DIVER 1.0.6.1267 generated profile table kept byte for byte for the shader inputs digest.
+dm/games/010097F018538000/shader_map.tsv.conflicts.tsv	DAVE THE DIVER 1.0.6.1267 generated shader map diagnostics kept in the format the splitter writes.
+dm/games/010097F018538000/shader_pairs.tsv	DAVE THE DIVER 1.0.6.1267 generated profile table kept byte for byte for the shader inputs digest.
+dm/games/01001B300B9BE000/bf_want.tsv	Host-planner shader variant list. dmsh_chain.py hashes the exact bytes.
+dm/games/01001B300B9BE000/pso_manifest.tsv	Empty prewarm seed manifest from the provisional profile template. Preserve the template output until pipeline recording supplies rows.
+dm/games/01001B300B9BE000/pso_pairs.tsv	Generated supplemental pipeline pair list. dmsh_chain.py hashes the exact bytes.
+dm/games/01001B300B9BE000/shader_facts.tsv	Generated translation facts. dmsh_chain.py hashes the exact bytes.
+dm/games/01001B300B9BE000/shader_files.tsv	File inventory emitted by shader_split.py. Keep the inventory reproducible from the same input.
+dm/games/01001B300B9BE000/shader_map.tsv	Shader splitter control-section map. dmsh_chain.py hashes the exact bytes.
+dm/games/01001B300B9BE000/shader_map.tsv.conflicts.tsv	Generated conflict rulings from the split. dmsh_chain.py hashes the exact bytes.
+dm/games/01001B300B9BE000/shader_pairs.tsv	Generated vertex/pixel pair list. dmsh_chain.py hashes the exact bytes.
+dm/games/010051F0207B2000/pso_pairs.tsv	Generated supplemental pipeline pair list. dmsh_chain.py hashes the exact bytes.
+dm/games/010051F0207B2000/shader_facts.tsv	Generated translation facts. dmsh_chain.py hashes the exact bytes.
+dm/games/010051F0207B2000/shader_files.tsv	File inventory emitted by shader_split.py. Keep the inventory reproducible from the same input.
+dm/games/010051F0207B2000/shader_map.tsv	Shader splitter control-section map. dmsh_chain.py hashes the exact bytes.
+dm/games/010051F0207B2000/shader_pairs.tsv	Generated vertex/pixel pair list. dmsh_chain.py hashes the exact bytes.
+dm/games/01007EF00011E000/pso_pairs.tsv	Generated supplemental pipeline pair list. dmsh_chain.py hashes the exact bytes.
+dm/games/01007EF00011E000/shader_facts.tsv	Generated translation facts. dmsh_chain.py hashes the exact bytes.
+dm/games/01007EF00011E000/shader_map.tsv	Shader splitter control-section map. dmsh_chain.py hashes the exact bytes.
+dm/games/01007EF00011E000/shader_pairs.tsv	Generated vertex/pixel pair list. dmsh_chain.py hashes the exact bytes.
+dm/games/0100AD80208A8000/pso_pairs.tsv	Generated supplemental pipeline pair list. dmsh_chain.py hashes the exact bytes.
+dm/games/0100AD80208A8000/shader_facts.tsv	Generated translation facts. dmsh_chain.py hashes the exact bytes.
+dm/games/0100AD80208A8000/shader_map.tsv	Shader splitter control-section map. dmsh_chain.py hashes the exact bytes.
+dm/games/0100AD80208A8000/shader_pairs.tsv	Generated vertex/pixel pair list. dmsh_chain.py hashes the exact bytes.
+dm/games/0100C49025D3E000/shader_files.tsv	File inventory emitted by shader_split.py. Keep the inventory reproducible from the same input.
+dm/games/0100C49025D3E000/shader_map.tsv	Shader splitter control-section map. dmsh_chain.py hashes the exact bytes.
+docs/agents/symptoms.md	Generated from reference Symptom bullets by dm/tools/docs_symptoms.py. Its --check compares the full generated document.
+dm/gfx/tools/dmsh_xlate/Program.cs	Embedded verbatim by dmsh_xlate.csproj. Its exact bytes feed xlate_source in dmsh_chain.lock and the shader chain version. A provenance comment would invalidate desktop and on-device translator fingerprints.

@@ -251,6 +251,7 @@ final class Ondevice {
             update = Ui.button(a, "Check for updates", Ui.Kind.SOFT, v -> Updater.checkNow(a));
             update.setVisibility(View.GONE);
             Ui.add(card, update, 8);
+            dev.peanuts.ui.BuildLogUi.card(a, card, () -> job == null ? null : new String[] {job.titleId(), job.name(), job.state()});   // PEANUTS: Share build log while the job has failed or is paused
             load();
             show();
         }
@@ -385,9 +386,10 @@ final class Ondevice {
             // A job of a game this app version does not include (made by an APK that had it): one sentence, nothing to press but ⋯ (Forget, the deletes)
             String notIncluded = Profile.missing(job.titleId(), job.name());
             boolean failed = "failed".equals(st);
-            title.setText((metaLine != null ? metaLine + " \u00b7 " : "") + (notIncluded != null ? "Not in this app version" : "done".equals(st) ? "Prepared" : "pending".equals(st) ? "Ready to prepare" : failed ? "Could not prepare"
+            String unsupported = a.getString(R.string.not_supported_yet);   // PEANUTS: match the Home filter
+            title.setText((metaLine != null ? metaLine + " \u00b7 " : "") + (notIncluded != null ? unsupported : "done".equals(st) ? "Prepared" : "pending".equals(st) ? "Ready to prepare" : failed ? "Could not prepare"
                     : "paused".equals(st) ? "Paused" : "Preparing") + (job.tryAnyway() ? " · tried anyway" : "") + sim);
-            status.setText(notIncluded != null ? notIncluded : job.statusText(alive));
+            status.setText(notIncluded != null ? notIncluded : failed ? job.failureSummary() : job.statusText(alive));   // PEANUTS: show the tool error beside Share build log
             int pct = (int) Math.round(job.overall() * 1000);
             bar.setProgress(pct);
             bar.setStateDescription((pct / 10) + " percent");
@@ -739,6 +741,7 @@ final class Ondevice {
             View line = new View(a);
             line.setBackgroundColor(Ui.col(a, R.color.bn_card_stroke));
             Ui.add(box, line, 20, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)));
+            Ui.add(box, Ui.button(a, "Share build log", Ui.Kind.QUIET, v -> { d[0].dismiss(); dev.peanuts.ui.BuildLogUi.share(a, j.titleId(), j.name()); }), 14, Ui.wrap());   // PEANUTS: Share build log
             if (running) Ui.add(box, Ui.small(a, "Pause first to forget or delete."), 14);
             Button f = Ui.button(a, "Forget this job…", Ui.Kind.QUIET, v -> { d[0].dismiss(); forget(); });
             f.setEnabled(!running);

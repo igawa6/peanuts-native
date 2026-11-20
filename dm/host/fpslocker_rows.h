@@ -11,9 +11,13 @@
 #define FPW_MAX_ROWS 16
 #define FPW_SPEC_SIZE 4096
 struct fpw_row {
-  uint64_t offset, chain[3];
+  uint64_t offset, chain[4]; // Four offsets after the module-relative pointer.
   unsigned nchain, kind, copies, direct, aux;
-  float a, b;
+  union { // PEANUTS: keep integer tick scales exact.
+    float a;
+    uint32_t ticks;
+  };
+  float b;
 };
 struct fpw_rows {
   struct fpw_row row[FPW_MAX_ROWS];
@@ -80,7 +84,7 @@ static inline int fpw_parse(const char *spec, const char *build,
                            "frame_scaled_f32", "target_scaled_f32",
                            "time_ratio_f32",   "flag_cap_u8", "target_i32", "zero_u16",
                            "time_step_pair_f32", "constant_i32",
-                           "elapsed_fps_f32", "flag_cap_u32_gt"};
+                           "elapsed_fps_f32", "flag_cap_u32_gt", "step_ticks_u32"}; // PEANUTS: integer fixed step
     for (unsigned i = 0; i < sizeof kinds / sizeof *kinds; i++)
       if (!strcmp(f[1], kinds[i]))
         r.kind = i + 1;
@@ -104,7 +108,8 @@ static inline int fpw_parse(const char *spec, const char *build,
       slash = strchr(path, '/');
       if (slash)
         *slash = 0;
-      if (r.nchain == 3 || !fpw_hex(path, &r.chain[r.nchain]))
+      if (r.nchain == sizeof r.chain / sizeof *r.chain ||
+          !fpw_hex(path, &r.chain[r.nchain]))
         return -1;
       r.nchain++;
     }
@@ -112,7 +117,16 @@ static inline int fpw_parse(const char *spec, const char *build,
     if (!r.copies || (r.kind == 13 && r.copies != 1) ||
         (r.kind == 13 && r.direct && (r.offset & 7)))
       return -1;
-    if ((r.kind >= 6 && r.kind <= 10) || r.kind >= 13) {
+    if (r.kind == 17) { // PEANUTS: tick scales are unsigned decimal integers.
+      size_t digits = strspn(f[4], "0123456789");
+      if (!digits || strcmp(f[4] + digits, ":1"))
+        return -1;
+      errno = 0;
+      unsigned long long ticks = strtoull(f[4], NULL, 10);
+      if (errno || ticks < 120 || ticks > UINT32_MAX)
+        return -1;
+      r.ticks = (uint32_t)ticks;
+    } else if ((r.kind >= 6 && r.kind <= 10) || r.kind >= 13) {
       if (!fpw_factors(f[4], &r.a, &r.b) ||
           (r.kind != 10 && r.kind != 14 && r.kind != 16 && r.a == 0))
         return -1;
@@ -266,6 +280,8 @@ static inline unsigned fpw_apply_context_storage(const struct fpw_rows *rows,
     uint32_t value = 0;
     if (r->kind == 14)
       value = (uint32_t)r->a;
+    else if (r->kind == 17) // PEANUTS: integer ticks per frame
+      value = r->ticks / (unsigned)fps;
     else if (r->kind == 11)
       value = (uint32_t)fps;
     else if (r->kind == 5)

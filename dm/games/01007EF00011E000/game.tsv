@@ -31,10 +31,11 @@ present_snap	on
 pso_mtl4	on
 
 # ---- Versions ----
-# only the merged 1.9.0 copy is extracted; the base game's own build IDs are added when needed
+# PEANUTS: the frame-step patches are specific to 1.9.0. Android selects an FPSLocker plan by main build.
 build	v1114112	1.9.0	main=cd57b23fa4bbad65803d9788c01821ee	subsdk0=f39f4c431234c72eb520cfdd1001bbcf	sdk=574284b40c06cf1821a44857939083be
+build	v786432	1.6.0	main=8e9978d50bdd20b4c8395a106c27ffde	subsdk0=93ff8252d975adf07230cb86c83301c5	sdk=fcf93a41b08c5193a1410d262602dc62
 package	v1114112
-shader_versions	v1114112
+shader_versions	v1114112 v786432
 
 # ---- Files ----
 modules	main subsdk0 sdk
@@ -86,3 +87,34 @@ fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	c0x8	-	t0xd0b208
 fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	d0x0	-	0000803f
 fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	d0x8	-	0000c842
 fpslocker_plan	cd57b23fa4bbad65803d9788c01821ee	d0x10	-	01000000
+
+# PEANUTS: 1.6.0 fractional timing from the Android host, with version-specific Warehouse sites.
+fpslocker	8e9978d50bdd20b4c8395a106c27ffde	time_ratio_f32	%0x0	1	30:2
+fpslocker	8e9978d50bdd20b4c8395a106c27ffde	target_scaled_f32	%0x8	1	30:0.001
+fpslocker	8e9978d50bdd20b4c8395a106c27ffde	flag_cap_u8	%0x10	1	0:30
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	clock	-	1
+# Select three presentation buffers.
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0xe557e8	2905891a	69008052
+# GPU timing factor for dynamic resolution.
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0x150ab50	28880090	p8:0x8
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0x150ab54	018542bd	010940bd
+# Refresh the VFR ratio even when the integer interval stays the same.
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0x1c011d0	a1010034	t0x1c011dc
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0x1c011e8	6218221e	p9:0x0
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0x1c011f4	4108211e	210140bd
+# Use the same ratio for the UI and its other interval-derived step.
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0x18522fc	01102c1e	p10:0x0
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0x1852300	0008211e	400140bd
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0x1821574	0001231e	p10:0x0
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0x1821588	00082b1e	400140bd
+# Keep the stock ragdoll solver step.
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0x1618480	090140bd	09102e1e
+# Preserve both video transition calls and pass their inverse playing flag to the host.
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0xfaf62c	1de34594	l0x0
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	m0xfafe5c	11e14594	l0x0
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	c0x0	-	p7:0x10
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	c0x4	-	e0000039
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	c0x8	-	t0x21282a0
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	d0x0	-	0000803f
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	d0x8	-	6f12833a
+fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	d0x10	-	01000000

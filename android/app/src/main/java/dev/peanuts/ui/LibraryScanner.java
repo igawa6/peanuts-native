@@ -198,8 +198,10 @@ final class LibraryScanner {
         // The build folder's own place (<build folder>/<title ID>/pack, where a build with that folder set writes): a pack put there that no finished build
         // listed (copied from a PC, or left when its list entry went) was not seen until it was moved. Taken only when it starts the game as it is (Game.ready,
         // the check Play makes: the title, no unfinished module, the game's build, a shader library), so a pack a build is still writing is not called ready
-        File built = PeanutsPrefs.buildPackDir(ctx, t.titleId);
-        if (built != null && new File(built, "pack.tsv").isFile() && ready(t.titleId, t.launch, built)) return built;
+        for (File dir : PeanutsPrefs.buildGameDirs(ctx, t.titleId)) {
+            File built = new File(dir, "pack");
+            if (new File(built, "pack.tsv").isFile() && ready(t.titleId, t.launch, built)) return built;
+        }
         return null;
     }
 

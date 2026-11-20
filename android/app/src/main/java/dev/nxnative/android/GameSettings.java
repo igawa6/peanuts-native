@@ -210,7 +210,7 @@ final class GameSettings {
         }
         if (Prefs.drsGame(id) && !simple)   // the host's dynamic resolution slider: testers only for a game with Resolution presets (Quality is the game's own dynamic resolution)
             speed.add(track(recRows, Recommend.DRS, new Ui.Setting(a, "📏", "Dynamic resolution", v -> drs(a, g, again)).value(drsValue(Prefs.drs(a, id))).chevron(a)));
-        speed.add(track(recRows, Recommend.DRIVER, new Ui.Setting(a, "🎮", "GPU driver", v -> driver(a, g, again)).value(driverShort(a, id)).chevron(a)));
+        speed.add(track(recRows, Recommend.DRIVER, new Ui.Setting(a, "🎮", "GPU driver", v -> dev.peanuts.ui.DriverActivity.openForGame(a, g.titleId, g.name)).value(driverShort(a, id)).chevron(a)));   // PEANUTS: the full GPU driver page, scoped to this game
 
         // ---- Game options: the profile's own switches ----
         if (prof != null && prof.vegetationDetail) {
@@ -753,7 +753,12 @@ final class GameSettings {
             String[] labels = new String[choices.length + 1];
             int pl = Prefs.profileLimit(g.titleId);   // the profile's own default (fps_limit), else the main screen's
             Integer rc = Prefs.recCap(a, g.titleId);
-            labels[0] = rc != null ? "Recommended (" + Prefs.paceLabel(rc) + ")" : pl > 0 ? "Default (this game's: " + Prefs.paceLabel(Prefs.paceOf(pl)) + ")" : "Default (Settings: " + Prefs.paceLabel(Prefs.paceOf(Prefs.fpsCap(a))) + ")";
+            // PEANUTS: Describe the game-owned default for an optional presentation cap.
+            Profile p = Profile.of(g.titleId);
+            if (rc != null) labels[0] = "Recommended (" + Prefs.paceLabel(rc) + ")";
+            else if (p != null && p.optInPresentRate()) labels[0] = "Default (Game owned)";
+            else if (pl > 0) labels[0] = "Default (this game's: " + Prefs.paceLabel(Prefs.paceOf(pl)) + ")";
+            else labels[0] = "Default (Settings: " + Prefs.paceLabel(Prefs.paceOf(Prefs.fpsCap(a))) + ")";
             int checked = 0, cur = Prefs.paceCap(a, g.titleId);
             for (int k = 0; k < choices.length; k++) { enabled[k + 1] = FrameRateCaps.contains(allowed, choices[k]); labels[k + 1] = Prefs.paceLabel(choices[k]) + (enabled[k + 1] ? "" : " · unavailable for this game"); if (Prefs.ownFpsCap(a, g.titleId) && choices[k] == cur) checked = k + 1; }
             new PadFocus.Builder(a).setTitle("Frame rate cap · " + g.name).setSingleChoiceItems(capItems(a, labels, enabled), checked, (x, w) -> {
@@ -783,26 +788,6 @@ final class GameSettings {
         new PadFocus.Builder(a).setTitle("Frame rate cap · " + g.name).setSingleChoiceItems(capItems(a, labels, enabled), checked, (x, w) -> {
             if (!enabled[w]) return;
             Prefs.fpsCap(a, g.titleId, w == 0 ? null : w == 1 ? -1 : choices[w - 2]);
-            x.dismiss();
-            done.run();
-        }).setNegativeButton("Cancel", null).show();
-    }
-
-    static void driver(MainActivity a, Game g, Runnable done) {   // PEANUTS: also opened by the system-driver launch warning
-        List<GpuDriver.Info> inst = GpuDriver.installed(a);
-        GpuDriver.Info def = GpuDriver.selected(a);
-        List<String> labels = new ArrayList<>();
-        String rd = Prefs.recommendedDriver(a, g.titleId);   // the first choice is this phone's recommended driver when there is one (Prefs.recommendedDriver)
-        labels.add(rd != null ? "Recommended (" + Prefs.recName(a, g.titleId, Recommend.DRIVER, Recommend.SYSTEM.equals(rd) ? "system" : rd) + ")" : "Default (the main screen's: " + (def == null ? "System" : def.label()) + ")");
-        labels.add("System (the phone's own driver)");
-        String c = GpuDriver.choice(a, g.titleId);
-        int checked = c == null ? 0 : c.equals(GpuDriver.SYSTEM) ? 1 : 0;
-        for (int k = 0; k < inst.size(); k++) {
-            labels.add(inst.get(k).label());
-            if (c != null && inst.get(k).dir.getName().equals(c)) checked = k + 2;
-        }
-        new PadFocus.Builder(a).setTitle("GPU driver · " + g.name).setSingleChoiceItems(labels.toArray(new String[0]), checked, (x, w) -> {
-            GpuDriver.choice(a, g.titleId, w == 0 ? null : w == 1 ? GpuDriver.SYSTEM : inst.get(w - 2).dir.getName());
             x.dismiss();
             done.run();
         }).setNegativeButton("Cancel", null).show();

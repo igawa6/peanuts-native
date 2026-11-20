@@ -173,21 +173,16 @@ public final class CompanionVersions {
     private LinearLayout row(CompanionPort.Item item) {
         boolean isActive = item.version.equals(activeVersion);
         boolean isLocal = localVersions.contains(item.version);
-        String verifiedTxt = isActive ? (activeVerified ? "verified" : "unverified (installed by an older version of this app)")
-                : item.sha256 != null ? "will verify: release checksum" : item.sha256Url != null ? "will verify: .sha256 asset" : "no checksum published - cannot be installed";
-        StringBuilder value = new StringBuilder();
-        if (!item.date.isEmpty()) value.append(item.date.length() >= 10 ? item.date.substring(0, 10) : item.date).append(" · ");
-        value.append(size(item.size)).append(" · ").append(verifiedTxt);
-        if (isLocal && !isActive) value.append(" · on this device");
-        String notes = firstLine(item.notes);
-        if (!notes.isEmpty()) value.append("\n").append(notes);
-        PUi.Setting s = new PUi.Setting(act, "🖥️", item.version + (isActive ? " · installed" : ""), notes.isEmpty() ? null : v -> showNotes(item));
-        s.value(value.toString());
         boolean installable = isLocal || (item.sha256 != null || item.sha256Url != null);   // Found in review: a digest-less release is refused by Installer anyway; grey it out here too rather than let the user hit the error
+        String state = isActive ? (activeVerified ? "Installed and verified. " : "Installed, not verified. ")
+                : !installable ? "No checksum, so it cannot be installed. " : isLocal ? "On this device. " : "";
+        String line = state + (item.date.isEmpty() ? "" : day(item.date, "d MMM yyyy") + ", ") + size(item.size) + ".";
+        String summary = CompanionNotes.summary(item.notes);
+        PUi.Setting s = new PUi.Setting(act, "🖥️", item.version, v -> showVersion(item));
+        s.value(summary.isEmpty() ? line : line + "\n" + summary);
         if (!isActive) {
-            String label = activeVersion == null ? "Install" : isOlderThanActive(item.version) ? "Roll back" : "Switch to";
             PUi.Kind kind = !isLocal ? PUi.Kind.PRIMARY : PUi.Kind.TONAL;
-            android.widget.Button b = PUi.button(act, label, kind, v -> install(item, isLocal));
+            android.widget.Button b = PUi.button(act, label(item), kind, v -> install(item, isLocal));
             b.setEnabled(!busy && installable);
             s.view.addView(b);
             if (isLocal) {
@@ -199,21 +194,57 @@ public final class CompanionVersions {
         return s.view;
     }
 
+    /** A version's button: Install with none installed, else Roll back to an older one or Switch to a newer one */
+    private String label(CompanionPort.Item item) { return activeVersion == null ? "Install" : isOlderThanActive(item.version) ? "Roll back" : "Switch to"; }
+
     /** True when version is older than the installed one (Roll back's label), false when newer or equal (Switch to's) */
     private boolean isOlderThanActive(String version) { return activeVersion != null && CompanionPort.compareVersions(version, activeVersion) < 0; }
 
-    private static String firstLine(String notes) {
-        if (notes == null) return "";
-        String s = notes.trim();
-        int nl = s.indexOf('\n');
-        if (nl >= 0) s = s.substring(0, nl).trim();
-        return s.length() > 140 ? s.substring(0, 140) + "…" : s;
-    }
-
     private static String size(long bytes) { return bytes >= 1 << 20 ? String.format(Locale.US, "%.1f MB", bytes / 1048576.0) : String.format(Locale.US, "%.0f KB", bytes / 1024.0); }
 
-    private void showNotes(CompanionPort.Item item) {
-        new AlertDialog.Builder(act).setTitle(item.version).setMessage(item.notes.isEmpty() ? "No release notes." : item.notes).setPositiveButton("Close", null).show();
+    /** A release's date ("2026-10-29T05:11:33Z") as words in the pattern ("29 October 2026"); the date as given when it is not one */
+    private static String day(String date, String pattern) {
+        try { return java.time.LocalDate.parse(date.substring(0, 10)).format(java.time.format.DateTimeFormatter.ofPattern(pattern, Locale.ENGLISH)); }
+        catch (RuntimeException e) { return date; }
+    }
+
+    /** A version's page: what it is for and where it stands, what it changes (its notes, as text), and its button */
+    private void showVersion(CompanionPort.Item item) {
+        boolean isActive = item.version.equals(activeVersion);
+        boolean isLocal = localVersions.contains(item.version);
+        boolean installable = isLocal || (item.sha256 != null || item.sha256Url != null);
+        LinearLayout page = new LinearLayout(act);
+        page.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout notes = PUi.add(page, PUi.card(act), 0);   // what is new first; the details stay small below it
+        String body = CompanionNotes.body(item.notes);
+        if (body.isEmpty()) notes.addView(PUi.small(act, "This release has no notes."));
+        else {
+            notes.setPadding(PUi.dp(act, 8), PUi.dp(act, 8), PUi.dp(act, 8), PUi.dp(act, 8));   // the text's own focus ring sits inside
+            notes.addView(GitHubTextStyle.view(act, body));
+        }
+        LinearLayout facts = PUi.add(page, new LinearLayout(act), 14);
+        facts.setOrientation(LinearLayout.VERTICAL);
+        facts.setPadding(PUi.dp(act, 4), 0, PUi.dp(act, 4), 0);
+        String game = CompanionNotes.gameVersion(item.notes);
+        if (!game.isEmpty()) fact(facts, "Game version", game);
+        if (!item.date.isEmpty()) fact(facts, "Released", day(item.date, "d MMMM yyyy"));
+        fact(facts, "Size", size(item.size));
+        fact(facts, "Checksum", isActive ? (activeVerified ? "Verified" : "Not verified, an older version of this app installed it")
+                : installable ? "Checked before it installs" : "None published, so it cannot be installed");
+        AlertDialog.Builder b = PUi.sheet(act, "Version " + item.version, page).setNegativeButton("Close", null);
+        if (!isActive && installable && !busy) b.setPositiveButton(label(item), (d, w) -> install(item, isLocal));
+        b.show();
+    }
+
+    /** A detail under the notes: its name, and the detail beside it, both small */
+    private void fact(LinearLayout box, String name, String value) {
+        LinearLayout r = PUi.row(act);
+        r.setGravity(android.view.Gravity.TOP);
+        r.addView(PUi.small(act, name), new LinearLayout.LayoutParams(PUi.dp(act, 120), LinearLayout.LayoutParams.WRAP_CONTENT));
+        android.widget.TextView v = PUi.small(act, value);
+        v.setTextColor(PUi.col(act, dev.nxnative.android.R.color.bn_text));
+        r.addView(v, PUi.weight());
+        PUi.add(box, r, box.getChildCount() == 0 ? 0 : 4);
     }
 
     private void install(CompanionPort.Item item, boolean isLocal) {

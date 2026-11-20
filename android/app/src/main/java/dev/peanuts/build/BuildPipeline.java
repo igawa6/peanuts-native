@@ -79,7 +79,7 @@ public final class BuildPipeline {
      * one of the profile's builds. Without it, a job that turns out to need that relaxation stops and asks instead of trying it on its own (Prepare.run)
      */
     public static int start(Context ctx, BuildRequest req, boolean buildAnyway, BuildListener l) {
-        String why = check(req);
+        String why = check(ctx, req);
         if (why != null) { if (l != null) MAIN.post(() -> l.done(false, why, BuildListener.OTHER)); return 0; }
         int id = NEXT.getAndIncrement();
         if (l != null) LISTENERS.put(id, l);
@@ -116,12 +116,13 @@ public final class BuildPipeline {
         try { ctx.startService(new android.content.Intent(ctx, BuildService.class).setAction(BuildService.ACTION_CANCEL)); } catch (RuntimeException e) { Log.w(TAG, "cancel: " + e); }
     }
 
-    private static String check(BuildRequest r) {
+    private static String check(Context ctx, BuildRequest r) {
         if (r == null) return "Nothing to build.";
         if (r.titleId == null || !r.titleId.matches("[0-9A-Fa-f]{16}")) return "The game has no title ID.";
         if (r.base == null) return "Pick the game's base file first.";
         if (!r.base.exists()) return "The base file is missing: " + r.base;
-        if (r.needsImport() && r.gameDir == null) return "No game folder (Setup).";
+        if (r.needsImport() && r.gameDir == null && r.buildDestination == null && dev.peanuts.PeanutsPrefs.buildDir(ctx) == null)
+            return "Choose a Build destination or set a Game folder.";
         return null;
     }
 

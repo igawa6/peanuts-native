@@ -101,6 +101,11 @@ public final class ModBuildService extends Service {
         boolean ok = false;
         String message;
         String code = BuildListener.OTHER;
+        long started = System.currentTimeMillis();
+        // the game's build log (BuildLog, Share build log): a build with mods is a run of its own there, its job in its own work folder
+        BuildLogShare.line(this, r.titleId, BuildLog.START + "build of " + name + " (" + r.titleId + ") with mods, variant " + r.variantId + ", " + Upstream.buildTag(this)
+                + ", engine " + dev.nxnative.android.BuildConfig.NX_PACK_ENGINE + "\ngame file: " + r.dump + "\nwork folder: " + r.workDir + "\npack: " + r.packDir);
+        BuildLogShare.remember(this, r.titleId, r.workDir);
         try {
             File normalShaders = ModdedBuild.normalShadersDir(r.normalPack);
             Prepare p = new Prepare(this);
@@ -123,6 +128,9 @@ public final class ModBuildService extends Service {
             message = "Building with mods failed: " + e;
             Log.e(TAG, "modded build " + name, e);
         }
+        long took = (System.currentTimeMillis() - started) / 1000;
+        BuildLogShare.line(this, r.titleId, BuildLog.END + (ok ? "ready" : BuildListener.CANCELLED.equals(code) ? "stopped (" + code + ")" : "failed (" + code + ")") + ": "
+                + String.valueOf(message).replace('\n', ' ') + " (after " + took / 60 + " min " + took % 60 + " s)");
         final boolean fok = ok;
         final String fmsg = message;
         final String fcode = code;

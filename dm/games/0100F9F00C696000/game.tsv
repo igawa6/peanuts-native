@@ -45,5 +45,8 @@ fps_limit	60
 fps_limit_max	120
 
 # ---- Shader split ----
+# PEANUTS: On an empty save the game opens on its Language Select screen and waits for a button, before it compiles the 2 run-time shaders:
+# the build's capture boot presses A every 3 s from 8 s on (AYN Thor: no capture in 75 s without, both in 15 s with it)
+capture_keys	8:A*45/3
 shader_groups	/archives/=archives /ghosts/=ghosts /dlog/=dlog /glslc_capture/=runtime
 shader_note	Crash Team Racing Nitro-Fueled shaders

@@ -813,7 +813,12 @@ GATHER_BIAS = 8
 
 
 ANSWERS = {'subgroup_size': VK['SUBGROUP_SIZE'], 'ssbo_align': VK['SSBO_ALIGN'], 'gs_passthrough': False, 'shared_max': VK['SHARED_MAX'], 'gather_bias': GATHER_BIAS}
-keys = NS['build_keys'](want, loc, PAIRS) if want else sorted(loc)
+# PEANUTS: both packers pass only absences validated against the split. Workers inherit the same file.
+absent = set()
+if absent_file := os.environ.get('DMSH_VK_ABSENT_FILE'):
+    with open(absent_file, encoding='utf-8') as f:
+        absent = set(f.read().splitlines())
+keys = delta.package_keys(want, loc, PAIRS, absent, NS['build_keys'])
 NJ = int(os.environ.get('J', '8')); BATCH = max(1, int(os.environ.get('DMSH_VK_BATCH', '64')))
 STAGE_OF = {k: loc[k][0][:2] for k in keys}   # the package file's name gives the stage (dmsh_build.py job_for)
 ORDER = [k for k in keys if STAGE_OF[k] != 'vs'] + [k for k in keys if STAGE_OF[k] == 'vs']   # pixel shaders first: their inputs pad their vertex shaders' outputs

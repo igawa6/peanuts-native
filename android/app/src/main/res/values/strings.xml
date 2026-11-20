@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="not_supported_yet">Not Supported Yet</string> <!-- PEANUTS: the shared library and Prepare label -->
     <!-- Resolution, Upscaling quality and Graphics quality (a game whose profile has a render_cfg row: Game settings and the in-game panel; Profile.renderOutLabel,
          Profile.renderPctLabel, Profile.renderRestartNote) -->
     <string name="render_res_title">Resolution</string>

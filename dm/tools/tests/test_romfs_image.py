@@ -23,9 +23,12 @@ class Images(unittest.TestCase):
         cls.addClassCleanup(cls.tools.cleanup)
         root = Path(cls.tools.name)
         source = root / 'validate.c'
+        # PEANUTS(upstream-candidate): keep the validator warning-clean with GCC as well as Clang.
         source.write_text('#include "romfs_image.h"\nint main(int argc, char **argv) {\n'
-                          'if (argc != 2) return 2; romfs_img *m = romfs_image_open(argv[1]);\n'
-                          'if (!m) return 1; romfs_image_close(m); return 0; }\n')
+                          '    if (argc != 2) return 2;\n'
+                          '    romfs_img *m = romfs_image_open(argv[1]);\n'
+                          '    if (!m) return 1;\n'
+                          '    romfs_image_close(m);\n    return 0;\n}\n')
         cls.validator = root / 'validate'
         subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-I', str(REPO / 'dm/host'),
                         str(source), '-o', str(cls.validator)], check=True)

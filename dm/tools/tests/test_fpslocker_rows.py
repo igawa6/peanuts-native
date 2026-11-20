@@ -99,6 +99,23 @@ int main(void) {
     assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,constant_i32,@0x740,1,1.5:1",bid,&r)==-1);
     assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,constant_i32,@0x740,1,4294967296:1",bid,&r)==-1);
     assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,flag_cap_u32_gt,@0x750,1,2:240",bid,&r)==-1);
+    // PEANUTS: Unity keeps fixedDeltaTime as integer ticks behind a pointer.
+    const char *ticks = "9fe60a212cff9b9a3656ab63d4f882e5,step_ticks_u32,0x158/0x50,1,141120000:1";
+    assert(fpw_parse(ticks, bid, &r) == 1);
+    assert(!fpw_apply(&r, base, 20, read_guest, write_guest));
+    bind(0x158, 0xa00);
+    memset(mem + 0xa50, 0xa5, 8);
+    const int caps[] = {20, 30, 40, 45, 60, 90, 120};
+    for (unsigned i = 0; i < sizeof caps / sizeof *caps; i++) {
+        assert(fpw_apply(&r, base, caps[i], read_guest, write_guest) == 1);
+        uint32_t count, neighbor;
+        memcpy(&count, mem + 0xa50, 4);
+        memcpy(&neighbor, mem + 0xa54, 4);
+        assert(count == 141120000u / (unsigned)caps[i] && neighbor == 0xa5a5a5a5u);
+    }
+    assert(fpw_parse(ticks, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &r) == 0);
+    assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,step_ticks_u32,@0x750,1,4294967296:1",bid,&r)==-1);
+    assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,step_ticks_u32,@0x750,1,141120000.5:1",bid,&r)==-1);
     // Halfword governor writes must preserve both neighboring bytes and
     // work at the final two bytes of a readable allocation.
     assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,zero_u16,0x100/0x2,1,0",bid,&r)==1);
@@ -204,6 +221,25 @@ int main(void) {
     }
     mem[0x810]=0;assert(fpw_effective_cap(&r,base,base+0x800,120,read_guest)==30);
     assert(fpw_effective_cap(&r,base,base+0x800,20,read_guest)==30); // required cutscene rate
+    // PEANUTS: Kirby and the Forgotten Land 1.1.0: the interval behind one pointer, and the
+    // frame-time budget pair behind four (Warehouse [MAIN, a, b, c, d, e]).
+    const char *kirby = "9fe60a212cff9b9a3656ab63d4f882e5,zero_i32,0x100/0x50,1,0;"
+                        "9fe60a212cff9b9a3656ab63d4f882e5,inverse_f32,0x108/0x140/0x1b0/0x20/0x34,1,30:1.95;"
+                        "9fe60a212cff9b9a3656ab63d4f882e5,inverse_f32,0x108/0x140/0x1b0/0x20/0x38,1,30:1.7";
+    memset(mem,0,sizeof mem);
+    assert(fpw_parse(kirby,bid,&r)==3 && fpw_rate_ok(&r,20) && fpw_rate_ok(&r,120));
+    assert(fpw_apply(&r,base,60,read_guest,write_guest)==0); // nothing bound yet
+    bind(0x100,0x200);mem[0x250]=2;
+    bind(0x108,0x300);bind(0x440,0x500);bind(0x6b0,0x700);
+    assert(fpw_apply(&r,base,60,read_guest,write_guest)==1); // a chain not built yet leaves its rows unwritten
+    memcpy(&count,mem+0x250,4);assert(count==0);
+    bind(0x720,0x780);
+    assert(fpw_apply(&r,base,60,read_guest,write_guest)==2);
+    assert(fabsf(val(0x7b4)-.975f)<.00001f && fabsf(val(0x7b8)-.85f)<.00001f);
+    assert(fpw_apply(&r,base,30,read_guest,write_guest)==2);
+    assert(fabsf(val(0x7b4)-1.95f)<.00001f && fabsf(val(0x7b8)-1.7f)<.00001f); // the game's own budget at 30
+    assert(fpw_apply(&r,base,120,read_guest,write_guest)==2 && fabsf(val(0x7b4)-.4875f)<.00001f);
+    assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,inverse_f32,0x108/0x8/0x8/0x8/0x8/0x8,1,30:1",bid,&r)==-1); // five: refused
     return 0;
 }
 '''

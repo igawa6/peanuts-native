@@ -23,7 +23,8 @@ import java.io.*;
 public final class RuntimeShaderMapTest {
     public static void main(String[] args) throws Exception {
         try {
-            if (args.length > 3 && args[3].equals("runtime-files")) System.out.println(RuntimeShaderMap.missingRuntime(new File(args[0]), new File(args[2])));
+            if (args.length > 2 && args[2].equals("capture-keys")) System.out.println("[" + RuntimeShaderMap.captureKeys(new FileInputStream(args[0]), args[1]) + "]");
+            else if (args.length > 3 && args[3].equals("runtime-files")) System.out.println(RuntimeShaderMap.missingRuntime(new File(args[0]), new File(args[2])));
             else if (args.length > 4) System.out.println(RuntimeShaderMap.matchesBuild(new FileInputStream(args[0]), args[1], java.util.Arrays.asList(args[4].split(","))));
             else if (args.length > 3) System.out.println(RuntimeShaderMap.missingStatic(new FileInputStream(args[0]), args[1], new File(args[2])));
             else if (args.length > 2) System.out.println(RuntimeShaderMap.missing(new FileInputStream(args[0]), args[1], new File(args[2])));
@@ -55,6 +56,27 @@ public final class RuntimeShaderMapTest {
         r = subprocess.run(args,
                            check=True, capture_output=True, text=True)
         return r.stdout.strip()
+
+    def capture_keys(self, entries, title):
+        archive = self.root / 'tools-keys.zip'
+        with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:
+            for name, text in entries.items():
+                z.writestr(name, text)
+        r = subprocess.run(['java', '-cp', str(self.root), 'dev.peanuts.build.RuntimeShaderMapTest', str(archive), title, 'capture-keys'],
+                           check=True, capture_output=True, text=True)
+        return r.stdout.strip()
+
+    def test_capture_keys(self):
+        t = '0100F9F00C696000'
+        shipped = {f'dm/games/{t}/game.tsv': (REPO / f'dm/games/{t}/game.tsv').read_text()}
+        self.assertEqual(self.capture_keys(shipped, t), '[8:A*45/3]')   # issue #111: the empty save's Language Select screen
+        fe3h = '010055D009F78000'
+        self.assertEqual(self.capture_keys({f'dm/games/{fe3h}/game.tsv': (REPO / f'dm/games/{fe3h}/game.tsv').read_text()}, fe3h), '[]')
+        self.assertEqual(self.capture_keys({}, t), '[]')   # an APK without the profile: no input, as before
+        self.assertEqual(self.capture_keys({f'dm/games/{t}/game.tsv': 'capture_keys\t8:A\nDM_AUDIO=1\n'}, t), '[8:A]')
+        self.assertEqual(self.capture_keys({f'dm/games/{t}/game.tsv': 'capture_keys\t\n'}, t), '[]')   # an empty row: none
+        for bad in ('8:A B', '8:A=1', '8:A;rm'):
+            self.assertEqual(self.capture_keys({f'dm/games/{t}/game.tsv': f'capture_keys\t{bad}\n'}, t), 'error: Invalid capture_keys in dm/games/' + t + '/game.tsv', bad)
 
     def test_shipped_profiles(self):
         titles = {'010055D009F78000': 'true', '01008CF01BAAC000': 'false', '0100152000022000': 'false'}

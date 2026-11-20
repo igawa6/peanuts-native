@@ -4,6 +4,10 @@
 
 struct ANativeWindow;
 
+// PEANUTS: Startup pipeline prewarm. Progress is -1 before the phase is decided, 0 after it, or total (high 32 bits) and processed (low 32) while waiting.
+void vka_pso_prepare_launch(void);
+__attribute__((visibility("default"))) int64_t nxhost_prewarm_progress(void);
+
 // The surface to present to: the launcher calls it from any thread, before or after nxhost_main, again with every new surface (surfaceCreated / surfaceChanged) and with NULL when the
 // surface goes (surfaceDestroyed, before it returns). The replay holds its own reference (ANativeWindow_acquire) until the next call. Without a window, presents are counted and dropped
 __attribute__((visibility("default"))) void nxhost_set_window(struct ANativeWindow *w);

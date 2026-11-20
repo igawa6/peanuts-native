@@ -8,11 +8,12 @@
 #   an adb-over-network address or a personal e-mail. Vendored third-party code (dm/peanuts/third_party) keeps its own copyright lines.
 #
 # <since-ref> defaults to the merge base with upstream/android (Banana Native's history before it is upstream's, published as the single import commit of the
-# public history, see peanuts/docs/CONTRIBUTING.md "Publishing"). peanuts/scripts/install-hooks.sh runs this before every push.
+# public history, see peanuts/docs/CONTRIBUTING.md "Publishing"). A contributor's clone, whose upstream is Peanuts Native itself (its main branch, no android),
+# takes the merge base with upstream/main: their own commits. peanuts/scripts/install-hooks.sh runs this before every push.
 set -u
 cd "$(git rev-parse --show-toplevel)" || exit 1
-since="${1:-$(git merge-base HEAD upstream/android 2>/dev/null)}"
-[ -n "$since" ] || { echo "check-publish: no <since-ref> and no upstream/android to take the merge base from"; exit 1; }
+since="${1:-$(git merge-base HEAD upstream/android 2>/dev/null || git merge-base HEAD upstream/main 2>/dev/null)}"
+[ -n "$since" ] || { echo "check-publish: no <since-ref>, and neither upstream/android nor upstream/main to take the merge base from"; exit 1; }
 fail=0
 AI='claude|anthropic|codex|openai|chatgpt|gpt-[0-9]|copilot|gemini|cursor|devin|aider|windsurf|noreply@anthropic'
 

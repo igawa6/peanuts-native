@@ -1,28 +1,37 @@
-"""The translator the repository ships (dm/gfx/tools/dmsh_xlate_bin) must be the one dmsh_chain.lock names.
+"""Check the desktop translator the Peanuts packer will use against the committed tool lock."""
+import hashlib
+import os
+from pathlib import Path
+import sys
+import unittest
+from unittest.mock import patch
 
-The Mac and Windows packers run these dlls (Windows: `dotnet dmsh_xlate.dll`); a translator commit that moves the lock without
-committing the rebuilt dlls makes every packer run stop at "translator does not match the lock file" (Forgejo issue #115, 2026-11-10:
-the dlls were left at their 2026-11-07 build while the lock moved with the 2026-11-08 translator commits). The fingerprints are plain
-file hashes, so this needs no .NET runtime; tool_lock.py --check-tools also runs the translator for its embedded source digest.
-"""
-import hashlib, os, unittest
-
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-BIN = os.path.join(ROOT, 'dm', 'gfx', 'tools', 'dmsh_xlate_bin')
-LOCK = os.path.join(ROOT, 'dm', 'gfx', 'tools', 'dmsh_chain.lock')
-
-
-def sha16(p):
-    with open(p, 'rb') as f: return hashlib.sha256(f.read()).hexdigest()[:16]
+ROOT = Path(__file__).resolve().parents[3]
+# PEANUTS: resolve a source-built translator when the inherited desktop binaries predate the lock.
+sys.path.insert(0, str(ROOT / 'peanuts/scripts'))
+import prepare_pc_translator
 
 
 class XlateBinLock(unittest.TestCase):
-    def test_shipped_dlls_are_the_locked_ones(self):
-        want = dict(l.rstrip('\n').split('\t', 1) for l in open(LOCK) if '\t' in l and not l.startswith('#'))
-        for dll in ('dmsh_xlate.dll', 'Ryujinx.Graphics.Shader.dll', 'Ryujinx.Common.dll'):
-            with self.subTest(dll=dll):
-                self.assertEqual(sha16(os.path.join(BIN, dll)), want.get(dll),
-                                 f'{dll} in dmsh_xlate_bin is not the one dmsh_chain.lock names: commit the rebuilt translator with the lock')
+    def test_desktop_dlls_are_the_locked_ones(self):
+        # PEANUTS: verify the same tool directory the desktop packer selected.
+        directory = prepare_pc_translator.resolve().parent
+        lock = ROOT / 'dm/gfx/tools/dmsh_chain.lock'
+        want = dict(line.split('\t', 1) for line in lock.read_text().splitlines() if line and not line.startswith('#'))
+        for name in ('dmsh_xlate.dll', 'Ryujinx.Graphics.Shader.dll', 'Ryujinx.Common.dll'):
+            with self.subTest(dll=name):
+                self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest()[:16], want[name])
+
+    def test_resolve_only_when_the_packer_needs_its_default_shader_translator(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        import pack_android
+        with patch.dict(os.environ, clear=True), patch.object(prepare_pc_translator, 'resolve', return_value='/test/translator') as resolve:
+            self.assertNotIn('XLATE', pack_android.peanuts_env('split'))
+            resolve.assert_not_called()
+            self.assertEqual(pack_android.peanuts_env('shaders')['XLATE'], '/test/translator')
+            os.environ['XLATE'] = '/chosen/translator'
+            self.assertNotIn('XLATE', pack_android.peanuts_env('shaders'))
+            resolve.assert_called_once_with()
 
 
 if __name__ == '__main__':

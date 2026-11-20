@@ -41,6 +41,31 @@ public final class RuntimeShaderMap {
         throw new IOException("The app's shader profile is missing: " + titleId + ". Reinstall the app and tap Build again.");
     }
 
+    /**
+     * The profile's capture_keys row (game.tsv): the buttons a capture boot presses, in the host's DM_KEYS form, "" when the profile has none.
+     * A capture boot starts on an empty save, and a game that then waits for a button before it compiles its shaders (Crash Team Racing Nitro-Fueled:
+     * its Language Select screen) would never compile them (issue #111).
+     */
+    static String captureKeys(InputStream tools, String titleId) throws IOException {
+        String name = "dm/games/" + titleId + "/game.tsv";
+        try (ZipInputStream zip = new ZipInputStream(tools)) {
+            for (ZipEntry e; (e = zip.getNextEntry()) != null; ) {
+                if (!name.equals(e.getName())) continue;
+                BufferedReader r = new BufferedReader(new InputStreamReader(zip, StandardCharsets.UTF_8));
+                for (String line; (line = r.readLine()) != null; ) {
+                    String[] cols = line.split("\t");
+                    if (cols.length < 2 || !cols[0].equals("capture_keys")) continue;
+                    String keys = cols[1].trim();
+                    // one environment line of button steps only: no touch of the env file's own syntax
+                    if (!keys.matches("[A-Za-z0-9:+~*/.,-]{1,256}")) throw new IOException("Invalid capture_keys in " + name);
+                    return keys;
+                }
+                return "";
+            }
+        }
+        return "";
+    }
+
     /** Check the pack itself: an adopted job may have lost its shaders_missing count (issue #81). Reads only the library's entry table. */
     static int missing(InputStream tools, String titleId, File library) throws IOException {
         return missingKeys(runtimeKeys(tools, titleId), titleId, library);

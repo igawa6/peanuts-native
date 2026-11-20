@@ -54,6 +54,16 @@ class Formats(unittest.TestCase):
         _, _, recs = vk_prewarm.parse(lst([bytes(bad)]))
         self.assertEqual(recs, [], 'a record marked bad is left out')
 
+    def test_record_count_includes_bad_records(self):
+        # PEANUTS(upstream-candidate): stop at the declared count and require every declared record header.
+        bad = bytearray(rec(1, [1])); bad[1] = 1
+        good = rec(1, [2])
+        for magic in (vk_prewarm.MAGIC1, vk_prewarm.MAGIC2):
+            self.assertEqual(vk_prewarm.parse(lst([bad], magic=magic) + good)[2], [])
+            for missing in (1, len(good)):
+                with self.subTest(magic=magic, missing=missing), self.assertRaisesRegex(vk_prewarm.Error, 'header for record 2 of 2'):
+                    vk_prewarm.parse(lst([bad, good], magic=magic)[:-missing])
+
     def test_refusals(self):
         a = rec(0, [1], 16)
         with self.assertRaisesRegex(vk_prewarm.Error, 'key layout'):

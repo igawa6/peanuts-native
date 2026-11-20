@@ -2,6 +2,8 @@ host/dmhost
 host/dmhost_*
 host/*.dSYM/
 *.bin
+# PEANUTS: ship the recorded Vulkan pipeline keys for DAVE THE DIVER.
+!games/010097F018538000/vk_prewarm.bin
 *.pkl
 __pycache__/
 # Intermediate build outputs of the shader translation tool (dotnet writes them next to the sources)

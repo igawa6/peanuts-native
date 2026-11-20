@@ -31,8 +31,11 @@ class EncoderWait(unittest.TestCase):
             return v;
         }
         ''' + ring[b:]
-        start = src.index("static void *enc_main(")
+        # PEANUTS(upstream-candidate): include the worker's real tail batching and statistics, with a portable counter.
+        start = src.index("static _Atomic uint32_t g_tail_every")
         worker = src[start:src.index("// ---------- Interface", start)]
+        counter = worker.index("static inline uint64_t enc_cnt(")
+        worker = worker[:counter] + "#define enc_cnt mono_ns\n" + worker[worker.index("#define KADD", counter):]
         pre = r'''
         #define _GNU_SOURCE
         #include <assert.h>
@@ -49,8 +52,9 @@ class EncoderWait(unittest.TestCase):
         #include <time.h>
         #include <unistd.h>
         typedef void *VkCommandBuffer;
-        enum { E_WRAP = 0, E_CALL = 1 };
+        enum { E_WRAP = 0, E_CALL = 1, E_N };   // PEANUTS: the worker records per-call statistics.
         #define VRED(...) do { fprintf(stderr, __VA_ARGS__); abort(); } while (0)
+        static void vka_fp_host(const char *thread) { (void)thread; }
         static void vka_perf_thread(int nice) { (void)nice; }
         '''
         driver = r'''

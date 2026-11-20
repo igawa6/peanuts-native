@@ -27,6 +27,15 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Found on:** [FINAL FANTASY X/X-2 HD Remaster](../../dm/games/0100BC300CB48000/README.md); base and both supplied DLC packs yield 5,752 unique shaders.
 - **Check:** `test_vbf.py` covers raw and zlib blocks, shared/missing members, truncation, unaligned effects, loose shader keys and inconsistent lengths. All 5,752 programs translate on the Mac.
 
+### Diablo III's console packages
+<!-- PEANUTS: Diablo III shader package support. -->
+
+- **Symptom:** the split finds no shaders (`[RED] the shader split found no shaders in main or the RomFS`), the RomFS holds only `.cpk` files, and `cpk.py` refuses them (`not a CPK`); the run prints `[RED] shader … is not in the shader map` for every program.
+- **Cause:** Diablo III: Eternal Collection's `.cpk` files are Blizzard's console packages, not CRI's: they start with the u32 `0xa1b2c3d4` and a version (7), then bit-packed tables and the data in 64 KiB sectors. Each file is stored or one zlib stream behind a 6-byte record `{u32 decoded length, u16 stored length}`; the game's SNO assets (`0xdeadbeef` headers) are such streams, and its shader assets hold each program as a control section directly followed by its code area. No reader looked inside the streams.
+- **Fix:** `dm/gfx/tools/d3cpk.py` finds each stream by its record and keeps it only when it inflates to exactly its decoded length and ends at its stored length, so a false start in stored data is left out; it does not read the archive's tables (no stream crosses a sector: in `ClientCommon.cpk` all 57,942 store at most 0xffff bytes). `shader_split.py` reads the packages in byte ranges (`d3cpk_jobs`) and takes every control section of 0x760 to 0x880 bytes followed by its code area in the same stream (`d3cpk_shaders`), each a program of one stage; one that is not is named in a red line, never dropped silently.
+- **Found on:** [Diablo III: Eternal Collection](../../dm/games/01001B300B9BE000/README.md) 2.7.7: 1,324 shaders (562 vertex, 762 pixel) from 16 GB in 26 s, against none before; every program the game asked for up to its menus is among them.
+- **Check:** `dm/tools/tests/test_split_d3cpk.py`: shaders in streams among stored data with a false zlib header, any cut of the byte ranges giving the same keys, a control section whose code area is cut short named, a record whose decoded length is wrong not taken.
+
 ### A file no reader reads
 
 - **Symptom:** the shader split stops on one archive with a Python traceback (an `IndexError` or `struct.error` naming no file), or a reader's `[RED]` line about a format it does not know, and nothing is written; the NSP script loses the build at the split.
@@ -427,6 +436,14 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Cause:** the translator's SPIR-V generator reuses an identical type, so a shared (or local) memory of 8 words took the support buffer's `uint[8]`, which carries `ArrayStride 16`; Workgroup and Private variables may have no explicit layout.
 - **Fix:** shared and local memory arrays get a type of their own (`CodeGen/Spirv/Declarations.cs` `DeclareMemories`, `TypeArray(…, forceIdAllocation: true)`).
 - **Found on:** [Orbitals](../../dm/games/040032B023CA4000/README.md): 24 compute shaders.
+
+### A movie pak is mistaken for an Unreal shader archive
+<!-- PEANUTS: Unreal movie-only package detection. -->
+
+- **Symptom:** shader splitting stops with `there are no decoded shader code archives` even though the game's global shaders and material shaders are inline.
+- **Cause:** `uepak.inline_shaders` classified every readable nonempty pak without inline shaders as a shader archive. Movie and other asset paks therefore triggered a decode step with no shader archives to decode.
+- **Fix:** classify asset-only paks separately. The splitter and profile survey check explicitly for shader libraries in IoStore so a library remains discoverable beside an asset-only pak.
+- **Found on:** [Demon Slayer 2](../../dm/games/0100AD80208A8000/README.md#shaders).
 
 ### IoStore patch containers keep their shader groups in the base container
 
@@ -1828,6 +1845,13 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Cause:** the module record's offset and the entry's c1 offset were 32-bit byte offsets into the blob, so a blob stopped at 4 GiB; the game below has 131,426 shaders and a 9.8 GB blob. `write_library` also built the whole blob in memory, from result files `read_result` had read whole.
 - **Fix:** the high bits of both offsets go in reserved fields, `dmsh_vk_module.off_hi` (bits 32-47) and `dmsh_vk_entry.c1_off_hi`, which are 0 in every smaller library, so those are written and read as before and the format stays version 1 ([android/SHADERS.md, Library format](../../android/SHADERS.md#library-format)). The replay reads them through `vka_shlib_mod_off` / `vka_shlib_c1_off`, the tools through `vk_android_delta.py` `mod_off` / `c1_off`; `c1_off_hi` is one of the positions the delta update's entry hash leaves out. `read_result` leaves the stored modules in their result files (`Stored`), `write_library` lays out the tables first and then copies the pieces one at a time, and `--check` maps the library. Checks: `t_android_shlib` (the high bits refused past a small blob, the offsets they give), `test_android_shader_delta` (`test_high_offset_bits`).
 - **Found on:** [Pokémon Pokopia](../../dm/games/0400A3A01EE4C000/README.md#found-on-this-game): the full library, 131,426 shaders.
+
+### Other versions' pixel shaders return during Android translation
+
+- **Symptom:** The Android build stops at 18%. The Vulkan builder requests more shaders than the launcher selected and reports the extra keys missing from the package. <!-- PEANUTS -->
+- **Cause:** A shared vertex shader can be paired with different pixel shaders across game updates. Expanding those pairs against the whole profile restored keys the split had already verified belonged to another version.
+- **Fix:** Both packers pass the validated missing keys to the Vulkan builder. It expands vertex dependencies within the remaining profile keys and checks the required records in the package.
+- **Found on:** [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md#shaders) 1.2.1 and [Mario Kart 8 Deluxe](../../dm/games/0100152000022000/README.md#files-and-shaders) 4.0.0 and 4.0.1.
 
 ### A library with failed shaders passed as finished (Android)
 

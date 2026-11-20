@@ -133,6 +133,35 @@ int main(void) {
       CHECK(cov == want, "placed %llu MiB, the granules touched %llu MiB", (unsigned long long)(cov / MIB), (unsigned long long)(want / MIB));
       printf("t_android_place: model: %d asks, %d across parts, all joined; %d segments, %llu MiB placed\n", nask, nstraddle, g_n, (unsigned long long)(cov / MIB)); }
 
+    // PEANUTS(upstream-candidate): asks that place without a join (vka_mem.c mtl_pool_place: a texture's storage). Kirby and the Forgotten Land's 1.4 GiB pool in 16 MiB
+    // granules, textures of 172 KiB to 1.3 MiB laid out end to end: with joins, every texture across a segment's end joins the whole segments, so one segment keeps growing
+    // (352 MiB on the Thor, then refused past DM_VK_PLACE_JOIN_MB); placed only, the segments stay one granule each; a command across a granule's end then joins two granules
+    { const uint64_t g = 16 * MIB, pm = 0x40377ec000ull, ps = 0x5aa00000ull; uint64_t x = 0x2545f4914f6cdd1dull, a = pm + 0x1000, big = 0;
+      static uint64_t as[2048], es[2048]; int n = 0;
+      while (n < 2048) { uint64_t len = 0x2b400 + rnd(&x) % 0x12aa00; if (a + len > pm + 512 * MIB) break; as[n] = a; es[n++] = a + len; a += len; }
+      g_n = 0; for (int i = 0; i < n; i++) ask(pm, ps, as[i], es[i], g, 1);
+      for (int i = 0; i < g_n; i++) if (g_s[i].hi - g_s[i].lo > big) big = g_s[i].hi - g_s[i].lo;
+      CHECK(big > 256 * MIB, "joined for textures, a segment grows past the join cap (%llu MiB)", (unsigned long long)(big / MIB));
+      g_n = 0; big = 0; for (int i = 0; i < n; i++) ask(pm, ps, as[i], es[i], g, 0);
+      for (int i = 0; i < g_n; i++) if (g_s[i].hi - g_s[i].lo > big) big = g_s[i].hi - g_s[i].lo;
+      CHECK(big == g, "placed only, every segment is one granule (largest %llu MiB)", (unsigned long long)(big / MIB));
+      int k0, k1, across = 0; for (int i = 0; i < n; i++) if (vkp_join(g_s, sizeof *g_s, g_n, as[i], es[i], &k0, &k1) > 1) { across = i; break; }
+      CHECK(across, "some texture lies across two granules");
+      CHECK(ask(pm, ps, as[across], es[across], g, 1) == 2 && vkp_join(g_s, sizeof *g_s, g_n, as[across], es[across], &k0, &k1) == 1 && g_s[k0].hi - g_s[k0].lo == 2 * g,
+            "a command over it joins just its two granules");
+      printf("t_android_place: textures placed only: %d textures, %d segments, the largest %llu MiB\n", n, g_n, (unsigned long long)(big / MIB)); }
+
+    // PEANUTS(upstream-candidate): the record of an ask with nothing left to do (vka_mem.c t_neg, vkp_neg_hit). A texture across two parts is placed without a join
+    // (mtl_pool_place) and recorded; the same range asked for with a join (the texture is linear, or the game takes its address) must not be answered from that record,
+    // or its two parts are never joined. A joining ask's record answers both kinds; another generation or a range outside the record answers none
+    { const uint64_t a = 0x4037fe0000ull, e = a + 0x40000;
+      CHECK(vkp_neg_hit(7, a, e, 0, 7, a, e, 0), "placed, then placed again: answered");
+      CHECK(!vkp_neg_hit(7, a, e, 0, 7, a, e, 1), "placed, then a joining ask of the same range: not answered");
+      CHECK(!vkp_neg_hit(7, a, e, 0, 7, a + 0x1000, e - 0x1000, 1), "placed, then a joining ask inside it: not answered");
+      CHECK(vkp_neg_hit(7, a, e, 1, 7, a, e, 1) && vkp_neg_hit(7, a, e, 1, 7, a, e, 0), "joined: answers both kinds");
+      CHECK(!vkp_neg_hit(7, a, e, 1, 8, a, e, 1), "another generation: not answered");
+      CHECK(!vkp_neg_hit(7, a, e, 1, 7, a, e + 1, 0) && !vkp_neg_hit(7, a, e, 1, 7, a - 1, e, 0), "a range past the record: not answered"); }
+
     if (fails) { printf("t_android_place: %d FAILED\n", fails); return 1; }
     printf("t_android_place: ok\n");
     return 0;

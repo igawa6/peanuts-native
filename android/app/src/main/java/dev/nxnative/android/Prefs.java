@@ -74,7 +74,7 @@ final class Prefs {
     static void padFirst(Context c, String key) { of(c).edit().putString("pad_first", key == null ? "" : key).commit(); }
 
     /** Button mapping (PadMap, DM_PAD_MAP): Settings' default ("" = none: the host's default), then each game's own (unset = Settings'; "" = none for this game) */
-    static String padMap(Context c) { return of(c).getString("pad_map", BuildConfig.APPLICATION_ID.endsWith(".peanuts") ? PEANUTS_PAD_MAP : ""); }
+    static String padMap(Context c) { return of(c).getString("pad_map", !BuildConfig.NX_PEANUTS_ID.isEmpty() ? PEANUTS_PAD_MAP : ""); }   // PEANUTS: a Peanuts build, whatever its -PnxAppId
     /** PEANUTS: the Peanuts app's default Button mapping: the face buttons by name (A=A, B=B, X=X, Y=Y), i.e. A/B and X/Y swapped from the positional default; the editor changes it */
     static final String PEANUTS_PAD_MAP = "BUTTON_A=A,BUTTON_B=B,BUTTON_X=X,BUTTON_Y=Y";
     static void padMapDefault(Context c, String spec) { of(c).edit().putString("pad_map", spec == null ? "" : spec).commit(); }
@@ -111,11 +111,13 @@ final class Prefs {
     /** Games whose speed follows the measured frame rate (their profile has fps_decouple sead: the host's sead_rate) get a frame limit instead of 60 / 30 / 20 locking.
      *  The limit is one of PACE_CAPS: 0 = 60 fps (the game's fastest rate, where the measured rate is clamped), or at most that many frames a second (paceOf) */
     static final int[] PACE_CAPS = {0, 45, 40, 30, 20};   // saved as the rate itself (fps_cap), not an index: 20 was added last, the others keep their meaning
-    static int paceMax(String titleId) { Profile p = Profile.of(titleId); return p == null || p.decoupled || p.fpsLimit <= 0 ? 60 : p.fpsLimitMax; }
+    // PEANUTS: Optional presentation caps use the maximum from the profile.
+    static int paceMax(String titleId) { Profile p = Profile.of(titleId); return p != null && !p.decoupled && (p.fpsLimit > 0 || p.optInPresentRate()) ? p.fpsLimitMax : 60; }
     static int[] paceCaps(String titleId) {
         Profile p = Profile.of(titleId);
         if (p != null && !p.fpsModes.isEmpty()) return p.fpsModeCaps();
-        return p != null && (p.steps && !p.fpsLocker.contains(",time_ratio_f32,") && !p.fpsLockerPlan.contains(",clock,-,1") || p.fpsLocker.contains(",vsync_u32,")) ? new int[] {FrameRateCaps.GAME_OWNED, 0, 30, 20} : FrameRateCaps.rates(paceMax(titleId), p == null ? 20 : p.fpsLimitMin);
+        // PEANUTS: Whole-step games expose only their supported divisors.
+        return p != null && (steps(titleId) || p.fpsLocker.contains(",vsync_u32,")) ? new int[] {FrameRateCaps.GAME_OWNED, 0, 30, 20} : FrameRateCaps.rates(paceMax(titleId), p == null ? 20 : p.fpsLimitMin);
     }
     static boolean paced(String titleId) { Profile p = Profile.of(titleId); return p != null && p.decoupled; }
     /** Games the host's frame limiter caps (hle_fpslock.c fps_limit_wait, DM_FPS_LIMIT): the paced ones, and those whose profile sets a default limit (game.tsv fps_limit, a game
@@ -125,7 +127,8 @@ final class Prefs {
     static boolean decouple(Context c, String titleId) { return of(c).getBoolean(gameKey("decouple", titleId), true); }
     static void decouple(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("decouple", titleId), on).commit(); }
     /** Games whose framework runs whole fixed steps a frame that the host holds (game.tsv fps_steps: hle_fpslock.c steps_tick), as Mario Kart World's */
-    static boolean steps(String titleId) { Profile p = Profile.of(titleId); return p != null && p.steps && !p.fpsLocker.contains(",time_ratio_f32,") && !p.fpsLockerPlan.contains(",clock,-,1"); }
+    // PEANUTS: Elapsed-time hooks do not use whole-vsync steps.
+    static boolean steps(String titleId) { Profile p = Profile.of(titleId); return p != null && p.steps && !p.elapsedFrameStep && !p.fpsLocker.contains(",time_ratio_f32,") && !p.fpsLockerPlan.contains(",clock,-,1"); }
     /** Hold 60 fps (per game, default off), for steps games at the cap of 60: one step a frame always, where the game's own mode runs two (30 fps) after a frame its work
      *  overran. A frame that runs long then plays a little slower instead of dropping to 30 (DM_FPS_HOLD60=1 at start, Native.hold60Set while it runs) */
     static boolean fullVegetation(Context c, String titleId) { return of(c).getBoolean(gameKey("full_vegetation", titleId), Recommend.bool(rec(c, titleId, Recommend.VEGETATION), true)); }
@@ -141,7 +144,8 @@ final class Prefs {
     static boolean hold60(Context c, String titleId) { return of(c).getBoolean(gameKey("hold60", titleId), Recommend.bool(rec(c, titleId, Recommend.HOLD60), false)); }
     static void hold60(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("hold60", titleId), on).commit(); }
     static final String HOLD60_TEXT = "Off: the game drops to 30 fps when it cannot keep 60, as on the console. On: the game always runs its 60 fps mode and Banana Native does not hold frames, so it never drops to 30; the frame rate is less even and the game runs a little slower while under 60. Only with the 60 fps cap";
-    static boolean limited(String titleId) { Profile p = Profile.of(titleId); return p != null && (p.decoupled || p.fpsLimit > 0); }
+    // PEANUTS: Include opt-in presentation caps in the game settings.
+    static boolean limited(String titleId) { Profile p = Profile.of(titleId); return p != null && (p.decoupled || p.fpsLimit > 0 || p.optInPresentRate()); }
     /** The profile's default frame limit (game.tsv fps_limit), 0 without one */
     static int profileLimit(String titleId) { Profile p = Profile.of(titleId); return p == null ? 0 : p.fpsLimit; }
     /** A saved cap as one of PACE_CAPS: the highest at or below it, 20 below that (the main screen's 15 for the other games). Since 20 was added a saved 20 or 15 (only the main
@@ -152,8 +156,10 @@ final class Prefs {
     static int paceCap(Context c, String titleId) {
         int pl = profileLimit(titleId);
         Integer r = recCap(c, titleId);   // the recommended limit comes before the profile's and the main screen's (Recommend.effective)
-        int v = FrameRateCaps.normalize(of(c).getInt(gameKey("fps_cap", titleId), r != null ? r : pl > 0 ? pl : of(c).getInt("fps_cap", -1)), paceMax(titleId));
         Profile p = Profile.of(titleId);
+        // PEANUTS: Use game-owned pacing until the player chooses a rate.
+        int defaultCap = p != null && p.optInPresentRate() ? FrameRateCaps.GAME_OWNED : of(c).getInt("fps_cap", -1);
+        int v = FrameRateCaps.normalize(of(c).getInt(gameKey("fps_cap", titleId), r != null ? r : pl > 0 ? pl : defaultCap), paceMax(titleId));
         if (p != null && !p.fpsModes.isEmpty()) return p.fpsMode(v);
         return v > 0 && p != null && v < p.fpsLimitMin ? p.fpsLimitMin : v;
     }
@@ -307,7 +313,8 @@ final class Prefs {
     /** A game whose DLSS runs on the host's GSR2 stand-in (game.tsv dlss_standin): its Upscaler row in Game settings and the in-game panel offers the stand-in's modes, with Motion clarity and Temporal sharpness (GameUpscaler, DlssTune) */
     /** Whether this game's frame limit only paces the presents (game.tsv fps_limit_present): the cap screens add PRESENT_ONLY_NOTE */
     static boolean presentOnly(String titleId) { Profile p = Profile.of(titleId); return p != null && p.presentOnly; }
-    static final String PRESENT_ONLY_NOTE = "Experimental for this game: the cap only limits how often the picture is shown, not the game itself. Expect bugs (for example the game running slower or faster).";
+    // PEANUTS: Warn about game speed when only presentation is paced.
+    static final String PRESENT_ONLY_NOTE = "Experimental for this game. Changing the frame rate may change game speed or cause bugs.";
     static boolean dlssGame(String titleId) { Profile p = Profile.of(titleId); return p != null && p.dlss; }
     static final int[][] DRS = {{100, 100}, {80, 100}, {70, 100}, {60, 100}, {50, 100}, {40, 100}, {30, 100}};   // 30 %: the game's rate table stops at 3x (640x360 at 1080p)
     static final String[] DRS_NAMES = {"Off", "80%", "70%", "60%", "50%", "40%", "30%"};   // the lowest render size, as % of the window (always up to 100 %)

@@ -70,6 +70,20 @@ class IoStore(unittest.TestCase):
         self.assertTrue(all(e[1] == e[2] and e[3] == 3 for e in a['shaders']))
         return [b[a['code'] + e[0]:a['code'] + e[0] + e[1]] for e in a['shaders']]
 
+    # PEANUTS: an asset-only sibling must not force an archive decode for inline shaders.
+    def test_movie_pak_is_neither_inline_nor_archive(self):
+        with patch.object(uepak, 'footer', return_value=(0, 0, 40, b'', 11)):
+            for filename, expected in (
+                (b'Movie.bk2\0', None),
+                (b'Material.uexp\0', True),
+                (b'ShaderArchive-Game.ushaderbytecode\0', False),
+            ):
+                with self.subTest(filename=filename):
+                    p = self.romfs / 'Game.pak'
+                    index = struct.pack('<iiQiiQQ', 0, 1, 0, 0, 1, 40, len(filename))
+                    p.write_bytes(index + filename)
+                    self.assertIs(uepak.inline_shaders(str(p)), expected)
+
     def test_single_container_and_finish(self):
         raw = b'LSLG-single-container'
         container(self.romfs, 'Game.utoc', [(LIB, library([(GROUP, raw, raw)])), (GROUP, raw)])

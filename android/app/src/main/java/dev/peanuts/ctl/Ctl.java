@@ -265,6 +265,21 @@ public final class Ctl {
                 CompanionCmd.start(app, r, res, () -> UI.post(() -> { done(res); if (changes) libraryChanged(); }));
                 break;
             }
+            case "share_build_log": {   // the game's build log bundle (Share build log) into files/ctl/build-logs, pending until it is written
+                String id = r.titleId(true);
+                new Thread(() -> {
+                    try {
+                        dev.peanuts.build.BuildLogShare.Made m = dev.peanuts.ui.BuildLogUi.forCtl(app, id);
+                        if (!m.anything) res.fail("no_build_log", "No build log of " + m.name + " yet, and no job folder was found.");
+                        else res.ok("The build log of " + m.name + " is in ctl/build-logs/" + m.zip.getName() + ".").put("file", "build-logs/" + m.zip.getName()).put("path", m.zip.getPath())
+                                .put("bytes", m.bytes).put("files", m.files).put("jobs", m.jobs).put("mod_jobs", m.modJobs).put("cut", m.cut);
+                    } catch (java.io.IOException | RuntimeException e) {
+                        res.fail("failed", e.getMessage() == null ? e.toString() : e.getMessage());
+                    }
+                    UI.post(() -> done(res));
+                }, "peanuts-ctl-build-log").start();
+                break;
+            }
             default: throw new Request.Bad("unknown_command", r.cmd);
         }
     }

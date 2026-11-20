@@ -21,6 +21,9 @@ public final class ExitNoticeJvmTest {
 
     public static void main(String[] a) throws IOException {
         switch (a[0]) {
+            case "workers":   // PEANUTS: build retry policy
+                System.out.println("reduce " + ExitNotice.reducePackWorkers(Integer.parseInt(a[1]), Integer.parseInt(a[2]), Boolean.parseBoolean(a[3])));
+                break;
             case "cause": System.out.println("cause " + ExitNotice.cause(ExitNotice.parse(file(a[1])), Integer.parseInt(a[2]), Integer.parseInt(a[3]), a[4].equals("-") ? null : a[4],
                     a[5].equals("1"), file(a[6]))); break;
             case "pending": System.out.println("pending " + ExitNotice.pending(ExitNotice.parse(file(a[1])))); break;

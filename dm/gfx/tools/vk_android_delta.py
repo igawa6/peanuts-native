@@ -244,6 +244,18 @@ def phone_keys(map_keys, seen_text, pairs, build_keys):
     return set(build_keys(sel, set(map_keys), pairs))
 
 
+# PEANUTS: a one-version split of a multi-version profile can lack a paired pixel shader.
+def package_keys(want, locations, pairs, absent, build_keys):
+    """Expand the selection using only the dependencies allowed for this package."""
+    if not absent:
+        return build_keys(want, locations, pairs)
+    available = locations.keys() - absent
+    selected = want - absent
+    if not available or (want and not selected):
+        raise ValueError("the shader selection is empty after excluding the validated missing shaders")
+    return build_keys(selected, available, pairs)
+
+
 def coverage(manifest, keys):
     """(the keys of a build that the manifest has, those it lacks), in the build's order. A manifest serves the keys it has whatever else it or the build holds: an entry is
     the key's alone once the tools (the version) and the profile's inputs are fixed, so a manifest of another key set (the profile's selection as published against a build

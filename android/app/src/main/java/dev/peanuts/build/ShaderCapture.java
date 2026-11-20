@@ -18,13 +18,13 @@ import java.util.List;
 
 /** Internal preparation mode of the non-exported GameActivity; never a normal play session. */
 public final class ShaderCapture {
-    private static final String DIR = "pn_capture_dir", SAVE = "pn_capture_save";
+    private static final String DIR = "pn_capture_dir", SAVE = "pn_capture_save", KEYS = "pn_capture_keys";
     private ShaderCapture() {}
 
-    static Intent intent(android.content.Context c, String title, File game, File pack, File dir, File save) {
+    static Intent intent(android.content.Context c, String title, File game, File pack, File dir, File save, String keys) {
         return new Intent().setClassName(c.getPackageName(), "dev.nxnative.android.GameActivity")
                 .putExtra("title_id", title).putExtra("name", game.getName()).putExtra("game", game.getPath())
-                .putExtra("pack", pack.getPath()).putExtra(DIR, dir.getPath()).putExtra(SAVE, save.getPath())
+                .putExtra("pack", pack.getPath()).putExtra(DIR, dir.getPath()).putExtra(SAVE, save.getPath()).putExtra(KEYS, keys == null ? "" : keys)
                 .putExtra("no_pause", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
     }
 
@@ -39,7 +39,7 @@ public final class ShaderCapture {
 
     public static void environment(Activity a, List<String> env) {
         if (!active(a)) return;
-        // A preparation boot gets no player's save, scripted input, companion or sound.
+        // A preparation boot gets no player's save, companion or sound, and no scripted input but the profile's own capture_keys.
         // PEANUTS: use the host's single default account; a multi-user selector would wait for input during Build.
         env.removeIf(s -> s.startsWith("DM_KEYS=") || s.startsWith("DM_SAVE=") || s.startsWith("DM_GLSLC_CAPTURE=")
                 || s.startsWith("DM_AUDIO=") || s.startsWith("PN_COMPANION=")
@@ -48,6 +48,9 @@ public final class ShaderCapture {
         env.add("DM_GLSLC_CAPTURE=" + a.getIntent().getStringExtra(DIR));
         env.add("DM_AUDIO=0");
         env.add("PN_COMPANION=off");
+        // The empty save can leave a game on a first-run screen that waits for a button (issue #111): the profile's presses get it past
+        String keys = a.getIntent().getStringExtra(KEYS);
+        if (keys != null && !keys.isEmpty()) env.add("DM_KEYS=" + keys);
     }
 
     /** Keep the rendering surface alive underneath an opaque preparation screen. */

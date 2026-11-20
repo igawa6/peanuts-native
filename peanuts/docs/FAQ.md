@@ -1,6 +1,6 @@
 # Peanuts Native FAQ
 
-For version 0.1.4. Labels in **bold** are the words the app shows. "Settings" is the gear button on the home screen. "Hold the cover" means a long press on a game's cover (or Y on a controller).
+For version 0.1.5. Labels in **bold** are the words the app shows. "Settings" is the gear button on the home screen. "Hold the cover" means a long press on a game's cover (or Y on a controller).
 
 ## Quick answers
 
@@ -64,7 +64,7 @@ You dump your own games, keys and firmware from your own console. The app ships 
 ### Where do my files go?
 
 - Your dumps stay where you put them, in the game folder you picked.
-- A build goes beside the game by default. Settings › Library › **Build folder** moves all builds to one folder, with one folder per game.
+- Settings › Library › **Build folders** lets you add folders on internal storage and the SD card. The game sheet's **Build destination** chooses where that game's new build goes.
 - Keys and extracted fonts are kept inside the app.
 - Saves are in the app's own storage. The game's **Saves** tab shows the exact path.
 
@@ -162,14 +162,14 @@ If the home screen says **No games found in …**, put your files in that folder
 |---|---|
 | A green check | Ready. Built. Tap the cover to play. |
 | **Build** | Found in your folder, not built yet. Tap to open its sheet. |
-| **Building · N %** or **Building · preparing** | A build is running. Tap to see its card. |
+| **Building** with a percentage, or **Building** and **preparing** | A build is running. Tap to see its card. |
 | **Build stopped** | The build failed or was stopped. Its card says why. |
 | **Wrong version** | Your update is not one this app version supports. |
 | **File gone** | A file of this game is no longer where the app found it. |
-| **Not in this app version** | This app version has no profile for the game. |
+| **Not Supported Yet** | This app version has no profile for the game. |
 | A green badge with two bars, bottom right | A companion is installed for this game. |
 
-The filters at the top are **All**, **Building** (only while something builds), **Ready**, **Build needed** and **Not in this app version**. **Wrong version** and **File gone** games are under **Build needed**. **Find** searches by name.
+The filters at the top are **All**, **Building** (only while something builds), **Ready**, **Build needed** and **Not Supported Yet**. **Wrong version** and **File gone** games are under **Build needed**. **Find** searches by name.
 
 ### What does "Wrong version" mean, and how do I fix it?
 
@@ -216,7 +216,7 @@ For a version that is not on the list, the button reads **Build anyway**. It ask
 
 It is a try, not a supported path. If it fails, use the supported update and build again. Do not report bugs for a game built this way without saying so.
 
-### What does "Not in this app version" mean, and what can I do?
+### What does "Not Supported Yet" mean, and what can I do?
 
 Every game needs a profile built into the app. This app version has none for that game, so it cannot be built or played. There is no Build button for it: its sheet only says **This app version does not include … Install a build that includes it.**
 
@@ -228,7 +228,7 @@ How the three labels differ:
 
 | Label | The problem | Can you fix it? |
 |---|---|---|
-| **Not in this app version** | The app has no profile for the game. | No. Only a newer app version can. |
+| **Not Supported Yet** | The app has no profile for the game. | No. Only a newer app version can. |
 | **Wrong version** | The app supports the game, but not the update you have. | Yes: use a supported update, or try **Build anyway**. |
 | **File gone** | The app supports the game, but a file it found is missing now. | Yes: put the file back, or pick it again. |
 
@@ -246,7 +246,13 @@ For a game that is already built, tapping the cover shows the dialog **Game file
 
 ### Which games are supported?
 
-The project's README lists the tested games with the update each one needs. In 0.1.1 they are Link's Awakening, Echoes of Wisdom, Fire Emblem: Three Houses, Fire Emblem Engage, Metroid Dread, Super Mario Odyssey, Mario Kart 8 Deluxe, Animal Crossing: New Horizons, Persona 5 Royal, Castlevania: Belmont's Curse, Octopath Traveler 0, Pokémon Brilliant Diamond, Pokémon Sword and Breath of the Wild (new, little tested). Super Mario Bros. Wonder and Dragon Quest III HD-2D Remake are in the app too, but were not tested on a device yet. 0.1.2 adds Pokémon Shining Pearl, Pokémon Shield, Final Fantasy Resonance, Skyward Sword HD, Pokémon Legends: Arceus and Resident Evil 4, all new and little tested, and Kirby's Return to Dream Land Deluxe, which was run by its contributor on their own AYN Thor only. 0.1.4 adds Crash Team Racing Nitro-Fueled, Kirby and the Forgotten Land, Super Mario 3D World + Bowser's Fury, Chained Echoes, My Time at Sandrock, Monster Sanctuary and Yoru, Tomosu, all new and little tested, and Xenoblade Chronicles X: Definitive Edition as an experiment. Super Mario Bros. Wonder was checked on a device for 0.1.4, on its 1.2.1 update, the only one the app builds now. The README's table says what was seen of each.
+The project's README lists all 39 games included in 0.1.5, the updates each supports and which have an Eden Duo catalog entry.
+
+The games tested for 0.1.1 were Link's Awakening, Echoes of Wisdom, Fire Emblem: Three Houses, Fire Emblem Engage, Metroid Dread, Super Mario Odyssey, Mario Kart 8 Deluxe, Animal Crossing: New Horizons, Persona 5 Royal, Castlevania: Belmont's Curse, Octopath Traveler 0, Pokémon Brilliant Diamond, Pokémon Sword and Breath of the Wild (new, little tested). Super Mario Bros. Wonder and Dragon Quest III HD-2D Remake are in the app too, but were not tested on a device yet. 0.1.2 adds Pokémon Shining Pearl, Pokémon Shield, Final Fantasy Resonance, Skyward Sword HD, Pokémon Legends: Arceus and Resident Evil 4, all new and little tested, and Kirby's Return to Dream Land Deluxe, which was run by its contributor on their own AYN Thor only. 0.1.4 adds Crash Team Racing Nitro-Fueled, Kirby and the Forgotten Land, Super Mario 3D World + Bowser's Fury, Chained Echoes, My Time at Sandrock, Monster Sanctuary and Yoru, Tomosu, all new and little tested, and Xenoblade Chronicles X: Definitive Edition as an experiment. Super Mario Bros. Wonder was checked on a device for 0.1.4, on its 1.2.1 update, the only one the app builds now.
+
+0.1.5 adds Astral Chain, Captain Tsubasa 2: World Fighters, Dave the Diver, Demon Slayer: The Hinokami Chronicles 2, Diablo III: Eternal Collection, EA Sports FC 27, The Legend of Zelda: Tears of the Kingdom and Tomodachi Life: Living the Dream. Breath of the Wild supports updates 1.6.0 and 1.9.0.
+
+The 0.1.5 verification build was checked on an AYN Thor with Turnip v26.2.0 R5. Demon Slayer 2 reached the playable rooftop fight against Daki at about 30 fps. Tears of the Kingdom reached the opening cave and responded to movement. Kirby and the Forgotten Land prepared all 418 pipeline keys on its first launch, then reused the cache on relaunch. The other six additions have earlier, game-specific device checks.
 
 Settings › **About** lists the games of the app you have installed, each with its title ID.
 
@@ -269,7 +275,7 @@ The app asks for the notification permission at your first build. Without it the
 
 ### What happens if the build is interrupted or the device sleeps?
 
-What is written so far stays. The game's card shows **Build stopped** with **Resume** or **Retry**, and the next build picks up what it can. If the screen going off stops the build on your device, turn on Settings › **Keep the screen on while preparing** and keep the device charging. A build can also pause by itself for heat or battery and then continue.
+What is written so far stays. The game's card shows **Build stopped** with **Resume** or **Retry**, and the next build picks up what it can. If it keeps stopping, send its **Share build log** (see "A build failed, stopped or the app closed during it"). If the screen going off stops the build on your device, turn on Settings › **Keep the screen on while preparing** and keep the device charging. A build can also pause by itself for heat or battery and then continue.
 
 ### It sits at the same percentage for a long time. Is it stuck?
 
@@ -277,7 +283,9 @@ Probably not. Large games can stay on one step for many minutes. Open the **Buil
 
 ### Can I build on a microSD card?
 
-Yes. By default a build is written beside the game, so a game on the card is built on the card. To choose, pick a folder in Settings › Library › **Build folder**, on the device or on the microSD card. Every new build then goes there, one folder per game, named by title ID. Hold that row to forget the folder. Builds made before you set the folder stay where they are and keep working.
+Yes. Add folders on internal storage and the microSD card in Settings › Library › **Build folders**. Tap a folder there to make it the default or forget it. Peanuts searches every configured folder for existing builds.
+
+In the game's Build or Rebuild pop-up, tap **Build destination** above the space estimate. Choose **Default** or pick a folder for that game. You can also add a folder there. A newly imported `.nup` and its `pack/` go into the title-ID folder at the selected destination. If you start from an existing `.nup`, only the pack goes to the selected destination.
 
 ### What happens when I remove the microSD card?
 
@@ -412,6 +420,25 @@ Every run of a game writes a log. To send it:
 
 After a crash the app's notice has a **Share log** button for that run.
 
+### A build failed, stopped or the app closed during it. What do I send?
+
+**Share build log** puts everything a build of one game left into one `.zip`, small enough to attach to an issue. It is on:
+
+- the game's card on Home while its build is stopped or failed;
+- the Prepare card while its job has failed or is paused, and in its **⋯** menu;
+- hold the game's cover › **Storage** tab › **Share build log**;
+- Settings › **Share log**, which asks whether you want the newest game run or the newest build when a build changed after the last run.
+
+The sheet says how many files the `.zip` holds and how big it is. Tap **Share**, or **Save to a folder** and attach the file from there. It holds:
+
+- the build's own log: what the import and the build did, from which files, with how much memory and space, and how the build ended;
+- each step's log of the game's build, and of a build with mods when there is one;
+- the job file and its test settings (`env.txt`; a value whose name looks like a password or a token is hidden);
+- the app's own messages of the build and of crashes;
+- a summary: the app's version, the device, its memory and free space, the build's state, and how Android ended the app's processes last (to free memory, a crash, or not responding).
+
+It never holds your keys, game files, `.nup` files, saves or packs. Folder paths and game names are in it, as in the game log. Long logs are cut to their first and last part. The app writes a build's own log only since it has **Share build log**: for a build made with an older version, the `.zip` has its step logs and the summary.
+
 ## GPU drivers
 
 ### What is a GPU driver here, and do I need a custom one?
@@ -436,35 +463,33 @@ The app does not mark any driver as recommended in its list. Whichever you use, 
 
 You need an internet connection. The app downloads nothing until you tap a file.
 
-1. Open Settings › **GPU driver**. The dialog **GPU driver (takes effect at the next game start)** opens.
-2. Tap **Install…**, then **Download…**.
-3. **Download a driver (GitHub releases)** lists the sources, for example **Mr. Purple Turnip** and **KIMCHI Turnip**. Tap one.
-4. The app reads that source's releases and lists the driver zips, each with its release name and size. Tap the one you want. For the recommended driver, pick the T30 release under **Mr. Purple Turnip**.
-5. Wait for **Downloading …**.
+1. Open **GPU driver** from Settings or from a game's **Performance** tab.
+2. Under **Add a driver**, open a source such as **Balemuni Turnip** for Adreno or **PanVK for Mali** for supported Mali and Immortalis devices.
+3. Browse the release names, supported GPUs and file sizes. Tap **Install** on the file you want.
 
-What you should see: the message **Installed and picked** with the driver's name, and the driver dialog again with that driver selected. The Settings row **GPU driver** now shows its name. It is used from the next game start.
+When you see **Installed and picked**, the driver is ready for the next game start. An install from a game's page picks the driver for that game only.
 
 If you see **No network (cannot reach GitHub)** or **GitHub rate limit, try again later**, check the connection or wait and try again.
 
 ### How do I install a driver from a zip I already have?
 
-1. Open Settings › **GPU driver** › **Install…** › **Pick a zip…**.
+1. Open **GPU driver**, then **From a file** › **Pick a zip file**.
 2. Pick the driver zip. It must be a driver package with a `meta.json` inside, the format other Android emulators use.
 
-What you should see: **GPU driver installed and picked:** with the driver's name. If the zip is not a driver package you see **GPU driver not installed:** and the reason, for example **no meta.json in the zip**. Nothing changes in that case.
+The page shows **Installed and picked** with the driver's name, or **Not installed** with a reason.
 
 ### How do I pick a driver for all games, or for one game?
 
 For all games:
 
 1. Open Settings › **GPU driver**.
-2. Tap **System (the phone's own driver)** or an installed driver. The dialog closes.
+2. Pick **System** or an installed driver, then go back.
 
 For one game:
 
 1. Hold the game's cover and open the **Performance** tab.
 2. Tap **GPU driver**.
-3. Pick **Default (the main screen's: …)** to follow Settings, **System (the phone's own driver)**, or an installed driver.
+3. Pick **Default** to follow Settings, **Recommended** if a device-specific recommendation is available, **System**, or an installed driver.
 
 What you should see: the row shows the name you picked. A game's own choice wins over the one in Settings. The change applies the next time the game starts, not to a running game.
 
@@ -474,11 +499,8 @@ Go back: Settings › **GPU driver** › **System (the phone's own driver)**. Fo
 
 Remove:
 
-1. Open Settings › **GPU driver** and pick the driver you want to remove. The dialog closes.
-2. Open Settings › **GPU driver** again and tap **Remove picked…**.
-3. Confirm with **Remove driver**.
-
-What you should see: **Removed …; the system driver is used**. Only the app's copy of the driver is deleted. Your zip, games, builds and saves are kept.
+1. Open **GPU driver** and tap **Remove** beside the driver.
+2. Confirm with **Remove driver**. This removes the driver's installed copy from the entire app.
 
 ### How do I check which driver a game really used?
 
@@ -490,7 +512,7 @@ What you should see: **Removed …; the system driver is used**. Only the app's 
 ### A driver made things worse. What can I try?
 
 1. Go back to **System (the phone's own driver)** and start the game again, to confirm the driver is the cause.
-2. Try another release of the same driver, older or newer, from **Download…**.
+2. Open a source under **Add a driver** to try a different release.
 3. Try a driver from another source in the list.
 4. If only one game is affected, give that game its own driver (hold the cover › **Performance** › **GPU driver**) and leave the others alone.
 5. Run Settings › **Readiness check** and **Graphics self-test** on the new driver.
@@ -553,6 +575,22 @@ It needs:
 - the companion installed for that game.
 
 On a single-screen device the game runs without it. A game without a companion leaves the second screen free for Android.
+
+### What does the second screen show while I am in the app, not in a game?
+
+The game the controller is on, and what you can do with it:
+
+- a built game: its name, **Ready**, its companion and when you last played it, with **Play** and **Game page**;
+- a game to build: what the app found for it, with **Build…** (it opens the game's sheet);
+- a game that is building: the build's step and progress, with **Stop build** and **Screens off**;
+- after **Play**, for a game with a companion: its cover until the companion is up. This also shows when the game starts from a home screen shortcut or a frontend;
+- anything else (the first start, Settings and its pages, the Readiness check, a game's page): the Peanuts Native logo.
+
+With a controller connected, each button shows the controller button that does the same: **A** is the main action, **Y** the second one, **X** opens Settings. Without one, they show the app's own icons (the gear for Settings). You can always tap them. The controller always stays on the main screen. While a question or a game's sheet is open on the main screen, the second screen dims and waits until it closes. The drifting peanuts behind both screens are one background: they carry on from one screen to the other.
+
+During a game without a companion the second screen is Android's, as before. Settings › Library › **Games without a companion** keeps the game's cover there instead.
+
+On Home, open Settings with the top-screen gear or press **X**, as shown under the gear. The second screen also has a Settings button. To give the second screen back to Android while you are in the launcher, turn off Settings › Library › **Bottom screen**. This setting controls the launcher and the optional cover shown while playing without a companion.
 
 ### Which games have a companion?
 
@@ -692,7 +730,7 @@ For a black screen, try another GPU driver first. On a device whose system drive
 
 Out of storage: the card offers **Free up space** and **Retry**. Free space on the volume the build writes to, then retry. The build picks up what it can.
 
-Out of memory, typically on an 8 GB device: update to 0.1.1 or later, which builds with fewer workers on low-memory devices. A build that Android ended for memory resumes with fewer workers, so tap **Resume**. Close other apps before a large build. If it still fails, build the game on a PC or a Mac, or report it.
+Out of memory, typically on an 8 GB device: update to 0.1.1 or later, which builds with fewer workers on low-memory devices. A build that Android ended for memory resumes with fewer workers, so tap **Resume**. Close other apps before a large build. If it still fails, build the game on a PC or a Mac, or report it with its **Share build log**: its summary says whether Android ended the build for memory.
 
 ### How do I report a bug well?
 
@@ -703,7 +741,8 @@ Open an issue at https://github.com/igawa6/peanuts-native/issues with:
 - the game, its title ID and its update version;
 - the app version and the GPU driver;
 - the Readiness check report (**Copy report**);
-- the log: hold the game's cover › **Storage** › **Share log**, or Settings › **Share log** for the newest log of any game.
+- the log: hold the game's cover › **Storage** › **Share log**, or Settings › **Share log** for the newest log of any game;
+- for a problem with a build (it fails, stops, never finishes, or the app closes during it): the `.zip` of **Share build log** instead, attached as it is.
 
 A screenshot or a short video helps for a wrong picture. Never attach or link game files, keys or firmware.
 
@@ -719,7 +758,7 @@ No. An update keeps the app's storage, and saves are in it. Uninstalling can del
 
 ### How do I tell which version I have?
 
-The build name is under the app's title on the home screen and in Settings › **About**. A release build reads `peanuts-native-0.1.4`. Every log starts with it too.
+The build name is under the app's title on the home screen and in Settings › **About**. A release build reads `peanuts-native-0.1.5`. Every log starts with it too.
 
 ## Credits
 

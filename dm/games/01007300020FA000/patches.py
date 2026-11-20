@@ -1,10 +1,10 @@
 # ASTRAL CHAIN 1.0.1, main 4b159f0f7a360669738390ee8657b4f0.
-# Host-paced 60 fps gameplay; fixed-step cinematics retain 30 fps for audio sync.
+# PEANUTS: Host-paced gameplay; fixed-step cinematics retain 30 fps for audio sync.
 # Target 0 runs the original instructions at every hook. Helpers live in the
 # rewriter's patch area, never in upstream's padding / empty-function caves.
 # Integer timer and camera helpers adapted from AstralChain-Dynamic-FPS v1.1.1:
 # https://github.com/yogesh1239/AstralChain-Dynamic-FPS/tree/79965b4df077f64b27b74456d0db88c6afac5bbe
-# Its measured-time core and interval patches are replaced by the host's frame step.
+# PEANUTS: The Android host paces the elapsed-time clock; other hosts use whole vsyncs.
 # Every game-code hook is asserted below; the NSO build ID gates the entire set.
 #
 # MIT License
@@ -61,11 +61,19 @@ def frame_step(ctx):
     # (0 is fixed-step cinematics), x20 is this frame's timestamp. The ordinary
     # epilogue restores d8/x19/x20/x21. s0/s1/s2 and x8/x16/x17 are scratch here.
     core = ctx.here(); ctx.emit(ADRP(16, core, ctx.state))
+    clock_start = core + (len(elapsed_clock) + 1) * 4  # PEANUTS: Relocate the elapsed-time branch to the emitted clock.
+    for i, word in enumerate(elapsed_clock):
+        if i == len(elapsed_clock) - 1:
+            word = B(ctx.here(), clock_start + 22 * 4)  # game's positive speed override
+        ctx.emit(word)
     for i, w in enumerate(clock):
         if i == 22: w = B(ctx.here(), 0x8a9570) | 0x80000000  # game's positive speed override
         elif i == len(clock) - 1: w = B(ctx.here(), 0x91dcb4)  # timestamp and epilogue
         ctx.emit(w)
-    targets = {0xa0e7d0: core, 0xa0e828: core}
+    first = ctx.here()  # PEANUTS: Initialize the clock before the first elapsed sample.
+    ctx.emit(0x1e2703e0)  # fmov s0,wzr: no previous time sample
+    ctx.emit(B(ctx.here(), core))
+    targets = {0xa0e7d0: core, 0xa0e828: first}
     cursor = ctx.here()
     for old, w in helpers:
         targets[old] = cursor; cursor += width(w) * 4
@@ -89,6 +97,26 @@ def frame_step(ctx):
 
 
 FRAME_STEP = {'4b159f0f7a360669738390ee8657b4f0': frame_step}
+
+# PEANUTS: The Android host enables elapsed-time pacing at state +0x3c. Cinematics
+# still use the original fixed 30 Hz step. At game clock entry s0 holds the
+# elapsed milliseconds and +0xdc gives the number of 30 Hz ticks per ms.
+# The first sample uses 30 / target until the game has a timestamp pair.
+elapsed_clock = (
+    0xb9403e11,  # ldr w17,[x16,#0x3c]
+    0x34000191,  # cbz w17, clock_start
+    0x34000175,  # cbz w21, clock_start
+    0xb900061f,  # str wzr,[x16,#4]
+    0xb900261f,  # str wzr,[x16,#0x24]
+    0x1e27d001,  # fmov s1,#30.0
+    0xbd400208,  # ldr s8,[x16]
+    0x1e281828,  # fdiv s8,s1,s8
+    0x1e202008,  # fcmp s0,#0.0
+    0x5400006d,  # b.le speed_override
+    0xbd40de61,  # ldr s1,[x19,#0xdc]
+    0x1e210808,  # fmul s8,s0,s1
+    0,           # b clock_start + 22 * 4
+)
 
 # Core: frame-state +4 marks a 30 fps cinematic; +0x24 fixes its step at two
 # vsyncs. Gameplay takes the host's step (+0x20), or 60 / target before the first

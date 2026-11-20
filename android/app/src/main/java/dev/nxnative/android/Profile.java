@@ -33,6 +33,7 @@ final class Profile {
     String presets = "";   // game.tsv res_preset rows with their windows' scene_output rows (build.gradle presetsOf): "id|label|window|mode|height|outW|outH|measured", ';' between them; Game settings › Resolution (ResPresets)
     boolean steps;   // game.tsv has fps_steps rows (build.gradle stepsOf): a framework of whole fixed steps a frame, which Hold 60 fps keeps at one (Prefs.steps)
     boolean presentOnly;   // game.tsv fps_limit_present 1 (build.gradle presentOnlyOf): the frame limit only paces the presents, the game's own logic is not known to follow it (Prefs.presentOnly)
+    boolean elapsedFrameStep; // PEANUTS: Android hooks derive game time from elapsed time.
     int fpsLimit;   // game.tsv fps_limit (build.gradle fpsLimitOf): the host's frame limit by default, frames a second (0 = none); the launcher offers a frame limit for it (Prefs.limited)
     String fpsLockerPlan = "";
     String fpsModes = "";   // explicit supported numeric rates; Game owned is always available
@@ -50,6 +51,8 @@ final class Profile {
     String cameraAspects = "";   // game.tsv aspect rows (build.gradle aspectsOf): "21:9,4:3", ',' between them; picture shapes the host's own 3D camera patch follows, with no module variant (Game settings › Aspect ratio)
     String variants = "";   // game.tsv variant rows (build.gradle variantsOf): "<name>=<label>", ',' between them; a native 4:3 mod is "43=4:3" (Game settings › Aspect ratio)
 
+    boolean optInPresentRate() { return presentOnly && fpsLimit == 0 && fpsLimitMax > 60 && !decoupled; } // PEANUTS: Leave present-only high rates opt-in.
+
     int[] fpsModeCaps() {
         if (fpsModes.isEmpty()) return new int[0];
         String[] values = fpsModes.split(",");
@@ -63,8 +66,20 @@ final class Profile {
         for (int cap : fpsModeCaps()) if (cap == value) return value;
         return 0;   // an unsupported saved choice returns to the safe 60 fps default
     }
+    // PEANUTS: the ordinary FPSLocker code plan requires a matching main build.
+    boolean fpsLockerPlanMatches(String mainBuild) {
+        if (fpsLockerPlan.isEmpty() || mainBuild == null) return true;
+        for (String row : fpsLockerPlan.split(";"))
+            if (row.startsWith(mainBuild + ",")) return true;
+        return false;
+    }
+
     boolean fpsRestart(int started, int selected) {
         return (started == -2) != (selected == -2) || !fpsPlan120.isEmpty() && (started == 120) != (selected == 120);
+    }
+    // PEANUTS: native timing modes need an engine target as well as a presentation limit.
+    boolean usesFpsModeTarget() {
+        return !fpsPlan120.isEmpty() || (!fpsModes.isEmpty() && fpsLocker.isEmpty() && fpsLockerPlan.isEmpty());
     }
     int fpsModeTarget(int selected) { return fpsMode(selected) == 120 ? 0 : fpsMode(selected) == 30 ? 30 : 60; }
     List<String> fpsModeEnv(int selected) {
@@ -568,6 +583,7 @@ final class Profile {
             p.fpsLimitMin = c.length > 34 && "30".equals(c[34]) ? 30 : 20;
             p.fpsModes = c.length > 35 ? c[35] : "";
             p.fpsPlan120 = c.length > 36 ? c[36] : "";
+            p.elapsedFrameStep = c.length > 37 && c[37].equals("1"); // PEANUTS: Optional trailing field for older profile tables.
             out.add(p);
         }
         return Collections.unmodifiableList(out);

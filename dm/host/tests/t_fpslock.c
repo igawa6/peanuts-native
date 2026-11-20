@@ -13,6 +13,8 @@
 static module_t test_modules[1];
 module_t *g_mod = test_modules;
 int g_nmod;
+// PEANUTS: Provide the movie-state input for the host pacing test.
+int dm_movie_playing(void) { return 0; }
 static int writes;
 void dm_guest_write_prepare(void *p, size_t n) { (void)p; assert(n == 4 || n == 8); writes++; }
 static void (*g_sead_gate)(uint64_t *, int);
@@ -239,6 +241,11 @@ static void step_check(void) {
     dm_fps_target_set(0, "test"); assert(step_page(page) == 0);   // the game's own logic
     nxhost_fps_limit_set(30); assert(step_page(page) == 30 && dm_fps_limit_step() == 30);   // the limit alone drives the step
     nxhost_fps_limit_set(60); assert(step_page(page) == 60 && dm_fps_limit_step() == 60);
+    // PEANUTS: An elapsed-time step must preserve a fractional-vsync rate.
+    uint32_t elapsed = 1;
+    memcpy(page + 0x3c, &elapsed, sizeof elapsed);
+    nxhost_fps_limit_set(120); assert(step_page(page) == 120 && dm_fps_limit_step() == 0 && nxhost_fps_limit_get() == 120);
+    nxhost_fps_limit_set(45); assert(step_page(page) == 45 && dm_fps_limit_step() == 0 && nxhost_fps_limit_get() == 45);
     dm_fps_state = NULL; nxhost_fps_limit_set(30); assert(dm_fps_limit_step() == 0 && nxhost_fps_limit_get() == 30);   // no frame step: the limiter alone
 }
 

@@ -233,6 +233,40 @@ class Tools(unittest.TestCase):
                 self.assertNotEqual(r.returncode, 0, argv[0])
                 self.assertNotIn('Traceback', r.stderr, argv[0]); self.assertTrue(r.stderr.startswith('[RED] '), (argv[0], r.stderr))
 
+    # PEANUTS: TLS moves through x18 use the guest slot and preserve the host register.
+    def test_rewriter_virtualizes_x18_in_tls_instructions(self):
+        try:
+            from capstone import CS_ARCH_ARM64, CS_MODE_ARM, Cs
+        except ImportError:
+            self.skipTest('rewriter test needs Capstone 5')
+        code = struct.pack('<6I', 0xD503201F, 0x1000, 0xD53BD052, 0xD53BD072, 0xD51BD052, 0xD65F03C0)
+        ro = struct.pack('<4s6i', b'MOD0', 0x1000, 0, 0, 0, 0, 0)
+        decoder = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
+        decoder.detail = True
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / 'main'
+            src.write_bytes(make_nso((code, ro, bytes(16)), compress=(0, 0, 0)))
+            for target in ('android', 'apple'):
+                with self.subTest(target=target):
+                    out = Path(tmp) / target
+                    command = [sys.executable, 'dm/tools/patch_nso.py', src, out, 'main', '--target', target]
+                    subprocess.run(command, cwd=REPO, check=True, capture_output=True)
+                    image = (out / 'main.patched.bin').read_bytes()
+                    for site, slots in ((8, (8, 0)), (12, (16, 0)), (16, (0, 8))):
+                        branch = next(decoder.disasm(image[site:site + 4], site))
+                        self.assertEqual(branch.mnemonic, 'b')
+                        start = int(branch.op_str.removeprefix('#'), 0)
+                        body = []
+                        for instruction in decoder.disasm(image[start:start + 96], start):
+                            body.append(instruction)
+                            if instruction.mnemonic == 'b':
+                                break
+                        self.assertEqual(int(body[-1].op_str.removeprefix('#'), 0), site + 4)
+                        self.assertNotRegex(' '.join(i.op_str for i in body), r'\b[xw]18\b')
+                        offsets = [i.operands[1].mem.disp for i in body if i.mnemonic == 'ldr' and i.op_str.startswith('x15, [x15')]
+                        self.assertEqual(tuple(offsets), slots)
+                        self.assertIn('x16, [x17]', [i.op_str for i in body if i.mnemonic == 'str'])
+
     def test_image_with_sparse_bss(self):   # nso.py's output file: the whole memory image, bss as a zero tail it never allocates
         with tempfile.TemporaryDirectory() as tmp:
             src, out = Path(tmp) / 'main', Path(tmp) / 'main.bin'; src.write_bytes(make_nso())

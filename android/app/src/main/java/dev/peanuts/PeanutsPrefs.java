@@ -44,7 +44,35 @@ public final class PeanutsPrefs {
     /** Settings › Library › Build folder: null (default) = beside the game, today's behaviour. A folder the user picked, on the phone or an SD card,
      *  to keep every build organized by title ID instead (one folder per game, nothing loose at its top level): {@code <build folder>/<title ID>/}. */
     public static String buildDir(Context c) { return of(c).getString("build_dir", null); }
-    public static void buildDir(Context c, String p) { put(c, "build_dir", p); }
+    /** The default remains in the original build_dir preference. Other folders follow in the order added. */
+    public static List<String> buildDirs(Context c) {
+        SharedPreferences prefs = of(c);
+        List<String> dirs = new ArrayList<>();
+        String first = prefs.getString("build_dir", null);
+        if (first != null && !first.isEmpty()) dirs.add(first);
+        try {
+            JSONArray extra = new JSONArray(prefs.getString("build_dirs_extra", "[]"));
+            for (int i = 0; i < extra.length(); i++) {
+                String dir = extra.optString(i, "");
+                if (!dir.isEmpty() && !dirs.contains(dir)) dirs.add(dir);
+            }
+        } catch (org.json.JSONException ignored) { /* the saved default still works */ }
+        return dirs;
+    }
+
+    public static void buildDirs(Context c, List<String> dirs) {
+        SharedPreferences.Editor e = of(c).edit();
+        if (dirs.isEmpty()) e.remove("build_dir"); else e.putString("build_dir", dirs.get(0));
+        JSONArray extra = new JSONArray();
+        for (int i = 1; i < dirs.size(); i++) extra.put(dirs.get(i));
+        e.putString("build_dirs_extra", extra.toString()).apply();
+    }
+
+    public static String chosenBuildDir(Context c, String titleId) {
+        String dir = of(c).getString(key(titleId, "build_dir"), null);
+        return dir != null && buildDirs(c).contains(dir) ? dir : null;
+    }
+    public static void chosenBuildDir(Context c, String titleId, String dir) { put(c, key(titleId, "build_dir"), dir); }
 
     private static final java.util.regex.Pattern TITLE_ID = java.util.regex.Pattern.compile("[0-9A-Fa-f]{16}");
 
@@ -55,9 +83,18 @@ public final class PeanutsPrefs {
     /** {@code <build folder>/<title ID>}, when a build folder is set and titleId passes {@link #validTitleId}; null otherwise, so a caller falls back to
      *  today's places (beside the game, the app's own storage). */
     public static File buildGameDir(Context c, String titleId) {
-        String b = buildDir(c);
-        if (b == null || b.isEmpty() || !validTitleId(titleId)) return null;
-        return new File(b, titleId.toUpperCase(Locale.ROOT));
+        return buildGameDir(buildDir(c), titleId);
+    }
+
+    public static File buildGameDir(String root, String titleId) {
+        if (root == null || root.isEmpty() || !validTitleId(titleId)) return null;
+        return new File(root, titleId.toUpperCase(Locale.ROOT));
+    }
+
+    public static List<File> buildGameDirs(Context c, String titleId) {
+        List<File> out = new ArrayList<>();
+        if (validTitleId(titleId)) for (String root : buildDirs(c)) out.add(buildGameDir(root, titleId));
+        return out;
     }
 
     /** {@code <build folder>/<title ID>/pack}: where a NEW build's pack goes when a build folder is set (AppStorage.pack still prefers an existing pack
@@ -83,19 +120,34 @@ public final class PeanutsPrefs {
     public static boolean developerReadout(Context c) { return of(c).getBoolean("developer_readout", false); }
     public static void developerReadout(Context c, boolean on) { of(c).edit().putBoolean("developer_readout", on).apply(); }
 
+    /** Settings > Library > Bottom screen, on by default */
+    public static boolean bottomScreen(Context c) { return of(c).getBoolean("bottom_screen", true); }
+    public static void bottomScreen(Context c, boolean on) { of(c).edit().putBoolean("bottom_screen", on).apply(); }
+    /** Settings > Library > Games without a companion: their cover stays on the second display, off by default */
+    public static boolean bottomScreenInGames(Context c) { return of(c).getBoolean("bottom_screen_games", false); }
+    public static void bottomScreenInGames(Context c, boolean on) { of(c).edit().putBoolean("bottom_screen_games", on).apply(); }
+
     /** Settings > Library > Haptics: false (default) = the launcher's haptics follow the system's touch feedback setting, true = none at all */
     public static boolean hapticsOff(Context c) { return of(c).getBoolean("haptics_off", false); }
     public static void hapticsOff(Context c, boolean off) { of(c).edit().putBoolean("haptics_off", off).apply(); }
     /** Settings > Library > Motion: false (default) = the launcher's animations follow the system's animator scale, true = fades and the progress fill only */
     public static boolean motionReduced(Context c) { return of(c).getBoolean("motion_reduced", false); }
     public static void motionReduced(Context c, boolean on) { of(c).edit().putBoolean("motion_reduced", on).apply(); }
+    /** Settings > Library > Swap screens: false (default) = the game on the built-in screen and the companion on the other display, true = the other way round
+     *  (a clip-on top screen that Android lists as the external display, GitHub issue #131). dev.peanuts.Screens applies it */
+    public static boolean swapScreens(Context c) { return of(c).getBoolean("swap_screens", false); }
+    public static void swapScreens(Context c, boolean on) { of(c).edit().putBoolean("swap_screens", on).apply(); }
 
     /** The roots the library scans: the game folder first, then the update and DLC folders when set and different, then the build folder (walked the same
      *  two levels deep, so its {@code <title ID>/<name>.nup} entries are found) */
     public static List<File> roots(Context c) {
         List<File> out = new ArrayList<>();
-        for (String p : new String[] {gameDir(c), updateDir(c), dlcDir(c), buildDir(c)}) {
+        for (String p : new String[] {gameDir(c), updateDir(c), dlcDir(c)}) {
             if (p == null || p.isEmpty()) continue;
+            File f = new File(p);
+            if (!out.contains(f)) out.add(f);
+        }
+        for (String p : buildDirs(c)) {
             File f = new File(p);
             if (!out.contains(f)) out.add(f);
         }

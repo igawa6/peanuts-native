@@ -23,6 +23,7 @@ The companion of eden-duo-companions (package `CrashTeamRacingNitroFueled`) is f
 | `mem_reserve 0x100000000`, `mem_alias 0x10000000`, `mem_stack 0x10000000`, `app_pool 0xCD500000`, `sys_resource 0x0` | `game.tsv` | the survey's guess (`dm/games/profile_guess.py`): `main` sets a heap of at most the pool − 64 MB, and the NPDM declares no system resource. Not measured |
 | `mem_used 0x7000000` | `game.tsv` | the modules take 107 MB (`main` 84.4, `sdk` 13.0, `subsdk0` 9.2), more than the default 64 MB the heap request is checked against |
 | `modules main subsdk0 sdk` | `game.tsv` | `subsdk0` is GLSLC, which `main` calls at run time |
+| `capture_keys 8:A*45/3` | `game.tsv` | on an empty save the game opens on Language Select and waits for a button before it compiles its 2 run-time shaders; the build's capture boot starts on an empty save, so it presses A (issue #111). AYN Thor: nothing captured in 75 s without a press, both in 15 s with it <!-- PEANUTS --> |
 
 No rewriter cut and no host rule of its own.
 

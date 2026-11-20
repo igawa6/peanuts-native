@@ -1,0 +1,46 @@
+# PEANUTS: Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2 Android profile.
+
+title_id	0100AD80208A8000
+program_id	0100AD80208A8000
+
+name	Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2
+ipa	DemonSlayerTheHinokamiChronicles2.ipa
+app_category	public.app-category.games
+
+build	v917504	1.80	main=dadf52c97d951fbcc95f1a7468a7fd3e	subsdk0=7c1a58cac01c4aa3935c6243f69cf0d3	sdk=835c229763ce5c1816a70f875bd70ccd
+package	v917504
+shader_versions	v917504
+
+modules	main subsdk0 sdk
+romfs_marker	APK2/Content/Paks/pakchunk0-Switch.utoc
+zip_store	.bk2:.mp4:.pak:.ucas:.utoc:.metallib
+
+# Android alias-region budget for the existing Unreal region and allocator rewrites.
+mem_reserve	0xF0000000
+mem_alias	0xC8000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1000000
+
+present_interval	display
+fps_limit	30
+fps_limit_max	120
+
+# FPSLocker Warehouse's 1.81 timing fixes, mapped to the 1.80 executable.
+# Use variable-rate updates, set t.MaxFPS and clear r.VSync.
+fpslocker	dadf52c97d951fbcc95f1a7468a7fd3e	constant_i32	0xcda2378/0xaf4	1	7:1
+fpslocker	dadf52c97d951fbcc95f1a7468a7fd3e	target_f32	0xcda1ff0	2	0
+fpslocker	dadf52c97d951fbcc95f1a7468a7fd3e	zero_i32	0xbdb5eb0	2	0
+
+# Scale gravity by the current Unreal frame delta, then apply the game's multiplier.
+fpslocker_plan	dadf52c97d951fbcc95f1a7468a7fd3e	m0x5b64190	9008d297	q8:0x9b947f0
+fpslocker_plan	dadf52c97d951fbcc95f1a7468a7fd3e	m0x5b64194	f39103d0	00f943fd
+fpslocker_plan	dadf52c97d951fbcc95f1a7468a7fd3e	m0x5b64198	68be41f9	0040621e
+fpslocker_plan	dadf52c97d951fbcc95f1a7468a7fd3e	m0x5b6419c	600100b4	01d0271e
+fpslocker_plan	dadf52c97d951fbcc95f1a7468a7fd3e	m0x5b641a0	080300b4	0808211e
+fpslocker_plan	dadf52c97d951fbcc95f1a7468a7fd3e	m0x5b641a4	09d16b39	t0x5b64244
+fpslocker_plan	dadf52c97d951fbcc95f1a7468a7fd3e	m0x5fd0138	0409231e	c408231e
+fpslocker_plan	dadf52c97d951fbcc95f1a7468a7fd3e	m0x5fd0178	0409231e	c408231e
+
+shader_groups	GlobalShaderCache=global #Engine/=engine #APK2/=game
+shader_note	Demon Slayer: The Hinokami Chronicles 2 1.80 shaders

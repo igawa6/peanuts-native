@@ -1,4 +1,5 @@
 name	class	meaning
+DMSH_VK_ABSENT_FILE	path	File of shader keys verified absent from the selected game build. The packer supplies one key per line so paired-shader expansion excludes them. [PEANUTS]
 DMSH_VK_BATCH	switch	`=<n>` shaders per translator call in `vk_android_build.py` (default 64)
 DMSH_VK_DELTA_FROM	path	older Android shader libraries a delta update of `vk_android_build.py` may keep entries of (paths separated by `:`; each a `dmsh_vk.lib`, a `v-<V>` folder or a folder of them; default the output's other `v-<V>` folders; the app passes the pack's `shaders/`)
 DMSH_VK_KEEP	switch	`0` makes `vk_android_build.py` delete its result folder once the library is written

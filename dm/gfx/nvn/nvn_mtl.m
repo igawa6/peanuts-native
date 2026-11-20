@@ -554,6 +554,7 @@ void mtl_pool_add(const void *mem, uint64_t size) {
 }
 
 void mtl_pool_need(const void *addr, uint64_t len, const char *why) { (void)addr; (void)len; (void)why; }   // every pool is a buffer from mtl_pool_add on
+void mtl_pool_place(const void *addr, uint64_t len, const char *why) { (void)addr; (void)len; (void)why; }   // PEANUTS(upstream-candidate): the same
 void mtl_pool_del(const void *mem) {
     g_reg_gen++;
     pthread_mutex_lock(&g_mu);

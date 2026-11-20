@@ -40,6 +40,30 @@ class ShaderWork(unittest.TestCase):
         self.assertNotIn("work / 'android-shaders' / 'work'", src)
         self.assertNotIn("work / 'android-shaders' / 'keys.txt'", src)
 
+    def test_optional_absences_reach_builder_without_relaxing_package_checks(self):  # PEANUTS
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            pkg = root / 'pkg'
+            pkg.mkdir()
+            profile = argparse.Namespace(id='test', dir=root)
+            args = argparse.Namespace(shader_cache=root / 'cache', shader_pkg=pkg,
+                                      shader_python=None, in_process=False, J=1)
+
+            def run(cmd, env):
+                self.assertEqual(Path(env['DMSH_VK_ABSENT_FILE']).read_text().splitlines(), ['a', 'b'])
+                self.assertEqual(env['DMSH_VK_REQUIRE_ALL'], '1')
+                return argparse.Namespace(returncode=1)
+
+            with patch.multiple(pack_android, require_shaders=lambda g: None,
+                                vk_chain=lambda: 'test', library_current=lambda *a: False,
+                                shader_python=lambda p: 'python', child_env=lambda **kw: kw,
+                                peanuts_env=lambda s: {'DMSH_VK_REQUIRE_ALL': '1'},
+                                selected_keys=lambda p: None, absent_optional=lambda *a: {'b', 'a'}):
+                with patch.object(pack_android.subprocess, 'run', side_effect=run) as child:
+                    with self.assertRaisesRegex(pack_android.Error, 'exit code 1'):
+                        pack_android.pack_shaders(args, profile, root / 'game', root / 'out', root / 'v')
+                    child.assert_called_once()
+
     def test_windows_sibling_caches_keep_each_child_selection_until_exit(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

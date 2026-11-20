@@ -1,0 +1,40 @@
+# PEANUTS: DAVE THE DIVER 1.0.6.1267 Android profile.
+
+# ---- Identity ----
+title_id	010097F018538000
+program_id	010097F018538000
+
+# ---- App ----
+name	DAVE THE DIVER
+ipa	DaveTheDiver.ipa
+app_category	public.app-category.games
+
+# PEANUTS: keep 30 fps in Game owned mode and offer display-paced caps up to 120.
+fps_limit_max	120
+fps_limit_present	1
+# PEANUTS: Unity fixedDeltaTime, in ticks at 141120000 Hz.
+fps_memory	f74b633e480e4e161f80a7c16a467f2a	step_ticks_u32	0xa5477e8/0x50	1	141120000:1
+
+# ---- Versions ----
+build	v3080192	1.0.6.1267	main=f74b633e480e4e161f80a7c16a467f2a	subsdk0=1e59dde5383b9cfb60f3e67e92add78b	sdk=a5813da32d12ef17099152ca79c9b24d
+package	v3080192
+shader_versions	v3080192
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Data/globalgamemanagers
+zip_store	.assets:.bin:.bundle:.dat:.png:.resource:.ress:.metallib
+
+# ---- Memory ----
+# the NPDM declares 16 MB of system resource (virtual address memory) and main never sets a heap: a 5 GB block with a 4.375 GB alias region, where the game maps its memory itself
+mem_reserve	0x140000000
+mem_alias	0x118000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+
+# ---- Shader split ----
+shader_groups	/Data/=data
+shader_note	DAVE THE DIVER 1.0.6.1267 shaders

@@ -1,5 +1,7 @@
 package dev.nxnative.android;
 
+import android.app.ActivityManager;   // PEANUTS: the previous pack process exit
+import android.app.ApplicationExitInfo;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -66,6 +68,8 @@ public final class PackService extends Service {
     /** Starts of one step the process may not live through before the job fails (Job.start) */
     private static final int MAX_STARTS = 3;   // PEANUTS: was 2; the later starts run with fewer workers (Job.memLevel, BuildMemory)
     private static final Pattern PROGRESS = Pattern.compile("^progress:? (\\d+)(?: |/)(\\d+)(?: (\\S+))?");
+    /** PEANUTS: vk_android_build.py's summary, "shaders <all>: ok <built>, <failure> <n>, ..." (Job.shadersFailed) */
+    private static final Pattern BUILT = Pattern.compile("^shaders (\\d+): ok (\\d+)\\b");
     /** A tool's "stage: <what it is doing now>" line (Job.stepNote) */
     private static final Pattern STAGE = Pattern.compile("^stage: (.+)$");
 
@@ -166,15 +170,22 @@ public final class PackService extends Service {
             stopSelf(startId);
             return START_NOT_STICKY;
         }
-        if ("running".equals(j.state())) {   // PEANUTS: still "running" at a start: the process before this one was ended (Android's low-memory killer, most likely): fewer workers from now on
+        if ("running".equals(j.state())) {   // PEANUTS: still "running" at a start: look up why the previous pack process ended
             // PEANUTS: ...unless the app was installed again after the job's last note: an update ends every process of the app, and that is no sign of low memory.
-            // Three installs during one build left Mario Kart 8 Deluxe's on one worker with 10 GB free
-            long installed = 0;
-            try { installed = getPackageManager().getPackageInfo(getPackageName(), 0).lastUpdateTime; } catch (android.content.pm.PackageManager.NameNotFoundException e) { /* 0: counted as a kill */ }
-            if (installed > j.updated()) stepLog(j, "the build's process ended when the app was updated; resuming with the same workers (level " + j.memLevel() + "; " + memLine() + ")");
+            // PEANUTS: Three installs during one build left Mario Kart 8 Deluxe's on one worker with 10 GB free
+            if (Job.installed(this) > j.updated()) stepLog(j, "the build's process ended when the app was updated; resuming with the same workers (level " + j.memLevel() + "; " + memLine() + ")");
             else {
-                j.memLevelUp();
-                stepLog(j, "the build's process ended before its step finished (most often Android freeing memory); resuming with fewer workers (level " + j.memLevel() + "; " + memLine() + ")");
+                // PEANUTS: Android's own record of that process's end (ApplicationExitInfo), not a guess: only an end for memory halves the workers. Mario Kart 8 Deluxe's
+                // split went 4 → 2 → 1 workers over three ends with 11 GB free, each run slower than the one before, and nothing in the log said what ended it
+                ApplicationExitInfo exit = ExitWatch.exitInfo(this, android.app.Application.getProcessName(), j.packPid(), j.updated());   // PEANUTS
+                int reason = exit == null ? ExitNotice.NONE : exit.getReason();
+                int status = exit == null ? 0 : exit.getStatus();
+                boolean reduce = ExitNotice.reducePackWorkers(reason, status, ActivityManager.isLowMemoryKillReportSupported());
+                if (reduce) j.memLevelUp();
+                String detail = exit == null ? "Android has no matching exit record"
+                        : dev.peanuts.build.BuildLogBundle.reason(reason) + ", status " + status + ", " + exit.getRss() / 1024 + " MB resident";
+                stepLog(j, "the build process ended (" + detail + "); resuming with " + (reduce ? "fewer" : "the same")
+                        + " workers (level " + j.memLevel() + "; " + memLine() + ")");
             }
         }
         stopReason = null;
@@ -363,11 +374,11 @@ public final class PackService extends Service {
                 j.stepState(s, "running");
                 int starts = j.start(s);
                 save(j, true);
-                if (starts > MAX_STARTS) {   // twice ended by Android inside this step (START_STICKY brought it back): stop instead of looping
-                    stepLog(j, "stopping: the step was ended by Android " + (starts - 1) + " times before it finished (most likely for memory); " + readings());
+                if (starts > MAX_STARTS) {   // PEANUTS: repeated sticky restarts inside this step
+                    stepLog(j, "stopping: the step was ended by Android " + (starts - 1) + " times before it finished; " + readings());
                     j.ended(s);
                     j.stepState(s, "pending");
-                    j.fail(PrepareText.killed(Job.STEP_TEXT[i], starts - 1, s.equals("rewrite") ? "2.7" : "1.5"));
+                    j.fail(PrepareText.killed(Job.STEP_TEXT[i], starts - 1));   // PEANUTS: a restart alone cannot diagnose low memory
                     save(j, true);
                     break;
                 }
@@ -486,6 +497,7 @@ public final class PackService extends Service {
         String[] argv;
         List<String> selected = null;
         String keysFrom = ShaderLibs.SELECTED;   // where the shaders step's key list comes from, for its log line
+        String absentFile = "";   // PEANUTS: validated exclusions for this invocation, including paired pixel shaders
         String otherVersionsNote = null;   // PEANUTS: the line for a dump that lacks only other listed versions' shaders (ShaderLibs.otherVersionsLine), for the step's log
         // The tools' arguments: the in-process forms (pack_android.py --in-process: the rewriter in the same Python; shader_split.py with J=1 below: no process pool;
         // vk_android_build.py with the translator and the validator as libraries, XLATE / SPIRV_VAL below; the app's process must not fork, ONDEVICE.md "No subprocesses").
@@ -545,6 +557,10 @@ public final class PackService extends Service {
                 if (absent != null) {
                     if (selected == null) selected = new java.util.ArrayList<>(new java.util.TreeSet<>(ShaderLibs.mapKeys(new File(PackNative.repo(), "dm/games/" + j.titleId() + "/shader_map.tsv"))));
                     selected.removeAll(absent);
+                    // PEANUTS: the Vulkan builder also expands vertex/pixel pairs from the multi-version profile.
+                    File excluded = new File(od, "absent-shaders.tsv");
+                    Files.write(excluded.toPath(), absent, StandardCharsets.UTF_8);
+                    absentFile = excluded.getPath();
                     keysFrom = "shader_map.tsv without " + absent.size() + " absent shaders";   // PEANUTS: optional or boot-generated outputs
                     // PEANUTS begin: a dump of one of the versions the tables are the union of (game.tsv shader_versions): one plain line, in logcat and in the step's log
                     File prof = new File(PackNative.repo(), "dm/games/" + j.titleId());
@@ -677,6 +693,7 @@ public final class PackService extends Service {
         PackEngine.setenv("DM_NUP_FD", nupFd);
         // vk_android_build.py: the per-shader results (kept until the job is done: a rerun resumes from them), the translator and SPIRV-Tools from the APK's lib/
         // (bare names: the linker finds them in the APK, as System.loadLibrary does; ctypes loads them in this process)
+        PackEngine.setenv("DMSH_VK_ABSENT_FILE", absentFile);   // PEANUTS: reset for every step and retry
         PackEngine.setenv("DMSH_VK_RESULTS", xlate.getPath());
         // the delta update: entries of the pack's older libraries that the profile's manifest has unchanged are kept, only the rest translated (android/SHADERS.md#delta-updates)
         PackEngine.setenv("DMSH_VK_DELTA_FROM", new File(pack, "shaders").getPath());
@@ -700,11 +717,12 @@ public final class PackService extends Service {
             int eq = l.indexOf('=');
             if (eq > 0 && !l.startsWith("#")) { PackEngine.setenv(l.substring(0, eq).trim(), capped(l.substring(0, eq).trim(), l.substring(eq + 1).trim(), mem));  /* PEANUTS: an env.txt count never goes over the memory plan */ Files.write(log.toPath(), ("[env.txt] " + l.trim() + "\n").getBytes(StandardCharsets.UTF_8), java.nio.file.StandardOpenOption.APPEND); }
         }
-        if (s.equals("shaders")) j.shadersMissing(0, 0);   // the step's own count (Tail), not an earlier run's
+        if (s.equals("shaders")) { j.shadersMissing(0, 0); j.shadersFailed(0, 0); }   // the step's own count (Tail), not an earlier run's // PEANUTS: shadersFailed
         Tail tail = new Tail(j, s, log);
         tail.start();
         int code;
         inTool = true;
+        long began = SystemClock.elapsedRealtime();   // PEANUTS
         try {
             if (autoReason != null || stopReason != null) return "interrupted";
             code = engine.run(tool, argv, log.getPath());
@@ -713,6 +731,8 @@ public final class PackService extends Service {
             tail.finish();
         }
         Log.i(TAG, s + ": exit " + code);
+        long sec = (SystemClock.elapsedRealtime() - began) / 1000;
+        stepLog(j, s + ": the tool ended with code " + code + " after " + sec / 60 + " min " + sec % 60 + " s");   // PEANUTS: the logs had a time only where a step began
         if (code == PackEngine.INTERRUPTED) return "interrupted";
         if (code != 0) {
             String why = tail.reason();   // the last [RED] line, or a traceback's last line after it (PrepareText.StopReason)
@@ -972,38 +992,41 @@ public final class PackService extends Service {
 
         @Override public void run() {
             while (!done) {
-                read();
-                SystemClock.sleep(300);
+                if (!read()) SystemClock.sleep(300);   // PEANUTS: catch up immediately if another chunk is ready
             }
-            read();
+            while (read()) { /* drain the finished tool's log through its summary */ }
         }
 
         void finish() {
             done = true;
-            try {
-                join(2000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            boolean interrupted = false;   // PEANUTS: finish draining before the job reads its counts and error
+            while (isAlive()) {
+                try { join(); }
+                catch (InterruptedException e) { interrupted = true; }
             }
+            if (interrupted) Thread.currentThread().interrupt();
         }
 
-        private void read() {
+        /** PEANUTS: true when another chunk is already available. */
+        private boolean read() {
+            boolean more;
             try (RandomAccessFile f = new RandomAccessFile(log, "r")) {
                 long len = f.length();
-                if (len <= pos) return;
+                if (len <= pos) return false;
                 f.seek(pos);
                 byte[] b = new byte[(int) Math.min(len - pos, 1 << 20)];
                 f.readFully(b);
                 pos += b.length;
+                more = pos < len;
                 partial.append(new String(b, StandardCharsets.UTF_8));
             } catch (IOException e) {
-                return;
+                return false;
             }
-            int nl;
+            int start = 0, nl;
             boolean changed = false;
-            while ((nl = partial.indexOf("\n")) >= 0) {
-                String line = partial.substring(0, nl).trim();
-                partial.delete(0, nl + 1);
+            while ((nl = partial.indexOf("\n", start)) >= 0) {   // PEANUTS: compact the consumed prefix once per chunk
+                String line = partial.substring(start, nl).trim();
+                start = nl + 1;
                 Matcher m = PROGRESS.matcher(line), st = STAGE.matcher(line);
                 if (m.find()) {
                     j.stepProgress(step, Long.parseLong(m.group(1)), Long.parseLong(m.group(2)), m.group(3));
@@ -1011,12 +1034,18 @@ public final class PackService extends Service {
                 } else if (st.find()) {
                     j.stepNote(step, st.group(1).trim());
                     changed = true;
+                } else if (step.equals("shaders") && (m = BUILT.matcher(line)).find()) {   // PEANUTS: the library's summary line: shaders that did not translate or validate (Try anyway writes the library without them)
+                    long of = Long.parseLong(m.group(1));
+                    j.shadersFailed(of - Long.parseLong(m.group(2)), of);
+                    changed = true;
                 } else if (stop.line(line)) {
                     long[] miss = PrepareText.missingShaders(line);   // Try anyway: shaders this game version lacks, said once the game is ready (Ondevice.addGame)
                     if (miss != null) { j.shadersMissing(miss[0], miss[1]); changed = true; }
                 }
             }
+            partial.delete(0, start);
             if (changed) save(j, false);
+            return more;   // PEANUTS
         }
 
         /** Why the step stopped, read once the tool is done (finish): null when its log gave no reason */

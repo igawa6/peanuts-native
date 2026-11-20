@@ -64,7 +64,8 @@ class Timing(unittest.TestCase):
         return struct.unpack('<f', self.u.mem_read(self.obj+0xd0, 4))[0], self.read32(self.obj+0xd8)
 
     def test_integer_clock_keeps_thirty_ticks_per_second(self):
-        for vsyncs, frames in ((1, 60), (2, 30)):
+        # PEANUTS: Fixed-step rates share the same 30 Hz clock.
+        for vsyncs, frames in ((1, 60), (2, 30), (3, 20)):
             self.u.mem_write(self.obj+0xd4, bytes(4))
             total = 0
             for _ in range(frames):
@@ -83,6 +84,28 @@ class Timing(unittest.TestCase):
             dt, ticks = self.step(v); elapsed += dt; integral += ticks
             self.assertEqual(integral, int(elapsed))
         self.assertEqual(struct.unpack('<Q', self.u.mem_read(self.state+0x30, 8))[0], 160)
+
+    # PEANUTS: Exercise every launcher rate with the elapsed clock.
+    def test_elapsed_clock_tracks_all_launcher_rates(self):
+        self.u.mem_write(self.state+0x3c, struct.pack('<I', 1))
+        self.u.mem_write(self.obj+0xdc, struct.pack('<f', 0.03))
+        for fps in (20, 30, 40, 45, 60, 90, 120):
+            with self.subTest(fps=fps):
+                self.u.mem_write(self.state, struct.pack('<f', fps))
+                self.u.mem_write(self.obj+0xd4, bytes(4))
+                total = 0
+                elapsed = 0
+                for _ in range(fps):
+                    ms = struct.unpack('<I', struct.pack('<f', 1000 / fps))[0]
+                    self.u.reg_write(arm.UC_ARM64_REG_S0, ms)
+                    dt, ticks = self.step()
+                    total += ticks
+                    elapsed += dt
+                self.assertAlmostEqual(elapsed, 30, places=5)
+                remainder = struct.unpack('<f', self.u.mem_read(self.obj+0xd4, 4))[0]
+                self.assertAlmostEqual(total + remainder, elapsed, places=5)
+                self.assertEqual(self.step(variable=False)[0], 1.0)
+                self.assertEqual(self.read32(self.state+0x24), 2)
 
     def test_cinematics_remain_thirty_and_release_the_cap(self):
         for _ in range(60): self.assertEqual(self.step(1, False), (1.0, 1))

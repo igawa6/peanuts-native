@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  * version does not include the game, and an update when this app build itself is broken (its files do not match each other). No Android classes: LauncherJvmTest
  * runs it on the Mac.
  */
-final class PrepareText {
+public final class PrepareText {   // PEANUTS: Home and Prepare use the same failure summary
     private PrepareText() {}
 
     /**
@@ -103,10 +103,10 @@ final class PrepareText {
         return new Failure(step + " stopped because of an error in the app. Tap Retry. If it stops again, Details has the error.", exception, FIX_RETRY);
     }
 
-    /** A step that Android ended several times (most likely for memory) */
-    static Failure killed(String step, int times, String gb) {
-        return new Failure(step + " was stopped by Android " + times + " times, most likely for lack of memory (it needs up to " + gb + " GB). Close other apps, then tap Retry.",
-                "", FIX_RETRY);
+    /** PEANUTS: repeated service restarts can follow a crash, memory pressure, or an unreported exit. */
+    static Failure killed(String step, int times) {
+        return new Failure(step + " was stopped by Android " + times + " times. Check the build log, then tap Retry.",
+                "If Android reported low memory, close other apps before retrying.", FIX_RETRY);
     }
 
     /** The split's shaders differ from the profile's list: a dump of another version, modified or incomplete; Try anyway builds what the profile's list finds in it */
@@ -171,6 +171,27 @@ final class PrepareText {
         if (structured && !error.isEmpty()) return error;
         return "Preparing stopped while " + lower(step) + ". Tap Retry. Details says why.";
     }
+
+    // PEANUTS begin: show the recorded tool error beside the failed step on both build cards.
+    public static String failureSummary(String step, String error, String detail) {
+        String summary = error.split("\n", 2)[0].trim();
+        String generic = " Tap Retry. If it stops again, Details has the log.";
+        if (summary.endsWith(generic)) summary = summary.substring(0, summary.length() - generic.length());
+        if (summary.isEmpty()) summary = step + " stopped.";
+        else if (!summary.startsWith(step)) summary = step + " · " + summary;
+        String[] lines = detail.trim().split("\n");
+        String reason = lines[0].trim();
+        int exit = reason.indexOf(": exit code ");
+        if (exit > 0) {
+            // toolStopped stores the exit status, the last tool error (if any), then the log location.
+            reason = capital(reason.substring(exit + 2));
+            if (lines.length > 1 && !lines[1].startsWith("Log: ")) reason = lines[1].trim();
+        }
+        if (reason.isEmpty() || reason.startsWith("Log: ") || summary.contains(reason)) return summary;
+        if (reason.length() > 300) reason = reason.substring(0, 299) + "…";
+        return summary.endsWith(".") ? summary + " " + reason : summary + " · " + reason;
+    }
+    // PEANUTS end
 
     static String failedDetail(String error, String detail, boolean structured) { return structured ? detail : error; }
 

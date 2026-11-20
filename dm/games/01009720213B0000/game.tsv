@@ -1,0 +1,38 @@
+# PEANUTS: Captain Tsubasa 2: World Fighters 1.0.6 Android profile.
+
+# ---- Identity ----
+title_id	01009720213B0000
+program_id	01009720213B0000
+
+# ---- App ----
+name	CAPTAIN TSUBASA 2: WORLD FIGHTERS
+ipa	CaptainTsubasa2WorldFighters.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v327680	1.0.6	main=63ad5f65431ae17b1bb2304fd3abc521	subsdk0=98be7d979f987d444eed189dee9c3b4e	sdk=ad9ee4518b1d8ca811fbdf35fc4f26d5
+package	v327680
+shader_versions	v327680
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	CaptainTsubasa2WF/Content/Paks/CaptainTsubasa2WF-Switch.ucas
+zip_store	.bk2:.mp4:.pak:.png:.txt:.ucas:.utoc:.metallib
+
+# PEANUTS: dynamic particle vertex handles use the driver's c2 texture and sampler tables.
+tex_dyn_slots	on
+
+# ---- Memory ----
+# Use the Android alias-region sizing applied by the Unreal rewriter.
+mem_reserve	0xF0000000
+mem_alias	0xC8000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 20 MB of system resource
+sys_resource	0x1400000
+
+# ---- Shader split ----
+# the decoded shader code archives: the engine's global shaders and the game's material shaders
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	Captain Tsubasa 2: World Fighters 1.0.6 shaders

@@ -107,6 +107,9 @@ final class Status {
         folders.put("update", folder(PeanutsPrefs.updateDir(c)));
         folders.put("dlc", folder(PeanutsPrefs.dlcDir(c)));
         folders.put("build", folder(PeanutsPrefs.buildDir(c)));
+        List<Map<String, Object>> buildFolders = new ArrayList<>();
+        for (String path : PeanutsPrefs.buildDirs(c)) buildFolders.add(folder(path));
+        folders.put("build_folders", buildFolders);
         File ext = c.getExternalFilesDir(null);
         folders.put("app", ext == null ? null : folder(ext.getPath()));
         m.put("folders", folders);

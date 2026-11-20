@@ -78,6 +78,7 @@ rest of the file.
 | | `-e cmd game -e do ctl -e line "A~0.5"` | One line into the running game's live control file (the lines of `android/TESTING.md`, "Live control"). Its answer is in the run's log |
 | `screens_off` | `-e cmd screens_off -e on true` | The black cover while a build runs; `-e on false` lifts it |
 | `set` | `-e cmd set -e key fps_cap -e value 30 -e title_id 0100F2C0115B6000` | One of the settings below, for every game or, with `title_id`, for one |
+| `share_build_log` | `-e cmd share_build_log -e title_id 0100F2C0115B6000` | Share build log without the sheet: the game's `.zip` into `ctl/build-logs/` (`adb pull` it). `data`: `file` (relative to `ctl/`), `path`, `bytes`, `files`, `jobs`, `mod_jobs`, `cut`. Pending while it is written; `no_build_log` when the game has no build log and no job folder. Bundles older than a day are deleted when the next one is made |
 | `companion` | `-e cmd companion -e do list` | The catalog against the library: one row a game in `data.companions` (below). With `title_id`, that game alone |
 | | `-e cmd companion -e do install -e title_id 0100F2C0115B6000` | The catalog's newest companion for the game, downloaded and checked as the catalog screen does. One that is installed and older is replaced |
 | | `-e cmd companion -e do update -e title_id 0100F2C0115B6000` | The same, refused (`not_installed`) when the game has none |

@@ -103,6 +103,14 @@ The game may also write into an NVN object directly, without an NVN call, throug
 - **Fix:** a texture of a sparse pool takes its content as on Metal (`tex_from_storage`): a sampled one (not linear, compressible or an image) is gathered through the page table (`nvn_sparse_copy`, unmapped pages as 0), uploaded, and uploaded again when a mapping in its range or a physical page behind it changes (`nvn_sparse_since`, checked when the page table's generation or the dirty clock moves; `vka_img.vtrack`); the others start cleared. Nothing reads the reserved range itself.
 - **Found on:** [Mario Kart World](../../dm/games/0400C3F00006E000/README.md), on the arm64 emulator, 2 s into its first frames.
 
+### Sparse pool buffers on the Vulkan replay
+<!-- PEANUTS: Android sparse buffer binding. -->
+
+- **Symptom:** `[RED] vk: index buffer … is not in placed guest RAM: skipped` and `[RED] vk: vertex stream … is not in placed guest RAM: it reads zeros` during an otherwise running match. The HUD renders and the pitch or players are black or incomplete.
+- **Cause:** Android keeps NVN's sparse mapping in its page table. A draw's virtual buffer address has no Vulkan allocation of its own, even when its physical backing can be placed and bound.
+- **Fix:** Vertex, index and storage-buffer bindings resolve a contiguous physical run through the NVN page table and bind its Vulkan buffer at the physical offset. A hole or a discontinuity ends the run. CPU reads retain their existing address checks.
+- **Found on:** [EA SPORTS FC 27](../../dm/games/0100C49025D3E000/README.md#android-bring-up), update 1.8d.6523 on AYN Thor with Turnip R5.
+
 ### A finalized sparse pool read through a registered texture
 
 - **Symptom:** Android: `CRASH sig=11` at a non-canonical address (`0x6db6db6db0ff0e`) in `vpool_at` ← `nvn_sparse_any` ← `upload_sparse_parts` ← `img_first_use` ← `vka_tex_get` ← `write_tex` ← `vka_tex_prepare` (`hle_nvn.c`, `vka_tex.c`), a few seconds after the first frames, right after `pool memory … given back as anonymous memory`.

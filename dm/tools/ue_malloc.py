@@ -6,7 +6,8 @@ pools (74 of 512 MB), which an iPhone cannot give.
 The chain, each link unique or nothing is cut:
 - the allocator's name, the UTF-16 string "Binned3" (TEXT("Binned3"); it starts a string), in ro;
 - its getter, GetDescriptiveName: adrp x0 + add x0 of the string, then ret;
-- the one data word holding the getter (the module's relative relocations applied), a slot of the vtable: the slots run back to two words of 0 (offset to top, no RTTI). The getter's
+- the one data word holding the getter (the module's relative relocations applied), a slot of the vtable. Its primary header has a zero offset to top and either zero RTTI or relocated
+  RTTI naming FMallocBinned3 (PEANUTS). The getter's
   slot number names the slot layout: 19 for Unreal Engine 4.26 and 4.27, 22 for UE 5, 26 for UE 5.6 (hle_uemalloc.c); any other stops the chain with a [RED] line;
 - the constructor: the one function other than the vtable's two destructors that stores the vtable's address (adrp + add, then str to [xN]);
 - its one call site, a bl (no b to it): x0 there is the object, already made (GCreateMalloc mallocs it, or a bss object in nninitStartup).
@@ -64,7 +65,14 @@ def find(img, text_end, ro_off, data_off):
     vt = slots[0]
     while vt - 8 >= data_off and is_code(value(vt - 8)): vt -= 8
     slot = (slots[0] - vt) // 8
-    if (value(vt - 16), value(vt - 8)) != (0, 0): return None, None, None, f'[RED] FMallocBinned3 vtable at {vt:#x}: no offset to top and RTTI words of 0 before it'
+    # PEANUTS(upstream-candidate): the primary vtable can carry Itanium RTTI when the build enables it.
+    if vt < 16 or value(vt - 16) != 0:
+        return None, None, None, f'[RED] FMallocBinned3 vtable at {vt:#x}: no zero offset to top before it'
+    rtti = value(vt - 8)
+    if rtti:
+        type_name = rel.get(rtti + 8) if vt - 8 in rel and data_off <= rtti <= len(img) - 16 and rtti % 8 == 0 else None
+        if type_name is None or type_name < ro_off or not img.startswith(b'14FMallocBinned3\0', type_name, data_off):
+            return None, None, None, f'[RED] FMallocBinned3 vtable at {vt:#x}: RTTI does not name FMallocBinned3'
     if slot not in LAYOUTS: return None, None, None, f'[RED] FMallocBinned3 vtable at {vt:#x}: the name getter is slot {slot}, a slot layout the host does not know'
     dtors = {value(vt), value(vt + 8)}
     # Direct calls and jumps in the text: bl (top bits 100101) and b (000101), by target

@@ -106,6 +106,42 @@ public final class PUi {
         return t;
     }
 
+    /** Text parts with a faint thin bar between them, instead of a "·" */
+    public static CharSequence joined(CharSequence... parts) {
+        android.text.SpannableStringBuilder s = new android.text.SpannableStringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) {
+                int at = s.length();
+                s.append(' ');   // read as a pause
+                s.setSpan(new Bar(), at, at + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            s.append(parts[i]);
+        }
+        return s;
+    }
+
+    /** Cap height, 35 % of the text colour, scales with the text */
+    private static final class Bar extends android.text.style.ReplacementSpan {
+        @Override public int getSize(android.graphics.Paint p, CharSequence t, int start, int end, android.graphics.Paint.FontMetricsInt fm) {
+            return Math.round(p.getTextSize() * 0.9f + width(p));
+        }
+
+        @Override public void draw(android.graphics.Canvas c, CharSequence t, int start, int end, float x, int top, int y, int bottom, android.graphics.Paint p) {
+            float w = width(p), h = p.getTextSize() * 0.7f, gap = p.getTextSize() * 0.45f;
+            android.graphics.Paint.FontMetrics m = p.getFontMetrics();
+            float mid = y + (m.ascent + m.descent) / 2f;
+            int was = p.getColor();
+            android.graphics.Paint.Style style = p.getStyle();
+            p.setColor((Math.round(Color.alpha(was) * 0.35f) << 24) | (was & 0xFFFFFF));
+            p.setStyle(android.graphics.Paint.Style.FILL);
+            c.drawRoundRect(x + gap, mid - h / 2, x + gap + w, mid + h / 2, w / 2, w / 2, p);
+            p.setColor(was);
+            p.setStyle(style);
+        }
+
+        private static float width(android.graphics.Paint p) { return Math.max(1f, p.getTextSize() / 12f); }
+    }
+
     /** A group's label above its card (the settings page, a sheet) */
     public static TextView section(Context c, CharSequence s) {
         TextView t = text(c, s, 12, R.color.bn_text_2, 700);
@@ -124,7 +160,7 @@ public final class PUi {
     }
 
     public static void status(TextView t, CharSequence s, int colorRes) {
-        t.setText("●  " + s);
+        t.setText(TextUtils.concat("●  ", s));   // keeps spans (PUi.joined)
         t.setContentDescription(s);   // the dot is decoration: a screen reader says the state only
         t.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);   // the state changes while the screen shows (Checking… → Ready): said when it does
         t.setTextColor(col(t.getContext(), colorRes));

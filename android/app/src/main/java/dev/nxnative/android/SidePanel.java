@@ -427,7 +427,7 @@ final class SidePanel extends FrameLayout {
                 if (v != FrameRateCaps.GAME_OWNED && !startedOwned && !restart) {
                     Native.fpsLimitSet(v > 0 ? v : 60);
                     Profile p = Profile.of(game());
-                    if (p != null && !p.fpsPlan120.isEmpty()) Native.fpsCapSet(p.fpsModeTarget(v));
+                    if (p != null && p.usesFpsModeTarget()) Native.fpsCapSet(p.fpsModeTarget(v));   // PEANUTS: select the native engine mode with the live cap
                 }
                 refresh();
             });

@@ -1,6 +1,7 @@
 # One row for each row of docs/env_switches.tsv (dm/tools/advanced_switches.py writes and checks it; the columns are described there). The launcher shows the
 # friendly and advanced rows in Settings > Advanced and on each game's page; developer rows are behind "Show developer options"; internal rows are never shown.
 name	tier	area	label	try_if	type	choices	default	scope	warn	owner	profile_key	games	fixes	reason
+DMSH_VK_ABSENT_FILE	internal	Packing			text			both						Packer-generated per-build shader exclusion list [PEANUTS]
 DMSH_VK_BATCH	developer	Packing			text			both						
 DMSH_VK_DELTA_FROM	developer	Diagnostics			text			both						
 DMSH_VK_KEEP	developer	Packing			text			both						

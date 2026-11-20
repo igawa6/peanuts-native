@@ -59,6 +59,11 @@ final class ExitNotice {
         return "java".equals(st) || "native".equals(st) || "host_exit".equals(st);
     }
 
+    /** PEANUTS: phones without low-memory kill reporting can record the kill as SIGKILL instead. */
+    static boolean reducePackWorkers(int reason, int status, boolean reportsMemoryKills) {
+        return reason == LOW_MEMORY || (reason == SIGNALED && status == 9 && !reportsMemoryKills);
+    }
+
     /** An end Android reports as for memory: its low-memory reason, or a kill whose description names the low-memory killer */
     static boolean memoryKill(int reason, String desc) {
         if (reason == LOW_MEMORY) return true;

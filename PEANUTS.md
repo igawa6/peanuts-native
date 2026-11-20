@@ -24,17 +24,19 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
    - `dm/gfx/vk_android/vka_dev.c`, `vka_readiness.c` — (2026-11-17) call the Peanuts guest-buffer remap probe before trusting advertised placed-memory support; use the existing tested exported-alias path on failure. `peanuts/UPSTREAM-EDITS.md`, issue #47 follow-up.
    - `android/app/build.gradle` — applicationId / label (`-PnxAppId=<suffix>`: a development build beside the app, with its own data); (2026-11-18) `androidBuildsOf` and its use in `buildsOf`: a profile's `android_builds <version> ...` row names the builds this app builds and plays when not all of the profile's (the launcher reads the others as a version it does not have; the host and the packer still know every build row).
    - `android/app/src/main/AndroidManifest.xml` — new Peanuts-owned activities/services/aliases, each its own marked block (already used for
-     `CatalogActivity` and `GameHold`; 2026-11-13 added the `dev.peanuts.launch.LaunchActivity` alias, `peanuts/docs/LAUNCHERS.md`).
+     `CatalogActivity` and `GameHold`; 2026-11-13 added the `dev.peanuts.launch.LaunchActivity` alias, `peanuts/docs/LAUNCHERS.md`; 2026-11-18 the
+     `dev.peanuts.build.BuildLogProvider` provider, `${applicationId}.buildlog`, read-only: Share build log's bundles).
    - `android/app/src/main/java/dev/nxnative/android/AppStorage.java` — (2026-11-13) `pack()` prefers an existing pack already in the app's own storage,
      else a build folder's `<title ID>/pack` when the user set one (`PeanutsPrefs.buildPackDir`; Settings › Library › Build folder); (2026-11-13,
      code mods) the class and `pack()` made `public` so `dev.peanuts.build.ModdedBuild`/`Prepare` can ask for a modded variant's own pack folder by
-     its variant id, same call as every other pack lookup.
+     its variant id, same call as every other pack lookup. `Folders.find()` also considers existing packs in every configured Build folder.
    - `android/app/src/ondevice/java/dev/nxnative/android/Job.java` — (2026-11-13, code mods) `modArgs()`/`modArgs(String)` (a modded variant job's
      extra rewrite-step argv) and `reuseShaders(File)` (skip split/shaders, point the shader cache at the normal pack's own library) — block-marked,
      additive only; a normal job never sets either. `design/platform/DESIGN-MODS.md`.
    - `android/app/src/ondevice/java/dev/nxnative/android/PackService.java` — (2026-11-13, code mods) the "rewrite" step appends `Job.modArgs()`
      (split on `"\n"`) to `pack_android.py`'s argv when it is not empty — block-marked, a no-op for a normal job.
      (2026-11-17) shader-map validation and selection call `RuntimeShaderMap.missingRuntime`: a deficit containing only boot-generated shaders is prepared for Build’s internal capture, while missing file-based keys still stop.
+   - `android/app/src/main/java/dev/nxnative/android/ExitWatch.java` — game exit notices and on-device pack retries use the same Android exit lookup by process name, PID and timestamp. `Job` saves the pack PID when its service marks a job running.
    - `android/app/src/ondevice/AndroidManifest.xml` — (2026-11-13, code mods) one new `<service>` line, `dev.peanuts.build.ModBuildService`
      (the modded-variant build, the Mods section's "Build with mods"), beside the existing `BuildService` line.
    - `scripts/pack_android.py` — (2026-11-13, code mods) `--modules`/`--mod-exefs`/`--mod-patches`, block-marked (too much logic for a one-line
@@ -46,9 +48,17 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      rail entry, a choice dialog's list and confirm button, the page's and a tab's entrance, Play. Additive only; `peanuts/UPSTREAM-EDITS.md` Round 7.
    - `android/app/src/main/java/dev/nxnative/android/Overlay.java` — (2026-11-17, SoC temperature) one `ITEMS` row (`soc`) and three lines in `tick()`: the flag, the `&& !soc` in the early return, and one call into `dev.peanuts.overlay.SocTemp.append(s)` (the line; `SocZones` reads `/sys/class/thermal`). Additive only. (2026-11-17, label / value table) two more `ITEMS` rows (`graph`, `driver`), `&& !dev.peanuts.overlay.Hud.extra(ctx)` in the early return, and `return dev.peanuts.overlay.Hud.table(...)` in place of `return s;` (Hud hands `s` back when the style is "classic").
    - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` (`overlayItems()`), `SidePanel.java` (the Overlay section) — (2026-11-17) one line each right after `Overlay.rows(...)`: `dev.peanuts.overlay.HudSettings.rows(<ctx>, box);` (the Style and Preset choices).
+   - Share build log (2026-11-18, `dev.peanuts.ui.BuildLogUi`, `peanuts/UPSTREAM-EDITS.md` Round 24): `MainActivity.java` Settings › Share log's listener is
+     `dev.peanuts.ui.BuildLogUi.shareLog(this, this::shareLog)` (the newest build instead, when a build log changed after the newest run), and one row after the
+     game page's Share log; `ondevice/.../Ondevice.java` one line in the Panel's constructor after the Check for updates button (`BuildLogUi.card`: the
+     button shows while the job has failed or is paused) and one button line in `manage()`.
    - `SidePanel.java` `look()` — (2026-11-17) one line after the `look(box, ...)` call: `dev.peanuts.ui.PanelPolish.apply(box);   // PEANUTS: ...` (segmented short radio groups, one look for headings, notes and buttons; styling only).
    - `android/app/src/main/java/dev/nxnative/android/GameActivity.java` — (2026-11-17) one line after `GpuDriver.env(...)`: `dev.peanuts.overlay.Hud.driver(...)` with the selected driver's label, else `Readiness.driverWord` of the system facts (null reads "System"), for the table's DRV row.
    - `android/app/src/main/cpp/nxlaunch.c` — (2026-11-17, overlay graph in realtime) in `Java_dev_nxnative_android_Native_overlaySet`, one line before `nxhost_overlay_set`: `if (peanuts_ovl_block) peanuts_ovl_block(...)` (JNI entry points forwarded to `dm/peanuts`), with `#pragma weak peanuts_ovl_block` and its prototype beside the other weak host symbols. `android/host/CMakeLists.txt`: one line compiling `dm/peanuts/peanuts_graph.c`; `android/host/libnxhost.map`: one line exporting `peanuts_ovl_block` (the host exports only `nxhost_*` and `Java_*`). `dm/peanuts/peanuts.c`: `pn_graph_frame();` in `peanuts_tick`.
+   - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-17, the GPU driver page) Settings' GPU driver row and the
+     Readiness check's "Pick a GPU driver" open `dev.peanuts.ui.DriverActivity` instead of `GpuDriver.dialog`, two lines; the page itself and its
+     manifest entry are Peanuts-owned. The Game settings row and the system-driver launch warning also open the page with a title ID.
+     The activity result refreshes the game settings. Installs still go through `GpuDriver.install`. `peanuts/UPSTREAM-EDITS.md` Round 22.
 3. **Settings go through upstream's own mechanisms**: `env.txt` keys named `PN_*`, `settings.tsv` rows, `DM_CTL` lines. No new settings UI inside upstream classes.
 4. **Never reformat or "fix" upstream files.** A general fix belongs upstream as a PR to Banana Native (its AGENTS.md prefers general changes), then it arrives by rebase.
 5. **Branches:** `upstream/android` is Banana Native; `peanuts` is this overlay, always a linear set of commits on top of a Banana Native tag. History is rewritten on every update (rebase, never merge).
@@ -142,3 +152,44 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
 - 2026-11-17 (SoC temperature, the overlay's "soc" item): `dev.peanuts.overlay.SocZones` (pure Java, the hottest `cpu*`/`gpu*` thermal zone under `/sys/class/thermal`, millidegrees converted, trip points and disabled zones skipped) and `SocTemp` (read every 2 s on its own thread; "SoC 52°C", red from 80 °C, "SoC ?" when no zone reads). Hook: `Overlay.java` (see the hook list above). JVM test: `SocZonesJvmTest` (`dm/tools/tests/test_android_soc.py`).
 - 2026-11-17 (overlay label / value table): `dev.peanuts.overlay.Hud` builds the top-right block from spans only (monospace, grey labels, right-aligned values, a larger fps number, `HistogramSpan` over a placeholder whose chars encode the bars so `Overlay.key` sees new frames), `FrameStats` (median, 1% low, levels, placeholder), `HudSettings` (Style Table / Classic and Preset Minimal / Normal / Full / Custom under `Overlay.rows`; a preset sets the sheet's own checkboxes). New items `graph` and `driver`. Frame times come from the host through `Bridge.frameTimes(float[])` (native, written on the C side; without it the graph row is hidden). The graph is realtime: the launcher still redraws the block twice a second, but `HistogramSpan` reports the bars' box in the bitmap (`Bridge.graphRect`) and `dm/peanuts/peanuts_graph.c` keeps a copy of the block (`peanuts_ovl_block`) and paints a new bar into it on every game frame (`pn_graph_frame`, then `nxhost_overlay_set`); test `dm/host/tests/t_peanuts_graph.c`. The block can sit in any corner (Position, `pn_overlay_corner`, sent with `Bridge.overlayCorner`; the host's `peanuts_ovl_corner`; in a bottom corner the bitmap's transparent top margin rows are rotated to the bottom) and at 75 to 200 % (Size, `pn_overlay_scale`, one `RelativeSizeSpan` over the whole text). Known limit: the on-screen fallback TextViews (used only when the host cannot draw the overlay) stay top right. `FrameStats.shortDriver` gives a compact driver name (parenthesised groups, the words Adreno / Driver / Vulkan and `@` words dropped). Preferences `pn_overlay_style`, `pn_overlay_preset` in the launcher file. Tests: `FrameStatsJvmTest`, `dm/tools/tests/test_android_hud.py`.
 - 2026-11-17 (side panel polish): overlay Preset / Style / Position / Size are four compact rows (value in the accent colour, a tap opens a single-choice dialog; the item switches show only for Custom) in `HudSettings`; `dev.peanuts.ui.PanelPolish` restyles a tab after `SidePanel.look()`: radio groups of up to 4 options with labels up to 12 chars become segmented controls, `head()` headings (bold, no side padding, top gap), `note()` texts (light grey 12 sp) and all-caps Buttons get one look each; views are tagged, so it is idempotent.
+
+   - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` (`startWithDriver`), `FrontendLaunch.java` — (2026-11-18, Swap screens, GitHub issue #131)
+     `dev.peanuts.Screens.startGame(...)` starts the game on the external display when Swap screens is on. It falls back to the current display if the external one is unavailable. A game on another display (so also the app started there) leaves the built-in display to its
+     companion (`CompanionScreen`, an activity: Android takes no Presentation on the default display). `AndroidManifest.xml`: the `CompanionScreen` activity (process `:game`). `peanuts/UPSTREAM-EDITS.md` Round 23.
+- 2026-11-18 (Share build log, issue #124's "no log attached"): one `.zip` per game with everything its build left. `dev.peanuts.build.BuildLog` is the
+  game's own build log, `<app files>/build-logs/<title ID>.log` (to `.1.log` at 2 MB), which `BuildService`, `ModBuildService` and `Prepare` write as
+  they go: the inputs with sizes, the folders and free space, the memory, the import's milestones, Prepare's choice of job, the progress every 5 % and
+  each change of step, and an `[end]` line; a run without one ended with the app's process. `BuildLogShare.make` finds the game's jobs as Prepare does
+  (`DumpCheck.workOf` of the listed game, the remembered job, the work folders each build noted, the build folder, one level of the game folder, and every
+  `<title ID>…-work` beside them, so builds with mods go to `mods/`). It zips the build log, each job's `job.json`, `env.txt` (secrets' values hidden)
+  and `logs/*.log` (each file as long as it was when opened, cut to its first 256 KB and last 768 KB past 1 MB, 24 MB in all), the app's own logcat lines
+  of the build's tags and of crashes, the newest ANR trace of each process, and `summary.txt` (app, device, memory, the build's and the jobs' states,
+  the worker plan, free space, the last `ApplicationExitInfo` of each process). Only `.log`, `.txt` and `.json` files go in (`BuildLogBundle.allowed`),
+  never keys, game files, saves or packs. `BuildLogProvider` serves it read-only; the sheet offers Share (the chooser on the app's display) and Save to
+  a folder (request 71 through `LibrarySettings.result`). Entry points: Home's stopped build card, the Prepare card and its Manage sheet, the game's
+  Storage tab, Settings › Share log, and ctl `share_build_log`. Tests: `dm/tools/tests/test_android_build_log.py` (`BuildLogJvmTest`).
+
+   - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-17, the launcher on a second display) one line in `buildHome`
+     after the header: `dev.peanuts.ui.BottomScreen.home(...)` gets Home's header (it steps aside while the second display shows the launcher's
+     page) and how Settings opens (X). `peanuts/UPSTREAM-EDITS.md` Round 20.
+   - `android/app/src/main/java/dev/nxnative/android/BananaBackgroundView.java` — (2026-11-17, the same) one line each in `onDraw` and `popAt`
+     after the drift `wx, wy`: `dev.peanuts.ui.BackgroundFlow.drift(...)` replaces it while the second display shows the launcher, so both screens
+     draw one field and a tap pops the banana where it is drawn. The drawing stays upstream's. `peanuts/UPSTREAM-EDITS.md` Round 20.
+   - `android/app/src/main/java/dev/nxnative/android/NxApp.java` — (2026-11-17, the same) one line in `onCreate`: `dev.peanuts.ui.AppScreens.install(this)`
+     lets the app's pages in other processes (Readiness check, Graphics self-test) tell the launcher they are in front, so the second display keeps
+     its page. `peanuts/UPSTREAM-EDITS.md` Round 20.
+- 2026-11-17 (the launcher on the second display, `dev.peanuts.ui.BottomScreen` / `BottomPanel`): while Home, Settings or a game's page is in front, the
+  second display (the Thor's Screen-2, or any presentation display) shows a page of the launcher instead of Android's own: the cover the D-pad is on
+  (Ready: Play and Game page; to build: what the scan found and Build…; building: the step, the bar, Stop build and Screens off), else the logo.
+  A `Presentation` with `Theme.Banana`, not focusable (the controller stays on Home), shown while MainActivity is started and hidden (not
+  dismissed) when it stops, so a game's companion takes the display as before; a `DisplayListener` follows the display coming and going. Built
+  from the launcher's own pieces (`PUi`, `BananaBackgroundView`, the covers' marks); a column on a small or squarish panel, the cover beside the
+  words on a landscape screen 600 dp or wider. Home keeps its Settings gear visible and labels its X shortcut. Y on a running build’s cover asks to stop it.
+  Settings › Library › **Bottom screen** turns the panel off (`PeanutsPrefs.bottomScreen`). Its buttons show the face buttons while a controller is connected (`Pads`, the
+  game's own rule), the app's icons without one. The cover mark
+  "Building · N %" and the build card's step words show a thin, faint bar between the parts instead of the dot (`PUi.joined`). Home's drifting peanuts and the second screen's are one field while it shows (`BackgroundFlow`): the
+  displays sit in it as on the device, the second centred right below the first, one phase for both; the drift is upstream's. Play
+  of a game with a companion turns the card into a start page, and the game's process shows the same page (`GameScreen`) until the companion is
+  up, also from a shortcut or a frontend; without one the second display is Android's, or the game's cover with Settings › Library ›
+  **Games without a companion** (`PeanutsPrefs.bottomScreenInGames`). Seen on the emulator (Android 13, a 1240x1080 and a 1920x1080 second display, hot-plugged both ways):
+  the logo page, Settings by X and back, the cards of a game to build and of one marked Not Supported Yet, the setting off. Not yet run on the Thor.

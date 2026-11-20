@@ -96,7 +96,8 @@ static void *m_Realloc32(void *self, void *p, uint32_t n, uint32_t a) { return m
 static uint32_t m_QuantizeSize32(void *self, uint32_t n, uint32_t a) { (void)self; (void)a; size_t q = plat_malloc_good_size(n); return q > UINT32_MAX ? n : (uint32_t)q; }
 static bool m_GetAllocationSize32(void *self, void *p, uint32_t *out) { (void)self; if (!p) return false; *out = (uint32_t)plat_malloc_size(p); return true; }
 static void m_Nothing(void *self) { (void)self; }   // Trim (its bool argument is ignored), the thread-local cache setup and teardown, DumpAllocatorStats
-static void *g_vt[NSLOT];
+static void *g_vt_storage[2 + NSLOT];   // PEANUTS: keep the Itanium offset-to-top and RTTI words before the address point
+static void **const g_vt = g_vt_storage + 2;
 static const char *g_what;
 
 // Observation gate OBS_UE_MALLOC, on the cut constructor call: the object in the register the gate number's upper bits name (x0), before anything calls it
@@ -163,6 +164,8 @@ void dm_ue_malloc_install(void) {
             if (L < 0) { LOG("[RED] main: Unreal's FMallocBinned3 has its name getter at slot %u, a layout the host does not know: Unreal's own allocator runs on cut code", m->ue_malloc_slot); return; }
             if (!gate_obs_present(OBS_UE_MALLOC)) { LOG("[RED] main: the fixups name Unreal's FMallocBinned3 but main has no allocator gate: the allocator would have no vtable"); return; }
             static char what[64]; snprintf(what, sizeof what, "main %.8s", m->build_id);
+            // PEANUTS(upstream-candidate): the rewriter verified this primary header. Preserve RTTI in the replacement.
+            memcpy(g_vt_storage, b + m->ue_malloc_vt - 2 * sizeof g_vt[0], 2 * sizeof g_vt[0]);
             fill(b + m->ue_malloc_vt, L, what);
             gate_obs_set(OBS_UE_MALLOC, obj_made);
             return;

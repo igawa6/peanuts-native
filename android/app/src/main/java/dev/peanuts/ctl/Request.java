@@ -19,7 +19,7 @@ public final class Request {
         public Bad(String code, String message) { super(message); this.code = code; }
     }
 
-    public static final List<String> COMMANDS = Arrays.asList("status", "list", "scan", "nav", "build", "reimport", "prepare", "job", "play", "game", "screens_off", "set", "companion");
+    public static final List<String> COMMANDS = Arrays.asList("status", "list", "scan", "nav", "build", "reimport", "prepare", "job", "play", "game", "screens_off", "set", "companion", "share_build_log");
     static final List<String> FILTERS = Arrays.asList("all", "building", "ready", "build", "not_in_app");
     static final List<String> COMPANION_ACTIONS = Arrays.asList("list", "install", "update", "remove");
     static final List<String> TABS = Arrays.asList("performance", "game", "saves", "storage");
@@ -114,7 +114,7 @@ public final class Request {
                 if (to.equals("game")) titleId(true);
                 break;
             }
-            case "build": case "prepare": case "play": titleId(true); break;
+            case "build": case "prepare": case "play": case "share_build_log": titleId(true); break;
             case "reimport": titleId(true); flag("confirm"); flag("delete_first"); break;   // the question itself is answered where the plan is known (CtlPort.reimport: needs_confirm)
             case "job": action(); titleId(false); break;
             case "game": {

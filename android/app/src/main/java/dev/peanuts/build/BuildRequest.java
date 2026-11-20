@@ -14,6 +14,8 @@ public final class BuildRequest {
     public List<File> dlcs = new ArrayList<>();
     /** The library root (the game folder from setup); an imported .nup goes to &lt;gameDir&gt;/&lt;Name&gt;/&lt;Name&gt;.nup */
     public File gameDir;
+    /** The game's explicit Build destination, or null to use the existing automatic placement. */
+    public String buildDestination;
     /** The catalog package to install into the game's companion root, or null */
     public String companionPackage;
     /** Import again ({@link Reimport}): the .nup to make anew from base/update/dlcs; it is replaced only when the import is complete. null: an ordinary build */

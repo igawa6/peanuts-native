@@ -110,9 +110,9 @@ public final class PrepareTextJvmTest {
         plain(f.text, "an exception");
         check(f.detail.contains("EACCES") && f.fix.equals(PrepareText.FIX_RETRY), "the exception in Details");
 
-        f = PrepareText.killed("Rewriting the game code", 2, "2.7");
+        f = PrepareText.killed("Rewriting the game code", 2);   // PEANUTS
         plain(f.text, "killed");
-        check(f.text.contains("2 times") && f.text.contains("2.7 GB"), "killed: " + f.text);
+        check(f.text.contains("2 times") && !f.text.contains("memory") && f.fix.equals(PrepareText.FIX_RETRY), "killed: " + f.text);
 
         f = PrepareText.shadersDiffer("Pokemon Pokopia", "update 655360", "The split's shader_map.tsv differs from the app's dm/games/0400A3A01EE4C000/shader_map.tsv.");
         plain(f.text, "shaders differ");
@@ -165,6 +165,19 @@ public final class PrepareTextJvmTest {
         check(text.equals("Preparing stopped while translating shaders. Tap Retry. Details says why."), "older job: " + text);
         check(PrepareText.failedDetail(old, "", false).equals(old), "older job: its error in Details");
         check(PrepareText.failedText("Translating shaders", "Some text.", true).equals("Some text.") && PrepareText.failedDetail("Some text.", "d", true).equals("d"), "a job of this version");
+
+        // PEANUTS begin: the failure card receives the fields persisted in job.json.
+        String step = "Finding the shaders";
+        f = PrepareText.toolStopped(step, 1, "[RED] ValueError: invalid shader archive", log);
+        check(PrepareText.failureSummary(step, f.text, f.detail).equals(step + " stopped. ValueError: invalid shader archive"), "show the last error once");
+        f = PrepareText.toolStopped(step, 9, null, log);
+        check(PrepareText.failureSummary(step, f.text, f.detail).equals(step + " stopped. Exit code 9"), "exit code when the log had no reason");
+        f = PrepareText.toolStopped(step, 1, "[RED] ENOSPC while writing", log);
+        String full = PrepareText.failureSummary(step, f.text, f.detail);
+        check(full.contains("Free some space") && full.endsWith("ENOSPC while writing"), "keep the recovery action and the tool reason");
+        check(PrepareText.failureSummary(step, "Legacy error", "").equals(step + " · Legacy error"), "old job without separate details");
+        check(PrepareText.failureSummary(step, "", "").equals(step + " stopped."), "empty failure");
+        // PEANUTS end
 
         // The progress line never says "0 of 0"
         check(PrepareText.progressLine(18, false, 0, 0, "", 0).equals("18 %"), "no total: no shader count: " + PrepareText.progressLine(18, false, 0, 0, "", 0));

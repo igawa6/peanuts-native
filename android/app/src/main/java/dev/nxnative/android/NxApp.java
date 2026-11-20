@@ -7,5 +7,6 @@ public final class NxApp extends Application {
     @Override public void onCreate() {
         super.onCreate();
         PickedNup.install(this);
+        dev.peanuts.ui.AppScreens.install(this);   // PEANUTS: the app's pages in other processes keep the second display's page (dev.peanuts.ui.AppScreens)
     }
 }

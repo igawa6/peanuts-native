@@ -1,0 +1,4 @@
+# PEANUTS: v1114112 can lack these v786432 supplemental pairs. Both shader keys exist in both updates.
+# Build in which the pair may be absent, vertex key, pixel key.
+v1114112	1f037afbe71a66f4	3419444185946af9
+v1114112	a9fede56c9d07bb2	afcdeaed85d1f91e

@@ -185,4 +185,5 @@ final class Native {
     static native int ndsrStatus();
     /** The skipped-work warning (vka_exec.c nxhost_skip_status): "<percent> <causes>" once the replay skipped a large share of the game's draws for causes of the GPU driver, "" before or when it is off; SkipNotice reads it */
     static native String skipStatus();
+    static native long prewarmProgress();   // PEANUTS: startup shader progress
 }

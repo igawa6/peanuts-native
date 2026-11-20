@@ -17,6 +17,9 @@ Update 1.1.0 (v131072) over the base game, SDK 8.2.0. Grezzo's engine on Nintend
 
 The default remains 60 fps with the existing Grezzo controller lock. The choices are Game owned, 30 and 60 fps, all using the original game timing. Game owned leaves the native controller and timing alone.
 
+<!-- PEANUTS -->
+For [issue #113](https://github.com/igawa6/peanuts-native/issues/113), the launcher now sends the matching engine target at launch and when switching between 30 and 60 fps in play. Removing the experimental plan had left manual 30 fps changing only the host limiter, while the Grezzo controller stayed at 60 fps. The launcher policy is covered by JVM tests. Gameplay timing on the reporting device still needs verification.
+
 The experimental 120 fps mode was removed after the owner reported broken gameplay. Its main-module timing patches and associated controller-memory override are no longer shipped. The precise timing failure remains unresolved; title-screen frame counts did not validate gameplay. Previously saved 120 fps selections resolve to the 60 fps default on the next launch through the launcher's existing cap normalization. Game files are unchanged; restart any running session to use the updated profile.
 
 ## Rendering

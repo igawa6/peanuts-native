@@ -33,6 +33,7 @@ int nxhost_main(int argc, char **argv);
 void nxhost_env_changed(void);
 #pragma weak nxhost_set_window
 #pragma weak nxhost_vk_selftest
+#pragma weak nxhost_prewarm_progress   // PEANUTS: optional startup shader progress
 #pragma weak nxhost_input_device_added
 #pragma weak nxhost_input_device_removed
 #pragma weak nxhost_input_key
@@ -642,6 +643,11 @@ JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_drsSet(JNIEnv *env, jcla
 #pragma weak nxhost_ndsr_status
 int nxhost_ndsr_status(void);   // vka_draw.c
 JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_ndsrStatus(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_ndsr_status ? nxhost_ndsr_status() : -1; }
+// PEANUTS: startup shader progress
+JNIEXPORT jlong JNICALL Java_dev_nxnative_android_Native_prewarmProgress(JNIEnv *env, jclass cls) {
+    (void)env; (void)cls;
+    return nxhost_prewarm_progress ? nxhost_prewarm_progress() : 0;
+}
 // The skipped-work notice (SkipNotice): "<percent> <causes>" once the replay's warning fired (DM_VK_SKIP_WARN), else ""
 #pragma weak nxhost_skip_status
 void nxhost_skip_status(char *buf, size_t n);   // vka_exec.c

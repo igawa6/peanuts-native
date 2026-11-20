@@ -159,6 +159,14 @@ To enroll a cut for any game's own module:
 - **Found on:** [Octopath Traveler 0](../../dm/games/01005270232F2000/README.md) `main+0x37f9bc8`: one of the 12 `br x18` sites in this `main`.
 - **Note:** a census of all the `br x18` sites first (each shape within 16 / 32 / 48 instructions) saves a 12-minute rewrite per site.
 
+### A TLS access uses the guest x18 register
+<!-- PEANUTS: Guest TLS register handling. -->
+
+- **Symptom:** a rewritten TLS load faults at an unmapped low address after the game executes `mrs x18, tpidr_el0`.
+- **Cause:** the system-register rewrite put the guest TLS pointer in the real `x18`. Later rewritten instructions loaded `x18` from the guest's saved slot, which still held the previous value.
+- **Fix:** `patch_nso.py` transfers between the guest register slot and the TLS slot when an MRS or MSR names `x18`. The stub preserves the host's `x18` and the scratch registers.
+- **Found on:** [Demon Slayer 2](../../dm/games/0100AD80208A8000/README.md#startup-rewrite) 1.80, `main+0x23f5ec0`.
+
 ### Indirect calls through x18
 
 - **Symptom:** `jump table <addr>` assertion in `patch_nso.py`, in a Unity / IL2CPP `main`, at a `blr x18`.

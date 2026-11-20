@@ -46,6 +46,7 @@ The game builds Mii heads from the console's MiiModel system data, starting at b
 ## Files and shaders
 
 - 29,785 shaders across 4.0.0 and 4.0.1 (12,579 vertex, 17,177 pixel, 28 compute, 1 geometry): BNSH in the courses' and objects' `.bfsha` / `.bfres` archives inside the `.szs` SARCs (courses, objects, karts, drivers), the effects' `.ptcl`, the layouts, agl's two BAHS sharcb and `main`; 19,012 variation pairs.
+- <!-- PEANUTS --> Android's [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [the observed file list](shader_files.tsv) to include files that contribute extra variation pairs. The targeted tables matched the profile for both 4.0.0 and 4.0.1. On 4.0.0, the split opened 1,359 of 6,597 RomFS files and its 29,650 shader records matched the full scan by SHA-256.
 - <!-- PEANUTS --> **Resolved (Peanuts): a 4.0.1 dump was refused for 134 shaders of 4.0.0.** 4.0.1 rebuilt `Common/Effect/common.ptcl` (its BNSH moved from `0x7e2000` to `0x7e3000`): 135 effects are new, tagged `/v1507328/` in the map, and 134 of 4.0.0's are gone. Those 134 are first-version rows, which carry no version tag, so `pack_android.py` took them as shaders every dump has and stopped a 4.0.1 dump (base + update 4.0.1, from NSPs, on a Mac, 2026-11-16) with `the dump's shaders lack 134 of the 29785`. [`shader_optional.tsv`](shader_optional.tsv) names them, as Super Mario Bros. Wonder's names its versions' own shaders; the split of 4.0.1 has every other key.
 - The NSP script's Mac-only build (`--platform mac`) saves about 30,000 iOS shader compiles and the 12 GB IPA for this game ([development.md, A Mac-only build for development](../../../docs/development.md#a-mac-only-build-for-development)). The player README gives the IPA as about 11.9 GB.
 
@@ -61,6 +62,8 @@ The game builds Mii heads from the console's MiiModel system data, starting at b
 - 2P: from a save past the Mii pick, L+R at the title, Down, A (2P), A (Grand Prix), A (50cc) opens the controller applet; 1.5–4 s between presses, or the menu fades drop them. Headless runs report one player; two players need a second controller.
 
 ## Found on this game
+
+- [Version-specific pixel shaders in an Android build](../../../docs/reference/shaders.md#other-versions-pixel-shaders-return-during-android-translation). <!-- PEANUTS -->
 
 - **Android title-screen NULL texture registration:** `treg` cleared the entry and then dereferenced the NULL texture while updating its buffer flag (SIGSEGV read at `0x4`). The flag now clears without reading the texture; the production registration regression passes under UBSan. A 90-second Turnip run reaches the title and menus at about 60 fps, including a NULL registration, with no recorded crash; a race remains unchecked. See [Clearing a Vulkan texture registration](../../../docs/reference/rendering.md#clearing-a-vulkan-texture-registration).
 

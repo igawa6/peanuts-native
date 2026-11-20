@@ -45,6 +45,10 @@ tex_dirty_upload	on
 # 30 when 60 does not hold, game time = real time. DM_FPS_TARGET=30 (Documents/env.txt on the iPhone) saves power, 0 = the game's own step. Until the host has decided a step
 # (the first frames) the stub steps by the measured frame time
 fps_target	60
+# PEANUTS: Android uses the FPSLocker elapsed-time path and paces presentation independently.
+fps_limit	60
+fps_limit_max	120
+fps_step_elapsed	1
 
 # ---- Shader split (shader_split.py) ----
 shader_groups	/Shader/ApplicationPackage=layout /Shader/=shader /Effect/=effect /UI/=layout

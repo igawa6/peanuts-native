@@ -728,6 +728,14 @@ Most service calls can be found before they crash, before the first boot or the 
 - **Dependency:** Android host CMake takes `NX_COOP_VENDOR_DIR`; no `coop.h` builds with `NX_COOP_VENDOR=0`, while a header with a missing required source file fails configuration. The module is pinned and supplied separately; the [Pokopia note](../../dm/games/0400A3A01EE4C000/README.md#optional-module-and-provenance) records the tested source. Its diagnostic logs can expose addresses, room codes and node IDs; redact them before sharing.
 - **Found on:** [Pokémon Pokopia](../../dm/games/0400A3A01EE4C000/README.md#link-play-on-android) (update 655360): earlier Android-to-PC joins over Wi-Fi and Tailscale; on `android` base `0bac816c` (2026-11-12), the Fold 7 on Turnip joined a Recompia 0.10.3 PC host over LAN with room authentication. Movement in both directions, normal visitor return home and subsequent host session shutdown were verified. Reconnection and current-source WAN/Tailscale traversal were not retested.
 
+<!-- PEANUTS(upstream-candidate): offline NSD application environment query. -->
+### NSD application server environment query aborts during startup
+
+- **Symptom:** the SDK aborts with result `0xe8d` after attempts to open `nsd:a` and `nsd:u`. <!-- PEANUTS -->
+- **Cause:** `nn::nsd::GetApplicationServerEnvironmentType()` expects an answer from NSD command 100. The SDK aborts if neither service can open.
+- **Fix:** the hook in `hle_offline.c` returns the retail environment enum `Lp` (1), consistent with the existing retail identifier `lp1`. The query works offline.
+- **Found on:** [Captain Tsubasa 2: World Fighters](../../dm/games/01009720213B0000/README.md#found-on-this-game).
+
 ### Network requests stay on hold before they settle
 
 - **Symptom:** the boot sits at a black loading screen for good, CPU nearly idle, every thread waiting, about 1 boot in 6 (3 in 4 with four Mac hosts at once); the title movie is never opened, and the save files are never probed.

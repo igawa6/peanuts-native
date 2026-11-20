@@ -42,4 +42,11 @@ static inline int vkp_join(const void *segs, size_t stride, int n, uint64_t a, u
 #undef VKP_LO
 #undef VKP_HI
 }
+// PEANUTS(upstream-candidate) begin: the per-thread record of an ask with nothing left to do (vka_mem.c t_neg) holds for a later ask only if that record's ask did all
+// the later one needs: an ask that only placed (mtl_pool_place: a texture's storage) leaves a range across two parts not joined, so a joining ask of the same range
+// (the same texture as a linear or buffer texture, its address, a command naming it) must not be answered from it. rec_join / join: 1 = the ask joins
+static inline int vkp_neg_hit(uint64_t rec_gen, uint64_t rec_a, uint64_t rec_e, int rec_join, uint64_t gen, uint64_t a, uint64_t e, int join) {
+    return rec_gen == gen && a >= rec_a && e <= rec_e && (rec_join || !join);
+}
+// PEANUTS(upstream-candidate) end
 #endif

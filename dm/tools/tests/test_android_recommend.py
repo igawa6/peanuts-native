@@ -74,7 +74,10 @@ class Wiring(unittest.TestCase):
         act = (SRC / 'GameActivity.java').read_text(encoding='utf-8')
         self.assertIn('Native.note(Recommend.logLine(Prefs.recStates(this, id)));', act)
         self.assertIn('Prefs.rememberFacts(this, probedChoice, vulkan);', act)
-        self.assertLess(act.index('Prefs.pinDriver(this, id);'), act.index('settingsEnv(id, genv);'), 'the driver is pinned before the check probes it')
+        hold = act.split('private boolean readinessHold(', 1)[1].split('\n    }', 1)[0]   # PEANUTS: scope the order to this probe
+        env = hold.index('settingsEnv(id, pack, genv);')
+        self.assertLess(hold.index('Prefs.pinDriver(this, id);'), env)
+        self.assertLess(env, hold.index('Native.readiness(denv)'))
         self.assertIn('Prefs.chosenFpsCap(this, id)', act)
         self.assertIn('Prefs.rememberFacts(app,', (SRC / 'ReadinessActivity.java').read_text(encoding='utf-8'))
         gs = (SRC / 'GameSettings.java').read_text(encoding='utf-8')
