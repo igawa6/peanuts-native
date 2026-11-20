@@ -48,6 +48,20 @@ Status: brought up on the Mac: the first-boot brightness screen, the title, a ne
 - **Checked 2026-10-28:** the [IoStore patch-container resolver](../../../docs/reference/shaders.md#iostore-patch-containers-keep-their-shader-groups-in-the-base-container) preserves this game's single-container extraction on update v65536. Both decoded archives match the original reader byte for byte: 3,542 + 70,702 shader entries, 73,496 distinct control-and-code keys, 707,636,257 archive bytes; both readers together took 39.4 s through the existing Mac host's Oodle service. This checks extraction only; gameplay was not rerun for this change. The full `regress.py check` was not completed (cold shader rebuild).
 - The pak stores block size 0 for a file of one block (`Pak.entry`).
 
+## Preparing the Android pack from an updated NUP
+
+<!-- PEANUTS: Android shader preparation for 1.0.1. -->
+If the split reports Unreal archives but finds no decoded shader code, use the **update** RomFS and `main` inside the same verified NUP. There is no need to unpack its entire filesystem. `uepak.job` needs a decoder for both IoStore compression layers. The host check used a locally installed Oodle decoder through its `decode(compressed, raw_size)` callback. With a Mac host built for this game and its matching rewritten modules, the public command-line equivalent is:
+
+```sh
+root="${NUP}:update/65536"
+python3 dm/gfx/tools/uepak.py job "$root/romfs" "$root/exefs/main" "$WORK/ue" "$GAME_HOST" "$MODULES"
+DM_UE_SHADERS="$WORK/ue/archives" DMSH_VK_REQUIRE_ALL=1 \
+  python3 scripts/pack_android.py "$NUP" --version 65536 --out "$WORK/android-pack"
+```
+
+`job.json` should list both libraries as `IoStore, decoded`, with zero records left in `oodle.job`. Pass the **`archives` subdirectory**, not its parent, to the packer. On Vulkan chain `dfebef5d68a9`, all 73,496 keys built and all 108,698 SPIR-V modules passed `spirv-val --target-env vulkan1.3`. The resulting pack was 1,489.8 MiB; the RomFS stayed in the NUP. A device run of this pack is pending.
+
 ## Rewriter
 
 `main` has 94 MB of text, 95% of it without unwind entries: 82 MB in one stretch (`main+0x6c4f88`–`+0x59220c0`) and the 6.65 MB before the first FDE (none before `main+0x6a75d4`).
