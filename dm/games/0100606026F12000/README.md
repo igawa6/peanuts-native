@@ -60,7 +60,9 @@ DM_UE_SHADERS="$WORK/ue/archives" DMSH_VK_REQUIRE_ALL=1 \
   python3 scripts/pack_android.py "$NUP" --version 65536 --out "$WORK/android-pack"
 ```
 
-`job.json` should list both libraries as `IoStore, decoded`, with zero records left in `oodle.job`. Pass the **`archives` subdirectory**, not its parent, to the packer. On Vulkan chain `dfebef5d68a9`, all 73,496 keys built and all 108,698 SPIR-V modules passed `spirv-val --target-env vulkan1.3`. The resulting pack was 1,489.8 MiB; the RomFS stayed in the NUP. A device run of this pack is pending.
+`job.json` should list both libraries as `IoStore, decoded`, with zero records left in `oodle.job`. Pass the **`archives` subdirectory**, not its parent, to the packer. On Vulkan chain `dfebef5d68a9`, all 73,496 keys built and all 108,698 SPIR-V modules passed `spirv-val --target-env vulkan1.3`. The resulting pack was 1,489.8 MiB; the RomFS stayed in the NUP.
+
+**Odin 2, Turnip v27 R1:** Host `7137913365fe` ran this pack with the matching Vulkan bank. From a fresh save at brightness 5, New Game → Normal → Yes reached Battlefield. Archwitch walked north, attacked and defeated the first three soldiers. HP went from 5,199 to 5,065, and field control returned at the staircase. The game stopped normally and wrote an autosave. Reloading that save, later encounters and the system driver were not tested in this run.
 
 ## Rewriter
 
