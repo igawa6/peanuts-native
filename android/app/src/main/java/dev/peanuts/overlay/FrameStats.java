@@ -14,10 +14,17 @@ public final class FrameStats {
 
     /** Median of ms[0..n) in ms; NaN for no frame */
     public static float median(float[] ms, int n) {
-        if (n <= 0) return Float.NaN;
-        float[] c = Arrays.copyOf(ms, n);
-        Arrays.sort(c);
-        return n % 2 == 1 ? c[n / 2] : (c[n / 2 - 1] + c[n / 2]) / 2f;
+        if (ms == null || n <= 0) return Float.NaN;
+        int limit = Math.min(n, ms.length);
+        float[] valid = new float[limit];
+        int count = 0;
+        for (int i = 0; i < limit; i++) {
+            float value = ms[i];
+            if (Float.isFinite(value) && value > 0f) valid[count++] = value;
+        }
+        if (count == 0) return Float.NaN;
+        Arrays.sort(valid, 0, count);
+        return count % 2 == 1 ? valid[count / 2] : (valid[count / 2 - 1] + valid[count / 2]) / 2f;
     }
 
     /**
