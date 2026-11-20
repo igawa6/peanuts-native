@@ -735,7 +735,8 @@ static int storage_mode(const tex_t *t, const uint8_t *c, const vka_fmt *f, int 
     else if (linear && t->pool) want = ST_TRACK;
     else if (d->target == NVN_TEXTURE_TARGET_BUFFER && t->pool) want = ST_TRACK;   // PEANUTS: a buffer texture's rows (img_create_): its elements as the CPU writes them, like a linear texture's rows
     else if (is_vid) want = ST_TRACK;
-    else if (comp && !(d->flags & (NVN_TEXTURE_FLAGS_IMAGE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_SPARSE)) && mem_any_mapped(c, t)) want = ST_TRACK;
+    else if (comp && !(d->flags & (NVN_TEXTURE_FLAGS_IMAGE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_SPARSE))
+             && (mem_any_mapped(c, t) || (DM_GAME_TEX_DIRTY_UPLOAD && sampled && !(pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL)) && !gpu_image_over(t->mem)))) want = ST_TRACK;
     else if (nvn2_sampled_content(t, f, pf, sampled)) {
         int any = mem_any_mapped(c, t); uint64_t k = g_nvn2_first[!any]++; want = ST_TRACK;
         if (any && k < 4) VLOG("texture serial %llu %ux%ux%u format %#x pool flags %#x: written by the CPU before its first use, a sample (NVN2): uploaded from its storage, re-uploaded when it changes (%llu so far, %llu more with empty storage)",
@@ -743,6 +744,9 @@ static int storage_mode(const tex_t *t, const uint8_t *c, const vka_fmt *f, int 
     }
     else if (!(d->flags & NVN_TEXTURE_FLAGS_COMPRESSIBLE) && t->pool && ((pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_CPU_UNCACHED)) || nvn_flushed(t->mem, t->L.size))
              && mem_any_mapped(c, t)) want = ST_FILL;
+    else if (DM_GAME_TEX_DIRTY_UPLOAD && sampled && t->pool && !t->has_layout
+             && !(d->flags & (NVN_TEXTURE_FLAGS_IMAGE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_SPARSE))
+             && !(pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL)) && !gpu_image_over(t->mem)) want = ST_TRACK;
     // No later CPU writes to follow: a pool the CPU cannot access, a virtual pool (its pages are not the storage's), storage outside every tracked pool, or tracking off
     int trk = VKA_ENV("DM_VK_TEX_TRACK", 1) != 0;   // live: textures made from now on
     if (want == ST_TRACK && !is_vid && (!trk || (pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL)) || !nvn_dirty_span(t->mem, t->L.size))) want = ST_FILL;
