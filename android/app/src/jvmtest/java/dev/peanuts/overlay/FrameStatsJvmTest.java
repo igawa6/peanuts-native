@@ -11,7 +11,6 @@ public final class FrameStatsJvmTest {
         check(Math.abs(FrameStats.median(new float[] {1, 2, 3, 4}, 4) - 2.5f) < 1e-4, "median even");
         check(Float.isNaN(FrameStats.median(f, 0)), "median empty");
         check(Math.abs(FrameStats.percentileFrameTime(f, 100, 95) - 33.3f) < 1e-3, "p95 ignores one isolated hitch");
-        check(Math.abs(FrameStats.percentileFrameTime(h, 100, 95) - 100f) < 1e-3, "p95 catches recurring slow frames");
         check(Float.isNaN(FrameStats.percentileFrameTime(f, 9, 95)), "p95 needs a stable sample window");
         check(Float.isNaN(FrameStats.percentileFrameTime(f, 100, 100)), "p100 is not a percentile request");
         float[] dirty = {Float.NaN, -1f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f};
@@ -24,6 +23,7 @@ public final class FrameStatsJvmTest {
         for (int i = 0; i < 90; i++) h[i] = 33.3f;
         for (int i = 90; i < 100; i++) h[i] = 100f;
         check(Math.abs(FrameStats.onePercentLowFps(h, 100) - 10f) < 1e-3, "1% low: 10 hitches in 100 give 10 fps");
+        check(Math.abs(FrameStats.percentileFrameTime(h, 100, 95) - 100f) < 1e-3, "p95 catches recurring slow frames");
         float[] u = new float[512];
         for (int i = 0; i < 512; i++) u[i] = 33.3f;
         u[7] = 400f;
