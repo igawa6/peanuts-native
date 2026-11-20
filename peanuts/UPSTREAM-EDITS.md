@@ -101,6 +101,7 @@ not edited (see table above).
 | `dm/games/0100A0F00DA68000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Monster Sanctuary (provisional: packed on a PC, not run on a device) |
 | `dm/games/0100B63016916000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for My Time at Sandrock (provisional: packed on a PC, not run on a device) |
 | `dm/games/0100DAE01E4C8000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for STORY OF SEASONS: Grand Bazaar |
+| `dm/games/010062E01FE0C000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Digimon Story Time Stranger |
 | `dm/gfx/tools/shader_split.py` | **fixed this pass** (header note + 6 def-site tags covering DM_SPLIT_DIRECT/WORKER, DM_UE_DECODE) | **yes** — the on-device process-pool split and the comment-insensitive table comparison (`table_rows`) are general infra, not game-specific |
 | `dm/gfx/tools/uepak.py` | marked (`_nxaes` off-Mac AES path) | **yes** — lets the packer run without CommonCrypto/OpenSSL, general portability fix |
 | `dm/gfx/vk_android/vka_draw.c` | **fixed this pass** | **yes** — indirect quad/line-loop draws read on CPU instead of being skipped (Three Houses) |
@@ -1306,6 +1307,23 @@ The host implemented the sampler builder's setters and three of its getters; a g
 | File | Hunks | Change | Marker |
 |---|---|---|---|
 | `dm/gfx/nvn/hle_nvn.c` | 1 | `nvnSamplerBuilderGet*`: LodBias, Compare, BorderColor (f / i / ui), MaxAnisotropy, ReductionFilter, LodSnap return what the setters stored | `PEANUTS begin(upstream-candidate)` |
+
+### Digimon Story Time Stranger: MVGL archives, engine shaders, sampler getters, its frame rate and job pool (2026-11-20)
+
+Digimon Story Time Stranger (`010062E01FE0C000`) keeps every shader in Media.Vision's MVGL archives, in a layout with 32-bit counts and 64-bit offsets (`app_0.nx64.mvgl` is 6.2 GB) whose compressed entries are LZ4 blocks; the split read that archive whole, which fails on macOS for one read of more than 2 GB (`OSError: [Errno 22]`), and found no shader. The engine's own shaders are the same NX?S containers inside `main`, which the control-section heuristic paired none of (black screen). It needs the sampler-builder getters of the section above (it crashed without them). Its FPSLocker Warehouse config needs rate offsets. Its animation job pool empties its job vectors under running workers (stops and crashes): a per-build cut.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/mvgl.py` | 3 | the 64-bit layout (`wide`: its tables end exactly at the data start), read beside the 32-bit one; its entries decoded as LZ4 | `PEANUTS begin(upstream-candidate)` / `PEANUTS(upstream-candidate)` |
+| `dm/gfx/tools/shader_split.py` | 5 | `mvgl_jobs` / `mvgl_shaders`: the archives' `shad` entries in ranges, each an `NXVS` / `NXFS` container read by its header (`nxsh_shader`); `nxsh_in`: the NX?S containers inside a module, read first in `raw_shaders`; the dispatch and the job list | `PEANUTS begin`/`end`, `PEANUTS`, `PEANUTS(upstream-candidate)` |
+| `dm/host/fpslocker_rows.h` | 3 | row kinds `target_offset_f32` ((fps + a) × b) and `frame_offset_ms_f32` (b × 1000 / (fps + a)) | `PEANUTS` |
+| `android/app/build.gradle` | 1 | the reviewed fpslocker row validator accepts the two kinds | `PEANUTS` |
+| `dm/tools/tests/test_fpslocker_rows.py` | 1 | the two kinds' values and their refused parameters | `PEANUTS` |
+| `docs/reference/threads.md` | 1 | [Job vectors emptied by a tidy while workers take from them](../docs/reference/threads.md#job-vectors-emptied-by-a-tidy-while-workers-take-from-them) | `PEANUTS begin`/`end` |
+| `docs/agents/symptoms.md`, `docs/agents/game-patches.md` | 1 each | regenerated (`docs_symptoms.py`, `docs_patches.py`) | generated |
+| `dm/games/010062E01FE0C000/patches.py`, `vk_prewarm.bin` | new | the job pool cut (main 1.2.2); the prewarm seed of one Turnip run | Peanuts profile files |
+
+New and Peanuts-owned: `peanuts/tests/test_mvgl_wide.py`.
 
 ### Targeted shader splits for released games (2026-11-19)
 

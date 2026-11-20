@@ -127,6 +127,21 @@ int main(void) {
       memcpy(&period,mem+0xa50,4);
       assert(period == periods[i]);
     }
+    // PEANUTS: Digimon Story Time Stranger's dynamic-resolution targets: fps + 2, 1000 / (fps + 5) and 0.78 of it.
+    const char *offs = "9fe60a212cff9b9a3656ab63d4f882e5,target_offset_f32,@0x760,1,2:1;"
+                       "9fe60a212cff9b9a3656ab63d4f882e5,frame_offset_ms_f32,@0x764,1,5:1;"
+                       "9fe60a212cff9b9a3656ab63d4f882e5,frame_offset_ms_f32,@0x768,1,5:0.78";
+    assert(fpw_parse(offs, bid, &r) == 3 && r.row[0].kind == 18 && r.row[1].kind == 19);
+    memset(mem + 0x760, 0, 16);
+    assert(fpw_apply(&r, base, 60, read_guest, write_guest) == 3);
+    float dr[4];
+    memcpy(dr, mem + 0x760, 16);
+    assert(dr[0] == 62.f && fabsf(dr[1] - 1000.f / 65.f) < 1e-5f && fabsf(dr[2] - 0.78f * 1000.f / 65.f) < 1e-5f && dr[3] == 0.f);
+    assert(fpw_apply(&r, base, 30, read_guest, write_guest) == 3);
+    memcpy(dr, mem + 0x760, 12);
+    assert(dr[0] == 32.f && fabsf(dr[1] - 1000.f / 35.f) < 1e-5f);
+    assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,frame_offset_ms_f32,@0x764,1,-15:1",bid,&r)==-1);   // fps + a can reach zero
+    assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,target_offset_f32,@0x760,1,2:0",bid,&r)==-1);
     // Halfword governor writes must preserve both neighboring bytes and
     // work at the final two bytes of a readable allocation.
     assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,zero_u16,0x100/0x2,1,0",bid,&r)==1);

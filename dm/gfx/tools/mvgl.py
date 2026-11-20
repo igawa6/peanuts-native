@@ -47,10 +47,36 @@ def doboz(b):
     return bytes(out)
 
 
+# PEANUTS begin(upstream-candidate): the 64-bit layout of Digimon Story Time Stranger (010062E01FE0C000, RomFS *.nx64.mvgl; app_0.nx64.mvgl is 6.2 GB)
+#   +0x00 'MDB1', u32 tree entries, u32 name entries, u32 data entries, u64 data start, u64 archive size
+#   +0x20 tree entries, 16 bytes each: u32 compare bit, u32 data index (0xffffffff for the root and inner nodes), u32 left, u32 right
+#   then name entries, 0x80 bytes each: char[4] extension, char[0x7c] name; then data entries, 16 bytes each: u64 offset (from data start), u32 length, u32 stored length
+# A file whose stored length is below its length is one LZ4 block (not doboz). The layout is told by its tables ending exactly at the data start.
+def wide(h):
+    nt, nn, nd, start, size = struct.unpack_from('<IIIQQ', h, 4)
+    return 0x20 + nt * 16 + nn * 0x80 + nd * 16 == start
+# PEANUTS end
+
+
 class Archive:
     def __init__(self, path):
         self.f = open(path, 'rb')
-        magic, nt, nn, nd, self.start, self.size = struct.unpack('<4sHHIII', self.f.read(0x14))
+        # PEANUTS begin(upstream-candidate): the 64-bit layout (wide, above)
+        h = self.f.read(0x20); self.f.seek(0x14); self.wide = h[:4] == b'MDB1' and wide(h)
+        if self.wide:
+            nt, nn, nd, self.start, self.size = struct.unpack_from('<IIIQQ', h, 4); self.f.seek(0x20)
+            tree, names, data = self.f.read(nt * 16), self.f.read(nn * 0x80), self.f.read(nd * 16)
+            self.files = {}
+            for k in range(nt):
+                idx = struct.unpack_from('<I', tree, k * 16 + 4)[0]
+                if idx == 0xffffffff: continue
+                ext = names[k * 0x80:k * 0x80 + 4].rstrip(b'\0 ').decode('latin1')
+                name = names[k * 0x80 + 4:(k + 1) * 0x80].split(b'\0')[0].decode('latin1')
+                off, n, cn = struct.unpack_from('<QII', data, idx * 16)
+                self.files[name + '.' + ext] = (self.start + off, n, cn)
+            return
+        # PEANUTS end
+        magic, nt, nn, nd, self.start, self.size = struct.unpack('<4sHHIII', h[:0x14])   # PEANUTS(upstream-candidate): the header read once, above
         if magic != b'MDB1': raise ValueError('%s: not an MVGL archive' % path)
         tree, names, data = self.f.read(nt * 8), self.f.read(nn * 0x40), self.f.read(nd * 12)
         self.files = {}   # 'name.ext' → (offset, length, stored length)
@@ -65,6 +91,9 @@ class Archive:
     def read(self, name):
         off, n, cn = self.files[name]
         self.f.seek(off); b = self.f.read(cn)
+        if self.wide and cn < n:   # PEANUTS(upstream-candidate): the 64-bit layout's entries are LZ4 blocks
+            import lz4.block
+            return lz4.block.decompress(b, uncompressed_size=n)
         return doboz(b) if cn < n else b
 
 

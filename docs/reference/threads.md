@@ -148,6 +148,16 @@ Guest threads, their synchronization and how the host schedules them. Each entry
 - **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) 1.6.0 ([issue #251](https://github.com/seedds/nxnative/issues/251)): the same job descriptor ran on two threads 8 us apart.
 - **Check:** another game that fails like this: trace which job a worker takes (a branch slot at the job entry, a lock-free per-thread ring); the same descriptor on two threads at once is this bug. Count the unfenced bare `ldxr` acquires (`acquire_lock` in the rewriter's statistics line).
 
+<!-- PEANUTS begin -->
+### Job vectors emptied by a tidy while workers take from them
+
+- **Symptom:** the picture stops (sound goes on) a few minutes in, at random places, or a job worker crashes on a null job (`CRASH sig=11 addr=0x378`, a store into the job). The thread dump shows the pool's workers `running/not waiting` with millions of mutex lock and unlock SVCs each, the pool's count of jobs not done above 0 and its job vectors empty, and the main thread waiting for the pool to go idle.
+- **Cause:** a game's job pool keeps its jobs in growable vectors that its workers take from holding the pool's mutexes. When every worker has gone idle, the pool's wait "tidies" the vectors (shrinks them to a high-water count, copying them, then empties them) holding neither mutex and without looking at jobs not taken yet or at the take index. A submit on another thread wakes a worker meanwhile, so a worker takes null slots of a half-tidied vector, or jobs it has just moved in are emptied away and the count never returns to 0. The game's own code; why the Switch does not show it is not known (its timing).
+- **Fix:** a per-build cut skips the tidy, which only shrinks the vectors' capacity: the workers already empty a vector when they take its last job. Taking the mutexes around the tidy is not enough: it ended the crashes but not the stops, since the tidy still emptied jobs not taken.
+- **Check:** temporary observation gates on the vector's slot loads (a host callback that reads the slot and logs a null job or one job taken by two threads) tell this from a lost lock: here a worker holding the mutex read two null slots right before the crash, and no job was taken twice.
+- **Found on:** [Digimon Story Time Stranger](../../dm/games/010062E01FE0C000/README.md) 1.2.2 (`main+0xb7f240`, called from the pool's wait at `main+0xb7f17c` / `+0xb7f184`).
+<!-- PEANUTS end -->
+
 ### Late PhysX task destructor after the unlock
 
 - **Symptom:** a PhysX worker crashes in a task's `removeReference` with a null task manager, right as the game switches to 30 fps (`pc=main+0x10ccf28`, `lr=main+0x13c236c`); on the iPhone and in 2 of 5 Mac runs, in every Mac run with 12 busy loops loading the CPU.

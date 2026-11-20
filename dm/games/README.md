@@ -85,6 +85,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Dead Cells](0100646009FBE000/README.md) | `0100646009FBE000` | 1.25.0 | 13.3.5 | Heaps / HashLink (HL/C) | NVN |
 | [Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2](0100AD80208A8000/README.md) | `0100AD80208A8000` | 1.80 | 16.2.3 | Unreal Engine 5.3.2 | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Diablo III: Eternal Collection](01001B300B9BE000/README.md) | `01001B300B9BE000` | 2.7.7.92380 | 8.2.0 | Blizzard's engine, FMOD | NVN |
+| [Digimon Story Time Stranger](010062E01FE0C000/README.md) | `010062E01FE0C000` | 1.2.2 | 20.5.21 | Media.Vision's engine (MVGL archives), CRIWARE | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Digimon Story Cyber Sleuth: Complete Edition](010014E00DB56000/README.md) | `010014E00DB56000` | 1.0.3 | 6.4.0 | Media.Vision MVGL | OpenGL |
 | [Donkey Kong Bananza](040074A01BF12000/README.md) | `040074A01BF12000` | v458752 (Switch 2) | 20.5.19 (Ounce) | Nintendo EPD (sead / agl / gsys) | NVN2 |
 | [Donkey Kong Country Returns HD](01009D901BC56000/README.md) | `01009D901BC56000` | 1.1.0 | 18.3.5 | Unity 6000.0.28f1 IL2CPP | NVN |

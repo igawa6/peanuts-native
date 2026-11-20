@@ -147,7 +147,7 @@ def fpsLimitMaxOf = { String game ->
 def fpsLockerOf = { String game ->
     // PEANUTS: reviewed typed rows include dynamic elapsed FPS and full-width state caps.
     (tsvRows(game, 'fpslocker') + tsvRows(game, 'fps_memory')).collect { c ->
-        if (c.size() != 6 || !(c[1] ==~ /[0-9a-f]{32}/) || !(c[2] in ['zero_i32','target_f32','frame_ms_f32','frame_ms2_f32','vsync_u32','inverse_f32','frame_scaled_f32','target_scaled_f32','time_ratio_f32','flag_cap_u8','target_i32','zero_u16','time_step_pair_f32','constant_i32','elapsed_fps_f32','flag_cap_u32_gt','step_ticks_u32']) || !(c[3] ==~ /[@%]?0x[0-9a-f]+(\/0x[0-9a-f]+){0,4}/) || !(c[4] in ['1','2'])) // PEANUTS: integer fixed-step ticks and four-offset chains
+        if (c.size() != 6 || !(c[1] ==~ /[0-9a-f]{32}/) || !(c[2] in ['zero_i32','target_f32','frame_ms_f32','frame_ms2_f32','vsync_u32','inverse_f32','frame_scaled_f32','target_scaled_f32','time_ratio_f32','flag_cap_u8','target_i32','zero_u16','time_step_pair_f32','constant_i32','elapsed_fps_f32','flag_cap_u32_gt','step_ticks_u32','target_offset_f32','frame_offset_ms_f32']) || !(c[3] ==~ /[@%]?0x[0-9a-f]+(\/0x[0-9a-f]+){0,4}/) || !(c[4] in ['1','2'])) // PEANUTS: integer fixed-step ticks, four-offset chains, rate offsets
             throw new GradleException("$game: invalid reviewed fpslocker row")
         c[1..5].join(',')
     }.join(';')
