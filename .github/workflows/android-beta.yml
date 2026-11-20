@@ -3,7 +3,7 @@ name: Peanuts Native Android Beta
 on:
   push:
     branches:
-      - codex/performance-foundation-2026-11-20
+      - main
     paths:
       - '.github/workflows/android-beta.yml'
       - 'android/**'
