@@ -4,6 +4,9 @@ Update 1.4.0 (v393216) over the base game, SDK 19.3.9 (its `sdk` is byte-identic
 
 Status: brought up on the Mac: initial settings, the opening movie, the prologue and the Orbonne Monastery battle up to the player's first turn, at 60 fps with no red line (about 1.4 GB resident).
 
+<!-- PEANUTS: Android update 1.2.0 -->
+Update 1.2.0 (v262144) has a different `main` but the same SDK as 1.4.0. Its shader split reproduced all 306 map entries, including source offsets, 32 compute facts and 30 vertex/pixel pairs. No version-specific shader rows are needed. The job-pool patch below remains limited to 1.4.0.
+
 ## What it needs
 
 | Setting | Where | Why |
