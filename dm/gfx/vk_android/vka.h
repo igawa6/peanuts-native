@@ -54,6 +54,7 @@ static inline int vka_red_repeat(void) { static int n = -1; if (n < 0) { const c
     X(vkCmdSetRasterizerDiscardEnable) X(vkCmdSetPrimitiveRestartEnable) X(vkCmdSetBlendConstants) X(vkCmdSetLineWidth) \
     X(vkCmdPushDescriptorSetKHR) X(vkCmdSetVertexInputEXT) X(vkCmdPushConstants) X(vkCmdDrawMeshTasksEXT) X(vkCmdDrawMeshTasksIndirectEXT) \
     X(vkCmdDrawIndirectCount) X(vkCmdDrawIndexedIndirectCount) \
+    X(vkCmdBeginQuery) X(vkCmdEndQuery) \
     X(vkCmdBindTransformFeedbackBuffersEXT) X(vkCmdBeginTransformFeedbackEXT) X(vkCmdEndTransformFeedbackEXT)   // PEANUTS: transform feedback (vka_tf.c); NULL without the extension
 #define VKA_DECL(f) PFN_##f f;
 typedef struct { PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr; VKA_GLOBAL_FNS(VKA_DECL) VKA_INSTANCE_FNS(VKA_DECL) VKA_DEVICE_FNS(VKA_DECL) } vka_fns;

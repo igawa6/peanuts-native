@@ -31,7 +31,7 @@
     X(vkCmdSetStencilCompareMask) X(vkCmdSetStencilWriteMask) X(vkCmdSetStencilReference) X(vkCmdSetDepthBias) X(vkCmdSetDepthBiasEnable) \
     X(vkCmdSetRasterizerDiscardEnable) X(vkCmdSetPrimitiveRestartEnable) X(vkCmdSetBlendConstants) X(vkCmdSetLineWidth) \
     X(vkCmdPushDescriptorSetKHR) X(vkCmdSetVertexInputEXT) X(vkCmdPushConstants) X(vkCmdDrawMeshTasksEXT) X(vkCmdDrawMeshTasksIndirectEXT) \
-    X(vkCmdDrawIndirectCount) X(vkCmdDrawIndexedIndirectCount)
+    X(vkCmdDrawIndirectCount) X(vkCmdDrawIndexedIndirectCount) X(vkCmdBeginQuery) X(vkCmdEndQuery)
 #define ENC_ID(f) E_##f,
 enum { E_WRAP = 0, E_CALL, ENC_FNS(ENC_ID) E_N };
 #define ENC_REAL(f) PFN_##f f;
@@ -146,6 +146,7 @@ typedef struct { CB_FIELD uint32_t v[5]; float f[4]; } r_val;               // t
 typedef struct { CB_FIELD VkPipelineBindPoint bp; VkPipelineLayout l; uint32_t set, n; const VkWriteDescriptorSet *w; } r_push;
 typedef struct { CB_FIELD uint32_t nb, na; const VkVertexInputBindingDescription2EXT *b; const VkVertexInputAttributeDescription2EXT *a; } r_vin;
 typedef struct { CB_FIELD VkPipelineLayout l; VkShaderStageFlags st; uint32_t o, n; const void *p; } r_pc;
+typedef struct { CB_FIELD VkQueryPool qp; uint32_t q; VkQueryControlFlags f; } r_qry;
 typedef struct { CB_FIELD void (*fn)(const void *); } r_call;   // a function of the replay's own, made in order with the calls (its argument bytes follow)
 
 static inline int mine(VkCommandBuffer cb) { return cb && cb == atomic_load_explicit(&g_ecb, memory_order_relaxed); }
@@ -349,6 +350,12 @@ static void VKAPI_CALL e_vkCmdPushConstants(VkCommandBuffer cb, VkPipelineLayout
     DIRECT(vkCmdPushConstants, cb, l, st, o, n, p);
     BEGIN(r_pc, E_vkCmdPushConstants, A8(n)); r->l = l; r->st = st; r->o = o; r->n = n; r->p = cpy(&at, p, n); END();
 }
+static void VKAPI_CALL e_vkCmdBeginQuery(VkCommandBuffer cb, VkQueryPool qp, uint32_t q, VkQueryControlFlags f) {
+    DIRECT(vkCmdBeginQuery, cb, qp, q, f); BEGIN(r_qry, E_vkCmdBeginQuery, 0); r->qp = qp; r->q = q; r->f = f; END();
+}
+static void VKAPI_CALL e_vkCmdEndQuery(VkCommandBuffer cb, VkQueryPool qp, uint32_t q) {
+    DIRECT(vkCmdEndQuery, cb, qp, q); BEGIN(r_qry, E_vkCmdEndQuery, 0); r->qp = qp; r->q = q; END();
+}
 
 // ---------- The encoder thread ----------
 static void run(const hdr *h) {
@@ -408,6 +415,8 @@ static void run(const hdr *h) {
     case E_vkCmdPushDescriptorSetKHR: { C(r_push); R.vkCmdPushDescriptorSetKHR(r->cb, r->bp, r->l, r->set, r->n, r->w); break; }
     case E_vkCmdSetVertexInputEXT: { C(r_vin); R.vkCmdSetVertexInputEXT(r->cb, r->nb, r->b, r->na, r->a); break; }
     case E_vkCmdPushConstants: { C(r_pc); R.vkCmdPushConstants(r->cb, r->l, r->st, r->o, r->n, r->p); break; }
+    case E_vkCmdBeginQuery: { C(r_qry); R.vkCmdBeginQuery(r->cb, r->qp, r->q, r->f); break; }
+    case E_vkCmdEndQuery: { C(r_qry); R.vkCmdEndQuery(r->cb, r->qp, r->q); break; }
     case E_CALL: { C(r_call); r->fn((const uint8_t *)r + A8(sizeof *r)); break; }
     default: break;
     }
@@ -520,8 +529,8 @@ void vka_enc_switch(VkCommandBuffer cb) { atomic_store(&g_ecb, cb); flush_pub();
 // The pace line's view of the encoder: per frame, the time of each kind of call (from the timed sample) and their counts, since the last reading
 void vka_enc_pace(char *b, size_t n, double frames) {
     static uint64_t ln[E_N], lt[E_N], ltn[E_N];
-    enum { G_PUSH, G_DRAW, G_PIPE, G_VTX, G_SETS, G_STATE, G_PASS, G_BAR, G_COPY, G_DISP, G_OWN, G_N };
-    static const char *gn[G_N] = {"push descriptors", "draws", "pipelines", "vertex/index buffers", "sets+constants", "dynamic state", "passes", "barriers", "copies/clears", "dispatches", "part submits"};
+    enum { G_PUSH, G_DRAW, G_PIPE, G_VTX, G_SETS, G_STATE, G_PASS, G_BAR, G_COPY, G_DISP, G_QRY, G_OWN, G_N };
+    static const char *gn[G_N] = {"push descriptors", "draws", "pipelines", "vertex/index buffers", "sets+constants", "dynamic state", "passes", "barriers", "copies/clears", "dispatches", "queries", "part submits"};
     double ms[G_N] = {0}, cnt[G_N] = {0};
     uint64_t f; __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(f));
     for (int i = 0; i < E_N; i++) {
@@ -531,7 +540,8 @@ void vka_enc_pace(char *b, size_t n, double frames) {
               : i == E_vkCmdBindPipeline ? G_PIPE : i == E_vkCmdBindVertexBuffers2 || i == E_vkCmdBindIndexBuffer || i == E_vkCmdSetVertexInputEXT ? G_VTX
               : i == E_vkCmdBindDescriptorSets || i == E_vkCmdPushConstants ? G_SETS
               : i == E_vkCmdBeginRendering || i == E_vkCmdEndRendering || i == E_vkCmdBeginRenderPass || i == E_vkCmdEndRenderPass || i == E_vkCmdClearAttachments ? G_PASS
-              : i == E_vkCmdPipelineBarrier ? G_BAR : i == E_vkCmdDispatch || i == E_vkCmdDispatchBase || i == E_vkCmdDispatchIndirect ? G_DISP : i == E_CALL ? G_OWN
+              : i == E_vkCmdPipelineBarrier ? G_BAR : i == E_vkCmdDispatch || i == E_vkCmdDispatchBase || i == E_vkCmdDispatchIndirect ? G_DISP
+              : i == E_vkCmdBeginQuery || i == E_vkCmdEndQuery ? G_QRY : i == E_CALL ? G_OWN
               : i >= E_vkCmdCopyBuffer && i <= E_vkCmdClearDepthStencilImage ? G_COPY : G_STATE;
         cnt[g] += (double)dn;
         if (dtn) ms[g] += (double)dt / (double)dtn * (double)dn / (double)f * 1e3;   // the timed calls' mean, times every call of the kind
