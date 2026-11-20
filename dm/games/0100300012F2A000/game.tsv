@@ -36,7 +36,8 @@ zip_store	.assets:.bank:.bk2:.bundle:.dat:.ress:.metallib
 mem_reserve	0x140000000
 mem_alias	0x118000000
 mem_stack	0x10000000
-app_pool	0x80000000
+# PEANUTS: the opening movie exhausts a 2 GiB guest pool on Android. Keep the alias reservation; use the retail application pool.
+app_pool	0xCD500000
 sys_resource	0x1000000
 
 # ---- Input ----
