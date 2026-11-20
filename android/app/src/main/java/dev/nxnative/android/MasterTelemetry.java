@@ -65,8 +65,8 @@ final class MasterTelemetry {
         writerThread = new HandlerThread("PeanutsTelemetry", Process.THREAD_PRIORITY_BACKGROUND);
         writerThread.start();
         writer = new Handler(writerThread.getLooper());
-        append("{\\"type\\":\\"session_start\\",\\"title_id\\":\\"" + titleId + "\\",\\"sdk\\":" + Build.VERSION.SDK_INT
-                + ",\\"abi\\":\\"" + Build.SUPPORTED_ABIS[0] + "\\",\\"elapsed_ms\\":" + startedAt + "}");
+        append("{\"type\":\"session_start\",\"title_id\":\"" + titleId + "\",\"sdk\":" + Build.VERSION.SDK_INT
+                + ",\"abi\":\"" + Build.SUPPORTED_ABIS[0] + "\",\"elapsed_ms\":" + startedAt + "}");
     }
 
     synchronized void tick() {
@@ -108,11 +108,11 @@ final class MasterTelemetry {
         float oneLow = FrameStats.onePercentLowFps(frameTimes, frameCount);
         float gpuMs = fresh ? nativeRate[5] : Float.NaN;
         String record = String.format(Locale.ROOT,
-                "{\\"type\\":\\"sample\\",\\"t_ms\\":%d,\\"native_fps\\":%s,\\"present_fps\\":%s,\\"frame_ms\\":%s,\\"gpu_ms\\":%s,"
-                        + "\\"frame_samples\\":%d,\\"median_ms\\":%s,\\"p95_ms\\":%s,\\"p99_ms\\":%s,\\"one_percent_low_fps\\":%s,"
-                        + "\\"frame_generation_state\\":%d,\\"images_per_game_frame\\":%s,\\"process_cpu_pct\\":%.2f,"
-                        + "\\"process_pss_kb\\":%d,\\"system_ram_total_kb\\":%d,\\"system_ram_available_kb\\":%d,"
-                        + "\\"system_low_memory\\":%s,\\"thermal_status\\":%d,\\"thermal_headroom\\":%s}",
+                "{\"type\":\"sample\",\"t_ms\":%d,\"native_fps\":%s,\"present_fps\":%s,\"frame_ms\":%s,\"gpu_ms\":%s,"
+                        + "\"frame_samples\":%d,\"median_ms\":%s,\"p95_ms\":%s,\"p99_ms\":%s,\"one_percent_low_fps\":%s,"
+                        + "\"frame_generation_state\":%d,\"images_per_game_frame\":%s,\"process_cpu_pct\":%.2f,"
+                        + "\"process_pss_kb\":%d,\"system_ram_total_kb\":%d,\"system_ram_available_kb\":%d,"
+                        + "\"system_low_memory\":%s,\"thermal_status\":%d,\"thermal_headroom\":%s}",
                 now - startedAt, number(fresh ? nativeRate[0] : Float.NaN), number(fresh ? nativeRate[1] : Float.NaN),
                 number(fresh ? nativeRate[2] : Float.NaN), number(gpuMs), frameCount, number(median), number(p95),
                 number(p99), number(oneLow), fresh ? (int) nativeRate[3] : -1,
@@ -125,15 +125,15 @@ final class MasterTelemetry {
 
     synchronized void memoryPressure(int level) {
         if (!started || finished) return;
-        append("{\\"type\\":\\"memory_pressure\\",\\"t_ms\\":" + (SystemClock.elapsedRealtime() - startedAt)
-                + ",\\"trim_level\\":" + level + "}");
+        append("{\"type\":\"memory_pressure\",\"t_ms\":" + (SystemClock.elapsedRealtime() - startedAt)
+                + ",\"trim_level\":" + level + "}");
     }
 
     synchronized void finish() {
         if (!started || finished) return;
         finished = true;
-        append("{\\"type\\":\\"session_end\\",\\"duration_ms\\":" + (SystemClock.elapsedRealtime() - startedAt)
-                + ",\\"samples\\":" + samples + "}");
+        append("{\"type\":\"session_end\",\"duration_ms\":" + (SystemClock.elapsedRealtime() - startedAt)
+                + ",\"samples\":" + samples + "}");
         Handler target = writer;
         if (target != null) target.post(() -> {
             closeStream();
@@ -154,7 +154,7 @@ final class MasterTelemetry {
                 if (parent != null && !parent.isDirectory() && !parent.mkdirs() && !parent.isDirectory()) return;
                 stream = new BufferedOutputStream(new FileOutputStream(output, true), 16 * 1024);
             }
-            stream.write((line + "\\n").getBytes(StandardCharsets.UTF_8));
+            stream.write((line + "\n").getBytes(StandardCharsets.UTF_8));
             if (++pendingRecords >= FLUSH_EVERY_RECORDS) {
                 stream.flush();
                 pendingRecords = 0;
