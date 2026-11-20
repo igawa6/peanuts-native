@@ -1,2 +1,2 @@
-# PEANUTS: Base 1.0.0 stalls during startup on Odin 2 before a title screen was verified.
+# PEANUTS: Base 1.0.0 stalls on Odin 2 and Thor before a title screen was verified.
 status	bring-up

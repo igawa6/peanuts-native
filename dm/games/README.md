@@ -93,7 +93,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET](010051C0134F8000/README.md) | `010051C0134F8000` | 1.70 | 9.3.1 | Unreal Engine 4 | NVN <!-- PEANUTS: Android bring-up --> |
 | [DRAGON QUEST I & II HD-2D Remake](0100D7C01F254000/README.md) | `0100D7C01F254000` | 1.0.2 | 18.3.2 | Unreal Engine 4.27.2 | NVN |
 | [DRAGON QUEST III HD-2D Remake](01003E601E324000/README.md) | `01003E601E324000` | 1.1.2 | 16.2.6 | Unreal Engine 4.27 | NVN |
-| [Dragon Quest Monsters: The Dark Prince](0100A77018EA0000/README.md) | `0100A77018EA0000` | 1.0.0 (bring-up; startup stalls on Odin 2) | 13.3.5 | Unity 2020.3.32f1 | NVN <!-- PEANUTS: base-game bring-up profile --> |
+| [Dragon Quest Monsters: The Dark Prince](0100A77018EA0000/README.md) | `0100A77018EA0000` | 1.0.0 (bring-up; stalls on Odin 2 and Thor) | 13.3.5 | Unity 2020.3.32f1 | NVN <!-- PEANUTS: base-game bring-up profile --> |
 | [DRAGON QUEST VII Reimagined](0100A9D01C446000/README.md) | `0100A9D01C446000` | 1.2.0 | 19.3.1 | Unreal Engine 4.27 | NVN |
 | [DRAGON QUEST XI S: Echoes of an Elusive Age – Definitive Edition](01006C300E9F0000/README.md) | `01006C300E9F0000` | 1.0.4 | 7.3.2 | Unreal Engine 4.18 | NVN |
 | [EA SPORTS FC 27](0100C49025D3E000/README.md) | `0100C49025D3E000` | 1.8d.6523 | 22.2.0 | Frostbite 2025.1.2 (its NVN renderer in an NRO) | NVN |
