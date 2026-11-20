@@ -15,9 +15,12 @@ app_category	public.app-category.role-playing-games
 pad_layout	full
 
 # ---- Versions ----
+# PEANUTS: 1.2.0 shares the SDK and shader tables, not the 1.4.0 main's job-pool patch.
+build	v262144	1.2.0	main=aaaa1ed3b0a458d66ab322e166622286	sdk=d83a56a5558798414c78ec722867a7da
 build	v393216	1.4.0	main=3cfd457814dd647f4cd0f0ae9f9454d2	sdk=d83a56a5558798414c78ec722867a7da
 package	v393216
-shader_versions	v393216
+# PEANUTS: all 306 map rows are shared; no version-specific keys.
+shader_versions	v262144 v393216
 
 # ---- Files ----
 # load order as on Horizon: main, sdk; not loaded, main takes nothing from it the host does not supply: subsdk0 (NintendoSDK_OpenGL)
