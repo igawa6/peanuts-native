@@ -28,6 +28,34 @@ public final class FrameStats {
     }
 
     /**
+     * One-pass frame-time summary for telemetry. The returned array contains
+     * median ms, P95 ms, P99 ms, 1% low FPS, and valid sample count.
+     * Invalid and non-positive samples are ignored. Percentiles need 10 valid samples.
+     */
+    public static float[] summarize(float[] ms, int n) {
+        if (ms == null || n <= 0) return new float[] {Float.NaN, Float.NaN, Float.NaN, Float.NaN, 0f};
+        int limit = Math.min(n, ms.length);
+        float[] valid = new float[limit];
+        int count = 0;
+        for (int i = 0; i < limit; i++) {
+            float value = ms[i];
+            if (Float.isFinite(value) && value > 0f) valid[count++] = value;
+        }
+        if (count == 0) return new float[] {Float.NaN, Float.NaN, Float.NaN, Float.NaN, 0f};
+        Arrays.sort(valid, 0, count);
+        float median = count % 2 == 1 ? valid[count / 2] : (valid[count / 2 - 1] + valid[count / 2]) / 2f;
+        float p95 = Float.NaN, p99 = Float.NaN, oneLow = Float.NaN;
+        if (count >= 10) {
+            int i95 = (95 * count + 99) / 100 - 1;
+            int i99 = (99 * count + 99) / 100 - 1;
+            p95 = valid[i95];
+            p99 = valid[i99];
+            oneLow = 1000f / p99;
+        }
+        return new float[] {median, p95, p99, oneLow, count};
+    }
+
+    /**
      * The requested frame-time percentile in ms (1..99). Invalid/non-positive samples are ignored;
      * fewer than 10 valid samples return NaN so the HUD does not present unstable short-window data.
      * The nearest-rank index is ceil(percentile * count / 100) - 1.
