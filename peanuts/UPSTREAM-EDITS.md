@@ -1157,6 +1157,74 @@ version moves. Device state: see the game's note.
 | `dm/gfx/tools/shader_split.py` | 3 | `iga_entries`, `iga_member`, `iga_shaders` and their branch in `scan_file_in`: Alchemy's igArchive version 13 (`IGA\x1a`), whose files are LZMA in 0x8000-byte blocks placed by the archive's small / medium / large block tables; every file is decoded and its whole GLSLC outputs taken. The game's split went from 12 shaders (those in `main`) to 1,945. Checked on all 74,311 files of its 401 archives; the large table (a file over 0x7FFF sectors) follows the same rule and was met on no file. nxnative has an open pull request with a reader of its own (#1077), not used here. Test: `test_split_iga.py`. Upstream candidate: yes | `PEANUTS(upstream-candidate)` |
 | `dm/host/hle_audren.c`, `dm/host/tests/t_audren_layout.c`, `dm/host/tests/t_audren_work.c`, `docs/reference/audio.md` | 71 | The host drives up to 4 audio renderers, each with its own state (`ar_t`), PCM blocks, render thread and output; it drove one, and a second `OpenAudioRenderer` logged `[RED] audren: a second renderer` and was never rendered. A hand port of nxnative 18b435ac38 and a334797d12 (MIT) onto this tree's clock pacing, catch-up queue and `DM_AUDREN_WAIT`, which stay, now per renderer. One renderer behaves as before; its log lines now name the renderer (`renderer 0 …`). Tests: the two host tests, built natively with ASan and UBSan, with a case of two renderers open at once. Not run on a device. Upstream candidate: yes (Banana Native 0.3.42 does not have it) | `PEANUTS(upstream-candidate)` on each file's first hunk, `PEANUTS` on the others |
 
+### Round 20, Hogwarts Legacy on the Odin 2 (2026-11-17, on the tree of Round 17 since 2026-11-18)
+
+The profile (`dm/games/0100F7E00C70E000/`, listed under "Per-game" above) and what the game needed to boot, draw and sound right on Android.
+
+**Boot:** Current upstream already provides `nn::nsd::GetApplicationServerEnvironmentType` as retail `Lp`; no second hook is needed.
+
+**Vulkan shader library** (both change `DMSH_VK_CHAIN`, now f20f62a0ebfb after merging upstream main: a pack's library is built again; the ABI is unchanged, `TEX_UBO` is the existing kind 14):
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/vk_android_build.py` | 2 | a texture handle in a game uniform buffer whose separate sampler is in c2 gets its uniform slot (TEX_UBO); the `nonuniform_arrays` call in `finish` | `# PEANUTS` each |
+| `dm/gfx/tools/vk_android_spv.py` | 1 | `nonuniform_arrays` and its constants (one span): a texture or sampler taken from a descriptor array at a computed index is decorated NonUniform | `# PEANUTS begin`/`end` |
+| `dm/gfx/nvn/dmsh_chain_vk.h` | 1 | `DMSH_VK_CHAIN` f20f62a0ebfb (generated) | generated header |
+| `dm/games/0400C3F00006E000/vk_delta.tsv` | 1 row | the version row follows `DMSH_VK_CHAIN` (the manifest only lists the one shader that does not build, and excuses it for the version it names: `test_android_shader_delta`) | allow-listed |
+| `dm/tools/tests/test_vk_android_ubo_tex.py`, `test_vk_android_nonuniform.py` (new) | whole files | each pass on a small module | Peanuts-owned |
+
+**Texel buffers in the Vulkan replay** ([rendering.md](../docs/reference/rendering.md)):
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_draw.c` | 8 | the view table starts again when 7/8 full; `tbc_ent` / `g_tbc`: a read-only texel buffer is copied once per submission and the copy reused in `tbuf_view`'s CPU path; `tbc_reset` forgets the copies at each submission's start (`vka_draw_sub_begin`); `vka_tbuf_stats`, `g_tbv_made` / `g_tbv_restarts` | `// PEANUTS` each |
+| `dm/gfx/vk_android/vka_tbuf.h`, `dm/host/tests/t_android_tbuf.c` | 1 each | `vka_tbuf_copy_live` (a kept copy is bound again only in the submission that made it) and its case | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_tex.c` | 1 | `vka_tex_gw_seq`, `vka_tex_gw_since` (inside the existing `PEANUTS begin`/`end` span) | `// PEANUTS begin`/`end` |
+| `dm/gfx/vk_android/vka.h`, `vka_exec.c` | 1 each | their declarations; the `texel buffers per frame:` line in the replay's statistics | `// PEANUTS:` |
+
+Beside Round 17's buffer textures: these hunks are all in the texel buffer binding's own path (`tbuf_view`, which Round 17 left as it was and asks first), not in the choice of
+the image a buffer texture is read through (`tbuf_img_gpu`, `vktb_memo`: one answer a draw). `vka_tbuf.h` and `t_android_tbuf` hold both rules. A binding `tbuf_view`
+gives no view now takes `vka_tbuf_view`'s, so a full view table would read as empty only where that has none either; the restart stays.
+
+**Tables of handles read through the texture pool** ([A table of handles longer than the translator's 32-element array](../docs/reference/shaders.md#a-table-of-handles-longer-than-the-translators-32-element-array-android)); no shader-chain file is changed:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_spvpatch.c`, `vka_spvpatch.h` | 1 each | `vka_spv_table_pool` and `vka_tabpool` (up to 16 arrays a module) | `// PEANUTS begin`/`end` |
+| `dm/gfx/vk_android/vka_shader.c` | 3 | `tabpool_plan` / `tabpool_of` (one span); the rewrite in `lib_words`; the shader's records in `vka_shader_make` | `// PEANUTS begin`/`end`, `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_bind.h`, `vka_bind.c` | 1 each | `VKA_BF_TABPOOL`: such a sampler record makes the shader a pool reader | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_tex.c`, `vka.h` | 1 each | `vka_bindless_tex_slots` | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_ctl.c` | 1 | `DM_VK_TABLE_POOL` in the restart-only table | `/* PEANUTS */` |
+| `dm/host/tests/t_android_spvpatch.c` | 2 | the module and its case | `// PEANUTS begin`/`end` |
+| `docs/env_switches.tsv` | 1 row | `DM_VK_TABLE_POOL` | `[PEANUTS]` |
+
+**Hardware Opus decoder** ([audio.md](../docs/reference/audio.md)):
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/hle_codec.c` | 10 | the C interface decodes with the game's own libopus when a game module exports it (`DM_OPUS_SDK=1`: the sdk's); the log names the rate, channels, packet bandwidths and failure counts; `DM_OPUS_DUMP` writes each packet with its PCM | `// PEANUTS` |
+| `docs/env_switches.tsv` | 2 rows | `DM_OPUS_DUMP` (its new format), `DM_OPUS_SDK` (new) | `[PEANUTS]` |
+
+**Docs:** new sections in `docs/reference/rendering.md`, `shaders.md` and `audio.md` (`<!-- PEANUTS -->` each) and their lines in the generated `docs/agents/symptoms.md`.
+
+Checked on the Odin 2 (Turnip) and the AYN Thor with Hogwarts Legacy only, in a build that also carried other pending changes; `t_android_tbuf` and the two
+Python tests pass. Not run: Qualcomm's driver beyond a first look, other games. The tables of handles: on the Odin 2 (Turnip) only, with up to 8 arrays a
+module; 16 a module is checked off the device (a 15-array pixel shader of the game rewritten and valid by spirv-val; `t_android_spvpatch` has the one-array case).
+
+**A table's textures made at the draw** ([A table of handles longer than the translator's 32-element array](../docs/reference/shaders.md#a-table-of-handles-longer-than-the-translators-32-element-array-android), its "Also"):
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_bind.h`, `vka_bind.c` | 1 each | `vka_tabpool_record` (the sampler's record keeps the table's uniform slot, offset and length) and `vka_tabpool_ids` (the texture IDs of the table's first entries, each table once) | `// PEANUTS begin`/`end` |
+| `dm/gfx/vk_android/vka_shader.c` | 1 | `tabpool_of` writes its records through `vka_tabpool_record` | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_draw.c` | 2 | `make_images` makes those textures (or gives one made already its pool slot) before the draw; `DM_VK_TABLE_PREMAKE` | `// PEANUTS begin`/`end`, `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_ctl.c` | 1 | `DM_VK_TABLE_PREMAKE` in the live table | `/* PEANUTS */` |
+| `dm/host/tests/t_android_shlib.c` | 1 | the case: two arrays over one table | `// PEANUTS:` |
+| `docs/env_switches.tsv` | 1 row | `DM_VK_TABLE_PREMAKE` | `[PEANUTS]` |
+| `docs/reference/shaders.md` | 2 lines | the entry's "Also" and its check | inside the entry (`<!-- PEANUTS -->`) |
+
+Checked on the AYN Thor (Turnip Gen8 V38) with Hogwarts Legacy only; on the tree before Round 17; on this tree `t_android_shlib` passes (clang with ASan and UBSan) and the app builds, and it has not run on a device yet. Not run: the Odin 2, Qualcomm's driver, other games. No shader-chain file is changed. The switch has its row in `docs/advanced_settings.tsv`.
+
 ## Breath of the Wild 1.6.0
 
 | Files | Change | Marker |
