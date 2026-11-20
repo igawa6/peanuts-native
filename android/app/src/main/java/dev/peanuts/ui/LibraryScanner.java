@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
 
 /**
  * The library: every game in the roots (the game folder, then the update and DLC folders; each walked two levels deep) as *.nsp, *.xci, *.nsz, *.xcz, *.nup or a dump folder
- * (base/exefs or exefs present), grouped by the base game's title ID, with a status per title.
+ * (base/exefs/main or exefs/main present; mods left out, LibraryWalk), grouped by the base game's title ID, with a status per title.
  * <p>
  * An NSP/XCI's titles come from the importer's probe (ImporterPort.probe: title id, application id, kind, version, name), kept in files/library-cache.json by
  * path+size+mtime so a scan reads each file once; without the importer the title ID is taken from a [16 hex digits] in the file name (common dump naming) and the kind
@@ -124,7 +124,7 @@ final class LibraryScanner {
     List<Title> scan() {
         loadCache();
         List<Source> sources = new ArrayList<>();
-        for (File root : PeanutsPrefs.roots(ctx)) walk(root, 0, sources);
+        for (File root : PeanutsPrefs.roots(ctx)) walk(root, sources);
         // the user's own picks (the sheet's Choose… / Add…), probed like the scan's files
         for (Title t : groupPreview(sources)) {
             String up = PeanutsPrefs.chosenUpdate(ctx, t.titleId);
@@ -293,25 +293,17 @@ final class LibraryScanner {
 
     // ---- The walk ----
 
-    private void walk(File dir, int depth, List<Source> out) {
-        File[] kids = dir.listFiles();
-        if (kids == null) return;
-        Arrays.sort(kids);
-        for (File f : kids) {
-            String n = f.getName();
-            if (n.startsWith(".") || n.endsWith("-work")) continue;
-            if (f.isDirectory()) {
-                if (isDump(f)) out.addAll(dump(f));
-                else if (depth < 2) walk(f, depth + 1, out);
-            } else {
-                String l = n.toLowerCase(Locale.ROOT);
+    /** A root's dump folders and game files (LibraryWalk: two levels deep, mods left out) */
+    private void walk(File root, List<Source> out) {
+        LibraryWalk.walk(root, 0, new LibraryWalk.Sink() {
+            @Override public void dump(File d) { out.addAll(LibraryScanner.this.dump(d)); }
+            @Override public void file(File f) {
+                String l = f.getName().toLowerCase(Locale.ROOT);
                 int dot = l.lastIndexOf('.');
                 if (dot > 0 && EXT.contains(l.substring(dot))) out.addAll(probe(f));
             }
-        }
+        });
     }
-
-    static boolean isDump(File d) { return new File(d, "base/exefs").isDirectory() || new File(d, "exefs").isDirectory(); }
 
     /** A dump folder: one base source (its updates are inside it, updates/<version>), version = the newest update's */
     private List<Source> dump(File d) {

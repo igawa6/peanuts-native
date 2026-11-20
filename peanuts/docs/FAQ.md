@@ -154,7 +154,7 @@ Later, change the folders in Settings › Library. **Rescan** reads them again.
 
 ### Where does the app look for my games?
 
-In the **Game folder**, the **Update folder**, the **DLC folder** and the **Build folder**, each up to two folders deep. It finds `.nsp`, `.xci`, `.nsz`, `.xcz` and `.nup` files and dump folders. Updates and DLC are matched to their game by title ID, wherever they are in those folders. A file deeper than two folders is not found: move it up, or point the folder setting at it.
+In the **Game folder**, the **Update folder**, the **DLC folder** and the **Build folder**, each up to two folders deep. It finds `.nsp`, `.xci`, `.nsz`, `.xcz` and `.nup` files and dump folders. Updates and DLC are matched to their game by title ID, wherever they are in those folders. A file deeper than two folders is not found: move it up, or point the folder setting at it. Mods for other emulators are skipped: folders named `mods`, `load` or `atmosphere`, and folders whose `exefs` has no `main`. To use a mod here, add it on the game's page, see [Mods](#mods).
 
 If the home screen says **No games found in …**, put your files in that folder and tap Settings › Library › **Rescan**.
 
