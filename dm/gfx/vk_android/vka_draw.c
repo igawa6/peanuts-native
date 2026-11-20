@@ -1271,12 +1271,12 @@ static struct { int valid, alpha; uint32_t ref; float rs0, v; vka_span s; } g_sm
 static int g_drv_memo = 1, g_drv_stamp = 1; static uint64_t g_dm_hit, g_dm_miss, g_dm_stamp;
 static void drv_memo_reset(void) { for (int st = 0; st < VKA_NSTAGE; st++) for (int b = 0; b < 3; b++) g_dm[st][b].valid = 0; g_gm.valid = 0; g_sm_ref.valid = 0; g_sm_rs.valid = 0; /* PEANUTS: g_sm_rs */ g_drv_memo = VKA_ENV("DM_VK_DRV_MEMO", 1); g_drv_stamp = VKA_ENV("DM_VK_DRV_STAMP", 1); }
 // What a graphics stage's segment is filled from (vka_bind.c vka_drv_fill), as stamps and values: c0 from the stage's storage buffers, the base instance and the sample
-// count; c2 from the stage's texture, sampler and image handles (and the pools' bases when the shader reads the pools); the push bank from the pushed constants. The same
+// PEANUTS(upstream-candidate): count; c2 from the stage's raw texture, sampler and image handles; the push bank from the pushed constants. The same
 // key as the memo's: the same bytes, so the draw binds the memo's span without filling the segment and comparing it (DM_VK_DRV_STAMP, live from the next submission,
 // default 1; 0: filled and compared every draw, as before). A c2 fill and compare is ~0.3 us a stage on the Mac (its 2.5 KB, 300 handle words)
 static void drv_key(const vka_dstate *d, int st, int bi_, int pool, uint64_t k[3]) {
     if (bi_ == 0) { k[0] = d->s_ssbo[st]; k[1] = d->b.base_instance; k[2] = d->b.samples; }
-    else if (bi_ == 1) { k[0] = d->s_tex[st]; k[1] = pool & VKA_POOL_READS ? (uint64_t)(uint32_t)d->b.tex_base | (uint64_t)(uint32_t)d->b.samp_base << 32 : 0; k[2] = (uint64_t)pool; }   // PEANUTS: pool bits (vka_bind.h)
+    else if (bi_ == 1) { k[0] = d->s_tex[st]; k[1] = (uint64_t)(pool & VKA_POOL_DYN); k[2] = 0; }   // PEANUTS: pool bits (vka_bind.h)
     else { k[0] = d->s_push; k[1] = k[2] = 0; }
 }
 static int drv_seg(const vka_dstate *d, int st, int bank, int pool, VkDescriptorBufferInfo *bi, c0_at *c0) {

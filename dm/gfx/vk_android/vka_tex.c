@@ -1350,13 +1350,19 @@ static void sparse_bind(vka_img *im, VkCommandBuffer cb, int all) {
 static void dirty(int **list, int *n, int *cap, uint8_t **flag, int nslots, int id);
 static int *g_tdirty, g_ntd, g_tdcap; static uint8_t *g_tdflag;
 typedef struct { tex_t t; view_t v; uint8_t has_v, img; uint64_t pgen; } treg_ent;   // pgen: the texture's pool's Initialize serial at registration (nvn_pool_live)
-static treg_ent *g_treg; static int g_ntreg;   // indexed by host texture ID
+#include "vka_treg.h"   // PEANUTS(upstream-candidate)
+static int g_gpu_end;   // highest representable Vulkan pool slot registered, plus one
 // The image made again from texture level base (caller holds g_tmu): the old image, its memory and views go when the GPU is done with them, and the texture IDs that name it
 // are written again at this submission (vka_tex_prepare); then everything is uploaded
 static uint64_t g_rebase;
 static unsigned redirty_ids(vka_img *im) {   // the texture IDs registered with im's texture, written again at this submission (caller holds g_tmu)
     unsigned nid = 0;
-    for (int id = 1; id < g_ntreg; id++) { if (!g_treg[id].t.serial) continue; smap_ent *e = map_get(g_treg[id].t.serial); if (e && e->im == im) { dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id); nid++; } }
+    for (int i = 0; i < g_ntreg; i++) {   // PEANUTS(upstream-candidate)
+        const treg_ent *t = treg_at(i); int id = treg_id(i);
+        if (!t->t.serial || id >= TREG_GPU) continue;
+        smap_ent *e = map_get(t->t.serial);
+        if (e && e->im == im) { dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, TREG_GPU, id); nid++; }
+    }
     return nid;
 }
 static int img_rebase(vka_img *im, uint32_t base, VkCommandBuffer cb) {
@@ -1918,8 +1924,8 @@ static void vka_tex_prune_locked(void) {
     // set over the limit is kept (logged below). Only with DM_VK_EAGER_TEX=1 (default 0): without it no image is made for a slot alone, so nothing to keep
     int pool_keep = VKA_ENV("DM_VK_EAGER_TEX", 0), npool = 0;
     if (pool_keep)
-        for (int id = 1; id < g_ntreg; id++) {
-            const treg_ent *te = &g_treg[id];
+        for (int id = 0; id < g_ntreg; id++) {   // PEANUTS(upstream-candidate)
+            const treg_ent *te = treg_at(id);
             if (!te->t.serial || (te->t.pool && te->pgen && nvn_pool_live(te->t.pool, NULL, NULL) != te->pgen)) continue;   // (a finalized pool's slot has the null view: treg_dead)
             smap_ent *se = map_get(te->t.serial);
             if (se && se->im && se->im->pool_frame != cur_frame) { se->im->pool_frame = cur_frame; npool++; }
@@ -2031,10 +2037,11 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
                 if (!im->d.stride) im->d.stride = vs ? vs : 7680;
                 im->track = 1;
                 im->gpu_owned = 0;
-                for (int id = 1; id < g_ntreg; id++) {
-                    if (g_treg[id].t.serial == t->serial) {
-                        g_treg[id].t.d.flags |= NVN_TEXTURE_FLAGS_LINEAR;
-                        if (!g_treg[id].t.d.stride) g_treg[id].t.d.stride = im->d.stride;
+                for (int id = 0; id < g_ntreg; id++) {   // PEANUTS(upstream-candidate)
+                    treg_ent *te = treg_at(id);
+                    if (te->t.serial == t->serial) {
+                        te->t.d.flags |= NVN_TEXTURE_FLAGS_LINEAR;
+                        if (!te->t.d.stride) te->t.d.stride = im->d.stride;
                     }
                 }
                 VLOG("texture serial %llu: late video pool detection, marked linear (stride %u)", (unsigned long long)im->serial, im->d.stride);
@@ -2871,7 +2878,7 @@ void vka_tex_pfb_draw(void) { if (atomic_load_explicit(&g_pfb, memory_order_rela
 void vka_tex_pfb_commit(VkCommandBuffer cb, uint64_t fence) {
     if (!cb || atomic_load(&g_pfb) <= 0 || !atomic_exchange(&g_pfb_any, 0)) return;
     pthread_mutex_lock(&g_tmu);
-    uint32_t n = (uint32_t)(((uint64_t)g_ntreg + 31) / 32 * 4), k = PFB_RING; if (n > PFB_BYTES) n = PFB_BYTES;
+    uint32_t n = (uint32_t)(((uint64_t)g_gpu_end + 31) / 32 * 4), k = PFB_RING; if (n > PFB_BYTES) n = PFB_BYTES;   // PEANUTS(upstream-candidate)
     for (uint32_t i = 0; i < PFB_RING && k == PFB_RING; i++) if (!g_pfb_r[i].busy) k = i;
     if (!n || k == PFB_RING) { g_pfb_skip++; atomic_store(&g_pfb_any, 1); pthread_mutex_unlock(&g_tmu); return; }   // (every slot waiting: the bits stay for the next submission's copy)
     g_pfb_r[k].fence = fence; g_pfb_r[k].n = n; g_pfb_r[k].busy = 1;
@@ -2890,8 +2897,8 @@ void vka_tex_pfb_commit(VkCommandBuffer cb, uint64_t fence) {
 static void dirty(int **list, int *n, int *cap, uint8_t **flag, int nslots, int id);
 // Texture ID id was read through the pool (caller holds g_tmu)
 static void pfb_hit(int id, uint64_t frame, uint64_t fence) {
-    if (id <= 0 || id >= g_ntreg || (uint32_t)id >= g_ntex_slots) return;
-    const treg_ent *e = &g_treg[id];
+    if (id <= 0 || (uint32_t)id >= g_ntex_slots) return;   // PEANUTS(upstream-candidate)
+    const treg_ent *e = treg_lookup(id);
     if (!e->t.serial || e->img || (e->t.pool && e->pgen && nvn_pool_live(e->t.pool, NULL, NULL) != e->pgen)) return;   // (a storage image's ID is another table; a finalized pool's: null)
     g_pfb_hits++;
     smap_ent *se = map_get(e->t.serial); vka_img *im = se ? se->im : NULL;
@@ -2981,17 +2988,19 @@ static void dirty(int **list, int *n, int *cap, uint8_t **flag, int nslots, int 
     (*list)[(*n)++] = id;
 }
 static void treg(int id, const tex_t *t, const view_t *v, int img) {
-    if (id < 0 || id >= (1 << 20)) return;
+    if (id <= 0) return;
     pthread_mutex_lock(&g_tmu);
-    if (id >= g_ntreg) { int n = g_ntreg ? g_ntreg : 1024; while (n <= id) n *= 2; g_treg = realloc(g_treg, (size_t)n * sizeof *g_treg); memset(g_treg + g_ntreg, 0, (size_t)(n - g_ntreg) * sizeof *g_treg); g_ntreg = n; }
+    treg_ent *e = treg_add(id);
+    if (!e) { pthread_mutex_unlock(&g_tmu); VRED_ONCE("cannot allocate texture registration %d", id); return; }
     // PEANUTS(upstream-candidate): NULL registration clears the ID; general fix (MK8D), not Peanuts-specific.
     // A NULL texture clears the ID (as nvn_mtl.m's mtl_reg_tex does): its slot reads the null view, every lookup sees it unregistered (serial 0). Mario Kart 8 Deluxe
-    // registers NULL into its texture pool at the title screen
-    treg_ent *e = &g_treg[id];
+    // PEANUTS(upstream-candidate): registers NULL into its texture pool at the title screen
     if (!t) {
         static _Atomic int n; if (!atomic_exchange(&n, 1)) VLOG("texture ID %d registered with no texture (a %s registration of NULL): the ID is cleared, its slot the null view", id, img ? "RegisterImage" : "RegisterTexture");
         memset(e, 0, sizeof *e);
     } else { e->t = *t; e->has_v = v != NULL; if (v) e->v = *v; e->img = (uint8_t)img; e->pgen = nvn_pool_live(t->pool, NULL, NULL); }
+    if (id >= TREG_GPU) { pthread_mutex_unlock(&g_tmu); return; }   // PEANUTS(upstream-candidate): directly bound; not addressable in Vulkan set 1
+    if (g_gpu_end <= id) g_gpu_end = id + 1;
     dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id);
     if (!g_tver) g_tver = calloc(1 << 20, sizeof *g_tver);
     if (g_tver) atomic_fetch_add_explicit(&g_tver[id], 1, memory_order_release);
@@ -2999,7 +3008,13 @@ static void treg(int id, const tex_t *t, const view_t *v, int img) {
     if (g_tisbuf) atomic_store_explicit(&g_tisbuf[id], t && (v && v->set_target ? v->target : t->d.target) == NVN_TEXTURE_TARGET_BUFFER, memory_order_release);
     pthread_mutex_unlock(&g_tmu);
 }
-int vka_tex_id_is_buffer(int id) {   // (no lock: the draw path asks it for every texture binding)
+int vka_tex_id_is_buffer(int id) {   // PEANUTS(upstream-candidate): The lock-free flag table covers the GPU-addressable range.
+    if (id >= TREG_GPU) {
+        pthread_mutex_lock(&g_tmu);
+        const treg_ent *e = treg_lookup(id);
+        int isbuf = e->t.serial && (e->has_v && e->v.set_target ? e->v.target : e->t.d.target) == NVN_TEXTURE_TARGET_BUFFER;
+        pthread_mutex_unlock(&g_tmu); return isbuf;
+    }
     return id > 0 && id < (1 << 20) && g_tisbuf && atomic_load_explicit(&g_tisbuf[id], memory_order_acquire);
 }
 void mtl_reg_tex(int id, const tex_t *t, const view_t *v) { treg(id, t, v, 0); }
@@ -3186,8 +3201,7 @@ static int img_storage_upgrade(vka_img *im, VkCommandBuffer cb, VkFormat need) {
     else vka_after(vka_fence_last() + 1, img_destroy, n);
     // Views made of the old image are gone with it: the recording memo (g_tgen) and the registered pool slots that name the image are made again
     atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release);
-    int named = 0;
-    for (int id = 1; id < g_ntreg; id++) { smap_ent *e = g_treg[id].t.serial ? map_get(g_treg[id].t.serial) : NULL; if (e && e->im == im) { dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id); named++; } }
+    int named = (int)redirty_ids(im);   // PEANUTS(upstream-candidate)
     static _Atomic int k; if (atomic_fetch_add(&k, 1) < 16)
         VLOG("texture serial %llu %ux%u format %#x (VkFormat %d) flags %#x: bound as a shader image %s, remade with storage use%s (content copied, %d texture IDs rewritten)",
              (unsigned long long)im->serial, im->w, im->h, im->d.format, im->f.vk, im->d.flags, listed ? "without the image flag" : "through a view in another format", listed ? "" : " and that format in its list", named);
@@ -3224,7 +3238,7 @@ static int treg_dead(int id, const treg_ent *e) {
     return dead;
 }
 static void write_tex(int id, VkCommandBuffer cb, VkWriteDescriptorSet *w, VkDescriptorImageInfo *ii, uint64_t *serial) {   // caller holds g_tmu; it is let go while the image is made. serial: the image's (0: the null view)
-    treg_ent ent = g_treg[id], *e = &ent;
+    treg_ent ent = *treg_lookup(id), *e = &ent;   // PEANUTS(upstream-candidate)
     if (e->img && VKA_ENV("DM_VK_IMG_UPGRADE", 1)) e->t.d.flags |= NVN_TEXTURE_FLAGS_IMAGE;   // an image registration is image intent (nvn_mtl.m image_prepare), with or without the texture's IMAGE flag
     // DM_VK_EAGER_TEX=1: the slot's image is made here (and uploaded) when it is not made yet. A texture a shader reads only through the pool (a bindless handle from a
     // record in a storage buffer, as agl / gsys lit materials read their lightmaps) has no other first use, and a slot written while its image is not made stays the null
@@ -3317,7 +3331,8 @@ int vka_tex_id_in_pass(int id) {
     if (!g_nfb || id <= 0) return 0;
     pthread_mutex_lock(&g_tmu);
     int r = 0;
-    if (id < g_ntreg && g_treg[id].t.serial) { smap_ent *e = map_get(g_treg[id].t.serial); if (e && e->im && in_fb(e->im)) r = e->im->f.kind >= 3 ? 2 : 1; }
+    const treg_ent *te = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (te->t.serial) { smap_ent *e = map_get(te->t.serial); if (e && e->im && in_fb(e->im)) r = e->im->f.kind >= 3 ? 2 : 1; }
     pthread_mutex_unlock(&g_tmu);
     return r;
 }
@@ -3390,8 +3405,9 @@ static VkFormat class_twin(VkFormat v, int cls) {
 VkFormat vka_tex_id_vkfmt(int id) {
     pthread_mutex_lock(&g_tmu);
     VkFormat r = VK_FORMAT_UNDEFINED;
-    if (id > 0 && id < g_ntreg && g_treg[id].t.serial) {
-        const treg_ent *e = &g_treg[id]; vka_fmt f;
+    const treg_ent *e = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (id > 0 && e->t.serial) {
+        vka_fmt f;
         if (vka_fmt_of(e->has_v && e->v.set_format ? e->v.format : e->t.d.format, &f)) r = f.vk;
     }
     pthread_mutex_unlock(&g_tmu);
@@ -3413,8 +3429,9 @@ static VkFormatFeatureFlags buf_feats(VkFormat f) {   // PEANUTS: texel buffer u
 int vka_tex_id_tbuf(int id, int want, int storage, uint64_t *addr, uint64_t *bytes, VkFormat *fmt, uint32_t *texel) {
     int ok = 0;
     pthread_mutex_lock(&g_tmu);
-    if (id > 0 && id < g_ntreg && g_treg[id].t.serial && g_treg[id].t.d.target == NVN_TEXTURE_TARGET_BUFFER && g_treg[id].t.mem) {
-        const treg_ent *e = &g_treg[id]; vka_fmt f;
+    const treg_ent *e = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (id > 0 && e->t.serial && e->t.d.target == NVN_TEXTURE_TARGET_BUFFER && e->t.mem) {
+        vka_fmt f;
         if (vka_fmt_of(e->has_v && e->v.set_format ? e->v.format : e->t.d.format, &f) && f.bw == 1 && f.bh == 1 && f.kind < 3 && f.bpb) {
             int have = f.kind == 1 ? 1 : f.kind == 2 ? 2 : 0; VkFormat vf = f.vk;
             if (want != have) vf = class_twin(f.vk, want);
@@ -3431,8 +3448,9 @@ int vka_tex_id_tbuf(int id, int want, int storage, uint64_t *addr, uint64_t *byt
 int vka_tex_id_class(int id) {
     pthread_mutex_lock(&g_tmu);
     int r = 0;
-    if (id > 0 && id < g_ntreg && g_treg[id].t.serial) {
-        const treg_ent *e = &g_treg[id]; vka_fmt f;
+    const treg_ent *e = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (id > 0 && e->t.serial) {
+        vka_fmt f;
         if (vka_fmt_of(e->has_v && e->v.set_format ? e->v.format : e->t.d.format, &f)) r = f.kind == 1 ? 1 : f.kind == 2 ? 2 : 0;
     }
     pthread_mutex_unlock(&g_tmu);
@@ -3459,8 +3477,9 @@ VkImageView vka_tex_id_view_bits(int id, VkCommandBuffer cb, VkImageLayout *layo
 static VkImageView id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage, vka_img **imo, VkFormat force) {
     int writes = wbf_view_writes(storage); storage &= VKA_VIEW_STORAGE;   // (VKA_VIEW_RO: a shader image the shader only reads)
     pthread_mutex_lock(&g_tmu);
-    if (id <= 0 || id >= g_ntreg || !g_treg[id].t.serial) { pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
-    treg_ent e = g_treg[id], e0 = e;   // (e0: the registration as it is, for the slot's own view)
+    const treg_ent *te = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (id <= 0 || !te->t.serial) { pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
+    treg_ent e = *te, e0 = e;
     if (storage && VKA_ENV("DM_VK_IMG_UPGRADE", 1)) e.t.d.flags |= NVN_TEXTURE_FLAGS_IMAGE;   // bound to an image slot: image intent (img_storage_upgrade)
     pthread_mutex_unlock(&g_tmu);
     nvn_pool_use(1); g_first_sampled = !storage; vka_img *im = treg_dead(id, &e) ? NULL : vka_tex_get(&e.t, cb); g_first_sampled = 0; nvn_pool_use(0);
@@ -3517,8 +3536,9 @@ static VkImageView id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage,
 }
 vka_img *vka_tex_id_img(int id, VkCommandBuffer cb) {   // the image of texture ID id (DM_VK_NANSCAN), NULL = none
     pthread_mutex_lock(&g_tmu);
-    if (id <= 0 || id >= g_ntreg || !g_treg[id].t.serial) { pthread_mutex_unlock(&g_tmu); return NULL; }
-    treg_ent e = g_treg[id];
+    const treg_ent *te = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (id <= 0 || !te->t.serial) { pthread_mutex_unlock(&g_tmu); return NULL; }
+    treg_ent e = *te;
     pthread_mutex_unlock(&g_tmu);
     nvn_pool_use(1); vka_img *im = treg_dead(id, &e) ? NULL : vka_tex_get(&e.t, cb); nvn_pool_use(0);
     return im;
@@ -3526,8 +3546,9 @@ vka_img *vka_tex_id_img(int id, VkCommandBuffer cb) {   // the image of texture 
 // DM_VK_NANSCAN_DUMP: level 0 of texture ID id as its storage holds it now (deswizzled), written to DM_TEMP as nan-now-<serial>.blk
 void vka_tex_id_dump(int id) {
     pthread_mutex_lock(&g_tmu);
-    if (id <= 0 || id >= g_ntreg || !g_treg[id].t.serial) { pthread_mutex_unlock(&g_tmu); return; }
-    treg_ent e = g_treg[id];
+    const treg_ent *te = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (id <= 0 || !te->t.serial) { pthread_mutex_unlock(&g_tmu); return; }
+    treg_ent e = *te;
     pthread_mutex_unlock(&g_tmu);
     vka_fmt f; if (!e.t.mem || !vka_fmt_of(e.t.d.format, &f)) return;
     uint32_t bx = (e.t.d.width + f.bw - 1) / f.bw, by = (e.t.d.height + f.bh - 1) / f.bh; size_t pitch = (size_t)bx * f.bpb, n = pitch * by;
@@ -3542,8 +3563,9 @@ void vka_tex_id_dump(int id) {
 // DM_VK_NANSCAN: texture ID id's storage now against its last upload: changed with the tracker's knowledge (re-uploaded at the next submission) or without it (a missed write)
 void vka_tex_id_check(int id) {
     nvn_pool_use(1); pthread_mutex_lock(&g_tmu);
-    if (id <= 0 || id >= g_ntreg || !g_treg[id].t.serial) { pthread_mutex_unlock(&g_tmu); nvn_pool_use(0); return; }
-    smap_ent *e = map_get(g_treg[id].t.serial); vka_img *im = e ? e->im : NULL;
+    const treg_ent *te = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (id <= 0 || !te->t.serial) { pthread_mutex_unlock(&g_tmu); nvn_pool_use(0); return; }
+    smap_ent *e = map_get(te->t.serial); vka_img *im = e ? e->im : NULL;
     if (im && im->track && !im->gpu_owned && im->mem && im->hash && !img_pool_dead(im)) {
         uint64_t h = mem_hash(im->mem, im->L.size); int dirty = nvn_dirty_since_span(im->span, im->mem, im->L.size, im->stamp);
         static _Atomic int n; if (h != im->hash && atomic_fetch_add(&n, 1) < 32) { char why[600]; nvn_dirty_debug(im->span, im->mem, im->L.size, im->stamp, why, sizeof why);
@@ -3559,8 +3581,9 @@ void vka_tex_id_check(int id) {
 // What texture ID id is, for a report: its texture, the registration's view and the image (or why there is none)
 void vka_tex_id_desc(int id, char *b, size_t n) {
     pthread_mutex_lock(&g_tmu);
-    if (id <= 0 || id >= g_ntreg || !g_treg[id].t.serial) { snprintf(b, n, "not registered"); pthread_mutex_unlock(&g_tmu); return; }
-    treg_ent e = g_treg[id]; smap_ent *m = map_get(e.t.serial); vka_img *im = m ? m->im : NULL;
+    const treg_ent *te = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (id <= 0 || !te->t.serial) { snprintf(b, n, "not registered"); pthread_mutex_unlock(&g_tmu); return; }
+    treg_ent e = *te; smap_ent *m = map_get(e.t.serial); vka_img *im = m ? m->im : NULL;
     pthread_mutex_unlock(&g_tmu);
     const view_t *v = e.has_v ? &e.v : NULL;
     snprintf(b, n, "serial %llu target %d format %#x %ux%ux%u levels %u flags %#x%s; view target %d layers %u+%u format %#x; image %s %ux%ux%u layers %u usage %#x",
@@ -3571,8 +3594,9 @@ void vka_tex_id_desc(int id, char *b, size_t n) {
 // DM_VK_TEX_PEEK (vka_draw.c): a texture ID and what it stands for, with the guest storage and the image, to tell which textures share an image
 void vka_tex_id_peek(int id, char *b, size_t n) {
     pthread_mutex_lock(&g_tmu);
-    if (id <= 0 || id >= g_ntreg || !g_treg[id].t.serial) { snprintf(b, n, "not registered"); pthread_mutex_unlock(&g_tmu); return; }
-    treg_ent e = g_treg[id]; smap_ent *m = map_get(e.t.serial); vka_img *im = m ? m->im : NULL;
+    const treg_ent *te = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (id <= 0 || !te->t.serial) { snprintf(b, n, "not registered"); pthread_mutex_unlock(&g_tmu); return; }
+    treg_ent e = *te; smap_ent *m = map_get(e.t.serial); vka_img *im = m ? m->im : NULL;
     uint64_t ims = im ? im->serial : 0; const void *imm = im ? im->mem : NULL; uint32_t iw = im ? im->w : 0, ih = im ? im->h : 0, il = im ? im->layers : 0, iv = im ? im->levels : 0; int fv = im ? (int)im->f.vk : 0;
     pthread_mutex_unlock(&g_tmu);
     const view_t *v = e.has_v ? &e.v : NULL;
@@ -3583,7 +3607,8 @@ void vka_tex_id_peek(int id, char *b, size_t n) {
 }
 int vka_tex_id_target(int id) {
     pthread_mutex_lock(&g_tmu);
-    int t = id > 0 && id < g_ntreg && g_treg[id].t.serial ? (g_treg[id].has_v && g_treg[id].v.set_target ? g_treg[id].v.target : g_treg[id].t.d.target) : -1;
+    const treg_ent *te = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    int t = id > 0 && te->t.serial ? (te->has_v && te->v.set_target ? te->v.target : te->t.d.target) : -1;
     pthread_mutex_unlock(&g_tmu);
     return t;
 }
@@ -3592,8 +3617,8 @@ int vka_tex_id_target(int id) {
 int vka_tex_id_buffer(int id, uint64_t *addr, uint32_t *elems, int *format) {
     pthread_mutex_lock(&g_tmu);
     int r = 0;
-    if (id > 0 && id < g_ntreg && g_treg[id].t.serial) {
-        const treg_ent *e = &g_treg[id];
+    const treg_ent *e = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    if (id > 0 && e->t.serial) {
         int target = e->has_v && e->v.set_target ? e->v.target : e->t.d.target;
         if (target == NVN_TEXTURE_TARGET_BUFFER && e->t.mem && !treg_dead(id, e)) {
             *addr = (uint64_t)(uintptr_t)e->t.mem; *elems = e->t.d.width; *format = e->has_v && e->v.set_format ? e->v.format : e->t.d.format; r = 1;
@@ -3604,14 +3629,16 @@ int vka_tex_id_buffer(int id, uint64_t *addr, uint32_t *elems, int *format) {
 }
 int vka_tex_id_storage_pending(int id) {
     pthread_mutex_lock(&g_tmu);
-    smap_ent *e = id > 0 && id < g_ntreg && g_treg[id].t.serial ? map_get(g_treg[id].t.serial) : NULL;
+    const treg_ent *te = treg_lookup(id);
+    smap_ent *e = id > 0 && te->t.serial ? map_get(te->t.serial) : NULL;
     int r = e && e->im && ((!(e->im->usage & VK_IMAGE_USAGE_STORAGE_BIT) && storage_able(e->im, VK_FORMAT_UNDEFINED) && !(e->im->holds - (int)e->im->rb_holds)) || e->im->m.z || e->im->rsc);   // (a zero-shared image gets memory of its own: outside the pass too)   // PEANUTS: rsc (a scaled image is made 1x for the binding: outside the pass too); - rb_holds: a texture readback's hold does not put the upgrade off (img_storage_upgrade), so the pass is ended for it as for an image nobody holds
     pthread_mutex_unlock(&g_tmu);
     return r;
 }
 int vka_tex_id_pending(int id) {
     pthread_mutex_lock(&g_tmu);
-    int r = id > 0 && id < g_ntreg && g_treg[id].t.serial && (g_treg[id].t.d.target != NVN_TEXTURE_TARGET_BUFFER || VKA_ENV("DM_VK_TBUF", 1)) && !map_get(g_treg[id].t.serial);   // PEANUTS: a buffer texture gets its row image here (img_create_), made outside the pass as any other image, unless they are off (upstream, whose img_create_ makes none: never)
+    const treg_ent *te = treg_lookup(id);   // PEANUTS(upstream-candidate)
+    int r = id > 0 && te->t.serial && (te->t.d.target != NVN_TEXTURE_TARGET_BUFFER || VKA_ENV("DM_VK_TBUF", 1)) && !map_get(te->t.serial);
     pthread_mutex_unlock(&g_tmu);
     return r;
 }
@@ -3644,9 +3671,9 @@ void vka_tex_dump_record(VkCommandBuffer cb, const char *spec) {
     if (g_idump.n || !spec || sscanf(spec, "%ux%u,%d", &W, &H, &F) < 2) return;
     vka_img *ims[24]; int n = 0; VkDeviceSize tot = 0;
     pthread_mutex_lock(&g_tmu);
-    for (int id = 1; id < g_ntreg && n < 24; id++) {
-        if (!g_treg[id].t.serial) continue;
-        smap_ent *m = map_get(g_treg[id].t.serial); vka_img *im = m ? m->im : NULL;
+    for (int id = 0; id < g_ntreg && n < 24; id++) {   // PEANUTS(upstream-candidate)
+        const treg_ent *te = treg_at(id); if (!te->t.serial) continue;
+        smap_ent *m = map_get(te->t.serial); vka_img *im = m ? m->im : NULL;
         if (!im || !im->img || !im->inited || im->w != W || im->h != H || im->samples != 1 || im->aspect != VK_IMAGE_ASPECT_COLOR_BIT || !im->f.bpb || (F && (int)im->f.vk != F)) continue;
         int dup = 0; for (int i = 0; i < n; i++) dup |= ims[i] == im;
         if (dup) continue;
@@ -3864,10 +3891,11 @@ void vka_tex_prepare(VkCommandBuffer cb) {
                     if (!im->d.stride) im->d.stride = vs;
                     im->track = 1;
                     im->gpu_owned = 0;
-                    for (int id = 1; id < g_ntreg; id++) {
-                        if (g_treg[id].t.serial == im->serial) {
-                            g_treg[id].t.d.flags |= NVN_TEXTURE_FLAGS_LINEAR;
-                            if (!g_treg[id].t.d.stride) g_treg[id].t.d.stride = vs;
+                    for (int id = 0; id < g_ntreg; id++) {   // PEANUTS(upstream-candidate)
+                        treg_ent *te = treg_at(id);
+                        if (te->t.serial == im->serial) {
+                            te->t.d.flags |= NVN_TEXTURE_FLAGS_LINEAR;
+                            if (!te->t.d.stride) te->t.d.stride = vs;
                         }
                     }
                     VLOG("texture serial %llu: late video pool detection in prepare, marked linear (stride %u)", (unsigned long long)im->serial, vs);
@@ -3920,7 +3948,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
     enum { BATCH = 64 }; VkWriteDescriptorSet w[BATCH]; VkDescriptorImageInfo ii[BATCH]; int nw = 0;
     for (int k = 0; k < g_ntd; k++) {
         int id = g_tdirty[k]; g_tdflag[id] = 0;
-        if (id >= (int)(g_treg[id].img ? g_nimg_slots : g_ntex_slots)) { VRED_ONCE("texture ID %d beyond the table", id); continue; }
+        if (id >= (int)(treg_lookup(id)->img ? g_nimg_slots : g_ntex_slots)) { VRED_ONCE("texture ID %d beyond the table", id); continue; }   // PEANUTS(upstream-candidate)
         uint64_t ser = 0; write_tex(id, cb, &w[nw], &ii[nw], &ser);
         if (w[nw].pImageInfo->imageView && slot_put_locked((int)w[nw].dstBinding, id, w[nw].pImageInfo->imageView, ser, 2)) nw++;   // (a slot that holds that view already: not written again)
         if (nw == BATCH) { vk.vkUpdateDescriptorSets(V.dev, (uint32_t)nw, w, 0, NULL); nw = 0; }
@@ -3942,11 +3970,13 @@ void vka_tex_prepare(VkCommandBuffer cb) {
 // ---------- The frame capture (vka_capture.c, DM_NVN_CAPTURE) and its replayer (vka_replay.c) ----------
 // Read under the texture lock: a registry entry (0 = none registered at id; *n = the table's size), a sampler entry, whether the CPU wrote a serial before its image existed,
 // and an image a texture would share at its first use (same storage and shape: vka_tex_get), with a reference the caller drops (vka_tex_drop)
-int vka_cap_treg(int id, tex_t *t, view_t *v, uint8_t *has_v, uint8_t *img, int *n) {
+int vka_cap_treg(int index, tex_t *t, view_t *v, uint8_t *has_v, uint8_t *img, int *n, int *host_id) {   // PEANUTS(upstream-candidate)
     pthread_mutex_lock(&g_tmu);
     if (n) *n = g_ntreg;
-    int ok = id >= 0 && id < g_ntreg && g_treg[id].t.serial;
-    if (ok) { *t = g_treg[id].t; *v = g_treg[id].v; *has_v = g_treg[id].has_v; *img = g_treg[id].img; }
+    if (host_id && index >= 0 && index < g_ntreg) *host_id = treg_id(index);
+    const treg_ent *te = index >= 0 && index < g_ntreg ? treg_at(index) : NULL;
+    int ok = te && te->t.serial;
+    if (ok) { *t = te->t; *v = te->v; *has_v = te->has_v; *img = te->img; }
     pthread_mutex_unlock(&g_tmu);
     return ok;
 }

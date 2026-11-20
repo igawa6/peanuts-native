@@ -592,6 +592,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 ## Rendering
 
 - the launcher selects Qualcomm 891.14, but Vulkan reports the system driver's version and features. Logcat's `hook_impl` says `cannot locate symbol "AIBinder_Class_setTransactionCodeToFunctionNameMap"` and `falling back`. The custom-driver tag describes the requested loader, not proof that its ICD loaded. → [A Qualcomm custom driver silently falls back on Android 15](../reference/rendering.md#a-qualcomm-custom-driver-silently-falls-back-on-android-15)
+- A stationary dialog flashes rectangles and its font atlas alternates with a much smaller texture when the game rotates descriptor pools. → [Rotating texture pools select the wrong image](../reference/rendering.md#rotating-texture-pools-select-the-wrong-image)
 - clang reports null dereferences in `nvnWindowInitialize` and `clear_tex`; clearing a null texture crashes with `DM_NVN_PASSDUMP=1`. → [Null textures in diagnostic logs](../reference/rendering.md#null-textures-in-diagnostic-logs)
 - Mario Kart 8 Deluxe crashes at the title screen after `texture ID 1031 registered with no texture`, with a read at address `0x4` in `treg`. → [Clearing a Vulkan texture registration](../reference/rendering.md#clearing-a-vulkan-texture-registration)
 - Metal aborts on a texture descriptor with an absurd size (`height (1869367126) greater than … 16384`). → [Texture objects copied into command records](../reference/rendering.md#texture-objects-copied-into-command-records)

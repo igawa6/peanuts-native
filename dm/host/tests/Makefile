@@ -432,6 +432,7 @@ $(B)/t_android_input: t_android_input.c ../android/input_map.c ../android/input_
 VKA = ../../gfx/vk_android
 $(B)/zstddeclib.o: ../../third_party/zstd/zstddeclib.c | $(B)
 	$(CLANG) -O2 -w -c -o $@ $<
+$(B)/t_android_shlib: $(VKA)/vka_treg.h ../../gfx/nvn/nvn_dpool.h   # PEANUTS(upstream-candidate): sparse descriptor pages.
 $(B)/t_android_shlib: t_android_shlib.c $(VKA)/vka_shlib.c $(VKA)/vka_shlib.h $(VKA)/vka_bind.c $(VKA)/vka_bind.h $(VKA)/vka_abi_compat.h $(VKA)/vka_gml.h ../../gfx/nvn/dmsh_abi_vk.h ../../gfx/nvn/dmsh_abi.h ../../gfx/nvn/dmsh_chain_vk.h $(B)/zstddeclib.o | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_shlib.c $(VKA)/vka_shlib.c $(VKA)/vka_bind.c $(B)/zstddeclib.o
 # The image memory blocks' extent allocator (vka_extents.h, vka_imgmem.c)

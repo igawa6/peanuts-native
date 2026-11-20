@@ -35,7 +35,7 @@ void vcap_iface(const prog_t *p, uint64_t out[6]);
 void vcap_shlib_path(char *out, size_t n);
 
 // Accessors of the replay's own tables (vka_tex.c, vka_mem.c) and hle_nvn.c's side tables
-int vka_cap_treg(int id, tex_t *t, view_t *v, uint8_t *has_v, uint8_t *img, int *n);
+int vka_cap_treg(int index, tex_t *t, view_t *v, uint8_t *has_v, uint8_t *img, int *n, int *host_id);   // PEANUTS(upstream-candidate)
 int vka_cap_sreg(int id, samp_par *p, int *n);
 int vka_cap_cpuw(uint64_t serial);
 vka_img *vka_cap_shared(const tex_t *t);
