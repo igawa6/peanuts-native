@@ -2796,3 +2796,7 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### FANTASIAN Neo Dimension
+
+The [experimental profile](../dm/games/01001BB01E8E2000/README.md) registers the 1.0.0 and 1.0.2 executables. Its shader indexes come from 1.0.2; their generated files are listed in `upstream-unmarked.txt`.
