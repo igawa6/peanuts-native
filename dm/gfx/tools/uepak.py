@@ -296,7 +296,7 @@ class Pak:
         off = r.take('<I' if v >> 31 & 1 else '<Q'); raw = r.take('<I' if v >> 30 & 1 else '<Q')
         size = r.take('<I' if v >> 29 & 1 else '<Q') if meth else raw
         cur, blocks = 53 + (4 + 16 * nblk if meth else 0), []
-        if nblk == 1 and not bsz: bsz = raw   # FINAL FANTASY RESONANCE's pak (UE 5.6) stores block size 0 for a file of one block
+        if nblk == 1: bsz = raw   # PEANUTS(upstream-candidate): the sole block spans the entry; its packed hint can be rounded down or zero.
         if nblk == 1 and not enc: blocks = [(cur, size)]
         else:
             for _ in range(nblk): s = r.take('<I'); blocks.append((cur, s)); cur += (s + 15) & ~15 if enc else s

@@ -21,6 +21,22 @@ def archive(records):
 
 
 class Decode(unittest.TestCase):
+    def test_v11_single_block_uses_the_entry_size(self):
+        # PEANUTS: a 2 KiB packed size is a per-block limit only for multi-block entries.
+        import zlib
+        raw = b'A' * 2048 + b'B' * 113
+        for chunks in ([raw], [raw[:2048], raw[2048:]]):
+            with self.subTest(blocks=len(chunks)):
+                blocks = [zlib.compress(c) for c in chunks]
+                pk = uepak.Pak.__new__(uepak.Pak)
+                pk.version, pk.path, pk.methods, pk.files = 11, 'test.pak', ['Zlib'], {'file': 0}
+                flags = (7 << 29) | (1 << 23) | (len(blocks) << 6) | 1
+                pk.enc = struct.pack('<4I', flags, 0, len(raw), sum(map(len, blocks)))
+                if len(blocks) > 1:
+                    pk.enc += struct.pack('<2I', *map(len, blocks))
+                pk.f = io.BytesIO(bytes(57 + 16 * len(blocks)) + b''.join(blocks))
+                self.assertEqual(pk.read('file'), raw)
+
     def test_writes_each_record_before_decoding_the_next(self):
         raws = [b'LSLG-shader-a', b'LSLG-shader-b']
         packed = archive([(b'aa', raws[0]), (b'bbb', raws[1])])
