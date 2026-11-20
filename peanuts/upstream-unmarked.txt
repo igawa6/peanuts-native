@@ -213,3 +213,10 @@ dm/games/01007A2027548000/shader_facts.tsv	Generated compute launch dimensions. 
 dm/games/01007A2027548000/shader_pairs.tsv	Generated vertex and pixel key pairs. Keep the shader input stamp reproducible.
 dm/games/01007A2027548000/pso_pairs.tsv	Generated supplemental pair list. Keep the shader input stamp reproducible.
 dm/games/01007A2027548000/shader_files.tsv	Generated shader-bearing file inventory for the targeted split.
+dm/games/01004BC0166CC000/shader_map.tsv	Generated shader key map; keep the input stamp reproducible.
+dm/games/01004BC0166CC000/shader_map.tsv.conflicts.tsv	Generated shader key conflict table.
+dm/games/01004BC0166CC000/shader_facts.tsv	Generated compute shader launch dimensions.
+dm/games/01004BC0166CC000/shader_pairs.tsv	Generated vertex and pixel key pairs.
+dm/games/01004BC0166CC000/pso_pairs.tsv	Generated supplemental pipeline key pairs.
+dm/games/01004BC0166CC000/pso_manifest.tsv	Generated pipeline seed list.
+dm/games/01004BC0166CC000/bf_want.tsv	Generated shader auxiliary table.

@@ -79,6 +79,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Chained Echoes](0100C510166F0000/README.md) | `0100C510166F0000` | v1310720 | 14.3.0 | Unity 2020.3.36f1 IL2CPP | NVN |
 | [Crash Team Racing Nitro-Fueled](0100F9F00C696000/README.md) | `0100F9F00C696000` | 1.0.15 | 8.2.0 | Vicarious Visions' Alchemy | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Cult of the Lamb](01002E7016C46000/README.md) | `01002E7016C46000` | 1.5.28 | 19.3.14 | Unity 2022.3.62f3 IL2CPP, FMOD | NVN |
+| [CRISIS CORE –FINAL FANTASY VII– REUNION](01004BC0166CC000/README.md) | `01004BC0166CC000` | 1.0.0 | 13.3.0 | Unreal Engine 4.27 | NVN <!-- PEANUTS: Android bring-up --> |
 | [Cuphead](0100A5C00D162000/README.md) | `0100A5C00D162000` | 1.3.7 | 5.5.0 | Unity 2017.4.9f1 IL2CPP | NVN |
 | [DARK SOULS: REMASTERED](01004AB00A260000/README.md) | `01004AB00A260000` | 1.0.3 | 4.5.0 | FromSoftware's engine | NVN |
 | [DAVE THE DIVER](010097F018538000/README.md) | `010097F018538000` | 1.0.6.1267 | 20.5.29 | Unity 6000.0.52f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
