@@ -1,0 +1,37 @@
+# PEANUTS: 1.5.0 (SDK 18.3.7); offline New Game and avatar creation checked on Odin 2 before submission.
+
+# ---- Identity ----
+title_id	0100755017EE0000
+program_id	0100755017EE0000
+
+# ---- App ----
+name	FANTASY LIFE i: The Girl Who Steals Time
+ipa	FantasyLifeITheGirlWhoStealsTime.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v524288	1.5.0	main=74bcac96835db9aeeb29bce78be410ea	subsdk0=8dceb03f9f04aac7a5d35a4ad83d4601	sdk=f9ed9d26b4ad414362affee1658db28a
+package	v524288
+shader_versions	v524288
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Game/Content/sound/movie/prime/w1920/movie_staffRoll.usm
+zip_store	.awb:.nro:.pak:.txt:.ucas:.usm:.metallib
+
+# ---- Memory ----
+# Unreal: nninitStartup reserves a 62 GB address region and its FMallocBinned3 takes 37 GB of it, so a 64 GB alias region for the bring-up on the Mac. The rewriter cuts the allocator in any Unreal 4 / 5 main (dm/tools/ue_malloc.py) and gives the region what the alias region has room for (dm/tools/ue_region.py), so an iPhone takes a smaller guest block, as Octopath Traveler 0's profile (docs/reference/memory.md)
+mem_reserve	0x1028000000
+mem_alias	0x1000000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 80 MB of system resource
+sys_resource	0x5000000
+
+# ---- Shader split ----
+# Global cache in PAK, material shaders in IoStore exports.
+shader_groups	GlobalShaderCache-=global .utoc#=game
+# Opening-scene vertex shaders select their texture slot at runtime.
+tex_dyn_slots	on
+shader_note	FANTASY LIFE i: The Girl Who Steals Time shaders
