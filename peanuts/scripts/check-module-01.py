@@ -43,8 +43,14 @@ require("ANDROID_PLATFORM=33" in host and "API 33+" in host,
         "Android native minimum platform/API 33 contract is missing")
 require("NX_GENERIC_HOST" in host and "NX_GAMES" in host and "GAME" in host,
         "CMake must retain generic-host and per-title host build modes")
-require("NX_GENERIC_HOST" in launcher_cmake and "arm64-v8a" in launcher_cmake,
-        "launcher CMake must link the generic/per-title host and enforce the Android ABI")
+require("NX_GENERIC_HOST" in launcher_cmake and "NX_GAMES" in launcher_cmake,
+        "launcher CMake must retain generic-host and per-title launcher modes")
+require("target_link_libraries(nxlaunch PRIVATE nxhost android log)" in launcher_cmake,
+        "generic launcher must link the generic native host")
+require("target_link_libraries(nxlaunch_${g} PRIVATE nxhost_${g} android log)" in launcher_cmake,
+        "per-title launcher must link its matching native host")
+require("add_subdirectory" in launcher_cmake and "android/host" in launcher_cmake,
+        "launcher must include the Android native host build")
 
 # App packaging: Peanuts defaults to a single generic host with title-specific
 # runtime profiles; the opt-out remains available for per-title hosts.
