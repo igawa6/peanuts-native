@@ -10,6 +10,8 @@ public final class FrameStatsJvmTest {
         check(Math.abs(FrameStats.median(f, 100) - 33.3f) < 1e-4, "median");
         check(Math.abs(FrameStats.median(new float[] {1, 2, 3, 4}, 4) - 2.5f) < 1e-4, "median even");
         check(Float.isNaN(FrameStats.median(f, 0)), "median empty");
+        check(Math.abs(FrameStats.median(new float[] {Float.NaN, -1f, 10f, 20f, 30f}, 5) - 20f) < 1e-4, "median ignores invalid samples");
+        check(Float.isNaN(FrameStats.median(new float[] {Float.NaN, -1f, 0f}, 3)), "median has no valid samples");
         check(Math.abs(FrameStats.percentileFrameTime(f, 100, 95) - 33.3f) < 1e-3, "p95 ignores one isolated hitch");
         check(Math.abs(FrameStats.percentileFrameTime(f, 100, 99) - 100f) < 1e-3, "p99 catches one isolated hitch");
         check(Float.isNaN(FrameStats.percentileFrameTime(f, 9, 95)), "p95 needs a stable sample window");
