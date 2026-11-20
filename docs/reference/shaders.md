@@ -264,6 +264,13 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Fix:** `shader_split.py` `pg_sized_shader` recognizes the self-described section boundaries and NVN magics (`0x12345678` for graphics code, `0x12345679` for compute, `0x98761234` for control). The prefix must be aligned and in bounds, both sections must fit, the record must end with its control section, and the control's code length at `+0x704` must agree. Graphics stages come from SPH; the compute magic identifies compute. The reader emits `#PGSO` records so the existing single-stage cover pairing applies. Recognition needs no title or filename rule, and the shader translation chain is unchanged.
 - **Found on:** [NieR:Automata The End of YoRHa Edition](../../dm/games/010056B015FE8000/README.md): the objects in five DAT shader archives inside `data000.cpk`; the game note records the census and the runtime-key checks.
 
+### Level-5 NNDXDHSC shader objects
+
+- **Symptom:** the CPK directory and CRILAYLA decoder find shader files, but the split does not recognize their contents.
+- **Cause:** each `NNDXDHSC` version 1 object wraps one shader. Its stage tag at `+0x0c` identifies vertex (1), pixel (2), geometry (3) or compute (6). Little-endian offset/length pairs at `+0x48` and `+0x50` locate code and control, respectively. Reflection data may follow.
+- **Fix:** validate both sections and the reported stage, then pass them to the existing single-stage pairing path. Select by magic, not extension: an `.esb` can hold a vertex stage.
+- **Found on:** Inazuma Eleven: Victory Road (`0100B36008F90000`), base CPK members under `data/nx/shader/`. This identifies shader objects, not runtime compatibility.
+
 ### BNSH files in PlatinumGames DAT archives inside CRI CPK archives
 
 - PlatinumGames' engine in its Wii U form keeps its shaders as BNSH files of one stage each, the `.vso` / `.pso` members of PlatinumGames DAT archives (`shader.dat`, `shader2.dat`, `shadereff.dat`) inside a CRI CPK archive, all CRILAYLA-compressed ([01](../agents/01-extract.md) has the CPK layout). `dm/gfx/tools/cpk.py` reads the @UTF tables (and the masked ones of Unicorn Overlord's CPKs, the same tables as before once unmasked), the TOC and CRILAYLA (a decoder over a bit string, about 29 MB/s); `shader_split.py` `cpk_jobs` splits the CPKs into jobs and scans each entry (a CPK it cannot read is scanned as one file, with a `[RED]` line).
