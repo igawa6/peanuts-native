@@ -1121,7 +1121,14 @@ int64_t vka_floor_period_ns(void) {
     double ms = VKA_ENVF("DM_VK_GPU_FLOOR_PERIOD", 0.0);
     if (ms >= 4 && ms <= 200) return (int64_t)(ms * 1e6);
     int64_t m = atomic_load_explicit(&vka_period_min_ns, memory_order_relaxed), v = 16666667;
-    return m >= 4000000 && m < v ? m : v;
+    int64_t target = m >= 4000000 && m < v ? m : v;
+    int dm_fps_cap_get(void) __attribute__((weak)), nxhost_fps_limit_get(void) __attribute__((weak));
+    int cap = &dm_fps_cap_get ? dm_fps_cap_get() : (&nxhost_fps_limit_get ? nxhost_fps_limit_get() : 0);
+    if (cap > 0) {
+        int64_t cap_ns = 1000000000ll / cap;
+        if (cap_ns > target) return cap_ns;
+    }
+    return target;
 }
 void vka_floor_span(uint64_t frame, uint64_t ns) {           // the completion thread: a submission of frame ended ns after the frame began
     unsigned k = frame % FSPAN;
