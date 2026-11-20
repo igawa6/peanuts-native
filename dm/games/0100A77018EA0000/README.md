@@ -24,4 +24,8 @@ The full base-game split found **35,020 unique shader keys**: 17,479 vertex, 17,
 
 ## Status
 
-Bring-up only. Boot, rendering, audio, input and player-controlled gameplay have not been verified on a device. This profile is not a release-list entry.
+**Bring-up only; startup stalls on Odin 2.** Two launches on Android 13 (Adreno 740, Turnip v27.0.0-R1, Vulkan 1.4.363) initialized the GPU and opened a 48 kHz AAudio stream. Both logged a thread-suspension timeout. On the second launch, the state dump still reported `tick 0 / stage startup` after 33 seconds: the main thread was in `SetThreadActivity` (SVC `0x32`), and the `IL2CPP Threadpool worker` it asked to pause was in a native wait, not stopped. A Vulkan screenshot request was accepted but no next frame was captured.
+
+No title screen, New Game, player input or battle was verified. Audio callbacks are not evidence of audible game sound. The isolated save stayed empty. This profile is not a release-list entry.
+
+In `dm/host/hle_thread.c`, SVC `0x32` accepts a thread already inside an SVC or stopped in the pause signal handler. The handler deliberately does not park a thread executing host code. A native HLE wait records its depth but does not acknowledge an individual pause. That matches the worker's observed state; the dump did not establish which native wait it entered. For a retest, check that this worker can acknowledge the pause with valid guest register and stack state, and that a later Vulkan frame actually reaches the title screen.
