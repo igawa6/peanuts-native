@@ -213,3 +213,11 @@ dm/games/01007A2027548000/shader_facts.tsv	Generated compute launch dimensions. 
 dm/games/01007A2027548000/shader_pairs.tsv	Generated vertex and pixel key pairs. Keep the shader input stamp reproducible.
 dm/games/01007A2027548000/pso_pairs.tsv	Generated supplemental pair list. Keep the shader input stamp reproducible.
 dm/games/01007A2027548000/shader_files.tsv	Generated shader-bearing file inventory for the targeted split.
+dm/games/0100755017EE0000/shader_map.tsv	Generated Fantasy Life i shader keys and offsets; do not change the shader input stamp.
+dm/games/0100755017EE0000/shader_facts.tsv	Generated compute dimensions; do not change the shader input stamp.
+dm/games/0100755017EE0000/shader_pairs.tsv	Generated shader pair table; do not change the shader input stamp.
+dm/games/0100755017EE0000/pso_pairs.tsv	Generated supplemental pair table; do not change the shader input stamp.
+dm/games/0100755017EE0000/shader_files.tsv	Generated inventory of shader-bearing files.
+dm/games/0100755017EE0000/shader_map.tsv.conflicts.tsv	Generated control-section conflict report.
+dm/games/0100755017EE0000/pso_manifest.tsv	Generated prewarm list; do not change the shader input stamp.
+dm/games/0100755017EE0000/bf_want.tsv	Generated binding flags; do not change the shader input stamp.
