@@ -1,0 +1,24 @@
+# PEANUTS: Trails in the Sky 1st Chapter, Switch update 1.0.4, SDK 19.3.13, NVN.
+title_id	01002C9022770000
+program_id	01002C9022770000
+name	Trails in the Sky 1st Chapter
+ipa	Trails-in-the-Sky-1st-Chapter.ipa
+app_category	public.app-category.role-playing-games
+
+build	v196608	1.0.4	main=2ad8cc7892ebf9fab667f6d218366c24	subsdk0=ca7f78a09c547c54beac3a33ed6bf364	sdk=7bba185a35ee9b4d0af66a4df910a823
+package	v196608
+shader_versions	v196608
+modules	main subsdk0 sdk
+romfs_marker	multilang_resource_list.json
+zip_store	.mp4:.nxopus:.metallib
+
+# nninitStartup subtracts 0x48200000 from free memory rounded down to 2 MiB.
+# main's allocator also requests 10 * 0x48200000 bytes of alias space, separate from the heap.
+mem_reserve	0x4b0000000
+mem_alias	0x400000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1000000
+
+shader_groups	/asset/=asset
+shader_note	Trails in the Sky 1st Chapter shaders
