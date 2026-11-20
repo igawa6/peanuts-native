@@ -213,3 +213,11 @@ dm/games/01007A2027548000/shader_facts.tsv	Generated compute launch dimensions. 
 dm/games/01007A2027548000/shader_pairs.tsv	Generated vertex and pixel key pairs. Keep the shader input stamp reproducible.
 dm/games/01007A2027548000/pso_pairs.tsv	Generated supplemental pair list. Keep the shader input stamp reproducible.
 dm/games/01007A2027548000/shader_files.tsv	Generated shader-bearing file inventory for the targeted split.
+dm/games/0100A77018EA0000/shader_map.tsv	Generated Dark Prince shader index; preserve the split's input stamp.
+dm/games/0100A77018EA0000/shader_map.tsv.conflicts.tsv	Generated control-section conflict rulings; preserve the split's input stamp.
+dm/games/0100A77018EA0000/shader_facts.tsv	Generated shader translation facts; preserve the split's input stamp.
+dm/games/0100A77018EA0000/shader_pairs.tsv	Generated vertex/pixel shader pairs; preserve the split's input stamp.
+dm/games/0100A77018EA0000/pso_pairs.tsv	Generated supplemental pipeline pairs; preserve the split's input stamp.
+dm/games/0100A77018EA0000/shader_files.tsv	Generated inventory of shader-bearing files for the targeted split.
+dm/games/0100A77018EA0000/bf_want.tsv	Generated blend-factor demand table; preserve the split's input stamp.
+dm/games/0100A77018EA0000/pso_manifest.tsv	Generated prewarm manifest; no recorded gameplay seed.

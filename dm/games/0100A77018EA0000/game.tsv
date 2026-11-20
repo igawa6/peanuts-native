@@ -1,0 +1,23 @@
+# PEANUTS: Dragon Quest Monsters: The Dark Prince, base 1.0.0. Bring-up only.
+title_id	0100A77018EA0000
+program_id	0100A77018EA0000
+name	Dragon Quest Monsters: The Dark Prince
+ipa	DragonQuestMonstersTheDarkPrince.ipa
+app_category	public.app-category.games
+
+build	v0	1.0.0	main=221c19c45e821e7ce155f734e979a800	subsdk0=d0f13015e5badf2243d60a2bc9b978dd	sdk=3644a6760469451cabc99f00c540acc2
+package	v0
+shader_versions	v0
+modules	main subsdk0 sdk
+romfs_marker	Data/globalgamemanagers
+zip_store	.assets:.awb:.dat:.ress:.metallib
+
+# Initial survey layout, not measured at runtime. The NPDM declares 16 MiB of system resource.
+mem_reserve	0x140000000
+mem_alias	0x118000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1000000
+
+shader_groups	/Data/=data
+shader_note	0100A77018EA0000 shaders (provisional profile)
