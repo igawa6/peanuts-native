@@ -190,8 +190,6 @@ final class MasterTelemetry {
         samples++;
     }
 
-    }
-
     synchronized void memoryPressure(int level) {
         if (!started || finished) return;
         append("{\"type\":\"memory_pressure\",\"t_ms\":" + (SystemClock.elapsedRealtime() - startedAt)
