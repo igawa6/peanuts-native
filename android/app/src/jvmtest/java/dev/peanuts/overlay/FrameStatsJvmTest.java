@@ -10,6 +10,12 @@ public final class FrameStatsJvmTest {
         check(Math.abs(FrameStats.median(f, 100) - 33.3f) < 1e-4, "median");
         check(Math.abs(FrameStats.median(new float[] {1, 2, 3, 4}, 4) - 2.5f) < 1e-4, "median even");
         check(Float.isNaN(FrameStats.median(f, 0)), "median empty");
+        check(Math.abs(FrameStats.percentileFrameTime(f, 100, 95) - 33.3f) < 1e-3, "p95 ignores one isolated hitch");
+        check(Math.abs(FrameStats.percentileFrameTime(h, 100, 95) - 100f) < 1e-3, "p95 catches recurring slow frames");
+        check(Float.isNaN(FrameStats.percentileFrameTime(f, 9, 95)), "p95 needs a stable sample window");
+        check(Float.isNaN(FrameStats.percentileFrameTime(f, 100, 100)), "p100 is not a percentile request");
+        float[] dirty = {Float.NaN, -1f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f};
+        check(Math.abs(FrameStats.percentileFrameTime(dirty, dirty.length, 95) - 20f) < 1e-3, "p95 ignores invalid samples");
         check(Math.abs(FrameStats.onePercentLowFps(f, 100) - 1000f / 33.3f) < 1e-2, "1% low: one hitch in 100 is not the low");
         check(Math.abs(FrameStats.onePercentLowFps(f, 100) - 30f) < 0.1f, "1% low ~ 30 fps at a steady 30");
         check(Float.isNaN(FrameStats.onePercentLowFps(f, 9)), "n < 10");
