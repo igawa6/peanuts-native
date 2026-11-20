@@ -67,14 +67,13 @@ jobs:
         run: |
           zsh android/ondevice/build.sh "$RUNNER_TEMP/peanuts-native-work"
 
-      - name: Build Peanuts Native beta APK for Super Mario Odyssey profile
+      - name: Build Peanuts Native beta APK with all Android-ready game profiles
         shell: bash
         run: |
           cd android/app
           chmod +x gradlew
           ./gradlew --no-daemon \
             -PnxApp=peanuts \
-            -PnxGames=0100000000010000 \
             -PnxPackStage="$RUNNER_TEMP/peanuts-native-work/stage" \
             apk
 
