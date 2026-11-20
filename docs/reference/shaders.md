@@ -4,6 +4,14 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 
 ## Containers by engine
 
+### Level-5 VFS3 shader objects
+
+- **Symptom:** the split misses the GLSLC objects in `data/preload_zstd.vfs`.
+- **Cause:** VFS3 v16 generation 1 indexes names and zstd block lists by file ID, not table order. Its compressed members store blocks rather than complete frames.
+- **Fix:** read just the shader members and validate their stages against their filename extensions.
+- **Check:** `dm/tools/tests/test_vfs3.py` covers a compressed member and a member crossing the payload boundary.
+- **Found on:** Ni no Kuni II 1.0.0 (902 distinct shader keys). Extracting these keys does not by itself produce a playable pack.
+
 ### One scrambled archive indexed by the NRO
 
 - **Symptom:** the split finds no shaders (on macOS also `OSError: [Errno 22]`, a single read of the whole file over 2 GiB), and the RomFS is one huge file with a short name (`42`) whose bytes look random past a table at its start (magic `CRA.`).

@@ -584,6 +584,73 @@ def glslc_shaders(d, label, need=True, skip=(), sink=None):
     if not out and need: red(f'{label}: no GLSLC output')
     return out
 
+# PEANUTS: Level-5 VFS3 v16 generation 1 (Ni no Kuni II). The payload offsets are relative to the aligned end of the index.
+VFS3 = b'VFS3\x10\0\0\0\x01\0\0\0'
+VFS3_STAGES = {'.vfxo': 'vs', '.pfxo': 'ps', '.gfxo': 'gs', '.cfxo': 'cs'}
+
+def vfs3_members(f, label):
+    """Read shader objects by file ID, not TOC order. Layout: masagrator/NXGameScripts, Ni No Kuni 2/VFS_Unpacker.py."""
+    import io
+    def take(stream, n):
+        if n > 16 << 20: red(f'{label}: oversized VFS3 table or shader')
+        b = stream.read(n)
+        if len(b) != n: red(f'{label}: truncated VFS3 table or shader')
+        return b
+    def u32(stream): return int.from_bytes(take(stream, 4), 'little')
+    def strings(stream, count):
+        if u32(stream) != count: red(f'{label}: VFS3 string count mismatch')
+        for _ in range(count): yield take(stream, u32(stream)).decode('utf-8')
+
+    size = f.seek(0, 2); f.seek(0)
+    if take(f, 12) != VFS3: red(f'{label}: unsupported VFS3 header')
+    nd = u32(f); f.seek(16 + 28 * nd)
+    nf = u32(f); records = take(f, 40 * nf)
+    chunks, dictionaries, names = struct.unpack('<3Q', take(f, 24))
+    base = (f.tell() + 15) & ~15
+    if not base <= chunks <= dictionaries <= names <= size: red(f'{label}: invalid VFS3 index ranges')
+    f.seek(names); strings_io = io.BytesIO(take(f, size - names))
+    files = list(strings(strings_io, nf))
+    for _ in strings(strings_io, nd): pass
+    if strings_io.tell() != size - names: red(f'{label}: trailing VFS3 names')
+
+    f.seek(chunks); table = io.BytesIO(take(f, dictionaries - chunks))
+    if u32(table) != dictionaries - chunks - 4: red(f'{label}: invalid VFS3 chunk table size')
+    blocks = []
+    for _ in range(nf):
+        n = u32(table)
+        if n % 4: red(f'{label}: invalid VFS3 chunk list length')
+        blocks.append(take(table, n))
+    if table.tell() != dictionaries - chunks: red(f'{label}: trailing VFS3 chunk lists')
+    table = io.BytesIO(take(f, names - dictionaries))
+    count, n = struct.unpack('<II', take(table, 8))
+    if n != names - dictionaries - 8: red(f'{label}: invalid VFS3 dictionary table size')
+    z = zstd_mod()
+    dicts = [z.ZstdDict(take(table, u32(table))) for _ in range(count)]
+    if table.tell() != names - dictionaries: red(f'{label}: trailing VFS3 dictionaries')
+
+    seen = set()
+    for off, stored, raw, _, fid, parent, codec, did in struct.iter_unpack('<QQQIIIhh', records):
+        if fid >= nf or fid in seen or parent >= nd or codec != 3 or not -1 <= did < count: red(f'{label}: invalid VFS3 member metadata')
+        seen.add(fid)
+        if base + off + stored > chunks: red(f'{label}: invalid VFS3 member range')
+        name = files[fid]
+        if os.path.splitext(name)[1].lower() not in VFS3_STAGES: continue
+        if raw > 16 << 20: red(f'{label}/{name}: oversized VFS3 shader')
+        f.seek(base + off); data = take(f, stored)
+        if stored != raw:
+            frame = bytearray(b'\x28\xb5\x2f\xfd\x00\x88'); pos = 0
+            for (block,) in struct.iter_unpack('<i', blocks[fid]):
+                n = abs(block)
+                if not 0 < n <= 131072 or pos + n > stored: red(f'{label}/{name}: invalid VFS3 block range')
+                frame.extend(((n << 3) | (4 if block > 0 else 0)).to_bytes(3, 'little')); frame.extend(data[pos:pos+n]); pos += n
+            if pos != stored: red(f'{label}/{name}: VFS3 block sizes do not cover member')
+            frame.extend(b'\x01\0\0')
+            dec = z.ZstdDecompressor(zstd_dict=dicts[did] if did >= 0 else None)
+            data = dec.decompress(frame, raw + 1)
+            if not dec.eof or len(data) != raw: red(f'{label}/{name}: VFS3 decompressed size mismatch')
+        yield name, data
+
+
 SNOWDROP_RECORD = rb'[\xc5\xc6]\x00\xcd\xab'
 def snowdrop_wrapped(d, label):
     """Shader cache records can themselves be SDF zstd chunks. Peek at the decoded header of each frame, and finish only frames starting with a cache record, not other assets.
@@ -3439,6 +3506,13 @@ def scan_file_in(args):
     if ext in ('.data', '.patch', '.debug', '.nxpc') and os.path.exists(stem + '.dict'): return rel, {}, set(), {}   # read through its Next Level Games index (nlg_shaders)
     with open(path, 'rb') as f: head = f.read(16)
     found = Shaders(); trees = {}
+    if head[:12] == VFS3:
+        with open(path, 'rb') as f:
+            for name, data in vfs3_members(f, rel):
+                label = f'/{rel}/{name}'; shaders = glslc_shaders(data, label)
+                if len(shaders) != 1 or shaders[0][1] != VFS3_STAGES[os.path.splitext(name)[1].lower()]: red(f'{label}: VFS3 shader stage mismatch')
+                found.extend(shaders)
+        return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and args[2][0] == b'ARH':   # PEANUTS: ARH1 and ARH2 share archive jobs
         arh_shaders(path, rel, args[2][1], found)
         return rel, uniq_keys(found), var_pairs(found), trees
