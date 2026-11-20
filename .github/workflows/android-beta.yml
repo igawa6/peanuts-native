@@ -1,4 +1,4 @@
-name: Peanuts Native Android Beta
+name: Peanuts Native BUILD MASTER
 
 on:
   push:
@@ -23,11 +23,11 @@ concurrency:
 
 jobs:
   build:
-    name: Build S22-compatible beta APK
+    name: Build S22-targeted Master APK
     runs-on: macos-15
     timeout-minutes: 180
     steps:
-      - name: Checkout beta branch
+      - name: Checkout main
         uses: actions/checkout@v4
 
       - name: Set up Java
@@ -67,7 +67,7 @@ jobs:
         run: |
           zsh android/ondevice/build.sh "$RUNNER_TEMP/peanuts-native-work"
 
-      - name: Build Peanuts Native beta APK with all Android-ready game profiles
+      - name: Build Peanuts Native Master APK with all Android-ready game profiles
         shell: bash
         run: |
           cd android/app
@@ -90,10 +90,10 @@ jobs:
           echo "path=$APK" >> "$GITHUB_OUTPUT"
           echo "Found: $APK"
 
-      - name: Upload installable beta APK
+      - name: Upload installable BUILD MASTER APK
         uses: actions/upload-artifact@v4
         with:
-          name: peanuts-native-s22-beta
+          name: peanuts-native-build-master-s22
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 14
