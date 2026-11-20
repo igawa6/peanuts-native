@@ -213,3 +213,8 @@ dm/games/01007A2027548000/shader_facts.tsv	Generated compute launch dimensions. 
 dm/games/01007A2027548000/shader_pairs.tsv	Generated vertex and pixel key pairs. Keep the shader input stamp reproducible.
 dm/games/01007A2027548000/pso_pairs.tsv	Generated supplemental pair list. Keep the shader input stamp reproducible.
 dm/games/01007A2027548000/shader_files.tsv	Generated shader-bearing file inventory for the targeted split.
+dm/games/01001BB01E8E2000/shader_map.tsv	Generated shader key and source map for FANTASIAN Neo Dimension 1.0.2.
+dm/games/01001BB01E8E2000/shader_facts.tsv	Generated shader translation facts.
+dm/games/01001BB01E8E2000/shader_pairs.tsv	Generated vertex and pixel key pairs.
+dm/games/01001BB01E8E2000/pso_pairs.tsv	Generated supplemental pipeline pairs.
+dm/games/01001BB01E8E2000/shader_files.tsv	Generated inventory of shader-bearing files for the targeted split.

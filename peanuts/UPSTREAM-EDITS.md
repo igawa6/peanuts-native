@@ -1396,3 +1396,7 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `dm/games/0100B8E016F76000/game.tsv`, `dm/games/0100B8E016F76000/README.md` | 2, 1 | NieR:Automata (Asian release) on Android: `depth_mode zero` as the global profile; frame limits 30 to 60 measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/0100B8E016F76000/vk_prewarm.bin` | new | its Turnip prewarm seed (225 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
+
+### FANTASIAN Neo Dimension
+
+The [experimental profile](../dm/games/01001BB01E8E2000/README.md) registers the 1.0.0 and 1.0.2 executables. Its shader indexes come from 1.0.2; their generated files are listed in `upstream-unmarked.txt`.
