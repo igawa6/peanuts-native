@@ -52,15 +52,15 @@ def find(img): return ue_malloc.find(bytes(img), TEXT, RO, DATA)
 class FindTest(unittest.TestCase):
     def test_found_in_place(self):
         call, vt, slot, why = find(image())
-        self.assertEqual((call, vt, slot), (CALLER + 4, VT, 19), why)
+        self.assertEqual((call, vt, slot), ((CALLER + 4,), VT, 19), why)
 
     def test_found_through_relocations(self):
         call, vt, slot, why = find(image(slot=26, relocated=True))
-        self.assertEqual((call, vt, slot), (CALLER + 4, VT, 26), why)
+        self.assertEqual((call, vt, slot), ((CALLER + 4,), VT, 26), why)
 
     def test_found_with_relocated_rtti(self):  # PEANUTS: Captain Tsubasa 2 uses RTTI at its primary address point.
         call, vt, slot, why = find(image(slot=26, relocated=True, rtti_name=b'14FMallocBinned3\0'))
-        self.assertEqual((call, vt, slot), (CALLER + 4, VT, 26), why)
+        self.assertEqual((call, vt, slot), ((CALLER + 4,), VT, 26), why)
 
     def test_reject_wrong_rtti(self):  # PEANUTS: only a proven FMallocBinned3 header permits the constructor cut.
         call, _, _, why = find(image(slot=26, relocated=True, rtti_name=b'7FMalloc\0'))
@@ -77,10 +77,14 @@ class FindTest(unittest.TestCase):
         self.assertIsNone(call)
         self.assertTrue(why.startswith('[RED] ') and 'slot 20' in why, why)
 
-    def test_two_calls_are_red(self):
-        call, _, _, why = find(image(calls=2))
-        self.assertIsNone(call)
-        self.assertTrue(why.startswith('[RED] ') and '2 calls' in why, why)
+    def test_two_calls_found(self):  # PEANUTS: DRAGON BALL: Sparking! ZERO calls FMallocBinned3's constructor twice.
+        calls, vt, slot, why = find(image(calls=2))
+        self.assertEqual((calls, vt, slot), ((CALLER + 4, CALLER + 12), VT, 19), why)
+
+    def test_zero_calls_is_red(self):
+        calls, _, _, why = find(image(calls=0))
+        self.assertIsNone(calls)
+        self.assertTrue(why.startswith('[RED] ') , why)
 
 
 if __name__ == '__main__':

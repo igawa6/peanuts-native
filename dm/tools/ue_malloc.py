@@ -99,8 +99,10 @@ def find(img, text_end, ro_off, data_off):
         if start not in dtors: ctors.add(start)
     if len(ctors) != 1: return None, None, None, f'[RED] FMallocBinned3 vtable at {vt:#x}: {len(ctors)} constructors (' + ', '.join(f'{x:#x}' for x in sorted(ctors)) + ')'
     c = ctors.pop()
-    if len(bl.get(c, [])) != 1 or b.get(c): return None, None, None, f'[RED] FMallocBinned3 constructor at {c:#x}: {len(bl.get(c, []))} calls and {len(b.get(c, []))} jumps, not one call'
-    return bl[c][0], vt, slot, f'FMallocBinned3 ({LAYOUTS[slot]}): its constructor at {c:#x}, called at {bl[c][0]:#x}; its vtable {vt:#x}, the name getter slot {slot}'
+    calls = tuple(bl.get(c, ()))
+    if not calls or b.get(c): return None, None, None, f'[RED] FMallocBinned3 constructor at {c:#x}: {len(calls)} calls and {len(b.get(c, []))} jumps'
+    called = ', '.join(f'{a:#x}' for a in calls)
+    return calls, vt, slot, f'FMallocBinned3 ({LAYOUTS[slot]}): its constructor at {c:#x}, called at {called}; its vtable {vt:#x}, the name getter slot {slot}'
 
 if __name__ == '__main__':
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
