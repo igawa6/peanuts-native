@@ -200,7 +200,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [The Legend of Zelda: Skyward Sword HD](01002DA013484000/README.md) | `01002DA013484000` | 1.0.1 | 11.4.0 | Nintendo's Wii-era engine, ported by Tantalus | NVN |
 | [The Legend of Zelda: Tears of the Kingdom](0100F2C0115B6000/README.md) | `0100F2C0115B6000` | 1.4.3 | 20.5.22 | Nintendo EPD (sead / agl / gsys) | NVN |
 | [Tomodachi Life: Living the Dream](010051F0207B2000/README.md) | `010051F0207B2000` | 1.0.4 | 20 | Nintendo | NVN |
-| [Trails in the Sky 1st Chapter](01002C9022770000/README.md) | `01002C9022770000` | 1.0.4 | 19.3.13 | Nihon Falcom | NVN | <!-- PEANUTS -->
+| [Trails in the Sky 1st Chapter](01002C9022770000/README.md) | `01002C9022770000` | 1.0.7 | 21.4.4 | Nihon Falcom | NVN | <!-- PEANUTS -->
 | [Trails in the Sky 2nd Chapter](01007A2027548000/README.md) | `01007A2027548000` | 1.0.3 | 21.4.4 | Nihon Falcom | NVN | <!-- PEANUTS -->
 | [TRIANGLE STRATEGY](0100CC80140F8000/README.md) | `0100CC80140F8000` | 1.1.1 | 12.3.2 | Unreal Engine 4.27 | NVN |
 | [Unicorn Overlord](010069401ADB8000/README.md) | `010069401ADB8000` | 1.05 | 16.2.4 | Vanillaware's engine | NVN |

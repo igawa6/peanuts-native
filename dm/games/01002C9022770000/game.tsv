@@ -1,13 +1,13 @@
-# PEANUTS: Trails in the Sky 1st Chapter, Switch update 1.0.4, SDK 19.3.13, NVN.
+# PEANUTS: Trails in the Sky 1st Chapter, Switch update 1.0.7, SDK 21.4.4, NVN.
 title_id	01002C9022770000
 program_id	01002C9022770000
 name	Trails in the Sky 1st Chapter
 ipa	Trails-in-the-Sky-1st-Chapter.ipa
 app_category	public.app-category.role-playing-games
 
-build	v196608	1.0.4	main=2ad8cc7892ebf9fab667f6d218366c24	subsdk0=ca7f78a09c547c54beac3a33ed6bf364	sdk=7bba185a35ee9b4d0af66a4df910a823
-package	v196608
-shader_versions	v196608
+build	v393216	1.0.7	main=8963a531fa7f27a52323081ace0f2f6e	subsdk0=fc537f0b21c880e89d6f247d22a150ca	sdk=148394139d9d26ca8afd5c9ba5d30601
+package	v393216
+shader_versions	v393216
 modules	main subsdk0 sdk
 romfs_marker	multilang_resource_list.json
 zip_store	.mp4:.nxopus:.metallib
