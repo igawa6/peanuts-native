@@ -1399,3 +1399,14 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
 | `dm/games/01002B00111A2000/game.tsv`, `dm/games/01002B00111A2000/README.md` | 1, 1 | Hyrule Warriors: Age of Calamity on Android: frame limits Game owned, 30 and 60 (the frame step's targets), measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/01002B00111A2000/vk_prewarm.bin` | new | its Turnip prewarm seed (242 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+### account::GetUserId takes any handle (2026-11-21, GitHub issue #239)
+
+nxnative 84e63860 ported. The host aborted with `FATAL account::GetUserId: the handle was not issued by the host (0x2)` when a handle's third word was not the marker its own open calls write; the SDK's accessor copies the first 16 bytes and never reads that word. EA SPORTS FC 27 passes a handle it built for a second controller's player.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/hle_account.c` | 2 | the marker check removed from `GetUserId`; a comment on `HANDLE_MAGIC` | `PEANUTS begin(upstream-candidate)` |
+| `dm/host/tests/Makefile` | 2 | `t_account` built and run | `PEANUTS(upstream-candidate)`, `PEANUTS begin(upstream-candidate)` |
+| `dm/host/tests/t_account.c` | new | nxnative's test as it is | allow-listed in `peanuts/upstream-unmarked.txt` |
+| `docs/reference/services.md`, `dm/games/0100C49025D3E000/README.md` | 1 each | the reference entry and the game note's line | `PEANUTS begin(upstream-candidate)`, `PEANUTS(upstream-candidate)` |

@@ -59,6 +59,8 @@ On the Mac (2026-10-29): the accessibility settings, the EA SPORTS and FC 27 log
 
 General changes first needed here; each applies to every game on the same path:
 
+<!-- PEANUTS(upstream-candidate): nxnative 84e63860 -->
+- **Resolved: a second controller ended the game** (1.8d.6523, GitHub issue #239: an Xbox and a DUALSHOCK 4 controller on a Lenovo Legion Tab, not yet rerun with the fix on a phone): the game passes `account::GetUserId` a handle it built itself → [`account::GetUserId` copies the Uid of any handle](../../../docs/reference/services.md#accountgetuserid-copies-the-uid-of-any-handle).
 - **Resolved: a first run's black pitch blamed on the GPU driver** (Android) → [Background pipeline builds blamed on the GPU driver](../../../docs/reference/rendering.md#background-pipeline-builds-blamed-on-the-gpu-driver-android). <!-- PEANUTS -->
 - **Resolved: a text longer than a branch reaches** (185.6 MB): the rewriter splits the patch area in two → [Two patch areas for a text longer than a branch reaches](../../../docs/reference/rewriter.md#two-patch-areas-for-a-text-longer-than-a-branch-reaches).
 - **Resolved: no shader container found** → [CompiledBytecode resources in Frostbite superbundles](../../../docs/reference/shaders.md#compiledbytecode-resources-in-frostbite-superbundles) (`dm/gfx/tools/frostbite.py`).
