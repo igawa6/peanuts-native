@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The two colours of the Peanuts icons (drawable/pi_*.xml): the shell's ink and the kernel. dev.peanuts.ui.Icons applies one of the styles below
+         to a copy of the activity's theme and draws the icon with it; it looks them up by name, so a build without this folder keeps its emoji -->
+    <attr name="pnIconInk" format="color" />
+    <attr name="pnIconKernel" format="color" />
+
+    <!-- A row's tile, a page's button: the text colour, the kernel in the accent (yellow in the dark theme, deep gold on cream) -->
+    <style name="PeanutsIcon">
+        <item name="pnIconInk">@color/bn_text</item>
+        <item name="pnIconKernel">@color/bn_accent</item>
+    </style>
+    <!-- A sidebar or drawer entry that is not selected: the quieter text colour -->
+    <style name="PeanutsIconQuiet" parent="PeanutsIcon">
+        <item name="pnIconInk">@color/bn_text_2</item>
+    </style>
+    <!-- The selected entry, on banana yellow: shell and kernel in the brown of text on yellow -->
+    <style name="PeanutsIconOnBanana">
+        <item name="pnIconInk">@color/bn_on_banana</item>
+        <item name="pnIconKernel">@color/bn_on_banana</item>
+    </style>
+
+    <!-- The drawer of the sections on a phone (dev.peanuts.ui.SettingsPage): it slides in a little from the left and fades in (Motion.ENTER), out with a fade -->
+    <style name="PeanutsDrawer">
+        <item name="android:windowEnterAnimation">@anim/peanuts_drawer_in</item>
+        <item name="android:windowExitAnimation">@anim/peanuts_drawer_out</item>
+    </style>
+    <style name="PeanutsDrawerReduced">
+        <item name="android:windowEnterAnimation">@anim/peanuts_fade_in</item>
+        <item name="android:windowExitAnimation">@anim/peanuts_fade_out</item>
+    </style>
+</resources>

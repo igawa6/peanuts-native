@@ -29,6 +29,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'peanuts/games.json'
+APP_COPY = 'android/app/src/peanuts/res/raw/peanuts_games.json'
 GAMES = 'peanuts/games.tsv'
 READMES = ('README.md', 'peanuts/docs/README.github.md')
 TABLE_BEGIN = ('<!-- PEANUTS begin: the Supported games table, written by peanuts/scripts/games_catalog.py from peanuts/games.tsv, '
@@ -235,7 +236,7 @@ def refresh(root=ROOT, warn=print, fetch=companions):
 def outputs(root=ROOT, warn=print):
     """{path: text this script writes}; a README without its markers is left out, with a warning"""
     catalog = build(root, warn)
-    want = {'peanuts/games.json': render(catalog)}
+    want = {'peanuts/games.json': render(catalog), APP_COPY: render(catalog)}   # the app's About › Games reads its copy (a raw resource of the Peanuts app)
     for name in READMES:
         path = root / name
         text = readme(path.read_text(encoding='utf-8'), catalog) if path.is_file() else None
@@ -258,6 +259,7 @@ def main(argv, root=ROOT):
             print('game catalog and games tables: up to date')
         return 1 if stale else 0
     for n in stale:
+        (root / n).parent.mkdir(parents=True, exist_ok=True)
         (root / n).write_text(want[n], encoding='utf-8', newline='\n')
     print(f'game catalog: {len(json.loads(want["peanuts/games.json"])["games"])} games; written: {", ".join(stale) or "nothing, all up to date"}')
     return 0

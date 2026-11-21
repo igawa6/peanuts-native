@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings' drawer closes (Motion.EXIT, 120 ms): it fades out and goes 8 % of its width back to the left -->
+<set xmlns:android="http://schemas.android.com/apk/res/android" android:interpolator="@interpolator/peanuts_in" android:shareInterpolator="true">
+    <alpha android:fromAlpha="1" android:toAlpha="0" android:duration="120" />
+    <translate android:fromXDelta="0" android:toXDelta="-8%" android:duration="120" />
+</set>

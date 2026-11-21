@@ -201,7 +201,29 @@ public final class BuildService extends Service {
         }
     }
 
+    /**
+     * Peanuts cracked (dev.peanuts.ui.Cracked): the game version this build made, from its job.json ("version": 0 for the base game, else the update's
+     * number), and the shaders this build prepared (its shaders step's total, when this build wrote the job: "Already prepared" and a pack that fitted
+     * prepared none). A version counted before adds nothing
+     */
+    private void cracked(BuildRequest r, File dump, long since) {
+        long version = -1, shaders = 0;
+        try {
+            File jf = Upstream.jobFileOf(Upstream.workOf(dump, r.titleId));
+            if (jf.isFile()) {
+                org.json.JSONObject o = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(jf.toPath()), java.nio.charset.StandardCharsets.UTF_8));
+                version = o.optLong("version", -1);
+                org.json.JSONObject steps = o.optJSONObject("steps"), sh = steps == null ? null : steps.optJSONObject("shaders");
+                if (sh != null && jf.lastModified() >= since) shaders = Math.max(0, sh.optLong("total", 0));
+            }
+        } catch (ReflectiveOperationException | IOException | org.json.JSONException e) {
+            Log.w(TAG, "peanuts cracked: the build's job is not readable: " + e);
+        }
+        dev.peanuts.ui.Cracked.built(this, r.titleId, version < 0 ? null : "v" + version, shaders);
+    }
+
     private void run(BuildRequest r) {
+        final long startedAt = System.currentTimeMillis();
         boolean ok = false;
         String message;
         String code = BuildListener.OTHER;
@@ -237,6 +259,7 @@ public final class BuildService extends Service {
             }
             if (prepareFailed != null) throw prepareFailed;
             ok = true;
+            cracked(r, dump, startedAt);
             message = name + " is ready to play." + shadersLeftOut(r, dump);
             progress("done", 100, message);
         } catch (IOException e) {

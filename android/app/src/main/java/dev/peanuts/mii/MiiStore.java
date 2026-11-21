@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.Random;
 
 /**
- * The player's own Miis (Settings › Miis): each one a name, a create ID and the fields of a console CharInfo (nn::mii, 0x58 bytes), kept in files/mii/miis.tsv. Every
+ * The player's own Miis (Settings › Users › Miis): each one a name, a create ID and the fields of a console CharInfo (nn::mii, 0x58 bytes), kept in files/mii/miis.tsv. Every
  * save also writes files/mii/database.bin for the host ("PNMII1\0\0", a u32 count, the CharInfo records; dm/host/hle_mii.c reads it as DM_MII_DB), where games list
  * these Miis as the console's own. The ranges are the ones CharInfoRaw::Verify checks; a value outside them is clamped, so a game never refuses a Mii.
  * No Android classes: MiiStoreJvmTest runs it on the JVM.

@@ -52,7 +52,7 @@ final class PadFocus {
             if (now == null || now.isInTouchMode() || now instanceof EditText || now instanceof ListView) return;
             lit[0] = now;
             old[0] = now.getForeground();
-            now.setForeground(frame(now.getContext()));
+            now.setForeground(dev.peanuts.ui.FocusFrame.at(now, frame(now.getContext())));   // PEANUTS: where the view shows, also on a one-line button or tab, whose text scrolls far (dev.peanuts.ui.FocusFrame)
         });
     }
 

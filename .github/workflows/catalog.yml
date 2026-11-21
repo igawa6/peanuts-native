@@ -54,7 +54,7 @@ jobs:
       - name: Commit what changed
         run: |
           # staged first: git diff alone does not see a file that is new
-          git add peanuts/games.json peanuts/games.tsv README.md peanuts/docs/README.github.md .github/ISSUE_TEMPLATE
+          git add peanuts/games.json android/app/src/peanuts/res/raw/peanuts_games.json peanuts/games.tsv README.md peanuts/docs/README.github.md .github/ISSUE_TEMPLATE   # PEANUTS: and the app's copy of the catalog (About › Games)
           if git diff --cached --quiet; then
             echo "catalog and forms are up to date"
             exit 0

@@ -117,7 +117,7 @@ public final class PeanutsPrefs {
     public static void setupDone(Context c, boolean on) { of(c).edit().putBoolean("setup_done", on).apply(); }
 
     /** Off by default: dev.peanuts.Companion only shows the chains/scan developer readout on the second display (instead of leaving it free) when this is on -
-     * a long press on Settings › Library › Companions toggles it (LibrarySettings). A title with no companion package normally gets no second-screen window at
+     * a long press on Settings › Screens › Companions toggles it (LibrarySettings). A title with no companion package normally gets no second-screen window at
      * all, so the AYN Thor's own launcher stays on Screen-2, exactly as without Peanuts. */
     public static boolean developerReadout(Context c) { return of(c).getBoolean("developer_readout", false); }
     public static void developerReadout(Context c, boolean on) { of(c).edit().putBoolean("developer_readout", on).apply(); }

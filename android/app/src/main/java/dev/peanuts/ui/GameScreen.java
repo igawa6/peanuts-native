@@ -21,7 +21,7 @@ import dev.peanuts.PeanutsPrefs;
 
 /**
  * The game's side of the second display (game process, Companion): the start page until its companion is up,
- * or the game's cover in place of one (Settings › Library › Games without a companion).
+ * or the game's cover in place of one (Settings › Screens › Games without a companion).
  */
 public final class GameScreen extends Presentation {
     public static final int LOADING = 0, PLAYING = 1;

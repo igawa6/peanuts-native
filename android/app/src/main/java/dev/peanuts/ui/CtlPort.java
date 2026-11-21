@@ -101,8 +101,8 @@ public final class CtlPort {
         LibraryScanner.Source up = GameSheet.storedUpdate(a, t);
         if (up != null && !up.file.exists()) return new String[] {"file_missing", "The update file is no longer where the app found it: " + up.file.getName()};
         if (t.home == null) return new String[] {"no_game_dir", "Set the game folder first (Settings › Library)."};
-        if (!PeanutsPrefs.hasKeys(a)) return new String[] {"no_keys", "Add your keys first (Settings › Library), then build."};
-        if (!PeanutsPrefs.hasFonts(a)) return new String[] {"no_firmware", "Add your firmware first (Settings › Library), then build."};
+        if (!PeanutsPrefs.hasKeys(a)) return new String[] {"no_keys", "Add your keys first (Settings › Console), then build."};
+        if (!PeanutsPrefs.hasFonts(a)) return new String[] {"no_firmware", "Add your firmware first (Settings › Console), then build."};
         if (!anyway && GameSheet.wouldAsk(a, t))
             return new String[] {"wrong_version", "This version is not one of this app's versions of " + t.name + ": the sheet asks \"Build anyway?\" first. The job command's try_anyway with this title_id gives that answer."};
         GameSheet.State s = GameSheet.resumeState(a, t, CompanionPort.forTitle(Library.catalogNow(), t.titleId));
@@ -126,8 +126,8 @@ public final class CtlPort {
         if (t.status == LibraryScanner.Status.NO_PROFILE) return new String[] {"not_in_app", String.valueOf(Upstream.profileMissing(t.titleId, t.name))};
         if (BuildPipeline.running() != 0 || lib.building(titleId)) return new String[] {"busy", "A build is running now. Wait for it to finish."};
         if (t.base == null || !t.base.isNup()) return new String[] {"not_a_nup", "Import again makes a game's .nup anew: " + t.name + " has none (" + (t.base == null ? "no base game found" : t.base.file.getName()) + ")."};
-        if (!PeanutsPrefs.hasKeys(a)) return new String[] {"no_keys", "Add your keys first (Settings › Library), then import."};
-        if (!PeanutsPrefs.hasFonts(a)) return new String[] {"no_firmware", "Add your firmware first (Settings › Library), then import."};
+        if (!PeanutsPrefs.hasKeys(a)) return new String[] {"no_keys", "Add your keys first (Settings › Console), then import."};
+        if (!PeanutsPrefs.hasFonts(a)) return new String[] {"no_firmware", "Add your firmware first (Settings › Console), then import."};
         dev.peanuts.build.Reimport.Plan p = GameSheet.plan(a, t);
         data.put("nup", p.nup.getPath());
         data.put("old_bytes", p.oldBytes);

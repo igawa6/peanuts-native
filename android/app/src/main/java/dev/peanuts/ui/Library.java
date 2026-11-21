@@ -1456,7 +1456,7 @@ public final class Library {
                     left = PUi.button(a, "Free up space", PUi.Kind.TONAL, v -> {
                         Haptics.play(v, Haptics.Word.CLICK);
                         try { a.startActivity(new android.content.Intent(android.provider.Settings.ACTION_INTERNAL_STORAGE_SETTINGS)); }
-                        catch (RuntimeException e) { Toast.makeText(a, "Open Settings › Storage to free some space.", Toast.LENGTH_LONG).show(); }
+                        catch (RuntimeException e) { Toast.makeText(a, "Open Settings › Library › Storage to free some space.", Toast.LENGTH_LONG).show(); }
                     });
                     right = PUi.button(a, "Retry", PUi.Kind.SOFT, Haptics.on(Haptics.Word.CLICK, v -> openSheet.run()));
                     break;
@@ -1534,8 +1534,8 @@ public final class Library {
         // Keys and firmware fonts are a one-time setup requirement (owner, 2026-11-13), checked here as a cheap file-presence gate for every entry point
         // that can start a build (the sheet's Build/Build anyway/Rebuild, and Resume below): GameSheet already disables its Build button for the same
         // reason, so this is only a last line of defense, never a per-build re-validation against the importer.
-        if (!PeanutsPrefs.hasKeys(a)) return "Add your keys first (Settings › Library), then build.";
-        if (!PeanutsPrefs.hasFonts(a)) return "Add your firmware first (Settings › Library), then build.";
+        if (!PeanutsPrefs.hasKeys(a)) return "Add your keys first (Settings › Console), then build.";
+        if (!PeanutsPrefs.hasFonts(a)) return "Add your firmware first (Settings › Console), then build.";
         BuildRequest r = new BuildRequest();
         r.titleId = s.titleId; r.name = s.name; r.base = s.base; r.update = s.update;
         r.dlcs = new ArrayList<>(s.dlcs);

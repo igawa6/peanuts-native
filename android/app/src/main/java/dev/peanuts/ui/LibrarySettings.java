@@ -209,7 +209,7 @@ public final class LibrarySettings {
 
     // ---- Pickers ----
 
-    /** The keys picker (Settings › Library › Keys, the first-run card, the sheet's Add keys…) */
+    /** The keys picker (Settings › Console › Keys, the first-run card, the sheet's Add keys…) */
     public static void pickKeys(Activity a) {
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -233,7 +233,7 @@ public final class LibrarySettings {
         a.startActivityForResult(i, request);
     }
 
-    /** Settings › Library › Firmware fonts: a folder of extracted NCAs (the old way), or a firmware .zip with the same NCAs flat inside it (stored
+    /** Settings › Console › Firmware: a folder of extracted NCAs (the old way), or a firmware .zip with the same NCAs flat inside it (stored
      * or deflated — users usually have firmware as a zip, not pre-extracted) */
     static void pickFirmwareSource(Activity a) {   // also the game sheet's and the first-run card's firmware buttons
         LinearLayout box = new LinearLayout(a);

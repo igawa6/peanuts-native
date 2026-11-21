@@ -35,6 +35,7 @@ public final class GameReturn {
     /** A game's screen is being started with these extras (Home's Play, a shortcut or a frontend): kept for {@link #back}. */
     public static void remember(Context c, String titleId, String name, String game, String pack) {
         if (titleId == null || game == null || pack == null) return;
+        dev.peanuts.ui.Cracked.starting(c, titleId);   // Peanuts cracked: a game's first start, and the time the run before it was played
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString("title_id", titleId).putString("name", name == null ? "" : name).putString("game", game).putString("pack", pack).apply();
     }

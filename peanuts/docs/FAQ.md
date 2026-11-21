@@ -4,8 +4,8 @@ For version 0.1.6. Labels in **bold** are the words the app shows. "Settings" is
 
 ## Quick answers
 
-- **Build is off, or a game stops at startup:** add your keys and firmware in Settings › Library (**Keys**, **Firmware**), then build or play again. See [Keys and firmware](#keys-and-firmware).
-- **Black screen, wrong picture or a crash at start:** pick another GPU driver in Settings › **GPU driver**, then run Settings › **Readiness check**. See [GPU drivers](#gpu-drivers).
+- **Build is off, or a game stops at startup:** add your keys and firmware in Settings › Console (**Keys**, **Firmware**), then build or play again. See [Keys and firmware](#keys-and-firmware).
+- **Black screen, wrong picture or a crash at start:** pick another GPU driver in Settings › Graphics › **GPU driver**, then run Settings › Help › **Readiness check**. See [GPU drivers](#gpu-drivers).
 - **A cover says Wrong version:** the update you have is not one this app version supports. See [What does "Wrong version" mean?](#what-does-wrong-version-mean-and-how-do-i-fix-it)
 - **The app closes as soon as it opens, on version 0.1.1 or 0.1.2:** on Android 13 or older those two versions close when they find a newer release. Install 0.1.3 or later by hand from the project's [releases page](https://github.com/igawa6/peanuts-native/releases); your games, saves and settings stay. Until then the app opens with Wi-Fi off.
 - **The companion is empty or keeps waiting after an app update:** hold the game's cover, open **Storage**, tap **Build again**, then **Rebuild**.
@@ -22,7 +22,7 @@ You need three things from your own console first: your game dumps, your `prod.k
 4. Optional: tap **Updates & DLC** if your update or DLC files are in other folders. Set **Update folder** and **DLC folder**, then **Done**. Skip this if everything is inside the game folder.
 5. Tap **Firmware**, then **Folder** or **Zip file**, and pick your firmware dump. The row reads **Reading the firmware…** and then **Firmware added from …**. Do this after the keys: the fonts cannot be read without them.
 6. Tap **Show my games**. You should see a grid of covers. A game that can be built has a **Build** label on its cover.
-7. Optional: install a GPU driver in Settings › **GPU driver**. See [Which driver is recommended?](#which-driver-is-recommended)
+7. Optional: install a GPU driver in Settings › Graphics › **GPU driver**. See [Which driver is recommended?](#which-driver-is-recommended)
 8. Tap a cover. Its sheet opens with the rows **Base**, **Update**, **DLC** and **Companion**. Check them and tap **Build**. Android asks to allow notifications: allow it, so you can see the progress outside the app.
 9. Wait. The cover shows **Building · N %**. You can leave the app.
 10. When the build ends you see **… is ready to play.** and the cover gets a green check. Tap the cover to play.
@@ -86,7 +86,7 @@ Both come from your own console. The app contains no keys and no firmware, and i
 
 ### How do I add my keys?
 
-1. Open Settings › Library › **Keys**. The same row is on the first-run card, and a game's sheet has **Add keys…** while keys are missing.
+1. Open Settings › Console › **Keys**. The same row is on the first-run card, and a game's sheet has **Add keys…** while keys are missing.
 2. The file picker opens with the hint **Pick your prod.keys**. Pick the `prod.keys` file from your own console. A file larger than 1 MB is refused.
 3. The app copies the file into its own storage and checks it.
 
@@ -98,12 +98,12 @@ The file is not a usable `prod.keys`. The message names what is missing, for exa
 
 ### A build stops with "prod.keys has no titlekek_…". What now?
 
-Your keys do not have the key this game or update needs. This usually means the keys were dumped on an older firmware than the game needs. Dump the keys again from your own console after updating it, then pick the new file in Settings › Library › **Keys**.
+Your keys do not have the key this game or update needs. This usually means the keys were dumped on an older firmware than the game needs. Dump the keys again from your own console after updating it, then pick the new file in Settings › Console › **Keys**.
 
 ### How do I add the firmware?
 
 1. Add your keys first. Without keys the firmware cannot be read.
-2. Open Settings › Library › **Firmware**. The same row is on the first-run card, and a game's sheet has **Choose firmware…** while fonts are missing.
+2. Open Settings › Console › **Firmware**. The same row is on the first-run card, and a game's sheet has **Choose firmware…** while fonts are missing.
 3. A small sheet **Firmware** asks: **Folder** or **Zip file**.
    - **Folder**: pick the folder your firmware dump is extracted into (hint: **Pick your firmware folder**). The app looks for `.nca` files in it, up to three folders deep.
    - **Zip file**: pick the firmware `.zip` (hint: **Pick your firmware zip**), with the `.nca` files inside it.
@@ -222,8 +222,8 @@ It is a try, not a supported path. If it fails, use the supported update and bui
 
 Every game needs a profile built into the app. This app version has none for that game, so it cannot be built or played. There is no Build button for it: its sheet only says **This app version does not include … Install a build that includes it.**
 
-- To see which games this version includes: Settings › scroll to **About** › **Games in this app:**. The list has each game's name and title ID.
-- Check for a newer app version: Settings › **Check for updates**, or the project's releases page.
+- To see which games this version includes: Settings › **About** › **Games**. Each card has the game's name and the version this app builds; **New in** shows the games that came with this version.
+- Check for a newer app version: Settings › App › **Check for updates**, or the project's releases page.
 - If no version includes it, you can ask in the GitHub issues. Give the game's name and its title ID (the sheet shows it).
 
 How the three labels differ:
@@ -258,7 +258,7 @@ The games tested for 0.1.1 were Link's Awakening, Echoes of Wisdom, Fire Emblem:
 
 The 0.1.5 verification build was checked on an AYN Thor with Turnip v26.2.0 R5. Demon Slayer 2 reached the playable rooftop fight against Daki at about 30 fps. Tears of the Kingdom reached the opening cave and responded to movement. Kirby and the Forgotten Land prepared all 418 pipeline keys on its first launch, then reused the cache on relaunch. The other six additions have earlier, game-specific device checks.
 
-Settings › **About** lists the games of the app you have installed, each with its title ID.
+Settings › **About** › **Games** lists the games of the app you have installed, each with the version it builds.
 
 ### Why does building take so long?
 
@@ -279,7 +279,7 @@ The app asks for the notification permission at your first build. Without it the
 
 ### What happens if the build is interrupted or the device sleeps?
 
-What is written so far stays. The game's card shows **Build stopped** with **Resume** or **Retry**, and the next build picks up what it can. If it keeps stopping, send its **Share build log** (see "A build failed, stopped or the app closed during it"). If the screen going off stops the build on your device, turn on Settings › **Keep the screen on while preparing** and keep the device charging. A build can also pause by itself for heat or battery and then continue.
+What is written so far stays. The game's card shows **Build stopped** with **Resume** or **Retry**, and the next build picks up what it can. If it keeps stopping, send its **Share build log** (see "A build failed, stopped or the app closed during it"). If the screen going off stops the build on your device, turn on Settings › Screens › **Keep the screen on while preparing** and keep the device charging. A build can also pause by itself for heat or battery and then continue.
 
 ### It sits at the same percentage for a long time. Is it stuck?
 
@@ -380,7 +380,7 @@ A game built by an older version whose original was deleted before that, and who
 ### How do I free up storage?
 
 - Settings › Library › **Free up space** deletes the original dump of a game that is already built. The game keeps playing from its built copy, and keeps its cover. Keep the original if you will add a later game update.
-- Settings › **Storage** removes leftovers and old files. It never removes saves.
+- Settings › Library › **Storage** removes leftovers and old files. It never removes saves.
 
 ## Playing
 
@@ -394,17 +394,25 @@ Games take the handheld's own buttons and sticks, external controllers and on-sc
 
 Most supported games run at 60 fps on the Thor. Animal Crossing: New Horizons runs at 30, as on the Switch. A few games that are 30 on the Switch run at 60 here because the app changes the game's frame step, for example Octopath Traveler 0 and Pokémon Sword. Some games lower their own rate in heavy scenes. The speed settings are **Frame rate cap**, **Hold 60 fps** and **Full game speed**.
 
+### What is Peanuts cracked?
+
+The count on Settings › **About**. A peanut cracks open each time you tap one on the drifting background, and the count also grows as you use the app: 25 for building a game version you had not built before, 1 for every 1,000 shaders that build prepared, 5 for every hour you play, 10 for a game's first start and 5 for your first own Mii. Building the same version again (**Import again**, **Rebuild**) adds nothing. The bananas you popped before are part of it. On a dual-screen device the second screen shows the count and the next milestone while About is open.
+
+### How do I find a setting?
+
+Settings has ten sections: Library, Console, Graphics, Controls, Screens, Users, App, Help, Developer and About. On a wide screen such as the AYN Thor they are listed on the left; on a tablet they are tiles across the screen (tap one, Back returns to the tiles); on a phone the button with three lines opens the list. The search button at the top of each section finds a row in any section by its name, a word of what it does or its value, and the matching switches of Advanced. Tap a result to go to it.
+
 ### Is there frame generation or upscaling?
 
 - **Frame generation** needs your own `Lossless.dll` from Lossless Scaling. It is never part of the app.
 - **Upscaler** offers Nearest neighbor, Bilinear, FSR 1, Native and SGSR 1, with **FSR sharpness**.
 - **Resolution** and **Dynamic resolution** appear for games that support them.
 
-Some of these rows show only with Settings › **Tester settings** on.
+Some of these rows show only with Settings › Developer › **Tester settings** on.
 
 ### Can I choose docked or handheld mode?
 
-Yes. **Console mode** is in Settings › Performance and picture and in each game's settings (hold the cover › **Performance** › Picture). **Docked** makes the game draw as it does on a TV, up to 1080p. **Handheld** makes it draw as on the Switch's own screen, up to 720p: that is lighter, so it can hold a higher frame rate, and the app's upscaler fills the screen. Handheld also turns on the game's touch screen. With nothing chosen, each game uses its own mode, which is Docked for most.
+Yes. **Console mode** is in Settings › Graphics and in each game's settings (hold the cover › **Performance** › Picture). **Docked** makes the game draw as it does on a TV, up to 1080p. **Handheld** makes it draw as on the Switch's own screen, up to 720p: that is lighter, so it can hold a higher frame rate, and the app's upscaler fills the screen. Handheld also turns on the game's touch screen. With nothing chosen, each game uses its own mode, which is Docked for most.
 
 The row applies from the next start. To change it while you play, open the in-game panel: **Console mode** is at the top of its first tab, above **Frame rate cap**. It changes at once, as when a Switch leaves its dock, and is kept for that game. Some games take the new picture size only at their next scene or their next start.
 
@@ -412,13 +420,13 @@ A few games are fixed to Handheld because they need the touch screen or the poin
 
 ### Can I make a game sharper, or lighter, than its own resolution?
 
-Yes. **Resolution scale** is in Settings › Performance and picture and in each game's settings (hold the cover › **Performance** › Picture). It draws the game's picture at a multiple of the size the game itself asks for: **1.25x**, **1.5x** or **2x** is sharper and asks more of the GPU, **0.75x** or **0.5x** is lighter and the app's upscaler fills the screen. **1x** is the game's own size. A game in Handheld mode draws at 720p, so 1.5x gives it exactly a 1080p screen. The choice applies from the next start.
+Yes. **Resolution scale** is in Settings › Graphics and in each game's settings (hold the cover › **Performance** › Picture). It draws the game's picture at a multiple of the size the game itself asks for: **1.25x**, **1.5x** or **2x** is sharper and asks more of the GPU, **0.75x** or **0.5x** is lighter and the app's upscaler fills the screen. **1x** is the game's own size. A game in Handheld mode draws at 720p, so 1.5x gives it exactly a 1080p screen. The choice applies from the next start.
 
 It works on the app's side, so it is there for every game, but not every part of a picture follows it. Some effects (a blur, an outline, anti-aliasing) are made for the game's own size and can look a little different, and a game that reads its picture back, or passes it through its own upscaler, keeps that part at 1x. If a game looks wrong with it, set it back to 1x for that game and tell us which game and which scale. Games that have their own **Resolution** and **Upscaling quality** rows do not show this one.
 
 ### What is Tester settings?
 
-A switch in Settings › Help. Off, a game that has **Resolution** choices shows just those. On, it also shows the rows made for testing: advanced resolution, **Upscaler** and **Dynamic resolution**. Leave it off unless you are trying things out or were asked to change one of those rows.
+A switch in Settings › Developer. Off, a game that has **Resolution** choices shows just those. On, it also shows the rows made for testing: advanced resolution, **Upscaler** and **Dynamic resolution**. Leave it off unless you are trying things out or were asked to change one of those rows.
 
 ### Where are a game's own settings, such as its language?
 
@@ -426,7 +434,7 @@ Hold its cover. The page has four tabs: **Performance**, **Game**, **Saves** and
 
 ### Can I turn off the vibration and the animations in the app?
 
-Yes. **Settings › Library** has two rows. **Haptics** is **System** or **Off**. **Motion** is **System** or **Reduced**. With **System**, the app also follows Android's own touch feedback and remove animations settings.
+Yes. **Settings › App** has two rows. **Haptics** is **System** or **Off**. **Motion** is **System** or **Reduced**. With **System**, the app also follows Android's own touch feedback and remove animations settings.
 
 ### Where are my saves, and can I import one?
 
@@ -437,7 +445,7 @@ Saves are in the app's own storage, under `saves/<title ID>`. The **Saves** tab 
 Every run of a game writes a log. To send it:
 
 - one game's newest log: hold its cover › **Storage** tab › **Share log**;
-- the newest log of any run, including a Graphics self-test: Settings › **Share log**.
+- the newest log of any run, including a Graphics self-test: Settings › Help › **Share log**.
 
 After a crash the app's notice has a **Share log** button for that run.
 
@@ -448,7 +456,7 @@ After a crash the app's notice has a **Share log** button for that run.
 - the game's card on Home while its build is stopped or failed;
 - the Prepare card while its job has failed or is paused, and in its **⋯** menu;
 - hold the game's cover › **Storage** tab › **Share build log**;
-- Settings › **Share log**, which asks whether you want the newest game run or the newest build when a build changed after the last run.
+- Settings › Help › **Share log**, which asks whether you want the newest game run or the newest build when a build changed after the last run.
 
 The sheet says how many files the `.zip` holds and how big it is. Tap **Share**, or **Save to a folder** and attach the file from there. It holds:
 
@@ -503,7 +511,7 @@ The page shows **Installed and picked** with the driver's name, or **Not install
 
 For all games:
 
-1. Open Settings › **GPU driver**.
+1. Open Settings › Graphics › **GPU driver**.
 2. Pick **System** or an installed driver, then go back.
 
 For one game:
@@ -516,7 +524,7 @@ What you should see: the row shows the name you picked. A game's own choice wins
 
 ### How do I go back to the system driver, or remove a driver?
 
-Go back: Settings › **GPU driver** › **System (the phone's own driver)**. For one game, set its own **GPU driver** row to **Default** or **System**.
+Go back: Settings › Graphics › **GPU driver** › **System (the phone's own driver)**. For one game, set its own **GPU driver** row to **Default** or **System**.
 
 Remove:
 
@@ -525,8 +533,8 @@ Remove:
 
 ### How do I check which driver a game really used?
 
-- **Settings row.** Settings › **GPU driver** shows **System** or the picked driver's name.
-- **Readiness check.** Settings › **Readiness check**, section **GPU**. The line **GPU and driver** names the GPU, its Vulkan version and the driver, and ends with **the system's driver** or **custom driver** and its name. **GPU driver picked** shows your choice. A game with its own driver has a line **Its own GPU driver**.
+- **Settings row.** Settings › Graphics › **GPU driver** shows **System** or the picked driver's name.
+- **Readiness check.** Settings › Help › **Readiness check**, section **GPU**. The line **GPU and driver** names the GPU, its Vulkan version and the driver, and ends with **the system's driver** or **custom driver** and its name. **GPU driver picked** shows your choice. A game with its own driver has a line **Its own GPU driver**.
 - **Graphics self-test.** Since 0.1.1 it runs on the driver picked in Settings. Its log has the line `graphics selftest: GPU driver: system` or `graphics selftest: GPU driver:` and the driver's name.
 - **Game log.** Near the top, look for `GPU driver: system` or `GPU driver:` and the driver's name, followed by `(picked in the launcher; …)`. With a custom driver the log also has `[nxlaunch] env DM_VK_DRIVER=…` and `[vk] custom GPU driver: …`. The line `[vk] driver: …` names the driver that really ran. A line with `the system driver is used` means the custom driver could not be loaded.
 
@@ -536,7 +544,7 @@ Remove:
 2. Open a source under **Add a driver** to try a different release.
 3. Try a driver from another source in the list.
 4. If only one game is affected, give that game its own driver (hold the cover › **Performance** › **GPU driver**) and leave the others alone.
-5. Run Settings › **Readiness check** and **Graphics self-test** on the new driver.
+5. Run Settings › Help › **Readiness check** and **Graphics self-test** on the new driver.
 
 The first start on a new driver can stutter or show objects late, because each driver builds its own pipeline cache. Judge it on the second start.
 
@@ -548,9 +556,9 @@ No. The custom drivers the app can install are for Adreno GPUs only. On a Mali, 
 
 ### What do the Readiness check and the Graphics self-test tell me?
 
-Settings › **Readiness check** checks Android, memory, file access, the GPU, the picked driver and each game's needs. Its verdict is **Ready**, **Ready, with limits** or **Not ready**, and a failed item has a button that opens the fix, such as **Pick a GPU driver** or **Allow file access**. **Run again** repeats it, and **Copy report** copies the text for a bug report. If you change the driver while it is open, leave the screen and open it again.
+Settings › Help › **Readiness check** checks Android, memory, file access, the GPU, the picked driver and each game's needs. Its verdict is **Ready**, **Ready, with limits** or **Not ready**, and a failed item has a button that opens the fix, such as **Pick a GPU driver** or **Allow file access**. **Run again** repeats it, and **Copy report** copies the text for a bug report. If you change the driver while it is open, leave the screen and open it again.
 
-Settings › **Graphics self-test** needs no game. It draws a test picture for a few seconds and ends in **PASS** or **FAIL**, with a return code. Since 0.1.1 it runs on the driver you picked. A FAIL on the system driver with a PASS on a custom one means: use the custom one.
+Settings › Help › **Graphics self-test** needs no game. It draws a test picture for a few seconds and ends in **PASS** or **FAIL**, with a return code. Since 0.1.1 it runs on the driver you picked. A FAIL on the system driver with a PASS on a custom one means: use the custom one.
 
 When a game starts, the app runs the same check for that game on that game's driver. If something required is missing you see **Not ready for this game** with **Try anyway**.
 
@@ -609,13 +617,15 @@ The game the controller is on, and what you can do with it:
 
 With a controller connected, each button shows the controller button that does the same: **A** is the main action, **Y** the second one, **X** opens Settings. Without one, they show the app's own icons (the gear for Settings). You can always tap them. The controller always stays on the main screen. While a question or a game's sheet is open on the main screen, the second screen dims and waits until it closes. The drifting peanuts behind both screens are one background: they carry on from one screen to the other.
 
-During a game without a companion the second screen is Android's, as before. Settings › Library › **Games without a companion** keeps the game's cover there instead.
+In Settings, the second screen explains what the D-pad is on: a section with its rows and their values, or a row with what it does, its value now and the app default. A switch can be flipped there too.
 
-On Home, open Settings with the top-screen gear or press **X**, as shown under the gear. The second screen also has a Settings button. To give the second screen back to Android while you are in the launcher, turn off Settings › Library › **Bottom screen**. This setting controls the launcher and the optional cover shown while playing without a companion.
+During a game without a companion the second screen is Android's, as before. Settings › Screens › **Games without a companion** keeps the game's cover there instead.
+
+On Home, open Settings with the top-screen gear or press **X**, as shown under the gear. The second screen also has a Settings button. To give the second screen back to Android while you are in the launcher, turn off Settings › Screens › **Bottom screen**. This setting controls the launcher and the optional cover shown while playing without a companion.
 
 ### Which games have a companion?
 
-Settings › Library › **Companions** shows the catalog: **Your games** first, then **Other companions · add the game first**. Most games on the tested list have a companion: the README's table says which. The catalog is read online, so the list can change without an app update.
+Settings › Screens › **Companions** shows the catalog: **Your games** first, then **Other companions · add the game first**. Most games on the tested list have a companion: the README's table says which. The catalog is read online, so the list can change without an app update.
 
 ### How do I install a companion for the first time?
 
@@ -627,7 +637,7 @@ With the build (the usual way):
 
 Later, for a game that is already built:
 
-1. Open Settings › Library › **Companions**.
+1. Open Settings › Screens › **Companions**.
 2. Find the game under **Your games** and tap **Install**.
 3. Wait for the line at the top to read **Installed …**.
 
@@ -637,8 +647,8 @@ What you should see: the row reads **installed** with the version and **up to da
 
 ### How do I see which version is installed, update it, or go back to an earlier one?
 
-- **See the version:** the **Companion** row in the game's sheet, in Settings › Library › **Companions**, or in the game's **Game** tab. It reads **installed** and the version, then **up to date** or the newer version that is available.
-- **Update:** tap **Update** in Settings › Library › **Companions** or in the game's **Game** tab. **Rebuild** also updates it.
+- **See the version:** the **Companion** row in the game's sheet, in Settings › Screens › **Companions**, or in the game's **Game** tab. It reads **installed** and the version, then **up to date** or the newer version that is available.
+- **Update:** tap **Update** in Settings › Screens › **Companions** or in the game's **Game** tab. **Rebuild** also updates it.
 - **Go back to an earlier version:**
   1. Open the game's sheet and tap **Versions…** (in the game's **Game** tab the button is **Versions**).
   2. The sheet lists every release, newest first, with its date and size. The installed one is marked **installed**. Tap a row to read its release notes.
@@ -650,7 +660,7 @@ Each download is checked against its published checksum. A release without a che
 
 ### How do I remove a companion, or turn the second screen off for one game?
 
-Remove: tap **Remove** in Settings › Library › **Companions** or in the game's **Game** tab, or **Remove companion** in the Versions sheet. Close the game first. The game and its saves stay, and the catalog can install the companion again.
+Remove: tap **Remove** in Settings › Screens › **Companions** or in the game's **Game** tab, or **Remove companion** in the Versions sheet. Close the game first. The game and its saves stay, and the catalog can install the companion again.
 
 Turn it off without removing it:
 
@@ -685,7 +695,7 @@ The companions are published with screenshots and a description of each at https
 
 The catalog is read from the internet each time. Offline:
 
-- Settings › Library › **Companions** shows **Catalog unavailable:** and you cannot install or update.
+- Settings › Screens › **Companions** shows **Catalog unavailable:** and you cannot install or update.
 - A game's sheet may read **No companion in the catalog for this game** even though one exists. Go online and tap Settings › Library › **Rescan**.
 - A build still finishes. The game is ready to play without the companion, and you can install it later.
 - A companion that is already installed keeps working. It is on the device.
@@ -737,8 +747,8 @@ Once it reads **Ready**, every start of the game uses the mods that are on: the 
 
 ### The game crashes at start or shows a black screen. What should I check?
 
-1. Settings › **Readiness check**.
-2. The firmware (Settings › Library › **Firmware**).
+1. Settings › Help › **Readiness check**.
+2. The firmware (Settings › Console › **Firmware**).
 3. Another GPU driver.
 4. The game update: **You have** in the game's sheet must be a version under **This build supports**.
 5. **Build again**, if the app was updated since the build.
@@ -757,7 +767,7 @@ Out of memory, typically on an 8 GB device: update to 0.1.1 or later, which buil
 
 Open an issue at https://github.com/igawa6/peanuts-native/issues and pick the form that fits:
 
-- **Game problem**: a game crashes, freezes, shows a black screen, draws wrong, runs slowly, or its sound, controls or saves misbehave. It asks for the log of that run: hold the game's cover › **Storage** › **Share log** right after the problem, before you start the game again, or Settings › **Share log**. Its file name starts with the game's title ID.
+- **Game problem**: a game crashes, freezes, shows a black screen, draws wrong, runs slowly, or its sound, controls or saves misbehave. It asks for the log of that run: hold the game's cover › **Storage** › **Share log** right after the problem, before you start the game again, or Settings › Help › **Share log**. Its file name starts with the game's title ID.
 - **Build problem**: adding a game went wrong (the import, Prepare or the companion fails, stops, never finishes, or the app closes during it). It asks for the `.zip` of **Share build log**, attached as it is.
 - **Setup or app problem**: keys, firmware, the game folder and the library (a missing game, **Wrong version**, **File gone**), storage, installing a driver, a companion or a mod, saves, the second screen, or the app itself.
 - **Desktop builder problem**: building a game on a computer ([BUILDER.md](BUILDER.md)) fails.

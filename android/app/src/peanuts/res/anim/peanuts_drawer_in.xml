@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings' drawer of the sections opens on a phone (Motion.ENTER, 180 ms): it fades in and comes 8 % of its width in from the left -->
+<set xmlns:android="http://schemas.android.com/apk/res/android" android:interpolator="@interpolator/peanuts_out" android:shareInterpolator="true">
+    <alpha android:fromAlpha="0" android:toAlpha="1" android:duration="180" />
+    <translate android:fromXDelta="-8%" android:toXDelta="0" android:duration="180" />
+</set>

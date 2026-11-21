@@ -185,6 +185,7 @@ public final class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     @Override public void onBackPressed() {
         if (ReleasePage.back(this)) return;   // the release page over Home
+        if (dev.peanuts.ui.SettingsPage.onBack(this)) return;   // PEANUTS: a tablet's Settings: from a section's page back to the tiles of the sections (dev.peanuts.ui.SettingsPage)
         if (advancedOpen) closeAdvanced();
         else if (settingsPage || settingsGame != null) page(false);
         else super.onBackPressed();
@@ -451,6 +452,7 @@ public final class MainActivity extends Activity {
         t.setTextIsSelectable(true);
         Ui.add(about, t, 10);
         refreshSettings();
+        dev.peanuts.ui.SettingsPage.lay(this, content);   // PEANUTS: these rows in ten sections, one shown: a sidebar of them on a wide window, a drawer on a phone (dev.peanuts.ui.SettingsPage)
     }
 
     /** A settings group's card of rows, under its section label */

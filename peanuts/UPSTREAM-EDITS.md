@@ -1399,3 +1399,49 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
 | `dm/games/01002B00111A2000/game.tsv`, `dm/games/01002B00111A2000/README.md` | 1, 1 | Hyrule Warriors: Age of Calamity on Android: frame limits Game owned, 30 and 60 (the frame step's targets), measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/01002B00111A2000/vk_prewarm.bin` | new | its Turnip prewarm seed (242 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+### Round 44, Settings in ten sections (2026-11-21)
+
+Settings was one long page of eight cards, its Library card holding folders, keys, haptics, both screens and Miis. Its rows now sit in ten sections,
+Library, Console, Graphics, Controls, Screens, Users, App, Help, Developer and About (the design: the canvas "Peanuts Settings Redesign", page Konzept,
+board "Aufteilung"), one section shown at a time: on a window 600 dp wide or more a sidebar of the sections at the left, each with its Peanuts icon and the
+selected one on banana yellow; on a tablet (its smaller side 600 dp or more) the ten sections as tiles across the screen, a tile opening the section's
+page and Back coming back to the tiles; on a narrow phone the section's page with a button that opens a drawer of the sections. Upstream still builds every row as
+before, with its listeners, its fields and its `refreshSettings()`; one line at the end of `buildSettings()` hands the column to
+`dev.peanuts.ui.SettingsPage.lay`, which moves each row, by its title, into its section's group (`dev.peanuts.ui.SettingsSections`). A row that table does not
+know (one upstream adds) goes to the section of the heading it was built under, in a group "More". Each row's emoji tile shows a Peanuts icon instead.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 2 | `buildSettings()`, after `refreshSettings()`: `dev.peanuts.ui.SettingsPage.lay(this, content)`; `onBackPressed()`, after the release page's line: `if (dev.peanuts.ui.SettingsPage.onBack(this)) return;` (a tablet: Back from a section's page to the tiles of the sections) | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/PadFocus.java` | 1 | `watch()`: the focus frame goes on as `dev.peanuts.ui.FocusFrame.at(now, frame(...))`, which draws it where the view shows. A view draws its foreground in its scrolled coordinates and a one-line, centred text scrolls far, so on every button, Segmented tab and chip the frame was off screen: About's Check for updates showed no focus at all, a tab only Android's grey highlight | trailing `// PEANUTS: ...` |
+
+Peanuts' own files, no marker: `android/app/src/main/java/dev/peanuts/ui/` (`SettingsSections.java`, `SettingsPage.java`, `Icons.java` new; `Motion.java`:
+the drawer's window animation), `android/app/src/peanuts/res/` (`drawable/pi_*.xml` new: the icons, made with `design/peanuts-native/icons/icons.py`;
+`values/peanuts_icons.xml`, `anim/peanuts_drawer_in.xml`, `anim/peanuts_drawer_out.xml` new), `dev/peanuts/ctl/Ctl.java` (`nav to=settings section=`
+picks a section; `screen.settings_section`), `FocusFrame.java` new (the controller's focus frame on a one-line button or tab; in the wide layout the D-pad
+stays in the page going up and down, left goes to the selected section, right from the sidebar to where the focus was in the page or its first item), the player texts that name a moved row (`FontGate`, `Library`, `CtlPort`), `peanuts/docs/` (`FAQ.md`,
+`CONTROL.md`), `android/app/src/jvmtest/java/dev/peanuts/ui/SettingsSectionsJvmTest.java` new, `peanuts/tests/test_settings_sections.py` new.
+
+Tests: `peanuts/tests/test_settings_sections.py` (the table on the JVM; every row Settings builds has its place and the table names no other; the icons are in
+the resources; the one hook), `test_ctl.py`. Upstream candidate: no (a new structure of upstream's page, drawn by Peanuts).
+
+### Round 45, Peanuts cracked: a tapped peanut cracks open (2026-11-21)
+
+Upstream's background pops a tapped banana in a burst of flecks. In Peanuts the background is the app's peanut, and About counts "Peanuts cracked": a tap
+now cracks the peanut open, the seam running down it and the halves swinging apart about the foot as on the shader screen (`dev.peanuts.ui.PeanutArt`,
+the drawing `PrepareCover` had), then it fades, calmly (900 ms). Only the drawing of those first 900 ms changes: the hit test, the count (upstream's
+`Prefs.addBananaPopped`, which Peanuts cracked adds to), the time away and the growing back stay upstream's. A Banana build, and any build while the
+system's animations are off, keeps the burst.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/BananaBackgroundView.java` | 1 | `drawBanana`'s first line: `dev.peanuts.ui.Crack.draw(...)` draws the pop while it cracks | `PEANUTS` |
+
+Peanuts' own files, no marker: `android/app/src/main/java/dev/peanuts/ui/` (`Crack.java`, `CrackedPeanut.java`, `PeanutArt.java`, `Cracked.java`,
+`CrackedCount.java`, `AboutPage.java`, `AboutData.java` new; `PrepareCover.java` draws through `PeanutArt`; `SettingsPage.java`, `BottomPanel.java`,
+`BottomScreen.java`), `dev/peanuts/build/BuildService.java`, `dev/peanuts/GameReturn.java`, `dev/peanuts/mii/MiiActivity.java` (where points are
+counted), `android/app/src/peanuts/res/raw/peanuts_games.json` new (written by `peanuts/scripts/games_catalog.py`, kept by `.github/workflows/catalog.yml`),
+`android/app/src/jvmtest/java/dev/peanuts/ui/CrackedCountJvmTest.java` new, `peanuts/tests/test_peanuts_cracked.py` new, `peanuts/tests/test_issue_forms.py`. `.github/workflows/catalog.yml`: one marked line, the catalog's app copy staged with the rest.
+
+Tests: `peanuts/tests/test_peanuts_cracked.py`, `test_issue_forms.py`. Upstream candidate: no (the peanut is Peanuts' own art).

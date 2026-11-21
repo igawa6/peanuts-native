@@ -126,6 +126,7 @@ public final class BananaBackgroundView extends View implements Choreographer.Fr
 
     /** A banana's look at this time since its pop: scale and alpha factor, and how far its flecks have flown (0 = none) */
     private void drawBanana(Canvas canvas, Bitmap b, float half, Long at, long now, boolean odd) {
+        if (at != null && dev.peanuts.ui.Crack.draw(this, canvas, half * 2, now - at, baseAlpha, odd ? 28f : -8f)) return;   // PEANUTS: a tapped peanut cracks open instead of bursting (dev.peanuts.ui.Crack)
         float scale = 1f, alpha = 1f, burst = -1f;
         if (at != null) {
             long age = now - at;
