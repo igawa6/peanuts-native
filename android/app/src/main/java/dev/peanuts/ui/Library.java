@@ -45,6 +45,7 @@ import dev.peanuts.build.BuildListener;
 import dev.peanuts.build.BuildPipeline;
 import dev.peanuts.build.BuildRequest;
 import dev.peanuts.build.GameEnv;
+import dev.peanuts.build.UpdateFound;
 
 import java.io.File;
 import java.lang.reflect.Method;
@@ -115,6 +116,7 @@ public final class Library {
         @Override public void run() {
             Library l = current;
             if (l != null && l.box != null && !l.scanning && PeanutsPrefs.gameDir(l.a) != null) l.staleCheck();
+            if (l != null) dev.peanuts.build.ReuseCheck.startAny(l.a);   // a build's kept shaders checked in full while the phone charges (issue #120); it waits while a game runs
             UI.postDelayed(this, STALE_TICK_MS);
         }
     };
@@ -1066,6 +1068,10 @@ public final class Library {
         String buildWords = fileGone ? "File gone" : wrongVersion ? "Wrong version" : "Build needed";
         CharSequence state = building ? (stopped ? "Build stopped" : PUi.joined("Building", ownBuild ? b.percent + " %" : "preparing"))
                 : st == READY ? "Ready" : st == BUILD ? buildWords : a.getString(R.string.not_supported_yet);
+        // a newer update or new add-ons beside a built game's .nup (issue #120): the cover says so, and a tap asks before it takes them in ("Not now" asks no more for these)
+        UpdateFound.Found found = !building && st == READY ? found(r) : null;
+        boolean askFound = found != null && !found.key().equals(PeanutsPrefs.foundSeen(a, r.id()));
+        if (found != null) state = PUi.joined(state, UpdateFound.what(found, updateName(r, found)));
 
         LinearLayout cell = new LinearLayout(a);
         cell.setOrientation(LinearLayout.VERTICAL);
@@ -1113,6 +1119,7 @@ public final class Library {
             FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(PUi.dp(a, 22), PUi.dp(a, 22), Gravity.TOP | Gravity.END);
             lp.setMargins(p8, p8, p8, p8);
             cover.addView(ok, lp);
+            if (found != null) cover.addView(mark(askFound ? "Update" : "Update later", PUi.col(a, R.color.bn_banana), R.color.bn_on_banana, false, Gravity.TOP | Gravity.START));
         } else if (st == BUILD) {
             String pill = fileGone ? "File gone" : wrongVersion ? "Wrong version" : "Build";
             int fill = fileGone || wrongVersion ? R.color.bn_danger_tint : R.color.bn_banana;
@@ -1146,7 +1153,7 @@ public final class Library {
         Runnable manageOrSheet = r.game != null ? () -> manage.accept(r.game) : () -> sheet(r.title);
         boolean plays = !building && st == READY && r.game != null;
         if (building) { tap = () -> { filter = BUILDING; focusGrid = true; animateNext = true; render(); }; hold = manageOrSheet; }
-        else if (st == READY) { tap = plays ? () -> play(r) : () -> sheet(r.title); hold = manageOrSheet; }
+        else if (st == READY) { tap = askFound ? () -> askFound(r, found) : plays ? () -> play(r) : () -> sheet(r.title); hold = manageOrSheet; }
         else if (st == BUILD) { tap = () -> sheet(r.title); hold = tap; }
         else { tap = manageOrSheet; hold = manageOrSheet; }   // listed: Banana's Manage (the sentence, Remove from list); scanned: the sheet (Profile.missing's sentence)
         // a tap or A: Play is the weighty word, at the press, whatever dialog may come first; the tile dips while the launch or the sheet goes on
@@ -1176,6 +1183,31 @@ public final class Library {
     }
 
     /** Play for a listed, ready game: Banana's own launch (the pack search, the checks, its dialogs); its Manage sheet if that cannot be reached */
+    /** What an Import again would add to a built game whose base is a .nup (UpdateFound), from the last scan; null when nothing or not a .nup */
+    private static UpdateFound.Found found(Row r) {
+        LibraryScanner.Title t = r.title;
+        if (t == null || t.base == null || !t.base.isNup()) return null;
+        List<UpdateFound.Part> parts = new ArrayList<>();
+        for (LibraryScanner.Source s : t.updates) parts.add(new UpdateFound.Part(UpdateFound.UPDATE, s.titleId, s.version, !s.needsImport()));
+        for (LibraryScanner.Source s : t.dlcs) parts.add(new UpdateFound.Part(UpdateFound.DLC, s.titleId, s.version, !s.needsImport()));
+        return UpdateFound.of(parts, t.profileBuilds.keySet());   // (not supportedBuilds: a BUILD title's only, empty for this READY one)
+    }
+
+    /** The update's name as the game's page shows it (the profile's), else its number */
+    private static String updateName(Row r, UpdateFound.Found f) {
+        String n = r.title == null ? null : r.title.profileBuilds.get(f.update);
+        return n != null && !n.isEmpty() ? n : String.valueOf(f.update);
+    }
+
+    /** Ask, then build: Build takes the finds in (Import again, whose build keeps what did not change), Play plays as it is, Not now asks no more for these */
+    private void askFound(Row r, UpdateFound.Found f) {
+        AlertDialog.Builder d = new AlertDialog.Builder(a).setTitle(UpdateFound.what(f, updateName(r, f))).setMessage(UpdateFound.ask(f, r.name()))
+                .setPositiveButton("Build", (x, w) -> GameSheet.importAgain(a, this, r.title, CompanionPort.forTitle(catalog, r.id()), null, f))
+                .setNegativeButton("Not now", (x, w) -> { PeanutsPrefs.foundSeen(a, r.id(), f.key()); render(); });
+        if (r.game != null) d.setNeutralButton("Play", (x, w) -> play(r));
+        d.show();
+    }
+
     private void play(Row r) {
         // PN_BUILD_ID as the scan sets it: a game added without a folder scan (picked, or by adb) has none, and a companion module that lists whole build ids refuses it
         File dump = r.title != null && r.title.launch != null ? r.title.launch : r.entry != null && r.entry.gameDir != null && !r.entry.gameDir.isEmpty() ? new File(r.entry.gameDir) : null;
@@ -1283,6 +1315,12 @@ public final class Library {
             k.companion = companionVersion(r); k.played = r.used();
             k.primary = tap; k.primaryLabel = r.game != null ? "Play" : "Open"; k.primaryIcon = r.game != null ? R.drawable.ic_play : 0;
             if (r.game != null) { k.second = hold; k.secondLabel = "Game page"; }
+            UpdateFound.Found f = found(r);   // as on the cover: what was found, and A asks first while it is not "Not now"
+            if (f != null) {
+                boolean ask = !f.key().equals(PeanutsPrefs.foundSeen(a, r.id()));
+                k.update = UpdateFound.what(f, updateName(r, f)) + (ask ? "" : ", for later");
+                if (ask) { k.primaryLabel = "Update…"; k.primaryIcon = R.drawable.ic_build; }
+            }
         } else if (st == BUILD) {
             k.kind = BottomScreen.Card.K_BUILD;
             LibraryScanner.VersionState vs = r.title == null ? LibraryScanner.VersionState.UNKNOWN : r.title.versionState;

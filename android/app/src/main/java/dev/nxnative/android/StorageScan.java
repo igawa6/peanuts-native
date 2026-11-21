@@ -40,6 +40,7 @@ final class StorageScan {
         FILEBACK("RAM saver files", true, "Memory files a game left behind when it was stopped."),
         OLD_LOGS("Old logs", true, "Run logs, except the newest of each game."),
         GAME_TEMP("Game temporary files", false, "Each game's temporary folder and pipeline cache. They come back as you play; the first minutes may stutter again."),
+        BUILD_CACHES("Build caches", false, "What each game's builds keep, so that a Build after an update, an added DLC or an Import again makes only what changed. Without it the game's next build takes as long as its first."),   // PEANUTS: no_backup/reuse (issue #120)
         UNUSED_PACKS("Packs of games not in your list", false, "Adding such a game again would need Prepare again."),
         UNUSED_COPIES("Game copies not in your list", false, "Copies made with Copy into the app that no game in the list uses."),
         GAME_DATA("Game data", false, "The game's pack with its shaders, temporary files, logs and DLC links. Play then needs Prepare again; saves stay.");
@@ -250,6 +251,8 @@ final class StorageScan {
         }
         // The games' temporary folders (DM_TEMP: temp/<title ID>); never temp/<id>_cache* (the game's cache storage) or anything else there
         for (File t : list(r.ext == null ? null : new File(r.ext, "temp"))) if (t.getName().matches(TITLE) && t.isDirectory()) add(r, out, Kind.GAME_TEMP, t, r.ext);
+        // PEANUTS: what the builds keep for the next one, per game (no_backup/reuse/<title ID>: dm/peanuts/reuse, the last shader library and the records; issue #120)
+        for (File t : list(r.noBackup == null ? null : new File(r.noBackup, "reuse"))) if (t.getName().matches(TITLE) && t.isDirectory()) add(r, out, Kind.BUILD_CACHES, t, r.noBackup);   // PEANUTS
         // GPU drivers: a stopped install's leftovers (DriverZip.recover's rule: a .replaced-<name> is still needed while <name> is missing)
         File drivers = r.files == null ? null : new File(r.files, "gpu_drivers");
         for (File d : list(drivers)) {

@@ -19,7 +19,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * The Prepare step without MainActivity's Ondevice panel: what Ondevice.Panel.picked → checked → go/adopt does, done directly against upstream's classes
@@ -48,13 +50,16 @@ final class Prepare {
     private static final String[] STEP_TEXT = {"Checking the dump", "Rewriting the game's code", "Finding the shaders", "Translating shaders", "Finishing the pack"};
     /** How long a job may sit "running" with no job.json change and no service message before we call it stalled (the service writes at least every few seconds while it runs) */
     private static final long STALL_MS = 10 * 60 * 1000;
+    /** How long Try anyway's restart waits for the failed run's end in the packer (its worker's last save and its end's message come moments after the failure) */
+    private static final long RUN_END_MS = 30_000;
 
     private final Context c;
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean cancelled;
-    private volatile String fromService;   // the newest job JSON the service sent over the Messenger
+    private volatile String fromService;   // the newest job JSON the service sent over the Messenger, of this build's job only
     private volatile long fromServiceAt;
-    private Link link;
+    private volatile String ownJob;   // this build's job file (its path, as the service sends it): the packer sends every client whatever job it holds (issue #120 review)
+    private volatile Link link;   // set on the main thread (bind, unbind), read by the build's thread (the stall rule, runEnded)
     private volatile String logId;   // the game whose build log (BuildLog) this run's lines go to
 
     Prepare(Context c) { this.c = c.getApplicationContext(); }
@@ -102,6 +107,7 @@ final class Prepare {
                 existing = null;   // another format or damaged: a new job replaces it
             }
         }
+        long firstRead = existing == null ? -1 : updatedOf(existing);   // job.json's "updated" as this run first read it: a job the packer still holds from then is not this run's
         // The game file was imported again since the job's pack was made (BuildService's import marked it: PackNote). The old job says nothing about the new
         // file: it is left below, and its Try anyway with it, unless the version itself needed that (had). Without this a job that finished without the DLC's
         // shaders answered "Already prepared" for a .nup that now has the DLC
@@ -211,6 +217,11 @@ final class Prepare {
         // The translator calls at once (4 on a phone with 14 GB or more, 2 on an 8 GB one) are set by PackService from the phone's memory (BuildMemory), not by a line here:
         // a fixed 4 in env.txt ran an 8 GB phone out of memory (Fire Emblem Engage on a Thor Base, issue #10). A line env.txt has still applies, up to that count
         // 4. the service, as the panel starts it
+        // the states from before this run, by their "updated" (issue #120): the job's as this run last read or wrote it (its state until the packer saves it
+        // again is the job's from before) and job.json's as this run first read it (a done or failed job of an earlier run of this game the packer still
+        // held, which it sends a client that binds: a game's builds share one job.json). A job the packer finished while the build got ready has neither
+        Set<Long> earlier = earlier(updatedOf(job), firstRead);
+        ownJob = file.getPath();   // the service's messages of this job only (Link.onMessage)
         bind();
         try {
             c.startForegroundService(Upstream.packStart(c, file));
@@ -237,6 +248,10 @@ final class Prepare {
             JSONObject o;
             try { o = new JSONObject(json); } catch (org.json.JSONException e) { continue; }
             String state = o.optString("state"), reason = o.optString("reason"), step = o.optString("step");
+            // a paused or failed job resumed (while the full check holds the packer, or its worker is slow to start), or one the packer still held from an
+            // earlier run: its state is not this run's until the packer saves it. A message counts as the file does: a state whose write failed (a full
+            // disk) reaches the build by it alone
+            if (earlier.contains(o.optLong("updated", -1))) state = "";
             int si = Math.max(0, java.util.Arrays.asList(STEPS).indexOf(step));
             JSONObject st = o.optJSONObject("steps") != null ? o.optJSONObject("steps").optJSONObject(STEPS[si]) : null;
             long done = st == null ? 0 : st.optLong("done"), total = st == null ? 0 : st.optLong("total");
@@ -261,10 +276,22 @@ final class Prepare {
                 }
                 if (AutoRelax.auto(fix, cause, o.optBoolean("try_anyway"), relaxed)) {   // the panel's "Try anyway…" button, pressed for the player: once
                     relaxed = true;
+                    // the failed run's end first (issue #120 review): read from job.json, its "failed" can come before the packer's worker has ended. Its last
+                    // save then wrote the job over this Try anyway (the restart failed the same way), a start beside a worker that runs is dropped (the build
+                    // waited with nothing running), and the end's message ("failed") came after the restart and ended the build
+                    boolean ended = runEnded();
+                    if (cancelled) break;   // the build is cancelled (below the loop), and nothing restarts: also when the run's end came in the same moment
+                    if (!ended) {
+                        log("prepare: the packer still ran the failed job " + RUN_END_MS / 1000 + " s after it failed: not trying anyway now");
+                        throw new BuildListener.Failure(dev.nxnative.android.PrepareText.failureSummary(STEP_TEXT[si], err, o.optString("error_detail")), BuildListener.TOOL_STOPPED);
+                    }
                     log("prepare: failed with the Try anyway fix (" + err + "): going on with the checks relaxed");
-                    Object j = Upstream.jobRead(file);
+                    Object j = Upstream.jobRead(file);   // as the packer left it
+                    add(earlier, o.optLong("updated", -1));   // the failed state as this run saw it, and as the packer left the file: not the new run's
+                    add(earlier, updatedOf(j));
                     Upstream.jobTryAnyway(j, true);
                     Upstream.jobSave(j);
+                    add(earlier, updatedOf(j));   // the failed run's state is not the new run's
                     fromService = null;
                     lastJson = null;
                     lastChange = SystemClock.elapsedRealtime();
@@ -370,9 +397,11 @@ final class Prepare {
         Upstream.set(r, "work", workDir);
         File jf = Upstream.jobFileOf(workDir);
         Object job = null;
+        long firstRead = -1;   // job.json's "updated" as this run first read it (as in run0)
         if (jf.isFile()) {
             try {
                 Object existing = Upstream.jobRead(jf);
+                firstRead = updatedOf(existing);
                 String s = Upstream.jobState(existing);
                 // resume this exact variant's own job where it stopped. A finished one is not the answer to Build / Rebuild with mods: the mod's files or the
                 // app's tools may have changed since (the variant's id is only the mods' names, versions and order), so a new job runs, and its rewrite step
@@ -397,6 +426,11 @@ final class Prepare {
         File file = Upstream.jobFile(job);
         log("modded prepare: job " + file + " (" + (resumedMod ? "resumed, it was " + Upstream.jobState(job) : "new") + "), pack " + packDir);
         BuildLogShare.remember(c, id, workDir);
+        // the states from before this run, by their "updated" (issue #120): the job's as this run last read or wrote it (its state until the packer saves it
+        // again is the job's from before) and job.json's as this run first read it (a done or failed job of an earlier run of this game the packer still
+        // held, which it sends a client that binds: a game's builds share one job.json). A job the packer finished while the build got ready has neither
+        Set<Long> earlier = earlier(updatedOf(job), firstRead);
+        ownJob = file.getPath();   // the service's messages of this job only (Link.onMessage)
         bind();
         try {
             c.startForegroundService(Upstream.packStart(c, file));
@@ -421,6 +455,10 @@ final class Prepare {
             JSONObject o;
             try { o = new JSONObject(json); } catch (org.json.JSONException e) { continue; }
             String state = o.optString("state"), reason = o.optString("reason"), step = o.optString("step");
+            // a paused or failed job resumed (while the full check holds the packer, or its worker is slow to start), or one the packer still held from an
+            // earlier run: its state is not this run's until the packer saves it. A message counts as the file does: a state whose write failed (a full
+            // disk) reaches the build by it alone
+            if (earlier.contains(o.optLong("updated", -1))) state = "";
             int si = Math.max(0, java.util.Arrays.asList(STEPS).indexOf(step));
             JSONObject st = o.optJSONObject("steps") != null ? o.optJSONObject("steps").optJSONObject(STEPS[si]) : null;
             long done = st == null ? 0 : st.optLong("done"), total = st == null ? 0 : st.optLong("total");
@@ -478,6 +516,38 @@ final class Prepare {
         try { return c.getString(c.getApplicationInfo().labelRes); } catch (RuntimeException e) { return "the app"; }
     }
 
+    /**
+     * The job's "updated" as this run last read or wrote it (Job.save writes it at every save), -1 when unknown. Not job.json read again at the start: a job the
+     * packer finished while the build got ready (one it ran on after a build was cancelled) would be taken for the state from before, and the packer writes
+     * nothing more for a done job
+     */
+    private static long updatedOf(Object job) {
+        try { return ((JSONObject) Upstream.get(job, "o")).optLong("updated", -1); } catch (ReflectiveOperationException | RuntimeException e) { return -1; }
+    }
+
+    /** The "updated" of states from before a run, the unknown ones (-1) left out: a state without one counts */
+    private static Set<Long> earlier(long... updated) {
+        Set<Long> s = new HashSet<>();
+        for (long u : updated) if (u > 0) s.add(u);
+        return s;
+    }
+
+    private static void add(Set<Long> earlier, long updated) { if (updated > 0) earlier.add(updated); }
+
+    /**
+     * Waits until the packer has ended the job's run, at most RUN_END_MS: its worker gone (the last message of this build's job says so; PackService.finished
+     * sends one), or no packer to wait for (not bound, or its process ended). False when it still runs then, or the build was cancelled meanwhile
+     */
+    private boolean runEnded() {
+        long until = SystemClock.elapsedRealtime() + RUN_END_MS;
+        while (true) {
+            Link l = link;
+            if (l == null || l.service == null || l.heard && !l.alive) return true;
+            if (cancelled || SystemClock.elapsedRealtime() > until) return false;
+            SystemClock.sleep(100);
+        }
+    }
+
     private static String read(File f) {
         try { return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8); } catch (IOException e) { return null; }
     }
@@ -511,8 +581,9 @@ final class Prepare {
 
     private final class Link implements ServiceConnection {
         final Messenger client = new Messenger(new Handler(Looper.getMainLooper(), this::onMessage));
-        Messenger service;
+        volatile Messenger service;   // read by the build's thread too (runEnded)
         volatile boolean alive;
+        volatile boolean heard;   // a message of this build's job came: alive is then the packer's word (runEnded)
 
         @Override public void onServiceConnected(ComponentName n, IBinder b) {
             service = new Messenger(b);
@@ -526,9 +597,13 @@ final class Prepare {
         boolean onMessage(Message m) {
             if (m.what != Upstream.MSG_STATE) return false;
             Bundle d = m.getData();
+            String own = ownJob;
+            if (own == null || !own.equals(d.getString("file"))) return true;   // another job file's (a game's done one the packer still held, the full check's): never this build's state. A
+                                                                               // game's builds share one job.json, so this keeps out no older state of this game's own
             String j = d.getString("job");
             if (j != null) { fromService = j; fromServiceAt = SystemClock.elapsedRealtime(); }
             alive = d.getBoolean("alive");
+            heard = true;
             return true;
         }
     }

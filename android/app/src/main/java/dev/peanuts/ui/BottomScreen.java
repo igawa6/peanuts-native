@@ -46,6 +46,7 @@ public final class BottomScreen {
         String state = "";              // the cover's own words
         String companion;               // ready: the companion's version, null if none
         long played;                    // ready: last Play, 0 if never
+        String update;                  // ready: a newer update or add-ons beside its .nup (UpdateFound), null if none
         String found = "", space = "";  // to build: what the scan found
         Runnable primary, second;       // A and Y, null if none
         String primaryLabel = "", secondLabel = "";

@@ -14,6 +14,7 @@ import dev.peanuts.PeanutsPrefs;
 import dev.peanuts.build.PackNote;
 import dev.peanuts.build.Reimport;
 import dev.peanuts.build.SpaceEstimate;
+import dev.peanuts.build.UpdateFound;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -271,7 +272,12 @@ public final class GameSheet {
      * found), or, when the new file does not fit beside the old one, says how much is needed and offers deleting the old one first as a second question with
      * its risk. started runs when the build was accepted
      */
-    static void importAgain(Activity a, Library lib, LibraryScanner.Title t, CompanionPort.Item companion, Runnable started) {
+    static void importAgain(Activity a, Library lib, LibraryScanner.Title t, CompanionPort.Item companion, Runnable started) { importAgain(a, lib, t, companion, started, null); }
+
+    /** named: what the cover's "update found" question named, when the player said Build there (Library.askFound). The checks stay; the confirmation does not
+     *  come twice when the plan takes just that (UpdateFound.takesWhatItNamed), and comes when it takes another update (the newest file beside the .nup, one the
+     *  profile does not know, or the one picked on the game's page: found in review) */
+    static void importAgain(Activity a, Library lib, LibraryScanner.Title t, CompanionPort.Item companion, Runnable started, UpdateFound.Found named) {
         View anchor = a.getWindow().getDecorView();
         if (t == null || t.base == null || !t.base.isNup()) return;
         if (lib.building(t.titleId)) { Haptics.play(anchor, Haptics.Word.REJECT); Toast.makeText(a, "Building now: the progress is on the game's card.", Toast.LENGTH_LONG).show(); return; }
@@ -285,6 +291,9 @@ public final class GameSheet {
             b.show();
             return;
         }
+        long had = -1;   // the update the .nup holds (as Reimport.plan takes it)
+        for (LibraryScanner.Source s : t.updates) if (!s.needsImport()) had = Math.max(had, s.version);
+        if (UpdateFound.takesWhatItNamed(named, had, p.update != null ? p.updateVersion : -1)) { startImport(a, lib, t, companion, p, false, started); return; }
         PUi.confirmDanger(a, "Import again?", Reimport.confirm(p, t.name), "Import again", () -> startImport(a, lib, t, companion, p, false, started));
     }
 

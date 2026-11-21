@@ -95,6 +95,9 @@ final class LibraryScanner {
         /** The profile's builds (game.tsv build rows, via Profile.buildMap/display): version → display ("1.0.1"), null when game.tsv names none. Empty: no
          *  profile, or the reflective read failed */
         Map<Long, String> supportedBuilds = Collections.emptyMap();
+        /** The profile's builds as supportedBuilds has them, for every title with a profile, a READY one too (supportedBuilds is a BUILD title's only: its
+         *  version state and its sheet read it). What the cover's "update found" question counts (Library.found, UpdateFound): an update the profile knows */
+        Map<Long, String> profileBuilds = Collections.emptyMap();
         /** The highest version in supportedBuilds (see the class doc's gap note); -1 without supportedBuilds */
         long recommendedVersion = -1;
         /** The folder that holds (or will hold) the game and its <title ID>-work: the dump folder, the .nup's folder, or <game folder>/<name> for an NSP/XCI */
@@ -161,7 +164,11 @@ final class LibraryScanner {
             Collections.sort(t.updates, (a, b) -> Long.compare(b.version, a.version));
             // P1: the version state (not computed for READY: the pack already fits, and for NO_PROFILE the sheet's Profile.missing sentence is the whole story)
             if (t.status == Status.NO_PROFILE) t.versionState = VersionState.NOT_IN_APP;
-            else if (t.status == Status.BUILD) t.versionState = versionState(t);
+            else {
+                VersionInfo vi = versionInfo(t.titleId);
+                t.profileBuilds = vi.builds;   // a READY title's too: the cover asks about an update the profile knows (issue #120; found in review: it never did)
+                if (t.status == Status.BUILD) t.versionState = versionState(t, vi);
+            }
         }
         List<Title> out = new ArrayList<>(titles.values());
         Collections.sort(out, (a, b) -> a.name.compareToIgnoreCase(b.name));
@@ -248,9 +255,8 @@ final class LibraryScanner {
      *  library-grid pill's state only — it is about the newest version this title has anywhere, not about any one file a sheet's "Choose another…" picked
      *  (found in review: the sheet computes its own, from {@code chosenUpdate}, in {@code GameSheet.chosenVersionState}; this one must not be
      *  read as "the version Build will actually use") */
-    private static VersionState versionState(Title t) {
+    private static VersionState versionState(Title t, VersionInfo vi) {
         if (fileGone(t.base) || fileGone(t.updates.isEmpty() ? null : t.updates.get(0))) return VersionState.FILE_GONE;
-        VersionInfo vi = versionInfo(t.titleId);
         t.supportedBuilds = vi.builds;
         t.recommendedVersion = vi.recommended;
         if (vi.builds.isEmpty()) return VersionState.UNKNOWN;   // no profile builds data (the reflective read failed, or game.tsv names none): never blocks Build

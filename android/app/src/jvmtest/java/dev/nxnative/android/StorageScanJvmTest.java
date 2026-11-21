@@ -89,6 +89,8 @@ public final class StorageScanJvmTest {
         File log2 = put(new File(ext, "logs/" + A + "-20260102-000000.log"), "l2"), logB = put(new File(ext, "logs/" + B + "-20260101-000000.log"), "lb");
         File tempA = put(new File(ext, "temp/" + A + "/vk_pipelines-fp0.bin"), "pc").getParentFile();
         File cacheA = put(new File(ext, "temp/" + A + "_cache0/c.bin"), "cs").getParentFile();
+        File reuseA = put(new File(nb, "reuse/" + A + "/library/v-" + CUR + "/dmsh_vk.lib"), "lib").getParentFile().getParentFile().getParentFile();   // PEANUTS: a build cache
+        File reuseOdd = put(new File(nb, "reuse/notatitle/x"), "x").getParentFile();   // PEANUTS
         File root = put(new File(ext, "root/cheats/x"), "c").getParentFile();
         File inst = put(new File(files, "gpu_drivers/.installing/x"), "i").getParentFile();
         put(new File(files, "gpu_drivers/foo/meta.json"), "{}");
@@ -118,6 +120,7 @@ public final class StorageScanJvmTest {
         check(kind(l, part) == StorageScan.Kind.UNFINISHED && kind(l, orphan) == StorageScan.Kind.UNUSED_COPIES && !listed(l, copyA), "copies");
         check(kind(l, log1) == StorageScan.Kind.OLD_LOGS && kind(l, dig1) == StorageScan.Kind.OLD_LOGS && !listed(l, log2) && !listed(l, logB), "old logs, the newest kept");
         check(kind(l, tempA) == StorageScan.Kind.GAME_TEMP && !listed(l, cacheA) && !listed(l, new File(ext, "temp/" + D)), "temp: not cache storage, not a folder holding a save");
+        check(kind(l, reuseA) == StorageScan.Kind.BUILD_CACHES && !listed(l, reuseOdd) && !listed(l, new File(nb, "reuse")), "build caches: a game's folder, nothing else");   // PEANUTS
         check(!listed(l, root), "never the host's root folder");
         check(kind(l, inst) == StorageScan.Kind.UNFINISHED && kind(l, repFoo) == StorageScan.Kind.UNFINISHED && !listed(l, repBar), "driver leftovers");
         check(kind(l, packTmp) == StorageScan.Kind.UNFINISHED && !listed(l, packCur), "the packer's stopped unpack");

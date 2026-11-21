@@ -120,6 +120,10 @@ On Linux the builder does that step itself for the games below. Each game's shad
 - `DM_OODLE_OOZ` set by you (a worker you built with `dm/third_party/ooz/build.sh`) is used for any game, with the same key check.
 - Double Dragon Revive (`01006AE02236C000`): set `DM_OODLE_OOZ` to that worker to decode its IoStore libraries, or supply the decoded `DM_UE_SHADERS` folder for the version being packed. Its [two-build split](../../dm/games/01006AE02236C000/README.md#shaders) contains 18,510 keys, including 13 read directly from NROs.
 
+## Yaz0
+
+Nintendo's own games keep nearly all of their shaders in Yaz0 files (`.szs`, and `.bfres` members of SARC archives), and decoding them was nearly all of their shader split's time. On Linux the builder compiles the `_nxyaz0` module (Yaz0 in C, [`dm/peanuts/pack_worker/nxyaz0.c`](../../dm/peanuts/pack_worker/nxyaz0.c)) for its own Python into `peanuts/.build/pymod` and puts that folder on the pack step's `PYTHONPATH`; the APK carries the same module for the phone's split. The outputs are the same byte for byte with and without it. It needs gcc or clang and Python's headers (`python3-dev` or `python3-devel`); without them the builder says so in a `note:` line and the split decodes in Python, about 20 times slower. On macOS and Windows the split decodes in Python.
+
 ## .NET
 
 The shader translator needs .NET. The builder points the tools it starts at the Python environment's own .NET (`<env>/lib/dotnet`, on Windows `<env>/dotnet` or `<env>/Library/dotnet`) when `DOTNET_ROOT` is not set, so the environment need not be activated. A `DOTNET_ROOT` you set is kept. On Linux without such an environment the translator is started with the `dotnet` on PATH (the distribution's .NET 10 runtime).
@@ -129,7 +133,7 @@ The shader translator needs .NET. The builder points the tools it starts at the 
 - The `.nup` goes beside the first input file, named `<Name> [<TITLE ID>][v<version>].nup`. Characters Windows does not allow in the name become `-`.
 - The title's icon goes beside the `.nup` as `<the .nup's name without .nup>.png` (`nximport_cli icon`, from the base file, else the update). It is written for `.nsp`, `.xci`, `.nsz` and `.xcz` inputs, also when the `.nup` is reused and only the PNG is missing (`--force-nup` writes it again). A failure is a warning, not an error. `--push` copies it beside the `.nup` on the phone, where the Peanuts library takes it as the game's icon when the game has none yet: it must be a PNG of at most 4 MiB, and once the library has an icon for a title it keeps it. Since issue #158 the `.nup` also carries the icon itself (its base package's meta block, which `nximport` writes); the library reads the PNG beside it first, then the icon inside.
 - The pack goes to `<folder of the .nup>/<TITLE ID>-work/android-pack`.
-- The importer is built into `peanuts/.build/nximport`, the Oodle worker into `peanuts/.build/ooz` and `_nxaes` into `peanuts/.build/pymod` (all git-ignored).
+- The importer is built into `peanuts/.build/nximport`, the Oodle worker into `peanuts/.build/ooz`, and `_nxaes` and `_nxyaz0` into `peanuts/.build/pymod` (all git-ignored).
 
 ## Status
 

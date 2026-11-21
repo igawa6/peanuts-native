@@ -408,7 +408,7 @@ final class BottomPanel extends Presentation {
         cardBadge.setVisibility(hasComp ? View.VISIBLE : View.GONE);
         ((LinearLayout.LayoutParams) cardLine1.getLayoutParams()).leftMargin = hasComp ? PUi.dp(c, 8) : 0;
         String l1 = ready ? (hasComp ? "Companion " + k.companion : "") : toBuild ? k.found : "This app version does not include this game.";
-        String l2 = ready ? played(k.played) : toBuild ? k.space : "";
+        String l2 = ready ? (k.update != null ? k.update : played(k.played)) : toBuild ? k.space : "";
         setLine(cardLine1, cardLine1Row, l1);
         setLine(cardLine2, cardLine2, l2);
         cardPrimary.setVisibility(k.primary != null ? View.VISIBLE : View.GONE);

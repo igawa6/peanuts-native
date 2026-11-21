@@ -67,6 +67,7 @@ public final class PackService extends Service {
     private static final int NOTE = 1;
     /** Starts of one step the process may not live through before the job fails (Job.start) */
     private static final int MAX_STARTS = 3;   // PEANUTS: was 2; the later starts run with fewer workers (Job.memLevel, BuildMemory)
+    private static final int NOTE_CHECK = NOTE + 8;   // PEANUTS: the full check's own (checkKept): under NOTE it took a failed or finished build's notification and removed it
     private static final Pattern PROGRESS = Pattern.compile("^progress:? (\\d+)(?: |/)(\\d+)(?: (\\S+))?");
     /** PEANUTS: vk_android_build.py's summary, "shaders <all>: ok <built>, <failure> <n>, ..." (Job.shadersFailed) */
     private static final Pattern BUILT = Pattern.compile("^shaders (\\d+): ok (\\d+)\\b");
@@ -86,6 +87,11 @@ public final class PackService extends Service {
     private volatile String stopReason;   // user, timeout: the job pauses and the service stops
     private volatile String autoReason;   // battery, thermal: the job waits and goes on by itself
     private volatile boolean inTool;
+    private volatile boolean checking;   // PEANUTS: the full check of the shaders a build kept runs (checkKept, dev.peanuts.build.ReuseCheck): the shaders step's tool with --check
+    private volatile boolean checkRunning;   // PEANUTS: its worker is alive (until its end is posted)
+    private volatile Intent afterCheck;   // PEANUTS: a job's start that came during the check: it runs once the check has stopped
+    private volatile Job checkJob;   // PEANUTS: the done job the check runs with: save and publish write and send nothing of it (a build that binds meanwhile must not take it for its own)
+    private volatile Job pausedWaiting;   // PEANUTS: a job paused while it waited for the check (ACTION_PAUSE): told to the clients and the notification at the check's end
     private PrepareText.Failure failure;   // what the last step that failed said for the card (step() sets it with its reason; the worker thread only)
     private volatile boolean heatOverride;   // Go on anyway: the heat pause is lifted while this service runs the job
     private int batteryPct = 100, thermal;
@@ -138,6 +144,25 @@ public final class PackService extends Service {
         }
         if (ACTION_PAUSE.equals(action)) {
             String from = intent.getStringExtra(EXTRA_FROM);
+            // PEANUTS begin: a job that waits for the full check to stop (afterCheck): the pause is that job's. It stopped the check instead, and the job started
+            // once the check had stopped (found in review). The check was asked to stop for the job already; it goes on another time, or now if it had not yet
+            Intent waiting = afterCheck;
+            if (waiting != null) {
+                afterCheck = null;
+                String wp = waiting.getStringExtra(EXTRA_JOB);
+                File wf = wp != null ? new File(wp) : Job.remembered(this);
+                Job w = null;
+                try { if (wf != null) w = Job.read(wf); } catch (IOException e) { Log.w(TAG, "job: " + e.getMessage()); }
+                logPause(w, (from != null ? from : "an intent without \"from\"") + ", a job that waited for the full check");
+                if (w != null && !"done".equals(w.state())) {
+                    w.state("paused", "user", null);
+                    try { w.save(); } catch (IOException e) { Log.e(TAG, "job.json: " + e); }   // its file at once: a build that waits for it (Prepare) stops
+                    pausedWaiting = w;   // the clients and its notification once the check's worker has ended (checkKept's post): with a worker alive, publish and
+                                         // note take a paused job for one the policy holds ("Waiting", ongoing, alive), which nothing removed then
+                }
+                return START_STICKY;
+            }
+            // PEANUTS end
             boolean running = worker != null && worker.isAlive();
             logPause(job, (from != null ? from : "an intent without \"from\"") + (running ? "" : ", nothing running"));
             if (running) requestStop("user");
@@ -152,8 +177,35 @@ public final class PackService extends Service {
         } catch (IOException e) {
             Log.w(TAG, "job: " + e.getMessage());
         }
+        // PEANUTS begin: dev.peanuts.build.ReuseCheck's start: the full check of the shaders the done job's last build kept (shader_reuse.py --check), only while it is due
+        final boolean checkAsked = intent != null && intent.getBooleanExtra(dev.peanuts.build.ReuseCheck.EXTRA_CHECK, false);
+        final boolean check = checkAsked && j != null && "done".equals(j.state())
+                && !j.apkChanged() && !engine.simulated() && dev.peanuts.build.ReuseCheck.due(getNoBackupFilesDir(), j.titleId())
+                && worker == null;   // not only a thread that ended: its end's post (finished, checkKept's) clears worker and checkJob, and a check started before it was forgotten (found in review)
+        if (check) checking = true;   // the notification says so from the start (note)
+        if (checkAsked && !check && j != null && "done".equals(j.state()) && j.apkChanged() && dev.peanuts.build.ReuseCheck.due(getNoBackupFilesDir(), j.titleId())) {
+            dev.peanuts.build.CheckDue.drop(new File(getNoBackupFilesDir(), "reuse/" + j.titleId()));   // an app update since the build: this app can never check it, and it was asked again every two minutes (found in review)
+            try { Outputs.delete(new File(j.dir(), "split")); } catch (IOException e) { Log.w(TAG, "split: " + e.getMessage()); }   // kept for the check only
+            Log.i(TAG, "check: " + j.titleId() + ": the app was updated since the build: its full check is dropped (the next build makes a library of this app)");
+        }
+        if (checkAsked && !check && (worker == null || !worker.isAlive())) {
+            // a check's start that runs nothing (found in review, twice):
+            // - with no job: upstream's startForeground(j), refused (a start from the background, the dataSync limit), marked a job that is not done paused
+            //   "refused", and a build whose job.json that was just then (its own start right behind) stopped with "Preparing paused";
+            // - under the check's own notification, which no build's is: under NOTE it took a failed or finished build's away;
+            // - while a worker's end is still to post (finished, checkKept's): that post decides the foreground and the service. Answered under the notification
+            //   in the foreground then, and nothing removed or stopped: a removed foreground made the post's start of a job that waited for the check one from
+            //   the background, and a service that stops with a foreground start unanswered ends the process
+            boolean ending = worker != null;
+            int id = ending && !checkRunning ? NOTE : NOTE_CHECK;   // a job's end to post: its notification is the one in the foreground
+            try { startForeground(id, id == NOTE ? note(job) : note((Job) null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC); }
+            catch (RuntimeException e) { Log.w(TAG, "check: startForeground refused: " + e); }
+            if (!ending) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(startId); }
+            return START_NOT_STICKY;
+        }
+        // PEANUTS end
         // A sticky restart (no intent: the process was killed) resumes only a job that was running; a start resumes one that is not done
-        boolean go = j != null && (intent == null ? "running".equals(j.state()) : !"done".equals(j.state()) || j.apkChanged());
+        boolean go = check || !checkAsked && j != null && (intent == null ? "running".equals(j.state()) : !"done".equals(j.state()) || j.apkChanged());   // PEANUTS: check ||, !checkAsked: a check's start never runs a job (an app update's job waits for the user)
         if (go && intent == null) stepLog(j, "going on after Android ended the job's process (a sticky restart; " + readings() + ")");
         if (!go && (worker == null || !worker.isAlive())) {
             // startForegroundService must be answered by startForeground even when there is nothing to do
@@ -162,6 +214,16 @@ public final class PackService extends Service {
             stopSelf(startId);
             return START_NOT_STICKY;
         }
+        // PEANUTS begin: a job's start during the full check (checkKept): the check stops (it goes on another time) and this start runs once it has; a start
+        // beside a running job is otherwise dropped, and a build waiting for it would stall
+        if (checkRunning && !check && go && intent != null) {
+            afterCheck = intent;
+            stepLog(j, "a job starts: the full check of the kept shaders stops and goes on another time");
+            if (inTool) engine.interrupt();
+            startForeground(job);
+            return START_STICKY;
+        }
+        // PEANUTS end
         if (worker != null && worker.isAlive()) {
             startForeground(job);
             return START_STICKY;
@@ -169,9 +231,24 @@ public final class PackService extends Service {
         job = j;
         if (!startForeground(j)) {
             // Android refused a foreground service here (a start from the background): the job stays as it is, the launcher's Resume starts it
+            checking = false;   // PEANUTS: the check waits for its next start (ReuseCheck)
+            if (check) job = null;   // PEANUTS: nor is its done job the service's job, which a client that binds is sent (found in review)
             stopSelf(startId);
             return START_NOT_STICKY;
         }
+        // PEANUTS begin: the check runs the done job's shaders step again with --check and changes nothing of the job (checkKept)
+        if (check) {
+            stopReason = null;
+            heatOverride = !heatTrusted();   // the device's Go on anyway (#93), as a job's run takes it: with the pause in place, a phone whose SEVERE is not real never ran it
+            policy();   // the pause with that override: checkKept looks at it once, at its start
+            final Job cj = j;
+            checkJob = j;
+            checkRunning = true;
+            worker = new Thread(() -> checkKept(cj), "nxpack-check");
+            worker.start();
+            return START_NOT_STICKY;   // a check the process did not live through is started again by ReuseCheck, not by a sticky restart (which resumes jobs)
+        }
+        // PEANUTS end
         if ("running".equals(j.state())) {   // PEANUTS: still "running" at a start: look up why the previous pack process ended
             // PEANUTS: ...unless the app was installed again after the job's last note: an update ends every process of the app, and that is no sign of low memory.
             // PEANUTS: Three installs during one build left Mario Kart 8 Deluxe's on one worker with 10 GB free
@@ -206,7 +283,13 @@ public final class PackService extends Service {
     @Override public void onTimeout(int startId, int fgsType) {
         Job j = job;
         stepLog(j, "pausing: timeout: Android's daily limit for background work (6 h of dataSync) is reached; " + readings());
-        if (j != null) {
+        if (j != null && j == checkJob) {   // PEANUTS: the full check stops and goes on another time; no notification stays (note() says "Checking ..." and is ongoing: found in review)
+            requestStop("timeout");
+            stopForeground(STOP_FOREGROUND_REMOVE);
+            stopSelf();
+            return;
+        }
+        if (j != null && j != checkJob) {   // PEANUTS: the full check's job stays done
             j.state("paused", "timeout", null);
             save(j, true);
         }
@@ -218,7 +301,9 @@ public final class PackService extends Service {
 
     private boolean startForeground(Job j) {
         try {
-            startForeground(NOTE, note(j), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            // PEANUTS: the check's own notification from its start to its end's post (checkRunning: its finally clears `checking`, then works on for seconds)
+            startForeground(checking || checkRunning ? NOTE_CHECK : NOTE, note(j), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            if (!checking && !checkRunning) nm.cancel(NOTE_CHECK);   // PEANUTS: a job that took the service from the check: the check's goes (Android cancels it too when the foreground id changes)
             return true;
         } catch (RuntimeException e) {   // ForegroundServiceStartNotAllowedException, or the type's time limit used up
             Log.w(TAG, "startForeground refused: " + e);
@@ -261,7 +346,7 @@ public final class PackService extends Service {
             if (w != null && w.isAlive() && worker == w) {
                 Job j = job;
                 stepLog(j, "the tool did not stop within 20 s of the " + reason + " pause: ending the process (the step runs again on Resume)");
-                if (j != null) {
+                if (j != null && j != checkJob) {   // PEANUTS: the full check's job stays done (the check goes on another time)
                     j.state("paused", reason, null);
                     save(j, true);
                     stopForeground(STOP_FOREGROUND_DETACH);
@@ -293,6 +378,7 @@ public final class PackService extends Service {
     /** PEANUTS: an env.txt value for a worker count, kept to the memory plan's counts */
     private String capped(String key, String value, BuildMemory.Plan mem) {
         if (key.equals("DMSH_VK_XLATE_J")) return BuildMemory.cap(value, mem.xlate);
+        if (key.equals("PN_REWRITE_J")) return BuildMemory.cap(value, mem.workers);   // PEANUTS: the rewrite's forks, as the split's workers (found in review)
         if (key.equals("J") || key.equals("DMSH_VK_WORKERS") || key.equals("DMSH_VK_PROCS")) return BuildMemory.cap(value, mem.workers);
         return value;
     }
@@ -417,7 +503,8 @@ public final class PackService extends Service {
                 j.state("done", null, null);
                 // the split and the translation results are not needed once the library is in the pack
                 try {
-                    Outputs.delete(new File(j.dir(), "split"));
+                    if (!dev.peanuts.build.ReuseCheck.due(getNoBackupFilesDir(), j.titleId())) Outputs.delete(new File(j.dir(), "split"));   // PEANUTS: kept for the full check of the shaders this build kept (checkKept), which deletes it
+                    else if (j.modArgs().isEmpty()) dev.peanuts.build.ReuseCheck.remember(getNoBackupFilesDir(), j.titleId(), j.file);   // PEANUTS: the job it checks with, for every way a job ends (ReuseCheck.startAny); not a build with code mods, which runs no shaders step and keeps no split (found in review)
                 } catch (IOException e) {
                     Log.w(TAG, "split: " + e.getMessage());   // the job is done all the same; a later split begins by deleting it again
                 }
@@ -436,11 +523,13 @@ public final class PackService extends Service {
             save(j, true);
         } finally {
             if (wake.isHeld()) wake.release();
-            main.post(this::finished);
+            Thread self = Thread.currentThread();   // PEANUTS: the post names the worker that ended (finished)
+            main.post(() -> finished(self));
         }
     }
 
-    private void finished() {
+    private void finished(Thread w) {   // PEANUTS: w, the worker whose end this is
+        if (worker != w) return;   // PEANUTS: a job's start before this post (the thread gone, the post not yet run) runs its own worker now, under its own foreground; it was forgotten (worker = null) and its service stopped under it, and a later start ran a second worker on the job
         Job j = job;
         worker = null;
         publish(j, true);
@@ -448,6 +537,87 @@ public final class PackService extends Service {
         if (j != null) nm.notify(NOTE, note(j));
         stopSelf();
     }
+
+    // PEANUTS begin: the full check of the shaders a build kept (dev.peanuts.build.ReuseCheck, dm/peanuts/reuse/shader_reuse.py full_check, issue #120)
+    /**
+     * The done job's shaders step run again with --check: every shader translated again in the app's own storage and compared with the pack's library, which a
+     * library that is not a full translation's byte for byte gives its place to (the tool does that). Only while no game runs and the policy does not pause: a game
+     * that starts stops it (the tool is interrupted, as the policy does), and ReuseCheck starts it again another time, from the results it kept. It changes nothing
+     * of the job; its lines go to ondevice/logs/check.log. The split it reads goes once nothing is due. A replaced library gets a notification of its own
+     */
+    private void checkKept(Job j) {
+        wake.acquire(7 * 3600_000L);
+        long since = System.currentTimeMillis();
+        String what = "ended";
+        String fixed = null;
+        File rd = new File(getNoBackupFilesDir(), "reuse/" + j.titleId());
+        try {
+            String died = dev.peanuts.build.CheckDue.died(rd);   // an earlier check whose process ended while it ran: a try (its own end never ran)
+            if (died != null) dev.peanuts.build.ReuseCheck.log(new File(j.dir(), "logs"), "check: the one before ended with the packer's process; " + died);
+            if (!dev.peanuts.build.ReuseCheck.due(getNoBackupFilesDir(), j.titleId())) what = "not due (dropped)";
+            else if (autoReason != null) what = "waits (" + autoReason + "; " + readings() + ")";
+            else if (dev.peanuts.build.ReuseCheck.gameRunning(this)) what = "waits (a game runs)";
+            else {
+                Thread watch = new Thread(() -> {   // a game that starts stops the tool; before the tool runs, step() looks itself
+                    // PEANUTS: sent again every 3 s while the tool runs, for a game and for a job that waits (onStartCommand): an interrupt before the tool's
+                    // run began is lost (dm_pack_interrupt does nothing without one), which left the check translating beside the game (found in review).
+                    // A game asks requestStop once: if the tool has not stopped 20 s later, the process ends (the job stays done; the check goes on another time)
+                    boolean asked = false;
+                    while (checking) {
+                        if (inTool) {
+                            boolean game = dev.peanuts.build.ReuseCheck.gameRunning(this);
+                            if (game && !asked) { Log.i(TAG, "check: a game started: stopping the check"); requestStop("game"); asked = true; }
+                            else if (game || afterCheck != null) engine.interrupt();
+                        }
+                        SystemClock.sleep(3000);
+                    }
+                }, "nxpack-check-game");
+                watch.setDaemon(true);
+                watch.start();
+                dev.peanuts.build.CheckDue.begin(rd);
+                String fail = step(j, Job.SHADERS);
+                what = fail == null ? "done" : fail;
+            }
+        } catch (Throwable e) {   // the end below runs whatever happened: a check left running would hold every later job's start
+            Log.e(TAG, "check", e);
+            what = String.valueOf(e);
+        } finally {
+            checking = false;
+            if (wake.isHeld()) wake.release();
+            try {
+                File nb = getNoBackupFilesDir();
+                // a check this job can never make is dropped, and one that failed counts a try (the third drops it): either was started again every two
+                // minutes for good, and held every other game's check (found in review)
+                String ended = dev.peanuts.build.CheckDue.ended(new File(nb, "reuse/" + j.titleId()), what);
+                if (ended != null) what += "; " + ended;
+                boolean due = dev.peanuts.build.ReuseCheck.due(nb, j.titleId());
+                if (!due) Outputs.delete(new File(j.dir(), "split"));
+                fixed = dev.peanuts.build.ReuseCheck.replacedText(nb, j.titleId(), j.name(), since);
+                dev.peanuts.build.ReuseCheck.log(new File(j.dir(), "logs"), "check: " + what + (due ? "; the check is still due (another time)" : ""));
+            } catch (IOException | RuntimeException e) {
+                Log.w(TAG, "check: after it: " + e);
+            }
+            final String note = fixed;
+            main.post(() -> {
+                Intent next = afterCheck;
+                afterCheck = null;
+                checkRunning = false;
+                if (job == checkJob) job = null;   // not the service's job: a client that binds later was sent it, and the panel and a waiting build took it (found in review)
+                checkJob = null;
+                worker = null;
+                Job pw = pausedWaiting;
+                pausedWaiting = null;
+                if (pw != null) { publish(pw, true); nm.notify(NOTE, note(pw)); }   // now that no worker runs: "Paused" with Resume, not alive (a job that came since takes NOTE after)
+                if (next != null) {   // the job that started during the check: started again now, while this service is still in the foreground
+                    try { startForegroundService(next); } catch (RuntimeException e) { Log.w(TAG, "check: the job that waited could not start: " + e); }
+                } else stopForeground(STOP_FOREGROUND_REMOVE);
+                if (note != null) nm.notify(NOTE + 7, new Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_banana_mono).setContentTitle(j.name() + ": shaders made again")
+                        .setContentText(note).setStyle(new Notification.BigTextStyle().bigText(note)).setAutoCancel(true).build());
+                if (next == null) stopSelf();
+            });
+        }
+    }
+    // PEANUTS end
 
     /** Waits while the policy pauses the job; false when the job is to stop */
     private boolean waitWhileAuto(Job j) throws InterruptedException {
@@ -544,6 +714,7 @@ public final class PackService extends Service {
             case "shaders": {
                 // the split went (a finished job deletes it; an APK update then translates again), or it is not complete (no marker; also an older build's split/): split first
                 if (!Outputs.complete(split)) {
+                    if (checking) return "no split to check with";   // PEANUTS: the check changes nothing of the job (checkKept)
                     j.stepState("split", "pending");
                     return "interrupted";
                 }
@@ -556,7 +727,7 @@ public final class PackService extends Service {
                 // PEANUTS end
                 String bad = j.tryAnyway() ? null : splitMatchesProfile(j, split);
                 if (bad != null) return bad;
-                tool = "dm/gfx/tools/vk_android_build.py";
+                tool = engine.simulated() ? "dm/gfx/tools/vk_android_build.py" : "dm/peanuts/reuse/shader_reuse.py";   // PEANUTS: vk_android_build.py run by a wrapper that keeps the older library's shaders whose translation is the same (issue #120)
                 argv = new String[] {"--target", "vulkan", new File(split, "pkg").getPath(), lib.getPath()};
                 // a profile with a selected set (shader_seen.tsv): only its keys, with their paired pixel shaders, as the Mac's selected build (android/SHADERS.md "Selected shaders")
                 selected = selection(j);
@@ -588,6 +759,7 @@ public final class PackService extends Service {
                 if (selected != null && selected.isEmpty()) return "the profile's " + ShaderLibs.SELECTED + " names none of the shaders of its shader_map.tsv";
                 // a split that kept the code of another selection (DM_SPLIT_SELECTED below; an older app's set): split again
                 if (!splitHolds(split, selected)) {
+                    if (checking) return "the split holds another selection";   // PEANUTS: the check changes nothing of the job (checkKept)
                     Outputs.delete(split);
                     j.stepState("split", "pending");
                     return "interrupted";
@@ -597,6 +769,14 @@ public final class PackService extends Service {
                     for (int k = 0; k < selected.size(); k++) a[argv.length + k] = selected.get(k);
                     argv = a;
                 }
+                // PEANUTS begin: the full check: the same tool, arguments and environment, with --check first (shader_reuse.py full_check)
+                if (checking) {
+                    String[] a = new String[argv.length + 1];
+                    a[0] = "--check";
+                    System.arraycopy(argv, 0, a, 1, argv.length);
+                    argv = a;
+                }
+                // PEANUTS end
                 break;
             }
             case "pack": {
@@ -632,13 +812,13 @@ public final class PackService extends Service {
         }
         File logs = new File(od, "logs");
         logs.mkdirs();
-        File log = new File(logs, s + ".log");
+        File log = new File(logs, (checking ? "check" : s) + ".log");   // PEANUTS: the full check's own log (checkKept)
         String head = "== " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT).format(new Date()) + " " + Prefs.buildTag(this) + ", engine " + BuildConfig.NX_PACK_ENGINE + ": "
                 + tool + " " + (selected == null ? String.join(" ", argv)
                         : String.join(" ", java.util.Arrays.copyOf(argv, argv.length - selected.size())) + " <" + selected.size() + " keys of " + keysFrom + ">") + "\n";
         Files.write(log.toPath(), head.getBytes(StandardCharsets.UTF_8), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
         if (otherVersionsNote != null) Files.write(log.toPath(), ("shaders: " + otherVersionsNote + "\n").getBytes(StandardCharsets.UTF_8), java.nio.file.StandardOpenOption.APPEND);   // PEANUTS
-        if (s.equals("shaders")) {   // a failed shader's kept result would fail every Retry the same way: those shaders are translated again (ShaderResults)
+        if (s.equals("shaders") && !checking) {   // a failed shader's kept result would fail every Retry the same way: those shaders are translated again (ShaderResults)   // PEANUTS: !checking
             List<ShaderResults.Failed> again = ShaderResults.dropFailed(xlate);
             StringBuilder b = new StringBuilder();
             for (ShaderResults.Failed f : again) b.append("[retry] translating again, it failed before: ").append(f).append('\n');
@@ -666,6 +846,7 @@ public final class PackService extends Service {
         PackEngine.setenv("J", s.equals("split") ? String.valueOf(pyLib == null ? 1 : shaderWorkers) : String.valueOf(workers));   // PEANUTS
         if (s.equals("split")) Log.i(TAG, "split workers: libpython " + pyLib + ", J " + (pyLib == null ? 1 : shaderWorkers));   // PEANUTS
         PackEngine.setenv("DM_SPLIT_WORKER", pyLib == null ? "" : "/system/bin/linker64 " + new File(PackNative.repo().getParentFile(), "python/bin/nxpack_worker").getPath());   // PEANUTS
+        PackEngine.setenv("PN_REWRITE_J", String.valueOf(pyLib == null ? 1 : mem.workers));   // PEANUTS: the rewrite's module in that worker, its x18 and spin phases on this many fast cores (pack_android.py pn_rewrite_worker, issue #120)
         PackEngine.setenv("LD_LIBRARY_PATH", pyLib == null ? "" : new File(pyLib).getParent());   // PEANUTS: read by the workers' linker only (this process's read it at its start)
         PackEngine.setenv("DM_SPLIT_RESUME", splitScan.getPath());   // the split's kept scan results (only shader_split.py reads it)
         // a profile with a selected set: the split keeps the code of only those shaders (and their pixel shaders), as the shaders step builds only them; a full
@@ -708,6 +889,7 @@ public final class PackService extends Service {
         PackEngine.setenv("DMSH_VK_RESULTS", xlate.getPath());
         // the delta update: entries of the pack's older libraries that the profile's manifest has unchanged are kept, only the rest translated (android/SHADERS.md#delta-updates)
         PackEngine.setenv("DMSH_VK_DELTA_FROM", new File(pack, "shaders").getPath());
+        PackEngine.setenv("PN_REUSE_DIR", new File(getNoBackupFilesDir(), "reuse/" + j.titleId()).getPath());   // PEANUTS: the records of shader_reuse.py and rewrite_reuse.py (and the profile copy), kept across jobs (issue #120)
         PackEngine.setenv("XLATE", "libdmsh_xlate.so");
         PackEngine.setenv("SPIRV_VAL", "libSPIRV-Tools-shared.so");
         // a library without every shader is a failed step, never a finished one; with Try anyway (the player's choice, warned that parts may not show) it is written
@@ -728,14 +910,15 @@ public final class PackService extends Service {
             int eq = l.indexOf('=');
             if (eq > 0 && !l.startsWith("#")) { PackEngine.setenv(l.substring(0, eq).trim(), capped(l.substring(0, eq).trim(), l.substring(eq + 1).trim(), mem));  /* PEANUTS: an env.txt count never goes over the memory plan */ Files.write(log.toPath(), ("[env.txt] " + l.trim() + "\n").getBytes(StandardCharsets.UTF_8), java.nio.file.StandardOpenOption.APPEND); }
         }
-        if (s.equals("shaders")) { j.shadersMissing(0, 0); j.shadersFailed(0, 0); }   // the step's own count (Tail), not an earlier run's // PEANUTS: shadersFailed
-        Tail tail = new Tail(j, s, log);
+        if (s.equals("shaders") && !checking) { j.shadersMissing(0, 0); j.shadersFailed(0, 0); }   // the step's own count (Tail), not an earlier run's // PEANUTS: shadersFailed; !checking
+        Tail tail = new Tail(j, checking ? "check" : s, log);   // PEANUTS: the check's progress goes to a step of its own, not the done shaders step's
         tail.start();
         int code;
         inTool = true;
         long began = SystemClock.elapsedRealtime();   // PEANUTS
         try {
             if (autoReason != null || stopReason != null) return "interrupted";
+            if (checking && (afterCheck != null || dev.peanuts.build.ReuseCheck.gameRunning(this))) return "interrupted";   // PEANUTS: a job or a game came while the check got ready (the interrupt reaches only a running tool)
             code = engine.run(tool, argv, log.getPath());
         } finally {
             inTool = false;
@@ -745,6 +928,7 @@ public final class PackService extends Service {
         long sec = (SystemClock.elapsedRealtime() - began) / 1000;
         stepLog(j, s + ": the tool ended with code " + code + " after " + sec / 60 + " min " + sec % 60 + " s");   // PEANUTS: the logs had a time only where a step began
         if (code == PackEngine.INTERRUPTED) return "interrupted";
+        if (checking && code == 3) return null;   // PEANUTS: shader_reuse.py full_check's DIFFER: the check is done (it replaced the library where the pack held it), no tool failure
         if (code != 0) {
             String why = tail.reason();   // the last [RED] line, or a traceback's last line after it (PrepareText.StopReason)
             failure = PrepareText.toolStopped(Job.STEP_TEXT[i], code, why, log.getPath());
@@ -754,6 +938,7 @@ public final class PackService extends Service {
             Outputs.finish(split);   // every output synced, then the marker: a reboot after the step is recorded done cannot leave cut tables accepted in split/
             // the scan results go only once job.json records the split done (work()): a kill before that resumes from them instead of scanning everything again
         }
+        if (checking) return null;   // PEANUTS: the done shaders step stays as it was
         long t = j.stepTotal(i);
         j.stepProgress(s, t > 0 ? t : 1, t > 0 ? t : 1, "");
         return null;
@@ -1051,7 +1236,7 @@ public final class PackService extends Service {
                     changed = true;
                 } else if (stop.line(line)) {
                     long[] miss = PrepareText.missingShaders(line);   // Try anyway: shaders this game version lacks, said once the game is ready (Ondevice.addGame)
-                    if (miss != null) { j.shadersMissing(miss[0], miss[1]); changed = true; }
+                    if (miss != null && !step.equals("check")) { j.shadersMissing(miss[0], miss[1]); changed = true; }   // PEANUTS: not from the full check (checkKept), whose job is done
                 }
             }
             partial.delete(0, start);
@@ -1067,6 +1252,7 @@ public final class PackService extends Service {
 
     /** Writes job.json (at most every 2 s unless forced) and tells the notification and the launcher */
     private void save(Job j, boolean force) {
+        if (j != null && j == checkJob) return;   // PEANUTS: the full check's done job: its job.json may be a new job's by now (checkKept)
         long now = SystemClock.elapsedRealtime();
         synchronized (this) {
             if (force || now - lastSave >= 2000) {
@@ -1082,7 +1268,7 @@ public final class PackService extends Service {
     }
 
     private void publish(Job j, boolean force) {
-        if (j == null) return;
+        if (j == null || j == checkJob) return;   // PEANUTS: never the full check's done job (checkKept): a build waiting for its own job would read "done"
         long now = SystemClock.elapsedRealtime();
         if (force || now - lastSend >= 250) {
             lastSend = now;
@@ -1130,6 +1316,7 @@ public final class PackService extends Service {
         String name = j == null ? "a game" : j.name();
         String sim = engine.simulated() ? " (simulated)" : "";
         if (j == null) return b.setContentTitle("Preparing " + name + sim).setContentText("Starting…").build();
+        if ((checking || checkRunning) && j == job) return b.setContentTitle("Checking " + name + "'s shaders").setContentText(dev.peanuts.build.ReuseCheck.NOTE).setOngoing(true).build();   // PEANUTS: checkKept
         String state = j.state();
         int pct = (int) Math.round(j.overall() * 100);
         int i = j.current();

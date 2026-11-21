@@ -55,6 +55,8 @@ Plan for the size of the game plus a few GB. Before a build, the game's sheet sh
 
 A game compressed as a solid `.nsz` needs about its size once more while it is imported, for the temporary copy (see [Can I build from NSZ or XCZ files?](#can-i-build-from-nsz-or-xcz-files)). The sheet says how much of the estimate that is.
 
+The app also keeps what a build made in its own storage, so that the next build of the game keeps what did not change: at most 4 GB for every game together, the games built longest ago going first, and none that would leave less than 2 GB free. Settings › **Storage** lists it under **Build caches**, one row a game.
+
 ### What do I need from my own console?
 
 - Your own game dumps as NSP, XCI, `.nup` files or dump folders, with their updates and DLC if you use them. NSP and XCI files compressed with nsz (`.nsz`, `.xcz`) work too.
@@ -310,7 +312,7 @@ Do not remove the card during a build or while a game from it runs.
 | **Prepare again** | Hold the cover › **Storage** tab, only for a game added as a dump folder | Remakes only the parts of the pack that do not fit, from the dump. It does not import or touch the companion. |
 | **Build with mods** | Hold the cover › **Game** tab › **Mods** | Makes a separate build that carries code mods. See [Mods](#mods). |
 
-A tap on a ready cover plays the game, so the way to its sheet is hold the cover › **Storage** › **Build again**.
+A tap on a ready cover plays the game (or asks first, when a newer update or DLC was found beside it: see [How do updates and DLC work?](#how-do-updates-and-dlc-work)), so the way to its sheet is hold the cover › **Storage** › **Build again**.
 
 ### What is Build again, and when do I need it?
 
@@ -329,7 +331,7 @@ It makes the game's `.nup` again from your dumps (the base, the update, the DLC)
 - after you add a newer game update;
 - when a build says its shaders "come from files your import does not have".
 
-Open the game's sheet (for a built game: hold the cover › **Storage** › **Build again**) and tap **Import again…**. It asks first, and says:
+Open the game's sheet (for a built game: hold the cover › **Storage** › **Build again**) and tap **Import again…**, or tap **Build** in the question a built game's cover asks when it found a newer update or DLC. It asks first, and says (from the cover's question only when it would take another update than the one the question named):
 
 - what is deleted: the old `.nup`, with its size and where it is. It is replaced only when the new one is complete. If the import fails or you stop it, the game stays as it was;
 - what is kept: your saves, mods and settings, and the built game until the new build replaces it;
@@ -357,6 +359,8 @@ Yes. A script prepares the game on a computer and pushes it to the device over U
 ### How do updates and DLC work?
 
 Put them in the game folder, or set Settings › Library › **Update folder** and **DLC folder**. They are matched to their games by title ID. The sheet shows the update it will use, the newest one found unless you chose another (**Choose another…** picks a different file), and the DLC it found (**Add…** picks more).
+
+For a game that is built already, the cover says when it found a newer update the app knows for the game, or DLC its `.nup` does not hold yet: an **Update** mark, and "Update 3.0.4 found" or "An add-on found" in its state. A tap asks first: **Build** takes them in with Import again, **Play** plays the game as it is, **Not now** asks no more for these (the mark then reads **Update later**). Nothing is built without the tap. Such a build keeps what did not change since the last build of the game (its shaders, its code, the game files the shader search read) and makes only the rest, so it takes a fraction of a first build; its ready message says what came from earlier builds. Later, while the device is plugged in and no game runs, the app checks every shader it kept against a translation made from the start.
 
 ### A build says shaders "come from files your import does not have". What now?
 
@@ -772,7 +776,7 @@ A screenshot or a short video helps for a wrong picture. Never attach or link ga
 
 ### Do I need to rebuild my games after an update?
 
-Rebuilding every game after an app update is strongly recommended. An update can change how a game's code and shaders are prepared, and a game built by an older version keeps the old result until it is built again. Hold the game's cover, open **Storage**, tap **Build again**, then **Rebuild**. Your saves are not touched. It is quick when the game's code is otherwise current, and takes as long as a first build when it is not.
+Rebuilding every game after an app update is strongly recommended. An update can change how a game's code and shaders are prepared, and a game built by an older version keeps the old result until it is built again. Hold the game's cover, open **Storage**, tap **Build again**, then **Rebuild**. Your saves are not touched. It is quick when the game's code is otherwise current. What the update changed is made again, which can take as long as a first build (all the shaders, when the update changed how they are translated); what it did not change is kept from the last build.
 
 ### Will I lose my saves?
 

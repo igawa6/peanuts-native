@@ -224,20 +224,39 @@ def scandir(path):
 
 
 def walk(top, topdown=True, onerror=None, followlinks=False):
-    if not _resolve(top):
+    # PEANUTS(upstream-candidate) begin: by the image's nodes. Each entry's is_dir was a stat of its whole path, which a .nup resolves again from its root
+    # (nup.find, a binary search a level): a walk of Animal Crossing's 103,400 RomFS files took about 10 s on an AYN Thor, and the split walks it three times
+    # (its files, runtime_nros, the Unreal check). The same names, in the same order, and the dirs a caller leaves in the list it was given are the ones walked
+    # (os.walk's)
+    resolved = _resolve(top)
+    if not resolved:
         yield from _os.walk(top, topdown=topdown, onerror=onerror, followlinks=followlinks); return
-    def visit(path):
-        try:
-            dirs, files = [], []
-            with scandir(path) as entries:
-                for e in entries: (dirs if e.is_dir() else files).append(e.name)
+    image, relative = resolved
+    try: top_node = image.find(relative)
+    except OSError as error:
+        if onerror: onerror(error)
+        return
+    def visit(path, k, rel):
+        try: kids = image.children(k)
         except OSError as error:
             if onerror: onerror(error)
             return
+        nodes, dirs, files = {}, [], []
+        for name, c in kids:
+            if image.entry(c)[4]: files.append(name)
+            else: dirs.append(name); nodes[name] = c
         if topdown: yield str(path), dirs, files
-        for name in dirs: yield from visit(_os.path.join(path, name))
+        for name in dirs:
+            sub = f'{rel}/{name}' if rel else name
+            if name in nodes: yield from visit(_os.path.join(path, name), nodes[name], sub); continue
+            try: c = image.find(sub)   # a name the caller put into dirs: found from the top, as the walk before found each by its path (os.walk walks it too)
+            except OSError as error:
+                if onerror: onerror(error)
+                continue
+            yield from visit(_os.path.join(path, name), c, sub)
         if not topdown: yield str(path), dirs, files
-    yield from visit(top)
+    yield from visit(top, top_node, relative)
+    # PEANUTS end
 
 
 class Path(type(_Path())):

@@ -201,6 +201,34 @@ public final class BuildService extends Service {
         }
     }
 
+    /**
+     * What the ready message adds when the build took part of its work from earlier builds (issue #120, peanuts/docs/INCREMENTAL-BUILD.md): how long it took and what
+     * came from them, read from this build's step logs (BuildReuse). Empty for a build that kept nothing, or when the logs cannot be found
+     */
+    private String reused(BuildRequest r, File dump) {
+        try {
+            File logs = new File(Upstream.workOf(dump, r.titleId), "ondevice/logs");
+            String t = BuildReuse.text(BuildReuse.read(logs, runStart), (System.currentTimeMillis() - runStart) / 1000);
+            if (!t.isEmpty()) log("reused:" + t);
+            return t;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return "";
+        }
+    }
+
+    /** The full check of the shaders this build kept, when it is due, the phone charges and no game runs (ReuseCheck): in the packer, after the build; else later */
+    private void startCheck(BuildRequest r, File dump) {
+        try {
+            File jobFile = Upstream.jobFileOf(Upstream.workOf(dump, r.titleId));
+            ReuseCheck.remember(getNoBackupFilesDir(), r.titleId, jobFile);   // for a start later, from the launcher (ReuseCheck.startAny)
+            String why = ReuseCheck.start(this, jobFile, r.titleId);
+            if (why == null) log("reuse check: the full check of the kept shaders starts in the background (a game that starts stops it)");
+            else if (!why.equals("nothing due")) log("reuse check: later (" + why + ")");
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            log("reuse check: " + e);
+        }
+    }
+
     private void run(BuildRequest r) {
         boolean ok = false;
         String message;
@@ -237,8 +265,9 @@ public final class BuildService extends Service {
             }
             if (prepareFailed != null) throw prepareFailed;
             ok = true;
-            message = name + " is ready to play." + shadersLeftOut(r, dump);
+            message = name + " is ready to play." + reused(r, dump) + shadersLeftOut(r, dump);
             progress("done", 100, message);
+            startCheck(r, dump);
         } catch (IOException e) {
             message = e.getMessage() == null ? e.toString() : e.getMessage();
             code = category(e);

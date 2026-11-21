@@ -164,6 +164,10 @@ public final class PeanutsPrefs {
     public static String chosenUpdate(Context c, String titleId) { return of(c).getString(key(titleId, "update"), null); }
     public static void chosenUpdate(Context c, String titleId, String path) { put(c, key(titleId, "update"), path); }
 
+    /** The newer update and add-ons found beside a built game that the player answered "Not now" for (dev.peanuts.build.UpdateFound.Found.key): those ask no more */
+    public static String foundSeen(Context c, String titleId) { return of(c).getString(key(titleId, "found_seen"), ""); }
+    public static void foundSeen(Context c, String titleId, String found) { put(c, key(titleId, "found_seen"), found); }
+
     /** The DLC files the user added by hand for a title (beside the ones the scan matched) */
     public static List<String> chosenDlc(Context c, String titleId) {
         List<String> out = new ArrayList<>();

@@ -34,6 +34,7 @@ PUSH_SCRIPT = REPO / 'peanuts' / 'scripts' / 'push-pack.py'
 OOZ_SRC = REPO / 'dm' / 'third_party' / 'ooz'
 OOZ_BUILD = REPO / 'peanuts' / '.build' / 'ooz'
 NXAES_SRC = REPO / 'dm' / 'peanuts' / 'pack_worker' / 'nxaes.c'
+NXYAZ0_SRC = REPO / 'dm' / 'peanuts' / 'pack_worker' / 'nxyaz0.c'
 PYMOD_BUILD = REPO / 'peanuts' / '.build' / 'pymod'
 WINDOWS = sys.platform == 'win32'
 LINUX = sys.platform.startswith('linux')
@@ -295,21 +296,32 @@ def build_unoodle():
 def build_nxaes():
     """-> (peanuts/.build/pymod, '') holding _nxaes for this Python (uepak.py reads an Unreal pak's encrypted index with it off the Mac), built from
     dm/peanuts/pack_worker/nxaes.c when it is missing or older than its source, or (None, why this computer has none)"""
-    if not LINUX: return None, 'the _nxaes module (dm/peanuts/pack_worker/nxaes.c) is built on Linux only'
+    return build_pymod('_nxaes', NXAES_SRC)
+
+
+def build_nxyaz0():
+    """-> (peanuts/.build/pymod, '') holding _nxyaz0 for this Python (shader_split.py's Yaz0 in C, many times faster than its Python loop, which it falls back to
+    without the module), built from dm/peanuts/pack_worker/nxyaz0.c when it is missing or older than its source, or (None, why this computer has none)"""
+    return build_pymod('_nxyaz0', NXYAZ0_SRC)
+
+
+def build_pymod(name, src):
+    """A module of dm/peanuts/pack_worker for this Python, in peanuts/.build/pymod: (that folder, '') or (None, why this computer has none)"""
+    if not LINUX: return None, f'the {name} module ({src.relative_to(REPO).as_posix()}) is built on Linux only'
     inc, suffix = sysconfig.get_paths().get('include') or '', sysconfig.get_config_var('EXT_SUFFIX') or '.so'
-    out = PYMOD_BUILD / ('_nxaes' + suffix)
-    if not stale(out, [NXAES_SRC]): return PYMOD_BUILD, ''
+    out = PYMOD_BUILD / (name + suffix)
+    if not stale(out, [src]): return PYMOD_BUILD, ''
     cc = os.environ.get('CC') or next((c for c in ('gcc', 'clang', 'cc') if shutil.which(c)), None)
-    if not cc: return None, 'the _nxaes module needs a C compiler (gcc or clang) on PATH'
+    if not cc: return None, f'the {name} module needs a C compiler (gcc or clang) on PATH'
     if not os.path.isfile(os.path.join(inc, 'Python.h')):
-        return None, f'the _nxaes module needs the headers of {sys.executable} (no Python.h in {inc or "its include folder"}: python3-dev or python3-devel)'
+        return None, f'the {name} module needs the headers of {sys.executable} (no Python.h in {inc or "its include folder"}: python3-dev or python3-devel)'
     PYMOD_BUILD.mkdir(parents=True, exist_ok=True)
-    say(f'building _nxaes into {PYMOD_BUILD}')
-    tmp = PYMOD_BUILD / ('_nxaes.tmp' + suffix)
-    rc, _ = run([cc, '-O2', '-Wall', '-fPIC', '-shared', f'-ffile-prefix-map={NXAES_SRC.parent}=dm/peanuts/pack_worker', '-I', inc, '-o', str(tmp), str(NXAES_SRC)], False, 'the _nxaes build')
+    say(f'building {name} into {PYMOD_BUILD}')
+    tmp = PYMOD_BUILD / (name + '.tmp' + suffix)
+    rc, _ = run([cc, '-O2', '-Wall', '-fPIC', '-shared', f'-ffile-prefix-map={src.parent}=dm/peanuts/pack_worker', '-I', inc, '-o', str(tmp), str(src)], False, f'the {name} build')
     if rc or not tmp.is_file():
         tmp.unlink(missing_ok=True)
-        return None, f'the _nxaes build failed (exit code {rc}; its messages are above)'
+        return None, f'the {name} build failed (exit code {rc}; its messages are above)'
     os.replace(tmp, out)
     return PYMOD_BUILD, ''
 
@@ -565,6 +577,9 @@ def main():
         ue = target.resolve().parent / f'{app}-work' / 'android-shaders' / 'ue_shaders'
         pc['DM_UE_DECODE'] = str(ue)
         if not args.dry_run: ue.parent.mkdir(parents=True, exist_ok=True)
+    pymod, why = build_nxyaz0()   # shader_split.py's Yaz0 in C, in the folder an Unreal game's _nxaes is in too
+    if pymod and 'PYTHONPATH' not in pc: pc['PYTHONPATH'] = str(pymod) + (os.pathsep + os.environ['PYTHONPATH'] if os.environ.get('PYTHONPATH') else '')
+    elif not pymod and LINUX: say(f'note: {why}; the split decodes Yaz0 in Python, which is many times slower')
     for k, v in pc.items():
         ENV[k] = v
         say(f'  {k}={v}')

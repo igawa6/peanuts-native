@@ -1399,3 +1399,113 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
 | `dm/games/01002B00111A2000/game.tsv`, `dm/games/01002B00111A2000/README.md` | 1, 1 | Hyrule Warriors: Age of Calamity on Android: frame limits Game owned, 30 and 60 (the frame step's targets), measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/01002B00111A2000/vk_prewarm.bin` | new | its Turnip prewarm seed (242 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+### Round 26, a Build after an update keeps the shaders and modules that come out the same (2026-11-18)
+
+Issue #120: a Build after a game update, an added DLC or an Import again translated every shader again, because upstream's delta update keeps an older library's
+entry only with a profile manifest (`vk_delta.tsv`) of the build, and no Switch 1 profile has one. The shaders step now runs `dm/peanuts/reuse/shader_reuse.py`,
+which runs `vk_android_build.py` in its process with a manifest of its own (the older library's entries that come out the same, in a copy of the profile folder),
+then checks a translated sample (spread over the shaders' classes) against the older library; see [INCREMENTAL-BUILD.md](docs/INCREMENTAL-BUILD.md). The same
+profile inputs alone are trusted only with the profile's own `pso_pairs.tsv`: without it the split's copy pads the vertex shaders, outside the inputs digest, and
+the per-shader record decides. A vertex shader is kept only when the pixel shaders paired with it that the build makes (the absences validated against
+the split left out) are those of the older library: their inputs pad its outputs. No file of the Vulkan chain changes (`vk_android_build.py --digest` is the same), so `DMSH_VK_CHAIN` does not move.
+
+The rewrite step: a module's key covers the profile's whole `patches.py` and every `build` / `fps_decouple` row, so a profile that gained a game version rewrote
+`sdk` and `subsdk*` again although their build IDs had not changed. `dm/peanuts/reuse/rewrite_reuse.py` records, after each rewrite, the part of what
+`patch_nso.py` reads for the module's build ID (every patch file with a table at that build ID, as `patch_nso.py` merges them from all; the build rows and
+`fps_decouple` rows it reads; the rewriter's files; the module's bytes) and the SHA-256 of its `patched.bin`. A later rewrite whose key moved keeps the module when
+both are the recorded ones and writes the current key. `PN_REUSE=0` in the job's `env.txt` turns both off.
+
+Measured on an AYN Thor (ACNH 3.0.3 with its DLC, test app, 2026-11-18/19): Import again 7 min 29 s → 2 min 15 s (shaders 2 min 34 s → 20 s, 9,570 of 9,766
+kept, 196 translated to check them); a profile that gained shader pairs: 9,555 kept, 211 translated, the library byte for byte the one of a build with
+`PN_REUSE=0`; a profile that gained a `build` row: `sdk` and `subsdk0` kept, `main` rewritten, the kept `sdk.patched.bin` byte for byte the one a build from
+nothing makes with that profile. These ran on 0.1.4, before a review's changes (the `pso_pairs.tsv` rule, the sample by class, the paired pixel shaders a build makes). On 0.1.5 with the
+code as it is: a full build 7 min 31 s, Import again 2 min 13 s (9,564 kept by the record, 202 translated to check them, all the older library's byte for
+byte), and the library after Import again is the full build's byte for byte.
+
+The shaders step keeps a copy of the last library it wrote in `no_backup/reuse/<title ID>/library/v-<V>/` (`shader_reuse.py keep_library`) and adds it to
+`DMSH_VK_DELTA_FROM` for itself and `vk_android_build.py`'s delta path: a game whose pack's library is gone (the build deleted, another Build folder) keeps its
+shaders all the same. Only this version's copy; at most 4 GB for every game together (`PN_REUSE_KEEP_MB`), the games built longest ago going first; none that
+would leave less than 2 GB free. The same library listed twice (the pack's and the copy) counts once. The rewrite's record keeps a copy of each module's files
+too (`rewrite_reuse.py record`, `no_backup/reuse/<title ID>/rewrite/<module>.files/`), and a pack without the module gets it back when its part and every file
+are the recorded ones (`restore`), in place of a rewrite. The full check (`shader_reuse.py full_check`, `dev.peanuts.build.ReuseCheck`, PackService `checkKept`): after a build that kept shaders, every
+shader is translated again later, while the phone charges and no game runs, and compared with the library; a library that differs is replaced by the full
+translation. On the Thor (ACNH, `incremental-check.py new-folder`, 2026-11-19): a Build in an empty Build folder
+with the app's caches kept took 1 min 16 s (a full build 7 min 55 s), the library and the modules byte for byte the full build's; the library copy is 96 MB.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/ondevice/java/dev/nxnative/android/PackService.java` | 2 | The shaders step's tool is `dm/peanuts/reuse/shader_reuse.py` (the simulated engine keeps `vk_android_build.py`, which `FakeEngine` knows); `PN_REUSE_DIR` = `no_backup/reuse/<title ID>` beside `DMSH_VK_DELTA_FROM` | `PEANUTS` |
+| `android/app/src/ondevice/java/dev/nxnative/android/PackService.java` (the rewrite on the fast cores) | 2 | `PN_REWRITE_J`: the memory plan's workers when the worker command is there, else 1; an `env.txt` `PN_REWRITE_J` stays within the plan (`capped`), as `J` does | `PEANUTS` |
+| `android/app/src/ondevice/java/dev/nxnative/android/PackService.java` (the full check) | 26 | `checking` / `checkRunning` / `afterCheck` / `checkJob` (`save` and `publish` write and send nothing of the check's done job; `onTimeout` and the 20 s kill leave it done; its end leaves it no more the service's `job`, which a client that binds later is sent); a check's start never runs a job, and one that runs nothing is answered without one (a refused `startForeground(j)` marked a job that is not done paused "refused"), under the check's own notification, and while a worker's end is still to post under the one in the foreground with nothing removed or stopped; a refused check start leaves no `job`; `onStartCommand` takes ACTION_START with `ReuseCheck.EXTRA_CHECK` for a done job whose check is due (`check`, only with no worker and no worker's end still to post, a worker running `checkKept`, not sticky), and a job's start during the check stops it and runs once it has (`afterCheck`), and a pause meanwhile is that job's (`ACTION_PAUSE`: it stopped the check instead, and the job started anyway), its file written at once and its clients and notification told at the check's end (`pausedWaiting`: with a worker alive, a paused job's notification read "Waiting" and stayed); `work()` keeps `split/` while a check is due and writes the job's path beside `check.todo` (`ReuseCheck.remember`); before the tool runs, a job or a game that came meanwhile stops the check; `step()` with `checking`: no state of the job changed (no split set pending, no failed results dropped, no shader counts reset, no step progress), `--check` before the shaders step's argv, `check.log`, the Tail under a step `check`; `checkKept` (only while no game runs and the policy does not pause, with the device's remembered Go on anyway as a job's run has it (`heatTrusted`, #93: without it a phone whose SEVERE is not real ended the check at every start); a watcher interrupts the tool when a game starts or a job waits, again every 3 s while it runs, and a game asks `requestStop` once; the split goes once nothing is due; a check this job cannot make is dropped and one that failed counts a try, `dev.peanuts.build.CheckDue`; a notification when the library was replaced); a check asked after an app update (`apkChanged`) is dropped; the tool's exit code 3 (`full_check`'s DIFFER) ends the check, no tool failure; `Tail` writes no missing-shader count for the check; `note` while checking, for the check's job only; the check's own notification (`NOTE_CHECK`: under `NOTE` it took a failed or finished build's and removed it), which a job that takes the service over cancels, from the check's start to its end's post (`checking || checkRunning`: its finally works on for seconds); a build with code mods is not the check's job | `PEANUTS`; `PEANUTS begin`/`PEANUTS end` spans |
+| `android/app/build.gradle` | 1 | `tools.zip` carries `dm/peanuts/reuse/*.py` | `PEANUTS` |
+| `dm/tools/patch_nso.py` | 2 | `in_parallel` forks its workers itself where `_multiprocessing` is missing (the phone's CPython): `in_forks` (pipes, pickled results put back in order, the children killed on an error; the heap frozen while they run, `gc.freeze`, so that they share it; a failed fork's pipe closed; a child's output flushed; the children follow the worker's CPUs and nice, `follow_parent_cpus`, as nxpack_worker's game-yield watch moves only the worker's own threads). The output is the same; the file before it is in `dm/tools/rewriter_equiv/patch_nso.py.eaf706b807d5` (allow-listed: a byte copy of main's file since its PR #164, which changed the rewriter; the file before #164 counts no more). Upstream candidate: yes | `PEANUTS(upstream-candidate)` spans |
+| `scripts/pack_android.py` (the rewrite on the fast cores) | 2 | `pn_rewrite_worker`: an in-process rewrite's module in `DM_SPLIT_WORKER`'s worker process with `DM_REWRITE_J` = `PN_REWRITE_J` (its forks there, not in the app's process), its log and progress as `run_in_process`, the pipe read in a thread of its own so that a stop reaches the call within half a second (it waited for the worker's next line, which `in_forks` prints only as each child is done); a stop kills its process group; the call tries it before `run_in_process` | `PEANUTS`; `PEANUTS begin`/`PEANUTS end` |
+| `scripts/pack_android.py` | 3 | `pn_reuse()`; in `rewrite`, a module whose key moved is kept when `rewrite_reuse.keep` finds its part of the profile, its bytes and its `patched.bin` the recorded ones, and a module the pack has none of is put back from the app's copy of its last rewrite when `rewrite_reuse.restore` finds it the same; after `rewrite`, `rewrite_reuse.record` for each module (not for a mod's cross-module layout). Without `PN_REUSE_DIR` (a computer) nothing changes | `PEANUTS` |
+| `dm/gfx/tools/shader_split.py` | 5 | `pn_split()`; `pooled` takes `pn` (a `split_reuse.Context`): before the scan it puts the kept results of unchanged plain files into the ScanCache and cuts the batches so that each kept file is one of its own, after it gives the new results to be kept; `split_tables` makes the context for the file jobs and, when a file scanned to check differs from its kept result (`split_reuse.Stale`), scans the files again without it. Without `PN_REUSE_DIR` (a computer) or with `PN_REUSE=0` nothing changes | `PEANUTS` |
+| `dm/tools/tests/test_split_versions.py` (new) | 1 | upstream's targeted split of one version of a multi-version profile (as Mario Kart 8 Deluxe's 4.0.0 + 4.0.1 union): the direct and the targeted scan keep the full scan's outputs byte for byte; a shader moved to a file the map does not name, one first found in another named file, or a profile without `shader_optional.tsv` takes the full scan | `PEANUTS` (the docstring) |
+| `README.md` | 1 | the contributors' paragraph: incremental builds | `<!-- PEANUTS -->` |
+| `dm/gfx/tools/shader_split.py` (a review's fix) | 1 | `unsized` lets a `MemoryError` or an `ImportError` through, which `scan_file` makes the file's `('unreadable', why)` for this split: it read a container that did not open as the file as it is, a result `split_reuse.py` kept, so a decoder that failed once (no memory) left the file's shaders out of every later build | `PEANUTS` |
+| `dm/tools/romfs.py` | 5 (one `PEANUTS(upstream-candidate)` span) | `walk` of a `.nup` or a RomFS image goes by the image's nodes; each entry's `is_dir` was a stat of its whole path, which a `.nup` resolved from its root (a walk of ACNH's 103,400 files took about 10 s on the Thor, and the split walks three times). The same names in the same order, `topdown` and a caller's pruning as before (`peanuts/tests/test_romfs_walk.py`); 20,000 files: 2.7 s → 0.02 s on a PC. Upstream candidate: yes | `PEANUTS(upstream-candidate)` |
+| `android/app/src/main/java/dev/nxnative/android/StorageScan.java` | 2 | Settings › Storage lists each game's build cache, `no_backup/reuse/<title ID>` (the kept shader library copy and the records of `dm/peanuts/reuse`), as its own kind, not ticked: a cache of up to 4 GB together should not be invisible, and without it the game's next build takes as long as its first. Refused while Prepare runs, as every item | `PEANUTS` |
+| `android/app/src/jvmtest/java/dev/nxnative/android/StorageScanJvmTest.java` | 2 | a game's cache is listed as a build cache, a folder under `reuse/` that is not a title ID is not | `PEANUTS` |
+
+Tests: `peanuts/tests/test_shader_reuse.py`, `peanuts/tests/test_rewrite_reuse.py`, `peanuts/tests/test_rewrite_forks.py`, `peanuts/tests/test_split_reuse.py`, `peanuts/tests/test_romfs_walk.py`, `peanuts/tests/test_reuse_check.py` (with `CheckDueJvmTest`), `peanuts/tests/test_update_found.py`, `peanuts/tests/test_build_reuse.py`, `dm/tools/tests/test_split_versions.py`, `dm/tools/tests/test_android_storage.py`. Upstream candidate: the mechanism, yes (moceure's delta needs a Mac manifest; this needs none).
+
+### Round 31, Yaz0 in C for the shader split (2026-11-19, GitHub issue #120)
+
+Nearly all of a Nintendo game's shaders are in Yaz0 files (`.szs`, and `.bfres` members of SARC archives), and `shader_split.py` decodes Yaz0 in a Python loop
+(`yaz0`). For Mario Kart 8 Deluxe 4.0.1 that loop was nearly all of the split: the 1,359 files that hold shaders are 752 Yaz0 streams, 5.5 GB that expand to
+10.7 GB. `_nxyaz0` (`dm/peanuts/pack_worker/nxyaz0.c`, new) is the same loop in C, as a module of the Python home's `lib-dynload` like `_nxaes`. `yaz0` takes
+its bytes when the module is there. The module returns None for every stream the loop stops on (the stream ends early, a back-reference reaches before the
+start, a size the stream cannot reach), and also for a buffer that is not one run of bytes or a size there is no memory for (a review found both raised an
+error instead), and `yaz0` then runs its loop on that stream, so a damaged file names the same error as before. Without the module
+(a Mac, Windows, a Python without it) nothing changes.
+
+The module is built by `dm/peanuts/pack_worker/build.sh` into the stage (`peanuts/scripts/ondevice-stage.sh <work dir> zbic` adds it to an existing stage),
+`build.gradle` refuses a stage without it, and `peanuts_build.py` builds it on Linux for its own Python (`peanuts/.build/pymod`, on the pack step's
+`PYTHONPATH`; `build_pymod`, shared with `_nxaes`). The shader reader is not a shader-cache input (`dmsh_chain.py` `FILES`), so no library version moves.
+
+Measured (a PC under Linux, Python 3.14, the 4.0.1 dump of a `.nup` without add-on RomFS, `J=2 DM_SPLIT_TARGETED=1 DM_SPLIT_DIRECT=1`):
+
+| | Python loop | `_nxyaz0` |
+|---|---|---|
+| Yaz0 of the test corpus (`test_split_yaz0.py`'s streams) | 23–27 MB/s | 1,400–1,600 MB/s |
+| Yaz0 of the 752 streams of the 4.0.1 shader files (10.7 GB decoded, one core) | 15 MB/s | 670 MB/s |
+| the direct split of 4.0.1 (`DM_SPLIT_DIRECT=1`, the phone's path) | 374 s | 30 s |
+| the full scan of 4.0.1 (6,597 files; the fallback) | 544 s (Windows, 2026-11-18) | 148 s |
+| the direct split of 4.0.1 on an AYN Thor (test app, 4 workers, the 0.1.4 packer stage with `_nxyaz0`) | 8:09 (the same APK without the module, 2026-11-18) | 16 s (twice: 16.3 s, 15.5 s) |
+
+The package and the four tables of every run are byte-identical to a full scan of the same dump in Python (Windows), and every fifth of the 752 streams, decoded
+both ways, gave the same bytes; the Thor's two splits too. In the direct split, Yaz0 is now about 8 of its 30 s; the rest is reading the 7.8 GB of the 1,359 files and scanning them.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/shader_split.py` | 2 | `import _nxyaz0` (None without it), and `yaz0`'s first line: the module's bytes, else the loop as before | `# PEANUTS begin`/`end`, `# PEANUTS: ...` |
+| `android/app/build.gradle` | 1 | the stage must have `lib-dynload/_nxyaz0.cpython-314-aarch64-linux-android.so` (`need`) | `// PEANUTS: ...` |
+| `dm/peanuts/pack_worker/nxyaz0.c`, `build.sh`; `peanuts/scripts/peanuts_build.py`; `peanuts/docs/BUILDER.md` (Peanuts-owned) | | the module, its stage build, its PC build | |
+| `dm/games/0100152000022000/README.md` | 1 | the note's line on the split's Yaz0 decoding, resolved | `<!-- PEANUTS -->` |
+| `dm/tools/tests/test_split_yaz0.py` (new) | 1 | the module built with this machine's compiler against the loop: a corpus of runs, repeats at every distance, text and random bytes; a size that ends inside an operation; trailing bytes; every cut of a stream and references before the start (None, and the loop's error); 3,000 random streams; a size the stream cannot reach; bytes, bytearray and memoryview; a buffer that is not one run of bytes, and a size with no memory for it (None, not an error); the hook with and without the module | `PEANUTS` docstring |
+
+Tests: `test_split_yaz0.py` (10; 8 skipped without a C compiler or Python's headers), every `test_split_*.py` with and without the module, `peanuts/tests/test_peanuts_build.py`.
+
+### Round 32, a worker's end and a build's earlier states (2026-11-20, issue #120 review)
+
+Three races the review of the incremental builds (pull request #150) found in code from before it. A job's start between a worker's end (its thread gone,
+so `onStartCommand`'s `isAlive` check lets it through) and that end's post (`finished`) started a new worker, which the post then took for the one that
+ended: `worker = null` forgot it, its notification read "Paused" with Resume, `stopSelf()` stopped the service under it, and a start after that found no
+worker and ran a second one on the same job. The post now names its worker and leaves one started since alone. In `Prepare`, a game's builds share one
+`job.json`, and the packer sends a client that binds whatever job it holds: a done or failed job of an earlier run, still held, could end a build that had
+made a new job at once. Such a state is now one from before the run by its `"updated"` (job.json's as the run first read it), as a resumed job's own state
+already was. And Prepare's automatic Try anyway restarted on a "failed" read from `job.json` before the packer's worker had ended: the worker's last save
+wrote the job over the Try anyway, a start beside a worker that runs is dropped, and the end's message came after the restart. The restart now waits for
+the run's end (the message that says no worker runs, at most 30 s; otherwise the build stops with the failure and its card's Try anyway), then reads
+`job.json` as the packer left it.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/ondevice/java/dev/nxnative/android/PackService.java` (a worker's end) | 2 | `work()`'s end posts `finished(self)`; `finished(Thread w)` returns when `worker != w` | `PEANUTS` |
+
+Peanuts' own files, no marker: `android/app/src/main/java/dev/peanuts/build/Prepare.java` (`earlier`: the states from before the run, `firstRead`;
+`runEnded`; `link`, `Link.service` volatile, `Link.heard`). Tests: `peanuts/tests/test_reuse_check.py` (`WorkerEnd`; `Resume`: a job the packer still
+holds, Try anyway once the failed run has ended). Upstream candidate: the `PackService` part, yes (upstream's own race).

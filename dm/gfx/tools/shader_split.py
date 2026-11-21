@@ -2841,9 +2841,15 @@ def ungzip(d, label):
     return out
 
 
+# PEANUTS begin: Yaz0 in C (dm/peanuts/pack_worker/nxyaz0.c) where this Python has the module: the phone's Python home (lib-dynload), the PC builder's peanuts/.build/pymod
+try: import _nxyaz0
+except ImportError: _nxyaz0 = None
+# PEANUTS end
+
 def yaz0(s, label='Yaz0'):
     """Yaz0 decompression (Super Mario 3D World + Bowser's Fury: almost all of RomFS is .szs = SARC wrapped in Yaz0). Pure Python runs at about 20–45 MB/s per core, under a minute for the whole 4.7 GB RomFS in parallel, and needs no extra dependency.
     Group header bits: 1 = one literal byte; 0 = back-reference, 2 bytes {length high nibble, 12-bit distance} (distance + 1); length 0 reads one more byte + 0x12, else + 2. Overlapping copies are expanded by their period"""
+    if _nxyaz0 and (d := _nxyaz0.decode(s)) is not None: return d   # PEANUTS: the same bytes in C; None where the loop below stops with an error, which it then names
     n = int.from_bytes(s[4:8], 'big'); out = bytearray(); si = 16
     try:
         while len(out) < n:
@@ -2950,6 +2956,7 @@ def unsized(d, where):
             dec = lz4.frame.decompress(f)
         elif did and did not in ZDICTS: dec = None
         else: dec = unzs_dict(f, did, where) if did else zstd_mod().decompress(f)
+    except (MemoryError, ImportError): raise   # PEANUTS (issue #120): not a property of the bytes; scan_file makes the file unreadable this once, which split_reuse.py never keeps
     except Exception as e: why = str(e) or type(e).__name__
     else:
         if dec is None: why = f'the frame needs zstd dictionary {did}, which Pack/ZsDic.pack.zs does not have'
@@ -3908,12 +3915,19 @@ def scan_digest(argv, jobs, sources=None):
         with open(p, 'rb') as f: h.update(hashlib.sha256(f.read()).digest())
     return h.hexdigest()
 
-def pooled(ex, jobs, total, start=0, chunk=1, cache=None):
+def pn_split():   # PEANUTS: dm/peanuts/reuse/split_reuse.py (issue #120): the scan results of unchanged game files, kept across builds; None on a computer (no PN_REUSE_DIR) or with PN_REUSE=0
+    if os.environ.get('PN_REUSE') == '0' or not os.environ.get('PN_REUSE_DIR'): return None
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../peanuts/reuse'))
+    import split_reuse
+    return split_reuse
+
+def pooled(ex, jobs, total, start=0, chunk=1, cache=None, pn=None):   # PEANUTS: pn (split_reuse.Context)
     """scan_file over jobs in the pool, the results in job order, with a 'progress: <done>/<total>' line at most twice a second (the NSP script shows it as
     the stage's count). The count is of the jobs finished in any order: counted in order it would stall behind one slow archive range while the others finish.
     start is the index of the first job among all the split's jobs (the count's start and ScanCache's keys); batches the cache holds whole are not scanned again"""
     cache = cache or ScanCache(None)
-    batches = [(start + i, jobs[i:i + chunk]) for i in range(0, len(jobs), chunk)]
+    if pn: pn.fill(cache, jobs, start, chunk)   # PEANUTS: kept results of unchanged files into the cache (split_reuse.py)
+    batches = pn.batches(jobs, start, chunk, cache) if pn and not pn.off else [(start + i, jobs[i:i + chunk]) for i in range(0, len(jobs), chunk)]   # PEANUTS: pn: each kept job a batch of its own
     kept = {first: r for first, b in batches if (r := cache.cached(first, len(b))) is not None}
     done, shown = start + sum(len(r) for r in kept.values()), 0.0
     if kept: print(f'progress: {done}/{total}', flush=True); shown = time.monotonic()
@@ -3936,7 +3950,9 @@ def pooled(ex, jobs, total, start=0, chunk=1, cache=None):
     finally:
         AT = None
         cache.flush()   # also on an interrupt (KeyboardInterrupt): what finished is kept
-    return [r for first, _ in batches for r in kept[first]]
+    out = [r for first, _ in batches for r in kept[first]]   # PEANUTS: named, for pn below
+    if pn: pn.store(jobs, out, start)   # PEANUTS: the new results kept; split_reuse.Stale when a file scanned to check differs from its kept result
+    return out
 
 
 # PEANUTS begin: a list argument (RomFS, main, DLC) whose paths may hold a comma. The lists were split at every ',', so one game file named with a comma
@@ -4273,9 +4289,15 @@ def split_tables(results, big, files, dumps, J, common, zdicts, cache, targeted=
     targeted: Fallback when a Unity serialized file wants a type tree, which a bundle the scan left out may lend. direct: the files read at their recorded containers (direct_targets, DIRECT)"""
     keys = {}
     # First pass: every file; Unity bundles carry type trees, and the Shader trees are collected on the way. Second pass: Unity serialized files without type trees are scanned again with the borrowed trees
+    pnm = pn_split()   # PEANUTS: split_reuse.py (issue #120): the plain files' kept results
+    pn = pnm.Context(common, zdicts, direct, KEEP, digest_sources(), ResultUnpickler) if pnm else None   # PEANUTS
     with pool(J, common, {}, zdicts, direct) as ex:   # PEANUTS: direct param above
         n = len(big) + len(files)
-        results += pooled(ex, big, n, cache=cache) + pooled(ex, files, n, len(big), chunk=16, cache=cache)
+        results += pooled(ex, big, n, cache=cache)   # PEANUTS begin: the files with pn; when a file scanned to check differs, all of them scanned again
+        try: results += pooled(ex, files, n, len(big), chunk=16, cache=cache, pn=pn)
+        except Exception as e:
+            if not (pnm and isinstance(e, pnm.Stale)): raise
+            pn.forget(cache); results += pooled(ex, files, n, len(big), chunk=16, cache=cache)   # PEANUTS end
     stage('sorting the shaders found')
     trees, defer = {}, []
     for rel, uniq, pr, extra in results:
