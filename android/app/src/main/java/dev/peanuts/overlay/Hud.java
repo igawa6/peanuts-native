@@ -49,6 +49,9 @@ public final class Hud {
     /** Whether an item of the table that Overlay.tick has no switch of its own for is on (the early return) */
     public static boolean extra(Context c) { return item(c, "graph") || item(c, "driver"); }
 
+    /** The short driver name the DRV row shows, null before GameActivity set it (the second screen's stats page, dev.peanuts.ui.StatsView) */
+    public static String driverName() { return driver; }
+
     /** The GPU driver's name for the DRV row (null: the system driver) */
     public static void driver(String label) {
         String s = FrameStats.shortDriver(label);

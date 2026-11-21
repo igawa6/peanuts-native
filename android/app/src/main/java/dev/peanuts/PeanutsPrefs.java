@@ -128,6 +128,15 @@ public final class PeanutsPrefs {
     /** Settings > Library > Games without a companion: their cover stays on the second display, off by default */
     public static boolean bottomScreenInGames(Context c) { return of(c).getBoolean("bottom_screen_games", false); }
     public static void bottomScreenInGames(Context c, boolean on) { of(c).edit().putBoolean("bottom_screen_games", on).apply(); }
+    /** What those games show there: their live stats (dev.peanuts.ui.StatsView, the default) or their cover */
+    public static final String GAMES_STATS = "stats", GAMES_COVER = "cover";
+    public static String bottomScreenGamesPage(Context c) { return GAMES_COVER.equals(of(c).getString("bottom_screen_games_page", GAMES_STATS)) ? GAMES_COVER : GAMES_STATS; }
+    public static void bottomScreenGamesPage(Context c, String page) { of(c).edit().putString("bottom_screen_games_page", page).apply(); }
+    /** The stats page's items (dev.peanuts.ui.StatsConfig.format; null: never set, every item) and its burn-in guards (StatsConfig.GUARDS, each on by default), for every game */
+    public static String statsShown(Context c) { return of(c).getString("stats_shown", null); }
+    public static void statsShown(Context c, String items) { of(c).edit().putString("stats_shown", items).apply(); }
+    public static boolean statsGuard(Context c, String guard) { return of(c).getBoolean("stats_guard_" + guard, true); }
+    public static void statsGuard(Context c, String guard, boolean on) { of(c).edit().putBoolean("stats_guard_" + guard, on).apply(); }
 
     /** Settings > Library > Haptics: false (default) = the launcher's haptics follow the system's touch feedback setting, true = none at all */
     public static boolean hapticsOff(Context c) { return of(c).getBoolean("haptics_off", false); }

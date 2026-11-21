@@ -34,6 +34,7 @@ public final class GameScreen extends Presentation {
 
     private BananaBackgroundView bg;
     private StartView start;
+    private StatsView stats;
 
     private GameScreen(Activity game, Display d) { super(game, d, R.style.Theme_Banana); }
 
@@ -79,7 +80,7 @@ public final class GameScreen extends Presentation {
         if (!f.isFile()) return;
         new Thread(() -> {
             Bitmap b = BitmapFactory.decodeFile(f.getPath());
-            if (b != null) UI.post(() -> { if (!titleId.equals(iconOf)) return; icon = b; if (shown != null) shown.start.icon(b); });
+            if (b != null) UI.post(() -> { if (!titleId.equals(iconOf)) return; icon = b; if (shown != null) { shown.start.icon(b); shown.stats.icon(b); } });
         }, "peanuts-game-icon").start();
     }
 
@@ -94,17 +95,25 @@ public final class GameScreen extends Presentation {
         root.addView(bg, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         start = new StartView(getContext());
         root.addView(start, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        stats = new StatsView(getContext());
+        stats.setVisibility(android.view.View.GONE);
+        root.addView(stats, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
     }
 
     @Override protected void onStop() { pause(); super.onStop(); }
 
-    private void pause() { if (bg != null) bg.setRunning(false); if (start != null) start.setAnimating(false); }
+    private void pause() { if (bg != null) bg.setRunning(false); if (start != null) start.setAnimating(false); if (stats != null) stats.setRunning(false); }
 
-    /** Loading: drifting, breathing, gliding. Playing: a still page */
+    /** Loading: drifting, breathing, gliding. Playing: the game's live stats (StatsView), or a still page with its cover (Settings › Library) */
     private void apply() {
         if (start == null) return;
         boolean loading = mode == LOADING;
+        boolean live = !loading && PeanutsPrefs.bottomScreenGamesPage(getContext()).equals(PeanutsPrefs.GAMES_STATS);
+        start.setVisibility(live ? android.view.View.GONE : android.view.View.VISIBLE);
+        stats.setVisibility(live ? android.view.View.VISIBLE : android.view.View.GONE);
+        if (live) stats.bind(name, icon, dev.peanuts.Companion.startedAt());
+        stats.setRunning(live);
         start.bind(name, icon);
         start.status(loading ? "Starting the companion" : "Now playing");
         start.quiet(!loading);

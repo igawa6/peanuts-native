@@ -17,6 +17,8 @@ import java.util.concurrent.Executors;
 public final class SocTemp {
     private SocTemp() {}
 
+    /** No reading (SocZones.NONE), for callers outside this package */
+    public static final int NONE = SocZones.NONE;
     static final int HOT = 80;                    // °C: the line turns red
     private static final int RED = 0xFFF44336;    // Overlay's red dot
     private static ExecutorService thread;

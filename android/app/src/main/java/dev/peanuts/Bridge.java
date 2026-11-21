@@ -35,6 +35,11 @@ public final class Bridge {
     /** The corner of the screen for the overlay's stats block (slot 1), as dm/gfx/vk_android/vka_ovl.h: 0 top left, 1 top right, 2 bottom left, 3 bottom right (dm/peanuts/peanuts_graph.c) */
     public static native void overlayCorner(int corner);
 
+    /** The console mode the game sees now: 1 docked, 0 handheld (dm/peanuts/peanuts_services.c, the host's oe::GetOperationMode); it can change while the game runs */
+    public static native int opMode();
+    /** opMode(), or -1 when the host does not have it (an older libnxhost), is not loaded, or the game has not shown a frame yet (asking earlier would fix the mode) */
+    public static int opModeSafe() { try { return opMode(); } catch (UnsatisfiedLinkError e) { return -1; } }
+
     public static final int RT_PENDING = 0, RT_LOADED = 1, RT_NONE = 2, RT_FAILED = 3;
 
     /** Core::Mods::HapticKind (dm/peanuts/peanuts.h): what raised a pulse. */

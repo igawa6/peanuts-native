@@ -103,7 +103,12 @@ public final class LibrarySettings {
         card.addView(bottomRow.view);
         gamesRow = new PUi.Setting(a, "🎮", "Games without a companion", v -> {
             if (!PeanutsPrefs.bottomScreen(a)) { Haptics.play(v, Haptics.Word.REJECT); return; }
-            PeanutsPrefs.bottomScreenInGames(a, !PeanutsPrefs.bottomScreenInGames(a));
+            // Android, then Stats, then Cover, then Android again
+            boolean in = PeanutsPrefs.bottomScreenInGames(a);
+            boolean stats = PeanutsPrefs.bottomScreenGamesPage(a).equals(PeanutsPrefs.GAMES_STATS);
+            if (!in) { PeanutsPrefs.bottomScreenInGames(a, true); PeanutsPrefs.bottomScreenGamesPage(a, PeanutsPrefs.GAMES_STATS); }
+            else if (stats) PeanutsPrefs.bottomScreenGamesPage(a, PeanutsPrefs.GAMES_COVER);
+            else PeanutsPrefs.bottomScreenInGames(a, false);
             Haptics.play(v, Haptics.Word.CLICK);
             refreshRows();
         });
@@ -158,8 +163,10 @@ public final class LibrarySettings {
             boolean on = PeanutsPrefs.bottomScreen(a);
             gamesRow.view.setAlpha(on ? 1f : 0.5f);
             gamesRow.value(!on ? "Needs Bottom screen on."
-                    : PeanutsPrefs.bottomScreenInGames(a) ? "The game's cover stays on the second screen while you play. Tap to leave it to Android."
-                    : "Android's own screen while you play. Tap to keep the game's cover there.");
+                    : !PeanutsPrefs.bottomScreenInGames(a) ? "Android's own screen while you play. Tap for the game's live stats there."
+                    : PeanutsPrefs.bottomScreenGamesPage(a).equals(PeanutsPrefs.GAMES_STATS)
+                    ? "Stats: frame rate, frame times, GPU, CPU, temperature, battery and the game's RAM while you play. Tap for the game's cover instead."
+                    : "The game's cover stays on the second screen while you play. Tap to leave it to Android.");
         }
     }
 
