@@ -511,12 +511,12 @@ public final class StatsView extends FrameLayout {
         vLow.setText(Float.isNaN(low) ? "—" : String.format(Locale.ROOT, "%.0f", low));
         vRun.setText(GameStats.clock(SystemClock.elapsedRealtime() - startedAt));
         graph.aim(tgt, Float.isNaN(low) ? Float.NaN : 1000f / low);
-        if (graph.longView) graphNote.setText("last 30 s · worst per ½ s");
+        if (graph.longView) graphNote.setText(PUi.joined("last 30 s", "worst per ½ s"));
         else {
             int shownBars = Math.min(BARS, n);
             float span = 0f;
             for (int i = n - shownBars; i < n; i++) span += frames[i];
-            graphNote.setText(shownBars == 0 ? "waiting for frames" : String.format(Locale.ROOT, "last %.1f s · ms", span / 1000f));
+            graphNote.setText(shownBars == 0 ? "waiting for frames" : PUi.joined(String.format(Locale.ROOT, "last %.1f s", span / 1000f), "ms"));
         }
     }
 
@@ -618,13 +618,13 @@ public final class StatsView extends FrameLayout {
         mBat.set(level / 100f, level <= 15 ? warnRed : level <= 30 ? warnYellow : good);
         int left = charging ? -1 : GameStats.minutesLeftAt(charge, ampsAvg);
         if (!charging && left < 0) left = GameStats.minutesLeft(level, GameStats.drainPerHour(batFrom, batFromAt, level, now));
-        String when = charging ? " ⚡︎" : left < 0 ? "" : " · " + GameStats.shortDuration(left);
+        String until = charging || left < 0 ? "" : GameStats.shortDuration(left);
         if (Float.isNaN(w)) {   // no current on this phone: the level is the value, as before
             watts.clear(level + "%");
-            lab.setText(charging ? "CHARGING" : left < 0 ? "BATTERY" : "BAT · " + GameStats.shortDuration(left));
+            lab.setText(charging ? "CHARGING" : left < 0 ? "BATTERY" : PUi.joined("BAT", until));
         } else {
             watts.set(w);
-            lab.setText(level + "%" + when);
+            lab.setText(charging ? level + "% ⚡︎" : PUi.joined(level + "%", until));
         }
         watts.view.setTextColor(warn(FrameStats.batteryLevel(temp)));   // the battery's temperature colours it
     }
