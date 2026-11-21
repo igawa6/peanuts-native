@@ -1399,3 +1399,7 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
 | `dm/games/01002B00111A2000/game.tsv`, `dm/games/01002B00111A2000/README.md` | 1, 1 | Hyrule Warriors: Age of Calamity on Android: frame limits Game owned, 30 and 60 (the frame step's targets), measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/01002B00111A2000/vk_prewarm.bin` | new | its Turnip prewarm seed (242 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+### Trails in the Sky 1st Chapter 1.0.7
+
+The [profile](../dm/games/01002C9022770000/README.md), game index row and default Android build selection are marked `PEANUTS`; the five generated metadata tables are listed in `upstream-unmarked.txt`. `draw_body` in `dm/gfx/vk_android/vka_draw.c` recognizes the first chapter's pixel key at the existing Turnip D16 shadow pass split.
