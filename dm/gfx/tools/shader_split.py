@@ -34,6 +34,9 @@
 #       NieR:Automata's DAT members instead prefix length-delimited NVN code and control sections with a binding table (pg_sized_shader)
 #   · HNSHV002 (Needle, Persona 5 Royal): NVN section descriptors in the shader containers embedded in main and the GSC files of its CPK archives, see needle_shaders
 #   · GFPAK (Game Freak, Pokémon Sword, Pokémon Legends: Arceus): BNSH entries of the archives under bin/archive (Sword's LZ4; Arceus's Oodle Kraken, decoded by the game's own decoder in the Mac host), see gfpak_members
+#   · DRPF (New Pokémon Snap): the entries of its 1,034 .drp files, each decrypted in one XorShift stream under a seed the entry carries (drp.py), its Oodle payload decoded by the game's own
+#       decoder in the Mac host (or the ooz worker, DM_OODLE_OOZ) and checked against its seed, then scanned like a loose file (the shaders are GLSLC outputs in the SSBH shader databases of
+#       its .nushdb entries), see the DRPF branch of scan_file_in and drp.py   PEANUTS(upstream-candidate)
 #   · .tfxo (Silicon Studio's YEBIS post effects, Pokémon Sword): control sections each followed by its code area, in a zlib stream in main, see tfxo_streams and tfxo_shaders
 #   · control sections loose in main, in no GLSLC output or BNSH file (Advance Wars 1+2: Re-Boot Camp's Bink 2 shaders): paired with their code areas by data records or adjacency, see raw_shaders
 #   · SNVN (Retro Studios, Donkey Kong Country: Tropical Freeze, Metroid Prime Remastered): zlib program records in the SNVN chunks of MaterialArchive.arc, of the MTRL resources in its
@@ -3187,6 +3190,7 @@ def separable_pairs(keys):
 
 SMASH_ARC = struct.pack('<Q', 0xABCDEF9876543210)   # smash_arc.MAGIC (scan_file reads only the first bytes, without importing the reader)
 BND2 = b'bnd2'
+DRP = struct.pack('<I', 0x7F0E5359)   # drp.MAGIC, Crc32("DRPF") (scan_file reads only the first bytes, without importing the reader)   PEANUTS(upstream-candidate)
 
 def bnd2_resources(d, label):
     """The resources of a Criterion Bundle 2 ('bnd2', Burnout Paradise's format; version 3 in Need for Speed: Hot Pursuit Remastered): → [(resource ID, type, block, data)].
@@ -3496,6 +3500,15 @@ def scan_file_in(args):
         return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and head[:8] == SMASH_ARC:   # files of Super Smash Bros. Ultimate's data.arc (smash_arc_jobs)
         smash_arc_shaders(path, rel, args[2], found)
+        return rel, uniq_keys(found), var_pairs(found), trees
+    if head[:4] == DRP:   # a DRPF archive (New Pokémon Snap, drp.py): each entry decrypted and decoded, then scanned as a file of its own (the shaders are GLSLC outputs in its SSBH shader databases)   PEANUTS(upstream-candidate)
+        from romfs import mmap
+        import drp
+        with open(path, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as d:
+            for nm, m in drp.entries(d, '/' + rel, oodle):
+                n = len(found)
+                scan_blob(m, f'/{rel}#{nm}', found)
+                if len(found) == n and b'\x91\x68\x86\x19' in m: found += glslc_shaders(m, f'/{rel}#{nm}', need=False)   # a nushdb holds GLSLC outputs, as Smash's data.arc's do
         return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and head[:4] == b'BDF3':   # entries of a FromSoftware dvdbnd archive (bdt_jobs)
         bdt_shaders(path, rel, args[2], found)
