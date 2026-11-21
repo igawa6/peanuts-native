@@ -1,13 +1,27 @@
 #!/usr/bin/env python3
 """dm/gfx/tools/drp.py, the DRPF (.drp) archive reader: a small archive written here in both of the format's forms (clear and encrypted) round-trips through entries(), a payload tagged 'Oodl'
-decodes through the Oodle decoder the caller passes, and a damaged archive is refused. No game data: the archives are built from the format's own rules (see drp.py's header), the Oodle
+decodes through the Oodle decoder the caller passes, and a damaged archive is refused; and the shader_split.py DRPF branch (scan_file) finds the GLSLC output of a .nushdb entry of a
+synthetic archive and labels it <file>#<entry>#GLSLC@<offset>. No game data: the archives are built from the format's own rules (see drp.py's header), the Oodle
 stream is a block stored whole (0xCC, the decoder type, the bytes), which unoodle's tests also write by hand, and the XorShift seed roll is checked against a fixed vector so a silent
 change of the crypto cannot pass."""
-import struct, sys, unittest, zlib
+import atexit, os, shutil, struct, sys, tempfile, unittest, zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'dm' / 'gfx' / 'tools'))
 import drp
+
+# shader_split takes DM_GAME at its import (its GAME profile), and the DRPF branch needs nothing else of the game: a profile of the test's own (two empty rows) is made here, the
+# import runs under it, and the environment is put back as it was
+_PROFILE = Path(tempfile.mkdtemp(prefix='drpf-split-profile-'))
+atexit.register(shutil.rmtree, _PROFILE, ignore_errors=True)
+(_PROFILE / 'testdrpf').mkdir()
+(_PROFILE / 'testdrpf' / 'game.tsv').write_text('shader_groups\t\nshader_note\t\n')
+_SAVED = {k: os.environ.pop(k, None) for k in ('DM_GAME', 'DM_GAMES_DIR')}
+os.environ['DM_GAMES_DIR'], os.environ['DM_GAME'] = str(_PROFILE), 'testdrpf'
+import shader_split
+for k, v in _SAVED.items():
+    if v is None: os.environ.pop(k, None)
+    else: os.environ[k] = v
 
 M32 = 0xFFFFFFFF
 TABLE = bytes((i * 37 + 11) & 0x7F for i in range(0x80))   # a seed table of the test's own (the game's are whatever the archive carries)
@@ -80,6 +94,24 @@ def decode(comp, n):   # the test's Oodle decoder: a stored block passes its byt
     return bytes(comp[2:]) if comp[:2] == oodl(b'')[:2] and len(comp) - 2 == n else None
 
 
+def glslc_cs():
+    """A minimal GLSLC output the split's glslc_shaders recognizes: one compute stage, its 0x760-byte control section (its own length at +0x20, the code area's at +0x704) at 0x50,
+    the code area (the compute magic) right after it, and the whole output's length at the output header's +0x44"""
+    c, nctl, ncode = 0x50, 0x760, 4
+    m = bytearray(c + nctl + ncode)
+    m[:4] = b'\x91\x68\x86\x19'
+    struct.pack_into('<I', m, 0x44, len(m))
+    m[c:c + 4] = shader_split.CTL_MAGIC
+    struct.pack_into('<I', m, c + 0x20, nctl)
+    struct.pack_into('<I', m, c + 0x704, ncode)
+    m[c + nctl:c + nctl + ncode] = shader_split.CS_MAGIC
+    return bytes(m)
+
+
+GLSLC = glslc_cs()
+GLSLC_CTL, GLSLC_CODE = GLSLC[0x50:0x7b0], GLSLC[0x7b0:]
+
+
 class Drp(unittest.TestCase):
     def test_rng_vector(self):
         """The RNG's first words for seed 0x12345678 over the test's seed table: the ones the field-checked reader produced, which the test's own writing of XorShift.cs's terms
@@ -114,6 +146,25 @@ class Drp(unittest.TestCase):
         bad_block = bytearray(whole); bad_block[0xC:0x10] = struct.pack('<I', 0x88)
         self.assertRaises(SystemExit, list, drp.entries(bytes(bad_block), 'test.drp', decode))
         self.assertRaises(SystemExit, list, drp.entries(whole, 'test.drp', lambda c, n: None))   # the decoder refused the stream
+
+    def test_split(self):
+        """The split's DRPF branch (shader_split.py's scan_file) takes a synthetic archive (encrypted and clear alike, its .nushdb entry Oodle-compressed as the game's are), passes
+        the decoded entry through glslc_shaders, and returns the shader under its key with the source label <file>#<entry>#GLSLC@<offset>: the detection of the format, the hand-off
+        and the label in one"""
+        where, key = f'/Graphics/Shader/characters.drp#CharactersMaterials_CharacterShader_200247744.nushdb#GLSLC@0x0', shader_split.skey(GLSLC_CTL, GLSLC_CODE)
+        old = shader_split.oodle
+        shader_split.oodle = decode   # the split's Oodle decoder stands in: this stream is a stored block, as the game's decoder would read it
+        try:
+            for enc in (False, True):
+                with self.subTest(enc=enc):
+                    p = _PROFILE / 'characters.drp'; p.write_bytes(archive([chunk('CharactersMaterials_CharacterShader_200247744.nushdb', GLSLC, enc)], enc))
+                    res = shader_split.scan_file((str(p), 'Graphics/Shader/characters.drp'))
+                    self.assertEqual(res[0], 'Graphics/Shader/characters.drp')
+                    self.assertEqual(list(res[1]), [key])
+                    self.assertEqual(res[1][key], (where, 'cs', GLSLC_CTL, GLSLC_CODE, res[1][key][4]))
+                    self.assertEqual((res[2], res[3]), (set(), {}))
+        finally:
+            shader_split.oodle = old
 
 
 if __name__ == '__main__':
