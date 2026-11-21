@@ -114,6 +114,7 @@ final class Pack {
      * the older ABIs its host also plays, DMSH_VK_ABI_COMPAT), null when none; only asked when {@link #libraryProblem} finds this version's missing
      */
     static File playableLibrary(File dir, String titleId) {
+        if (guestVulkan(titleId)) return null;   // PEANUTS: an NVN library cannot replace the guest's embedded shaders.
         return ShaderLibs.playable(dir, titleId, BuildConfig.NX_DMSH_VK_CHAIN, BuildConfig.NX_DMSH_VK_ABI, BuildConfig.NX_DMSH_VK_ABI_COMPAT);
     }
 
@@ -126,7 +127,44 @@ final class Pack {
     }
 
     /** A library of another version made before versioned shader updates (no ABI): played with a warning when no playable one is there (ShaderLibs.legacy), null when none */
-    static File legacyLibrary(File dir, String titleId) { return ShaderLibs.legacy(dir, titleId, BuildConfig.NX_DMSH_VK_CHAIN); }
+    static File legacyLibrary(File dir, String titleId) { return guestVulkan(titleId) ? null : ShaderLibs.legacy(dir, titleId, BuildConfig.NX_DMSH_VK_CHAIN); }   // PEANUTS
+
+    // PEANUTS: a guest Vulkan pack has no translated shader library. Verify its identity and the embedded bytes.
+    static boolean guestVulkan(String id) {
+        Profile p = Profile.of(id);
+        return p != null && p.shaderInputs.startsWith("spirv:");
+    }
+
+    private static String embeddedShaders(File dir, Profile prof) {
+        String[] bank = prof.shaderInputs.split(":");
+        try {
+            Pack pack = read(dir);
+            if (bank.length != 5 || !pack.titleId.equals(prof.titleId) || !java.util.Arrays.asList(pack.modules).contains("main")
+                    || !bank[1].equals(BuildCheck.builds(pack).get("main")) || pack.program != Profile.program(prof.titleId))
+                return "This pack is not for the registered guest Vulkan shader build.";
+            try (RandomAccessFile f = new RandomAccessFile(new File(dir, "main.patched.bin"), "r")) {
+                long at = Long.parseLong(bank[2], 16), left = Long.parseLong(bank[3], 16);
+                if (at < 0 || left <= 0 || at > f.length() - left) return "The guest Vulkan shader bank is outside the rewritten main.";
+                f.seek(at);
+                java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+                byte[] block = new byte[(int)Math.min(left, 16384)];
+                while (left > 0) {
+                    int n = (int)Math.min(left, block.length);
+                    f.readFully(block, 0, n);
+                    digest.update(block, 0, n);
+                    left -= n;
+                }
+                byte[] actual = digest.digest();
+                for (int i = 0; i < actual.length; i++)
+                    if (Character.digit(bank[4].charAt(2 * i), 16) != (actual[i] & 255) >> 4
+                            || Character.digit(bank[4].charAt(2 * i + 1), 16) != (actual[i] & 15))
+                        return "The rewritten main's guest Vulkan shader bank differs from the registered build.";
+                return null;
+            }
+        } catch (IOException | java.security.NoSuchAlgorithmException | NumberFormatException e) {
+            return "Cannot verify this pack's embedded Vulkan shaders: " + e.getMessage();
+        }
+    }
 
     /**
      * The first module whose code is unfinished: its &lt;module&gt;.android.key is missing (scripts/pack_android.py removes it before a rewrite and writes it last,
@@ -148,6 +186,7 @@ final class Pack {
     /** Why the game (titleId) would draw nothing with this pack folder, in one sentence; null when it has this APK's shader library built from that game's profile */
     static String libraryProblem(File dir, String titleId) {
         Profile prof = Profile.of(titleId);
+        if (guestVulkan(titleId)) return embeddedShaders(dir, prof);  // PEANUTS: do not accept an unrelated shader library.
         String inputs = prof == null ? "unknown" : prof.shaderInputs;
         File lib = libraryOf(dir);
         if (lib != null) {
@@ -295,6 +334,11 @@ final class Pack {
 
     /** The RomFS folder the host mounts: the one pack.tsv names, else the game folder's romfs/, else the newest updates/<version>/romfs */
     File romfs(File game) {
+        if (program > 0) {  // PEANUTS: never launch a collection member against the menu's RomFS.
+            File member = DumpLayout.programDir(game, program);
+            File romfs = member == null ? null : new File(member, "romfs");
+            return romfs != null && romfs.isDirectory() ? romfs : null;
+        }
         File f = new File(game, romfsRel);
         if (f.isDirectory()) return f;
         f = new File(game, "romfs");

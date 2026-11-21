@@ -1,0 +1,20 @@
+# PEANUTS: v0 code-rewrite profile for program 1 of collection 010090C022978000.
+title_id	010090C022978001
+program_id	010090C022978001
+name	Kingdom Hearts Final Mix
+ipa	010090c022978001.ipa
+app_category	public.app-category.games
+build	v0	1.0.0	main=badf2faf580b712464365c4d529d92c9	subsdk1=99e21f98a397434b534c1459fc38a2b8	sdk=bc204aae7319bab274894f1cc3f5da92
+package	v0
+modules	main subsdk1 sdk
+romfs_marker	kh1_first.pkg
+zip_store	.mp4:.pkg:.metallib
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# The rounded image charge for main, subsdk1 and sdk is 70 MiB.
+mem_used	0x4600000
+sys_resource	0x0
+guest_spirv	badf2faf580b712464365c4d529d92c9	30c838	31ce8	8c7e503ad269efa6bd85b18eb19ed9d580fc9bdf8fd7e372df80f9150f52ebf4
+shader_note	Native Vulkan; shader modules come from the verified SPIR-V bank in main.
