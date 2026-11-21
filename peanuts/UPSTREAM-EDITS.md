@@ -1400,3 +1400,19 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
 | `dm/games/01002B00111A2000/game.tsv`, `dm/games/01002B00111A2000/README.md` | 1, 1 | Hyrule Warriors: Age of Calamity on Android: frame limits Game owned, 30 and 60 (the frame step's targets), measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/01002B00111A2000/vk_prewarm.bin` | new | its Turnip prewarm seed (242 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+### Round 31, a texture filled before its first use takes over an image with older content (2026-11-21)
+
+SPY×ANYA: Operation Memories (`010089B01AB44000`) lost letters from text it showed for the first time, from the end of its dash tutorial on, on the AYN Thor.
+Unity makes its dynamic font atlas again over the same memory, with the same size and format, and fills it with one whole `WriteTexels` before its first use.
+That first use took over the old atlas's image without reading the CPU-written note, and the re-read queue, keyed by serial, lost the image once the old
+atlas was finalized. Entry: `docs/reference/nvn-objects.md`, "A texture filled before its first use takes over an image with older content (Vulkan replay)".
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_tex.c` | 5 | forward declarations of `redo_add_locked` and `redo_forget_locked`; `unref_locked` takes an image out of the re-read queue before it is freed; `vka_tex_get` queues a taken-over image (or a level child's parent) for a re-read when the texture's serial was noted CPU-written (`cpuw_take`); `g_redo` holds images, not serials; `vka_tex_prepare` reads the image from the entry | `// PEANUTS(upstream-candidate)` |
+| `docs/reference/nvn-objects.md`, `docs/agents/symptoms.md` | 1 each | the entry (between `PEANUTS(upstream-candidate) begin`/`end` comments) and its generated symptom line | as said |
+
+Run: SPY×ANYA on the AYN Thor with Turnip, a new save over the same route before and after: before, `Talk to Becky` read `a to ec` and the controls panel lost its
+new letters; after, the panel, every objective and the dialogue to `Return home` are whole, re-uploads 25 → 70, no red line. Not run: the system driver, other
+games. No shader-chain file is changed. Upstream candidate: yes, for every game.

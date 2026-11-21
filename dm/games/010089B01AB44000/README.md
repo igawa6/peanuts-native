@@ -2,7 +2,7 @@
 
 <!-- PEANUTS: a Peanuts Native profile and note (Banana Native has none for this title). -->
 
-Update 1.0.1 (v65536) over the base game, SDK 14.3.1. Unity 2020.3.43f1 IL2CPP on NVN, with CRIWARE and FMOD. Modules `main`, `subsdk0` (NintendoSDK_movie) and `sdk`. The profile is still the provisional one from `scripts/build_ipa_from_nsp.py`, except for its memory layout. On Android (AYN Thor, Adreno 740, Turnip) a new save goes through the license screens, the title menu and the classroom tutorial's first steps (moving, the camera, dashing) at 30 fps, with no red line; from the dash tutorial on, text loses letters it shows for the first time ([Text](#text)).
+Update 1.0.1 (v65536) over the base game, SDK 14.3.1. Unity 2020.3.43f1 IL2CPP on NVN, with CRIWARE and FMOD. Modules `main`, `subsdk0` (NintendoSDK_movie) and `sdk`. The profile is still the provisional one from `scripts/build_ipa_from_nsp.py`, except for its memory layout. On Android (AYN Thor, Adreno 740, Turnip) a new save goes through the license screens, the title menu and the whole classroom tutorial (moving, the camera, dashing, talking to Henderson, Becky and Damian) to its `Return home` objective at 30 fps, with no red line.
 
 ## What it needs
 
@@ -19,7 +19,7 @@ Update 1.0.1 (v65536) over the base game, SDK 14.3.1. Unity 2020.3.43f1 IL2CPP o
 ## Text
 
 - Unity's dynamic font atlas is an R8 texture that the game makes again over the same memory when it adds glyphs: `nvnTextureInitialize`, one whole `WriteTexels`, then `nvnTextureFinalize` of the old object, all in one frame.
-- **Open: letters missing from text shown for the first time.** On a new save, from the end of the dash tutorial on, the controls panel reads `B  as` and `A  al  amine` for Dash and Talk/Examine and the objective `Talk to Becky` reads `a to ec`; letters shown before (Move Anya, Rotate Camera) are whole. No red line.
+- **Resolved: letters missing from text shown for the first time** (2026-11-21). On a new save, from the end of the dash tutorial on, the controls panel read `B  as` and `A  al  amine` for Dash and Talk/Examine and the objective `Talk to Becky` read `a to ec`; letters shown before (Move Anya, Rotate Camera) were whole. The new atlas took over the old one's image and kept its texels, and the re-read queue lost that image once the old atlas was finalized: [A texture filled before its first use takes over an image with older content](../../../docs/reference/nvn-objects.md#a-texture-filled-before-its-first-use-takes-over-an-image-with-older-content-vulkan-replay). Checked on Turnip with a new save, the same route before and after: with the fix the panel, every objective and the dialogue to `Return home` are whole; the run's re-uploads go from 25 to 70.
 
 ## Open
 
@@ -29,3 +29,4 @@ Update 1.0.1 (v65536) over the base game, SDK 14.3.1. Unity 2020.3.43f1 IL2CPP o
 ## Found on this game
 
 - [Sizing the pool and alias region for virtual address memory](../../../docs/reference/memory.md#sizing-the-pool-and-alias-region-for-virtual-address-memory): the hardware pool's StandardAllocator region left Unity 1.2 GB of a 4.375 GB alias region; a 16 GB alias region on Android.
+- [A texture filled before its first use takes over an image with older content](../../../docs/reference/nvn-objects.md#a-texture-filled-before-its-first-use-takes-over-an-image-with-older-content-vulkan-replay): Unity's font atlas made again over the same memory; letters missing from the text.
