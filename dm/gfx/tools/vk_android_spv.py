@@ -720,6 +720,46 @@ def buffer_textures_split(m):
     return len(si)
 
 
+# PEANUTS begin
+DEC_NON_UNIFORM, CAP_SHADER_NON_UNIFORM, CAP_SAMPLED_IMAGE_ARRAY_NU, CAP_STORAGE_IMAGE_ARRAY_NU = 5300, 5301, 5307, 5309
+
+
+def nonuniform_arrays(m):
+    """A texture, image or sampler taken from a descriptor array at an index that is not a constant is marked NonUniform (the access chain, its load and what the load becomes:
+    OpCopyObject, OpImage, OpSampledImage), with the capabilities and, before SPIR-V 1.5, SPV_EXT_descriptor_indexing. The translator marks them only when its host says it
+    indexes non-uniformly (Ryujinx MarkNonUniform, QueryHostSupportsShaderNonUniformIndexing), which Program.cs leaves at the Metal default, no. Vulkan reads an unmarked index
+    as the same in every invocation of a subgroup: an Adreno fragment wave covers 8x8 pixels and takes one invocation's descriptor for all of them, so a per-pixel index (Unreal's
+    forward lighting choosing a light's shadow map, a material table indexed by the primitive) drew whole 8x8 blocks from another texture. → the number of values marked"""
+    descs = (OP_TYPE_IMAGE, OP_TYPE_SAMPLER, OP_TYPE_SAMPLED_IMAGE)
+    arrays, storage = set(), False
+    for vid, (ptr, sc) in m.vars.items():
+        if sc != SC_UNIFORM_CONSTANT: continue
+        t = m.pointee(ptr)[1]
+        el, _ = m.strip_arrays(t)
+        if m.op(t) in (OP_TYPE_ARRAY, OP_TYPE_RUNTIME_ARRAY) and m.op(el) in descs: arrays.add(vid)
+    marked = set()
+    for x in m.ins:
+        op = x[0] & 0xffff
+        if op in (OP_ACCESS_CHAIN, OP_IN_BOUNDS_ACCESS_CHAIN) and x[3] in arrays and any(i not in m.consts for i in x[4:]):
+            marked.add(x[2])
+            el, _ = m.strip_arrays(m.pointee(m.vars[x[3]][0])[1])
+            storage = storage or m.op(el) == OP_TYPE_IMAGE and m.types[el][7] == 2
+        elif op in (OP_LOAD, OP_COPY_OBJECT, OP_IMAGE) and x[3] in marked: marked.add(x[2])
+        elif op == OP_SAMPLED_IMAGE and (x[3] in marked or x[4] in marked): marked.add(x[2])
+    marked = {i for i in marked if DEC_NON_UNIFORM not in m.decos.get(i, {})}
+    if not marked: return 0
+    caps = [c for c in (CAP_SHADER_NON_UNIFORM, CAP_SAMPLED_IMAGE_ARRAY_NU) + ((CAP_STORAGE_IMAGE_ARRAY_NU,) if storage else ()) if c not in m.caps]
+    k = max(i for i, y in enumerate(m.ins) if y[0] & 0xffff == OP_CAPABILITY) + 1
+    m.ins[k:k] = [[2 << 16 | OP_CAPABILITY, c] for c in caps]
+    if m.header[1] < 0x10500 and 'SPV_EXT_descriptor_indexing' not in m.exts:
+        e = lit_string('SPV_EXT_descriptor_indexing'); m.ins.insert(k + len(caps), [(1 + len(e)) << 16 | OP_EXTENSION, *e])
+    d = max(i for i, y in enumerate(m.ins) if y[0] & 0xffff in (OP_DECORATE, OP_MEMBER_DECORATE, OP_NAME, 6, 7, 3, 4, OP_EXTENSION, OP_CAPABILITY, OP_EXT_INST_IMPORT, 14, OP_ENTRY_POINT, OP_EXECUTION_MODE)) + 1   # (6 OpMemberName, 7 OpString, 3 OpSource, 4 OpSourceExtension, 14 OpMemoryModel)
+    m.ins[d:d] = [[3 << 16 | OP_DECORATE, i, DEC_NON_UNIFORM] for i in sorted(marked)]
+    m.index()
+    return len(marked)
+# PEANUTS end
+
+
 def dual_source(m):
     """Dual-source blending (dmsh_build.py fs_dual): NVN's SRC1 factors read output 1 as target 0's second source; Vulkan reads it only from Location 0 Index 1. For a shader
     writing exactly colours 0 and 1: output 1 moved to Location 0, Index 1. → True when rewritten"""

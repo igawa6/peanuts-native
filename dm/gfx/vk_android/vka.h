@@ -409,6 +409,7 @@ VkImageView vka_view(vka_img *im, VkFormat fmt, VkImageViewType type, VkImageAsp
 void vka_tex_prepare(VkCommandBuffer cb);           // at submit begin: dirty CPU textures re-uploaded, registered descriptors written
 void vka_tex_uploads(VkCommandBuffer cb);
 VkDescriptorSet vka_bindless_set(void);
+uint32_t vka_bindless_tex_slots(void);        // PEANUTS: the pool's sampled-image table length, 0 without the pool set
 VkDescriptorSetLayout vka_bindless_layout(void);
 void vka_barrier_at(VkCommandBuffer cb, const char *file, int line);   // a full memory barrier (the replay orders every transfer op after the previous one)
 void vka_xp_ts(VkCommandBuffer cb, int site);   // DM_VK_XP_TS experiment (vka_tex.c)
@@ -667,6 +668,8 @@ void vka_tex_gw_fill(uint64_t dst, uint64_t n, uint32_t value);
 void vka_tex_gw_update(uint64_t dst, uint64_t n, const void *data);
 void vka_tex_gw_opaque(uint64_t dst, uint64_t n);   // bytes the host does not know at recording (shader stores, texture → buffer copies)
 void vka_tex_gw_tbuf(uint64_t dst, uint64_t n);   // PEANUTS: an opaque write made by stores through a storage texel buffer (vka_tbuf.h)
+uint64_t vka_tex_gw_seq(void);   // PEANUTS: the newest GPU write's sequence number
+int vka_tex_gw_since(uint64_t addr, uint64_t n, uint64_t seq);   // PEANUTS: a GPU write recorded after seq overlaps the range
 int vka_tex_gw_tbuf_pending(uint64_t addr, uint64_t n);   // PEANUTS: 1 = such a write over [addr, addr + n) is not done yet: the CPU does not have its bytes
 int vka_tex_gw_read(uint64_t addr, uint64_t n, void *out);   // [addr, addr + n) as the GPU sees it now (guest RAM + pending gw_t writes); out NULL = only whether known (no opaque write)
 int vka_tex_gml_take(VkDescriptorBufferInfo *bi);  // a raw global memory write log for one draw or dispatch, read when its submission is done (0 = none free)

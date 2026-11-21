@@ -46,6 +46,14 @@ uint32_t *vka_spv_pool_fb(const uint32_t *w, size_t nw, uint32_t set, uint32_t t
 // L < 16 moves to nibble L of map, or with nibble 0xf becomes a Private (0, 0, 0, 1). A malloc'd copy (*out_nw words; *moved / *consts the original locations of each kind);
 // NULL with err empty when nothing changes, NULL with the reason in err when it cannot be made
 uint32_t *vka_spv_input_remap(const uint32_t *w, size_t nw, uint64_t map, size_t *out_nw, uint32_t *moved, uint32_t *consts, char *err, size_t errn);
+// PEANUTS begin: arrays of sampled images over a table of handles in a uniform buffer, read through the texture pool instead (vka_spvpatch.c vka_spv_table_pool): per table
+// its array's set 0 binding, the uniform buffer's set 0 binding and the byte offset of the table's entry 0 in it. The array's variable becomes one sampler; each read
+// loads entry k's handle from the buffer and takes its texture ID's element of the pool's sampled images (set pool_set, binding pool_binding, IDs clamped to max_id).
+// A malloc'd copy (*out_nw words; *sites the element loads rewritten); NULL with err empty when the module reads none of the arrays, NULL with the reason in err when it
+// cannot be rewritten
+typedef struct { uint32_t binding, ubo_binding, off; } vka_tabpool;
+uint32_t *vka_spv_table_pool(const uint32_t *w, size_t nw, const vka_tabpool *t, int nt, uint32_t pool_set, uint32_t pool_binding, uint32_t max_id, size_t *out_nw, int *sites, char *err, size_t errn);
+// PEANUTS end
 
 // PEANUTS(upstream-candidate): preserve the rounding of arithmetic feeding a translated FragDepth store. NULL if no decorations are needed.
 uint32_t *vka_spv_precise_depth(const uint32_t *words, size_t count, size_t *out_count);

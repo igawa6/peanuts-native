@@ -814,6 +814,16 @@ int vka_tex_gw_tbuf_pending(uint64_t addr, uint64_t n) {
     pthread_mutex_unlock(&g_tmu);
     return r;
 }
+// The newest write's sequence number now, and whether a write recorded after `seq` (not done) overlaps [addr, addr + n): a copy of the range taken at `seq` is still what the
+// GPU will read (vka_draw.c tbuf_view's copy kept for the submission)
+uint64_t vka_tex_gw_seq(void) { pthread_mutex_lock(&g_tmu); uint64_t s = g_gwseq - 1; pthread_mutex_unlock(&g_tmu); return s; }
+int vka_tex_gw_since(uint64_t addr, uint64_t n, uint64_t seq) {
+    int r = 0;
+    pthread_mutex_lock(&g_tmu);
+    for (int i = g_ngw - 1; i >= 0 && !r; i--) r = g_gw[i].seq > seq && g_gw[i].lo < addr + n && addr < g_gw[i].hi;
+    pthread_mutex_unlock(&g_tmu);
+    return r;
+}
 // PEANUTS end
 // Stores through raw global memory (an address the shader loaded: dmsh_abi.h DMSH_GMEM_LOG_*) land where only the GPU knows: each draw or dispatch with such stores gets a write
 // log of its own, read once its submission is done; its pools (or, in an older ABI's page-hash log, its pages) become writes of unknown bytes, done (the images over them are
@@ -2975,6 +2985,7 @@ static void bindless_init_once(void) {
     VLOG("bindless tables: %u textures, %u samplers, %u images (update after bind)%s", g_ntex_slots, g_nsamp_slots, g_nimg_slots, pfb ? "; the pool reads' bitmap in a set of its own" : "");
 }
 VkDescriptorSet vka_bindless_set(void) { return g_set; }
+uint32_t vka_bindless_tex_slots(void) { return g_set ? g_ntex_slots : 0; }   // PEANUTS: the sampled table's length (vka_shader.c tabpool clamps the IDs a module loads to it)
 VkDescriptorSetLayout vka_bindless_layout(void) { return g_dsl; }
 // PEANUTS: the tables made before the first pipeline layout (vka_pso.c layout_slow). They were made at the first frame's textures (vka_tex_prepare), so a layout made
 // before the game's first frame (the startup prewarm, the preparing step) had set 0 alone: another layout than the same shaders' at a draw of a later run, and the

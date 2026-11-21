@@ -144,6 +144,7 @@ void mtl_set_frame(uint64_t f) {
           { void vka_drv_memo_stats(char *b, size_t n); vka_drv_memo_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
           vka_memu_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb);
           { void vka_memu_stop_stats(char *b, size_t n, double frames); vka_memu_stop_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb); }
+          { void vka_tbuf_stats(char *b, size_t n, double frames); vka_tbuf_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb); }   // PEANUTS: texel buffer views and copies (vka_draw.c)
           { void vka_draw_unplaced(char *b, size_t n); vka_draw_unplaced(pb, sizeof pb); if (pb[0]) VRED("%s", pb); } }   // PEANUTS: draws and buffers lost to memory that is not placed, while the counts move (vka_draw.c)
         { static uint64_t fc; if (f - fc >= 1800) { vka_disp_census(f); fc = f; } }   // (every 1,800 frames)
         vka_dobj_census(f);   // DM_VK_DISP_OBJ (its own interval)

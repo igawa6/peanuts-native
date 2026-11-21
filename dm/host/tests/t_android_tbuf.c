@@ -113,7 +113,14 @@ int main(void) {
     #undef ASK
     (void)nc;
 
+    // PEANUTS: The copy kept for the submission (vka_tbuf_copy_live): Hogwarts Legacy's frame, three submissions whose fences the worker reserved before the first is recorded, so
+    // vka_fence_last() + 1 is the same in all three (the key the copy was matched by before): a copy made in the first is not bound in the second or third
+    { uint64_t fence_last = 7581, sub = 100, made_key_old = fence_last + 1, made_sub = sub;
+      CHECK(vka_tbuf_copy_live(made_sub, sub), "a copy is bound again in the submission that made it");
+      for (int k = 1; k < 3; k++) { sub++;
+          CHECK(made_key_old == fence_last + 1, "the old key cannot tell submission %d of the frame from the first", k + 1);
+          CHECK(!vka_tbuf_copy_live(made_sub, sub), "a copy of the frame's first submission is not bound in submission %d", k + 1); } }
     if (fails) { printf("t_android_tbuf: %d FAILED\n", fails); return 1; }
-    printf("t_android_tbuf: ok (%d choices; the pending writes; the image of a buffer texture and a draw's answers)\n", n);
+    printf("t_android_tbuf: ok (%d choices; the pending writes; the image of a buffer texture and a draw's answers; the copy kept for a submission)\n", n);
     return 0;
 }

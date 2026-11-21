@@ -149,6 +149,30 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Fix:** an image slot the shader declares as uint / int now gets a view of the same texel size in that class (`img_fit` in `nvn_mtl.m`). The format-view usage costs lossless compression, so a texture gets it only when a shader needs such a view: it is upgraded (copied into a texture with the usage) before the next draw pass opens, as the copy cannot run inside the draw's own pass; until then that one draw reads it as before.
 - **Found on:** [FINAL FANTASY TACTICS - The Ivalice Chronicles](../../dm/games/010038B015560000/README.md): the last passes have no render target; fragment shaders composite each UI layer into the window texture with image stores, blending in software (`uirender.tec`, `4cf1975ed1e36590`).
 
+### The texel buffer view table filled up (Android)
+
+<!-- PEANUTS: an entry of this fork. -->
+- **Symptom:** (Android) `[RED] vk: more than 512 texel buffer views at once`, then bursts of wrong surfaces (garbled, blocky lighting) until the next memory generation.
+- **Cause:** `tbuf_view` (`vka_draw.c`) caches views of guest memory in a 512-entry table that it emptied only when the memory generation changed (`vka_mem_gen`). A game that binds many distinct buffer ranges filled it, and every texel buffer bound after that got no view and read as empty.
+- **Fix:** the table is also started again once 7/8 full, each view destroyed after the submission that may use it, as at a new generation. Since buffer textures have a view of their own too (`vka_tbuf_view`, `vka_tbuf.c`), a binding `tbuf_view` gives no view takes that one, in the texture's own format and only where the device can view the memory in place, so a full table would no longer read as empty everywhere; the restart keeps `tbuf_view`'s own answer for every binding.
+- **Found on:** [Hogwarts Legacy](../../dm/games/0100F7E00C70E000/README.md): its forward lighting reads the light grid and light data through texel buffers in every lit draw (`fp_t_cb196610_105C006C`, `_105C0070`).
+
+### A texel buffer copied for every binding (Android)
+
+<!-- PEANUTS: an entry of this fork. -->
+- **Symptom:** (Android) a game that is at its frame rate elsewhere drops to a steady 13-14 fps in some scenes (Hogwarts Legacy after its first spell, during cutscenes) with the GPU at 13-17 ms: the replay's `recording` 70 ms or more a frame, `game waited for the replay worker` most of the frame, tens of thousands of minor page faults a frame in the `[longframe]` lines and the `scratch` figure of the `[vk] memory:` lines swinging by hundreds of MiB. `nxctl.sh env DM_VK_TBUF_COPY=0` brings it back at once.
+- **Cause:** a read-only texel buffer of up to 1 MiB is read through a copy of the CPU's bytes in scratch memory (`DM_VK_TBUF_COPY`, `tbuf_view` in `vka_draw.c`), and the copy was made again for every binding. Hogwarts Legacy binds its forward lighting's light grid (texel buffers of up to 960 KiB) to every lit draw: hundreds of MB of copies a frame, in freshly mapped scratch.
+- **Fix:** one copy per submission: a copy of the same range and view format made earlier in the submission being recorded is bound again, unless a GPU write recorded since overlaps the range (`vka_tex_gw_since`). The GPU runs the submission after it is recorded, so its draws read one state of the bytes on the console too. The replay's statistics line `texel buffers per frame:` counts views, copies (and their MB) and reuses.
+- **Found on:** [Hogwarts Legacy](../../dm/games/0100F7E00C70E000/README.md).
+
+### A texel buffer's copy bound again after its submission (Android)
+
+<!-- PEANUTS: an entry of this fork. -->
+- **Symptom:** (Android) plants, grass and ground black for single frames, sporadically, at full frame rate (Hogwarts Legacy's cliff: 27 of 1,500 frames on the AYN Thor, 186 on the Odin 2); gone with `DM_VK_TBUF_COPY=0`. Within one frame the HDR scene colour can be right and a later pass's output black.
+- **Cause:** the copy of a read-only texel buffer kept for the submission ([above](#a-texel-buffer-copied-for-every-binding-android)) was matched by `vka_fence_last() + 1`, which is not the submission being recorded when the worker has reserved the fences of several submissions ahead: Hogwarts Legacy records three a frame, all three with that same number. A copy made in the first was bound again in the second and third, after its scratch memory had retired with the first one's fence and been handed out again, so the light grid or the GPU scene's data read as another draw's bytes.
+- **Fix:** the copies are forgotten at each submission's start (`tbc_reset` from `vka_draw_sub_begin`, `vka_draw.c`), as the driver segment memo is. The copy itself stays.
+- **Found on:** [Hogwarts Legacy](../../dm/games/0100F7E00C70E000/README.md): the cliff talk screen-recorded on the AYN Thor (Turnip Gen8 V38), frames whose near-black pixel count jumps over both neighbours: 27 before, 0 after.
+
 ### Buffer textures read by 1D integer fetches (row wrap)
 
 - **Symptom:** `texture type mismatch: shader declares 2, texture is 9`; the slot read 0.

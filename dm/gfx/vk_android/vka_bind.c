@@ -115,6 +115,7 @@ int vka_walk(const vka_bstate *s, int st, const dmsh_vk_entry *e, const dmsh_vk_
             case DMSH_VK_KIND_SAMP: case DMSH_VK_KIND_SAMP_TEX: case DMSH_VK_KIND_SAMP_ID: case DMSH_VK_KIND_SAMP_UBO: case DMSH_VK_KIND_SAMP_C2A: {
                 dmsh_vk_bind sb = *b; sb.skind = b->kind; sb.sreg = b->reg; sb.soff = b->kind == DMSH_VK_KIND_SAMP_C2A ? b->soff : b->off;   // a sampler on its own: its own fields name it
                 int sid = noslot && b->kind != DMSH_VK_KIND_SAMP_C2A ? 0 : samp_of(s, st, &sb, k, rd, ctx);
+                if ((b->flags & VKA_BF_TABPOOL) && uses_pool) *uses_pool |= VKA_POOL_READS;   // PEANUTS: its textures come from the pool (vka_shader.c tabpool)
                 if (sid) { r.what = VKA_R_TEX; r.sid = sid; }
                 break; }
             case DMSH_VK_KIND_GMEM_MAP: r.what = VKA_R_GMEM_MAP; break;
@@ -134,6 +135,30 @@ int vka_walk(const vka_bstate *s, int st, const dmsh_vk_entry *e, const dmsh_vk_
     }
     return n;
 }
+
+// PEANUTS begin: a table of handles read through the pool keeps its place in its sampler's record (vka_bind.h)
+void vka_tabpool_record(dmsh_vk_bind *x) {
+    x->reserved = (uint16_t)(x->reg + 1); x->bytes = (uint32_t)x->off | (uint32_t)x->count << 16;
+    x->kind = x->skind; x->reg = x->sreg; x->off = x->soff == 0xFFFF ? 0 : x->soff; x->skind = 0; x->count = 1;
+    x->desc = 0 /* VK_DESCRIPTOR_TYPE_SAMPLER */; x->flags |= VKA_BF_TABPOOL;
+}
+int vka_tabpool_ids(const vka_bstate *s, int st, const dmsh_vk_entry *e, const dmsh_vk_bind *bs, vka_read_fn rd, void *ctx, int *ids, int max, uint8_t *dim) {
+    int n = 0;
+    if (st < 0 || st >= VKA_NSTAGE) return 0;
+    for (unsigned i = 0; i < e->bind_count; i++) {
+        const dmsh_vk_bind *b = &bs[i]; unsigned j = 0;
+        if (!(b->flags & VKA_BF_TABPOOL) || !b->reserved) continue;
+        while (j < i && !((bs[j].flags & VKA_BF_TABPOOL) && bs[j].reserved == b->reserved && (bs[j].bytes & 0xffff) == (b->bytes & 0xffff))) j++;
+        if (j < i) continue;   // (its table was read for an earlier record)
+        if (!n && dim) *dim = b->dim;
+        for (unsigned k = 0, cnt = b->bytes >> 16; k < cnt && n < max; k++) {
+            int tid = ubo_tex_id(s, (uint32_t)ubo_word(s, st, b->reserved - 1, (b->bytes & 0xffff) + 8u * k, 4, rd, ctx));
+            if (tid) ids[n++] = tid;
+        }
+    }
+    return n;
+}
+// PEANUTS end
 
 static int c0_ssbo_base(int st) { return st == 0 ? DMSH_C0_SSBO_VS : st == 1 ? DMSH_C0_SSBO_PS : st == 2 ? DMSH_C0_SSBO_GS : st == 5 ? DMSH_C0_SSBO_CS : st == 6 ? DMSH_C0_SSBO_TS : st == 7 ? DMSH_C0_SSBO_MS : -1; }
 

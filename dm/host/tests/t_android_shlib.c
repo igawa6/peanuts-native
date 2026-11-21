@@ -218,6 +218,22 @@ static void test_walk(void) {
         na = vka_walk(&s, 1, &ea, &ab, 0, 64, rd, NULL, r, 32, NULL, why, sizeof why);
         CHECK(na == 3 && r[1].tid == 121 && r[2].sid == 231, "DM_VK_TEXU_ELEM=0: %d/%d", r[1].tid, r[2].sid);
         vka_texu_elem = 1;
+        // PEANUTS: such arrays read through the texture pool (vka_tabpool_record): two arrays over the one table (one per sampler) become their samplers' records, the
+        // walk binds a sampler for each and marks the stage a pool reader, and vka_tabpool_ids gives the table's texture IDs once, for the draw to make
+        dmsh_vk_bind tb[2] = {{.kind = DMSH_VK_KIND_TEX_UBO, .desc = 1, .binding = 256, .count = 3, .reg = 0, .off = 0x40, .skind = DMSH_VK_KIND_SAMP, .sreg = 5, .soff = 0xFFFF, .dim = 2},
+                              {.kind = DMSH_VK_KIND_TEX_UBO, .desc = 1, .binding = 257, .count = 3, .reg = 0, .off = 0x40, .skind = DMSH_VK_KIND_SAMP_ID, .sreg = 44, .soff = 0xFFFF, .dim = 2}};
+        dmsh_vk_entry et = {.stage = DMSH_VK_STAGE_FS, .bind_count = 2}; int ids[8], tp = 0; uint8_t dim = 0;
+        CHECK(vka_tabpool_ids(&s, 1, &et, tb, rd, NULL, ids, 8, &dim) == 0, "an array bound as it is has no pool table");
+        vka_tabpool_record(&tb[0]); vka_tabpool_record(&tb[1]);
+        na = vka_walk(&s, 1, &et, tb, 0, 64, rd, NULL, r, 32, &tp, why, sizeof why);
+        CHECK(na == 2 && r[0].desc == 0 && r[0].sid == 11 && !r[0].tid && r[1].sid == 44 && (tp & VKA_POOL_READS), "table through the pool: %d results, samplers %d %d, pool %d", na, r[0].sid, r[1].sid, tp);
+        int ni = vka_tabpool_ids(&s, 1, &et, tb, rd, NULL, ids, 8, &dim);
+        CHECK(ni == 3 && ids[0] == 121 && ids[1] == 122 && ids[2] == 123 && dim == 2, "the table's textures, once: %d (%d %d %d) dim %d", ni, ids[0], ids[1], ids[2], dim);
+        CHECK(vka_tabpool_ids(&s, 1, &et, tb, rd, NULL, ids, 2, &dim) == 2, "no more than asked");
+        uint32_t zero = 0; memcpy(g_mem + 0x48, &zero, 4);   // an empty entry names no texture
+        ni = vka_tabpool_ids(&s, 1, &et, tb, rd, NULL, ids, 8, &dim);
+        CHECK(ni == 2 && ids[1] == 123, "an empty entry is left out: %d", ni);
+        memcpy(g_mem + 0x48, &hs[1], 4);
     }
     // An image whose handle the game keeps in its uniform buffer (DMSH_VK_KIND_IMG_UBO; Unreal Engine 5.6 on the Switch 2, Orbitals' compute shaders: c[3] word 2): a storage
     // image of the handle's texture ID with the pool base, as tex_ubo's and upstream's IMGU; a zero handle binds nothing
