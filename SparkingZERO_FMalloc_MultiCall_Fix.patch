@@ -1,0 +1,162 @@
+--- a/dm/tools/ue_malloc.py
++++ b/dm/tools/ue_malloc.py
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env python3
+-"""Unreal Engine 4 / 5's FMallocBinned3 in any module, found by what the engine itself holds, without a build ID: patch_nso.py cuts the call of its constructor and puts observation
+-gate OBS_UE_MALLOC on that call, and the host gives the object its own allocator's vtable there (dm/host/hle_uemalloc.c). The constructor reserves 37 GB of address space for its
++"""Unreal Engine 4 / 5's FMallocBinned3 in any module, found by what the engine itself holds, without a build ID: patch_nso.py cuts every direct call of its constructor and puts observation
++gate OBS_UE_MALLOC on each call, and the host gives the object its own allocator's vtable there (dm/host/hle_uemalloc.c). The constructor reserves 37 GB of address space for its
+ pools (74 of 512 MB), which an iPhone cannot give.
+ 
+ The chain, each link unique or nothing is cut:
+@@ -10,7 +10,7 @@
+   RTTI naming FMallocBinned3 (PEANUTS). The getter's
+   slot number names the slot layout: 19 for Unreal Engine 4.26 and 4.27, 22 for UE 5, 26 for UE 5.6 (hle_uemalloc.c); any other stops the chain with a [RED] line;
+ - the constructor: the one function other than the vtable's two destructors that stores the vtable's address (adrp + add, then str to [xN]);
+-- its one call site, a bl (no b to it): x0 there is the object, already made (GCreateMalloc mallocs it, or a bss object in nninitStartup).
++- every direct call site, a bl (no b to it): x0 at each site is the object, already made (GCreateMalloc mallocs it, or a bss object in nninitStartup).
+ Checked on the five Unreal 4 / 5 mains on the game drive (OCTOPATH TRAVELER 0 and II, DRAGON QUEST VII Reimagined, Pikmin 4, FINAL FANTASY RESONANCE), which gave the call sites of their
+ registered cuts. Unreal Engine 3 (Batman: Arkham Knight) inlines the constructor; its cut stays its build's (its patches.py).
+ Usage on its own: ue_malloc.py <module>... (what the chain finds in each)"""
+@@ -33,8 +33,8 @@
+ def is_adrp(w, rd=None): return (w & 0x9F000000) == 0x90000000 and (rd is None or w & 31 == rd)
+ 
+ def find(img, text_end, ro_off, data_off):
+-    """(call site, vtable, the getter's slot, reason) when the chain holds; (None, None, None, why not) otherwise, with why starting '[RED] ' when the allocator is there but cannot
+-    be replaced (its pools would take the address space)"""
++    """(all direct call sites, vtable, getter slot, reason) when the chain holds; (None, None, None, why) otherwise. Multiple BL sites to the same proven constructor
++    are all safe to cut: each gate installs the same host allocator vtable in that call's x0 object."""
+     word = lambda a: struct.unpack_from('<I', img, a)[0]
+     s = -1; names = []
+     while True:
+@@ -99,8 +99,12 @@
+         if start not in dtors: ctors.add(start)
+     if len(ctors) != 1: return None, None, None, f'[RED] FMallocBinned3 vtable at {vt:#x}: {len(ctors)} constructors (' + ', '.join(f'{x:#x}' for x in sorted(ctors)) + ')'
+     c = ctors.pop()
+-    if len(bl.get(c, [])) != 1 or b.get(c): return None, None, None, f'[RED] FMallocBinned3 constructor at {c:#x}: {len(bl.get(c, []))} calls and {len(b.get(c, []))} jumps, not one call'
+-    return bl[c][0], vt, slot, f'FMallocBinned3 ({LAYOUTS[slot]}): its constructor at {c:#x}, called at {bl[c][0]:#x}; its vtable {vt:#x}, the name getter slot {slot}'
++    calls = sorted(bl.get(c, []))
++    jumps = sorted(b.get(c, []))
++    if not calls or jumps: return None, None, None, f'FMallocBinned3 constructor at {c:#x}: {len(calls)} calls and {len(jumps)} jumps; expected one or more direct calls and no jumps'
++    call_text = ', '.join(f'{x:#x}' for x in calls)
++    return calls, vt, slot, f'FMallocBinned3 ({LAYOUTS[slot]}): its constructor at {c:#x}, called at {call_text}; its vtable {vt:#x}, the name getter slot {slot}'
++
+ 
+ if __name__ == '__main__':
+     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+@@ -108,5 +112,5 @@
+     for path in sys.argv[1:]:
+         try: m = nso.read(path)
+         except nso.Error as e: print(f'{path}\t-\t{e}'); continue
+-        call, vt, slot, why = find(bytes(m.image), m.text_end, m.segments[1][0], m.segments[2][0])
++        calls, vt, slot, why = find(bytes(m.image), m.text_end, m.segments[1][0], m.segments[2][0])
+         print(f'{path}\t{m.build_id[:16].hex()}\t{why}')
+--- a/dm/tools/patch_nso.py
++++ b/dm/tools/patch_nso.py
+@@ -212,13 +212,14 @@
+ elif fps_target_why.startswith('[RED] '): print(f'[RED] {NAME}: {fps_target_why[6:]}: the host cannot write it')
+ 
+ # ---- Unreal's FMallocBinned3 (any module: dm/tools/ue_malloc.py finds it by the engine's own name string, getter and vtable, without a build ID) ----
+-# Its constructor reserves 37 GB of address space for its pools. Its one call is cut, and observation gate OBS_UE_MALLOC goes on it (below), where x0 holds the object: the host gives
++# Its constructor reserves 37 GB of address space for its pools. Every direct call is cut, and observation gate OBS_UE_MALLOC goes on each one (below), where x0 holds the object: the host gives
+ # the object its own allocator's vtable there (dm/host/hle_uemalloc.c), whose place and slot layout the fixups table names (UE_MALLOC_VT, UE_MALLOC_SLOT)
+ import ue_malloc
+-UE_CALL, UE_VT, UE_SLOT, ue_why = ue_malloc.find(bytes(IMG), TEXT_END, RO_OFF, DATA_OFF)
+-if UE_CALL is not None:
+-    cuts.append((UE_CALL, bytes(IMG[UE_CALL:UE_CALL + 4]).hex(), struct.pack('<I', NOP).hex(), f'{ue_why}: the constructor call → nop, gate OBS_UE_MALLOC on it (ue_malloc.py)'))
+-    struct.pack_into('<I', IMG, UE_CALL, NOP)
++UE_CALLS, UE_VT, UE_SLOT, ue_why = ue_malloc.find(bytes(IMG), TEXT_END, RO_OFF, DATA_OFF)
++if UE_CALLS is not None:
++    for ue_call in UE_CALLS:
++        cuts.append((ue_call, bytes(IMG[ue_call:ue_call + 4]).hex(), struct.pack('<I', NOP).hex(), f'{ue_why}: constructor call → nop, gate OBS_UE_MALLOC on it (ue_malloc.py)'))
++        struct.pack_into('<I', IMG, ue_call, NOP)
+     print(f'{NAME}: {ue_why}')
+ elif ue_why.startswith('[RED] '): print(f'[RED] {NAME}: {ue_why[6:]}: Unreal\'s own allocator runs')
+ 
+@@ -1459,9 +1460,9 @@
+     return out
+ region_obs += stdalloc_gates()
+ # Unreal's FMallocBinned3 (above): the gate on the cut constructor call, a nop now; x0 is the object (the gate number's upper bits name the register, 0)
+-if UE_CALL is not None:
+-    assert UE_CALL not in kinds and not any(lo <= UE_CALL < hi for wseg in windows for lo, hi in [(wseg[0].address, wseg[-1].address + 4)]), f'FMallocBinned3 gate conflicts with a rewrite site {UE_CALL:#x}'
+-    region_obs.append((UE_CALL, OBS_UE_MALLOC, f'{NOP:08x}', 'FMallocBinned3 constructor call (cut): the object in x0; the host puts its allocator\'s vtable in (hle_uemalloc.c)'))
++for ue_call in UE_CALLS or ():
++    assert ue_call not in kinds and not any(lo <= ue_call < hi for wseg in windows for lo, hi in [(wseg[0].address, wseg[-1].address + 4)]), f'FMallocBinned3 gate conflicts with a rewrite site {ue_call:#x}'
++    region_obs.append((ue_call, OBS_UE_MALLOC, f'{NOP:08x}', 'FMallocBinned3 constructor call (cut): the object in x0; the host puts its allocator\'s vtable in (hle_uemalloc.c)'))
+ # Unreal's engine region (above): the gate on the store of its size, which the callback changes in that register and x1, the size the call asks for
+ if UE_REGION is not None:
+     assert UE_REGION_REG is not None, 'engine region gate has no size register'
+@@ -1855,7 +1856,7 @@
+     if TARGET == 'android': f.write('# TARGET_ANDROID\t1\n')   # the slot base of Targets above: an Apple host refuses this module, an Android host every other
+     if FS_STATE_OFF: f.write(f'# FPS_STATE_OFF\t{FS_STATE_OFF:#x}\n')   # frame step state page (FRAME_STEP): the loader writes the target fps there
+     if OOT_PATCHES: f.write('# OOT_PATCHES\t1\n')
+-    if UE_CALL is not None: f.write(f'# UE_MALLOC_VT\t{UE_VT:#x}\n# UE_MALLOC_SLOT\t{UE_SLOT:#x}\n')   # Unreal's FMallocBinned3 (ue_malloc.py): its vtable and the slot of its name getter, which names the slot layout
++    if UE_CALLS is not None: f.write(f'# UE_MALLOC_VT\t{UE_VT:#x}\n# UE_MALLOC_SLOT\t{UE_SLOT:#x}\n')   # Unreal's FMallocBinned3 (ue_malloc.py): its vtable and the slot of its name getter, which names the slot layout
+     if FPS_TARGET_PTR is not None: f.write(f'# FPS_TARGET_PTR\t{FPS_TARGET_PTR:#x}\n# FPS_TARGET_FIELD\t{FPS_TARGET_FIELD:#x}\n')   # a target frame rate the game steps by (fps_target.py)
+     for n, o in UE_CVARS.items(): f.write(f'# UE_CVAR:{n}\t{o:#x}\n')   # Unreal console variables (ue_cvar.py): the TAutoConsoleVariable registered under each name
+     if RENDER_SCALE: f.write('# RENDER_SCALE\t1\n')   # a render-scale stub reads state +0x10 (the loader ignores the key; dm/games/settings.py offers the setting by it)
+--- a/dm/tools/tests/test_ue_malloc.py
++++ b/dm/tools/tests/test_ue_malloc.py
+@@ -1,5 +1,5 @@
+ """Unreal's FMallocBinned3 found without a build ID (dm/tools/ue_malloc.py) on synthetic images, no game files: the name, its getter, the vtable (in place or through
+-relative relocations), the constructor and its one call; a broken link changes nothing, with a [RED] reason once the name is there."""
++relative relocations), the constructor and all its direct calls; a broken link changes nothing, with a [RED] reason once the name is there."""
+ import struct
+ import sys
+ import unittest
+@@ -52,15 +52,15 @@
+ class FindTest(unittest.TestCase):
+     def test_found_in_place(self):
+         call, vt, slot, why = find(image())
+-        self.assertEqual((call, vt, slot), (CALLER + 4, VT, 19), why)
++        self.assertEqual((call, vt, slot), ([CALLER + 4], VT, 19), why)
+ 
+     def test_found_through_relocations(self):
+         call, vt, slot, why = find(image(slot=26, relocated=True))
+-        self.assertEqual((call, vt, slot), (CALLER + 4, VT, 26), why)
++        self.assertEqual((call, vt, slot), ([CALLER + 4], VT, 26), why)
+ 
+     def test_found_with_relocated_rtti(self):  # PEANUTS: Captain Tsubasa 2 uses RTTI at its primary address point.
+         call, vt, slot, why = find(image(slot=26, relocated=True, rtti_name=b'14FMallocBinned3\0'))
+-        self.assertEqual((call, vt, slot), (CALLER + 4, VT, 26), why)
++        self.assertEqual((call, vt, slot), ([CALLER + 4], VT, 26), why)
+ 
+     def test_reject_wrong_rtti(self):  # PEANUTS: only a proven FMallocBinned3 header permits the constructor cut.
+         call, _, _, why = find(image(slot=26, relocated=True, rtti_name=b'7FMalloc\0'))
+@@ -77,10 +77,13 @@
+         self.assertIsNone(call)
+         self.assertTrue(why.startswith('[RED] ') and 'slot 20' in why, why)
+ 
+-    def test_two_calls_are_red(self):
+-        call, _, _, why = find(image(calls=2))
+-        self.assertIsNone(call)
+-        self.assertTrue(why.startswith('[RED] ') and '2 calls' in why, why)
++    def test_two_calls_to_the_same_constructor_are_both_found(self):
++        calls, vt, slot, why = find(image(calls=2))
++        self.assertEqual((calls, vt, slot), ([CALLER + 4, CALLER + 12], VT, 19), why)
++
++    def test_three_calls_to_the_same_constructor_are_all_found(self):
++        calls, vt, slot, why = find(image(calls=3))
++        self.assertEqual((calls, vt, slot), ([CALLER + 4, CALLER + 12, CALLER + 20], VT, 19), why)
+ 
+ 
+ if __name__ == '__main__':
+--- a/dm/host/hle_uemalloc.c
++++ b/dm/host/hle_uemalloc.c
+@@ -1,6 +1,6 @@
+ // Unreal Engine's allocator on a host malloc zone. Unreal Engine 4 / 5's FMallocBinned3 reserves 37 GB of address space for its pools (74 of 512 MB), which an iPhone cannot give (about
+ // 5 GB without the extended virtual addressing entitlement), and its pools are too uneven to shrink. The rewriter finds it in any main without a build ID (dm/tools/ue_malloc.py: its name
+-// string, getter, vtable, constructor and the constructor's one call), cuts the call, puts observation gate OBS_UE_MALLOC on it and names the vtable and its slot layout in the fixups table
++// string, getter, vtable, constructor and all its direct calls), cuts each call, puts observation gate OBS_UE_MALLOC on each and names the vtable and its slot layout in the fixups table
+ // (UE_MALLOC_VT, UE_MALLOC_SLOT). At the gate the host puts this vtable in the object instead (x0 there: made by GCreateMalloc, or a bss object in nninitStartup). Every FMemory allocation
+ // reaches it through the object (FPlatformMemory::BaseAllocator returns it, and the thread-local storage allocator calls its Malloc / Free slots), and the guest's own trivial functions stay
+ // in the slots that do nothing. The slot of the name getter (GetDescriptiveName) names the layout:
+@@ -100,7 +100,7 @@
+ static void **const g_vt = g_vt_storage + 2;
+ static const char *g_what;
+ 
+-// Observation gate OBS_UE_MALLOC, on the cut constructor call: the object in the register the gate number's upper bits name (x0), before anything calls it
++// Observation gate OBS_UE_MALLOC, on each cut constructor call: the object in the register the gate number's upper bits name (x0), before anything calls it
+ static void obj_made(uint64_t *regs, int param) {
+     *(void **)(uintptr_t)regs[param] = g_vt;
+     static int once; if (!once++) LOG("%s: Unreal's allocator (FMallocBinned3 at %#llx) runs on a host malloc zone", g_what, (unsigned long long)regs[param]);
