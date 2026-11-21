@@ -102,6 +102,8 @@ not edited (see table above).
 | `dm/games/0100B63016916000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for My Time at Sandrock (provisional: packed on a PC, not run on a device) |
 | `dm/games/0100DAE01E4C8000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for STORY OF SEASONS: Grand Bazaar |
 | `dm/gfx/tools/shader_split.py` | **fixed this pass** (header note + 6 def-site tags covering DM_SPLIT_DIRECT/WORKER, DM_UE_DECODE) | **yes** — the on-device process-pool split and the comment-insensitive table comparison (`table_rows`) are general infra, not game-specific |
+| `dm/gfx/tools/tool_lock.py` | marked (2026-11-21: the Darwin-only xcrun guard behind `sys.platform == 'darwin'`; the pre-existing `xlate_command`/`no_run_message` Linux lines carry `PEANUTS`) | **yes** — xcrun is macOS-only and dotnet starts the portable translator dlls on Linux: general portability, one PR with `vk_android_build.py`'s hunk |
+| `dm/gfx/tools/vk_android_build.py` | exception (2026-11-21: `translate()` starts the translator through `tool_lock.xlate_command`); allow-listed in `peanuts/upstream-unmarked.txt`, feeds `DMSH_VK_CHAIN` | **yes** — same portability fix as `tool_lock.py`'s hunk (the §3.3 run is in its section at the end) |
 | `dm/gfx/tools/uepak.py` | marked (`_nxaes` off-Mac AES path) | **yes** — lets the packer run without CommonCrypto/OpenSSL, general portability fix |
 | `dm/gfx/vk_android/vka_draw.c` | **fixed this pass** | **yes** — indirect quad/line-loop draws read on CPU instead of being skipped (Three Houses) |
 | `dm/gfx/vk_android/vka_exec.c` | **fixed this pass** | **yes** — sRGB↔linear converting copy between formats (Link's Awakening) |
@@ -1399,3 +1401,21 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
 | `dm/games/01002B00111A2000/game.tsv`, `dm/games/01002B00111A2000/README.md` | 1, 1 | Hyrule Warriors: Age of Calamity on Android: frame limits Game owned, 30 and 60 (the frame step's targets), measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/01002B00111A2000/vk_prewarm.bin` | new | its Turnip prewarm seed (242 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+### Linux shader tools (2026-11-21)
+
+The packer's shader tools now run on Linux: `dm/gfx/tools/tool_lock.py` guards the macOS-only `xcrun` Metal queries behind `sys.platform == 'darwin'` (Linux has no Metal toolchain), and `dm/gfx/tools/vk_android_build.py` starts the translator through `tool_lock.xlate_command` (on Linux, dotnet runs the portable `dmsh_xlate.dll`; the apphost in the repository is a Mach-O). The shader chain procedure of `peanuts/docs/UPSTREAM.md` §3.3 was run for the `vk_android_build.py` edit. The lock and the chain headers are left to the maintainer, who regenerates them during integration (CONTRIBUTING.md).
+
+1. `tool_lock.py --update-lock` on Linux drops only the two `metal_*` rows; the translator dlls, `xlate_source` and `spirv-cross` (the in-repo Linux build in `spirv_cross_bin/`) are unchanged. The committed lock is the upstream one (with the metal rows), so the tools digest is the same on Linux and macOS.
+2. With the upstream lock, the tools digest is `cc4a8ae11c32`; the new `vk_android_same.tsv` row resolves it to `e084efc69b46`, the version upstream's tree expects and the phones carry, so no library version moves.
+3. `DMSH_VK_ABI` `3d4e8bb1e1e8` unchanged: the moved chain is a translate pass, not an outage (no full rebuild of installed devices).
+4. Byte-compare: a full Mario Kart 8 Deluxe build on Linux (all 29,785 `shader_map.tsv` keys, the 134 the package lacks left out, `DMSH_VK_REQUIRE_ALL=0`, 29,651 shaders) is byte-identical to the same full build with upstream's own tools on the Mac: both files 204,778,511 bytes, SHA-256 `7f1bc569e684efab467d000acb6bee68e89d00cf8ebd30a8644081e25869e336`. The Mac build ran in a worktree at upstream `main` `606320f` with the committed Mach-O apphost; the Linux build ran in this tree with dotnet starting the portable `dmsh_xlate.dll`. Row appended to `dm/gfx/tools/vk_android_same.tsv` (`cc4a8ae11c32 → e084efc69b46`).
+5. `vk_android_build.py --check` of the rebuilt library: every module decompresses and passes spirv-val --target-env vulkan1.3.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/tool_lock.py` | 1 | the Darwin-only xcrun guard behind `sys.platform == 'darwin'` | `PEANUTS(upstream-candidate)` |
+| `dm/gfx/tools/vk_android_build.py` | 1 | `translate()` starts the translator through `tool_lock.xlate_command` | allow-listed in `peanuts/upstream-unmarked.txt` (feeds `DMSH_VK_CHAIN`); upstream candidate: yes, with `tool_lock.py`'s hunk |
+| `dm/gfx/tools/vk_android_same.tsv` | 1 | the row `cc4a8ae11c32 → e084efc69b46` with the build's evidence | allow-listed in `peanuts/upstream-unmarked.txt` (feeds `DMSH_VK_CHAIN` by its rows, takes no marker) |
+
+The lock and the chain headers are not in this change: the maintainer regenerates them during integration (CONTRIBUTING.md).

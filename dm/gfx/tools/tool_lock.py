@@ -17,15 +17,17 @@ def tools_now():
     t['xlate_source'] = xlate_embedded()
     sc = shutil.which(SPIRV_CROSS)
     t['spirv-cross'] = sha16(sc) if sc else 'missing'
-    for sdk in ('macosx', 'iphoneos'):
-        t['metal_' + sdk] = subprocess.run(['xcrun', '-sdk', sdk, 'metal', '--version'], capture_output=True, text=True).stdout.splitlines()[0:1] or ['missing']
-        t['metal_' + sdk] = t['metal_' + sdk][0]
+    # PEANUTS(upstream-candidate): xcrun is macOS-only; Linux has no Metal toolchain
+    if sys.platform == 'darwin':
+        for sdk in ('macosx', 'iphoneos'):
+            t['metal_' + sdk] = subprocess.run(['xcrun', '-sdk', sdk, 'metal', '--version'], capture_output=True, text=True).stdout.splitlines()[0:1] or ['missing']
+            t['metal_' + sdk] = t['metal_' + sdk][0]
     return t
 
 def xlate_command(path):
     """The command that starts the translator program at path (the apphost dmsh_xlate in dmsh_xlate_bin): [path] where the apphost runs. The apphost in the repository is the
-    Mac's; the dlls beside it are portable, so on Windows it is <path>.exe when there is one (an apphost made for Windows), else `dotnet <path>.dll` (the .NET 10 runtime's
-    dotnet on PATH, or DOTNET_ROOT's)"""
+    Mac's; the dlls beside it are portable, so on Linux and Windows it is <path>.exe when there is one (an apphost made for that system), else `dotnet <path>.dll` (the .NET
+    10 runtime's dotnet on PATH, or DOTNET_ROOT's)"""
     # PEANUTS: Linux too starts the dlls with dotnet: the apphost in the repository is a Mach-O file, and starting it there is "Exec format error" (the PC builder on Linux)
     linux = sys.platform.startswith('linux') and not path.lower().endswith('.dll') and os.path.isfile(path + '.dll')
     if not linux and (os.name != 'nt' or os.path.splitext(path)[1].lower() in ('.exe', '.cmd', '.bat')): return [path]

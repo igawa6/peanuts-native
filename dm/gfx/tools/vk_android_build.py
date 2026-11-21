@@ -588,7 +588,7 @@ def translate(jobs_list, w, tag):
     jp = os.path.join(w, f'job_{tag}.json'); json.dump(jobs_list, open(jp, 'w'))
     with XLATE_GATE:
         if XLATE_LIB: return XLATE_LIB([jp, w], os.path.join(w, f'log_{tag}.txt'))
-        return subprocess.run([XLATE, jp, w], capture_output=True, text=True)
+        return subprocess.run(tool_lock.xlate_command(XLATE) + [jp, w], capture_output=True, text=True)
 
 
 PS_INPUTS = {}   # pixel shader key → the input locations it reads (for its vertex shaders' padding)
