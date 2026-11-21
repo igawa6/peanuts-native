@@ -41,3 +41,12 @@ sys_resource	0x0
 # ---- Shader split (shader_split.py: 24 BNSH files in the RomFS folder shader/, none in main) ----
 shader_groups	/=romfs
 shader_note	Yoru, Tomosu shaders (provisional profile)
+# PEANUTS begin: picture shapes, untested candidates (aspect_plan, dm/host/aspect_plan.h): Game settings > Display > Fill
+# NOT SEEN ON A DEVICE. Every place the ? pack's main has the packed 1920x1080 sizes in code and the 16/9 float words (a scan of the code on 2026-11-21, no community patch behind them):
+# the 3D view may follow the screen, the 2D layer may not, or the game may draw wrongly or not start with Fill. Fit is unchanged. Take out the
+# rows that prove wrong, and aspect_plan_untested once a device has shown the rest right (the note says what was seen).
+aspect_plan_untested	1
+aspect_plan	3a573656d869f5786166fcff376c93ae	width_movz	m0x30e8	14f080d2
+aspect_plan	3a573656d869f5786166fcff376c93ae	width_movz	m0x32e80	17f080d2
+aspect_plan	3a573656d869f5786166fcff376c93ae	width_movz	m0x36108	08f080d2
+# PEANUTS end

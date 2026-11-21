@@ -33,3 +33,10 @@ On Thor with Turnip R5, the rooftop tutorial ran at about 20 and 59–60 rendere
 - **AYN Thor, Qualcomm 676.53.** Reached the 1.80 title and rendered the rooftop scene. The driver then raised SIGSEGV inside `vulkan.adreno.so+0x1ed124`. The dev app uses Turnip for play.
 - The launcher mounted all 12 add-ons, and the game displayed entitlement notices, including the Battle Attire pack. Later chapters, online modes and individual DLC characters were not played.
 - The PC translated all 128,449 shader keys. All 178,561 Vulkan modules passed SPIR-V validation.
+
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.80 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->

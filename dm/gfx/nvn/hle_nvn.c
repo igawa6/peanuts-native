@@ -1051,6 +1051,9 @@ static int keys_hash(const NVNshaderData *sd, int mapped, uint8_t out[8]) {
 // PEANUTS: the Android replay notes what a shader's control section says it captures by transform feedback (vka_tf.c), where the shader's key is made: the section
 // is only guaranteed valid during SetShaders
 __attribute__((weak)) void nvn_tf_ctl_note(const uint8_t key[8], const void *control) { (void)key; (void)control; }
+// PEANUTS: whether nvnProgramSetShaders made the stage's key (prog_key would otherwise hash the stage's code now, which is not known to be readable or
+// written yet at that time: the reason the key is left to the first draw). For the Android replay's program list (vka_shader.c mtl_prog_prefetch)
+int prog_key_ready(const prog_t *p, unsigned st) { if (st >= p->nstage) return 0; prog_keys_t *k = pk_get(p, 0); return k && (k->ok >> st & 1); }
 int prog_key(const prog_t *p, unsigned st, uint8_t key[8]) {
     if (st >= p->nstage) return 0;
     prog_keys_t *k = pk_get(p, 1);
@@ -1322,12 +1325,18 @@ NVN(nvnCommandBufferIsRecording, NVNboolean, const NVNcommandBuffer *c) { return
 // PEANUTS begin: CopyCommands copies, as in NVN. The game may record over the source's command memory as soon as the copy is made; a CALL into it, read a frame
 // later by the Android replay worker, found other records there (Unicorn Overlord: a record size of pixel data, then a jump into unmapped memory). Inline replay
 // read the CALL at submit time, before the game reused the memory. The source's records are copied into this buffer up to its END, across its JUMPs.
+// The largest record the host records: an uniform update of the NVN limit (64 KiB) and its header. A larger size is stale memory, never a record
+enum { CMD_COPY_REC_MAX = (64 << 10) + 64 };
 static void cmd_copy_list(cmd_t *o, const uint8_t *s) {
     for (unsigned n = 0; s && n < (1u << 22); n++) {
+        if (dm_guest_unmapped((uintptr_t)s, 16)) {   // a jump (or a stale handle) into a page the guest has not mapped: reading it would fault
+            static int once; if (!once++) LOG("[RED] CopyCommands: record %u of the source list at %p is in memory the guest has not mapped: the copy stops there", n, (const void *)s);
+            return;
+        }
         op_hdr h; memcpy(&h, s, sizeof h);
         if (h.op == OP_END) return;
         if (h.op == OP_JUMP && h.size >= 16) { memcpy(&s, s + 8, 8); continue; }
-        if (h.size < 8 || (h.size & 7) || h.op >= OP_COUNT_) {
+        if (h.size < 8 || (h.size & 7) || h.op >= OP_COUNT_ || h.size > CMD_COPY_REC_MAX || dm_guest_unmapped((uintptr_t)s, h.size)) {
             static int once; if (!once++) LOG("[RED] CopyCommands: record %u of the source list at %p is not a record (op %u, size %u): the copy stops there", n, (const void *)s, h.op, h.size);
             return;
         }

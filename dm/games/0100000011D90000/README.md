@@ -79,3 +79,10 @@ The spare accumulator is explicitly zeroed on first update. The source scheduler
 Actual ARM64 fixtures for both builds passed 2,192 checks: checked 76-word transactions, Game owned omission, integer cap writes, 30 Hz water at every supported target, first-update/replay behavior, stall recovery, NPC/player/null-pointer paths and AI random/threshold handling. A bounded Turnip run reached Twinleaf Town at about 59 FPS. CPU fixtures and short town checks do not establish full-game correctness.
 
 Source: [Fl4sh9174 Switch emulator mods](https://github.com/Fl4sh9174/Switch-Emulator-Ultrawide-FPS-Mods), reviewed commit `5eed21701e8091389e2e746f073f694ea2ad4ec6`. These community timing patches are separate from FPSLocker Warehouse configs.
+
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.3.0 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->

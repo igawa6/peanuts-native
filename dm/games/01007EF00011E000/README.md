@@ -161,6 +161,15 @@ Every kind of cold start also shows the game's own 130–220 ms frames every 9�
 
 On this Mac the background prewarm also ends before the save loads, so the step changes the first minute only where the prewarm is slower than the way into play: a slower device, fewer cores, a longer list, a player who skips through the title. Frames over 25 ms without pipeline work (20–71 per run) are the game's own and vary with the machine's other load.
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+Game settings › Display offers **Fill the screen** on 1.6.0 (not 1.9.0) through three `aspect_plan` rows of kind `ratio_fmov`, at the sites of the community's any-aspect patch for 1.6.0 (BOTW-AAR by Fayaz), read on the 1.6.0 pack's main: two `fdiv s0,s0,s1` that make the ratio from the width and the height (`main+0xe0ad68`, `main+0x15c2148`) and the getter's `ldr s0,[x0,#0xb0]` (`main+0x1271870`) become `fmov s0,#imm8`. That instruction holds only some values, so the view's ratio is the nearest one (1.125 for a 1.148 screen, 2.375 for 21:9: within 3.2 %) while the picture is shown at the screen's exact shape. The rows change the 3D view only: the HUD and the menus are still drawn for 16:9 and take the picture's shape with it (the community tool edits the layout files for that, which these rows do not).
+
+**On an AYN Thor (2026-11-21, Turnip 27.0.0-R2, main `8e9978d5…`, the second screen, window 1240x1080 → 31:27):** the log has `aspect plan: 3 words for the 1.1481 picture`, and two runs of 82 s and about 130 s have no `CRASH` line. **No picture was taken** (the Thor's screens were off by then), so the view, the HUD and the menus are all still to be looked at.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 ### The regression route (2026-10-29, current)

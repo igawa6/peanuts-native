@@ -284,7 +284,8 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                     sampledImageType,
                     sampledImagePointerType,
                     sampledImageVariable,
-                    sampler.ArrayLength != 1));
+                    sampler.ArrayLength != 1,
+                    sampler.ArrayLength > 1 && sampler.ArrayLength <= SamplerDeclaration.ShaderIndexedMaxLength)); // PEANUTS: IsShaderIndexed
                 context.SamplersTypes.Add(new(sampler.Set, sampler.Binding), sampler.Type);
 
                 context.Name(sampledImageVariable, sampler.Name);

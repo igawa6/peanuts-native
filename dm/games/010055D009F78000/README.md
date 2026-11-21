@@ -63,6 +63,15 @@ Game-specific findings. The general host changes they led to are listed under [F
 - Its GLSLC (output version 0x1d.2) writes 0x848 / 0x850-byte control sections and compute code with no header, which the reader used to drop: 24 shaders before, 1,355 after. A few outputs of version 0x1d.0 keep something else at control +0x20 (odd values such as 0x136b), so a control length must be a multiple of 4; `glslc_section` later took 8 more of them ([GLSLC outputs read through their section headers](../../../docs/reference/shaders.md#glslc-outputs-read-through-their-section-headers)).
 - **Shaders compiled at run time:** KTGL compiles 9 built-in GLSL shaders at boot with the game's own GLSLC (`glslcCompile` from `main+0x9c89f8`; the sources are strings in `main`): 2D primitives, text, the loading quill. No game file holds their output, so they are captured on the Mac: the game runs with `DM_GLSLC_CAPTURE=<version dir>/glslc_capture` (`hle_glslc.c`), and `shader_split.py` reads that folder. The outputs are identical on every run. The NSP script does this by itself in its `GLSLC capture` stage, so the dump folder is enough: it builds the Mac host into `<id>_build/tools/` and boots the game until the 9 files are in `<id>_build/extract/v327680/glslc_capture`. Without the folder the split tables would differ from the profile, and the script would stop at its table check. By hand, run the game for a few seconds with that variable (step 5 of the build by hand).
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+Game settings › Display offers **Fill the screen** on 1.2.0 through three `aspect_plan` rows, the words of the community's 21:9 patch for this build (Fl4sh9174, Switch-Emulator-Ultrawide-FPS-Mods), read on the 1.2.0 pack's main: the 16/9 float at `main+0xcb801c` becomes the picture's shape, and the calls at `main+0x55a6c4` and `main+0x5653f8` become NOPs. **What the two calls do is not known here** (the patch has no comment).
+
+**On an AYN Thor (2026-11-21, Turnip 27.0.0-R2, main `89048449…`, the second screen, window 1240x1080 → 31:27):** the log has `aspect plan: 3 words for the 1.1481 picture` and the game starts with no `CRASH` line in half a minute. **The picture was not looked at:** the title, the menus, the monastery and a battle are all open, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - A fresh save needs `DM_KBD=<name>` for the name entry, and its confirm dialogs default to No.

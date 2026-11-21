@@ -191,7 +191,7 @@ final class GameSettings {
             if (GameUpscaler.mode(a, id) == GameUpscaler.MODE_FSR)   // only with FSR 1 chosen
                 picture.add(new Ui.Setting(a, "✨", "FSR sharpness", v -> sharpness(a, g, again)).value(dflt(GameUpscaler.ownSharp(a, id), GameUpscaler.sharpName(a, id))).chevron(a).sub());
         }
-        picture.add(new Ui.Setting(a, "📺", "Display", v -> display(a, g, again)).value(Prefs.DISPLAY_NAMES[Prefs.stretch(a, id) ? 1 : 0]).chevron(a));
+        picture.add(new Ui.Setting(a, "📺", "Display", v -> display(a, g, again)).value(displayLabel(a, id)).chevron(a));   // PEANUTS: displayLabel (Fill)
         if (!aspects(prof).isEmpty())   // a profile with a native aspect mod (game.tsv variant rows labelled w:h)
             picture.add(new Ui.Setting(a, "🔳", "Aspect ratio", v -> aspect(a, g, again)).value(aspectLabel(a, id)).chevron(a));
 
@@ -716,9 +716,22 @@ final class GameSettings {
     }
 
     /** Display: Fit keeps the game's 16:9 picture with bars on a screen of another shape; Stretch fills the screen (DM_VK_STRETCH), the touch mapping with it */
+    // PEANUTS begin: Display › Fill. A game whose view follows the picture's shape (aspect or aspect_plan rows) draws for the screen's own shape, so the picture
+    // fills the screen with nothing stretched and no bars. It is Aspect ratio's Screen shape under another name (the same stored choice, ScreenShape.CHOICE), read at the
+    // game's start; Fit and Stretch leave that choice, and a fixed Aspect ratio shape stays what it was.
+    static final String FILL_NAME = "Fill the screen (the game draws for this screen's shape; from the next start)";
+    static boolean fillable(Profile p) { return p != null && (!p.cameraAspects.isEmpty() || !p.aspectPlan.isEmpty()); }
+    static boolean filling(android.content.Context a, String id) { return fillable(Profile.of(id)) && ScreenShape.CHOICE.equals(Prefs.aspect(a, id)); }
+    static String displayLabel(android.content.Context a, String id) { return filling(a, id) ? "Fill the screen" : Prefs.DISPLAY_NAMES[Prefs.stretch(a, id) ? 1 : 0]; }
+    // PEANUTS end
     private static void display(MainActivity a, Game g, Runnable done) {
-        new PadFocus.Builder(a).setTitle("Display · " + g.name).setSingleChoiceItems(Prefs.DISPLAY_NAMES, Prefs.stretch(a, g.titleId) ? 1 : 0, (x, w) -> {
+        boolean fill = fillable(Profile.of(g.titleId));   // PEANUTS: a third choice for a game that can fill
+        boolean guess = fill && Profile.of(g.titleId).aspectUntested;   // PEANUTS: rows nobody has seen on a device (game.tsv aspect_plan_untested)
+        String[] names = fill ? new String[] {Prefs.DISPLAY_NAMES[0], Prefs.DISPLAY_NAMES[1], FILL_NAME + (guess ? ". Untested on this game: it may look wrong or not start; pick Fit to go back" : "")} : Prefs.DISPLAY_NAMES;   // PEANUTS
+        new PadFocus.Builder(a).setTitle("Display · " + g.name).setSingleChoiceItems(names, filling(a, g.titleId) ? 2 : Prefs.stretch(a, g.titleId) ? 1 : 0, (x, w) -> {   // PEANUTS: names, Fill
             Prefs.stretch(a, g.titleId, w == 1);
+            if (w == 2) Prefs.aspect(a, g.titleId, ScreenShape.CHOICE);   // PEANUTS: Fill
+            else if (filling(a, g.titleId)) Prefs.aspect(a, g.titleId, null);   // PEANUTS: Fit or Stretch after Fill: the game as shipped again
             x.dismiss();
             done.run();
         }).setNegativeButton("Cancel", null).show();

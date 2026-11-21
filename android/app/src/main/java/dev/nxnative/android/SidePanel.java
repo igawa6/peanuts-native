@@ -712,9 +712,11 @@ final class SidePanel extends FrameLayout {
         int sz = live ? ga.runPictureSize() : Prefs.pictureSize(act, game());
         RadioGroup fit = new RadioGroup(act);
         fit.setOrientation(RadioGroup.HORIZONTAL);
-        String[] names = {"Fit", "Stretch"};
+        boolean canFill = GameSettings.fillable(Profile.of(game()));   // PEANUTS: Display > Fill for a game whose view follows the screen's shape (GameSettings.fillable)
+        boolean fillRun = ga != null && ga.runFill();   // PEANUTS: whether this run started with Fill
+        String[] names = canFill ? new String[] {"Fit", "Stretch", "Fill"} : new String[] {"Fit", "Stretch"};   // PEANUTS: Fill
         for (int i = 0; i < names.length; i++) { RadioButton b = new RadioButton(act); b.setId(ID_FIT + i); b.setText(names[i]); fit.addView(b); }
-        fit.check(ID_FIT + (st ? 1 : 0));
+        fit.check(ID_FIT + (canFill && GameSettings.filling(act, game()) ? 2 : st ? 1 : 0));   // PEANUTS: Fill
         box.addView(fit);
         TextView sl = new TextView(act);
         SeekBar ss = new SeekBar(act);
@@ -724,14 +726,33 @@ final class SidePanel extends FrameLayout {
         Runnable label = () -> sl.setText("Size " + PictureFit.sizeOfStep(ss.getProgress()) + " %" + (ss.getProgress() == PictureFit.steps() ? " (full)" : ""));
         label.run();
         Runnable send = () -> { if (ga != null) ga.picture(fit.getCheckedRadioButtonId() == ID_FIT + 1, PictureFit.sizeOfStep(ss.getProgress())); };
-        fit.setOnCheckedChangeListener((g, id) -> send.run());
+        // PEANUTS begin: Fill is kept at once and applies at the next start (the game's own shape number is set before its code is sealed: aspect_plan.h);
+        // Fit and Stretch after Fill clear it. One line says when this run and the stored choice differ
+        TextView fillNow = new TextView(act);
+        Runnable fillNote = () -> {
+            boolean want = canFill && GameSettings.filling(act, game());
+            fillNow.setVisibility(canFill && want != fillRun ? VISIBLE : GONE);
+            fillNow.setText(want ? "Restart the game to apply Fill." : "Restart the game to leave Fill.");
+        };
+        fit.setOnCheckedChangeListener((g, id) -> {
+            if (canFill) {
+                if (id == ID_FIT + 2) Prefs.aspect(act, game(), ScreenShape.CHOICE);
+                else if (GameSettings.filling(act, game())) Prefs.aspect(act, game(), null);
+                fillNote.run();
+            }
+            send.run();
+        });
+        // PEANUTS end
         ss.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar b, int v, boolean user) { label.run(); send.run(); }
             @Override public void onStartTrackingTouch(SeekBar b) {}
             @Override public void onStopTrackingTouch(SeekBar b) {}
         });
+        if (canFill) { box.addView(fillNow); fillNote.run(); }   // PEANUTS: Fill's restart line, under the three choices
         box.addView(sl);
         box.addView(ss);
+        if (canFill) note("Fill makes the game draw for this screen's shape, so nothing is stretched and there are no bars: from the next start."
+                + (Profile.of(game()).aspectUntested ? " Untested on this game: it may look wrong or not start; pick Fit to go back." : ""));   // PEANUTS
         note(live ? "Fit keeps the game's shape, Stretch fills the screen; below 100 % the picture is smaller, with black around it. Applies now, kept for this game."
                 : "Applies at the next start (this run takes no live changes: DM_CTL is off).");
         rows.position(box);

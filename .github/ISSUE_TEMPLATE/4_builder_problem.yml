@@ -39,7 +39,7 @@ body:
     attributes:
       label: "Source"
       description: "The release or the commit you built from (git rev-parse --short HEAD)."
-      placeholder: "v0.1.5 or 04cad56"
+      placeholder: "v0.1.6 or 04cad56"
   - type: input
     id: command
     attributes:

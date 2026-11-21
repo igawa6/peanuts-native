@@ -28,6 +28,8 @@ public final class MiiStoreJvmTest {
         m.set("hair_type", 500); m.set("eyebrow_y", 0); m.set("favorite_color", -3);
         check(m.get("hair_type") == 131 && m.get("eyebrow_y") == 3 && m.get("favorite_color") == 0, "values clamp to the console's ranges");
         check(MiiStore.cleanName("  ").equals("Mii") && MiiStore.cleanName("ABCDEFGHIJKL").length() == 10, "names: never empty, at most 10");
+        check(MiiStore.cleanName("123456789\uD83D\uDE00").equals("123456789"), "names: no half a surrogate pair at the cut");
+        check(MiiStore.copyName("Abcdefghij").equals("Abcdefgh 2") && MiiStore.copyName("Ana").equals("Ana 2"), "a duplicate's name differs and fits");
         Random r = new Random(1);
         for (int i = 0; i < 200; i++) {
             byte[] c = MiiStore.charInfo(MiiStore.random("R", r));
@@ -45,6 +47,12 @@ public final class MiiStoreJvmTest {
         List<MiiStore.Mii> back = MiiStore.load(dir);
         check(back.size() == 2 && back.get(0).name.equals("Ana") && back.get(0).get("hair_type") == 77, "round trip");
         check(java.util.Arrays.equals(back.get(1).createId, list.get(1).createId), "create IDs survive");
+        File tsv = new File(MiiStore.database(dir).getParentFile(), "miis.tsv"); // PEANUTS (review fix)
+        String ok1 = Files.readAllLines(tsv.toPath()).get(0), ok2 = Files.readAllLines(tsv.toPath()).get(1);
+        String bad = "zz" + ok1.substring(2, 32) + "\tBad\thair_type=1";
+        Files.write(tsv.toPath(), (ok1 + "\n" + bad + "\n" + ok2 + "\n").getBytes("UTF-8"));
+        check(MiiStore.load(dir).size() == 2, "one bad line in the middle still loads the others");
+        check(MiiStore.cleanName("A\rB").equals("A B"), "a CR in a name is cleaned");
         System.out.println(fails == 0 ? "PASS" : fails + " failures");
         System.exit(fails == 0 ? 0 : 1);
     }

@@ -39,3 +39,10 @@ This profile was written from a survey of the game files, with its memory keys g
 - The movie path (CRI Mana over `movie::Decoder`) was not run.
 - No readiness rows (`readiness.tsv`): the game is not marked as supported on Android.
 - The profile has no row in the games table of [dm/games/README.md](../README.md) yet.
+
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on ? through 6 `aspect_plan` rows that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the width,height pairs in data, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->

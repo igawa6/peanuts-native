@@ -1711,6 +1711,9 @@ void vka_tex_soft_copy(vka_img *im, int dst_level, VkCommandBuffer cb) {
 
 static vka_img *g_bc_sync[64];
 static int g_nbc_sync;
+static void bc_cancel_locked(vka_img *im) {   // PEANUTS: caller holds g_tmu: the forced free in vka_tex_drop_pool drops the queue's reference
+    for (int i = 0; i < g_nbc_sync; i++) if (g_bc_sync[i] == im) g_bc_sync[i] = NULL;   // PEANUTS
+}
 static int bc_alias_match(const vka_img *src, const vka_img *dst) {
     if (!src || !dst || src == dst || !src->mem || src->mem != dst->mem) return 0;
     if (compressed(&src->f) || !compressed(&dst->f) || src->f.bpb != dst->f.bpb) return 0;
@@ -2164,6 +2167,7 @@ void vka_tex_drop_pool(const void *pool) {
             ndrop++;
             wb_cancel_locked(im);
             rw_cancel_locked(im);   // PEANUTS: its queued region writes go with it: the count forced below would leave them holding a freed image
+            bc_cancel_locked(im);   // PEANUTS: and its bc alias sync entry (the forced count below consumes the queue's reference)
             map_del_im(im);
             im->refs = 1;
             unref_locked(im);
@@ -2944,8 +2948,10 @@ static void pfb_consume_locked(void) {
     }
 }
 
-static void bindless_init(void) {
-    static int done; if (done) return; done = 1;
+static void bindless_init_once(void);
+// PEANUTS: once, from any thread (was a flag read on the replay thread alone): vka_tex_bindless_ready below
+static void bindless_init(void) { static pthread_once_t once = PTHREAD_ONCE_INIT; pthread_once(&once, bindless_init_once); }
+static void bindless_init_once(void) {
     if (!V.uab) { VRED("no update-after-bind descriptor indexing: the texture and sampler pools have no tables"); return; }
     VkPhysicalDeviceVulkan12Properties p12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
     VkPhysicalDeviceProperties2 p2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &p12}; vk.vkGetPhysicalDeviceProperties2(V.pd, &p2);
@@ -2981,6 +2987,11 @@ static void bindless_init(void) {
 VkDescriptorSet vka_bindless_set(void) { return g_set; }
 uint32_t vka_bindless_tex_slots(void) { return g_set ? g_ntex_slots : 0; }   // PEANUTS: the sampled table's length (vka_shader.c tabpool clamps the IDs a module loads to it)
 VkDescriptorSetLayout vka_bindless_layout(void) { return g_dsl; }
+// PEANUTS: the tables made before the first pipeline layout (vka_pso.c layout_slow). They were made at the first frame's textures (vka_tex_prepare), so a layout made
+// before the game's first frame (the startup prewarm, the preparing step) had set 0 alone: another layout than the same shaders' at a draw of a later run, and the
+// pipelines and shader parts compiled with it were never found in the driver's cache again (Super Mario Odyssey, 2026-11-20: 9 of 267 fetches in the run after the
+// one that prepared them)
+void vka_tex_bindless_ready(void) { if (V.dev) bindless_init(); }
 VkDescriptorSetLayout vka_pfb_layout(void) { return atomic_load(&g_pfb) > 0 ? g_pfb_dsl : VK_NULL_HANDLE; }
 VkDescriptorSet vka_pfb_set(void) { return atomic_load(&g_pfb) > 0 ? g_pfb_set : VK_NULL_HANDLE; }
 
@@ -3720,6 +3731,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
         int any_bc = 0;
         for (int i = 0; i < g_nbc_sync; i++) {
             vka_img *src = g_bc_sync[i];
+            if (!src) continue;   // PEANUTS: cancelled by bc_cancel_locked (its pool was dropped)
             if (src->inited && !img_pool_dead(src) && src->mem) {
                 int lk_bc; for (vka_img *dst = live_first(src->mem, &lk_bc); dst; dst = live_next(dst, src->mem, &lk_bc)) {
                     if (!dst->inited || img_pool_dead(dst) || !bc_alias_match(src, dst)) continue;

@@ -101,10 +101,10 @@ body:
       label: "Peanuts Native version"
       description: "Settings › About shows it. In an older version, please try the newest first: many problems are fixed there."
       options:
-        - "0.1.5 (the newest)"
+        - "0.1.6 (the newest)"
+        - "0.1.5"
         - "0.1.4"
-        - "0.1.3"
-        - "0.1.2 or older"
+        - "0.1.3 or older"
         - "A test or development build (say which in \"Anything else\")"
     validations:
       required: true

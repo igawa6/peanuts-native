@@ -52,6 +52,13 @@ No `patches.py`. `op_mode` stays docked: Odyssey only takes its motion moves in 
 - 27,984 shaders: agl `sharcb` and `bfsha` in `ShaderData`, particles in `EffectData`; groups per RomFS folder in `game.tsv`.
 - The spin-wait rewrite leaves its modules byte for byte as before the lock and store rules.
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.4.1 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - A fresh save wakes Mario in the Cap Kingdom with `DM_KEYS="f1000:A,f8200:RLeft~6,f9200:LUp~4"`: the "Look Around" hint waits for the right stick held about 6 s one way (left then right cancels out). Play starts at about frame 9,900, and the game saves there.

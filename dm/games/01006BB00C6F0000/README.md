@@ -64,6 +64,13 @@ Game-specific findings; the general host changes they led to are listed under [F
 - 9,698 shaders from the bfsha archives, effects and layouts.
 - **GLSLC.** `subsdk0` is NVN's runtime GLSL compiler and `main` imports `glslcCompile*`; `game.tsv` says the `*_uber.bfsha` are compiled at run time through it, but up to the house, the beach and the menus every shader the game loaded was in the offline tables.
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.1.0 through 3 `aspect_plan` rows that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - The title wants L+R: `DM_KEYS="f6000:L+R~0.4,f6300:A,f6500:A,f6700:Down,f6800:A"` reaches a new file's name entry (a fresh save directory via `SV=`).

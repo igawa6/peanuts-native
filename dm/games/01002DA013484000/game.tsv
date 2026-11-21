@@ -53,3 +53,17 @@ fps_plan	5441af3c89f97e1d25a8ccf14c742bf8	m0x104a520	013d0dbd	1f2003d5
 # The first frame, before a present can update the memory rows, starts at 60.
 fps_plan	5441af3c89f97e1d25a8ccf14c742bf8	m0x181bd38	0000803f	0000003f
 fps_plan	5441af3c89f97e1d25a8ccf14c742bf8	m0x181bd3c	56550542	55558541
+# PEANUTS begin: picture shapes, untested candidates (aspect_plan, dm/host/aspect_plan.h): Game settings > Display > Fill
+# NOT SEEN ON A DEVICE. Every place the 1.0.1 pack's main has the width,height pairs in data (a scan of the code on 2026-11-21, no community patch behind them):
+# the 3D view may follow the screen, the 2D layer may not, or the game may draw wrongly or not start with Fill. Fit is unchanged. Take out the
+# rows that prove wrong, and aspect_plan_untested once a device has shown the rest right (the note says what was seen).
+aspect_plan_untested	1
+aspect_plan	5441af3c89f97e1d25a8ccf14c742bf8	area_width_u32	m0x13a915c	00050000
+aspect_plan	5441af3c89f97e1d25a8ccf14c742bf8	area_height_u32	m0x13a9160	d0020000
+aspect_plan	5441af3c89f97e1d25a8ccf14c742bf8	area_width_u32	m0x13a9164	40060000
+aspect_plan	5441af3c89f97e1d25a8ccf14c742bf8	area_height_u32	m0x13a9168	84030000
+aspect_plan	5441af3c89f97e1d25a8ccf14c742bf8	area_width_u32	m0x13a916c	80070000
+aspect_plan	5441af3c89f97e1d25a8ccf14c742bf8	area_height_u32	m0x13a9170	38040000
+aspect_plan	5441af3c89f97e1d25a8ccf14c742bf8	area_width_u32	m0x16cac94	80070000
+aspect_plan	5441af3c89f97e1d25a8ccf14c742bf8	area_height_u32	m0x16cac98	38040000
+# PEANUTS end

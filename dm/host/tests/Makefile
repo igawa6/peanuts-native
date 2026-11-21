@@ -589,6 +589,14 @@ $(B)/t_android_pace: t_android_pace.c $(VKA)/vka_pace.h | $(B)
 # The skipped-work warning's window logic (vka_skipwarn.h)
 $(B)/t_android_skipwarn: t_android_skipwarn.c $(VKA)/vka_skipwarn.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_skipwarn.c
+# PEANUTS begin: the "Preparing graphics" notice's counters (vka_warmnote.h)
+run: $(B)/t_android_warmnote
+$(B)/t_android_warmnote: t_android_warmnote.c $(VKA)/vka_warmnote.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_warmnote.c
+.PHONY: android-warmnote
+android-warmnote: $(B)/t_android_warmnote
+	$(B)/t_android_warmnote
+# PEANUTS end
 $(B)/t_android_fpenv: t_android_fpenv.c $(VKA)/vka_fpenv.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_fpenv.c
 # GPU waits across NVN queues on the Android replay (dm/gfx/vk_android/vka_qsched.h): parks, producers, the SDK's predicates, syncs, timeline signals, safety valves

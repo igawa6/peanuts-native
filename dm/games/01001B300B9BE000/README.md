@@ -33,6 +33,13 @@ Experimental display-paced caps offer 20, 30, 40, 45, 60, 90 and 120 fps, with G
 - Each shader is a program of one stage (`#D3@` in `SINGLE_STAGE`): the pairs table pairs every vertex shader with a cover of the pixel shaders' inputs.
 - All 34 programs the game asked for on the way to its first menus (dumped with `DM_NVN_SHDUMP` before the reader existed) are among them, 33 in `ClientCommon.cpk`; no draw on the route above asked for a shader the map lacks.
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 2.7.7.92380 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - Fresh save to hero creation: `DM_KEYS="25:A*4/3"` passes the autosave notice, the logo movie and the gamma screen; the "New on Nintendo Switch" notice comes up at about 45 s and closes with B, then the patch notice with B again (a B pressed while the notice is still fading in does nothing; a B on hero creation is Back). [`smoke.tsv`](smoke.tsv) stops at the first notice.

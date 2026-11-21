@@ -75,6 +75,22 @@ Open: **120 on a 120 Hz panel.** The window asked for 120 (`window frame rate 12
 
 <!-- PEANUTS end -->
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+Game settings › Display offers **Fill the screen** beside Fit and Stretch (the game draws for the screen's own shape, from the next start), with no code of the game's own: one `aspect_plan` row (`width_movz` at `main+0x747408`). The game builds its screen size there (`mov x8,#1920; movk x8,#1080,lsl #32`, read on the 1.1.0 pack's main), and the loader makes the width the one for the picture's shape before code is sealed: 2520 for 21:9, 1234 for 8:7 ([`aspect_plan.h`](../../host/aspect_plan.h), `test_aspect_plan.py`). The site is the one the community's 21:9 patch for this build changes (Fl4sh9174, Switch-Emulator-Ultrawide-FPS-Mods: 2580 there, for 3440x1440), which says the cameras and part of the menus follow it.
+
+The two runs below used `aspect 21:9` and `aspect 8:7` rows and the Aspect ratio list, before Fill replaced them in this profile at the owner's request.
+
+**21:9 on an AYN Thor (2026-11-21, Turnip 27.0.0-R2, main `a6ce40dc…`, the top screen, started from the library with Aspect ratio 21:9):** the log has `aspect plan: 1 words for the 2.3333 picture`, and in the first stage the picture is 1920x823 with bars above and below, Kirby and the star blocks in their own proportions, the ability panel inside the picture and the coin counter near its right edge (outside the middle 16:9, so that part of the HUD follows the shape). 30 fps Game owned with the GPU at 9.3 ms, and 59 fps at the 60 limit with the GPU at 9.5 ms; no `CRASH` line in a run of about three minutes, two and a half of them the first start's shader preparation.
+
+**8:7 on the Thor's second screen (the same build and driver, Settings › Library › Swap screens on, Aspect ratio 8:7):** the log has `aspect plan: 1 words for the 1.1429 picture` and `swapchain 1080x1240`; the picture fills the 1240x1080 screen with no bars and the scenery and Kirby keep their proportions, 59 fps at the 60 limit with the GPU at 11.1 ms on the beach, 47 fps a minute later in the first stage with the GPU at 8.6 ms and the SoC at 90 °C (the top screen's 21:9 runs came just before it). No HUD element was on screen in the two captures, so whether the HUD stays inside the narrower picture is open.
+
+**Fill on the Thor's second screen (dev build 73e1d54e, Display › Fill the screen, Swap screens on):** the log has `aspect ratio: screen shape, window 1240x1080 -> 31:27` and `aspect plan: 1 words for the 1.1481 picture`, and the game runs at 60 fps on the title screen. **Known limit on a screen narrower than 16:9:** the title screen's game logo is cut at the picture's left edge (the game's own frame, `ctl` screenshot of frame 3325); the Nintendo and HAL marks in the corners and the file menu follow the shape. So the 3D view fills such a screen, and a 2D element the game places for 16:9 can fall outside it. Nothing of the kind was seen at 21:9.
+
+Not run yet: Fill on a screen wider than 16:9, the HUD at 8:7, the menus and the movies at either shape, and a 16:9 capture of the same spot to measure how much the view changes.
+<!-- PEANUTS end -->
+
 ## Audio
 
 - `nn::atk2` through an audio renderer (96 voices, 14 effects, one sink). 131,543 of the first 132,000 rendered frames were not silent.

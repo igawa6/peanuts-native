@@ -54,6 +54,9 @@ public final class Strip {
         private final RectF r = new RectF();
         private final android.graphics.Path clip = new android.graphics.Path();
         private ValueAnimator anim;
+        private android.graphics.LinearGradient gradient;
+        private float gradientBand;
+        private final android.graphics.Matrix shift = new android.graphics.Matrix();
         private float t = 0.5f;   // where the light is, 0 = off the left edge, 1 = off the right one
 
         Sweep(int trackColor, int fillColor, int heightPx) {
@@ -71,8 +74,14 @@ public final class Strip {
             r.set(b.left, top, b.right, top + h);
             c.drawRoundRect(r, rad, rad, track);
             c.drawRoundRect(r, rad, rad, lit);
-            light.setShader(new android.graphics.LinearGradient(x0, 0, x0 + band, 0, new int[] {alpha(fillColor, 0f), fillColor, alpha(fillColor, 0f)}, null,
-                    android.graphics.Shader.TileMode.CLAMP));
+            if (gradient == null || gradientBand != band) {   // one shader for a band's width, moved with a matrix: nothing allocated per frame
+                gradient = new android.graphics.LinearGradient(0, 0, band, 0, new int[] {alpha(fillColor, 0f), fillColor, alpha(fillColor, 0f)}, null,
+                        android.graphics.Shader.TileMode.CLAMP);
+                gradientBand = band;
+                light.setShader(gradient);
+            }
+            shift.setTranslate(x0, 0);
+            gradient.setLocalMatrix(shift);
             c.save();
             clip.reset();
             clip.addRoundRect(r, rad, rad, android.graphics.Path.Direction.CW);

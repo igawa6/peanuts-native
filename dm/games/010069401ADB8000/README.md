@@ -52,6 +52,13 @@ Each found by one boot ([Hardware Opus decoders built on the SDK's software deco
 
 - Rumble: `main` sends each player's vibration every frame (two `hid::SendVibrationValue` calls per player; Asian release `main` `9c3116f0…` at `+0x5ead8c`) from fields of its pad object that only the pad reset writes (amplitude 0, 160 / 320 Hz), so that path never vibrates. CRI's audio-driven vibration (`hid::VibrationConverter`, behind the sound renderer type 6 that CRI registers at startup, `+0x790b60`) never opened in the opening scene nor in a battle on the Mac. The game has no rumble: on the Switch it does not vibrate either. With a DualSense its (zero) values reach the controller since [Vibration handles before a controller is reported](../../../docs/reference/services.md#vibration-handles-before-a-controller-is-reported).
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.05 through 6 `aspect_plan` rows that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the float 16/9 built in code, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - `DM_KEYS=f2400:A*20/300` goes from the title screen (about frame 2,500) through a new game into the opening story scene (about frame 4,900).

@@ -46,7 +46,7 @@ final class Importer {
 
     /** Stop (on), or clear a Stop meant for an earlier import (off, before one starts). An older importer without it: nothing (Stop then waits for the end) */
     static void cancel(boolean on) {
-        try { dev.peanuts.importer.Native.cancel(on); } catch (Throwable t) { /* no such native method: the import runs to its end, as before */ }
+        try { dev.peanuts.importer.Native.cancel(on); } catch (LinkageError t) { /* no such native method: the import runs to its end, as before */ }
     }
 
     /**
@@ -65,7 +65,7 @@ final class Importer {
                     if (!o.has("size") || !appId.equalsIgnoreCase(o.optString("app_id"))) continue;
                     nup = Math.max(0, nup) + o.optLong("size"); s[1] += o.optLong("unpack"); s[2] += o.optLong("check");
                 }
-            } catch (Throwable t) { /* not sized: its length below */ }
+            } catch (Exception | LinkageError t) { /* not sized: its length below */ }
             s[0] += nup >= 0 ? nup : f.length();
         }
         return s;

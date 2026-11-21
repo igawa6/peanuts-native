@@ -43,7 +43,7 @@ shader_groups	#arc/system_resource=system #arc/ik_effect=effect #arc/ik_pokemon=
 shader_note	Pokémon Legends: Z-A shaders
 # The packs are Oodle Mermaid streams; the shader split decodes them with the game's own OodleLZ_Decompress in the Mac host (dm/host/hle_oodle.c), which the NSP script builds for any game with Trinity packs
 
-# PEANUTS: prefer installed Turnip on the Thor GPU and Qualcomm driver that aborted in the opening.
+# PEANUTS: prefer installed Turnip on the Thor GPU and Qualcomm driver that aborted in the opening (README.md, AYN Thor).
 recommend	gpu.device=0x43050a01,driver.id=8,driver.version=0x802a4035	driver=18
 
 # PEANUTS begin: use the elapsed SDK tick for Trinity's per-frame nanosecond period.

@@ -45,8 +45,13 @@ public final class GenericProfile {
             profile = asset(c, new File(dir, titleId + ".profile.bin"), installed, true);
         }
         File seed = asset(c, new File(dir, titleId + ".seed"), installed, false);
+        // The game's programs (vertex and pixel shader pairs): their shader parts are compiled before the game starts (vka_pso.c pp_prepare).
+        File pairs = asset(c, new File(dir, titleId + ".pairs"), installed, false);
+        File programs = asset(c, new File(dir, titleId + ".programs"), installed, false);
         return java.util.Arrays.asList("DM_PROFILE_PATH=" + profile.getPath(),
-                "DM_PROFILE_SEED=" + (seed != null && seed.length() > 0 ? seed.getPath() : ""));
+                "DM_PROFILE_SEED=" + (seed != null && seed.length() > 0 ? seed.getPath() : ""),
+                "DM_PROFILE_PAIRS=" + (pairs != null && pairs.length() > 0 ? pairs.getPath() : ""),
+                "DM_PROFILE_PROGRAMS=" + (programs != null && programs.length() > 0 ? programs.getPath() : ""));
     }
 
     private static File asset(Context c, File dest, long installed, boolean required) throws IOException {

@@ -28,3 +28,10 @@ The Peanuts Android profile targets update 1.0.6.1267 (`v3080192`). Its main bui
 
 - The NPDM declares 16 MiB of system resource. The profile uses a 5 GiB guest reservation with 4.375 GiB for virtual address regions and the standard Switch application pool.
 - The shared SDK rewriter matches this build's `AddressRegionManager` constructor. The two edits at `sdk+0x145d0c` and `sdk+0x145d78` reduce the reserved node area from 1,022 MiB to 62 MiB.
+
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.0.6.1267 through 14 `aspect_plan` rows that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the width,height pairs in data, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->

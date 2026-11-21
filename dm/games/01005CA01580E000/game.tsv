@@ -75,3 +75,11 @@ fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	m0xebdf5c	0000221e	q9:0x231a000
 fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	m0xebdf60	01102e1e	29dd47b9
 fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	m0xebdf64	2018201e	l0x0
 fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	m0xebdf68	8102221e	t0xebdf88
+# PEANUTS begin: picture shapes, untested candidates (aspect_plan, dm/host/aspect_plan.h): Game settings > Display > Fill
+# NOT SEEN ON A DEVICE. Every place the 1.0.2 pack's main has the packed 1920x1080 sizes in code and the 16/9 float words (a scan of the code on 2026-11-21, no community patch behind them):
+# the 3D view may follow the screen, the 2D layer may not, or the game may draw wrongly or not start with Fill. Fit is unchanged. Take out the
+# rows that prove wrong, and aspect_plan_untested once a device has shown the rest right (the note says what was seen).
+aspect_plan_untested	1
+aspect_plan	d4b150b29a931cd381e2a30318fc299f	width_movz	m0x10a4cf0	08f080d2
+aspect_plan	d4b150b29a931cd381e2a30318fc299f	ratio_f32	m0x15cc1a8	398ee33f
+# PEANUTS end

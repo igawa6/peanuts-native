@@ -30,7 +30,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;   // PEANUTS: startup shader progress
+// PEANUTS: (the startup shader progress has its own view now, dev.peanuts.ui.PrepareCover: no ProgressBar here)
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -253,48 +253,34 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         v.requestLayout();
     }
 
-    // PEANUTS: show the cold pipeline build while the native host waits to start the game.
+    // PEANUTS begin: show the cold pipeline build while the native host waits to start the game.
     private final Runnable prewarmPoll = this::prewarmTick;
-    private LinearLayout prewarmCover;
-    private ProgressBar prewarmBar;
-    private TextView prewarmText;
+    private dev.peanuts.ui.PrepareCover prewarmCover;   // PEANUTS: the home screen's background, the game's cover, a peanut cracking open, the count (dev.peanuts.ui.PrepareCover)
 
     private void prewarmTick() {
         ui.removeCallbacks(prewarmPoll);
         long progress = Native.prewarmProgress();
+        dev.peanuts.Companion.preparing(progress != 0);   // PEANUTS: the second screen's start page stays up meanwhile
         if (progress == 0) {
             if (prewarmCover != null) {
                 rootView.removeView(prewarmCover);
                 prewarmCover = null;
-                prewarmBar = null;
-                prewarmText = null;
             }
             return;
         }
         if (progress > 0) {
             int total = (int) (progress >>> 32), done = (int) progress;
             if (prewarmCover == null) {
-                prewarmCover = new LinearLayout(this);
-                prewarmCover.setOrientation(LinearLayout.VERTICAL);
-                prewarmCover.setGravity(Gravity.CENTER);
-                prewarmCover.setBackgroundColor(0xff101714);
-                prewarmCover.setClickable(true);
-                prewarmText = new TextView(this);
-                prewarmText.setTextColor(Color.WHITE);
-                prewarmText.setTextSize(20);
-                prewarmText.setGravity(Gravity.CENTER);
-                prewarmCover.addView(prewarmText);
-                prewarmBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-                int width = Math.round(280 * getResources().getDisplayMetrics().density);
-                prewarmCover.addView(prewarmBar, new LinearLayout.LayoutParams(width, LinearLayout.LayoutParams.WRAP_CONTENT));
+                GpuDriver.Info drv = GpuDriver.selected(this, titleId());
+                prewarmCover = new dev.peanuts.ui.PrepareCover(this, titleId(), getIntent().getStringExtra("name"), drv == null ? null : drv.label(),
+                        Native::prewarmSkip, this::end);
                 rootView.addView(prewarmCover, rootView.indexOfChild(pausedView), new FrameLayout.LayoutParams(-1, -1));
             }
-            prewarmText.setText("Preparing shaders · " + done + " of " + total);
-            prewarmBar.setMax(total);
-            prewarmBar.setProgress(done);
+            prewarmCover.set(done, total);
         }
         ui.postDelayed(prewarmPoll, 150);
     }
+    // PEANUTS end
 
     private boolean overlayOn() { return overlayEnv != null ? overlayEnv : Prefs.overlay(this); }
 
@@ -328,6 +314,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
     private void skipStart() {
         ui.removeCallbacks(skipRun);
+        warmStart();   // PEANUTS: the "Preparing graphics" notice, started and stopped with this one
         if (!skipShown) ui.postDelayed(skipRun, 30000);
     }
     private void skipShow(int pct) {
@@ -354,6 +341,43 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         h.setOnClickListener(v -> gone.run());
         h.postDelayed(gone, 20000);
     }
+
+    // PEANUTS begin: the "Preparing graphics" notice (dev.peanuts.ui.WarmNotice; vka_warmnote.h). Every second, ask the host how many pipelines its background threads
+    // still make while draws are skipped for them (Native.warmStatus): shown, small, at the top, while that is above 0, with the count; gone when it is 0. A host without
+    // the entry point (-1) is not asked again. Without it a first run looked broken: EA SPORTS FC 27's pitch was black for a minute with no word why on screen
+    private TextView warmView;
+    private final Runnable warmRun = this::warmTick;
+    private void warmStart() { ui.removeCallbacks(warmRun); ui.postDelayed(warmRun, 1000); }
+    private void warmTick() {
+        if (rootView == null) return;
+        int n = stopped || paused ? 0 : Native.warmStatus();
+        if (dev.peanuts.ui.WarmNotice.shown(n)) {
+            if (warmView == null) {
+                warmView = new TextView(this);
+                warmView.setTextColor(Color.WHITE);
+                warmView.setTextSize(13);
+                float dp = getResources().getDisplayMetrics().density;
+                int p = Math.round(8 * dp);
+                warmView.setPadding(p, p, p, p);
+                android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+                bg.setColor(0xCC000000);
+                bg.setCornerRadius(10 * dp);
+                warmView.setBackground(bg);
+                warmView.setMaxWidth(Math.round(460 * dp));
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+                lp.topMargin = Math.round(16 * dp);
+                rootView.addView(warmView, panel != null ? rootView.indexOfChild(panel) : rootView.getChildCount(), lp);
+                Native.note("preparing graphics: notice shown (" + n + " pipelines waiting)");
+            }
+            warmView.setText(dev.peanuts.ui.WarmNotice.text(n));
+        } else if (warmView != null) {
+            rootView.removeView(warmView);
+            warmView = null;
+            Native.note("preparing graphics: notice hidden");
+        }
+        if (dev.peanuts.ui.WarmNotice.poll(n)) ui.postDelayed(warmRun, 1000);
+    }
+    // PEANUTS end
 
     // PEANUTS begin: the active display reports the compositor's required buffer-queue lead, independent of nominal refresh.
     private void presentationDeadlineUpdate() {
@@ -587,12 +611,18 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         env.add("DM_MOTION_SENS=" + Prefs.motionFactor(this, id));   // Game settings › Controls › Motion sensitivity (the phone's gyro, 50 % unless the player chose; env.txt lines come later and win)
         if (Prefs.stretch(this, id)) env.add("DM_VK_STRETCH=1");   // Game settings › Display › Stretch to screen (or the in-game panel's Picture rows)
         String aspect = Prefs.aspect(this, id), variant = aspect == null || Profile.of(id) == null ? null : Profile.of(id).aspectVariant(aspect);
+        // PEANUTS: aspect_plan rows (aspect_plan.h) are exact-build: pass them, and a shape, only for a main build they name
+        boolean aspectPlanOk = prof == null || prof.aspectPlanMatches(BuildCheck.builds(pack).get("main"));
+        if (prof != null && aspectPlanOk && !prof.aspectPlan.isEmpty()) env.add("DM_ASPECT_PLAN=" + prof.aspectPlan);
+        runFill = aspectPlanOk && variant == null && ScreenShape.CHOICE.equals(aspect) && GameSettings.fillable(Profile.of(id));   // PEANUTS: Display > Fill at this start
         if (variant != null) {   // Game settings › Aspect ratio: the pack's native-aspect modules (<pack>/<variant>/, loader.c) and the picture shown at that aspect
             env.add("DM_PATCH_VARIANT=" + variant);
             env.add("DM_VK_PICTURE_ASPECT=" + aspect);
+        } else if (!aspectPlanOk) {   // PEANUTS: aspect_plan rows that do not cover this pack's main build: the game as shipped, not a squeezed picture
+            shapeNote = "[nxlaunch] aspect ratio: the profile's aspect rows are for another game version; 16:9 kept";
         } else if (aspect != null && Profile.of(id) != null && Arrays.asList(Profile.of(id).cameraAspects.split(",")).contains(aspect)) {   // a shape the host's camera patch follows (game.tsv aspect rows): the picture at that shape, no variant
             env.add("DM_VK_PICTURE_ASPECT=" + aspect);
-        } else if (ScreenShape.CHOICE.equals(aspect) && Profile.of(id) != null && !Profile.of(id).cameraAspects.isEmpty()) {   // Screen shape: the window's own shape (ScreenShape), read now, once; a 16:9-ish window passes nothing
+        } else if (ScreenShape.CHOICE.equals(aspect) && GameSettings.fillable(Profile.of(id))) {   // PEANUTS: fillable, so aspect_plan rows alone do (Display › Fill)   // Screen shape: the window's own shape (ScreenShape), read now, once; a 16:9-ish window passes nothing
             android.graphics.Rect b = getWindowManager().getCurrentWindowMetrics().getBounds();
             String shape = ScreenShape.ratio(b.width(), b.height(), orientationFixed());
             if (shape != null) env.add("DM_VK_PICTURE_ASPECT=" + shape);
@@ -974,6 +1004,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** Whether the running game takes live switches (DM_CTL): the in-game panel says "applies at the next start" otherwise */
     boolean live() { return hostRunning && runCtl != null; }
     boolean runStretch() { return runStretch; }
+    private static boolean runFill;   // PEANUTS: this run started with Display > Fill (the screen's own shape asked of the game), for the in-game panel's restart line
+    boolean runFill() { return runFill; }   // PEANUTS
     int runPictureSize() { return runPictureSize; }
 
     /**
@@ -1476,6 +1508,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
         if (dev.peanuts.build.ShaderCapture.active(this) && gamepad(e.getSource())) return true;   // PEANUTS: no gameplay input during preparation
+        if (prewarmCover != null && gamepad(e.getSource())) return super.dispatchKeyEvent(e);   // PEANUTS: Preparing shaders: the pad moves over its buttons; nothing goes to the game or the panel under it
         if (panel == null) return super.dispatchKeyEvent(e);   // no host for this game (onCreate): only the message is shown
         // A controller opens and closes the in-game panel (PadPanel.Combo: Home, or − and + held; Settings › Controller: in-game panel); while it is open the pad moves
         // through it and the game gets no pad keys. A key the panel took a press of stays the panel's until it comes up
@@ -1547,7 +1580,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     /** Back (the phone's button or its edge swipe) opens and closes the in-game panel, which has Stop; while the controller applet's join screen shows, it cancels that */
     @SuppressWarnings("deprecation")
-    @Override public void onBackPressed() { if (dev.peanuts.build.ShaderCapture.active(this)) { dev.peanuts.build.ShaderCapture.cancel(this); return; } /* PEANUTS: Back cancels preparation */ if (panel != null && !panel.isOpen() && CtrlScreen.back()) return; if (panel != null) panel.toggle(); else end(); }
+    @Override public void onBackPressed() { if (prewarmCover != null) return; /* PEANUTS: Preparing shaders has its own Close; the panel is under it */ if (dev.peanuts.build.ShaderCapture.active(this)) { dev.peanuts.build.ShaderCapture.cancel(this); return; } /* PEANUTS: Back cancels preparation */ if (panel != null && !panel.isOpen() && CtrlScreen.back()) return; if (panel != null) panel.toggle(); else end(); }
 
     // For CtrlScreen: the view tree it goes into (under the in-game panel), and whether a gamepad is connected (then the on-screen controls are hidden and cannot join)
     FrameLayout rootView() { return rootView; }

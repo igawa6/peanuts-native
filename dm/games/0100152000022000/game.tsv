@@ -46,3 +46,11 @@ sys_resource	0x0
 # agl's two BAHS sharcb and 37 in main; 18,747 variation pairs
 shader_groups	/MapObj/=mapobj /Course/=course /UI/=ui /Audio/=audio /Kart/=kart /Ghost/=ghost /Driver/=driver /RaceCommon/=racecommon /Common/=common /DriverTex/=drivertex /Trophy/=trophy /UI3D/=ui3d /Data/=data /DriverAnim/=driveranim /AI/=ai
 shader_note	Mario Kart 8 Deluxe shaders
+# PEANUTS begin: picture shapes, untested candidates (aspect_plan, dm/host/aspect_plan.h): Game settings > Display > Fill
+# NOT SEEN ON A DEVICE. Every place the 4.0.0 pack's main has the width,height pairs in data (a scan of the code on 2026-11-21, no community patch behind them):
+# the 3D view may follow the screen, the 2D layer may not, or the game may draw wrongly or not start with Fill. Fit is unchanged. Take out the
+# rows that prove wrong, and aspect_plan_untested once a device has shown the rest right (the note says what was seen).
+aspect_plan_untested	1
+aspect_plan	2c336a9bcf79c3040ce506cdd391b578	area_width_u32	m0xf74514	00050000
+aspect_plan	2c336a9bcf79c3040ce506cdd391b578	area_height_u32	m0xf74518	d0020000
+# PEANUTS end

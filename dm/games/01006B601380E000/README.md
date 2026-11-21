@@ -81,3 +81,10 @@ below remain a separate open rendering question.
 - `[RED] vk: … texture ID … has no view of shape …: it reads as unbound` on both drivers: a 16x16 cube texture (6 layers) sampled through a view of another target, from two shaders; what it draws, and whether anything looks wrong, is not checked.
 - Frame pacing (above), memory layout and pool sizes (the sibling's, not checked against this game).
 - Only the title, the file select and the first stage were played: later worlds, movies, the Magolor Epilogue, Merry Magoland and saves over several sessions are untested.
+
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.0.0 through 2 `aspect_plan` rows that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->

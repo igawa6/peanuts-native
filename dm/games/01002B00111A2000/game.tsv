@@ -51,6 +51,10 @@ fps_target	60
 # The iPhone battle's GPU going from 10 to 41 ms a frame was first read as its GPU clock following the hold; the same rise came with no hold at all: the battle runs about 1,000 to
 # 2,800 compute dispatches a frame after its first cutscene, which each had an encoder of their own (nvn_mtl.m dispatch_enc)
 fps_hold	off
+# PEANUTS: Android offers Game owned, 30 and 60 only: the frame step takes DM_FPS_TARGET 0, 30 or 60 (20 and 15 fell back to the game's own 30). Thor, Turnip:
+# the stubs' vsync counter gave game speed 0.99 at the 60 cap (59.5 updates a second while battle presents ran 46-56 fps) and 1.00 at the 30 cap
+fps_limit	60
+fps_modes	30,60
 # KTGL binds whole mesh pools (up to ~590,000 vertices) and its soldiers' Half2 / Short2 attributes feed integer shader inputs, which the replay converts on the CPU:
 # over the bound ranges that was millions of vertices a frame in battle (26 fps at any target on the Mac); only over the vertices each draw reads. Shadow vertex inputs
 # (nvn_mtl.m vin_on) now take those attributes on the GPU; this still serves the draws that keep the CPU conversion (transform feedback, DM_NVN_VCONV_CPU=1)

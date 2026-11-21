@@ -50,3 +50,10 @@ fps_plan	646761f643afebb379edd5e6a5151af2	m0x119a350	41030054	1a000014
 # Keep the existing 100 ms stall bound instead of the FPS-dependent step clamp.
 # Otherwise a 20/30/40 cap clips elapsed time to 1/60 and slows gameplay.
 fps_plan	646761f643afebb379edd5e6a5151af2	m0x80db4	c9000034	06000014
+# PEANUTS begin: picture shapes without code of the game's own (aspect_plan, dm/host/aspect_plan.h): Game settings > Display > Fill
+# The game keeps its picture size as two 32-bit numbers at main+0x1a1be18 (1600) and main+0x1a1be1c (900), read on the 2.1.0 pack's main; the community's 21:9
+# patch for this build (Fl4sh9174, Switch-Emulator-Ultrawide-FPS-Mods) writes 1792x750 there. The rows make them the picture's shape with about the same pixel
+# count (1834x786 for 21:9, 1282x1122 for 8:7); the note says what was seen on a device.
+aspect_plan	646761f643afebb379edd5e6a5151af2	area_width_u32	m0x1a1be18	40060000
+aspect_plan	646761f643afebb379edd5e6a5151af2	area_height_u32	m0x1a1be1c	84030000
+# PEANUTS end

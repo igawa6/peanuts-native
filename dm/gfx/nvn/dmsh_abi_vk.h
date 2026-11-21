@@ -197,7 +197,7 @@ typedef struct {
     uint8_t dim;             // DMSH_VK_DIM_*
     int16_t sreg;            // the sampler half's reg
     uint16_t soff;           // the sampler half's off; 0xFFFF none
-    uint16_t reserved;
+    uint16_t step;           // PEANUTS: tex_ubo with a count: the bytes from one element's handle to the next, 0 = 8 (an array read by record: the record's size)
     uint32_t bytes;          // DMSH_VK_KIND_SHARED_SPILL: bytes of one workgroup's slice; else 0
 } dmsh_vk_bind;
 

@@ -986,7 +986,23 @@ static uint64_t fpslocker_reserve(module_t *m,uint64_t size) {
     if (!owned && p->aux) { m->fpslocker_code_off=size;m->fpslocker_data_off=size+FPW_AUX_PAGE;size+=2*FPW_AUX_PAGE; }
     return size;
 }
+// PEANUTS: aspect rows (game.tsv aspect_plan, aspect_plan.h): the game's own 16:9 number becomes the picture's shape, before code is sealed.
+#include "aspect_plan.h"
+static void aspect_apply_plan(module_t *m) {
+    if (strcmp(m->name,"main") || m->nro) return;
+    const char *spec=getenv("DM_ASPECT_PLAN");if (!spec || !*spec) return;
+    double shape=asp_shape(getenv("DM_VK_PICTURE_ASPECT"));if (!shape) return;   // 16:9 or no shape: the game as shipped
+    struct asp_plan p;int n=asp_plan_parse(spec,m->build_id,&p);
+    if (n<0) die("Aspect plan is malformed");
+    if (!n) { LOG("[RED] aspect plan: no rows for main build %s; the %.4f picture keeps the game's 16:9 view",m->build_id,shape);return; }
+    uint64_t original=m->fpslocker_code_off?m->fpslocker_code_off:m->size;
+    n=asp_plan_apply(&p,m->base,original,shape);
+    if (n<0) die("Aspect plan for %s failed its expected-word/bounds/width check (%d); nothing written",m->build_id,n);
+    for (unsigned i=0;i<p.n;i++) if (p.row[i].off<m->text_end) plat_icache_invalidate(m->base+p.row[i].off,4);
+    LOG("%s: aspect plan: %d words for the %.4f picture (restart to change)",m->name,n,shape);
+}
 static void fpslocker_apply_plan(module_t *m) {
+    aspect_apply_plan(m);   // PEANUTS: aspect rows, at the same pre-seal point
     struct fpw_plan *p=m->fpslocker_plan;if (!p) return;
     uint64_t original=m->fpslocker_code_off?m->fpslocker_code_off:m->size;
     int n=fpw_plan_apply(p,m->base,original,m->fpslocker_code_off,m->fpslocker_data_off,!m->fpslocker_active);

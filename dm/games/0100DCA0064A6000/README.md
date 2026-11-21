@@ -71,6 +71,13 @@ A deferred renderer: the scene draws into a G-buffer of two integer targets (R32
 - Update 1.4.0 leaves `.dict` and `.data` as they were and adds `<name>.patch`: u64 a bitmask of the records it patches, u32 offset, stored and inflated length of its body (one zlib stream: 16 u32 section offsets, 16 u16 alignments, then each section's new data), then 0xd0 bytes per patched record {u32 offset, stored length and entry count of its new resource table (one zlib stream), u16 its top-level entry count, u16, u32 the new length of each of 16 sections, 16 u32 end and 16 u32 start of the old data that is overwritten before it is read}. After loading a section the game walks the new table and packs that section's entries from its start at their alignment, each from the old section (an offset below its length) or from the body (the rest, counted from the old length), and writes the new offset into the entry (`main+0x1c8d0`, `main+0x1cbd0`); it does this in place, keeping a copy of the old data in [start, end). `shader_split.py` `nlg_patch_section` does the same ([01, Compressed RomFS content](../../../docs/agents/01-extract.md#compressed-romfs-content)).
 - Shaders: 5,317 (5,149 in the base game), all in `init` (`shader_split.py` `nlg_shaders`): control sections back to back in one section, their code areas in the same order in another, one NVN program per stage (paired as single-stage programs). 46 of the 103 the title draws exist only in the patched sections.
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.4.0 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - The work folder's `run/ctl.sh` drives a run started with `DM_CTL`; `DM_KEYS=14:A,18:A,26:A,31:A,41:Right,42:A,54:A` goes from the boot notices through a new game into the opening cutscene.

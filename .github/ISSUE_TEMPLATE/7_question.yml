@@ -30,7 +30,7 @@ body:
     id: context
     attributes:
       label: "Device, app version and game, if they matter"
-      placeholder: "AYN Thor Max, Peanuts Native 0.1.5, Mario Kart 8 Deluxe"
+      placeholder: "AYN Thor Max, Peanuts Native 0.1.6, Mario Kart 8 Deluxe"
   - type: textarea
     id: links
     attributes:

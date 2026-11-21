@@ -24,7 +24,7 @@ import android.content.pm.PackageManager;
 import java.io.*;
 public class Context {
     public int opens;
-    public byte[] profile = {1}, seed = {2};
+    public byte[] profile = {1}, seed = {2}, pairs = {6}, programs = {7};
     public final PackageManager pm = new PackageManager();
     public PackageManager getPackageManager() { return pm; }
     public String getPackageName() { return "test"; }
@@ -32,7 +32,7 @@ public class Context {
     public Context getAssets() { return this; }
     public InputStream open(String path) throws IOException {
         opens++;
-        byte[] bytes = path.endsWith(".seed") ? seed : profile;
+        byte[] bytes = path.endsWith(".seed") ? seed : path.endsWith(".pairs") ? pairs : path.endsWith(".programs") ? programs : profile;
         if (bytes == null) throw new FileNotFoundException(path);
         return new ByteArrayInputStream(bytes);
     }
@@ -52,14 +52,18 @@ public class Check {
         List<String> initial = GenericProfile.envLines(c, "title");
         assert Files.readAllBytes(file(initial.get(0)))[0] == 1;
         assert Files.readAllBytes(file(initial.get(1)))[0] == 2;
-        assert GenericProfile.envLines(c, "title").equals(initial) && c.opens == 2;
+        assert Files.readAllBytes(file(initial.get(2)))[0] == 6 && initial.get(2).startsWith("DM_PROFILE_PAIRS=");
+        assert Files.readAllBytes(file(initial.get(3)))[0] == 7 && initial.get(3).startsWith("DM_PROFILE_PROGRAMS=");
+        assert GenericProfile.envLines(c, "title").equals(initial) && c.opens == 4;
 
         c.pm.lastUpdateTime++;
         c.profile[0] = 3;
         c.seed = null;
+        c.programs = null;
         List<String> updated = GenericProfile.envLines(c, "title");
         assert Files.readAllBytes(file(updated.get(0)))[0] == 3;
         assert updated.get(1).equals("DM_PROFILE_SEED=");
+        assert updated.get(3).equals("DM_PROFILE_PROGRAMS=");
 
         Path pack = Files.createDirectory(Path.of("mod"));
         Path override = pack.resolve("profile.bin");

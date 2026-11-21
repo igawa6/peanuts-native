@@ -53,6 +53,13 @@ performance remain unverified for this candidate.
 - **A torn movie picture (issue #497, not reproduced).** That report saw a horizontal band near the top of the opening movie, rows from two successive pictures, and proposes keeping a snapshot of the texture storage for each upload. On an Apple M6 here, 114 shots of `THP/Demo01_01.webm` show no row boundary that jumps across the width. Whether the race can happen here is not settled.
 - **Dash speed from a tilted stick (issue #928, not reproduced).** That report has Link running at dash speed without B at some diagonal angles, because a host stick can go outside the circle a Switch stick stays in, and proposes scaling every stick back onto the circle in `hle_hid.c`. In the Academy hall, a full diagonal for 1.2 s and the opposite diagonal on the circle for 1.2 s brought Link back to the same spot, so the game showed no extra speed at that angle. A shallower angle was inconclusive, the camera having turned. The change would reach every game, so it waits for a measurement.
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.0.1 through 8 `aspect_plan` rows that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the width,height pairs in data, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 The work folder is `<NSP folder>/01002DA013484000-work`, with `boot.sh`, `ctl.sh`, `go.sh`, `mash.sh`, `health.sh` and the saves.

@@ -438,7 +438,13 @@ final class LibraryScanner {
         byte[] b;
         try { b = NupIcon.inside(nup); } catch (IOException | RuntimeException e) { Log.w("peanuts", "icon inside " + nup.getName() + ": " + e); return false; }
         if (b == null) return false;
-        Bitmap bm = BitmapFactory.decodeByteArray(b, 0, b.length);
+        Bitmap bm;
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options(); o.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(b, 0, b.length, o);
+            if (o.outWidth > 2048 || o.outHeight > 2048) { Log.w("peanuts", "icon inside " + nup.getName() + ": " + o.outWidth + "x" + o.outHeight + " is too large, skipped"); return false; }
+            bm = BitmapFactory.decodeByteArray(b, 0, b.length);
+        } catch (OutOfMemoryError e) { Log.w("peanuts", "icon inside " + nup.getName() + ": out of memory decoding it"); return false; }
         if (bm == null) { Log.w("peanuts", "icon inside " + nup.getName() + ": " + b.length + " bytes the decoder does not read"); return false; }
         File tmp = null;
         try {

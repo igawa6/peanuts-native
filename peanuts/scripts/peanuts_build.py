@@ -253,6 +253,7 @@ PC_DECODE = {
     '0100A3D008C5C000': True,    # PEANUTS: Pokémon Scarlet (Trinity packs, Oodle)
     '01008F6008C5E000': True,    # PEANUTS: Pokémon Violet (Trinity packs, Oodle)
     '01001F5010DFA000': True,    # Pokémon Legends: Arceus (GFPAK entries, Oodle Kraken)
+    '0100F43008C44000': True,    # Pokémon Legends: Z-A (Trinity packs, Oodle Mermaid)
     '01009720213B0000': True,    # Captain Tsubasa 2: World Fighters (Unreal IoStore, Oodle)
     '0100AD80208A8000': True,    # PEANUTS: Demon Slayer 2 (inline Unreal IoStore shaders, Oodle)
     '0100606026F12000': True,    # FINAL FANTASY RESONANCE (Unreal IoStore, Oodle Mermaid)
@@ -320,7 +321,7 @@ def pc_decode(app, name=None):
                      for any game. pack_android.py takes that decoder's output only when the split's shader keys are exactly the profile's.
       DM_UE_DECODE   for a game with /ue_shaders/ rows: the split decodes the Unreal archives itself, as the phone's does ('' here; main() names the folder);
                      with PYTHONPATH naming the folder of _nxaes.
-    A PC_DECODE game without /ue_shaders/ rows (Arceus) whose worker cannot be had stops here, before the import, unless the game's own decoder is set (DM_OODLE_HOST)."""
+    A PC_DECODE game without /ue_shaders/ rows (Arceus and Z-A) whose worker cannot be had stops here, before the import, unless the game's own decoder is set (DM_OODLE_HOST)."""
     label = f'{name or app} ({app})'
     given = os.environ.get('DM_OODLE_OOZ')
     if given and not Path(given).expanduser().is_file(): die(f'DM_OODLE_OOZ names {given}, which is not a file')

@@ -103,6 +103,13 @@ Game-specific findings; the general host changes they led to are listed under [F
 - Focus handling mode 2 (focus notifications are sent). Mario never throws C++ exceptions.
 - Ghidra: `main` (28 MB) took about 35 minutes to analyse, 138k functions.
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.2.1 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - `DM_KEYS="12:A,14:A,20:A,26:A,32:A"` reaches the opening course.

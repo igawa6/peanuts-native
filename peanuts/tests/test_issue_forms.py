@@ -137,6 +137,12 @@ class Catalog(unittest.TestCase):
             self.assertIn('0100000000000002\tSecond Game\t\tyes', (root / 'peanuts/games.tsv').read_text(encoding='utf-8'))
             self.assertIn('not read', said[-1])
 
+            (root / 'peanuts/release-titles.txt').write_text('0100000000000001\n0100000000000002\n0100000000000003\n', encoding='utf-8')
+            (root / 'dm/games/0100000000000003').mkdir(parents=True)
+            (root / 'dm/games/0100000000000003/game.tsv').write_text('name\tThird Game\nbuild\tv65536\t1.0.1\n', encoding='utf-8')
+            catalog_mod.refresh(root, said.append, fetch=offline)   # a new row offline gets no companion value, not a 'no'
+            self.assertTrue((root / 'peanuts/games.tsv').read_text(encoding='utf-8').endswith('0100000000000003\tThird Game\n'))
+
 
 class IssueForms(unittest.TestCase):
     def setUp(self):

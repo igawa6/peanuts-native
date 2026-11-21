@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="status" src="https://img.shields.io/badge/release-0.1.5-brightgreen"> <!-- PEANUTS -->
+  <img alt="status" src="https://img.shields.io/badge/release-0.1.6-brightgreen"> <!-- PEANUTS -->
   <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue">
   <img alt="platform" src="https://img.shields.io/badge/platform-Android%2013%2B-green">
 </p>
@@ -32,7 +32,7 @@ too.
 
 <!-- PEANUTS begin: the Supported games table, written by peanuts/scripts/games_catalog.py from peanuts/games.tsv, peanuts/release-titles.txt and the profiles. Edit peanuts/games.tsv, not this table -->
 
-Peanuts Native 0.1.5 includes 39 games, and 12 more are coming in 0.1.6 (marked in the table). The Companion column shows whether a game appears in the Eden Duo Companions catalog. Updates are shown as version numbers or numeric update IDs.
+Peanuts Native 0.1.6 includes 52 games. The Companion column shows whether a game appears in the Eden Duo Companions catalog. Updates are shown as version numbers or numeric update IDs.
 
 | Game | Title ID | Game update | Companion |
 |---|---|---|---|
@@ -75,22 +75,23 @@ Peanuts Native 0.1.5 includes 39 games, and 12 more are coming in 0.1.6 (marked 
 | Diablo III: Eternal Collection | `01001B300B9BE000` | 2.7.7.92380 | Yes |
 | EA Sports FC 27 | `0100C49025D3E000` | 1.8d.6523, 1.8d.f570 | No |
 | Tomodachi Life: Living the Dream | `010051F0207B2000` | 1.0.4 | No |
-| Unicorn Overlord (coming in 0.1.6) | `010069401ADB8000` | 1.05 | No |
-| Luigi's Mansion 3 (coming in 0.1.6) | `0100DCA0064A6000` | 1.4.0 | No |
-| Pokémon Legends: Z-A (coming in 0.1.6) | `0100F43008C44000` | 2.0.2 | No |
-| STORY OF SEASONS: Grand Bazaar (coming in 0.1.6) | `0100DAE01E4C8000` | v655360 | No |
-| Double Dragon Revive (coming in 0.1.6) | `01006AE02236C000` | 1.0.0, N1.10 | No |
-| Trails in the Sky 2nd Chapter (coming in 0.1.6) | `01007A2027548000` | 1.0.3 | No |
-| DRAGON BALL: Sparking! ZERO (coming in 0.1.6) | `010035F022078000` | 1.0.0 | No |
-| Pokémon Scarlet (coming in 0.1.6) | `0100A3D008C5C000` | 4.0.0 | No |
-| Pokémon Violet (coming in 0.1.6) | `01008F6008C5E000` | 4.0.0 | No |
-| DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET (coming in 0.1.6) | `010051C0134F8000` | 1.70 | No |
-| STEINS;GATE RE:BOOT (coming in 0.1.6) | `01008BC024FDE000` | 1.0.3, 1.0.4 | No |
-| NieR:Automata The End of YoRHa Edition (Asian release) (coming in 0.1.6) | `0100B8E016F76000` | 1.0.3 | No |
+| Unicorn Overlord | `010069401ADB8000` | 1.05 | No |
+| Luigi's Mansion 3 | `0100DCA0064A6000` | 1.4.0 | No |
+| Pokémon Legends: Z-A | `0100F43008C44000` | 2.0.2 | No |
+| STORY OF SEASONS: Grand Bazaar | `0100DAE01E4C8000` | v655360 | No |
+| Double Dragon Revive | `01006AE02236C000` | 1.0.0, N1.10 | No |
+| Trails in the Sky 2nd Chapter | `01007A2027548000` | 1.0.3 | No |
+| DRAGON BALL: Sparking! ZERO | `010035F022078000` | 1.0.0 | No |
+| Pokémon Scarlet | `0100A3D008C5C000` | 4.0.0 | No |
+| Pokémon Violet | `01008F6008C5E000` | 4.0.0 | No |
+| DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET | `010051C0134F8000` | 1.70 | No |
+| STEINS;GATE RE:BOOT | `01008BC024FDE000` | 1.0.3, 1.0.4 | No |
+| NieR:Automata The End of YoRHa Edition (Asian release) | `0100B8E016F76000` | 1.0.3 | No |
+| Hyrule Warriors: Age of Calamity | `01002B00111A2000` | 1.3.0 | No |
 
 <!-- PEANUTS end: the Supported games table -->
 
-On the 0.1.5 verification build, an AYN Thor with Turnip v26.2.0 R5 reached the rooftop fight in Demon Slayer 2 and the opening cave in Tears of the Kingdom. Kirby and the Forgotten Land skipped no draws in the opening walk with either a fresh or a saved shader cache.
+The 0.1.6 release candidate installed over 0.1.5 on an AYN Thor with its saves kept. Nine of the 13 new games reached early gameplay on an AYN Thor with Turnip, among them the Hyrule Field battle in Hyrule Warriors: Age of Calamity and Lumiose Station in Pokémon Legends: Z-A. The other four were checked on other Android devices.
 
 ## What you need
 
@@ -178,12 +179,14 @@ by seedds (MIT). Some fixes are adapted from [nx2android](https://github.com/shi
 
 The companion runtime and package format come from [Eden Duo](https://github.com/igawa6/eden-duo).
 
-Contributors:
+Contributors: <!-- PEANUTS: the contributor list of this fork -->
 
 - [intermission88](https://github.com/intermission88): the builder for PC, Mac and Linux (`peanuts/docs/BUILDER.md`, pull request #13), the profiles of Kirby's Return to Dream Land Deluxe, Kirby and the Forgotten Land and Super Mario 3D World + Bowser's Fury (pull requests #34, #84 and #83), the guide for adding a game (`peanuts/docs/NEW-GAME.md`, pull request #34), and fixes to the on-device packer, the release notes popup and the Unreal shader step (pull requests #37, #35 and #71).
 - [davdxpx](https://github.com/davdxpx): the issue and discussion forms rebuilt from the ground up, with a game catalog that also keeps the Supported games table up to date (pull request #175), building from .nsz and .xcz files, the launcher and companion on the second screen, Swap screens, the GPU driver page, Share build log, game icons that outlive their NSP, companion release notes, and many smaller fixes across the app.
 - [elliott-groves](https://github.com/elliott-groves): development builds that install beside the Peanuts Native app (pull request #60).
-- [tapionallanaire](https://github.com/tapionallanaire): building the APK on Windows (pull request #54).
+- [tapionallanaire](https://github.com/tapionallanaire): building the APK on Windows (pull request #54), and the Trails in the Sky 2nd Chapter and Double Dragon Revive profiles (pull requests #164 and #197).
+- [dnyan007](https://github.com/dnyan007): the DRAGON BALL: Sparking! ZERO profile and the sync of GPU-written terrain into block-compressed textures (pull requests #168 and #167).
+- [skyhong2002](https://github.com/skyhong2002): STEINS;GATE RE:BOOT 1.0.4, standalone NUP updates in the library, and Prepare surviving a missed job status read (pull requests #192, #185 and #181).
 - [ArchOwlen](https://github.com/ArchOwlen): the first issue and discussion forms (pull request #5).
 
 The project as a whole is licensed GPL-3.0-or-later. Frame generation (ported from Eden and lsfg-vk) and other

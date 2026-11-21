@@ -80,7 +80,10 @@ public final class MiiActivity extends Activity {
         LinearLayout top = PUi.add(content, PUi.listCard(this), 8);
         top.addView(new PUi.Setting(this, "✏️", "Name", v -> rename(idx)).value(m.name).chevron(this).view);
         top.addView(new PUi.Setting(this, "🎲", "Randomize", v -> { MiiStore.Mii r = MiiStore.random(m.name, new Random()); m.v.clear(); m.v.putAll(r.v); save(); showEdit(idx); }).view);
-        top.addView(new PUi.Setting(this, "📋", "Duplicate", v -> { if (miis.size() < MiiStore.MAX_MIIS) { miis.add(m.copy(MiiStore.cleanName(m.name + " 2"))); save(); showList(); } }).view);
+        top.addView(new PUi.Setting(this, "📋", "Duplicate", v -> {
+            if (miis.size() >= MiiStore.MAX_MIIS) { Toast.makeText(this, "At most " + MiiStore.MAX_MIIS + " Miis", Toast.LENGTH_SHORT).show(); return; }
+            miis.add(m.copy(MiiStore.copyName(m.name))); save(); showList();
+        }).view);
         String section = null; LinearLayout card = null;
         for (MiiStore.Field fd : MiiStore.FIELDS) {
             if (!fd.section.equals(section)) { section = fd.section; PUi.add(content, PUi.section(this, section), PUi.SECTION_GAP); card = PUi.add(content, PUi.listCard(this), 8); }

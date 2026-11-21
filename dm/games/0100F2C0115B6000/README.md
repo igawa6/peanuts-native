@@ -72,6 +72,13 @@ Game-specific findings. The general host changes they led to are listed under [F
 - Shaders: `Shader/*.bfsha.zs` (BNSH; `material.bfsha` holds most) and the layout shaders in `Shader/ApplicationPackage.Nin_NX_NVN.release.sarc.zs`.
 - **Resolved in the host: duplicate pipeline keys from unused colour state.** MacNativeGames commit `f3e2f66`, reported in [PR #196](https://github.com/seedds/nxnative/pull/196), found 8,479 of 24,146 recorded render pipelines (35%) differed only in unused state. The general normalization and prewarm deduplication are ported; this is the source project's measurement, with no new gameplay or prewarm-count measurement on this game here.
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.4.3 through 3 `aspect_plan` rows that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - **Layered-clear review, 2026-11-01 (#808): incomplete runtime validation.** All 28,669 shaders built without failures. The baseline cave route completed at 59.8 fps with no red diagnostics. The candidate stopped at frame 1,500 immediately after focus changed to 2 and notification 15 was consumed: its main thread waited in `h_oe_PopMsg`, with GPU fences submitted/completed both 1,502 and the present queue drained. This was a focus pause, not an outstanding GPU wait. The foreground-controlled repeat was stopped at the maintainer's request during pipeline preparation, so this game is not recorded as validated for the change.

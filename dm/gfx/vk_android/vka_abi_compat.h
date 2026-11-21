@@ -16,12 +16,15 @@
 // headers and this line is raised (the unit test t_android_shlib fails meanwhile)
 // PEANUTS: raised for this tree's ABI, which is neither upstream's nor this fork's before: both sides' kinds, IMG_UBO renumbered (dmsh_abi_vk.h: TEX_DYN 23, SAMP_DYN 24,
 // IMG_UBO 25). Upstream's own ABI of v0.3.22-v0.3.26 (4fbeb79f5ab7, IMG_UBO 23) is no row: its 23 is this host's TEX_DYN
-#define VKA_ABI_COMPAT_FOR "cb5a89b39291"
+#define VKA_ABI_COMPAT_FOR "3d4e8bb1e1e8"   // PEANUTS: raised for the step of an array read by record (the row cb5a89b39291 below)
 // The rows' ABIs, space-separated, in the table's order: what the launcher reads (build.gradle NX_DMSH_VK_ABI_COMPAT, ShaderLibs.playable)
-#define DMSH_VK_ABI_COMPAT "d9c33f6111c1 228b73bd10f6 674db0a4ff79"   // PEANUTS: d9c33f6111c1 (the row below)
+#define DMSH_VK_ABI_COMPAT "cb5a89b39291 d9c33f6111c1 228b73bd10f6 674db0a4ff79"   // PEANUTS: cb5a89b39291 and d9c33f6111c1 (the rows below)
 
 typedef struct { const char *abi; unsigned differs; } vka_abi_compat_row;
 static const vka_abi_compat_row vka_abi_compat[] = {
+    // PEANUTS: before the step of an array of handles read by record (2026-11-21; Vulkan chains up to dfebef5d68a9): the headers differ only in the binding
+    // record's last 16-bit field before bytes (dmsh_abi_vk.h dmsh_vk_bind: reserved then, 0 in every library; step now, where 0 is the 8 bytes those libraries mean)
+    {"cb5a89b39291", 0},
     // PEANUTS: this fork's releases (its ABI from 2026-11-14 on; Vulkan chains c3959e8b8f88 to 4d3a924dcd04): the headers differ only in the kind added since
     // (dmsh_abi_vk.h DMSH_VK_KIND_IMG_UBO, 25 here, dmsh_abi.h DMSH_KIND_IMG_UBO), which no library of that ABI holds; TEX_DYN and SAMP_DYN keep their numbers
     {"d9c33f6111c1", 0},

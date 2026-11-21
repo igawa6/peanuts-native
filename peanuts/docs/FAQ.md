@@ -1,6 +1,6 @@
 # Peanuts Native FAQ
 
-For version 0.1.5. Labels in **bold** are the words the app shows. "Settings" is the gear button on the home screen. "Hold the cover" means a long press on a game's cover (or Y on a controller).
+For version 0.1.6. Labels in **bold** are the words the app shows. "Settings" is the gear button on the home screen. "Hold the cover" means a long press on a game's cover (or Y on a controller).
 
 ## Quick answers
 
@@ -248,11 +248,13 @@ For a game that is already built, tapping the cover shows the dialog **Game file
 
 ### Which games are supported?
 
-The project's README lists all 39 games included in 0.1.5, the updates each supports and which have an Eden Duo catalog entry.
+The project's README lists all 52 games included in 0.1.6, the updates each supports and which have an Eden Duo catalog entry.
 
 The games tested for 0.1.1 were Link's Awakening, Echoes of Wisdom, Fire Emblem: Three Houses, Fire Emblem Engage, Metroid Dread, Super Mario Odyssey, Mario Kart 8 Deluxe, Animal Crossing: New Horizons, Persona 5 Royal, Castlevania: Belmont's Curse, Octopath Traveler 0, Pokémon Brilliant Diamond, Pokémon Sword and Breath of the Wild (new, little tested). Super Mario Bros. Wonder and Dragon Quest III HD-2D Remake are in the app too, but were not tested on a device yet. 0.1.2 adds Pokémon Shining Pearl, Pokémon Shield, Final Fantasy Resonance, Skyward Sword HD, Pokémon Legends: Arceus and Resident Evil 4, all new and little tested, and Kirby's Return to Dream Land Deluxe, which was run by its contributor on their own AYN Thor only. 0.1.4 adds Crash Team Racing Nitro-Fueled, Kirby and the Forgotten Land, Super Mario 3D World + Bowser's Fury, Chained Echoes, My Time at Sandrock, Monster Sanctuary and Yoru, Tomosu, all new and little tested, and Xenoblade Chronicles X: Definitive Edition as an experiment. Super Mario Bros. Wonder was checked on a device for 0.1.4, on its 1.2.1 update, the only one the app builds now.
 
 0.1.5 adds Astral Chain, Captain Tsubasa 2: World Fighters, Dave the Diver, Demon Slayer: The Hinokami Chronicles 2, Diablo III: Eternal Collection, EA Sports FC 27, The Legend of Zelda: Tears of the Kingdom and Tomodachi Life: Living the Dream. Breath of the Wild supports updates 1.6.0 and 1.9.0.
+
+0.1.6 adds Unicorn Overlord, Luigi's Mansion 3, Pokémon Legends: Z-A, STORY OF SEASONS: Grand Bazaar, Double Dragon Revive, Trails in the Sky 2nd Chapter, DRAGON BALL: Sparking! ZERO, Pokémon Scarlet, Pokémon Violet, DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET, STEINS;GATE RE:BOOT, NieR:Automata The End of YoRHa Edition and Hyrule Warriors: Age of Calamity. EA Sports FC 27 also supports update 1.8d.f570, Double Dragon Revive supports 1.0.0 and N1.10, and STEINS;GATE RE:BOOT supports 1.0.3 and 1.0.4.
 
 The 0.1.5 verification build was checked on an AYN Thor with Turnip v26.2.0 R5. Demon Slayer 2 reached the playable rooftop fight against Daki at about 30 fps. Tears of the Kingdom reached the opening cave and responded to movement. Kirby and the Forgotten Land prepared all 418 pipeline keys on its first launch, then reused the cache on relaunch. The other six additions have earlier, game-specific device checks.
 
@@ -778,7 +780,7 @@ No. An update keeps the app's storage, and saves are in it. Uninstalling can del
 
 ### How do I tell which version I have?
 
-The build name is under the app's title on the home screen and in Settings › **About**. A release build reads `peanuts-native-0.1.5`. Every log starts with it too.
+The build name is under the app's title on the home screen and in Settings › **About**. A release build reads `peanuts-native-0.1.6`. Every log starts with it too.
 
 ## Credits
 

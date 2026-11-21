@@ -1,6 +1,6 @@
 {
   "about": "Written by peanuts/scripts/games_catalog.py from peanuts/release-titles.txt, dm/games/<title ID>/game.tsv and peanuts/games.tsv. Do not edit by hand.",
-  "app_version": "0.1.5",
+  "app_version": "0.1.6",
   "readme_order": [
     "01006BB00C6F0000",
     "01008CF01BAAC000",
@@ -52,7 +52,8 @@
     "01008F6008C5E000",
     "010051C0134F8000",
     "01008BC024FDE000",
-    "0100B8E016F76000"
+    "0100B8E016F76000",
+    "01002B00111A2000"
   ],
   "games": [
     {
@@ -370,6 +371,24 @@
       "since": null,
       "profile": "dm/games/010055D009F78000/game.tsv",
       "note": "dm/games/010055D009F78000/README.md"
+    },
+    {
+      "title_id": "01002B00111A2000",
+      "name": "Hyrule Warriors: Age of Calamity",
+      "profile_name": "Hyrule Warriors: Age of Calamity",
+      "builds": [
+        {
+          "version": "v327680",
+          "number": 327680,
+          "display": "1.3.0"
+        }
+      ],
+      "readme_update": "1.3.0",
+      "package": "v327680",
+      "companion": false,
+      "since": "0.1.6",
+      "profile": "dm/games/01002B00111A2000/game.tsv",
+      "note": "dm/games/01002B00111A2000/README.md"
     },
     {
       "title_id": "01004D300C5AE000",

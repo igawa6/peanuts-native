@@ -188,7 +188,7 @@ def check_translator(xlate=None):
 
 # dmsh_build.py runs as a script; the functions that read packages and control sections and build the translator's jobs are taken from its source by name, so there is one copy
 BUILD = os.path.join(HERE, 'dmsh_build.py')
-BORROWED = ('record_index', 'vertex_ab', 'early_fragment_tests', 'tf_layout', 'job_for', 'decode_tex', 'const_sampler', 'decode_ubo_tex', 'c2_array', 'load_pairs', 'build_keys')
+BORROWED = ('record_index', 'vertex_ab', 'early_fragment_tests', 'tf_layout', 'job_for', 'decode_tex', 'const_sampler', 'decode_ubo_tex', 'ubo_tex_step', 'c2_array', 'load_pairs', 'build_keys')   # PEANUTS: ubo_tex_step
 
 
 def borrow(namespace: dict[str, Any]) -> dict[str, Any]:   # PEANUTS(upstream-candidate): exec adds callable values to this namespace.
@@ -467,7 +467,7 @@ def classify(stage, r, res, m):
         ut, us = NS['decode_ubo_tex'](nm)
         if desc == spv.VK_SAMPLER: e.update(kind=abi.KIND_SAMP_ID, reg=us[1]) if us[0] == 'id' else e.update(kind=abi.KIND_SAMP_UBO, reg=us[0], off=us[1])
         elif desc == spv.VK_UNIFORM_TEXEL: e['kind'] = abi.KIND_UNKNOWN   # a bindless buffer texture: not implemented in the replay (as on Metal)
-        else: e.update(kind=abi.KIND_TEX_UBO, reg=ut[0], off=ut[1])
+        else: e.update(kind=abi.KIND_TEX_UBO, reg=ut[0], off=ut[1], step=NS['ubo_tex_step'](nm))   # PEANUTS: step (an array read by record)
     elif desc in (spv.VK_STORAGE_IMAGE, spv.VK_STORAGE_TEXEL) and (iu := ubo_img(nm)):
         e.update(kind=abi.KIND_IMG_UBO, reg=iu[0], off=iu[1])
     elif texlike and r['count'] > 1 and NS['c2_array'](nm, 'array<'):
@@ -725,7 +725,7 @@ def entry_parts(key, refl, nmods):
         s = e.get('soff'); s = 0xFFFF if s is None else s
         binds += struct.pack('<BBHBBHhHBBhHHI', KIND_NUM[e['kind']], e['desc'], e['binding'], e['set'], e['flags'], 0 if e['set'] == VK['SET_POOL'] else min(e['count'], 0xFFFF),
                              -1 if e.get('reg') is None else e['reg'], e.get('off') or 0, KIND_NUM[e['skind']] if e.get('skind') else 0, dim_byte(e.get('dim')),
-                             -1 if e.get('sreg') is None else e['sreg'], s, 0, e.get('bytes') or 0)
+                             -1 if e.get('sreg') is None else e['sreg'], s, e.get('step') or 0, e.get('bytes') or 0)   # PEANUTS: step
     c1 = bytes.fromhex(refl['c1'])
     vin_mask = sum(1 << int(l) for l in refl['vin']); vin_types = sum(t << (2 * int(l)) for l, t in refl['vin'].items())
     fout_mask = sum(1 << int(l) for l in refl['fout'] if int(l) < 8); fout_types = sum(t << (2 * int(l)) for l, t in refl['fout'].items() if int(l) < 8)

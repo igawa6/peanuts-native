@@ -656,6 +656,8 @@ static void font_try_cjk(FontJob *fj, NxNca *n) {
 // PEANUTS begin: the console's MiiModel system data (0100000000000802), written beside the fonts for the host's MountSystemData (hle_mii.c). A game that
 // builds Mii heads from it (Mario Kart 8 Deluxe) drew none with the host's empty stand-in; the firmware the player gives the app has the real one. Optional:
 // a firmware without it still gives the fonts. Its RomFS holds the files at the root (NXTexture*.dat, Shape*.dat)
+// A file name from the firmware becomes a path in miimodel.tmp: only a plain name is taken (no separator, not . or ..)
+static int mii_name_ok(const char *nm) { return *nm && strcmp(nm, ".") && strcmp(nm, "..") && !strpbrk(nm, "/\\"); }
 static void font_try_mii(FontJob *fj, NxNca *n) {
     if (fj->got_mii || n->title_id != 0x0100000000000802ull) return;
     int s = nx_nca_find_section(n, NX_FS_ROMFS); NxNode *root = s >= 0 ? nx_romfs_tree(n, s) : NULL;
@@ -663,7 +665,7 @@ static void font_try_mii(FontJob *fj, NxNca *n) {
     int ok = 1, k = 0;
     for (int i = 0; i < root->nkids && ok; i++) {
         NxNode *f = root->kids[i];
-        if (f->is_dir || strlen(f->name) >= sizeof fj->mii_name[0]) continue;
+        if (f->is_dir || strlen(f->name) >= sizeof fj->mii_name[0] || !mii_name_ok(f->name)) continue;
         if (k == 16 || nx_node_read_whole(f, &fj->mii_data[k], 64u << 20)) { ok = 0; break; }
         snprintf(fj->mii_name[k], sizeof fj->mii_name[k], "%s", f->name); fj->mii_size[k] = (size_t)f->size; k++;
     }

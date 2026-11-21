@@ -118,3 +118,11 @@ fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	c0x8	-	t0x21282a0
 fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	d0x0	-	0000803f
 fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	d0x8	-	6f12833a
 fpslocker_plan	8e9978d50bdd20b4c8395a106c27ffde	d0x10	-	01000000
+# PEANUTS begin: picture shapes without code of the game's own (aspect_plan, dm/host/aspect_plan.h): Game settings > Display > Fill, 1.6.0 only
+# The three sites of the community's any-aspect patch for 1.6.0 (BOTW-AAR by Fayaz), read on the 1.6.0 pack's main: two fdiv s0,s0,s1 that make the ratio from the
+# width and the height (main+0xe0ad68, main+0x15c2148) and the getter's ldr s0,[x0,#0xb0] (main+0x1271870) become fmov s0,#imm8, the nearest value that instruction
+# holds (within 3.2 % of the picture's shape). The 3D view follows; the 2D layer is still drawn for 16:9 and takes the picture's shape with it. 1.9.0 has no rows.
+aspect_plan	8e9978d50bdd20b4c8395a106c27ffde	ratio_fmov	m0xe0ad68	0018211e
+aspect_plan	8e9978d50bdd20b4c8395a106c27ffde	ratio_fmov	m0x1271870	00b040bd
+aspect_plan	8e9978d50bdd20b4c8395a106c27ffde	ratio_fmov	m0x15c2148	0018211e
+# PEANUTS end

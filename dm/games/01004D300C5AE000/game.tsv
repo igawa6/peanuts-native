@@ -49,6 +49,13 @@ fpslocker	a6ce40dc3aedb1becacd2f1ff4515307	zero_i32	0xa76728/0x50	1	0
 fpslocker	a6ce40dc3aedb1becacd2f1ff4515307	inverse_f32	0xa767b0/0x140/0x1b0/0x20/0x34	1	30:1.95
 fpslocker	a6ce40dc3aedb1becacd2f1ff4515307	inverse_f32	0xa767b0/0x140/0x1b0/0x20/0x38	1	30:1.7
 # PEANUTS end
+# PEANUTS begin: picture shapes without code of the game's own (aspect_plan, dm/host/aspect_plan.h)
+# The game builds its screen size at main+0x747408 (mov x8,#1920; movk x8,#1080,lsl #32) and the row makes the width the one for the picture's shape (2520 for
+# 21:9, 1234 for 8:7), read on the 1.1.0 pack's main. The site is the one of the community's 21:9 patch for this build (Fl4sh9174,
+# Switch-Emulator-Ultrawide-FPS-Mods), which says the cameras and part of the menus follow it. The row alone gives Game settings > Display > Fill (the screen's own shape); 21:9 on the top screen
+# and 8:7 on the second screen were seen on an AYN Thor with aspect rows, since taken out (the note).
+aspect_plan	a6ce40dc3aedb1becacd2f1ff4515307	width_movz	m0x747408	08f080d2
+# PEANUTS end
 
 # ---- Shader split (shader_split.py; BNSH in HAL's .cmp containers, the loose shader/ files and main) ----
 shader_groups	/gfx/=gfx /ptcl/=ptcl /lyt/=lyt /shader/=shader

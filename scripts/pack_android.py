@@ -374,9 +374,9 @@ def other_version_keys(g, ver):
     return keys
 
 
-def may_lack(g, ver=None):
-    """The keys a dump of version ver may lack: shader_optional.tsv's, and the other listed versions' own (other_version_keys)"""
-    return optional_keys(g) | other_version_keys(g, ver)
+def may_lack(g, ver=None, other=None):
+    """The keys a dump of version ver may lack: shader_optional.tsv's, and the other listed versions' own (other_version_keys, or the caller's already read set)"""
+    return optional_keys(g) | (other_version_keys(g, ver) if other is None else other)
 # PEANUTS end
 
 
@@ -876,7 +876,7 @@ def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: th
         want, have = map_keys(g.dir / 'shader_map.tsv'), map_keys(tmp / 'shader_map.tsv')
         missing = sorted(want - have)
         other = other_version_keys(g, ver)   # PEANUTS: read the profile's version table once, even when thousands of keys differ
-        if hard := sorted(set(missing) - (optional_keys(g) | other)):   # PEANUTS: keys from other listed versions may be absent
+        if hard := sorted(set(missing) - may_lack(g, ver, other)):   # PEANUTS: keys from other listed versions may be absent
             raise Error(lacking_shaders(g, rd, hard, len(want), getattr(a, 'dlc_count', None), tmp, shader_versions(g) != [f'v{ver}']))   # PEANUTS: names DLC that was not imported as a possible reason, only for tables of this one version
         # PEANUTS: the one plain line for a dump of one of the versions the tables are the union of (the phone's: PackService.splitMatchesProfile)
         if theirs := set(missing) & other:   # PEANUTS: reuse the same version table

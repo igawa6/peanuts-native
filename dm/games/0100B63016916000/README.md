@@ -72,3 +72,10 @@ The rewriter took all three modules without an error.
 - Later quests and longer memory behavior, depth correctness, sound quality (Wwise), DLC completeness, and companion pages beyond Today, Inventory and Map. Opening-town movement, basic menus, manual save/reload and one successful live-texture readback have bounded coverage.
 - Minimum memory sizes have not been established. The tested layout fixes the observed opening pool exhaustion; no `mem_used` adjustment or allocator patch was needed for that scene.
 - `bf_want.tsv`, `pso_pairs.tsv` and `pso_manifest.tsv` are empty. No `patches.py`.
+
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.4.2.0 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->

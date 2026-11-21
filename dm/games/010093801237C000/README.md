@@ -70,6 +70,15 @@ Android's reviewed plan follows theboy181's [2.1.0 60fps patch](https://github.c
 - Every shader is in `system/shd/*.bshdat` (MSHD containers; nothing in `main` or the `.pkg` packs), which is also the profile's `romfs_marker` (`system/shd`). Each stage is a control section (its length at control +0x20, at least 0x880 bytes, sometimes followed by a small compiler-option table such as `fastmath true`), then the code area at the next code header. Every file holds vertex / pixel stages in alternating order (1, 2 or 4 programs) and is paired two by two. The control section carries NV assembly text after its first 0x880 bytes, and the SASS disassembly follows each code area, so the binding layout can be read straight from the files.
 - 478 files, 1,342 stages, 1,010 unique keys (359 vertex, 651 pixel), 659 pairs.
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+Game settings › Display offers **Fill the screen** (the game draws for the screen's own shape, from the next start), with no code of the game's own: two `aspect_plan` rows on 2.1.0. The game keeps its picture size as two 32-bit numbers, 1600 at `main+0x1a1be18` and 900 at `main+0x1a1be1c` (read on the 2.1.0 pack's main); the rows make them the shape with about the same pixel count ([`aspect_plan.h`](../../host/aspect_plan.h): 1834x786 for 21:9, 1282x1122 for 8:7). The sites are those of the community's 21:9 patch for this build (Fl4sh9174, Switch-Emulator-Ultrawide-FPS-Mods: 1792x750 there).
+
+**On an AYN Thor (2026-11-21, Turnip 27.0.0-R2, main `646761f6…`, the second screen with Swap screens, window 1240x1080 → 31:27):** the log has `aspect plan: 2 words for the 1.1481 picture`; the loading screen and the first area fill the screen, Samus and the rooms keep their proportions, and the missile count, the energy, the minimap and the tutorial line are inside the picture. 117 fps at the 120 limit with the GPU at 4.7 ms, no `CRASH` line in about a minute. Not run: a screen wider than 16:9, the map and pause screens, the movies.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 ### Final gameplay validation (2026-10-26, current)

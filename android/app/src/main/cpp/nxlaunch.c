@@ -34,6 +34,8 @@ void nxhost_env_changed(void);
 #pragma weak nxhost_set_window
 #pragma weak nxhost_vk_selftest
 #pragma weak nxhost_prewarm_progress   // PEANUTS: optional startup shader progress
+#pragma weak nxhost_prewarm_skip       // PEANUTS: Play anyway on the Preparing shaders screen
+void nxhost_prewarm_skip(void);
 #pragma weak nxhost_input_device_added
 #pragma weak nxhost_input_device_removed
 #pragma weak nxhost_input_key
@@ -644,6 +646,7 @@ JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_drsSet(JNIEnv *env, jcla
 int nxhost_ndsr_status(void);   // vka_draw.c
 JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_ndsrStatus(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_ndsr_status ? nxhost_ndsr_status() : -1; }
 // PEANUTS: startup shader progress
+JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_prewarmSkip(JNIEnv *env, jclass cls) { (void)env; (void)cls; if (nxhost_prewarm_skip) nxhost_prewarm_skip(); }   // PEANUTS
 JNIEXPORT jlong JNICALL Java_dev_nxnative_android_Native_prewarmProgress(JNIEnv *env, jclass cls) {
     (void)env; (void)cls;
     return nxhost_prewarm_progress ? nxhost_prewarm_progress() : 0;
@@ -656,3 +659,7 @@ JNIEXPORT jstring JNICALL Java_dev_nxnative_android_Native_skipStatus(JNIEnv *en
     if (nxhost_skip_status) nxhost_skip_status(buf, sizeof buf);
     return (*env)->NewStringUTF(env, buf);
 }
+// PEANUTS: the "Preparing graphics" notice (dev.peanuts.ui.WarmNotice): pipelines still waiting while draws are skipped for them, 0 = none, -1 = this host cannot say
+#pragma weak nxhost_warm_status
+int nxhost_warm_status(void);   // vka_exec.c
+JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_warmStatus(JNIEnv *env, jclass cls) { (void)env; (void)cls; return nxhost_warm_status ? nxhost_warm_status() : -1; }

@@ -4,6 +4,8 @@
 #include "../hle.h"
 #undef HLE_FORCE
 #define HLE_FORCE(mangled, why, ret, cname, ...) static ret cname(__VA_ARGS__)
+#undef HLE_FORCE_BIG   // PEANUTS: the asm take-over does not link in the test
+#define HLE_FORCE_BIG HLE_FORCE   // PEANUTS
 #include "../hle_sf.c"
 
 static int checks, fails, events;

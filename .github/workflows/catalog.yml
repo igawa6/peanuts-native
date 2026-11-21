@@ -12,6 +12,7 @@ on:
       - peanuts/VERSION
       - peanuts/games.tsv
       - 'dm/games/*/game.tsv'
+      - 'dm/games/*/README.md'   # PEANUTS: the catalog's note field
       - peanuts/scripts/games_catalog.py
       - peanuts/scripts/issue_forms.py
   schedule:
@@ -52,13 +53,14 @@ jobs:
           python peanuts/scripts/issue_forms.py
       - name: Commit what changed
         run: |
-          if git diff --quiet -- peanuts/games.json peanuts/games.tsv README.md peanuts/docs/README.github.md .github/ISSUE_TEMPLATE; then
+          # staged first: git diff alone does not see a file that is new
+          git add peanuts/games.json peanuts/games.tsv README.md peanuts/docs/README.github.md .github/ISSUE_TEMPLATE
+          if git diff --cached --quiet; then
             echo "catalog and forms are up to date"
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add peanuts/games.json peanuts/games.tsv README.md peanuts/docs/README.github.md .github/ISSUE_TEMPLATE
           git commit -m "Update the game catalog, the games table and the issue forms" -m "Written by .github/workflows/catalog.yml after ${GITHUB_SHA::12}."
           git pull --rebase --quiet origin main
           git push origin HEAD:main

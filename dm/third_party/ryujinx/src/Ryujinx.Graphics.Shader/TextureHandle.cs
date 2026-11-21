@@ -10,6 +10,7 @@ namespace Ryujinx.Graphics.Shader
         SeparateSamplerId = 2,
         SeparateConstantSamplerHandle = 3,
         Direct = 4,
+        CombinedSamplerRecords = 5, // PEANUTS: an array of combined handles, one per record of a table in a uniform buffer: offset 0 the word offset of record 0's handle, offset 1 the words of a record (BindlessToArray)
     }
 
     public static class TextureHandle

@@ -607,9 +607,9 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
             return OperationResult.Invalid;
         }
 
-        private static void MarkNonUniform(CodeGenContext context, SpvInstruction inst)
+        private static void MarkNonUniform(CodeGenContext context, SpvInstruction inst, bool always = false) // PEANUTS: always (SamplerDeclaration.IsShaderIndexed)
         {
-            if (context.HostCapabilities.SupportsShaderNonUniformIndexing)
+            if (always || context.HostCapabilities.SupportsShaderNonUniformIndexing) // PEANUTS: always
             {
                 if (!context.WasNonUniformAccessDeclared)
                 {
@@ -2457,7 +2457,7 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                 SpvInstruction textureIndex = context.Get(AggregateType.S32, texOp.GetSource(srcIndex++));
 
                 image = context.AccessChain(declaration.SampledImagePointerType, image, textureIndex);
-                MarkNonUniform(context, image);
+                MarkNonUniform(context, image, declaration.IsShaderIndexed); // PEANUTS: always
             }
 
             if (texOp.IsSeparate)
@@ -2465,7 +2465,7 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                 image = context.Load(declaration.ImageType, image);
                 if (imageIndexed)
                 {
-                    MarkNonUniform(context, image);
+                    MarkNonUniform(context, image, declaration.IsShaderIndexed); // PEANUTS: always
                 }
 
                 SamplerDeclaration samplerDeclaration = context.Samplers[texOp.GetSamplerSetAndBinding()];
@@ -2478,19 +2478,19 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                     SpvInstruction samplerIndex = context.Get(AggregateType.S32, texOp.GetSource(srcIndex++));
 
                     sampler = context.AccessChain(samplerDeclaration.SampledImagePointerType, sampler, samplerIndex);
-                    MarkNonUniform(context, sampler);
+                    MarkNonUniform(context, sampler, samplerDeclaration.IsShaderIndexed); // PEANUTS: always
                 }
 
                 sampler = context.Load(samplerDeclaration.ImageType, sampler);
                 if (samplerIndexed)
                 {
-                    MarkNonUniform(context, sampler);
+                    MarkNonUniform(context, sampler, samplerDeclaration.IsShaderIndexed); // PEANUTS: always
                 }
 
                 image = context.SampledImage(declaration.SampledImageType, image, sampler);
                 if (imageIndexed || samplerIndexed)
                 {
-                    MarkNonUniform(context, image);
+                    MarkNonUniform(context, image, declaration.IsShaderIndexed || samplerDeclaration.IsShaderIndexed); // PEANUTS: always
                 }
             }
             else
@@ -2498,7 +2498,7 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                 image = context.Load(declaration.SampledImageType, image);
                 if (imageIndexed)
                 {
-                    MarkNonUniform(context, image);
+                    MarkNonUniform(context, image, declaration.IsShaderIndexed); // PEANUTS: always
                 }
             }
 

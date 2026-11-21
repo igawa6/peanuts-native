@@ -863,7 +863,8 @@ static int present_one(const pq_item *it) {
             prewait = 0;
 #endif
     }
-    if (it->fence && !vka_hung() && VKA_ENV("DM_VK_PRESENT_PREWAIT", prewait || g_fg_on) && it->fence <= __atomic_load_n(&V.tl_queued, __ATOMIC_ACQUIRE)) {
+    int pw_env = VKA_ENV("DM_VK_PRESENT_PREWAIT", -1), pw = pw_env >= 0 ? pw_env : (prewait || g_fg_on);   // PEANUTS: the default is read live (frame generation can start after the first present); an explicit 0 / 1 wins
+    if (it->fence && !vka_hung() && pw && it->fence <= __atomic_load_n(&V.tl_queued, __ATOMIC_ACQUIRE)) {
         VkResult vka_tl_wait(VkSemaphore s, uint64_t v, uint64_t timeout_ns); vka_tl_wait(V.tl, it->fence, vka_hang_ns());   // a timeout: the submission below waits as before, and the hang handling sees it
     }
     // No gate pending when the copy goes to the queue (vka_dev.c vka_gate_drain): on Turnip the driver would hold the copy back behind the gated work while Android

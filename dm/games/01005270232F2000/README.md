@@ -71,6 +71,13 @@ No `pad_layout` key: the iPhone gamepad starts in the 2D layout ([README](../../
 - **Resolved: the sound stuttered and the input box lagged while the player typed a name** (on an iPhone: one 4.7 s frame, 5,035 wakeups a second instead of about 1,800, no audio underruns). The host froze the guest clock while `swkbd::ShowKeyboard` was up; Unreal calls it off its game thread, so the game kept running, and every thread that waits on the clock spun while its audio mixing starved. On the Switch the applet blocks only the caller while the clock runs; the host now does the same (`hle_swkbd.c`). The iOS input box froze the clock a second time around its own wait (`front_ios.m`), so the first fix changed nothing on the phone (4,977 ms and 2,577 ms frames, 5,181 wakeups a second). On the Mac, `DM_KBD=<text> DM_TEST_SWKBD_HOLD_MS=8000` holds the keyboard up: frozen, 8.8 fps and 7,936 wakeups a second in that window; running, 30 fps and 1,788.
 - The game reads a mouse and no touch screen ([Romance of the Three Kingdoms 8 Remake's note](../0100C2A01A730000/README.md)).
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.0.5 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - A fresh save reaches the story with `DM_KBD=Lyra DM_KEYS="20:Plus,24:A*27/4,150:Plus,154:A*62/3,340:Right*12/3,341.5:A*12/3,380:Plus*5/3,396:A*20/3,470:A,474:Up,476:A,480:A*140/3"` (initial settings, the prologue, character creation with three belongings, "Begin Lyra's journey?").

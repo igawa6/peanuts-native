@@ -25,7 +25,7 @@ static uint64_t ubo_word(const vka_bstate *s, int st, int reg, unsigned off, uns
 }
 int vka_texu_elem = 1;
 // Element k's byte offset past an array's base: a uniform buffer's array of 64-bit NVN handles that the shader indexes (BindlessToArray: the host fills element k from base + 8k)
-static unsigned ubo_elem(const dmsh_vk_bind *b, unsigned k) { return b->count > 1 && vka_texu_elem ? 8u * k : 0; }
+static unsigned ubo_elem(const dmsh_vk_bind *b, unsigned k) { return b->count > 1 && vka_texu_elem ? (b->step ? b->step : 8u) * k : 0; }   // PEANUTS: step (an array read by record, dmsh_abi_vk.h)
 static int ubo_tex_id(const vka_bstate *s, uint32_t h) { int t = (int)(h & 0xfffff); return t ? t + s->tex_base : 0; }
 static int ubo_samp_id(const vka_bstate *s, uint32_t h) { int x = (int)(h >> 20); return x ? x + s->samp_base : 0; }
 

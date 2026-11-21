@@ -1916,6 +1916,24 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Fix (explicit diagnostic adaptation):** on the build host, `scripts/optimize_android_shader.py source.lib destination.lib --key <compute-key>` runs SPIRV-Tools `--redundancy-elimination --simplify-instructions` on every variant of the selected compute entry. It validates the input and output for Vulkan 1.3, preserves the library's ABI, entry metadata, bindings, constants and all other entries, and publishes a new library without overwriting an existing file. Requires `spirv-opt`, `spirv-val` and Python `zstandard`. Select it through `DM_VK_SHLIB`; the source library remains available for A/B. The pair of passes succeeds where each alone fails in the observed case. This is a workaround for the closed compiler, not a diagnosed compiler fix or an automatic policy for other shaders. Module validation and pipeline creation alone do not establish gameplay correctness.
 - **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md#found-on-this-game), Foliage compute on Adreno 830.
 
+<!-- PEANUTS begin: handle arrays read by record. -->
+### Textures picked from the records of a table all read as one texture
+
+- **Symptom:** ground or other surfaces that pick their texture by a value the shader computes draw flat, in one placeholder colour or in tile-shaped blocks. No `[RED]` line names it, or only `has no view of shape` lines of a placeholder texture.
+- **Cause:** the shader reads the texture handle from a table of records in a uniform buffer, at byte `(record << k) + offset`. The translator turned such a read into an array of 32 handles, one every 8 bytes, and clamped the index to 31. With records of 256 bytes the array reached record 0 alone and every other read clamped to the last element.
+- **Fix:** the vendored `BindlessToArray` gives a read of that form (`k` from 4 to 15, a constant offset above 0) an array of 256 elements indexed by the record (handle type 5, `CombinedSamplerRecords`: the name carries the offset and the record's size, as in `fp_t2d_cb3_50100038`). `vk_android_build.py` writes the record's size into the binding record's `step` (`dmsh_abi_vk.h`), and the replay reads element `k` at `off + step * k` (`vka_bind.c` `ubo_elem`). A draw may now write 4096 descriptors (`vka_draw.c` `VKA_DESC_MAX`, 512 before). Libraries of the ABI before it still play (`vka_abi_compat.h`). The Metal replay does not read the step yet: it fills such an array every 8 bytes as before.
+- **Check:** `DM_VK_BIND_LOG=<fragment shader key>` lists each element's texture: before, one placeholder ID in every element; after, each record's own texture. `DM_VK_UB_PEEK=<key>` with `DM_VK_UB_PEEK_AT` shows the table's handles as the CPU sees them.
+- **Found on:** Tomodachi Life: Living the Dream (010051F0207B2000), the island's ground: 160 records of 256 bytes in c[3], shaders `1b611e4eb2a2d0eb`, `bb62dd4dd4f94aa7` and `c7f9b506209fc76d` ([GitHub issue #182](https://github.com/igawa6/peanuts-native/issues/182)). Turnip on the Adreno 740 holds 30 fps with them.
+
+### A texture array indexed per pixel draws broken edges where the index changes
+
+- **Symptom:** dashed or blocky edges, two pixels wide, along the line where a surface changes from one texture of an array to another (the border between two ground types).
+- **Cause:** the shader picks an element of an array of textures with a value it computes per pixel, and the SPIR-V did not say so. Vulkan lets a driver take one element for a whole 2×2 pixel quad unless the access carries the `NonUniform` decoration; Turnip did, so a quad that straddles two ground types read one type's texture for all four pixels.
+- **Fix:** the vendored SPIR-V generator decorates the reads of an array of at most 256 textures or samplers (`SamplerDeclaration.IsShaderIndexed`: the arrays `BindlessToArray` makes from handles in a buffer) with `NonUniform`, whatever the host capability says, and declares `SPV_EXT_descriptor_indexing` with its capabilities in those shaders. The pools of every texture and sampler are longer and stay as they were. The replay already enables every Vulkan 1.2 feature the device has (`vka_dev.c`).
+- **Check:** the decoration by hand on the three ground shaders through `DM_VK_SPV_OVERRIDE` removed the dashed border on Turnip 27.0.0 (Adreno 740); the library built by the changed translator is not yet run on a device. A thin dashed outline a few pixels outside each darker plot remains with it: open, another cause.
+- **Found on:** Tomodachi Life: Living the Dream (010051F0207B2000), the island's ground between two ground types.
+<!-- PEANUTS end -->
+
 ## Optional page candidates for compute-mesh raw loads
 
 - **Symptom:** cached raw-load helpers still enter a full pool-table search on cold words whose pools cover no complete 2 MiB hint chunk.

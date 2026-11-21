@@ -56,6 +56,13 @@ The game builds Mii heads from the console's MiiModel system data, starting at b
 
 - The spin-wait search with the lock, test and store rules finds `main` 25 → 26 loops (a state setter like Breath of the Wild's, `main+0x715df8`) and one loop wider in `subsdk0` (the movie library's thread loop, `0x24118`) ([development.md, Power](../../../docs/development.md#power)).
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 4.0.0 through 2 `aspect_plan` rows that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the width,height pairs in data, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - The work folder's `run/ctl.sh` drives a run started with `DM_CTL`.

@@ -67,6 +67,16 @@ final class Profile {
         for (int cap : fpsModeCaps()) if (cap == value) return value;
         return 0;   // an unsupported saved choice returns to the safe 60 fps default
     }
+    // PEANUTS: game.tsv aspect_plan rows (build.gradle aspectPlanOf): "<main build>,<kind>,m0x<offset>,<expected word>", ';' between them.
+    // The host's loader makes the game's own 16:9 number the picture's shape (dm/host/aspect_plan.h); exact main build only.
+    String aspectPlan = "";
+    boolean aspectUntested;   // game.tsv aspect_plan_untested 1: the rows are candidates from a scan of the game's code, not seen on a device; Fill says so
+    boolean aspectPlanMatches(String mainBuild) {
+        if (aspectPlan.isEmpty() || mainBuild == null) return true;
+        for (String row : aspectPlan.split(";"))
+            if (row.startsWith(mainBuild + ",")) return true;
+        return false;
+    }
     // PEANUTS: the ordinary FPSLocker code plan requires a matching main build.
     boolean fpsLockerPlanMatches(String mainBuild) {
         if (fpsLockerPlan.isEmpty() || mainBuild == null) return true;
@@ -586,6 +596,8 @@ final class Profile {
             p.fpsPlan120 = c.length > 36 ? c[36] : "";
             p.elapsedFrameStep = c.length > 37 && c[37].equals("1"); // PEANUTS: Optional trailing field for older profile tables.
             p.ownedByDefault = c.length > 38 && c[38].equals("1");   // PEANUTS: fps_owned_default
+            p.aspectPlan = c.length > 39 ? c[39] : "";   // PEANUTS: aspect_plan
+            p.aspectUntested = c.length > 40 && c[40].equals("1");   // PEANUTS: aspect_plan_untested
             out.add(p);
         }
         return Collections.unmodifiableList(out);

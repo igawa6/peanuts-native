@@ -41,6 +41,13 @@ Status: brought up on the Mac on 2026-10-31: the logos and the opening movie, th
 
 - The NSP folder holds 5 DLC NSPs with a licence only (103 KB each, no content); the host reports the indices as owned. Nothing in the opening asks for them.
 
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.1.2 through 8 `aspect_plan` rows that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the width,height pairs in data, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
+
 ## Mac routes
 
 - The work folder's `run/ctl.sh` drives a run started with `DM_CTL` (`wait S` / `snap NAME`), and `run/ab.sh <tag> [VAR=value…]` boots, continues from the autosave in the first slot, presses the stick left for 0.6 s and takes shots before and after (the frame-rate check above): [05, Scripted input](../../../docs/agents/05-debugging.md#scripted-input-and-thread-scheduling).

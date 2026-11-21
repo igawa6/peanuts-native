@@ -36,3 +36,10 @@ sys_resource	0x1400000
 # the decoded shader code archives: the engine's global shaders and the game's material shaders
 shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
 shader_note	Captain Tsubasa 2: World Fighters 1.0.6 shaders
+# PEANUTS begin: picture shapes, untested candidates (aspect_plan, dm/host/aspect_plan.h): Game settings > Display > Fill
+# NOT SEEN ON A DEVICE. Every place the 1.0.6 pack's main has the packed 1920x1080 sizes in code and the 16/9 float words (a scan of the code on 2026-11-21, no community patch behind them):
+# the 3D view may follow the screen, the 2D layer may not, or the game may draw wrongly or not start with Fill. Fit is unchanged. Take out the
+# rows that prove wrong, and aspect_plan_untested once a device has shown the rest right (the note says what was seen).
+aspect_plan_untested	1
+aspect_plan	63ad5f65431ae17b1bb2304fd3abc521	ratio_f32	m0x6fb238c	398ee33f
+# PEANUTS end

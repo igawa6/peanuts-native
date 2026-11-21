@@ -76,6 +76,14 @@ Update 1.3.0 (v327680) over the base game, with four DLC packages (one is only a
 - Shaders: 40,726 GLSLC outputs (37,043 pixel, 3,440 vertex, 241 compute, 2 geometry): KTGL's G2S containers (`_S2G3000`, type KTID `0x7bcd279f`; 23,108 entries in `asset/system.rdb.bin*`, 2.3 GB inflated) and one `_DOK0000` container (type `0x20a6a0bb`, the engine's system resources: 151 bare GLSLC outputs, 21 of them drawn in the first battle), plus 117 in `main` (`shader_split.py` `idrk_shaders`). Many have 0x850-byte controls and the compute ones no code header. Mario's texture handle layout (`0x20 + 8 × slot`); pairs come from the single-stage cover (`separable_pairs`).
 - `glslc_section` took 3 more outputs (GLSLC version 0x1d.0, whose control +0x20 holds odd values) that used to be dropped ([GLSLC outputs read through their section headers](../../../docs/reference/shaders.md#glslc-outputs-read-through-their-section-headers)).
 
+## Android (Peanuts Native)
+
+PEANUTS: packed on Linux from 1.3.0 with its four DLC (`01002B00111A3001` to `3004`): all 40,729 shaders and 58,163 modules valid for spirv-val, a 1,316 MB library; the targeted split reads 3 of 1,101 RomFS files (9.5 s, against 12.7 s for the full scan, with the same tables and package hashes). Played on an AYN Thor (Adreno 740) with Turnip v26.2.0 R5, 2026-11-21:
+
+- First boot on an empty save, the intro movie, the opening battle on Hyrule Field with combat, KOs, the tutorial prompts and the captain's dialogue: 43 to 59 fps in battle (GPU 12 to 18 ms a frame), about 3.5 GB. All four DLC mount (`aoc: reporting 4 add-on contents`); their content was not exercised. Audio without underruns in 12,000 callbacks. A relaunch loads the save into the battle. No crash in about 15 minutes over several runs. The system driver was not tested.
+- Frame limits ([`game.tsv`](game.tsv)): the frame step takes 0, 30 or 60, so the launcher offers Game owned, 30 and 60 (`fps_modes 30,60`); 20 and 15 had run the game's own 30. The stubs' vsync counter on the frame-step state page (`+0x30`) against wall time gave game speed 0.99 at the 60 cap (59.5 updates a second while battle frames were presented at 46 to 56 fps, as `fps_hold off` intends) and 1.00 at the 30 cap.
+- Shader seed (`vk_prewarm.bin`, 242 pipeline keys from the boot, the intro and the opening battle): the first run without it built 369 pipelines in 57 s with a 6.4 s stall as the battle began. A cold launch prepares the 242 before the game starts with none on the frame path; the relaunch reads the pipeline cache and prepares nothing.
+
 ## Mac routes
 
 - With a save whose first-boot settings were made, `DM_KEYS="f300:A,f420:A,f540:A,f660:A,f780:A,f900:A,f1300:Plus,f1350:Plus"` confirms the settings, skips the intro movie and plays the opening into the first battle, The Battle of Hyrule Field (about frame 4000).

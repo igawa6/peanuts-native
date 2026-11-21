@@ -123,3 +123,10 @@ fps_plan	94ceae325c205c4b9d6f7235552f28fd	m0x1743498	1f2003d5	2138221e
 fps_plan	94ceae325c205c4b9d6f7235552f28fd	m0x174349c	1f2003d5	76000014
 fps_plan	94ceae325c205c4b9d6f7235552f28fd	m0x1742d78	1f2003d5	7f1e01b9
 fps_plan	94ceae325c205c4b9d6f7235552f28fd	m0x1742d7c	1f2003d5	3f020014
+# PEANUTS begin: picture shapes, untested candidates (aspect_plan, dm/host/aspect_plan.h): Game settings > Display > Fill
+# NOT SEEN ON A DEVICE. Every place the 1.3.0 pack's main has the packed 1920x1080 sizes in code and the 16/9 float words (a scan of the code on 2026-11-21, no community patch behind them):
+# the 3D view may follow the screen, the 2D layer may not, or the game may draw wrongly or not start with Fill. Fit is unchanged. Take out the
+# rows that prove wrong, and aspect_plan_untested once a device has shown the rest right (the note says what was seen).
+aspect_plan_untested	1
+aspect_plan	94ceae325c205c4b9d6f7235552f28fd	width_movz	m0xe99f44	01f080d2
+# PEANUTS end

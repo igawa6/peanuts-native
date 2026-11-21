@@ -2274,13 +2274,14 @@ def fb_refs(d, t, i):   # the tables / strings a vector of offsets points at
 
 def fb_root(d, at=0): return at + struct.unpack_from('<I', d, at)[0]
 
-def trpfs_jobs(files, parts=64):
+def trpfs_jobs(files, parts=64, targeted=False):   # PEANUTS: select Trinity packs for a known shader map
     """Game Freak's Trinity engine (Pokémon Legends: Z-A): almost everything is in arc/data.trpfs, packs of files, with arc/data.trpfd as their index, both FlatBuffers. The descriptor's root table:
     0 file hashes [u64], 1 pack names [string], 2 file infos [{0 pack index u64}] (in file hash order), 3 pack infos [{0 pack size u64, 1 file count u64}]. The file system: 'ONEPACK\\0', u64 offset of its
     root table {0 pack name hashes [u64], 1 pack offsets [u64]}, each pack a table of its own at its offset. A pack is named through its first file's hash (its own name hash is not a plain FNV-1a of the
     descriptor's name). → ([(path, rel, ((pack offset, pack name), …)), …] in about equal sizes, the paths taken)"""
     from romfs import mmap
     jobs, taken = [], set()
+    sources = map_sources() if targeted else ()   # PEANUTS: the map is read once, not once per archive root
     for p, r in files:
         if not p.endswith('.trpfs') or not os.path.exists(p[:-1] + 'd'): continue
         with open(p, 'rb') as f:
@@ -2297,6 +2298,17 @@ def trpfs_jobs(files, parts=64):
                 pr = fb_root(d, off); h0 = fb_vec(d, pr, 0)
                 if not h0[1] or struct.unpack_from('<Q', d, h0[0])[0] not in pack_of: red(f'{r}: the pack at {off:#x} has no file the descriptor lists')
                 i = pack_of[struct.unpack_from('<Q', d, h0[0])[0]]; packs.append((off, names[i], sizes[i]))
+        # PEANUTS begin: a Trinity source records the pack name after the archive path. Compare all result tables before accepting this subset.
+        if targeted:
+            prefix = r + '#'
+            wanted = {source[len(prefix):].split('#', 1)[0] for source in sources if source.startswith(prefix)}
+            if wanted and wanted.issubset(name for _, name, _ in packs):
+                count = len(packs)
+                # The map names first appearances. Other packs of the same resource types can pair those shaders again.
+                suffixes = tuple({'.' + '.'.join(name.rsplit('.', 2)[-2:]) for name in wanted if name.count('.') >= 2 and name.endswith('.trpak')})
+                packs = [pack for pack in packs if pack[1] in wanted or pack[1].endswith(suffixes)]
+                print(f'targeted Trinity: /{r}: reading {len(packs):,} of {count:,} packs', flush=True)
+        # PEANUTS end
         cur, size, step = [], 0, sum(s for _, _, s in packs) / parts
         for off, name, s in sorted(packs):
             cur.append((off, name)); size += s
@@ -4233,7 +4245,7 @@ def scan_jobs(files, want=None, mains=(), nros=()):
     want, only the jobs of those files are kept, in the full scan's order. nros: the game's runtime NROs (runtime_nros), where Camelot's archive keeps its file table"""
     big = [j for p, r in files for j in (linkdata_jobs(p, r) or [])]   # Three Houses' 6.9 GB DATA1.bin: one job per range of entries, not one read of the whole file
     pak_jobs, paks = kpka_jobs(files)   # Monster Hunter Rise's PAKs: the newest copy of each path, in ranges of entries
-    tr_jobs, trp = trpfs_jobs(files)   # Pokémon Legends: Z-A's Trinity packs (data.trpfs and its index data.trpfd), decoded by the game's own Oodle in the Mac host
+    tr_jobs, trp = trpfs_jobs(files, targeted=want is not None)   # PEANUTS: Pokémon Legends: Z-A's Trinity packs (data.trpfs and its index data.trpfd), decoded by the game's own Oodle in the Mac host
     ue_jobs, uep = ue_legacy_jobs(files, mains=mains)   # Unreal paks with inline shaders: DRAGON QUEST XI S's legacy ones (the game's own LZ5 in the Mac host), OCTOPATH TRAVELER II's (Zlib)
     bd_jobs, bdts = bdt_jobs(files)   # Dark Souls Remastered's dvdbnd archives: the entries of each .bdt by its .bhd5 index, in ranges
     arc_jobs, arcs = smash_arc_jobs(files)   # Super Smash Bros. Ultimate's data.arc: its current files, in ranges

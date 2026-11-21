@@ -56,6 +56,8 @@ option_patch	DM_LM3_FIXED_RES	79e5950ffa85acf63e28c9aec051eac2	0x86745c	41a945bd
 option_patch	DM_LM3_FIXED_RES	79e5950ffa85acf63e28c9aec051eac2	0x8674c0	61a945bd	01102e1e
 option_patch	DM_LM3_FIXED_RES	79e5950ffa85acf63e28c9aec051eac2	0xb81884	21a945bd	01102e1e
 option_patch	DM_LM3_FIXED_RES	79e5950ffa85acf63e28c9aec051eac2	0xb81bf8	00a945bd	00102e1e
+
+# PEANUTS: on Turnip the opening bus cutscene stalled with 8,094 MiB of Vulkan images; the fixed resolution kept it near 460 MiB (README.md, Android).
 recommend	driver.id=18	option.DM_LM3_FIXED_RES=on
 
 # ---- Input ----
@@ -67,3 +69,10 @@ shader_groups	/init.dict=init
 shader_note	Luigi's Mansion 3 shaders
 # the NVN depth mode the game sets (nvnDeviceSetDepthMode near = 0): the pipeline archive made offline holds the main0_z vertex entries (dm/gfx/tools/pso_offline.py)
 depth_mode	zero
+# PEANUTS begin: picture shapes, untested candidates (aspect_plan, dm/host/aspect_plan.h): Game settings > Display > Fill
+# NOT SEEN ON A DEVICE. Every place the 1.4.0 pack's main has the packed 1920x1080 sizes in code and the 16/9 float words (a scan of the code on 2026-11-21, no community patch behind them):
+# the 3D view may follow the screen, the 2D layer may not, or the game may draw wrongly or not start with Fill. Fit is unchanged. Take out the
+# rows that prove wrong, and aspect_plan_untested once a device has shown the rest right (the note says what was seen).
+aspect_plan_untested	1
+aspect_plan	79e5950ffa85acf63e28c9aec051eac2	ratio_f32	m0x13c96fc	398ee33f
+# PEANUTS end

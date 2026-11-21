@@ -104,7 +104,7 @@ static int cs_variant(const vka_shader *s) {
 }
 VkShaderModule vka_shader_cs_module(vka_shader *s) {
     VkShaderModule m = cs_variant(s) == DMSH_VK_MOD_SHUFFLE_LDS ? vka_shader_module(s, DMSH_VK_MOD_SHUFFLE_LDS) : VK_NULL_HANDLE;
-    return m ? m : s->mods[DMSH_VK_MOD_BASE];   // (that module not made: logged by vka_shader_module; the base one)
+    return m ? m : vka_shader_module(s, DMSH_VK_MOD_BASE);   // (that module not made: logged by vka_shader_module; the base one) PEANUTS: through vka_shader_module (vka_shader_drop_modules)
 }
 
 const char *vka_shader_lib_path(void) { return g_lib_path; }
@@ -274,6 +274,22 @@ VkShaderModule vka_shader_pfb_pick(VkShaderModule m, int a2c, int alpha_func) {
 // ---------- Shaders by key ----------
 typedef struct { uint64_t key; vka_shader *sh; const vka_shlib *lib; } shent;
 static shent *g_sh; static size_t g_shcap, g_shn;
+// PEANUTS begin: the library modules of every shader destroyed (vka_shader_module makes one again at its next use). For the end of the preparing step (vka_pso.c
+// pp_prepare), which makes the modules of every program of the game to compile them into the driver's cache: tens of thousands, 1.2 GiB in Super Mario Odyssey,
+// of which a session draws with a few hundred. Only while no other thread makes pipelines, and no kept pipeline library is keyed by a module. A shader with
+// derived modules (retyped inputs or textures, a geometry claim, folded constants) is left as it is. Returns the modules destroyed
+size_t vka_shader_drop_modules(void) {
+    size_t n = 0;
+    pthread_mutex_lock(&g_mu);
+    for (size_t i = 0; i < g_shcap; i++) {
+        vka_shader *s = g_sh[i].sh;
+        if (!s || s->vin || s->fout || s->img || s->tex || s->gslink || s->gs_claim || s->frz[0] || s->frz[1]) continue;
+        for (size_t v = 0; v < sizeof s->mods / sizeof *s->mods; v++) if (s->mods[v]) { vk.vkDestroyShaderModule(V.dev, s->mods[v], NULL); s->mods[v] = VK_NULL_HANDLE; n++; }
+    }
+    pthread_mutex_unlock(&g_mu);
+    return n;
+}
+// PEANUTS end
 static size_t hslot(uint64_t k, size_t cap) { return (size_t)((k * 0x9E3779B97F4A7C15ull) >> 17) & (cap - 1); }
 static shent *sh_find(uint64_t key, const vka_shlib *L) {
     if (!g_shcap) return NULL;
@@ -923,7 +939,32 @@ void mtl_prog_release(prog_t *p) {
     if (!p || !p->serial) return;
     pthread_mutex_lock(&g_mu); prent *e = pr_find(p->serial); if (e) { e->serial = ~0ull; memset(&e->ps, 0, sizeof e->ps); } pthread_mutex_unlock(&g_mu);   // a tombstone
 }
-void mtl_prog_prefetch(const prog_t *p) { (void)p; }   // modules are made at the program's first draw (vka_prog_shaders)
+// PEANUTS begin: the program's shader parts are made in the background from now (vka_pso.c pf_main), not at its first draw. On the game's thread only the stage keys
+// are copied (made at nvnProgramSetShaders, prog_key); the shaders are resolved on the prefetch thread (vka_shaders_by_keys)
+void mtl_prog_prefetch(const prog_t *p) {
+    if (!p || !p->serial || !p->nstage) return;
+    // Only a program whose stage keys were all made at nvnProgramSetShaders: prog_key would hash a missing one from the stage's code here, before the game has
+    // placed or written it (and keep that key for the program's draws). Such a program is learned from its first draw's miss instead
+    for (unsigned i = 0; i < p->nstage && i < 6; i++) if (!prog_key_ready(p, i)) return;
+    uint8_t md[6][8]; memset(md, 0, sizeof md); unsigned n = 0;
+    for (unsigned i = 0; i < p->nstage && i < 6; i++) if (prog_key(p, i, md[n])) n++;
+    vka_pso_prefetch(md, n);
+}
+// The shaders of stage keys, each at its NVN stage; 0 = no library, a key the library lacks or a refused shader (nothing logged: the program's first draw says it)
+int vka_shaders_by_keys(const uint8_t md[6][8], unsigned n, vka_shader *sh[VKA_NSTAGE]) {
+    pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
+    if (!ok) return 0;
+    for (unsigned i = 0; i < n && i < 6; i++) {
+        uint64_t key = vka_shlib_key(md[i]);
+        const dmsh_vk_entry *en = vka_shlib_find(&g_lib, key);
+        if (!en) return 0;
+        int st = vka_nvn_stage(en->stage);
+        if (st < 0 || sh[st]) return 0;
+        if (!(sh[st] = vka_shader_make(&g_lib, key))) return 0;
+    }
+    return 1;
+}
+// PEANUTS end
 
 static int mem_read(uint64_t addr, void *out, size_t n) {
     if (vka_addr(addr, n, NULL, NULL, NULL)) { memcpy(out, (const void *)(uintptr_t)addr, n); return 1; }

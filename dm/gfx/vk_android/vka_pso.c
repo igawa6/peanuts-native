@@ -91,6 +91,7 @@ int vka_layout_of(vka_shader *const sh[VKA_NSTAGE], int compute, vka_layout *out
 }
 static int layout_slow(vka_shader *const sh[VKA_NSTAGE], int compute, vka_layout *out) {
     lkey k; memset(&k, 0, sizeof k);
+    vka_tex_bindless_ready();   // PEANUTS: the layout holds the pool's sets: made first (vka_tex.c)
     uint32_t ndesc = 0;
     for (int st = 0; st < VKA_NSTAGE; st++) {
         const vka_shader *s = sh[st];
@@ -164,11 +165,14 @@ static uint64_t g_probe_hit, g_probe_miss, g_probe_miss_ns;          // GPL: the
 static _Atomic uint64_t g_save_ns_total, g_hy_draws, g_pw_wait_ns;
 // PEANUTS: startup pipeline prewarm and its progress counters.
 static void pw_load(void); static void pw_start(int wait); static int pw_save(void);
+static void pcl_open(void); static void pcl_save(int force); static void pp_prepare(void); static _Atomic int g_pcl_due;   // PEANUTS: the shader parts' cache and the preparing step (below)
 static int g_pw_startup;
 static _Atomic int g_pw_start_total = -1;   // -1 before the startup phase is decided
 static _Atomic uint32_t g_pw_processed;
 static pthread_t g_pw_workers[4];
 static int g_pw_threads;
+static _Atomic int g_pp_skip;   // PEANUTS: Play anyway (nxhost_prewarm_skip): the startup prewarm and the preparing step stop where they are
+static _Atomic int g_pw_running;   // PEANUTS: prewarm threads not yet returned (pp_prepare waits for them before it drops the shader modules)
 static pthread_mutex_t g_pw_start_mu = PTHREAD_MUTEX_INITIALIZER;
 
 static void pw_path(char *out, size_t n) {
@@ -245,6 +249,7 @@ static void pc_open_once(void) {
     else VLOG("pipeline cache %s: %zu bytes read (its stamp lists %zu shaders, %llu stale)", g_pc_path[0] ? g_pc_path : e && !strcmp(e, "0") ? "(none: DM_VK_PCACHE=0)" : vka_fp_guest() ? "(none: DM_VK_GUEST_FPCR=1)" : "(not kept: no DM_TEMP or HOME)", n,
               g_pck.n, (unsigned long long)g_pck.dead);
     free(data);
+    pcl_open();   // PEANUTS
     pw_load();
     pthread_t th;
     if (!pthread_create(&th, NULL, saver_main, NULL)) { pthread_detach(th); g_sv_up = 1; }
@@ -294,6 +299,7 @@ static void save_now(void) {
         }
     }
     int keys = pw_save();
+    pcl_save(atomic_exchange(&g_pcl_due, 0));   // PEANUTS: the learned programs; the shader parts' cache when due
     uint64_t dt = now_ns() - t; atomic_fetch_add(&g_save_ns_total, dt);
     if (d || keys > 0) VLOG("pipeline cache: %zu bytes written to %s (%llu pipelines made this run), prewarm list %d keys, %.0f ms (on the saver thread)", n, g_pc_path[0] ? g_pc_path : "(none)",
                             (unsigned long long)made, keys, dt / 1e6);
@@ -317,13 +323,14 @@ void vka_pso_save(int force) {
     if (!g_pc) return;
     uint64_t t = now_ns();
     if (force != 1) {
-        if (__atomic_load_n(&g_made, __ATOMIC_RELAXED) == g_saved_at) return;
+        if (__atomic_load_n(&g_made, __ATOMIC_RELAXED) == g_saved_at && !atomic_load(&g_pcl_due)) return;   // PEANUTS: g_pcl_due (the shader parts' cache has something to save)
         int s = force == 2 ? VKA_ENV("DM_VK_PCACHE_SAVE_SLOW_S", 3) : VKA_ENV("DM_VK_PCACHE_SAVE_S", 20); if (s < 1) s = 1;
         if (t - g_save_ns < (uint64_t)s * 1000000000ull) return;
         g_save_ns = t;
         if (g_sv_up) { pthread_mutex_lock(&g_sv_mu); g_sv_want = 1; pthread_cond_signal(&g_sv_cv); pthread_mutex_unlock(&g_sv_mu); return; }
     }
     g_save_ns = t;
+    if (force == 1) atomic_store(&g_pcl_due, 1);   // PEANUTS: the shader parts' cache too
     pthread_mutex_lock(&g_save_mu); save_now(); pthread_mutex_unlock(&g_save_mu);
 }
 // PEANUTS: the Android front end calls this after the profile and pack are loaded, before entering guest code.
@@ -340,8 +347,12 @@ void vka_pso_prepare_launch(void) {
             VLOG("startup prewarm complete: %u keys processed before guest entry", (unsigned)atomic_load(&g_pw_processed));
         }
     }
+    pp_prepare();   // PEANUTS: the shader parts of the profile's programs, before the game starts (below)
     atomic_store(&g_pw_start_total, 0);
 }
+
+// PEANUTS: the launcher's Play anyway on the Preparing shaders screen: what is prepared so far is kept, the rest is prepared at the next start
+void nxhost_prewarm_skip(void) { atomic_store(&g_pp_skip, 1); }
 
 int64_t nxhost_prewarm_progress(void) {
     int total = atomic_load(&g_pw_start_total);
@@ -350,6 +361,7 @@ int64_t nxhost_prewarm_progress(void) {
 
 void vka_gpl_line(char *out, size_t n);
 void vka_pso_async_line(char *out, size_t n);
+void vka_pso_prefetch_line(char *out, size_t n);   // PEANUTS
 void mtl_pso_line(char *out, size_t n) {
     if (!n) return;
     int k = snprintf(out, n, "%llu graphics + %llu compute pipelines (%llu failed, %llu compute (program, layout) pairs not made for shared memory, %llu on the frame path), %llu set layouts, %.0f ms creating", (unsigned long long)g_ngfx, (unsigned long long)g_ncs,
@@ -357,6 +369,8 @@ void mtl_pso_line(char *out, size_t n) {
     if (V.gpl && k > 0 && (size_t)k + 3 < n) { memcpy(out + k, "; ", 3); vka_gpl_line(out + k + 2, n - (size_t)k - 2); }
     size_t o = strlen(out); char a[960]; vka_pso_async_line(a, sizeof a);   // PEANUTS: 960, was 200: the line was cut before the counts of the draws not skipped (vka_gfx_pipeline_now)
     if (a[0] && o + 2 < n) snprintf(out + o, n - o, "; %s", a);
+    // PEANUTS: the prefetch and the frame path's links on a line of their own, when they changed (the line above is already cut by some callers)
+    { static char last[520]; char b[520]; vka_pso_prefetch_line(b, sizeof b); if (b[0] && strcmp(b, last)) { memcpy(last, b, sizeof last); VLOG("%s", b); } }
 }
 
 // The long-frame log's counters (hle_nvn.c): pipelines made on the frame path and the time it took, cumulative (it takes each frame's difference). Background and prewarm
@@ -658,30 +672,65 @@ static int gpl_on(void) { return V.gpl && !atomic_load(&g_gpl_off); }
 #define LIB_REFUSED ((void *)(uintptr_t)1)
 #define LIB_BUSY ((void *)(uintptr_t)2)
 static pthread_cond_t g_lib_cv = PTHREAD_COND_INITIALIZER;
-static VkPipeline lib_make(int kind, const void *key, size_t klen, VkGraphicsPipelineCreateInfo *ci, VkGraphicsPipelineLibraryFlagsEXT part, int *refused, uint64_t vs, uint64_t fs) {
+// PEANUTS begin: how: LM_MAKE as before; LM_FETCH (the frame path, gfx_obtain): from the maps or the driver's cache only (FAIL_ON_PIPELINE_COMPILE_REQUIRED), never a
+// compile and never a wait for another thread's: VK_NULL_HANDLE then, the entry left free; LM_DISCARD (the preparing step and the prefetch, prog_parts): compiled
+// into the driver's cache and destroyed, the maps untouched (a game has tens of thousands of shader parts and draws with a few hundred). The shader parts go into
+// their own cache (g_pcl, pcl_open), saved apart from the pipelines' cache (pcl_save: every 30 s of the preparing step and at its end, then when the background thread has caught up)
+enum { LM_MAKE, LM_FETCH, LM_DISCARD };
+static VkPipelineCache g_pcl; static _Atomic uint64_t g_pcl_made, g_ft_n, g_ft_miss, g_ft_ns, g_ft_max_ns;
+#define GPL_YES ((VkPipeline)(uintptr_t)1)
+// PEANUTS end
+static VkPipeline lib_make(int kind, const void *key, size_t klen, VkGraphicsPipelineCreateInfo *ci, VkGraphicsPipelineLibraryFlagsEXT part, int *refused, uint64_t vs, uint64_t fs, int how) {   // PEANUTS: how
     uint64_t h = fnv(key, klen, 1469598103934665603ull);
+    int shp = kind == L_PRE || kind == L_PREFS;
+    // PEANUTS begin
+    VkPipelineCache pc = (shp || kind == L_FS) && g_pcl ? g_pcl : g_pc;
+    if (how == LM_DISCARD) {
+        VkGraphicsPipelineLibraryCreateInfoEXT li = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT, .pNext = shp && (g_pre_adapt & A_NORI) ? NULL : ci->pNext, .flags = part};
+        ci->pNext = &li; ci->flags |= VK_PIPELINE_CREATE_LIBRARY_BIT_KHR | (g_pre_adapt & A_RETAIN ? VK_PIPELINE_CREATE_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT : 0);
+        VkPipeline p = VK_NULL_HANDLE; VkResult r = vk.vkCreateGraphicsPipelines(V.dev, pc, 1, ci, NULL, &p);
+        ci->pNext = li.pNext;
+        if (!r && p) { vk.vkDestroyPipeline(V.dev, p, NULL); atomic_fetch_add(&g_pcl_made, 1); return GPL_YES; }
+        return VK_NULL_HANDLE;
+    }
     pthread_mutex_lock(&g_mu);
-    void *hit;
-    while ((hit = km_get(&g_lib[kind], key, h)) == LIB_BUSY) pthread_cond_wait(&g_lib_cv, &g_mu);   // (looked up again: an adaptation may have emptied the map meanwhile)
-    if (!hit) km_put(&g_lib[kind], key, h, LIB_BUSY);
+    void *hit; void **sl;
+    for (;;) {   // (looked up again after a wait: an adaptation may have emptied the map meanwhile)
+        sl = km_slot(&g_lib[kind], key, h); hit = sl ? *sl : NULL;
+        if (hit != LIB_BUSY) break;
+        if (how == LM_FETCH) { pthread_mutex_unlock(&g_mu); return VK_NULL_HANDLE; }
+        pthread_cond_wait(&g_lib_cv, &g_mu);
+    }
+    if (!hit) { if (sl) *sl = LIB_BUSY; else km_put(&g_lib[kind], key, h, LIB_BUSY); }   // (an entry a fetch left free is taken again)
     pthread_mutex_unlock(&g_mu);
     if (hit) return hit == LIB_REFUSED ? VK_NULL_HANDLE : (VkPipeline)hit;
-    int shp = kind == L_PRE || kind == L_PREFS;
+    // PEANUTS end
     VkGraphicsPipelineLibraryCreateInfoEXT li = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT, .pNext = shp && (g_pre_adapt & A_NORI) ? NULL : ci->pNext, .flags = part};
-    ci->pNext = &li; ci->flags |= VK_PIPELINE_CREATE_LIBRARY_BIT_KHR | (g_pre_adapt & A_RETAIN ? VK_PIPELINE_CREATE_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT : 0);
+    ci->pNext = &li; ci->flags |= VK_PIPELINE_CREATE_LIBRARY_BIT_KHR | (g_pre_adapt & A_RETAIN ? VK_PIPELINE_CREATE_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT : 0)
+                                  | (how == LM_FETCH ? VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT : 0);   // PEANUTS: LM_FETCH
     uint64_t t0 = now_ns();
-    int bs = build_begin(g_lib_name[kind], vs, fs);
-    VkPipeline p = VK_NULL_HANDLE; VkResult r = vk.vkCreateGraphicsPipelines(V.dev, shp && (g_pre_adapt & A_NOCACHE) ? VK_NULL_HANDLE : g_pc, 1, ci, NULL, &p);
-    build_end(bs);
+    int bs = how == LM_FETCH ? -1 : build_begin(g_lib_name[kind], vs, fs);   // PEANUTS: (a fetch compiles nothing)
+    VkPipeline p = VK_NULL_HANDLE; VkResult r = vk.vkCreateGraphicsPipelines(V.dev, shp && (g_pre_adapt & A_NOCACHE) ? VK_NULL_HANDLE : pc, 1, ci, NULL, &p);   // PEANUTS: pc
+    if (bs >= 0) build_end(bs);   // PEANUTS
     ci->pNext = li.pNext;
     double ms_ = (now_ns() - t0) / 1e6;
+    int nofetch = how == LM_FETCH && (r || !p);   // PEANUTS: not in the driver's cache (VK_PIPELINE_COMPILE_REQUIRED): the entry is left free
     pthread_mutex_lock(&g_mu);
     if (r) p = VK_NULL_HANDLE; else g_nlib[kind]++;
-    g_lib_ms += ms_;
+    if (how != LM_FETCH) g_lib_ms += ms_;   // PEANUTS: (the fetches are counted apart, below)
     void **slot = km_slot(&g_lib[kind], key, h);   // (gone if an adaptation emptied the map while it was made: then not kept, as it was made without the adaptation)
-    if (slot) *slot = p ? (void *)p : LIB_REFUSED;
+    if (slot) *slot = p ? (void *)p : nofetch ? NULL : LIB_REFUSED;   // PEANUTS: nofetch
     pthread_cond_broadcast(&g_lib_cv);
     pthread_mutex_unlock(&g_mu);
+    // PEANUTS begin
+    if (how == LM_FETCH) {
+        uint64_t d = now_ns() - t0, mx = atomic_load(&g_ft_max_ns);
+        atomic_fetch_add(&g_ft_ns, d); while (d > mx && !atomic_compare_exchange_weak(&g_ft_max_ns, &mx, d)) {}
+        if (p) atomic_fetch_add(&g_ft_n, 1); else atomic_fetch_add(&g_ft_miss, 1);
+        return p;
+    }
+    if (!r && (shp || kind == L_FS)) atomic_fetch_add(&g_pcl_made, 1);
+    // PEANUTS end
     if (r) { if (refused) *refused = r; static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("graphics pipeline library (%s): %d; the whole pipeline is made instead", g_lib_name[kind], r); }
     else if (ms_ > 50) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 100) VLOG("graphics pipeline library (%s) took %.0f ms", g_lib_name[kind], ms_); }
     return p;
@@ -762,17 +811,23 @@ static unsigned pre_probe(const VkGraphicsPipelineCreateInfo *ci0, const pstate 
     return a;
 }
 // The parts of P, each made once; then the link. VK_NULL_HANDLE = a part failed (the caller makes the whole pipeline)
-static VkPipeline gpl_link(pstate *P, const vka_gkey *k) {
+// PEANUTS begin: mode GPL_FETCH (the frame path): the shader parts from the maps or the driver's cache only (lib_make LM_FETCH), then the link; VK_NULL_HANDLE when
+// one of them would have to be compiled. GPL_SHADERS (prog_parts): only the shader parts, compiled into the driver's cache and destroyed; non-null when made
+enum { GPL_LINK, GPL_FETCH, GPL_SHADERS };
+// PEANUTS end
+static VkPipeline gpl_link(pstate *P, const vka_gkey *k, int mode) {   // PEANUTS: mode
+    int how = mode == GPL_FETCH ? LM_FETCH : mode == GPL_SHADERS ? LM_DISCARD : LM_MAKE;   // PEANUTS: the shader parts' (the other parts are always made)
     const vka_shader *pre0 = P->mesh ? P->sh[7] : P->sh[0];
     uint64_t vs_key = pre0 ? pre0->key : 0;
     uint64_t fs_key = P->sh[1] ? P->sh[1]->key : 0;
     VkDynamicState dl[NLIB][24]; VkPipelineDynamicStateCreateInfo dy[NLIB];
     for (int i = 0; i < NLIB; i++) dyn_of(P, i, dl[i], &dy[i]);
     VkPipeline part[4]; uint32_t nparts = 0;
+    if (mode != GPL_SHADERS)   // PEANUTS: (the prepared parts are the shader ones)
     {   vikey key; memset(&key, 0, sizeof key); key.topo = k->topo; key.vin_static = k->vin_static;
         if (k->vin_static) { memcpy(key.va, k->va, sizeof key.va); memcpy(key.vb, k->vb, sizeof key.vb); }
         VkGraphicsPipelineCreateInfo ci = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pVertexInputState = &P->vi, .pInputAssemblyState = &P->ia, .pDynamicState = &dy[L_VI]};
-        if (!(part[nparts++] = lib_make(L_VI, &key, sizeof key, &ci, VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT, NULL, 0, 0))) return VK_NULL_HANDLE; }
+        if (!(part[nparts++] = lib_make(L_VI, &key, sizeof key, &ci, VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT, NULL, 0, 0, LM_MAKE))) return VK_NULL_HANDLE; }   // PEANUTS: LM_MAKE
     VkPipelineShaderStageCreateInfo pre[4], *fs = NULL; uint32_t npre = 0;
     for (uint32_t i = 0; i < P->ns; i++) { if (P->ss[i].stage == VK_SHADER_STAGE_FRAGMENT_BIT) fs = &P->ss[i]; else if (npre < 4) pre[npre++] = P->ss[i]; }
     VkPipelineRenderingCreateInfo ri0 = {VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};   // the shader parts take only the view mask (0); the formats are the output's
@@ -790,13 +845,13 @@ static VkPipeline gpl_link(pstate *P, const vka_gkey *k) {
         VkGraphicsPipelineCreateInfo ci = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &ri0, .stageCount = nb, .pStages = both, .pTessellationState = P->tess ? &P->ts : NULL,
                                            .pViewportState = &P->vp, .pRasterizationState = &P->rs, .pMultisampleState = &P->ms, .pDepthStencilState = &P->ds, .pDynamicState = &dy[L_PREFS], .layout = P->ci.layout,
                                            .renderPass = rp};
-        if (!(part[nparts++] = lib_make(L_PREFS, &key, sizeof key, &ci, VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT | VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT, NULL, vs_key, fs_key))) return VK_NULL_HANDLE;
+        if (!(part[nparts++] = lib_make(L_PREFS, &key, sizeof key, &ci, VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT | VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT, NULL, vs_key, fs_key, how))) return VK_NULL_HANDLE;   // PEANUTS: how
     } else {
         VkGraphicsPipelineCreateInfo ci = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &ri0, .stageCount = npre, .pStages = pre, .pTessellationState = P->tess ? &P->ts : NULL,
                                            .pViewportState = &P->vp, .pRasterizationState = &P->rs, .pDynamicState = &dy[L_PRE], .layout = P->ci.layout, .renderPass = rp};
         int refused = 0;
         VkGraphicsPipelineCreateInfo ci_probe = ci;   // (lib_make chains its own structure onto ci and restores it)
-        if (!(part[nparts++] = lib_make(L_PRE, &pk, sizeof pk, &ci, VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT, &refused, vs_key, 0))) {
+        if (!(part[nparts++] = lib_make(L_PRE, &pk, sizeof pk, &ci, VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT, &refused, vs_key, 0, how))) {   // PEANUTS: how
             if (refused && !__atomic_load_n(&g_nlib[L_PRE], __ATOMIC_RELAXED)) {
                 int first = 0;
                 pthread_mutex_lock(&g_mu); int nref = ++g_pre_refused; if (!g_pre_probed) { g_pre_probed = 1; first = 1; } pthread_mutex_unlock(&g_mu);
@@ -814,14 +869,15 @@ static VkPipeline gpl_link(pstate *P, const vka_gkey *k) {
         }
         VkGraphicsPipelineCreateInfo cf = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &ri0, .stageCount = fs ? 1 : 0, .pStages = fs, .pMultisampleState = &P->ms,
                                            .pDepthStencilState = &P->ds, .pDynamicState = &dy[L_FS], .layout = P->ci.layout, .renderPass = rp};
-        if (!(part[nparts++] = lib_make(L_FS, &fk, sizeof fk, &cf, VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT, NULL, 0, fs_key))) return VK_NULL_HANDLE;
+        if (!(part[nparts++] = lib_make(L_FS, &fk, sizeof fk, &cf, VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT, NULL, 0, fs_key, how))) return VK_NULL_HANDLE;   // PEANUTS: how
     }
+    if (mode == GPL_SHADERS) return GPL_YES;   // PEANUTS
     {   fokey key; memset(&key, 0, sizeof key);
         memcpy(key.cfmt, k->cfmt, sizeof key.cfmt); key.dfmt = k->dfmt; key.sfmt = k->sfmt; key.ncolor = k->ncolor; key.samples = (uint8_t)P->ms.rasterizationSamples; key.a2c = k->a2c;
         key.logic_en = k->logic_en; key.logic_op = k->logic_op; key.vin_static = (uint8_t)k->vin_static; memcpy(key.att, k->att, sizeof key.att);
         VkGraphicsPipelineCreateInfo ci = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &P->ri, .pMultisampleState = &P->ms, .pColorBlendState = &P->bs, .pDynamicState = &dy[L_FO],
                                            .renderPass = rp};   // (with a render pass the formats come from it; P->ri is then ignored)
-        if (!(part[nparts++] = lib_make(L_FO, &key, sizeof key, &ci, VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT, NULL, 0, 0))) return VK_NULL_HANDLE; }
+        if (!(part[nparts++] = lib_make(L_FO, &key, sizeof key, &ci, VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT, NULL, 0, 0, LM_MAKE))) return VK_NULL_HANDLE; }   // PEANUTS: LM_MAKE
     VkPipelineLibraryCreateInfoKHR libs = {VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR, .libraryCount = nparts, .pLibraries = part};
     VkGraphicsPipelineCreateInfo ci = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &libs, .layout = P->ci.layout, .renderPass = rp};   // no LINK_TIME_OPTIMIZATION: the fast link
     uint64_t t0 = now_ns();
@@ -919,6 +975,7 @@ static uint64_t gate_hold(int tok, uint64_t key) {
 typedef struct opt_job { struct opt_job *next; gval *g; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; } opt_job;
 static opt_job *g_opt_head, **g_opt_tail = &g_opt_head; static pthread_mutex_t g_opt_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_opt_cv = PTHREAD_COND_INITIALIZER;
 static uint64_t g_opt_waiting;
+static _Atomic int g_as_depth;   // PEANUTS: the asynchronous queue's depth (defined with the queue, below), for opt_main
 static void *opt_main(void *a) {
     (void)a; pthread_setname_np(pthread_self(), "vk-psopt"); vka_fp_host("vk-psopt");
     // Under the game's threads, as the prewarm and asynchronous threads: nothing waits for an optimized pipeline (its linked one draws meanwhile). Before 2026-11-10 it kept
@@ -933,6 +990,7 @@ static void *opt_main(void *a) {
         pthread_mutex_unlock(&g_opt_mu);
         const vka_shader *pre = j->sh[7] ? j->sh[7] : j->sh[0];
         uint64_t key = pre ? pre->key : (j->sh[1] ? j->sh[1]->key : 0);
+        while (atomic_load(&g_as_depth) > 0) { usleep(2000); pause_point(); }   // PEANUTS: not while a draw waits for its pipeline (Turnip compiles one at a time)
         int tok = gate_enter(0, gate_heavy(pre, j->sh[1]));   // speculative: its linked pipeline draws meanwhile
         gate_hold(tok, key);
         pstate *P = malloc(sizeof *P);
@@ -1159,7 +1217,7 @@ static void *pw_main(void *a) {
                                 if (t0) atomic_fetch_add(&g_pw_memwait_ns, now_ns() - t0); }
         uint32_t i = me == 0 ? atomic_fetch_add(&g_pw_next_mesh, 1) : nm;   // the mesh thread: the next mesh record while there is one
         if (i >= nm) { uint32_t q = atomic_fetch_add(&g_pw_next, 1); i = nm + q; }
-        if (i >= limit) break;   // PEANUTS: match the startup progress total
+        if (i >= limit || atomic_load(&g_pp_skip)) break;   // PEANUTS: match the startup progress total; Play anyway
         pwrec r; memcpy(&r, g_pw_load + offs[i], sizeof r);
         const uint8_t *kb = g_pw_load + offs[i] + sizeof r;
         vka_shader *sh[VKA_NSTAGE]; memset(sh, 0, sizeof sh); int bad = !vka_pw_rec_ok(&r, kb);
@@ -1220,6 +1278,7 @@ static void *pw_main(void *a) {
              (unsigned)atomic_load(&g_pw_had), (unsigned)atomic_load(&g_pw_bad), atomic_load(&g_pw_wait_ns) / 1e6, atomic_load(&g_pw_memwait_ns) / 1e9,
              atomic_load(&g_pw_heavywait_ns) / 1e9);
     }   // PEANUTS: end of the last-worker block
+    atomic_fetch_sub(&g_pw_running, 1);   // PEANUTS
     return NULL;
 }
 // DM_VK_PREWARM threads (default 4, at most 4; 2 before 2026-11-08). With the pipeline cache warm a key costs a few milliseconds (297 in 0.1 s on 2 threads); with it
@@ -1254,7 +1313,8 @@ static void pw_start(int wait) {
     pthread_mutex_lock(&g_pw_start_mu);   // PEANUTS: publish worker count before workers enter the loop
     for (int i = 0; i < nt; i++) {
         pthread_t *thread = &g_pw_workers[g_pw_threads];
-        if (pthread_create(thread, NULL, pw_main, NULL)) continue;
+        atomic_fetch_add(&g_pw_running, 1);   // PEANUTS
+        if (pthread_create(thread, NULL, pw_main, NULL)) { atomic_fetch_sub(&g_pw_running, 1); continue; }   // PEANUTS: g_pw_running
         if (!wait) pthread_detach(*thread);
         g_pw_threads++;
     }
@@ -1288,6 +1348,14 @@ static void busy_wait(gval *g) {
 typedef struct as_job { struct as_job *next; gval *g; size_t len; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; uint64_t t0, cost; int cs; } as_job;
 static as_job *g_as_head, **g_as_tail = &g_as_head; static pthread_mutex_t g_as_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_as_cv = PTHREAD_COND_INITIALIZER;
 static _Atomic uint64_t g_as_queued, g_as_made, g_as_skips, g_as_ns, g_as_lat_max_ns; static _Atomic int g_as_depth, g_as_depth_max;
+// PEANUTS begin: whether the frame path's last lookup that returned no pipeline did so because a background thread is to make it, not because the driver refused it
+// (the replay thread's only, as the lookups), and how many pipelines the asynchronous threads have queued or are making: vka_draw.c counts those skips apart from the
+// driver's refusals, and the "Preparing graphics" notice says while they happen (vka_warmnote.h)
+static int g_last_pending;
+int vka_pso_last_pending(void) { return g_last_pending; }
+// (a draw may also be skipped for a pipeline a prewarm thread is making, which is in no queue: counted as one while those threads run, so the notice stays up)
+int vka_pso_waiting(void) { int d = atomic_load_explicit(&g_as_depth, memory_order_relaxed); if (d < 0) d = 0; return d + (atomic_load_explicit(&g_pw_running, memory_order_relaxed) > 0 && !d ? 1 : 0); }
+// PEANUTS end
 // The queue's order (vka_psogate.h vkpg_take_oldest): the job of least predicted cost first, the oldest in its turn. DM_VK_PSO_ORDER=0 (restart): arrival order, as
 // before 2026-11-11. DM_VK_PSO_FAIR_MS (restart, 2000; 0 never): how long the oldest job waits before it takes turns with the cheapest. Under g_as_mu: g_as_credit (ns)
 // PEANUTS: the draws not skipped (vka_gfx_pipeline_now): their pipelines by reason (vka_psosync.h: a small target, memory written), the frame time they took, and
@@ -1382,6 +1450,338 @@ void vka_pso_async_line(char *out, size_t n) {
              g_as_order ? "least cost first, the oldest in turn (DM_VK_PSO_ORDER)" : "in arrival order (DM_VK_PSO_ORDER=0)",
              (unsigned long long)cn, cl, (unsigned long long)on, ol);
 }
+// PEANUTS begin: programs prepared before they are drawn.
+// The build translates a game's shaders to SPIR-V, but the GPU driver still compiles each to its own code, and until 2026-11-20 it did so at a program's first draw:
+// with DM_VK_PSO_ASYNC that draw, and every draw of the program until its parts were compiled, was skipped (black or missing geometry on a first run), and without it
+// the frame waited (10-30 ms a shader part on the AYN Thor's Turnip, one compile at a time). The compile of a shader part needs the shaders and their layout, not the
+// draw's state (the state is in the vertex input and fragment output parts, which compile nothing), so it is done ahead:
+//  - the profile lists the game's programs (dm/games/<id>/shader_pairs.tsv, pso_pairs.tsv: the vertex and pixel shader of every variation in the game's files; the
+//    APK's <id>.pairs, DM_PROFILE_PAIRS). vka_pso_prepare_launch compiles their shader parts into the driver's cache before the game starts, behind the launcher's
+//    "Preparing shaders" progress (pp_prepare): once per driver and shader library, minutes for a large game (Super Mario Odyssey: 20,741 pairs);
+//  - a program the game sets that the list lacks (nvnProgramSetShaders, mtl_prog_prefetch) is kept in a list beside the prewarm list (<prewarm list>.programs2) and its
+//    parts are compiled on a background thread while no draw waits for a pipeline (pf_main); the next start prepares what that thread did not reach;
+//  - a draw whose pipeline is missing fetches its shader parts from the driver's cache and links them on the frame path (gfx_obtain: no compile, the link 0.02 ms).
+// The parts are compiled for the state most draws have (the base modules, one sample, no alpha test, filled polygons, no depth clamp, the depth mode of the last run):
+// a draw with another state misses as before (queued, skipped until made). Super Mario Odyssey sets 26,874 programs while it boots and draws with about 300 of them
+// in its first minute and a half: compiled as they were set, in order, the first run's draws waited behind them (14,156 skipped against 1,507), hence the list.
+// Switches (restart): DM_VK_PSO_PREP=0 no preparing step, DM_VK_PSO_PREP_THREADS (default 4) its threads, DM_VK_PSO_PREFETCH=0 no background compiles of the
+// programs the game sets, DM_VK_PSO_LINK_NOW=0 no fetch and link on the frame path
+// A program: its stage keys as nvnProgramSetShaders makes them (prog_key), and the state its shader parts are keyed by when a draw asked for other than the usual
+// (all zero, samples 1: what a program set by the game or listed by the profile is prepared with). 64 bytes in the learned programs' file
+typedef struct { uint8_t md[6][8]; uint8_t n, fs_variant, alpha_func, a2c, samples, depth_clamp, poly_mode, pad; uint32_t vin_u, vin_s; } prec;
+_Static_assert(sizeof(prec) == 64, "prec is a file record");
+typedef struct { uint64_t magic, lib, pairs_id; uint32_t pairs_done, learn_done, depth_zero, pad; } pstamp;
+#define PSTAMP_MAGIC 0x3250524750544e50ull   // "PNTPGRP2"
+static prec *g_pairs, *g_learn; static size_t g_npairs, g_nlearn, g_learn_cap, g_learn_saved; static uint64_t g_pairs_id;
+static uint64_t *g_pl_set; static size_t g_pl_cap, g_pl_n;   // the programs known (pairs and learned), by a hash free of the stages' order; under g_pl_mu
+static pthread_mutex_t g_pl_mu = PTHREAD_MUTEX_INITIALIZER;
+static _Atomic uint32_t g_pairs_done, g_learn_done; static _Atomic int g_prep_depth_zero = -1;   // -1: no run has said yet
+static char g_pcl_path[1100], g_pl_path[1200]; static uint64_t g_pcl_saved, g_pcl_save_ns;
+static _Atomic uint64_t g_pp_made, g_pp_none, g_pp_ns;
+static _Atomic uint64_t g_pf_set, g_pf_new, g_pf_made, g_pf_ns;
+static _Atomic uint64_t g_ln_n, g_ln_ns, g_ln_max_ns, g_ln_unready;   // the frame path's links (gfx_obtain) and the misses whose shader parts the cache lacked
+// The whole lists are prepared only where memory allows: the driver keeps a parts cache in memory once read (Super Mario Odyssey's 251 MB of parts: 460 MB more
+// at the end of the same route on the AYN Thor). Under DM_VK_PSO_PREP_MEM_MB of RAM (default 10000) only the programs whose draws missed are learned and
+// prepared, not the profile's lists nor every program the game sets. DM_VK_PSO_PREP=2: the whole lists whatever the memory
+static int prep_full(void) {
+    static _Atomic int v = -1; int r = atomic_load(&v);
+    if (r >= 0) return r;
+    FILE *f = fopen("/proc/meminfo", "r"); char line[128]; uint64_t kb = 0;
+    while (f && fgets(line, sizeof line, f)) if (!strncmp(line, "MemTotal:", 9)) { kb = strtoull(line + 9, NULL, 10); break; }
+    if (f) fclose(f);
+    r = VKA_ENV("DM_VK_PSO_PREP", 1) >= 2 || (kb >> 10) >= (uint64_t)VKA_ENV("DM_VK_PSO_PREP_MEM_MB", 10000);
+    atomic_store(&v, r);
+    return r;
+}
+static int link_now_on(void) { static int v = -1; if (v < 0) v = VKA_ENV("DM_VK_PSO_LINK_NOW", 1) != 0; return v; }
+static uint64_t prec_hash(const prec *r) {
+    uint64_t h = 0;
+    for (unsigned i = 0; i < r->n && i < 6; i++) h += fnv(r->md[i], 8, 1469598103934665603ull) * 0x9e3779b97f4a7c15ull;
+    h ^= fnv(&r->fs_variant, sizeof *r - offsetof(prec, fs_variant), 1469598103934665603ull) * (r->fs_variant | r->alpha_func | r->a2c | r->depth_clamp | r->poly_mode | r->vin_u | r->vin_s | (r->samples > 1) ? 1 : 0);
+    return h ? h : 1;
+}
+static int pl_add(uint64_t h) {   // 1 = new; under g_pl_mu
+    if (2 * (g_pl_n + 1) > g_pl_cap) {
+        size_t nc = g_pl_cap ? 2 * g_pl_cap : 4096; uint64_t *n = calloc(nc, sizeof *n); if (!n) return 0;
+        for (size_t i = 0; i < g_pl_cap; i++) if (g_pl_set[i]) { size_t j = g_pl_set[i] & (nc - 1); while (n[j]) j = (j + 1) & (nc - 1); n[j] = g_pl_set[i]; }
+        free(g_pl_set); g_pl_set = n; g_pl_cap = nc;
+    }
+    size_t j = h & (g_pl_cap - 1);
+    while (g_pl_set[j]) { if (g_pl_set[j] == h) return 0; j = (j + 1) & (g_pl_cap - 1); }
+    g_pl_set[j] = h; g_pl_n++;
+    return 1;
+}
+static void *pl_slurp(const char *path, size_t *n) {
+    *n = 0;
+    FILE *f = path && *path ? fopen(path, "rb") : NULL; if (!f) return NULL;
+    fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);
+    if (sz >= (1024l << 20)) VRED_ONCE("%s is %ld MiB: not read (over 1024 MiB)", path, sz >> 20);   // (never silently: a parts cache not read is prepared again at every start)
+    void *d = sz > 0 && sz < (1024l << 20) ? malloc((size_t)sz) : NULL;
+    if (d && fread(d, 1, (size_t)sz, f) == (size_t)sz) *n = (size_t)sz; else { free(d); d = NULL; }
+    fclose(f);
+    return d;
+}
+// The shader parts' cache, the profile's pairs and the learned programs, read once (pc_open_once, after the pipelines' cache)
+static void pcl_open(void) {
+    if (!V.gpl) return;
+    if (g_pc_path[0]) snprintf(g_pcl_path, sizeof g_pcl_path, "%s.parts", g_pc_path);
+    if (g_pw_path[0]) snprintf(g_pl_path, sizeof g_pl_path, "%s.programs2", g_pw_path);
+    size_t n = 0; void *data = pl_slurp(g_pcl_path, &n);
+    if (n > 32) {
+        uint32_t hl, ver, vendor, devid; uint8_t uuid[VK_UUID_SIZE];
+        memcpy(&hl, data, 4); memcpy(&ver, (uint8_t *)data + 4, 4); memcpy(&vendor, (uint8_t *)data + 8, 4); memcpy(&devid, (uint8_t *)data + 12, 4); memcpy(uuid, (uint8_t *)data + 16, VK_UUID_SIZE);
+        if (hl < 32 || ver != VK_PIPELINE_CACHE_HEADER_VERSION_ONE || vendor != V.props.vendorID || devid != V.props.deviceID || memcmp(uuid, V.props.pipelineCacheUUID, VK_UUID_SIZE)) n = 0;
+    } else n = 0;
+    // The pairs: 16 bytes a row (the vertex key, the pixel key, each its 16 hexadecimal digits as bytes)
+    size_t pn = 0; uint8_t *pd = prep_full() ? pl_slurp(getenv("DM_PROFILE_PAIRS"), &pn) : NULL;
+    // and the profile's program list (DM_PROFILE_PROGRAMS: dm/games/<id>/vk_programs.bin, the learned programs' file of a run of the game, 64 bytes a record): the
+    // programs the game sets that its files do not pair, and the states its draws asked for; after the pairs, as one list
+    size_t qn = 0; uint8_t *qd = prep_full() ? pl_slurp(getenv("DM_PROFILE_PROGRAMS"), &qn) : NULL; size_t nq = qn / sizeof(prec);
+    g_npairs = pn / 16; g_pairs = g_npairs + nq ? calloc(g_npairs + nq, sizeof *g_pairs) : NULL; if (!g_pairs) g_npairs = nq = 0;
+    for (size_t i = 0; i < g_npairs; i++) { memcpy(g_pairs[i].md[0], pd + 16 * i, 8); memcpy(g_pairs[i].md[1], pd + 16 * i + 8, 8); g_pairs[i].n = 2; g_pairs[i].samples = 1; }
+    g_pairs_id = g_npairs ? fnv(pd, g_npairs * 16, 1469598103934665603ull) : 0;
+    if (nq) { memcpy(g_pairs + g_npairs, qd, nq * sizeof(prec)); for (size_t i = 0; i < nq; i++) if (g_pairs[g_npairs + i].n > 6) g_pairs[g_npairs + i].n = 0;
+              g_pairs_id = fnv(qd, nq * sizeof(prec), g_pairs_id ? g_pairs_id : 1469598103934665603ull); g_npairs += nq; }
+    free(pd); free(qd);
+    size_t ln = 0; void *ld = pl_slurp(g_pl_path, &ln);
+    pthread_mutex_lock(&g_pl_mu);
+    for (size_t i = 0; i < g_npairs; i++) pl_add(prec_hash(&g_pairs[i]));
+    g_nlearn = ln / sizeof(prec); g_learn_cap = g_nlearn + 1024; g_learn = calloc(g_learn_cap, sizeof *g_learn);
+    if (g_learn && g_nlearn) memcpy(g_learn, ld, g_nlearn * sizeof(prec)); else g_nlearn = 0;
+    for (size_t i = 0; i < g_nlearn; i++) { if (g_learn[i].n > 6) g_learn[i].n = 0; pl_add(prec_hash(&g_learn[i])); }
+    g_learn_saved = g_nlearn;
+    pthread_mutex_unlock(&g_pl_mu);
+    free(ld);
+    // The stamp: how far the lists were compiled into this cache file, for which library and pairs
+    char sp[1200]; snprintf(sp, sizeof sp, "%s.done", g_pcl_path);
+    size_t sn = 0; pstamp *st = g_pcl_path[0] ? pl_slurp(sp, &sn) : NULL;
+    uint32_t pdone = 0, ldone = 0;
+    if (st && sn == sizeof *st && st->magic == PSTAMP_MAGIC) {
+        atomic_store(&g_prep_depth_zero, st->depth_zero ? 1 : 0);   // (the last run's depth mode holds whatever the cache)
+        if (n && st->lib == vka_shader_lib_id() && st->pairs_id == g_pairs_id) { pdone = st->pairs_done; ldone = st->learn_done; }
+        else n = 0;   // another library's or another list's parts: started empty
+    } else n = 0;
+    free(st);
+    if (pdone > g_npairs) pdone = (uint32_t)g_npairs;
+    if (ldone > g_nlearn) ldone = (uint32_t)g_nlearn;
+    atomic_store(&g_pairs_done, pdone); atomic_store(&g_learn_done, ldone);
+    VkPipelineCacheCreateInfo ci = {VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, .initialDataSize = n, .pInitialData = n ? data : NULL};
+    VkResult r = vk.vkCreatePipelineCache(V.dev, &ci, NULL, &g_pcl);
+    if (r && n) { ci.initialDataSize = 0; ci.pInitialData = NULL; n = 0; atomic_store(&g_pairs_done, 0); atomic_store(&g_learn_done, 0); r = vk.vkCreatePipelineCache(V.dev, &ci, NULL, &g_pcl); }
+    if (r) g_pcl = VK_NULL_HANDLE;
+    if (!n) { atomic_store(&g_pairs_done, 0); atomic_store(&g_learn_done, 0); }
+    free(data);
+    VLOG("shader parts cache %s: %zu bytes read; programs: %zu of the profile (%u prepared), %zu set by the game in earlier runs (%u prepared)%s%s", g_pcl_path[0] ? g_pcl_path : "(not kept)", n,
+         g_npairs, (unsigned)atomic_load(&g_pairs_done), g_nlearn, (unsigned)atomic_load(&g_learn_done), g_pcl ? "" : "; no cache made: the parts go into the pipelines' cache",
+         prep_full() ? "" : "; under DM_VK_PSO_PREP_MEM_MB of memory: only the programs whose draws missed are prepared, not the profile's lists");
+}
+// The shader parts' cache, its stamp and the learned programs to their files: force 1 now, else when parts were made since and the last save is a minute old
+static void pcl_save(int force) {
+    uint64_t t = now_ns();
+    if (g_pl_path[0]) {
+        pthread_mutex_lock(&g_pl_mu);
+        size_t nl = g_nlearn; prec *cp = nl != g_learn_saved ? malloc(nl * sizeof *cp + 1) : NULL;
+        if (cp) memcpy(cp, g_learn, nl * sizeof *cp);
+        pthread_mutex_unlock(&g_pl_mu);
+        if (cp) { char tmp[1300]; snprintf(tmp, sizeof tmp, "%s.tmp", g_pl_path); if (pc_write_atomic(g_pl_path, tmp, cp, nl * sizeof *cp)) g_learn_saved = nl; free(cp); }
+    }
+    if (!g_pcl || !g_pcl_path[0]) return;
+    uint64_t made = atomic_load(&g_pcl_made);
+    if (made == g_pcl_saved) return;
+    // (the copy holds the driver's cache for its 250 MB: a fetch on the frame path waited 78 ms for one. Not every minute: when the background thread has caught
+    // up with the game's programs (pf_main), at a forced save, else every ten minutes)
+    if (!force && t - g_pcl_save_ns < 600000000000ull) return;
+    g_pcl_save_ns = t;
+    pstamp st = {PSTAMP_MAGIC, vka_shader_lib_id(), g_pairs_id, atomic_load(&g_pairs_done), atomic_load(&g_learn_done), (uint32_t)(atomic_load(&g_prep_depth_zero) > 0), 0};   // (read before the copy: no more than it holds)
+    size_t n = 0; void *d = NULL; VkResult gr = VK_INCOMPLETE;
+    for (int tr = 0; tr < 3 && gr == VK_INCOMPLETE; tr++) {
+        size_t q = 0; if (vk.vkGetPipelineCacheData(V.dev, g_pcl, &q, NULL) || !q) { gr = VK_ERROR_UNKNOWN; break; }
+        n = q + q / 4; free(d); d = malloc(n); if (!d) { gr = VK_ERROR_OUT_OF_HOST_MEMORY; break; }
+        gr = vk.vkGetPipelineCacheData(V.dev, g_pcl, &n, d);
+    }
+    if (gr == VK_SUCCESS) {
+        char tmp[1200], sp[1200], stt[1300]; snprintf(tmp, sizeof tmp, "%s.tmp", g_pcl_path); snprintf(sp, sizeof sp, "%s.done", g_pcl_path); snprintf(stt, sizeof stt, "%s.done.tmp", g_pcl_path);
+        unlink(sp);   // (a cache file without its stamp is started empty: never a stamp ahead of its file)
+        if (pc_write_atomic(g_pcl_path, tmp, d, n) && pc_write_atomic(sp, stt, &st, sizeof st)) {
+            g_pcl_saved = made;
+            VLOG("shader parts cache: %zu bytes written to %s (%u of the profile's programs and %u of the game's own prepared), %.0f ms", n, g_pcl_path, st.pairs_done, st.learn_done, (now_ns() - t) / 1e6);
+        } else VRED_ONCE("shader parts cache not written to %s", g_pcl_path);
+    }
+    free(d);
+}
+// The shader parts of one program, compiled into the driver's cache (or found there). 1 = made; 0 = not a program of this kind (a missing shader, mesh, compute) or refused
+static int prog_parts(const prec *r) {
+    vka_shader *sh[VKA_NSTAGE] = {0}; vka_layout lay;
+    if (!r->n || r->n > 6 || !vka_shaders_by_keys(r->md, r->n, sh) || !sh[0] || sh[5] || sh[6] || sh[7]) return 0;
+    if (!vka_layout_of(sh, 0, &lay)) return 0;
+    vka_gkey k; memset(&k, 0, sizeof k);
+    k.samples = r->samples ? r->samples : 1; k.topo = (uint8_t)VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; k.gl_depth = atomic_load(&g_prep_depth_zero) <= 0; k.vin_static = !V.vin_dyn;
+    k.fs_variant = r->fs_variant; k.alpha_func = r->alpha_func; k.a2c = r->a2c; k.depth_clamp = r->depth_clamp; k.poly_mode = r->poly_mode; k.vin_u = r->vin_u; k.vin_s = r->vin_s;
+    if (k.fs_variant >= VKA_FS_RETYPE) return 0;   // (retyped by the targets' formats: not a state kept here)
+    pstate *P = malloc(sizeof *P); int ok = 0;
+    if (P && pstate_fill(P, sh, &lay, &k)) ok = gpl_link(P, &k, GPL_SHADERS) != VK_NULL_HANDLE;
+    free(P);
+    return ok;
+}
+// The preparing step (vka_pso_prepare_launch, before the game's code runs): the programs of the lists this cache file lacks, on DM_VK_PSO_PREP_THREADS threads. The
+// launcher shows nxhost_prewarm_progress. Every 30 s what is finished so far is saved (a step that is stopped goes on from there)
+#define PP_MAXT 8
+static _Atomic uint32_t g_pp_next; static uint32_t g_pp_total, g_pp_base_pairs, g_pp_base_learn; static _Atomic uint32_t g_pp_cur[PP_MAXT];
+static _Atomic uint32_t g_pp_left = UINT32_MAX;   // the first program a thread left unmade when the step was skipped (those before it are all made)
+static const prec *pp_rec(uint32_t i) {   // the i-th program to prepare: the pairs left, then the learned ones left
+    uint32_t np = (uint32_t)g_npairs - g_pp_base_pairs;
+    return i < np ? &g_pairs[g_pp_base_pairs + i] : &g_learn[g_pp_base_learn + (i - np)];
+}
+static void *pp_main(void *a) {
+    int me = (int)(intptr_t)a; char nm[16]; snprintf(nm, sizeof nm, "vk-psoprep%d", me); pthread_setname_np(pthread_self(), nm); vka_fp_host("vk-psoprep");
+    for (;;) {
+        uint32_t i = atomic_fetch_add(&g_pp_next, 1);
+        if (i < g_pp_total && atomic_load(&g_pp_skip)) { uint32_t l = atomic_load(&g_pp_left); while (i < l && !atomic_compare_exchange_weak(&g_pp_left, &l, i)) {} i = g_pp_total; }
+        if (i >= g_pp_total) { atomic_store(&g_pp_cur[me], UINT32_MAX); break; }
+        atomic_store(&g_pp_cur[me], i);
+        uint64_t t0 = now_ns();
+        if (prog_parts(pp_rec(i))) atomic_fetch_add(&g_pp_made, 1); else atomic_fetch_add(&g_pp_none, 1);
+        atomic_fetch_add(&g_pp_ns, now_ns() - t0);
+        atomic_fetch_add(&g_pw_processed, 1);
+    }
+    return NULL;
+}
+static void pp_mark(uint32_t upto) {   // the first upto programs of this step are in the cache
+    uint32_t np = (uint32_t)g_npairs - g_pp_base_pairs;
+    atomic_store(&g_pairs_done, g_pp_base_pairs + (upto < np ? upto : np));
+    atomic_store(&g_learn_done, g_pp_base_learn + (upto < np ? 0 : upto - np));
+}
+static void pp_prepare(void) {
+    if (!VKA_ENV("DM_VK_PSO_PREP", 1) || getenv("DM_GLSLC_CAPTURE") || !vka_init()) return;
+    pc_open();
+    if (!gpl_on() || !g_pcl || !g_pcl_path[0]) return;
+    g_pp_base_pairs = atomic_load(&g_pairs_done); g_pp_base_learn = atomic_load(&g_learn_done);
+    g_pp_total = (uint32_t)(g_npairs - g_pp_base_pairs) + (uint32_t)(g_nlearn - g_pp_base_learn);
+    if (!g_pp_total) return;
+    int nt = VKA_ENV("DM_VK_PSO_PREP_THREADS", 4); nt = nt < 1 ? 1 : nt > PP_MAXT ? PP_MAXT : nt;
+    uint64_t t0 = now_ns(), last = t0;
+    VLOG("preparing shaders: the shader parts of %u programs (%u of the profile, %u set by the game in earlier runs) on %d threads, before the game starts", g_pp_total,
+         (unsigned)(g_npairs - g_pp_base_pairs), (unsigned)(g_nlearn - g_pp_base_learn), nt);
+    atomic_store(&g_pw_processed, 0); atomic_store(&g_pp_next, 0); atomic_store(&g_pw_start_total, (int)g_pp_total);
+    pthread_t th[PP_MAXT]; int up = 0;
+    for (int i = 0; i < nt; i++) { atomic_store(&g_pp_cur[i], 0); if (!pthread_create(&th[up], NULL, pp_main, (void *)(intptr_t)i)) up++; else atomic_store(&g_pp_cur[i], UINT32_MAX); }
+    // Play anyway (g_pp_skip): a thread ends once the program it is at is made, and the step waits for that: a single large shader takes 40 s of it in Super
+    // Mario Odyssey. Leaving that thread to finish beside the game's start was tried (2026-11-20): the game crashed in its own code in one of two starts
+    if (!up) { VRED_ONCE("preparing shaders: no thread could be started: nothing prepared"); return; }   // (nothing is marked made)
+    while (up) {
+        usleep(200000);
+        uint32_t low = atomic_load(&g_pp_next); int live = 0;
+        if (low > g_pp_total) low = g_pp_total;
+        for (int i = 0; i < nt; i++) { uint32_t c = atomic_load(&g_pp_cur[i]); if (c != UINT32_MAX) { live = 1; if (c < low) low = c; } }
+        if (!live) break;
+        if (atomic_load(&g_pp_skip)) continue;   // (no more saves: the threads are ending)
+        if (now_ns() - last > 30000000000ull) {
+            last = now_ns(); pp_mark(low);
+            pthread_mutex_lock(&g_save_mu); pcl_save(1); pthread_mutex_unlock(&g_save_mu);
+            VLOG("preparing shaders: %u of %u programs, %.0f s", low, g_pp_total, (last - t0) / 1e9);
+        }
+    }
+    for (int i = 0; i < up; i++) pthread_join(th[i], NULL);
+    uint32_t made_to = atomic_load(&g_pp_left) < g_pp_total ? atomic_load(&g_pp_left) : g_pp_total;
+    pp_mark(made_to);
+    if (made_to < g_pp_total) VLOG("preparing shaders: stopped at %u of %u programs (Play anyway): the rest is prepared at the next start", made_to, g_pp_total);
+    pthread_mutex_lock(&g_save_mu); pcl_save(1); pthread_mutex_unlock(&g_save_mu);
+    // The modules of every program were made for it: dropped, once the prewarm threads (which use modules too) are done and while no library is kept by module
+    while (atomic_load(&g_pw_running) > 0) usleep(20000);
+    pthread_mutex_lock(&g_mu); int kept = g_lib[L_PRE].n || g_lib[L_FS].n || g_lib[L_PREFS].n; pthread_mutex_unlock(&g_mu);
+    size_t dropped = kept ? 0 : vka_shader_drop_modules();
+    VLOG("preparing shaders: done, %u programs in %.1f s (%llu with their shader parts made, %llu without: a shader the library lacks or the driver refused; %.0f ms of compiles over %d threads); "
+         "%zu shader modules made for it dropped", g_pp_total, (now_ns() - t0) / 1e9, (unsigned long long)atomic_load(&g_pp_made), (unsigned long long)atomic_load(&g_pp_none),
+         atomic_load(&g_pp_ns) / 1e6, up, dropped);
+}
+// The programs the game sets (nvnProgramSetShaders): one the lists lack is added to the learned list and its shader parts are compiled here, while no draw waits for
+// a pipeline (the asynchronous queue is empty: Turnip compiles one at a time, and a draw's pipeline goes first)
+typedef struct pf_job { struct pf_job *next; prec r; } pf_job;
+static pf_job *g_pf_head, **g_pf_tail = &g_pf_head; static pthread_mutex_t g_pf_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_pf_cv = PTHREAD_COND_INITIALIZER;
+static void *pf_main(void *a) {
+    (void)a; pthread_setname_np(pthread_self(), "vk-psopre"); vka_fp_host("vk-psopre");
+    setpriority(PRIO_PROCESS, 0, 10);
+    for (;;) {
+        pause_point();
+        pthread_mutex_lock(&g_pf_mu);
+        while (!g_pf_head) pthread_cond_wait(&g_pf_cv, &g_pf_mu);
+        pf_job *j = g_pf_head; g_pf_head = j->next; if (!g_pf_head) g_pf_tail = &g_pf_head;
+        pthread_mutex_unlock(&g_pf_mu);
+        while (!V.dev) usleep(50000);   // (a program set before the device is there)
+        pc_open();
+        // The depth mode the game runs with picks the vertex shaders' entry: parts prepared for the other one are of no use, so the lists are prepared again
+        int dz = vka_depth_zero() != 0, was = atomic_exchange(&g_prep_depth_zero, dz);
+        if ((was > 0) != dz) {   // (no run has said yet, -1: prog_parts prepared for near = -w, as for 0)
+            atomic_store(&g_pairs_done, 0); atomic_store(&g_learn_done, 0); atomic_fetch_add(&g_pcl_made, 1);
+            VLOG("shader parts: the game's depth mode (%s) is not the one they were prepared for: prepared again at the next start", dz ? "near = 0" : "near = -w");
+        }
+        uint64_t h = prec_hash(&j->r);
+        pthread_mutex_lock(&g_pl_mu);
+        int isnew = pl_add(h); size_t at = 0;
+        if (isnew) {
+            if (g_nlearn == g_learn_cap) { size_t nc = g_learn_cap ? 2 * g_learn_cap : 1024; prec *n = realloc(g_learn, nc * sizeof *n); if (n) { g_learn = n; g_learn_cap = nc; } }
+            if (g_nlearn < g_learn_cap) { at = g_nlearn; g_learn[g_nlearn++] = j->r; } else isnew = 0;
+        }
+        pthread_mutex_unlock(&g_pl_mu);
+        if (isnew) {
+            atomic_fetch_add(&g_pf_new, 1);
+            if (gpl_on() && g_pcl && VKA_ENV("DM_VK_PSO_PREFETCH", 1)) {
+                while (atomic_load(&g_as_depth) > 0) { usleep(2000); pause_point(); }
+                uint64_t t0 = now_ns();
+                int tok = gate_enter(0, 0);
+                if (prog_parts(&j->r)) atomic_fetch_add(&g_pf_made, 1);
+                gate_leave(tok);
+                atomic_fetch_add(&g_pf_ns, now_ns() - t0);
+                if (atomic_load(&g_learn_done) == at) atomic_store(&g_learn_done, (uint32_t)at + 1);   // (in order: this thread is the only one that adds)
+                pthread_mutex_lock(&g_pf_mu); int idle = !g_pf_head; pthread_mutex_unlock(&g_pf_mu);
+                if (idle) atomic_store(&g_pcl_due, 1);   // caught up: what it compiled is saved at the next save (vka_pso_save)
+            }
+        }
+        free(j);
+    }
+    return NULL;
+}
+// From the game's threads (nvnProgramSetShaders): the program's stage keys, as made there. Nothing else is done on that thread (its stack is the game's)
+static void pf_push(const prec *r, int set) {
+    static _Atomic int started;
+    pf_job *j = calloc(1, sizeof *j); if (!j) return;
+    j->r = *r;
+    if (!atomic_exchange(&started, 1)) { pthread_t th; if (!pthread_create(&th, NULL, pf_main, NULL)) pthread_detach(th); else atomic_store(&started, 2); }
+    if (atomic_load(&started) == 2) { free(j); return; }
+    if (set) atomic_fetch_add(&g_pf_set, 1);
+    pthread_mutex_lock(&g_pf_mu); *g_pf_tail = j; g_pf_tail = &j->next; pthread_cond_signal(&g_pf_cv); pthread_mutex_unlock(&g_pf_mu);
+}
+void vka_pso_prefetch(const uint8_t md[6][8], unsigned n) {
+    if (!n || n > 6 || !prep_full()) return;
+    prec r; memset(&r, 0, sizeof r); memcpy(r.md, md, sizeof r.md); r.n = (uint8_t)n; r.samples = 1;
+    pf_push(&r, 1);
+}
+// A draw whose shader parts the cache lacked (gfx_obtain): its program with the state its parts are keyed by goes into the learned list, so the next start prepares
+// it (the vertex shader retyped for a mesh's integer vertex formats, an alpha test, depth clamp, more samples). Not the kinds no record holds (retyped textures,
+// outputs retyped by the targets' formats, a geometry claim)
+static void pf_learn_draw(vka_shader *const sh[VKA_NSTAGE], const vka_gkey *k) {
+    if (k->fs_variant >= VKA_FS_RETYPE || k->gs_fx) return;
+    for (int i = 0; i < 5; i++) if (k->tex_u[i] | k->tex_s[i]) return;
+    prec r; memset(&r, 0, sizeof r);
+    for (int st = 0; st < VKA_NSTAGE; st++) if (sh[st]) { if (r.n == 6) return; uint64_t kk = sh[st]->key; for (int b = 0; b < 8; b++) r.md[r.n][b] = (uint8_t)(kk >> (56 - 8 * b)); r.n++; }
+    r.fs_variant = k->fs_variant; r.alpha_func = k->alpha_func; r.a2c = k->a2c; r.samples = k->samples ? k->samples : 1; r.depth_clamp = k->depth_clamp; r.poly_mode = k->poly_mode;
+    r.vin_u = k->vin_u; r.vin_s = k->vin_s;
+    pf_push(&r, 0);
+}
+// On a line of its own beside the pipelines line (mtl_pso_line)
+void vka_pso_prefetch_line(char *out, size_t n) {
+    if (!n) return;
+    out[0] = 0;
+    uint64_t q = atomic_load(&g_pf_set), ln = atomic_load(&g_ln_n), un = atomic_load(&g_ln_unready), fn = atomic_load(&g_ft_n), fm = atomic_load(&g_ft_miss);
+    if (!q && !ln && !un) return;
+    snprintf(out, n, "shader parts: %zu programs of the profile (%u prepared), %llu set by the game, %llu of them new to the lists (%llu compiled in the background, %.0f ms); "
+             "pipelines linked on the frame path %llu (%.1f ms in all, longest %.2f ms), misses the cache had no parts for %llu; parts fetched from the cache %llu, not there %llu "
+             "(%.1f ms in all, longest %.2f ms)",
+             g_npairs, (unsigned)atomic_load(&g_pairs_done), (unsigned long long)q, (unsigned long long)atomic_load(&g_pf_new), (unsigned long long)atomic_load(&g_pf_made),
+             atomic_load(&g_pf_ns) / 1e6, (unsigned long long)ln, atomic_load(&g_ln_ns) / 1e6, atomic_load(&g_ln_max_ns) / 1e6, (unsigned long long)un,
+             (unsigned long long)fn, (unsigned long long)fm, atomic_load(&g_ft_ns) / 1e6, atomic_load(&g_ft_max_ns) / 1e6);
+}
+// PEANUTS end
 static gval *gfx_obtain(const gkey_full *fk, uint64_t h, size_t len, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k, int prewarm, int *made) {
     *made = 0;
     int async = !prewarm && !sh[7] && as_threads() > 0;
@@ -1400,7 +1800,8 @@ static gval *gfx_obtain(const gkey_full *fk, uint64_t h, size_t len, vka_shader 
         pc_open();
         VkPipeline p = VK_NULL_HANDLE;
         pstate *P = malloc(sizeof *P);
-        if (P && gpl_on() && pstate_fill(P, sh, lay, k)) {   // (the cache-only try needs pipelineCreationCacheControl, which GPL is on with)
+        int filled = 0;   // PEANUTS: P is whole (pstate_fill counts its stages before it can fail: a count alone does not say so)
+        if (P && gpl_on() && (filled = pstate_fill(P, sh, lay, k))) {   // PEANUTS: filled   // (the cache-only try needs pipelineCreationCacheControl, which GPL is on with)
             P->ci.flags |= VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
             uint64_t t0 = now_ns();
             VkResult r = vk.vkCreateGraphicsPipelines(V.dev, g_pc, 1, &P->ci, NULL, &p);
@@ -1411,6 +1812,43 @@ static gval *gfx_obtain(const gkey_full *fk, uint64_t h, size_t len, vka_shader 
             g_create_ns += dns;
             pthread_mutex_unlock(&g_mu);
         }
+        // PEANUTS begin: the cache lacks the whole pipeline, but its shader parts are in the maps or in the driver's cache (compiled by the preparing step, the
+        // prefetch or an earlier run: prog_parts): fetched and linked here, on the frame path, without a compile (the link itself: 0.02 ms each in the AYN Thor's
+        // Turnip logs), so the draw is neither skipped nor waited for; the optimized twin follows in the background as after any link. A part the driver would have
+        // to compile: queued and skipped as before. DM_VK_PSO_LINK_NOW=0: always queued
+        if (!p && filled && gpl_on() && !P->mesh && link_now_on()) {
+            uint64_t t1 = now_ns();
+            p = gpl_link(P, k, GPL_FETCH);
+            uint64_t d2 = now_ns() - t1;
+            pthread_mutex_lock(&g_mu); g_create_ns += d2; if (p) { g_ngfx++; g_frame_made++; g_create_ms += d2 / 1e6; } pthread_mutex_unlock(&g_mu);
+            atomic_fetch_add(&g_ln_ns, d2); uint64_t mx = atomic_load(&g_ln_max_ns); while (d2 > mx && !atomic_compare_exchange_weak(&g_ln_max_ns, &mx, d2)) {}
+            if (!p) {
+                pf_learn_draw(sh, k);
+                if (atomic_fetch_add(&g_ln_unready, 1) < 60) {   // (what the preparing step should have covered: the program, and the state its parts are keyed by)
+                    prec r; memset(&r, 0, sizeof r); r.samples = 1;
+                    for (int st = 0; st < VKA_NSTAGE; st++) if (sh[st] && r.n < 6) { uint64_t kk = sh[st]->key; for (int b = 0; b < 8; b++) r.md[r.n][b] = (uint8_t)(kk >> (56 - 8 * b)); r.n++; }
+                    uint64_t hh = prec_hash(&r); int known = 0;
+                    pthread_mutex_lock(&g_pl_mu); if (g_pl_cap) for (size_t jj = hh & (g_pl_cap - 1); g_pl_set[jj]; jj = (jj + 1) & (g_pl_cap - 1)) if (g_pl_set[jj] == hh) { known = 1; break; } pthread_mutex_unlock(&g_pl_mu);
+                    VLOG("shader parts: not in the cache for vertex %016llx pixel %016llx (%u stages; program %s): variant %u alpha %u a2c %u samples %u clamp %u poly %u gl %u vin %x/%x tex %d gs %u",
+                         (unsigned long long)(sh[0] ? sh[0]->key : 0), (unsigned long long)(sh[1] ? sh[1]->key : 0), (unsigned)r.n, known ? "in the lists" : "not in the lists",
+                         k->fs_variant, k->alpha_func, k->a2c, k->samples, k->depth_clamp, k->poly_mode, k->gl_depth, k->vin_u, k->vin_s,
+                         (int)((k->tex_u[0] | k->tex_s[0] | k->tex_u[4] | k->tex_s[4]) != 0), k->gs_fx);
+                }
+            }
+            if (p) {
+                atomic_fetch_add(&g_ln_n, 1);
+                free(P);
+                pw_note(VKA_PW_GFX, sh, k, (uint32_t)(len - offsetof(gkey_full, k))); pw_explain(VKA_PW_GFX, sh, k, (uint32_t)(len - offsetof(gkey_full, k)), (now_ns() - t_make) / 1e6, 1, " on the frame path");
+                pthread_mutex_lock(&g_mu);
+                __atomic_store_n(&g->linked, 1, __ATOMIC_RELEASE); __atomic_store_n(&g->p, p, __ATOMIC_RELEASE); __atomic_store_n(&g->busy, 0, __ATOMIC_RELEASE);
+                pthread_cond_broadcast(&g_busy_cv);
+                pthread_mutex_unlock(&g_mu);
+                opt_queue(g, sh, lay, k);
+                *made = 1;
+                return g;
+            }
+        }
+        // PEANUTS end
         free(P);
         if (p) {
             pw_note(VKA_PW_GFX, sh, k, (uint32_t)(len - offsetof(gkey_full, k))); pw_explain(VKA_PW_GFX, sh, k, (uint32_t)(len - offsetof(gkey_full, k)), (now_ns() - t_make) / 1e6, 0, " on the frame path");
@@ -1434,7 +1872,7 @@ static void gfx_build(gval *g, size_t len, vka_shader *const sh[VKA_NSTAGE], con
     if (P && pstate_fill(P, sh, lay, k)) {   // (else logged by vka_shader_module)
         if (async && gpl_on() && !P->mesh) {
             uint64_t t1 = now_ns();
-            p = gpl_link(P, k);
+            p = gpl_link(P, k, GPL_LINK);   /* PEANUTS: GPL_LINK */
             if (p) { linked = 1; pthread_mutex_lock(&g_mu); g_ngfx++; g_create_ms += (now_ns() - t1) / 1e6; pthread_mutex_unlock(&g_mu); }
         }
         else if (!prewarm && !async && gpl_on() && !P->mesh) {   // (a mesh pipeline is made whole: the libraries here are cut for vertex input pipelines)
@@ -1452,7 +1890,7 @@ static void gfx_build(gval *g, size_t len, vka_shader *const sh[VKA_NSTAGE], con
                 pthread_mutex_lock(&g_mu); g_probe_miss++; g_probe_miss_ns += dns; g_create_ns += dns; pthread_mutex_unlock(&g_mu);
                 p = VK_NULL_HANDLE;
                 uint64_t t1 = now_ns();
-                p = gpl_link(P, k);
+                p = gpl_link(P, k, GPL_LINK);   /* PEANUTS: GPL_LINK */
                 if (p) { uint64_t d2 = now_ns() - t1; linked = 1; pthread_mutex_lock(&g_mu); g_ngfx++; g_frame_made++; g_create_ms += d2 / 1e6; g_create_ns += d2; pthread_mutex_unlock(&g_mu); }
                 else { uint64_t d2 = now_ns() - t1; pthread_mutex_lock(&g_mu); g_create_ns += d2; pthread_mutex_unlock(&g_mu); }   // the refused parts' time is the frame's too
             }
@@ -1469,10 +1907,11 @@ static void gfx_build(gval *g, size_t len, vka_shader *const sh[VKA_NSTAGE], con
     if (linked) opt_queue(g, sh, lay, k);
 }
 static inline VkPipeline gval_use(gval *g) {
+    g_last_pending = 0;   // PEANUTS
     if (!g) return VK_NULL_HANDLE;
     if (__atomic_load_n(&g->linked, __ATOMIC_ACQUIRE)) atomic_fetch_add_explicit(&g_hy_draws, 1, memory_order_relaxed);
     VkPipeline p = __atomic_load_n(&g->p, __ATOMIC_ACQUIRE);
-    if (!p && __atomic_load_n(&g->busy, __ATOMIC_ACQUIRE)) atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed);
+    if (!p && __atomic_load_n(&g->busy, __ATOMIC_ACQUIRE)) { atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed); g_last_pending = 1; }   // PEANUTS: g_last_pending
     return p;
 }
 static gval *last_g;   // PEANUTS: at file scope (was vka_gfx_pipeline's own): vka_gfx_pipeline_now makes the entry of the last lookup
@@ -1634,6 +2073,11 @@ static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderMod
       if (!prewarm && !r && ms_ > 1000) vka_pso_save(2); }
 }
 VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 0); }
-VkPipeline vka_cs_pipeline_frame(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 1); }
+VkPipeline vka_cs_pipeline_frame(vka_shader *cs, const vka_layout *lay) {   // PEANUTS: g_last_pending, from the skips cs_obtain counted for this dispatch
+    int made; uint64_t s0 = atomic_load_explicit(&g_as_skips, memory_order_relaxed);
+    VkPipeline p = cs_obtain(cs, lay, 0, &made, 0, 0, 1);
+    g_last_pending = !p && atomic_load_explicit(&g_as_skips, memory_order_relaxed) != s0;
+    return p;
+}
 VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask) { int made; return cs_obtain(cs, lay, 0, &made, umask, smask, 0); }
 #endif

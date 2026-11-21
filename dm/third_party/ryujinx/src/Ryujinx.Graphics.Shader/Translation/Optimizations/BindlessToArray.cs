@@ -13,6 +13,10 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
         // 1 and 0 elements are not considered arrays anymore.
         public const int MinimumArrayLength = 2;
 
+        // PEANUTS: the length of an array of handles read by record (RunPass): the records one array reaches. A record's number is the game's own value, with no
+        // bound the shader shows; Tomodachi Life: Living the Dream reads it from a tile map's 8-bit channel (160 records in its table)
+        private const int RecordArrayLength = 256;
+
         public static void RunPassOgl(BasicBlock block, ResourceManager resourceManager)
         {
             // We can turn a bindless texture access into a indexed access,
@@ -214,6 +218,30 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                 }
 
                 int length = Math.Max(MinimumArrayLength, gpuAccessor.QueryTextureArrayLengthFromBuffer(src0CbufSlot));
+
+                // PEANUTS begin: handles in the records of a table, read as c[n][(record << k) + offset] with records of 16 bytes or more. An array of one handle
+                // every 8 bytes reaches the first records alone (records of 256 bytes: record 0), and every other read clamps to its last element. Tomodachi Life:
+                // Living the Dream's island ground reads each ground type's textures so (c[3], 256 bytes a record: the ground drew flat, in tile-shaped blocks).
+                // The array is indexed by record instead: element r is record r's handle, which the host reads at the offset + the record's size times r (the
+                // handle type CombinedSamplerRecords carries both; each offset within the record has its own array)
+                if (!nativeCompute && !hasSecondaryHandle && TryArrayBase(ldcVecIndex, out Operand recordAddress, out int recordOffset) &&
+                    recordAddress.AsgOp is Operation recordShift && recordShift.Inst == Instruction.ShiftLeft &&
+                    recordShift.GetSource(1).Type == OperandType.Constant && recordShift.GetSource(1).Value >= 4 && recordShift.GetSource(1).Value <= 15 &&
+                    recordOffset / 4 <= 0x3fff)
+                {
+                    int recordWords = (1 << recordShift.GetSource(1).Value) / 4;
+
+                    TurnIntoArray(resourceManager, texOp, cbufSlot, TextureHandle.PackOffsets(recordOffset / 4, recordWords, TextureHandleType.CombinedSamplerRecords), RecordArrayLength);
+
+                    Operand recordMin = Local();
+
+                    block.Operations.AddBefore(node, new Operation(Instruction.MinimumU32, recordMin, recordShift.GetSource(0), Const(RecordArrayLength - 1)));
+
+                    texOp.SetSource(0, recordMin);
+
+                    continue;
+                }
+                // PEANUTS end
 
                 // nxnative: handles at a computed index past a constant base, the base beyond the array's length: every read would clamp to its last element, which is no handle. Fire Emblem Fortune's
                 // Weave's character shaders read their cube maps as c[14][8 i + 0x340] (LDC after a shift of 3). The array starts at the base instead (the host fills element k from base + 8k), so

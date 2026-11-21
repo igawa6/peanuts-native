@@ -672,8 +672,16 @@ def decode_ubo_tex(name):
     slots, h = int(m.group(1)), int(m.group(2), 16)
     tb = slots & 0xffff; sb = (slots >> 16) - 1 if slots >> 16 else tb
     o0, o1, ty = h & 0x3fff, (h >> 14) & 0x3fff, h >> 28
+    if ty == 5: return ((tb - 3, o0 * 4), (tb - 3, o0 * 4)) if 3 <= tb <= 16 and slots >> 16 == 0 else None   # PEANUTS: an array of combined handles read by record (ubo_tex_step)
     if not 3 <= tb <= 16 or ty not in (0, 1, 3) or (ty == 1 and not 3 <= sb <= 16): return None
     return (tb - 3, o0 * 4), (('id', o1) if ty == 3 else (sb - 3, o1 * 4) if ty else (tb - 3, o0 * 4))
+
+def ubo_tex_step(name):   # PEANUTS
+    """An array of handles read by record (the vendored BindlessToArray's handle type 5, CombinedSamplerRecords: fp_t2d_cb3_50100038 = c[3], record 0's handle at word 0x38,
+    0x40 words a record): the bytes from one element's handle to the next, else 0 (8 bytes: one handle after another). Tomodachi Life: Living the Dream's ground textures"""
+    m = re.match(r'[a-z]+_t\w*?_cb(\d+)_([0-9A-F]+)', name)
+    h = int(m.group(2), 16) if m else 0
+    return ((h >> 14) & 0x3fff) * 4 if h >> 28 == 5 else 0
 
 def c2_array(name, ty):
     """An array of handles in the driver table c2 that the shader indexes at run time (Ryujinx's texture array from a buffer, here bank 2: <stage>_t<type>_cb<slots>_<handle>, declared

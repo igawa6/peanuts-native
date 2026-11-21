@@ -65,3 +65,10 @@ Validation on the M4 Pro:
 - Trace the tutorial's cube placeholder and validate visible effects against the original game.
 - Validate later combat input windows, camera behavior and cinematic audio/video sync with the 60 fps profile; establish sustained performance without competing workloads.
 - Later levels and Bink movies are untested.
+
+<!-- PEANUTS begin: picture shapes -->
+## Picture shapes (Android)
+
+**Untested.** Game settings › Display offers **Fill the screen** on 1.0.1 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
+
+<!-- PEANUTS end -->
