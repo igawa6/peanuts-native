@@ -1404,7 +1404,7 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 
 ### Linux shader tools (2026-11-21)
 
-The packer's shader tools now run on Linux: `dm/gfx/tools/tool_lock.py` guards the macOS-only `xcrun` Metal queries behind `sys.platform == 'darwin'` (Linux has no Metal toolchain), and `dm/gfx/tools/vk_android_build.py` starts the translator through `tool_lock.xlate_command` (on Linux, dotnet runs the portable `dmsh_xlate.dll`; the apphost in the repository is a Mach-O). The shader chain procedure of `peanuts/docs/UPSTREAM.md` §3.3 was run for the `vk_android_build.py` edit. The lock and the chain headers are left to the maintainer: CONTRIBUTING.md says they are regenerated on merge.
+The packer's shader tools now run on Linux: `dm/gfx/tools/tool_lock.py` guards the macOS-only `xcrun` Metal queries behind `sys.platform == 'darwin'` (Linux has no Metal toolchain), and `dm/gfx/tools/vk_android_build.py` starts the translator through `tool_lock.xlate_command` (on Linux, dotnet runs the portable `dmsh_xlate.dll`; the apphost in the repository is a Mach-O). The shader chain procedure of `peanuts/docs/UPSTREAM.md` §3.3 was run for the `vk_android_build.py` edit. The lock and the chain headers are left to the maintainer, who regenerates them during integration (CONTRIBUTING.md).
 
 1. `tool_lock.py --update-lock` on Linux drops only the two `metal_*` rows; the translator dlls, `xlate_source` and `spirv-cross` (the in-repo Linux build in `spirv_cross_bin/`) are unchanged. The committed lock is the upstream one (with the metal rows), so the tools digest is the same on Linux and macOS.
 2. With the upstream lock, the tools digest is `cc4a8ae11c32`; the new `vk_android_same.tsv` row resolves it to `e084efc69b46`, the version upstream's tree expects and the phones carry, so no library version moves.
@@ -1418,4 +1418,4 @@ The packer's shader tools now run on Linux: `dm/gfx/tools/tool_lock.py` guards t
 | `dm/gfx/tools/vk_android_build.py` | 1 | `translate()` starts the translator through `tool_lock.xlate_command` | allow-listed in `peanuts/upstream-unmarked.txt` (feeds `DMSH_VK_CHAIN`); upstream candidate: yes, with `tool_lock.py`'s hunk |
 | `dm/gfx/tools/vk_android_same.tsv` | 1 | the row `cc4a8ae11c32 → e084efc69b46` with the build's evidence | allow-listed in `peanuts/upstream-unmarked.txt` (feeds `DMSH_VK_CHAIN` by its rows, takes no marker) |
 
-The lock and the chain headers are not in this change: CONTRIBUTING.md says they are regenerated on merge.
+The lock and the chain headers are not in this change: the maintainer regenerates them during integration (CONTRIBUTING.md).
