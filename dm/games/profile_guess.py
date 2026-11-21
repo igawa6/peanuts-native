@@ -63,7 +63,7 @@ def romfs_files(romfs):   # (path, size, first 32 bytes) of every RomFS file: fr
         for n in names:
             p = Path(d) / n
             with open(p, 'rb') as f: head = f.read(32)
-            yield '/' + str(p.relative_to(romfs)), p.stat().st_size, head
+            yield '/' + p.relative_to(romfs).as_posix(), p.stat().st_size, head   # PEANUTS(upstream-candidate): as_posix: RomFS paths use '/' on every host (Windows' str() gives '\')
 
 
 def npdm(path):   # (system resource size, program ID) from main.npdm; a non-zero system resource means virtual address memory (Engage 16 MB); (0, None) without the file

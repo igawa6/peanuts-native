@@ -173,6 +173,12 @@ Also gated, but not `#ifdef`-paired with upstream code (new Peanuts-owned files/
     stops with FileNotFoundError (found packing Link's Awakening from a .nup on an exFAT drive). Both skip an entry that is
     gone. The same file's `peanuts_env` (the phone packer's DM_SPLIT_DIRECT=1 and DMSH_VK_ZSTD_LEVEL=6 for a computer's
     pack) is Peanuts-specific and stays local
+12. Windows paths in the survey and the Unreal split: `dm/games/profile_guess.py` `romfs_files` (`as_posix()`), `dm/gfx/tools/uepak.py`
+    `Toc` file names and `dm/gfx/tools/shader_split.py`'s two pak labels (`posixpath.normpath`). On Windows `os.path.normpath` / `str(Path)` gave `\`,
+    so the provisional profile's `romfs_marker` read `TetrisEffect\Content\…` and the shader map's sources `..\..\..\Engine\…`
+    instead of `Engine/…` (found on Tetris Effect: Connected, `dm/games/0100DE501433A000/README.md`). No change on macOS or Linux
+13. `dm/tools/docs_patches.py` writes `docs/agents/game-patches.md` with `newline='\n'`: on Windows `Path.write_text` translated every line end to CR LF,
+    so a regeneration showed the whole page changed. No change on macOS or Linux
 
 `dm/host/hle_fpslock.c`'s new `EXTRA_VSYNCS_U8` lock kind is also upstream-worthy infra; its two
 per-game rows (Link's Awakening, Echoes of Wisdom) should instead move to a Peanuts-owned

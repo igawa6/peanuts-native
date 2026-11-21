@@ -41,7 +41,7 @@
 #        uepak.py job <RomFS> <main NSO> <work dir> [<Mac host> <rewritten modules>]   the shader code archives of every pak, and an Oodle job of their Oodle-compressed shaders (LZ4 ones
 #                                                                       decoded at once); IoStore shader libraries (UE 5.6) decoded at once through the game's Oodle in the host (OodleHost)
 #        uepak.py finish <work dir> <out dir>                           after the host has run the job: the archives with every shader decoded
-import ctypes, json, os, re, struct, sys
+import ctypes, json, os, posixpath, re, struct, sys   # PEANUTS(upstream-candidate): posixpath for container paths on Windows
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../tools'))
 from romfs import os, open
 
@@ -447,7 +447,8 @@ class Toc:
             if sib != none: todo.append((sib, at))
             if child != none: todo.append((child, here))
             while f != none: nm, f, chunk = files[f]; out[chunk] = here + strs[nm]
-        return {c: re.sub(r'^(\.\./)+', '', os.path.normpath(mount + v)) for c, v in out.items()}
+        # PEANUTS(upstream-candidate): posixpath: a container path uses '/' on every host (os.path on Windows gives '\' and keeps the leading ../)
+        return {c: re.sub(r'^(\.\./)+', '', posixpath.normpath(mount + v)) for c, v in out.items()}
     def ucas(self, part):
         if part not in self.files: self.files[part] = open(self.path[:-5] + ('.ucas' if not part else f'_s{part}.ucas'), 'rb')
         return self.files[part]
