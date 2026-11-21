@@ -133,6 +133,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Monster Train 2](010051701FB46000/README.md) | `010051701FB46000` | 1.1.1 | 18.3.5 | Unity 2022.3.54f1 IL2CPP | NVN |
 | [My Time at Sandrock](0100B63016916000/README.md) | `0100B63016916000` | 1.4.2.0 (provisional, packed on a PC, not run on a device) | 16.2.0 | Unity 2021.3.26f1 IL2CPP, Wwise | NVN <!-- PEANUTS: Peanuts-only profile, provisional --> |
 | [Need for Speed: Hot Pursuit Remastered](010029B0118E8000/README.md) | `010029B0118E8000` | 1.0.3 | 10.4.1 | Criterion's engine (Stellar Entertainment port) | NVN |
+| [New Pokemon Snap](0100F4300BF2C000/README.md) | `0100F4300BF2C000` | v0 | 10 | Bandai Namco nu/nv, Wwise | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [NieR:Automata The End of YoRHa Edition](010056B015FE8000/README.md) | `010056B015FE8000` | 1.0.3 | 12.3.9 | PlatinumGames' engine | NVN |
 | [NieR:Automata The End of YoRHa Edition, Asian release](0100B8E016F76000/README.md) | `0100B8E016F76000` | 1.0.3 | 12.3.9 | PlatinumGames' engine | NVN |
 | [Nintendo Switch Sports Resort](04008E001F098000/README.md) | `04008E001F098000` | v65536 (Switch 2) | 22.2.10 (Ounce) | sead / agl / gsys, Havok | NVN2 |
