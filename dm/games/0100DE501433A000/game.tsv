@@ -1,0 +1,38 @@
+# Tetris Effect: Connected: Monstars and Resonair (published by Enhance), Unreal Engine 4.26 / 4.27 with IoStore containers (.utoc / .ucas), Wwise, SDK 13.3.2,
+# NVN, nn::movie for the backgrounds' .mp4 movies; update 2.0.2.2 (v1310720).
+# PEANUTS: started from the NSP script's provisional profile (dm/games/profile_guess.py) on a Windows PC; shader_groups set by hand (below). Runs on an AYN Thor
+# on Turnip with patches.py's RedpointEOS cut; the memory values are the Unreal guess, not measured (README.md)
+
+# ---- Identity ----
+title_id	0100DE501433A000
+program_id	0100DE501433A000
+
+# ---- App ----
+name	Tetris Effect: Connected
+ipa	TetrisEffectConnected.ipa
+app_category	public.app-category.puzzle-games
+
+# ---- Versions ----
+build	v1310720	2.0.2.2	main=8838095f4f659f63cb45a00e62dfb887	subsdk0=a8cb97803f7f442a3b6cce1c7cd4ee4a	sdk=357efc198e728cb5d55265aff304f03c
+package	v1310720
+shader_versions	v1310720
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	TetrisEffect/Content/Paks/TetrisEffect-Switch.pak
+zip_store	.mp4:.nro:.pak:.ucas:.metallib
+
+# ---- Memory ----
+# Unreal: nninitStartup reserves a 62 GB address region and its FMallocBinned3 takes 37 GB of it, so a 64 GB alias region for the bring-up on the Mac. The rewriter cuts the allocator in any Unreal 4 / 5 main (dm/tools/ue_malloc.py) and gives the region what the alias region has room for (dm/tools/ue_region.py), so an iPhone takes a smaller guest block, as Octopath Traveler 0's profile (docs/reference/memory.md)
+mem_reserve	0x1028000000
+mem_alias	0x1000000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 80 MB of system resource
+sys_resource	0x5000000
+
+# ---- Shader split ----
+# the shaders are inline in the cooked packages (no shader code archives): the engine's global shader cache in the .pak, the engine's and the game's materials in the IoStore container
+shader_groups	GlobalShaderCache=global #Engine/=engine #TetrisEffect/=game
+shader_note	Tetris Effect: Connected shaders

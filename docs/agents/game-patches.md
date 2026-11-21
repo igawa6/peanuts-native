@@ -46,6 +46,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `game` → `host` | MTL4Compiler pipelines on iOS | rendering | gap | judgement | 1 | `pso_mtl4`: [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | a setting the game was tested with on an iPhone: a default for every game after `regress.py check` on the games |
 | `game` → `host` | one vertex shader's visibility counter (VertexCounterLowering) | shaders | gap | judgement | — | [Program.cs:314](../../dm/gfx/tools/dmsh_xlate/Program.cs#L314) | a general lowering of subgroup ballots in vertex shaders would cover any shader that counts that way |
 | `game` → `host` | present snapshots | rendering | gap | judgement | 1 | `present_snap`: [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | a setting the game was tested with: a default for every game after `regress.py check` on the games |
+| `build` → `engine` | RedpointEOS without an EOS platform: a null object's delegate registration skipped | runtime | gap | judgement | 1 | [Tetris Effect: Connected](../../dm/games/0100DE501433A000/README.md) | Redpoint's EOS online subsystem plugin for Unreal, which any game shipping it has: its registration function could be found by the plugin's L"RedpointEOS" name and a fingerprint |
 | `build` → `engine` | the dynamic resolution's level lists, lowered at load to fit DM_WINDOW_SIZE (the Android launcher's Game resolution) | rendering | gap | judgement | 1 | `res_levels`: [Pokemon Pokopia](../../dm/games/0400A3A01EE4C000/README.md) | KTGL's size table and level lists, at fixed offsets per main build; a fingerprint of the controller that picks the list (oe::GetOperationMode, oe::GetCurrentGraphicsScale, the 34-level table) could find them in other KTGL games |
 | `build` → `engine` | the dynamic resolution's range steered while the game runs (DM_DRS, the Android launcher's Dynamic resolution) | rendering | gap | judgement | 1 | `drs_ctl`: [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md) | four places in sead / agl's MaintainGpuPercentage controller, at fixed offsets per main build (each checked for its instruction); a fingerprint of the controller could find them in other games on that engine |
 | `build` → `engine` | the framework's fixed steps per frame (its mode and step count), written for the frame rate cap: 30 and 20 fps at full game speed | frame rate | gap | judgement | 1 | `fps_steps`: [Mario Kart World](../../dm/games/0400C3F00006E000/README.md) | the framework at a fixed global per main build; a fingerprint of its frame function (the step pick from the mode, then the update loop over the count and the present interval set to it) could find it in the game's updates |
@@ -143,6 +144,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Super Mario Bros. Wonder - Nintendo Switch 2 Edition](#super-mario-bros-wonder---nintendo-switch-2-edition) | 1 | 0 | 0 | 0 | 0 | `build` → `host` |
 | [Super Smash Bros. Ultimate](#super-smash-bros-ultimate) | 11 | 0 | 0 | 1 | 0 | `game` |
 | [Taiko Risshiden V DX](#taiko-risshiden-v-dx) | 1 | 0 | 0 | 2 | 0 | `game` |
+| [Tetris Effect: Connected](#tetris-effect-connected) | 4 | 0 | 0 | 0 | 0 | `build` → `engine` |
 | [The Legend of Zelda: Breath of the Wild](#the-legend-of-zelda-breath-of-the-wild) | 7 | 0 | 5 | 0 | 0 | `build` → `game` ×2 |
 | [The Legend of Zelda: Echoes of Wisdom](#the-legend-of-zelda-echoes-of-wisdom) | 0 | 0 | 0 | 0 | 1 | `build` → `game` |
 | [The Legend of Zelda: Link's Awakening](#the-legend-of-zelda-links-awakening) | 1 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
@@ -694,6 +696,18 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - cut `+0x443fac`: frame limiter threshold: N × tick frequency / 60 (umulh by 1/60 → udiv by 60), then 0 when N = 1 (cmp w20, #1; csel x20, xzr, x8, eq): one vsync a frame is the present pacing's; N = 2 keeps the 2 ms rounds
 - **function-matched** (`main` of builds without CUTS): frame limiter threshold: 0 when N = 1: 1 function, 1 cut
 - **function-matched** (`main` of builds without CUTS): frame limiter threshold: 0 when N = 1: 1 function, 1 cut
+
+### Tetris Effect: Connected
+
+[Tetris Effect: Connected](../../dm/games/0100DE501433A000/README.md), `0100DE501433A000`, [patches.py](../../dm/games/0100DE501433A000/patches.py).
+
+- **`build` → `engine`**, runtime, gap, judgement: RedpointEOS without an EOS platform: a null object's delegate registration skipped. Redpoint's EOS online subsystem plugin for Unreal, which any game shipping it has: its registration function could be found by the plugin's L"RedpointEOS" name and a fingerprint
+
+- **2.0.2.2 `main`** `8838095f…` ([patches.py:11](../../dm/games/0100DE501433A000/patches.py#L11))
+  - cut `+0xb64bdc`: adrp x8 + add x8, #0xc94 (the delegate callback main+0xb64c94) → adr x8, #0xb64c94
+  - cut `+0xb64be0`: mov x1, sp, one slot earlier
+  - cut `+0xb64be4`: stp x8, xzr, [x21, #0x20] (the delegate callback), one slot earlier
+  - cut `+0xb64be8`: RedpointEOS object null (no EOS platform): cbz x20 → main+0xb64bfc, past its delegate registration
 
 ### The Legend of Zelda: Breath of the Wild
 
