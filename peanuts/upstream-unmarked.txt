@@ -215,3 +215,4 @@ dm/games/01007A2027548000/pso_pairs.tsv	Generated supplemental pair list. Keep t
 dm/games/01007A2027548000/shader_files.tsv	Generated shader-bearing file inventory for the targeted split.
 dm/games/0100000000010000/vk_programs.bin	the program list of the preparing step (vka_pso.c pp_prepare), the learned programs file of this fork's run of the game on an AYN Thor (Turnip), 2026-11-20: binary, 64-byte records of shader keys and part states, new in Peanuts Native
 dm/games/01002B00111A2000/vk_prewarm.bin	Pipeline keys recorded on Thor with Turnip v26.2.0-R5 (boot, intro movie, the Hyrule Field battle) and verified before guest entry.
+dm/host/tests/t_account.c	nxnative 84e63860's test ported as it is (account::GetUserId takes a handle the game built, issue #239); a later sync can take nxnative's file
