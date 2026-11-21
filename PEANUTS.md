@@ -12,7 +12,8 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
 2. **Hooks into upstream files are one-liners, each tagged `PEANUTS`.** A hook is a call-out to Peanuts code, never logic.
    Allowed hook sites (keep this list current):
    - `android/app/src/main/java/dev/nxnative/android/GameActivity.java` — create/destroy the companion `Presentation`; (2026-11-13) one line in
-     `onCreate` that touches the last-3-played list for dynamic shortcuts (`dev.peanuts.launch.RecentGames`, `peanuts/docs/LAUNCHERS.md`); and
+     `onCreate` that touches the last-3-played list for dynamic shortcuts (`dev.peanuts.launch.RecentGames`, `peanuts/docs/LAUNCHERS.md`); (2026-11-21) one line at the top of
+     `fpsTick` and one in `onDestroy` for the total play time (`dev.peanuts.launch.PlayTime`; the game page's Played row is one line in `MainActivity`'s More card); and
      (2026-11-13) in `start()`'s env assembly, two lines adding `DM_ROMFS_OVERLAY`/`DM_CHEATS` for the enabled Mods (`dev.peanuts.mods.ModRuntime`,
      `design/platform/DESIGN-MODS.md`); (2026-11-18) one line in `settingsEnv` after `ResScale.env`: `dev.peanuts.Companion.env(this, id, env)` adds `PN_COMPANION=off` when the title's Second screen is Off, which is the default on a device without a second display (`Companion.hasSecondDisplay`); internal shader-preparation mode (`dev.peanuts.build.ShaderCapture`) covers the game surface, isolates its save/environment, suppresses play-session hooks and input, and reports errors to Build.
      (2026-11-17) `hostSetup` and the active existing `fpsTick` forward the current display's presentation deadline through a marked helper. The same tick applies `dev.peanuts.display.RunningDisplayMode` before reading the deadline; pause and destruction release its window-local request. Only the running effective 30 fps cap with requested FG off selects a same-resolution 60 Hz mode; pending restart preferences are ignored.

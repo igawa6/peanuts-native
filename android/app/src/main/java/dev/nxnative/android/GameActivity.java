@@ -392,6 +392,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      * views show them only while the present does not (not yet drawn, DM_VK_OVERLAY=0, a failure), the top-right one set again only when its text changed
      */
     private void fpsTick() {
+        dev.peanuts.launch.PlayTime.tick(this, titleId(), started && resumedNow && !stopped && !paused && prewarmCover == null);   // PEANUTS: total play time (only while the game runs, not behind "Preparing shaders")
         // PEANUTS: Stable 30 uses a window-local 60 Hz mode; requested FG and the running cap are authoritative.
         if (started && resumedNow && !stopped && !paused) runningDisplayMode.update(this, Native.fpsCapStatus(), Native.frameGenEnabled());
         else runningDisplayMode.clear(this);
@@ -1115,6 +1116,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     @Override protected void onDestroy() {
         runningDisplayMode.clear(this);   // PEANUTS: release this game window's display request
         dev.peanuts.Companion.stop();   // PEANUTS
+        dev.peanuts.launch.PlayTime.flush(this);   // PEANUTS: total play time, what is still in memory
         TextInput.gone(this);
         UserPicker.gone(this);
         CtrlScreen.gone(this);

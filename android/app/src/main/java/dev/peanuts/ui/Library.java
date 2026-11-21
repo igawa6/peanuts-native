@@ -230,6 +230,8 @@ public final class Library {
                 front(true);
                 Haptics.refresh(x); Motion.refresh(x);
                 Library l = current;
+                // the bottom screen card's play time after a game, and the toast of a session its Stop ended (the game's process writes both as it goes, maybe just after this)
+                if (l != null && l.a == x) { l.playTimesAgain(); UI.postDelayed(() -> { if (current == l && top == x) { l.playTimesAgain(); l.sessionToast(); } }, 2500); }
                 String id = played;
                 if (l == null || l.a != x || id == null) return;
                 played = null;
@@ -872,6 +874,7 @@ public final class Library {
 
         int cell = (Math.min(widthDp(), 900) - 40 - PUi.GAP * (cols - 1)) / cols;   // Banana's 20 dp gutters and 12 dp gaps
         List<View> cells = new ArrayList<>();
+        playTimes = dev.peanuts.launch.PlayTime.all(a);   // once per render: the bottom screen's card of a focused cover (bottom)
         for (Row r : show) cells.add(coverCell(r, cell));
         grid(cells, cols, 16);
         boolean first = lastCells == 0 && !cells.isEmpty();   // the grid shows after an empty one (the first scan ended): it enters as after a filter change
@@ -1045,6 +1048,27 @@ public final class Library {
     }
 
     // ---- The covers ----
+
+    /** Every title's total play time (dev.peanuts.launch.PlayTime), read again at each render of the grid */
+    private Map<String, dev.peanuts.launch.PlayLedger.Entry> playTimes = Collections.emptyMap();
+
+    /** The session a game's Stop left (dev.peanuts.launch.PlayTime.sessionNote), shown once */
+    private void sessionToast() {
+        String note = dev.peanuts.launch.PlayTime.sessionNote(a);
+        if (note != null) Toast.makeText(a, note, Toast.LENGTH_LONG).show();
+    }
+
+    /** The bottom screen's card shows the focused game's total, read again after a game (playTimesAgain) */
+    private void playTimesAgain() {
+        playTimes = dev.peanuts.launch.PlayTime.all(a);
+        for (Map.Entry<String, dev.peanuts.launch.PlayLedger.Entry> e : playTimes.entrySet()) BottomScreen.playTime(e.getKey(), e.getValue());
+    }
+
+    /** The title's play time for the bottom screen's card, null when the game was never played with this app */
+    private dev.peanuts.launch.PlayLedger.Entry play(String titleId) {
+        dev.peanuts.launch.PlayLedger.Entry e = playTimes.get(titleId.toUpperCase(Locale.ROOT));
+        return e == null || e.ms <= 0 ? null : e;
+    }
 
     /**
      * One cell of the grid: the cover (PUi's tile at cell size, the NACP icon once it has landed) with the state on it, the name under it. The cover is the focusable,
@@ -1280,7 +1304,7 @@ public final class Library {
         }
         if (st == READY) {
             k.kind = BottomScreen.Card.K_READY; k.state = "Ready";
-            k.companion = companionVersion(r); k.played = r.used();
+            k.companion = companionVersion(r); k.played = r.used(); k.play = play(r.id());
             k.primary = tap; k.primaryLabel = r.game != null ? "Play" : "Open"; k.primaryIcon = r.game != null ? R.drawable.ic_play : 0;
             if (r.game != null) { k.second = hold; k.secondLabel = "Game page"; }
         } else if (st == BUILD) {

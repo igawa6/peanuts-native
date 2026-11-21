@@ -1399,3 +1399,15 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
 | `dm/games/01002B00111A2000/game.tsv`, `dm/games/01002B00111A2000/README.md` | 1, 1 | Hyrule Warriors: Age of Calamity on Android: frame limits Game owned, 30 and 60 (the frame step's targets), measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/01002B00111A2000/vk_prewarm.bin` | new | its Turnip prewarm seed (242 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+### Total play time (2026-11-21)
+
+Each game's total play time, counted only while the game runs (started, its screen resumed, not stopped or paused, not behind the "Preparing shaders" cover, not Build's shader preparation), kept in
+`files/peanuts-playtime.tsv` by `dev.peanuts.launch.PlayTime` (the format and arithmetic in `PlayLedger`, no Android class) and shown on the game's page, on the bottom screen's card of the focused game as three tiles, Total, Last run and Last played (`dev.peanuts.ui.BottomPanel`, read again at Home's resume) and in all in Settings › Library (`LibrarySettings`); after Stop, Home's toast says how long that session was.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/GameActivity.java` | 2 | `fpsTick` hands each tick to `PlayTime.tick`; `onDestroy` writes what is still in memory (`PlayTime.flush`) | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 1 | the game page's More card starts with a Played row (`PlayTime.line`) once the game was played | `PEANUTS` |
+
+Tests: `peanuts/tests/test_play_time.py`. Upstream candidate: no.

@@ -67,6 +67,8 @@ public final class LibrarySettings {
                 .value("Reads the folders again").chevron(a).view);
         card.addView(new PUi.Setting(a, "🧹", "Free up space", Haptics.on(Haptics.Word.TICK, v -> freeUpSpace(a)))
                 .value("Delete original dumps of games already built").chevron(a).view);
+        String played = dev.peanuts.launch.PlayTime.totalLine(a);   // the total play time of every game (dev.peanuts.launch.PlayTime), once one was played
+        if (played != null) { PUi.Setting pr = new PUi.Setting(a, "⏱️", "Played", null).value(played); pr.view.setClickable(false); pr.view.setFocusable(false); card.addView(pr.view); }
         // Haptics and Motion: each row is its own switch between two values, System (the default: what Android's settings say) and the quieter one
         hapticsRow = new PUi.Setting(a, "📳", "Haptics", v -> {
             boolean off = !PeanutsPrefs.hapticsOff(a);

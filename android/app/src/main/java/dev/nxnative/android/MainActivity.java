@@ -929,6 +929,7 @@ public final class MainActivity extends Activity {
         pack.addView(new Ui.Setting(this, "📁", "Folders", v -> Folders.dialog(this, g)).value("Game, pack and save folders").chevron(this).view);
         Ui.add(content, Ui.section(this, "More"), 16);
         LinearLayout more = Ui.add(content, Ui.listCard(this), 6);
+        CharSequence played = dev.peanuts.launch.PlayTime.line(this, g.titleId); if (played != null) more.addView(new Ui.Setting(this, "⏱️", "Played", null).value(played).view);   // PEANUTS: total play time (dev.peanuts.launch.PlayTime)
         if (noProfile == null && Shortcuts.supported(this))
             more.addView(new Ui.Setting(this, "🏠", "Add to home screen", v -> Shortcuts.pin(this, g)).value("A shortcut that starts this game").chevron(this).view);
         more.addView(new Ui.Setting(this, "📨", "Share log", v -> shareLog(g.titleId)).value("This game's newest log").chevron(this).view);
