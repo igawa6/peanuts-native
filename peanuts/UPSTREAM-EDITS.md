@@ -101,6 +101,7 @@ not edited (see table above).
 | `dm/games/0100A0F00DA68000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Monster Sanctuary (provisional: packed on a PC, not run on a device) |
 | `dm/games/0100B63016916000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for My Time at Sandrock (provisional: packed on a PC, not run on a device) |
 | `dm/games/0100DAE01E4C8000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for STORY OF SEASONS: Grand Bazaar |
+| `dm/games/010089B01AB44000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for SPY×ANYA: Operation Memories |
 | `dm/gfx/tools/shader_split.py` | **fixed this pass** (header note + 6 def-site tags covering DM_SPLIT_DIRECT/WORKER, DM_UE_DECODE) | **yes** — the on-device process-pool split and the comment-insensitive table comparison (`table_rows`) are general infra, not game-specific |
 | `dm/gfx/tools/uepak.py` | marked (`_nxaes` off-Mac AES path) | **yes** — lets the packer run without CommonCrypto/OpenSSL, general portability fix |
 | `dm/gfx/vk_android/vka_draw.c` | **fixed this pass** | **yes** — indirect quad/line-loop draws read on CPU instead of being skipped (Three Houses) |
@@ -1399,3 +1400,19 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
 | `dm/games/01002B00111A2000/game.tsv`, `dm/games/01002B00111A2000/README.md` | 1, 1 | Hyrule Warriors: Age of Calamity on Android: frame limits Game owned, 30 and 60 (the frame step's targets), measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/01002B00111A2000/vk_prewarm.bin` | new | its Turnip prewarm seed (242 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+### Round 31, a texture filled before its first use takes over an image with older content (2026-11-21)
+
+SPY×ANYA: Operation Memories (`010089B01AB44000`) lost letters from text it showed for the first time, from the end of its dash tutorial on, on the AYN Thor.
+Unity makes its dynamic font atlas again over the same memory, with the same size and format, and fills it with one whole `WriteTexels` before its first use.
+That first use took over the old atlas's image without reading the CPU-written note, and the re-read queue, keyed by serial, lost the image once the old
+atlas was finalized. Entry: `docs/reference/nvn-objects.md`, "A texture filled before its first use takes over an image with older content (Vulkan replay)".
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_tex.c` | 5 | forward declarations of `redo_add_locked` and `redo_forget_locked`; `unref_locked` takes an image out of the re-read queue before it is freed; `vka_tex_get` queues a taken-over image (or a level child's parent) for a re-read when the texture's serial was noted CPU-written (`cpuw_take`); `g_redo` holds images, not serials; `vka_tex_prepare` reads the image from the entry | `// PEANUTS(upstream-candidate)` |
+| `docs/reference/nvn-objects.md`, `docs/agents/symptoms.md` | 1 each | the entry (between `PEANUTS(upstream-candidate) begin`/`end` comments) and its generated symptom line | as said |
+
+Run: SPY×ANYA on the AYN Thor with Turnip, a new save over the same route before and after: before, `Talk to Becky` read `a to ec` and the controls panel lost its
+new letters; after, the panel, every objective and the dialogue to `Return home` are whole, re-uploads 25 → 70, no red line. Not run: the system driver, other
+games. No shader-chain file is changed. Upstream candidate: yes, for every game.

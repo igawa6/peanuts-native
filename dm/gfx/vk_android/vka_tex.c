@@ -260,6 +260,7 @@ static vka_img *g_big[64]; static int g_nbig;   // large images (DM_VK_BIGIMG_MB
 static vka_img *g_lrz_prev;   // PEANUTS: the depth image of the last pass that had one (vka_lrz_touch), under g_tmu
 static vka_img *g_linger[32]; static int g_nlinger;   // PEANUTS: GPU-drawn images kept past their last texture object (linger_keep below), under g_tmu
 static void linger_prune_locked(void); static void linger_take(vka_img *im);   // PEANUTS
+static void redo_add_locked(vka_img *im), redo_forget_locked(vka_img *im);   // PEANUTS(upstream-candidate): (the re-read queue, "The CPU wrote the texture's storage")
 static void unref_locked(vka_img *im) {
     atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release);
     if (--im->refs) return;
@@ -271,6 +272,7 @@ static void unref_locked(vka_img *im) {
         p->nkids--; if (f > p->last_fence) p->last_fence = f;
         vka_after(f, img_destroy, im);
         unref_locked(p); return; }
+    if (im->cpu_dirty) redo_forget_locked(im);   // PEANUTS(upstream-candidate): the re-read queue holds images by pointer: this one leaves it before it is freed
     live_del(im);
     for (int i = 0; i < g_nbig; i++) if (g_big[i] == im) { g_big[i] = g_big[--g_nbig]; break; }
     g_img_bytes -= im->bytes;
@@ -2068,6 +2070,12 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
             }
             if (t->pool && (im->pool != t->pool || revived)) { uint64_t fin = nvn_pool_fin(), g = nvn_pool_live(t->pool, NULL, NULL); if (g) { im->pool = t->pool; im->pfin = fin; im->pgen = g; } } }
         if (!im) im = level_child(t, &f);   // (a texture over mip levels of a live image: that image)
+        // PEANUTS(upstream-candidate): a texture the CPU filled before its first use (WriteTexels with no image yet only notes its serial: mtl_tex_write_region) has that
+        // content in its storage also when it takes over a live image here; only img_create below read the note, so the new texture showed the old one's texels. Unity
+        // makes its dynamic font atlas again over the same memory, with the same size and format, fills it with one whole WriteTexels and finalizes the old one, all in one
+        // frame: the text drew the new glyph layout from the old atlas (SPY×ANYA: Operation Memories, docs/reference/nvn-objects.md "A texture filled before its first
+        // use takes over an image with older content"). Its storage is read again at the next prepare; a GPU-drawn image keeps its content, as for a WriteTexels into it
+        if (im && cpuw_take(t->serial, 0)) redo_add_locked(im);
         if (im && !im->par) big_share(im, t);   // (another texture object of the same storage and shape: DM_VK_BIGIMG_MB diagnostic)
         uint32_t vmin = 0, base = sparse_sampled(t, &f) ? sparse_base(t->pool, t->mem, &t->d, &t->L, &vmin) : 0;
         int mode = 0;
@@ -2622,13 +2630,21 @@ unsigned mtl_cpu_tex_count(void) {   // live images whose content follows their 
 }
 void mtl_pkg_stats(uint64_t *uploads, uint64_t *reuploads) { if (uploads) *uploads = g_st_up[ST_TRACK] + g_st_up[ST_FILL] + g_st_up[ST_SPARSE]; if (reuploads) *reuploads = g_reup; }
 // The CPU wrote the texture's storage: uploaded at its first use, or again at the next submission unless the GPU has written it since (then the GPU's content wins)
-static uint64_t *g_redo; static int g_nredo, g_redocap;
+// PEANUTS(upstream-candidate): the queue holds the images, not their serials. im->serial is the serial of the texture an image was made for; once the game finalized that
+// texture (mtl_tex_release: map_del) an image taken over by a newer texture of the same storage was not found by it, its entry was skipped with cpu_dirty left set, and
+// redo_add_locked refused it from then on: no CPU write reached it again. An entry is no reference: unref_locked takes an image out (redo_forget_locked) before it is freed,
+// on every path (release, eviction, a finalized pool), and cpu_dirty says whether an image is in the queue at all
+static vka_img **g_redo; static int g_nredo, g_redocap;
 static void redo_add_locked(vka_img *im) {   // (g_tmu held) its guest storage holds a write the next prepare must read again
     if (im && im->par) im = im->par;   // (a level child's storage is its parent's: the parent is uploaded)
     if (!im || im->gpu_owned || im->cpu_dirty) return;
+    if (g_nredo == g_redocap) { int nc = g_redocap ? g_redocap * 2 : 64; vka_img **nq = realloc(g_redo, (size_t)nc * sizeof *nq); if (!nq) return; g_redo = nq; g_redocap = nc; }   // PEANUTS(upstream-candidate)
     im->cpu_dirty = 1;
-    if (g_nredo == g_redocap) { g_redocap = g_redocap ? g_redocap * 2 : 64; g_redo = realloc(g_redo, (size_t)g_redocap * sizeof *g_redo); }
-    g_redo[g_nredo++] = im->serial;
+    g_redo[g_nredo++] = im;   // PEANUTS(upstream-candidate)
+}
+static void redo_forget_locked(vka_img *im) {   // PEANUTS(upstream-candidate): (g_tmu held) im is about to be freed: its entry is emptied (the prepare skips it)
+    for (int i = 0; i < g_nredo; i++) if (g_redo[i] == im) g_redo[i] = NULL;
+    im->cpu_dirty = 0;
 }
 void mtl_tex_cpu_written(const tex_t *t) {
     pthread_mutex_lock(&g_tmu);
@@ -3748,7 +3764,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
     }
     int n_up = 0;
     for (int i = 0; i < g_nredo; i++) {   // CPU writes to textures that already have an image (WriteTexels): from now on they follow their storage
-        smap_ent *e = map_get(g_redo[i]); vka_img *im = e ? e->im : NULL;
+        vka_img *im = g_redo[i];   // PEANUTS(upstream-candidate): (NULL: freed while queued, redo_forget_locked)
         if (!im || !im->cpu_dirty) continue;
         im->cpu_dirty = 0;
         if (im->gpu_owned || img_pool_dead(im)) continue;
