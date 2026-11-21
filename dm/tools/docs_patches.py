@@ -481,5 +481,5 @@ if __name__ == '__main__':
         if OUT.read_text() != text: sys.exit(f'{rel(OUT)} is out of date: run dm/tools/docs_patches.py')
         print(f'{rel(OUT)} is current')
     else:
-        OUT.write_text(text)
+        OUT.write_text(text, newline='\n')   # PEANUTS(upstream-candidate): LF on every host (Windows' default translation wrote CR LF, a diff of every line)
         print(f'{rel(OUT)}: {text.count("### ")} games')

@@ -76,7 +76,7 @@
 #   Environment DM_SPLIT_WORKER=<command> (the phone's split, PackService): the pool's workers (J > 1) are processes of that command, which runs Python as `python3 -c` does, fed over pipes
 #   (split_pool.py; the phone's Python has no python executable and no _multiprocessing: dm/peanuts/pack_worker's nxpack_worker through /system/bin/linker64); unset, concurrent.futures' process pool
 # Pair table: (vertex key, pixel key) of every BNSH variation (every Unity program); dmsh_build uses it to give vertex shaders the outputs their pixel shaders read but they do not write (see dmsh_build.py vs_pad)
-import base64, collections, concurrent.futures as cf, functools, glob, hashlib, json, os, pickle, re, struct, subprocess, sys, time, zlib
+import base64, collections, concurrent.futures as cf, functools, glob, hashlib, json, os, pickle, posixpath, re, struct, subprocess, sys, time, zlib   # PEANUTS(upstream-candidate): posixpath for pak paths on Windows
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../tools'))
 from typing import NoReturn, cast   # PEANUTS(upstream-candidate): profile_files validates the targeted main build IDs
 from romfs import os, open, is_image
@@ -2517,7 +2517,7 @@ def ue_legacy_jobs(files, parts=64, mains=()):
     for p, r in sorted(paks, key=lambda x: (x[1].endswith('_P.pak'), x[1])):   # patch paks last, so they replace; one view per pak folder (one per version given)
         try:   # all of a pak's names or none: a patch pak read halfway would still replace the base pak's files
             keys[p] = key_of(p); pk = uepak.Pak(p, keys[p])
-            view.update({(os.path.dirname(p), os.path.normpath(pk.mount + name)): (p, r, name, pk.entry(name)['raw']) for name in pk.files})
+            view.update({(os.path.dirname(p), posixpath.normpath(pk.mount + name)): (p, r, name, pk.entry(name)['raw']) for name in pk.files})   # PEANUTS(upstream-candidate): posixpath, pak paths use '/' on every host
         except (OSError, ValueError) as e: print(f'[RED] /{r}: the pak cannot be read ({e}); its shaders are left out', flush=True)
     chunks, taken, folders = {}, {p for p, _ in paks}, {os.path.dirname(p) for p, _ in paks}
     for p, r in sorted(((p, r) for p, r in files if p.endswith('.utoc') and os.path.dirname(p) in folders), key=lambda x: uepak.mount_order(x[0])):
@@ -2558,7 +2558,7 @@ def ue_legacy_shaders(path, rel, names, out, key=None):
     """Files of an Unreal pak with inline shaders (ue_legacy_jobs), each decoded block by block (Zlib and LZ4 in uepak.py; others with the game's own decoder, DRAGON QUEST XI S: LZ5) and scanned
     for the shader records the engine keeps inline; key: the AES key of a pak whose index and entries are encrypted (ue_legacy_jobs) → ue_packages's extra"""
     pk = _PAKS.get(path) or _PAKS.setdefault(path, uepak.Pak(path, key))
-    label = lambda name: re.sub(r"^(\.\./)+", "", os.path.normpath(pk.mount + name))
+    label = lambda name: re.sub(r"^(\.\./)+", "", posixpath.normpath(pk.mount + name))   # PEANUTS(upstream-candidate): posixpath: pak paths use '/' on every host
     return ue_packages(((f'/{rel}#{label(name)}', lambda name=name: pk.read(name, decode=oodle)) for name in names), out)
 
 def ue_io_shaders(path, rel, chunks, out, key=None):
