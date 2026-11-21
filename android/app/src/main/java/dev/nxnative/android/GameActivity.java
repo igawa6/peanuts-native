@@ -117,7 +117,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         overlay = overlayText(Gravity.BOTTOM | Gravity.START, 1f);
         root.addView(overlay, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.START));
         // The on-screen controls take every touch and pass it to the host, which tells controls from touchscreen fingers
-        controls = new TouchControls(this, Native.hasInput());
+        controls = new TouchControls(this, Native.hasInput(), id);
         root.addView(controls, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         // The build tag: an overlay item, on by default (fpsTick follows the switches); bold, flush in the top-left corner
         tag = overlayText(Gravity.TOP | Gravity.START, 1f);

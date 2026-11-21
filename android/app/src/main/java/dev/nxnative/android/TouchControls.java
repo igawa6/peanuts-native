@@ -39,12 +39,14 @@ final class TouchControls extends View {
     private static final int BUTTON = 0, STICK = 1, DPAD = 2, MAX = 24;   // input_map.h NXT_*, NXT_MAX
     private static final int SHAPE_ROUND = 0, SHAPE_SHOULDER = 1;
 
+    private final String gameTitleId;  // per-game skin override; null/empty uses the global default
     private final boolean input;   // the host takes touches (nxhost_input_touch)
     private SharedPreferences prefs() { return Prefs.open(getContext(), "touch_controls"); }   // read again when the other process wrote it (Prefs.open)
     private boolean available;     // the host takes a layout (nxhost_touch_controls_set): the controls can be drawn
     private boolean shown = true, gamepad;
     private boolean button = true;   // the show / hide button is there (toggleButton): without it the controls are never hidden by it
     private int mode = MODE_AUTO;   // the "On-screen controls" setting (setMode)
+    private int skinStyle = SKIN_SWITCH;   // appearance and stick arrangement, not the host's Nintendo input bits
     private float opacity, scale;
     private boolean haptics;
 
@@ -60,8 +62,8 @@ final class TouchControls extends View {
     // The user's layout, one per screen shape (prof: the view's size in steps of 40 units, so a foldable's two screens keep one each): each group (the left stick with L3,
     // the D-pad, the face buttons, the right stick with R3, the left and the right shoulders with − / +) moved by (gdx, gdy) units and scaled by gsc around its centre,
     // and where the picture sits in the free space (placeX, placeY: 0 left / top, 0.5 centred, 1 right / bottom; nxhost_picture_place)
-    private static final int GROUPS = 6;
-    private static final String[] GROUP_NAME = {"left stick", "D-pad", "A B X Y", "right stick", "ZL L −", "ZR R +"};
+    private static final int GROUPS = 8;
+    private static final String[] GROUP_NAME = {"left stick", "D-pad", "A B X Y", "right stick", "left shoulder", "right shoulder", "Create / Select", "Options / Start"};
     private String prof;
     private final float[] gdx = new float[GROUPS], gdy = new float[GROUPS], gsc = new float[GROUPS];
     private float placeX = 0.5f, placeY = 0.5f;
@@ -95,12 +97,17 @@ final class TouchControls extends View {
     private final Path path = new Path();
     private final RectF rect = new RectF();
 
-    TouchControls(Context c, boolean input) {
+    /** The visual self-test is not a game: it follows the global touch skin. */
+    TouchControls(Context c, boolean input) { this(c, input, null); }
+
+    TouchControls(Context c, boolean input, String titleId) {
         super(c);
         this.input = input;
+        this.gameTitleId = titleId;
         opacity = prefs().getFloat("opacity", 0.6f);
         scale = prefs().getFloat("scale", 1f);
         haptics = prefs().getBoolean("haptics", true);
+        skinStyle = skin(c, titleId);
         shown = prefs().getBoolean("shown", true);
         line.setStyle(Paint.Style.STROKE);
         text.setTextAlign(Paint.Align.CENTER);
@@ -121,6 +128,51 @@ final class TouchControls extends View {
     private boolean active() { return visible() && (shown || !button) && (mode == MODE_ON || !gamepad); }
 
     static final int MODE_AUTO = 0, MODE_ON = 1, MODE_OFF = 2;
+    static final int SKIN_SWITCH = 0, SKIN_DUALSHOCK = 1, SKIN_DUALSENSE = 2;
+    static final String[] SKIN_NAMES = {"Switch Pro (classic)", "DualShock", "DualSense"};
+    /** Two PlayStation render themes share one layout; the original Switch profile is untouched. */
+    private boolean playStationSkin() { return skinStyle != SKIN_SWITCH; }
+    static int skin(Context c) {
+        int style = Prefs.open(c, "touch_controls").getInt("skin", SKIN_SWITCH);
+        return style >= 0 && style < SKIN_NAMES.length ? style : SKIN_SWITCH;
+    }
+    static void skin(Context c, int style) {
+        if (style < 0 || style >= SKIN_NAMES.length) throw new IllegalArgumentException("unknown control skin");
+        Prefs.open(c, "touch_controls").edit().putInt("skin", style).commit();
+    }
+    /** A game's skin choice: absent means follow global Settings, as with other per-game preferences. */
+    static int skin(Context c, String titleId) {
+        int global = skin(c);
+        if (titleId == null || titleId.isEmpty()) return global;
+        int style = Prefs.open(c, "touch_controls").getInt(Prefs.gameKey("skin", titleId), global);
+        return style >= 0 && style < SKIN_NAMES.length ? style : global;
+    }
+    static boolean ownSkin(Context c, String titleId) {
+        return titleId != null && !titleId.isEmpty() && Prefs.open(c, "touch_controls").contains(Prefs.gameKey("skin", titleId));
+    }
+    /** Null removes the game-specific choice, returning the game to the global default. */
+    static void skin(Context c, String titleId, Integer style) {
+        if (titleId == null || titleId.isEmpty()) throw new IllegalArgumentException("missing game title ID");
+        String key = Prefs.gameKey("skin", titleId);
+        SharedPreferences.Editor edit = Prefs.open(c, "touch_controls").edit();
+        if (style == null) edit.remove(key);
+        else {
+            if (style < 0 || style >= SKIN_NAMES.length) throw new IllegalArgumentException("unknown control skin");
+            edit.putInt(key, style);
+        }
+        edit.commit();
+    }
+    /** Switch without changing the host's A/B/X/Y input mapping or existing layout edits. */
+    void setSkin(int style) {
+        if (style == skinStyle) return;
+        if (gameTitleId == null || gameTitleId.isEmpty()) skin(getContext(), style);
+        else skin(getContext(), gameTitleId, style);
+        skinStyle = style;
+        prof = null; // reload the saved PlayStation layout, separate from the original Switch profile
+        relayout();
+        invalidate();
+        Native.note("on-screen controls skin: " + SKIN_NAMES[style]);
+    }
     static final String[] MODE_NAMES = {"Auto", "On", "Off"};
     /** The "On-screen controls" setting, kept for every game: Auto (hidden while a gamepad is connected), On or Off */
     static int mode(Context c) { int m = Prefs.open(c, "touch_controls").getInt("mode", MODE_AUTO); return m >= 0 && m < MODE_NAMES.length ? m : MODE_AUTO; }
@@ -199,7 +251,8 @@ final class TouchControls extends View {
         // a tablet) they stay where the thumbs are, in the bottom corners, instead of spreading over its height
         float y0 = Math.max(0, h - 380 * d), bh = h - y0;
         float bar = picX * w;   // the width of each letterbox bar
-        float rStick = 60 * d, rRight = 54 * d, rPad = 50 * d, rFace = 25 * d, rSh = 25 * d, rSmall = 17 * d, rClick = 17 * d, off = 1.65f * rFace;
+        float rStick = 60 * d, rRight = playStationSkin() ? rStick : 54 * d;
+        float rPad = 50 * d, rFace = 25 * d, rSh = 25 * d, rSmall = 17 * d, rClick = 17 * d, off = 1.65f * rFace;
         n = 0;
         // Shoulders in the band's top corners, ZL / ZR outside, L / R inside, minus / plus next to them
         float shY = y0 + m + 0.7f * rSh;
@@ -207,17 +260,36 @@ final class TouchControls extends View {
         add(BUTTON, L, 0, SHAPE_SHOULDER, m + 3 * rSh + 10 * d, shY, rSh, "L");
         add(BUTTON, ZR, 0, SHAPE_SHOULDER, w - m - rSh, shY, rSh, "ZR");
         add(BUTTON, R, 0, SHAPE_SHOULDER, w - m - 3 * rSh - 10 * d, shY, rSh, "R");
-        add(BUTTON, MINUS, 0, SHAPE_ROUND, m + 4 * rSh + 22 * d + rSmall, shY, rSmall, "−");
-        add(BUTTON, PLUS, 0, SHAPE_ROUND, w - m - 4 * rSh - 22 * d - rSmall, shY, rSmall, "+");
-        // Left: the stick high, the D-pad low, centred in the bar when it is wide enough
+        // Switch Pro keeps its EXACT original top-corner Select/Start geometry.
+        // For both PlayStation skins, Moonlight V+'s intuitive low Create/Options
+        // targets live between the corresponding stick and the screen centre.
+        if (!playStationSkin()) {
+            add(BUTTON, MINUS, 0, SHAPE_ROUND, m + 4 * rSh + 22 * d + rSmall, shY, rSmall, "−");
+            add(BUTTON, PLUS, 0, SHAPE_ROUND, w - m - 4 * rSh - 22 * d - rSmall, shY, rSmall, "+");
+        }
+        // Switch: offset sticks (left high, right low). DualSense: symmetrical sticks low and D-pad high.
+        // Only the layout and icons change: A/B/X/Y and the shoulder bits sent to the game stay unchanged.
         float top = shY + rSh + 10 * d;
-        float lx = Math.max(m + rStick, bar / 2), ly = Math.max(y0 + bh * 0.45f, top + rStick);
-        int ls = add(STICK, 0, 0, SHAPE_ROUND, lx, ly, rStick, "");
-        add(DPAD, UP | DOWN | LEFT | RIGHT, 0, SHAPE_ROUND, Math.max(m + rPad, bar / 2), h - m - rPad, rPad, "");
+        float highY = Math.max(y0 + bh * 0.45f, top + rStick);
+        boolean dual = playStationSkin();
+        float lx = Math.max(m + rStick, bar / 2), ly = dual ? h - m - rStick : highY;
+        if (dual) {
+            // Unlike the offset Switch arrangement, the PlayStation sticks
+            // are both low. Shift its D-pad/face-row *up* enough to clear
+            // those sticks instead of letting the overlap solver drag the
+            // right stick sideways. The same radii/scale as Switch are kept.
+            float faceBottom = off + rFace;
+            float maxHigh = ly - rStick - faceBottom - 4 * d;
+            float minHigh = shY + rSh * 0.62f + rPad + 3 * d;
+            highY = Math.max(minHigh, Math.min(highY, maxHigh));
+        }
+        add(STICK, 0, 0, SHAPE_ROUND, lx, ly, rStick, "");
+        add(DPAD, UP | DOWN | LEFT | RIGHT, 0, SHAPE_ROUND, Math.max(m + rPad, bar / 2),
+                dual ? highY : h - m - rPad, rPad, "");
         float diag = (rStick + rClick + 6 * d) * 0.7071f;
-        add(BUTTON, LS, 0, SHAPE_ROUND, lx + diag, ly + diag, rClick, "L3");
-        // Right: the face buttons high (A right, B bottom, X top, Y left, as on a Switch), the right stick low
-        float fx = Math.min(w - m - rFace - off, w - bar / 2), fy = ly;
+        add(BUTTON, LS, 0, SHAPE_ROUND, lx + diag, ly + (dual ? -diag : diag), rClick, "L3");
+        // On the right the same Nintendo bit positions correspond to Circle/Cross/Triangle/Square.
+        float fx = Math.min(w - m - rFace - off, w - bar / 2), fy = highY;
         add(BUTTON, A, 0, SHAPE_ROUND, fx + off, fy, rFace, "A");
         add(BUTTON, B, 0, SHAPE_ROUND, fx, fy + off, rFace, "B");
         add(BUTTON, X, 0, SHAPE_ROUND, fx, fy - off, rFace, "X");
@@ -226,6 +298,18 @@ final class TouchControls extends View {
         add(STICK, 0, 1, SHAPE_ROUND, rx, ry, rRight, "");
         float diagR = (rRight + rClick + 6 * d) * 0.7071f;
         add(BUTTON, RS, 0, SHAPE_ROUND, rx - diagR, ry - diagR, rClick, "R3");
+        if (dual) {
+            // Lower utility controls, like Moonlight V+'s ⋯ (Create) and ≡ (Options).
+            // Same 17-unit button radius as the original Switch Pro + / − buttons.
+            // Clamped outside the analog-stick touch circles; mirrored by default.
+            float lowerY = h - m - rSmall;
+            float menuLeft = Math.max(w * 0.28f, lx + rStick + rSmall + 8 * d);
+            float menuRight = Math.min(w * 0.72f, rx - rRight - rSmall - 8 * d);
+            menuLeft = Math.min(w * 0.5f - rSmall - 4 * d, menuLeft);
+            menuRight = Math.max(w * 0.5f + rSmall + 4 * d, menuRight);
+            add(BUTTON, MINUS, 0, SHAPE_ROUND, menuLeft, lowerY, rSmall, "⋯");
+            add(BUTTON, PLUS, 0, SHAPE_ROUND, menuRight, lowerY, rSmall, "≡");
+        }
         // Push apart what still overlaps (a large size on a small screen): the later control moves towards the middle
         for (int pass = 0; pass < 4; pass++)
             for (int j = 0; j < n; j++)
@@ -261,6 +345,8 @@ final class TouchControls extends View {
         if (b == LS) return 0;
         if (b == RS) return 3;
         if ((b & (A | B | X | Y)) != 0) return 2;
+        if (playStationSkin() && b == MINUS) return 6;
+        if (playStationSkin() && b == PLUS) return 7;
         if ((b & (ZL | L | MINUS)) != 0) return 4;
         return 5;
     }
@@ -289,21 +375,25 @@ final class TouchControls extends View {
         return placeX != 0.5f || placeY != defY();
     }
 
+    private String layoutProfile() {
+        return prof + (playStationSkin() ? "#dualsense" : "");  // retain the existing colored-skin layout edits
+    }
+
     private void load() {
         button = toggleButton(getContext());
         for (int g = 0; g < GROUPS; g++) {
-            String[] v = prefs().getString("group" + g + "@" + prof, "0 0 1").split(" ");
+            String[] v = prefs().getString("group" + g + "@" + layoutProfile(), "0 0 1").split(" ");
             try { gdx[g] = Float.parseFloat(v[0]); gdy[g] = Float.parseFloat(v[1]); gsc[g] = Float.parseFloat(v[2]); }
             catch (RuntimeException e) { gdx[g] = 0; gdy[g] = 0; gsc[g] = 1; }
         }
-        String[] v = prefs().getString("picture@" + prof, "0.5 " + defY()).split(" ");
+        String[] v = prefs().getString("picture@" + layoutProfile(), "0.5 " + defY()).split(" ");
         try { placeX = Float.parseFloat(v[0]); placeY = Float.parseFloat(v[1]); } catch (RuntimeException e) { placeX = 0.5f; placeY = defY(); }
     }
 
     private void saveLayout() {
         SharedPreferences.Editor e = prefs().edit();
-        for (int g = 0; g < GROUPS; g++) e.putString("group" + g + "@" + prof, gdx[g] + " " + gdy[g] + " " + gsc[g]);
-        e.putString("picture@" + prof, placeX + " " + placeY).commit();   // commit: the game process may end right after (Stop)
+        for (int g = 0; g < GROUPS; g++) e.putString("group" + g + "@" + layoutProfile(), gdx[g] + " " + gdy[g] + " " + gsc[g]);
+        e.putString("picture@" + layoutProfile(), placeX + " " + placeY).commit();   // commit: the game process may end right after (Stop)
     }
 
     private void relayout() { layout(getWidth(), getHeight()); }
@@ -524,7 +614,12 @@ final class TouchControls extends View {
     private void drawControls(Canvas c) {
         for (int i = 0; i < n; i++) {
             boolean held = pressed[i] != 0;
-            fill.setColor(held ? Color.argb(alpha(0.55f), 255, 255, 255) : Color.argb(alpha(0.35f), 0, 0, 0));
+            // Both PlayStation skins keep the exact same translucent button
+            // background and touch geometry as DualShock (no white disc fill).
+            // Only the face symbol's stroke changes: colored for DualShock,
+            // clean white for DualSense.
+            fill.setColor(held ? Color.argb(alpha(0.55f), 255, 255, 255)
+                    : Color.argb(alpha(0.35f), 0, 0, 0));
             line.setColor(Color.argb(alpha(0.9f), 255, 255, 255));
             if (kind[i] == STICK) drawStick(c, i);
             else if (kind[i] == DPAD) drawDpad(c, i);
@@ -537,11 +632,75 @@ final class TouchControls extends View {
                     c.drawCircle(cx[i], cy[i], r[i], fill);
                     c.drawCircle(cx[i], cy[i], r[i], line);
                 }
-                text.setColor(held ? Color.argb(alpha(1f), 0, 0, 0) : Color.argb(alpha(1f), 255, 255, 255));
-                text.setTextSize(r[i] * (label[i].length() > 1 ? 0.72f : 0.95f));
-                c.drawText(label[i], cx[i], cy[i] - (text.descent() + text.ascent()) / 2, text);
+                if (playStationSkin() && (buttons[i] & (A | B | X | Y)) != 0) {
+                    dualSenseSymbol(c, buttons[i], cx[i], cy[i], r[i], held);
+                } else if (playStationSkin() && (buttons[i] == MINUS || buttons[i] == PLUS)) {
+                    drawPlayStationUtility(c, buttons[i], cx[i], cy[i], r[i], held);
+                } else {
+                    String name = playStationSkin() ? dualSenseLabel(buttons[i], label[i]) : label[i];
+                    text.setColor(held ? Color.argb(alpha(1f), 0, 0, 0) : Color.argb(alpha(1f), 255, 255, 255));
+                    text.setTextSize(r[i] * (name.length() > 1 ? 0.72f : 0.95f));
+                    c.drawText(name, cx[i], cy[i] - (text.descent() + text.ascent()) / 2, text);
+                }
             }
         }
+    }
+
+    private static String dualSenseLabel(long bit, String original) {
+        if (bit == ZL) return "L2";
+        if (bit == ZR) return "R2";
+        if (bit == L) return "L1";
+        if (bit == R) return "R1";
+        if (bit == MINUS) return "⋯";  // Create (Nintendo minus input)
+        if (bit == PLUS) return "≡";   // Options (Nintendo plus input)
+        return original;
+    }
+
+    /** Crisp vector PlayStation face shapes, so no special glyph font or image resource is required. */
+    private void dualSenseSymbol(Canvas c, long bit, float x, float y, float radius, boolean held) {
+        int color = bit == X ? Color.rgb(105, 205, 122)   // Triangle: top Nintendo X
+                : bit == A ? Color.rgb(241, 113, 130)      // Circle: right Nintendo A
+                : bit == Y ? Color.rgb(218, 137, 226)      // Square: left Nintendo Y
+                : Color.rgb(105, 165, 252);               // Cross: bottom Nintendo B
+        if (skinStyle == SKIN_DUALSENSE) color = Color.rgb(250, 251, 255); // white vector outlines over transparent glass
+        line.setColor(held ? Color.argb(alpha(1f), 20, 24, 34)
+                : Color.argb(alpha(1f), Color.red(color), Color.green(color), Color.blue(color)));
+        float z = radius * 0.44f;
+        line.setStrokeWidth(Math.max(1.6f * getResources().getDisplayMetrics().density, radius * 0.11f));
+        if (bit == A) c.drawCircle(x, y, z, line);
+        else if (bit == Y) c.drawRect(x - z, y - z, x + z, y + z, line);
+        else if (bit == X) {
+            path.reset(); path.moveTo(x, y - z); path.lineTo(x + z, y + z * 0.82f);
+            path.lineTo(x - z, y + z * 0.82f); path.close(); c.drawPath(path, line);
+        } else {
+            c.drawLine(x - z, y - z, x + z, y + z, line);
+            c.drawLine(x + z, y - z, x - z, y + z, line);
+        }
+        line.setStrokeWidth(Math.max(1.5f, 1.6f * getResources().getDisplayMetrics().density));
+    }
+
+    /** Three dots = Create; three rounded bars = Options. Vector shapes avoid font glyph differences. */
+    private void drawPlayStationUtility(Canvas c, long bit, float x, float y, float radius, boolean held) {
+        int ink = held ? Color.rgb(20, 24, 34) : Color.rgb(247, 249, 255);
+        int color = Color.argb(alpha(0.98f), Color.red(ink), Color.green(ink), Color.blue(ink));
+        line.setColor(color);
+        float d = getResources().getDisplayMetrics().density;
+        float halfWidth = radius * 0.41f;
+        float spacing = radius * 0.26f;
+        if (bit == MINUS) {
+            fill.setColor(color);
+            for (int i = -1; i <= 1; i++)
+                c.drawCircle(x + i * spacing, y, Math.max(d * 1.15f, radius * 0.085f), fill);
+        } else {
+            line.setStrokeWidth(Math.max(d * 1.5f, radius * 0.10f));
+            line.setStrokeCap(Paint.Cap.ROUND);
+            for (int i = -1; i <= 1; i++) {
+                float yy = y + i * spacing;
+                c.drawLine(x - halfWidth, yy, x + halfWidth, yy, line);
+            }
+            line.setStrokeCap(Paint.Cap.BUTT);
+        }
+        line.setStrokeWidth(Math.max(1.5f, 1.6f * d));
     }
 
     /** The editor: the picture's outline, each group's frame (the one held filled), the buttons along the top and what to do */
@@ -626,6 +785,19 @@ final class TouchControls extends View {
         mg.check(4000 + mode);
         mg.setOnCheckedChangeListener((g, id) -> { mode(ctx, id - 4000); setMode(id - 4000); });
         box.addView(mg);
+        TextView skinTitle = new TextView(ctx);
+        skinTitle.setText("Virtual controller style (changes the on-screen buttons and stick placement)");
+        RadioGroup skins = new RadioGroup(ctx);
+        skins.setOrientation(RadioGroup.VERTICAL);
+        for (int i = 0; i < SKIN_NAMES.length; i++) {
+            RadioButton b = new RadioButton(ctx);
+            b.setId(4200 + i);
+            b.setText(SKIN_NAMES[i]);
+            skins.addView(b);
+        }
+        skins.check(4200 + skinStyle);
+        skins.setOnCheckedChangeListener((g, id) -> { if (id >= 4200 && id < 4200 + SKIN_NAMES.length) setSkin(id - 4200); });
+        box.addView(skinTitle); box.addView(skins);
         TextView ol = new TextView(ctx), sl = new TextView(ctx);
         SeekBar os = new SeekBar(ctx), ss = new SeekBar(ctx);
         CheckBox hb = new CheckBox(ctx), lb = new CheckBox(ctx), tb = new CheckBox(ctx);
