@@ -1258,6 +1258,31 @@ All logic is in Peanuts' own files; the upstream lines only call it.
 
 Tests: `dm/tools/tests/test_android_build_log.py`. Upstream candidate: no (it serves Peanuts' build pipeline).
 
+### Round 42, the Share log chooser everywhere (2026-11-21)
+
+Share log asked between the newest game run and the newest build only in Settings, and only when a build log was newer than the newest run. The game's
+Storage tab had two rows, the build cards and the Prepare card's menu shared the build only, the "Game stopped" notice the run only. Now every place asks
+when the game has both a run log and a build (a build log or a job folder), and shares the one there is otherwise. Each choice says when it happened and
+how it ended, from the files' own facts: "Stopped today at 14:32 after 18 min", "Failed while translating shaders yesterday at 21:05 after 3 min"
+(`dev.peanuts.ui.LogChoice`: a run's start from its log's name, its end from the log's last change, how it ended from the exit record or its log's end; a
+build's newest run from its build log's start, end and progress lines, or its job.json). All logic is in Peanuts' own files; the upstream lines only call it.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 1 | The game page's Share log and Share build log rows become one Share log… row: `BuildLogUi.shareLog(this, g.titleId, g.name, null, () -> shareLog(g.titleId))` (upstream's own Share log of the game when the run is picked, and its "No log of this game yet.") | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/ExitWatch.java` | 1 | The notice's Share log calls `BuildLogUi.shareLog` with that run; picking the run sends it with its digest as before (`a.shareLog(log, digest)`) | `PEANUTS` |
+| `android/app/src/ondevice/java/dev/nxnative/android/Ondevice.java` | 2 | The Manage sheet's button reads Share log and calls `BuildLogUi.shareLog`; the Prepare card's `BuildLogUi.card` line keeps its call, its comment says Share log | `PEANUTS` |
+
+Peanuts' own files, no marker: `android/app/src/main/java/dev/peanuts/ui/LogChoice.java` (new), `ui/BuildLogUi.java` (the choice, the card's button, a run shared
+through `MainActivity.shareLog(File, File)` by reflection where the caller has no way of its own), `ui/Library.java` (the build card's Share log),
+`build/BuildLogShare.java` (`found`: the build log's end and the newest job, as `make` finds them), `android/app/src/jvmtest/java/dev/peanuts/ui/LogChoiceJvmTest.java`
+(new), `peanuts/tests/test_share_log_choice.py` (new), `dm/tools/tests/test_android_build_log.py` (the entry points), `peanuts/docs/FAQ.md`,
+`peanuts/scripts/issue_forms.py` and the two forms it writes (`.github/ISSUE_TEMPLATE/1_game_problem.yml`, `2_build_problem.yml`, allow-listed in
+`peanuts/upstream-unmarked.txt`: Newest game run and Newest build), `peanuts/tests/test_issue_forms.py` (the app's words).
+
+Tests: `peanuts/tests/test_share_log_choice.py`, `dm/tools/tests/test_android_build_log.py`, and upstream's `dm/tools/tests/test_android_game_settings.py` (the game
+page still calls `shareLog(g.titleId)`). Upstream candidate: no (it serves Peanuts' build pipeline).
+
 ### Shader extraction and build failure cards (2026-11-19)
 
 The marked changes in `dm/gfx/tools/uepak.py` stream decoded LZ4 shader records to disk and reuse the completed
@@ -1399,3 +1424,34 @@ The Trinity reader in `dm/gfx/tools/shader_split.py` narrows a recognized build 
 | `README.md`, `peanuts/docs/README.github.md` | 1 + 1 each | the game's table row and its paragraph under Upcoming in 0.1.6 | inside the files' `PEANUTS` sections |
 | `dm/games/01002B00111A2000/game.tsv`, `dm/games/01002B00111A2000/README.md` | 1, 1 | Hyrule Warriors: Age of Calamity on Android: frame limits Game owned, 30 and 60 (the frame step's targets), measured on an AYN Thor; the note's Android section | `PEANUTS` |
 | `dm/games/01002B00111A2000/vk_prewarm.bin` | new | its Turnip prewarm seed (242 keys) | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+### Round 41, Back keeps your place (2026-11-21)
+
+Settings and a game's page came back at their top, a controller's focus on the first row, after Advanced, a size change, or the activity made again
+(Android ended the launcher's process behind a sub-page such as the Readiness check, a fold, dark mode). `dev.peanuts.ui.PagePlace` keeps the scroll
+position and the focused row across MainActivity's rebuilds; the upstream lines only call it.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 5 | `onCreate` after the first `build()`: `PagePlace.restore(saved, ...)` off Home; `onSaveInstanceState`: `PagePlace.save(...)` off Home; `onConfigurationChanged`: `PagePlace.of(...)` before `build()` and `place.restore(...)` after it, off Home (upstream's own scroll keeping for a game's page stays); `openAdvanced`: `PagePlace.cover(...)` before `build()`; `closeAdvanced`: `PagePlace.uncover(...)` after it | `PEANUTS` |
+
+Peanuts' own files, no marker: `android/app/src/main/java/dev/peanuts/ui/` (`PagePlace.java`, `PlacePick.java` new),
+`android/app/src/jvmtest/java/dev/peanuts/ui/PagePlaceJvmTest.java` new, `peanuts/tests/test_page_place.py` new.
+
+Tests: `peanuts/tests/test_page_place.py`. Upstream candidate: possibly (Banana Native rebuilds its pages the same way); the code would then live in
+MainActivity.
+
+### Round 43, the bottom screen's peanuts pop (2026-11-21)
+
+Tapping the drifting peanuts on the Thor's bottom screen did nothing: the launcher's page there (`dev.peanuts.ui.BottomPanel`) draws upstream's
+`BananaBackgroundView`, but nothing routed a tap to its `popAt`. The panel now tells a tap on its background itself (`BackgroundTap`) and pops the peanut;
+the count goes through MainActivity's own counter, so Settings' line follows. All logic is in Peanuts' own files; the upstream line only hands the counter over.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 1 | `onCreate`, after `bananas.setOnPop(...)`: `dev.peanuts.ui.BottomScreen.onPop(this, ...)` with the same count and Settings line as the top screen's pop | `PEANUTS` |
+
+Peanuts' own files, no marker: `android/app/src/main/java/dev/peanuts/ui/` (`BackgroundTap.java` new, `BottomPanel.java`, `BottomScreen.java`),
+`android/app/src/jvmtest/java/dev/peanuts/ui/BackgroundTapJvmTest.java` new, `peanuts/tests/test_bottom_screen_peanuts.py` new.
+
+Tests: `peanuts/tests/test_bottom_screen_peanuts.py`. Upstream candidate: no (the second display is Peanuts').

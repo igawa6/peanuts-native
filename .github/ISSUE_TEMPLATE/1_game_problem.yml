@@ -315,7 +315,7 @@ body:
     attributes:
       label: "Log of the run"
       description: |
-        Right after the problem, before you start the game again: hold the game's cover › **Storage** › **Share log** (that game's newest run), or Settings › **Share log**. After "The game stopped unexpectedly", the dialog's **Share log** works too. Its file name starts with the game's title ID.
+        Right after the problem, before you start the game again: hold the game's cover › **Storage** › **Share log…** and pick **Newest game run** when it asks, or Settings › **Share log**. After "The game stopped unexpectedly", the dialog's **Share log** works too. Its file name starts with the game's title ID.
         Best: save the file, zip it and drag the .zip into this box. Or paste the whole log into the block below (it is collapsed in the issue), and keep the `<details>` lines.
       value: |
         <details>
@@ -332,7 +332,7 @@ body:
     id: build_log
     attributes:
       label: "Build log, if the problem began after a build"
-      description: "When the game ran before and the problem began after it was built, prepared or updated again. Tap **Share build log** on the game's card on Home (it shows while a build has stopped or failed), on the Prepare card, or hold the game's cover › **Storage** › **Share build log**; then **Save to a folder**, and drag that .zip into this box as it is."
+      description: "When the game ran before and the problem began after it was built, prepared or updated again. Tap **Share log** on the game's card on Home (it shows while a build has stopped or failed), on the Prepare card, or hold the game's cover › **Storage** › **Share log…**, and pick **Newest build** when it asks; then **Save to a folder**, and drag that .zip into this box as it is."
       placeholder: "Drag the build log .zip here"
   - type: textarea
     id: save

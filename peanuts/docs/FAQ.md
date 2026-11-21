@@ -279,7 +279,7 @@ The app asks for the notification permission at your first build. Without it the
 
 ### What happens if the build is interrupted or the device sleeps?
 
-What is written so far stays. The game's card shows **Build stopped** with **Resume** or **Retry**, and the next build picks up what it can. If it keeps stopping, send its **Share build log** (see "A build failed, stopped or the app closed during it"). If the screen going off stops the build on your device, turn on Settings › **Keep the screen on while preparing** and keep the device charging. A build can also pause by itself for heat or battery and then continue.
+What is written so far stays. The game's card shows **Build stopped** with **Resume** or **Retry**, and the next build picks up what it can. If it keeps stopping, send its build log with **Share log** › **Newest build** (see "A build failed, stopped or the app closed during it"). If the screen going off stops the build on your device, turn on Settings › **Keep the screen on while preparing** and keep the device charging. A build can also pause by itself for heat or battery and then continue.
 
 ### It sits at the same percentage for a long time. Is it stuck?
 
@@ -436,19 +436,21 @@ Saves are in the app's own storage, under `saves/<title ID>`. The **Saves** tab 
 
 Every run of a game writes a log. To send it:
 
-- one game's newest log: hold its cover › **Storage** tab › **Share log**;
+- one game's newest log: hold its cover › **Storage** tab › **Share log…**;
 - the newest log of any run, including a Graphics self-test: Settings › **Share log**.
 
-After a crash the app's notice has a **Share log** button for that run.
+After a crash the app's notice has a **Share log** button for that run. When the game also has a build log, each of these asks which one you want: the newest game run or the newest build, each with when it happened and how it ended (for example "Stopped today at 14:32 after 18 min").
 
 ### A build failed, stopped or the app closed during it. What do I send?
 
-**Share build log** puts everything a build of one game left into one `.zip`, small enough to attach to an issue. It is on:
+The build log puts everything a build of one game left into one `.zip`, small enough to attach to an issue. It is behind every **Share log**:
 
 - the game's card on Home while its build is stopped or failed;
 - the Prepare card while its job has failed or is paused, and in its **⋯** menu;
-- hold the game's cover › **Storage** tab › **Share build log**;
-- Settings › **Share log**, which asks whether you want the newest game run or the newest build when a build changed after the last run.
+- hold the game's cover › **Storage** tab › **Share log…**;
+- Settings › **Share log**.
+
+When the game also has a game run's log, Share log asks which one you want: **Newest build** is the `.zip`, with when the build happened and how it ended (for example "Failed while translating shaders today at 14:32 after 22 min").
 
 The sheet says how many files the `.zip` holds and how big it is. Tap **Share**, or **Save to a folder** and attach the file from there. It holds:
 
@@ -458,7 +460,7 @@ The sheet says how many files the `.zip` holds and how big it is. Tap **Share**,
 - the app's own messages of the build and of crashes;
 - a summary: the app's version, the device, its memory and free space, the build's state, and how Android ended the app's processes last (to free memory, a crash, or not responding).
 
-It never holds your keys, game files, `.nup` files, saves or packs. Folder paths and game names are in it, as in the game log. Long logs are cut to their first and last part. The app writes a build's own log only since it has **Share build log**: for a build made with an older version, the `.zip` has its step logs and the summary.
+It never holds your keys, game files, `.nup` files, saves or packs. Folder paths and game names are in it, as in the game log. Long logs are cut to their first and last part. The app writes a build's own log only since version 0.1.5: for a build made with an older version, the `.zip` has its step logs and the summary.
 
 ## GPU drivers
 
@@ -751,14 +753,14 @@ For a black screen, try another GPU driver first. On a device whose system drive
 
 Out of storage: the card offers **Free up space** and **Retry**. Free space on the volume the build writes to, then retry. The build picks up what it can.
 
-Out of memory, typically on an 8 GB device: update to 0.1.1 or later, which builds with fewer workers on low-memory devices. A build that Android ended for memory resumes with fewer workers, so tap **Resume**. Close other apps before a large build. If it still fails, build the game on a PC or a Mac, or report it with its **Share build log**: its summary says whether Android ended the build for memory.
+Out of memory, typically on an 8 GB device: update to 0.1.1 or later, which builds with fewer workers on low-memory devices. A build that Android ended for memory resumes with fewer workers, so tap **Resume**. Close other apps before a large build. If it still fails, build the game on a PC or a Mac, or report it with its build log (**Share log** › **Newest build**): its summary says whether Android ended the build for memory.
 
 ### How do I report a bug well?
 
 Open an issue at https://github.com/igawa6/peanuts-native/issues and pick the form that fits:
 
 - **Game problem**: a game crashes, freezes, shows a black screen, draws wrong, runs slowly, or its sound, controls or saves misbehave. It asks for the log of that run: hold the game's cover › **Storage** › **Share log** right after the problem, before you start the game again, or Settings › **Share log**. Its file name starts with the game's title ID.
-- **Build problem**: adding a game went wrong (the import, Prepare or the companion fails, stops, never finishes, or the app closes during it). It asks for the `.zip` of **Share build log**, attached as it is.
+- **Build problem**: adding a game went wrong (the import, Prepare or the companion fails, stops, never finishes, or the app closes during it). It asks for the `.zip` of **Share log** › **Newest build**, attached as it is.
 - **Setup or app problem**: keys, firmware, the game folder and the library (a missing game, **Wrong version**, **File gone**), storage, installing a driver, a companion or a mod, saves, the second screen, or the app itself.
 - **Desktop builder problem**: building a game on a computer ([BUILDER.md](BUILDER.md)) fails.
 - **Game request** and **Feature request**: one game or one idea per post; search first and add a 👍 to an existing one.

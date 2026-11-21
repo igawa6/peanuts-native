@@ -309,7 +309,7 @@ body:
     attributes:
       label: "Build log"
       description: |
-        Tap **Share build log** on the game's card on Home (it shows while a build has stopped or failed), on the Prepare card, or hold the game's cover › **Storage** › **Share build log**; then **Save to a folder**, and drag that .zip into this box as it is.
+        Tap **Share log** on the game's card on Home (it shows while a build has stopped or failed), on the Prepare card, or hold the game's cover › **Storage** › **Share log…**, and pick **Newest build** when it asks; then **Save to a folder**, and drag that .zip into this box as it is.
         It holds the build's own log, its step logs, the job's state and a summary (the app, the device, memory, free space, and why Android ended the app if it did). Never keys, game files, `.nup` files or saves. If you tried again since, that is fine: the log keeps the recent tries one after the other.
       placeholder: "Drag the build log .zip here"
     validations:

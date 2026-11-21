@@ -199,8 +199,9 @@ STORAGE = ['Internal storage', 'microSD card', 'USB drive or SSD', "I don't know
 
 LOG_BLOCK = '<details>\n<summary>Log (click to expand)</summary>\n\n```text\npaste the log here, or delete this block when you attach the file\n```\n\n</details>\n'
 
-BUILD_LOG_HOW = ("Tap **Share build log** on the game's card on Home (it shows while a build has stopped or failed), on the Prepare card, or hold the "
-                 "game's cover › **Storage** › **Share build log**; then **Save to a folder**, and drag that .zip into this box as it is.")
+BUILD_LOG_HOW = ("Tap **Share log** on the game's card on Home (it shows while a build has stopped or failed), on the Prepare card, or hold the "
+                 "game's cover › **Storage** › **Share log…**, and pick **Newest build** when it asks; then **Save to a folder**, and drag that .zip "
+                 "into this box as it is.")
 
 
 def searched(extra=()):
@@ -285,8 +286,8 @@ def game_problem():
                 'A controller\'s gyro',
             ], multiple=True, required=False),
             text('log', 'Log of the run', (
-                "Right after the problem, before you start the game again: hold the game's cover › **Storage** › **Share log** (that game's "
-                "newest run), or Settings › **Share log**. After \"The game stopped unexpectedly\", the dialog's **Share log** works too. Its "
+                "Right after the problem, before you start the game again: hold the game's cover › **Storage** › **Share log…** and pick "
+                "**Newest game run** when it asks, or Settings › **Share log**. After \"The game stopped unexpectedly\", the dialog's **Share log** works too. Its "
                 "file name starts with the game's title ID.\n"
                 "Best: save the file, zip it and drag the .zip into this box. Or paste the whole log into the block below (it is collapsed in "
                 "the issue), and keep the `<details>` lines.\n"), value=LOG_BLOCK, required=True),

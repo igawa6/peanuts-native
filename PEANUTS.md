@@ -53,6 +53,13 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      `dev.peanuts.ui.BuildLogUi.shareLog(this, this::shareLog)` (the newest build instead, when a build log changed after the newest run), and one row after the
      game page's Share log; `ondevice/.../Ondevice.java` one line in the Panel's constructor after the Check for updates button (`BuildLogUi.card`: the
      button shows while the job has failed or is paused) and one button line in `manage()`.
+   - The Share log chooser everywhere (2026-11-21, `dev.peanuts.ui.BuildLogUi.shareLog`, words in `dev.peanuts.ui.LogChoice`, `peanuts/UPSTREAM-EDITS.md`
+     Round 42): every place that shares a log asks between the game's newest run and its build when it has both, and shares the one there is otherwise. Upstream
+     lines: `MainActivity.java` the game page's two rows Share log and Share build log become one **Share log…** row (`BuildLogUi.shareLog(this, g.titleId,
+     g.name, null, () -> shareLog(g.titleId))`; Settings › Share log keeps its line); `ExitWatch.java` the "Game stopped" notice's Share log
+     (`BuildLogUi.shareLog(a, title, name, log, () -> a.shareLog(log, digest))`); `ondevice/.../Ondevice.java` the Manage sheet's button (Share log,
+     `BuildLogUi.shareLog(a, j.titleId(), j.name(), null, null)`) and the Prepare card's comment. A run picked where the caller gives no way to share it goes
+     through `MainActivity.shareLog(File, File)` by reflection.
    - `SidePanel.java` `look()` — (2026-11-17) one line after the `look(box, ...)` call: `dev.peanuts.ui.PanelPolish.apply(box);   // PEANUTS: ...` (segmented short radio groups, one look for headings, notes and buttons; styling only).
    - `android/app/src/main/java/dev/nxnative/android/GameActivity.java` — (2026-11-17) one line after `GpuDriver.env(...)`: `dev.peanuts.overlay.Hud.driver(...)` with the selected driver's label, else `Readiness.driverWord` of the system facts (null reads "System"), for the table's DRV row.
    - `android/app/src/main/cpp/nxlaunch.c` — (2026-11-17, overlay graph in realtime) in `Java_dev_nxnative_android_Native_overlaySet`, one line before `nxhost_overlay_set`: `if (peanuts_ovl_block) peanuts_ovl_block(...)` (JNI entry points forwarded to `dm/peanuts`), with `#pragma weak peanuts_ovl_block` and its prototype beside the other weak host symbols. `android/host/CMakeLists.txt`: one line compiling `dm/peanuts/peanuts_graph.c`; `android/host/libnxhost.map`: one line exporting `peanuts_ovl_block` (the host exports only `nxhost_*` and `Java_*`). `dm/peanuts/peanuts.c`: `pn_graph_frame();` in `peanuts_tick`.
@@ -60,6 +67,10 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      Readiness check's "Pick a GPU driver" open `dev.peanuts.ui.DriverActivity` instead of `GpuDriver.dialog`, two lines; the page itself and its
      manifest entry are Peanuts-owned. The Game settings row and the system-driver launch warning also open the page with a title ID.
      The activity result refreshes the game settings. Installs still go through `GpuDriver.install`. `peanuts/UPSTREAM-EDITS.md` Round 22.
+   - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-21, Back keeps your place) one line each in `onCreate` (after the
+     first `build()`), `onSaveInstanceState`, `openAdvanced` (before `build()`) and `closeAdvanced` (after it), and two in `onConfigurationChanged`
+     around its `build()`: `dev.peanuts.ui.PagePlace` takes the page's scroll position and focused row and puts them back once the page is built
+     again. Home keeps its own (`dev.peanuts.ui.Library`). `peanuts/UPSTREAM-EDITS.md` Round 41.
 3. **Settings go through upstream's own mechanisms**: `env.txt` keys named `PN_*`, `settings.tsv` rows, `DM_CTL` lines. No new settings UI inside upstream classes.
 4. **Never reformat or "fix" upstream files.** A general fix belongs upstream as a PR to Banana Native (its AGENTS.md prefers general changes), then it arrives by rebase.
 5. **Branches:** `upstream/android` is Banana Native; `peanuts` is this overlay, always a linear set of commits on top of a Banana Native tag. History is rewritten on every update (rebase, never merge).
@@ -192,6 +203,9 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
    - `android/app/src/main/java/dev/nxnative/android/BananaBackgroundView.java` — (2026-11-17, the same) one line each in `onDraw` and `popAt`
      after the drift `wx, wy`: `dev.peanuts.ui.BackgroundFlow.drift(...)` replaces it while the second display shows the launcher, so both screens
      draw one field and a tap pops the banana where it is drawn. The drawing stays upstream's. `peanuts/UPSTREAM-EDITS.md` Round 20.
+   - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-21, the bottom screen's peanuts pop) one line in `onCreate` after
+     `bananas.setOnPop(...)`: `dev.peanuts.ui.BottomScreen.onPop(this, ...)` counts a peanut popped on the second display as the top screen's
+     (`Prefs.addBananaPopped`, Settings' line while it shows). `peanuts/UPSTREAM-EDITS.md` Round 43.
    - `android/app/src/main/java/dev/nxnative/android/NxApp.java` — (2026-11-17, the same) one line in `onCreate`: `dev.peanuts.ui.AppScreens.install(this)`
      lets the app's pages in other processes (Readiness check, Graphics self-test) tell the launcher they are in front, so the second display keeps
      its page. `peanuts/UPSTREAM-EDITS.md` Round 20.
@@ -220,3 +234,26 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
   Paradise compressed with nsz 5.0.0: the `.nup` of the NSPs, of a solid set, of a block set and of a mixed set are one file (SHA-256 the same, 11.05
   GiB); import 30.8 s from the NSPs, 41.7 s from blocks, 64.3 s from solid; peak memory 321 to 403 MiB. A Build in the test app from the solid set ran
   to Ready in 8 min 4 s; Stop while unpacking left nothing behind. UPSTREAM-EDITS Round 29; HOOKS.md "Compressed dumps".
+- 2026-11-21 (Back keeps your place): Settings, Advanced and a game's page come back where they were. MainActivity builds a page anew for every
+  change, in a new ScrollView without a view id, and saved only which page was open, so the page came back at its top with a controller's focus on
+  its first row: Back from Advanced (over Settings or a game's page), a size change, and the activity made again. The last one is what Back from a
+  sub-page in front of Settings (GPU driver, Readiness check, Graphics self-test, Companions, Miis) runs into when Android ends the launcher's process
+  meanwhile; while the process lives, those pages keep the place (seen on the Thor with the controller and on the emulator). `dev.peanuts.ui.PagePlace`
+  takes the scroll position and the focused row before such a rebuild (also into the saved state) and puts them back in the new page's first layout,
+  before the page's own first-row focus. The row is found again by its words and which of the rows with those words it was, else by its place
+  (`PlacePick`). A window made again starts in touch mode, showing no focus: the row is then the page's default focus, so the controller's first
+  press lands on it, unless the page was scrolled since. Home keeps its own place (`Library`). Thor: Back from Advanced, and from the Readiness check
+  with the launcher's process ended behind it, land on the same row at the same position. UPSTREAM-EDITS Round 41; test
+  `peanuts/tests/test_page_place.py`.
+- 2026-11-21 (the Share log chooser everywhere, UPSTREAM-EDITS Round 42): every place that shares a log asks between the game's newest run and its
+  build when it has both, each with when it happened and how it ended (`dev.peanuts.ui.LogChoice`); with one log it is shared at once. The game page's
+  two rows are one **Share log…**. When both logs in Settings › Share log are of one game, its name is the sheet's title and the lines carry only when
+  and how. Emulator (test app, a run log, a failed build log and an exit record of Link's Awakening): Settings › Share log, the game page's Share log…
+  and the "Game stopped" notice ask and share; the build card, the Prepare card and its menu are covered by `peanuts/tests/test_share_log_choice.py`.
+- 2026-11-21 (the bottom screen's peanuts): a tap on the drifting peanuts of the launcher's page on the second display pops the one under it and counts it,
+  as on the top screen. The page drew upstream's `BananaBackgroundView` under its pages, but no touch ever reached its `popAt`: the pages' scroll views
+  took every touch and nothing looked for a tap on the background. `BottomPanel.dispatchTouchEvent` now looks at each touch without taking it; a press
+  where no card, button, bar or dimming scrim is, that moves no more than the touch slop and lifts before a long press (`BackgroundTap`, the same rule as
+  `MainActivity.bananaTaps`), pops the peanut there, with a light tick, and `BottomScreen.popped` counts it through MainActivity's own counter. The start
+  page is not a background. The pop's look and the counter are upstream's, unchanged. UPSTREAM-EDITS Round 43; test
+  `peanuts/tests/test_bottom_screen_peanuts.py`.

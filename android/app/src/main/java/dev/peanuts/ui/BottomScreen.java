@@ -85,6 +85,8 @@ public final class BottomScreen {
     private static boolean ownerFocused = true;
     private static boolean setup;                               // first run: no way around it to Settings
     private static final Set<String> pages = new HashSet<>();  // the app's other pages in front (AppScreens)
+    private static Activity popsOf;                             // the MainActivity that counts a popped peanut
+    private static Runnable pops;
 
     private BottomScreen() {}
 
@@ -118,6 +120,15 @@ public final class BottomScreen {
             }
             if (panel != null) panel.dim(!f && resumed);   // a dialog; another page of the app pauses this one first
         });
+    }
+
+    /** MainActivity.onCreate (PEANUTS hook): what a peanut popped on this screen does, the same as the top screen's (count, Settings' line) */
+    public static void onPop(Activity a, Runnable counted) { popsOf = a; pops = counted; }
+
+    /** BottomPanel: a peanut popped */
+    static void popped() {
+        Activity a = popsOf;
+        if (a != null && pops != null && !a.isFinishing() && !a.isDestroyed()) pops.run();
     }
 
     /** Off Home (Settings, a game's page): the logo */
@@ -367,6 +378,7 @@ public final class BottomScreen {
                 if (l.said != null) handOff(); else UI.postDelayed(launchEnd, HANDOFF_MAX_MS);
             }
             @Override public void onActivityDestroyed(Activity x) {
+                if (x == popsOf) { popsOf = null; pops = null; }
                 if (x != owner) return;
                 launch = null; UI.removeCallbacks(launchEnd); UI.removeCallbacks(launchStuck); UI.removeCallbacks(launchDialog);
                 dismiss();

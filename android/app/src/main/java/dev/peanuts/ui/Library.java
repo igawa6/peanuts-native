@@ -1476,8 +1476,8 @@ public final class Library {
             right = play;
         }
         PUi.add(c, PUi.pair(a, left, right), 14);
-        // a build that stopped or failed: everything it left, in one .zip (BuildLogUi; the same bundle as the game's Storage tab and Settings › Share log)
-        if (b.failed) PUi.add(c, PUi.button(a, "Share build log", PUi.Kind.QUIET, Haptics.on(Haptics.Word.TICK, v -> BuildLogUi.share(a, b.titleId, name))), 8, PUi.wrap());
+        // a build that stopped or failed: its build log, or its newest game run when it has one too (BuildLogUi.shareLog asks which)
+        if (b.failed) PUi.add(c, PUi.button(a, "Share log", PUi.Kind.QUIET, Haptics.on(Haptics.Word.TICK, v -> BuildLogUi.shareLog(a, b.titleId, name, null, null))), 8, PUi.wrap());
         updateBuildCard(b, true);
         return c;
     }

@@ -406,12 +406,63 @@ public final class BuildLogShare {
         return t != null && (BuildLog.file(dir(c), t).isFile() || BuildLog.older(dir(c), t).isFile());
     }
 
-    /** The newest build log's game and the time it changed, or null */
-    public static Object[] newest(Context c) {
-        String t = BuildLog.newest(dir(c));
+    /** What Share log's choice tells of a game's builds ({@link #found}): the end of its build log, and its newest job (job.json) */
+    public static final class Found {
+        public String titleId;
+        /** The build log's last 64 KB (its newest run is there), null without a build log */
+        public String log;
+        public long logChanged;
+        /** A job folder of the game is there (its .zip has its logs); the facts of the newest job.json, when one can be read */
+        public boolean job;
+        public String jobState, jobStep;
+        public long jobCreated, jobUpdated;
+    }
+
+    /**
+     * The game's build log and jobs, as {@link #make} would find them, for Share log's choice; null when there is neither (the .zip would have nothing of a
+     * build). titleId null: the game whose build changed last (its build log, or the Prepare card's job when that is newer)
+     */
+    public static Found found(Context c, String titleId) {
+        String t = titleId != null ? BuildLog.title(titleId) : newestTitle(c);
         if (t == null) return null;
-        File f = BuildLog.file(dir(c), t);
-        String text = BuildLog.tail(f, 64 << 10);
-        return new Object[] {t, f.lastModified(), BuildLog.lastEnd(text), BuildLog.lastStart(text)};
+        Found f = new Found();
+        f.titleId = t;
+        File log = BuildLog.file(dir(c), t), older = BuildLog.older(dir(c), t);
+        File use = log.isFile() ? log : older.isFile() ? older : null;
+        if (use != null) { f.log = BuildLog.tail(use, 64 << 10); f.logChanged = use.lastModified(); }
+        long best = -1;
+        for (BuildLogBundle.Job j : BuildLogBundle.jobs(t, workDirs(c, t, new ArrayList<>()), jobFiles(c))) {
+            f.job = true;
+            String json = BuildLogBundle.head(j.file, 1 << 20);
+            if (json == null) continue;
+            try {
+                JSONObject o = new JSONObject(json);
+                long u = Math.max(o.optLong("updated"), o.optLong("created"));
+                if (u <= best) continue;
+                best = u;
+                f.jobState = o.optString("state");
+                f.jobStep = o.optString("step");
+                f.jobCreated = o.optLong("created");
+                f.jobUpdated = o.optLong("updated");
+            } catch (org.json.JSONException e) { /* its logs still go into the .zip */ }
+        }
+        return f.log == null && !f.job ? null : f;
+    }
+
+    /** The game whose build changed last: the newest build log's, or the Prepare card's job's when it changed after it */
+    private static String newestTitle(Context c) {
+        String t = BuildLog.newest(dir(c));
+        long at = t == null ? -1 : BuildLog.file(dir(c), t).lastModified();
+        for (File jf : jobFiles(c)) {
+            String json = BuildLogBundle.head(jf, 1 << 20);
+            if (json == null) continue;
+            try {
+                JSONObject o = new JSONObject(json);
+                String id = BuildLog.title(o.optString("title_id"));
+                long u = Math.max(o.optLong("updated"), o.optLong("created"));
+                if (id != null && u > at) { t = id; at = u; }
+            } catch (org.json.JSONException e) { /* not a job to name */ }
+        }
+        return t;
     }
 }

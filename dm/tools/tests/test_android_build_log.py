@@ -18,13 +18,14 @@ class Wiring(unittest.TestCase):
     def test_entry_points(self):
         main = (APP / 'main/java/dev/nxnative/android/MainActivity.java').read_text(encoding='utf-8')
         self.assertIn('v -> dev.peanuts.ui.BuildLogUi.shareLog(this, this::shareLog)', main)
-        self.assertIn('dev.peanuts.ui.BuildLogUi.share(this, g.titleId, g.name)', main)
+        self.assertIn('dev.peanuts.ui.BuildLogUi.shareLog(this, g.titleId, g.name, null, () -> shareLog(g.titleId))', main)   # PEANUTS Round 42: one Share log row asks which (peanuts/tests/test_share_log_choice.py)
         ond = (APP / 'ondevice/java/dev/nxnative/android/Ondevice.java').read_text(encoding='utf-8')
         self.assertIn('dev.peanuts.ui.BuildLogUi.card(a, card, ', ond)
-        self.assertIn('dev.peanuts.ui.BuildLogUi.share(a, j.titleId(), j.name())', ond)
+        self.assertIn('dev.peanuts.ui.BuildLogUi.shareLog(a, j.titleId(), j.name(), null, null)', ond)
         lib = (APP / 'main/java/dev/peanuts/ui/Library.java').read_text(encoding='utf-8')
-        self.assertIn('BuildLogUi.share(a, b.titleId, name)', lib)
-        for f, text in (('MainActivity', main), ('Ondevice', ond)):
+        self.assertIn('BuildLogUi.shareLog(a, b.titleId, name, null, null)', lib)
+        ew = (APP / 'main/java/dev/nxnative/android/ExitWatch.java').read_text(encoding='utf-8')
+        for f, text in (('MainActivity', main), ('Ondevice', ond), ('ExitWatch', ew)):
             for line in text.splitlines():
                 if 'BuildLogUi' in line:
                     self.assertIn('PEANUTS', line, f + ': an upstream line without its marker: ' + line.strip())

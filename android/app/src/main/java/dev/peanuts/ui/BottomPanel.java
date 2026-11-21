@@ -17,7 +17,10 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.WindowManager;
@@ -52,6 +55,8 @@ final class BottomPanel extends Presentation {
     private View[] pages;
     private boolean wide, tall;
     private int coverDp;
+    private final BackgroundTap tap = new BackgroundTap();
+    private final int[] at = new int[2];
     private final int madeW, madeH, madeDpi;
 
     // card page
@@ -91,6 +96,7 @@ final class BottomPanel extends Presentation {
         root = new FrameLayout(c);
         root.setBackgroundColor(PUi.col(c, R.color.bn_bg));
         bg = new BananaBackgroundView(c);
+        bg.setOnPop(() -> { bg.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK); BottomScreen.popped(); });   // counted as on the top screen
         root.addView(bg, fill());
         stage = new FrameLayout(c);
         root.addView(stage, fill());
@@ -105,6 +111,33 @@ final class BottomPanel extends Presentation {
     }
 
     @Override protected void onStart() { super.onStart(); setActive(active); }
+
+    /** A tap where no card, button or bar is pops the peanut under it, as on the top screen (MainActivity.bananaTaps). Never takes the touch */
+    @Override public boolean dispatchTouchEvent(MotionEvent e) {
+        if (bg != null && root != null) {
+            bg.getLocationInWindow(at);
+            float x = e.getX() - at[0], y = e.getY() - at[1], slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN: tap.down(x, y, page != LAUNCH && emptyAt(root, x, y)); break;
+                case MotionEvent.ACTION_MOVE: tap.move(x, y, slop); break;
+                case MotionEvent.ACTION_UP: if (tap.up(x, y, slop, e.getEventTime() - e.getDownTime(), ViewConfiguration.getLongPressTimeout())) bg.popAt(x, y); break;
+                default: tap.cancel();
+            }
+        }
+        return super.dispatchTouchEvent(e);
+    }
+
+    /** No view with a background (a card, a button, the bar, the dimming scrim) at this point: the peanuts show there */
+    private static boolean emptyAt(ViewGroup g, float x, float y) {
+        for (int i = g.getChildCount() - 1; i >= 0; i--) {
+            View v = g.getChildAt(i);
+            float vx = x + g.getScrollX() - v.getLeft(), vy = y + g.getScrollY() - v.getTop();
+            if (vx < 0 || vy < 0 || vx >= v.getWidth() || vy >= v.getHeight() || v.getVisibility() != View.VISIBLE) continue;
+            if (v.getBackground() != null) return false;
+            if (v instanceof ViewGroup && !emptyAt((ViewGroup) v, vx, vy)) return false;
+        }
+        return true;
+    }
     @Override protected void onStop() { if (bg != null) bg.setRunning(false); if (start != null) start.setAnimating(false); super.onStop(); }
 
     /** Off while hidden or the display is off: hide() keeps the window, and its animations would keep running */

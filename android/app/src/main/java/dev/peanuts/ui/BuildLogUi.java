@@ -1,6 +1,7 @@
 package dev.peanuts.ui;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.ActivityOptions;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
@@ -18,6 +19,7 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import dev.peanuts.build.BuildLog;
 import dev.peanuts.build.BuildLogBundle;
 import dev.peanuts.build.BuildLogProvider;
 import dev.peanuts.build.BuildLogShare;
@@ -27,16 +29,19 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.TimeZone;
 import java.util.function.Supplier;
 
 /**
- * Share build log's screens: the sheet that makes one game's bundle ({@link BuildLogShare#make}) and offers Share or Save to a folder, the Settings
- * › Share log choice between the newest game run and the newest build, and the button on upstream's Prepare card. Every entry point shares the same bundle:
- * Home's build card (Library), the Prepare card and its Manage sheet (Ondevice, PEANUTS lines), the game's Storage tab and Settings › Share log
- * (MainActivity, PEANUTS lines), and the control interface's share_build_log (no screen).
+ * Share build log's screens: the sheet that makes one game's bundle ({@link BuildLogShare#make}) and offers Share or Save to a folder, Share log's choice
+ * between the newest game run and the newest build ({@link #shareLog}, its words in {@link LogChoice}), and the button on upstream's Prepare card. Every place
+ * that shares a log asks which when there are both: Settings › Share log and the game's Storage tab (MainActivity), Home's build card (Library), the Prepare
+ * card and its Manage sheet (Ondevice), the "Game stopped" notice (ExitWatch), each an upstream line marked PEANUTS. The control interface's share_build_log
+ * makes the same bundle (no screen).
  */
 public final class BuildLogUi {
     /** Save to a folder's file picker; its result comes through LibrarySettings.result (MainActivity's one PEANUTS line for every picker) */
@@ -141,7 +146,7 @@ public final class BuildLogUi {
         Context app = a.getApplicationContext();
         new Thread(() -> {
             String msg;
-            if (!zip.isFile()) msg = "The build log is no longer there (it is kept for a day). Open Share build log again.";
+            if (!zip.isFile()) msg = "The build log is no longer there (it is kept for a day). Open Share log again.";
             else try (InputStream in = new FileInputStream(zip); OutputStream out = app.getContentResolver().openOutputStream(to, "w")) {
                 if (out == null) throw new IOException("the folder took no file");
                 byte[] b = new byte[64 << 10];
@@ -157,61 +162,123 @@ public final class BuildLogUi {
         return true;
     }
 
-    // ---- Settings › Share log ----
+    // ---- Share log: a game run or a build ----
 
     /**
-     * Settings › Share log: the newest game run's log as before (runLog: MainActivity's own shareLog), unless a build log changed after it: then the player
-     * picks the newest run or the newest build
+     * Settings › Share log: the newest run of any game and the newest build of any game. With both, the player picks one (each says when it happened and how it
+     * ended, LogChoice); with one, it is shared at once. runLog: MainActivity's own Share log of the newest run (also its "No log yet." when there is none)
      */
     public static void shareLog(Activity a, Runnable runLog) {
-        Object[] nb = BuildLogShare.newest(a);
-        File run = newestRunLog(a);
-        if (nb == null || run != null && run.lastModified() >= (Long) nb[1]) { runLog.run(); return; }
-        String t = (String) nb[0];
-        String bname = BuildLogShare.gameName(a, t);
+        File run = newestRunLog(a, null);
+        BuildLogShare.Found b = BuildLogShare.found(a, null);
+        int what = LogChoice.choose(run != null, b != null);
+        if (what == LogChoice.BUILD) { share(a, b.titleId, null); return; }
+        if (what != LogChoice.ASK) { runLog.run(); return; }
+        String rt = run.getName().length() > 16 ? run.getName().substring(0, 16) : "";
+        if (rt.equalsIgnoreCase(b.titleId)) {   // both of one game: its name in the title, so each line has room for when and how
+            ask(a, "Share a log of " + BuildLogShare.gameName(a, b.titleId), runLine(a, run), runLog, buildLine(b), () -> share(a, b.titleId, null));
+            return;
+        }
+        String rn = run.getName().startsWith("selftest") ? "Graphics self-test" : BuildLogShare.gameName(a, rt);
+        ask(a, "Share log", PUi.joined(rn, runLine(a, run)), runLog, PUi.joined(BuildLogShare.gameName(a, b.titleId), buildLine(b)), () -> share(a, b.titleId, null));
+    }
+
+    /**
+     * A game's Share log (its page's Storage tab, its build card on Home, the Prepare card and its menu, the "Game stopped" notice): its newest run and its build.
+     * With both, the player picks one; with one, it is shared at once. run: the run to offer (the notice's), null for the game's newest; shareRun: how the caller
+     * shares that run (upstream's own Share log, with its "No log of this game yet." when there is none), null for MainActivity's shareLog(log, digest)
+     */
+    public static void shareLog(Activity a, String titleId, String name, File run, Runnable shareRun) {
+        File r = run != null && run.isFile() ? run : newestRunLog(a, titleId);
+        BuildLogShare.Found b = titleId == null ? null : BuildLogShare.found(a, titleId);
+        Runnable runShare = shareRun != null ? shareRun : () -> shareRun(a, r);
+        switch (LogChoice.choose(r != null, b != null)) {
+            case LogChoice.ASK:
+                String shown = name != null && !name.isEmpty() ? name : BuildLogShare.gameName(a, titleId);
+                ask(a, "Share a log of " + shown, runLine(a, r), runShare, buildLine(b), () -> share(a, titleId, name));
+                return;
+            case LogChoice.RUN: runShare.run(); return;
+            case LogChoice.BUILD: share(a, titleId, name); return;
+            default:
+                if (shareRun != null) shareRun.run();   // the caller's own sentence for no log
+                else share(a, titleId, name);   // the sheet's "No build log of ... yet"
+        }
+    }
+
+    /** The choice: two rows, the game run and the build, each with its line */
+    private static void ask(Activity a, CharSequence title, CharSequence run, Runnable shareRun, CharSequence build, Runnable shareBuild) {
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
         AlertDialog[] d = new AlertDialog[1];
-        if (run != null) {
-            String rn = run.getName().startsWith("selftest") ? "Graphics self-test" : BuildLogShare.gameName(a, run.getName().length() > 16 ? run.getName().substring(0, 16) : "");
-            box.addView(new PUi.Setting(a, "🎮", "Newest game run", v -> { d[0].dismiss(); runLog.run(); }).value(rn + ", " + when(run.lastModified())).chevron(a).view);
-        }
-        box.addView(new PUi.Setting(a, "🧾", "Newest build", v -> { d[0].dismiss(); share(a, t, bname); })
-                .value(bname + ", " + state((String) nb[2], (String) nb[3], t) + ", " + when((Long) nb[1])).chevron(a).view);
-        d[0] = PUi.sheet(a, "Share log", box).setNegativeButton("Cancel", null).show();
+        box.addView(new PUi.Setting(a, "🎮", "Newest game run", v -> { d[0].dismiss(); shareRun.run(); }).value(run).chevron(a).view);
+        box.addView(new PUi.Setting(a, "🧾", "Newest build", v -> { d[0].dismiss(); shareBuild.run(); }).value(build).chevron(a).view);
+        d[0] = PUi.sheet(a, title, box).setNegativeButton("Cancel", null).show();
     }
 
-    /** The newest run log (MainActivity's Share log: &lt;app files&gt;/logs/*.log), null when there is none */
-    private static File newestRunLog(Context c) {
+    /** The newest run log (&lt;app files&gt;/logs/&lt;title ID&gt;-&lt;time&gt;.log, LogProvider) of one game, or of any run (titleId null: the self-test's too); null when there is none */
+    static File newestRunLog(Context c, String titleId) {
         File ext = c.getExternalFilesDir(null);
-        File[] l = ext == null ? null : new File(ext, "logs").listFiles((d, n) -> n.endsWith(".log"));
+        String t = titleId == null ? null : titleId.trim().toUpperCase(Locale.ROOT) + "-";
+        File[] l = ext == null ? null : new File(ext, "logs").listFiles((d, n) -> n.endsWith(".log") && (t == null || n.toUpperCase(Locale.ROOT).startsWith(t)));
         if (l == null || l.length == 0) return null;
         File best = l[0];
         for (File f : l) if (f.lastModified() > best.lastModified()) best = f;
         return best;
     }
 
-    /** The newest build's state in a word from its log's end line ("ready", "stopped", "failed"), or what its missing end line means */
-    static String state(String end, String start, String titleId) {
-        if (end != null) { int sp = end.indexOf(' '); String w = (sp < 0 ? end : end.substring(0, sp)).replace(":", ""); return w.isEmpty() ? "ended" : w; }
-        if (start == null) return "no build";
-        java.util.Map<String, Object> s = dev.peanuts.build.BuildPipeline.snapshot();
-        boolean runs = s != null && Boolean.TRUE.equals(s.get("running")) && titleId.equalsIgnoreCase(String.valueOf(s.get("title_id")));
-        return runs ? "running" : "ended with the app";
+    /** The run's line (LogChoice.runLine): its exit record (ExitWatch's last-exit.txt in the app's files) when it is that run's, else the end of its log */
+    private static String runLine(Context c, File run) {
+        Map<String, String> rec = LogChoice.record(BuildLog.tail(new File(c.getFilesDir(), "last-exit.txt"), 16 << 10));
+        boolean alive = false;
+        if (run.getName().equals(rec.get("log"))) {
+            int pid = -1;
+            try { pid = Integer.parseInt(String.valueOf(rec.get("pid"))); } catch (NumberFormatException e) { /* no pid: not running */ }
+            ActivityManager am = c.getSystemService(ActivityManager.class);
+            List<ActivityManager.RunningAppProcessInfo> ps = am == null ? null : am.getRunningAppProcesses();
+            if (ps != null) for (ActivityManager.RunningAppProcessInfo p : ps) if (p.pid == pid && p.processName != null && p.processName.endsWith(":game")) alive = true;
+        }
+        return LogChoice.runLine(run.getName(), run.lastModified(), BuildLog.tail(run, 32 << 10), rec, alive, System.currentTimeMillis(), TimeZone.getDefault());
     }
 
-    private static String when(long t) { return new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).format(new Date(t)); }
+    /** The build's line: its job's when the job changed after the build log, else the build log's newest run */
+    private static String buildLine(BuildLogShare.Found b) {
+        long now = System.currentTimeMillis();
+        TimeZone z = TimeZone.getDefault();
+        String fromLog = b.log == null ? null : LogChoice.buildLine(b.log, buildsNow(b.titleId), now, z);
+        boolean job = b.jobState != null && !b.jobState.isEmpty();
+        if (job && (fromLog == null || Math.max(b.jobUpdated, b.jobCreated) > b.logChanged)) return LogChoice.jobLine(b.jobState, b.jobStep, b.jobCreated, b.jobUpdated, now, z);
+        return fromLog != null ? fromLog : "An older build";
+    }
+
+    /** A build of this game runs in this process now (BuildPipeline) */
+    private static boolean buildsNow(String titleId) {
+        Map<String, Object> s = dev.peanuts.build.BuildPipeline.snapshot();
+        return s != null && Boolean.TRUE.equals(s.get("running")) && titleId.equalsIgnoreCase(String.valueOf(s.get("title_id")));
+    }
+
+    /** A run's log through MainActivity's own Share log, with the digest the "Game stopped" notice wrote beside it (ExitWatch.digestOf), when there is one */
+    static void shareRun(Activity a, File log) {
+        File digest = new File(log.getParentFile(), log.getName().replaceFirst("\\.log$", "") + ".digest.txt");
+        try {
+            Method m = a.getClass().getDeclaredMethod("shareLog", File.class, File.class);
+            m.setAccessible(true);
+            m.invoke(a, log, digest.isFile() ? digest : null);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            Log.w(TAG, "share log: " + e);
+            Toast.makeText(a, "The log could not be shared from here. Settings › Share log sends it.", Toast.LENGTH_LONG).show();
+        }
+    }
 
     // ---- The Prepare card (Ondevice, one PEANUTS line) ----
 
     /**
-     * Share build log under upstream's Prepare card, shown while its job has failed or is paused. job gives {title ID, name, state} of the card's job, or
-     * null without one; the button reads it again every second while it is attached (the card itself is upstream's and draws on its own tick)
+     * Share log under upstream's Prepare card, shown while its job has failed or is paused. job gives {title ID, name, state} of the card's job, or null
+     * without one; the button reads it again every second while it is attached (the card itself is upstream's and draws on its own tick)
      */
     public static void card(Activity a, LinearLayout card, Supplier<String[]> job) {
-        Button b = PUi.button(a, "Share build log", PUi.Kind.QUIET, v -> {
+        Button b = PUi.button(a, "Share log", PUi.Kind.QUIET, v -> {
             String[] j = job.get();
-            if (j != null) share(a, j[0], j[1]);
+            if (j != null) shareLog(a, j[0], j[1], null, null);
         });
         b.setVisibility(View.GONE);
         PUi.add(card, b, 8, PUi.wrap());   // as on Home's build card: a quiet action under the card's own buttons

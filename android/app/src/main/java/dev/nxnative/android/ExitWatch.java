@@ -286,7 +286,7 @@ final class ExitWatch {
                 AlertDialog.Builder b = new PadFocus.Builder(a).setTitle(ExitNotice.TITLE).setMessage(ExitNotice.message(rec.get("name"), end.why, likely))
                         .setPositiveButton("OK", null);
                 FixOffer.add(a, b, fix, rec);
-                if (log != null) b.setNeutralButton("Share log", (d, w) -> a.shareLog(log, dg != null && dg.isFile() ? dg : null));
+                if (log != null) b.setNeutralButton("Share log", (d, w) -> dev.peanuts.ui.BuildLogUi.shareLog(a, rec.get("title"), rec.get("name"), log, () -> a.shareLog(log, dg != null && dg.isFile() ? dg : null)));   // PEANUTS: asks between this run and the game's build when it has one (dev.peanuts.ui.BuildLogUi.shareLog)
                 if (v != null && v.rule != null) {
                     b.setNegativeButton("What it means", (d, w) -> {
                         CharSequence msg = ExitNotice.meaningMessage(v.meaning, v.cause);
