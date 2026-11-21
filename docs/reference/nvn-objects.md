@@ -44,6 +44,14 @@ The game may also write into an NVN object directly, without an NVN call, throug
 
 ## Memory pools
 
+### The pool builder's getters return the builder's fields
+
+- **Symptom:** a game reads a pool builder back and gets zero for the device, memory, size and flags; its resource pipeline then reads a null pool.
+- **Cause:** the host implemented the builder's setters but not `nvnMemoryPoolBuilderGetDevice`, `GetMemory`, `GetSize` and `GetFlags`, so the calls returned zero.
+- **Fix:** the four getters return the fields the setters stored (`pool_builder_t`'s `dev`, `mem`, `size`, `flags`).
+- **Found on:** [New Pokemon Snap](../../dm/games/0100F4300BF2C000/README.md).
+- **Check:** the game's resource pipeline reads the builder back at startup; the getters are a general NVN host behavior, no profile is needed.
+
 ### Heaps cut from a pool at alignment relative to its GPU address
 
 - **Symptom:** a null write as soon as the main thread starts recording a command buffer (13 Sentinels: a constructor at `main+0x2fa9a0` runs on `this = 0` when the prologue enters its first battle).
