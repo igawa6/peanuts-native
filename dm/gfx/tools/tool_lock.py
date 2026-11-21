@@ -17,9 +17,11 @@ def tools_now():
     t['xlate_source'] = xlate_embedded()
     sc = shutil.which(SPIRV_CROSS)
     t['spirv-cross'] = sha16(sc) if sc else 'missing'
-    for sdk in ('macosx', 'iphoneos'):
-        t['metal_' + sdk] = subprocess.run(['xcrun', '-sdk', sdk, 'metal', '--version'], capture_output=True, text=True).stdout.splitlines()[0:1] or ['missing']
-        t['metal_' + sdk] = t['metal_' + sdk][0]
+    # PEANUTS(upstream-candidate): xcrun is macOS-only; Linux has no Metal toolchain
+    if sys.platform == 'darwin':
+        for sdk in ('macosx', 'iphoneos'):
+            t['metal_' + sdk] = subprocess.run(['xcrun', '-sdk', sdk, 'metal', '--version'], capture_output=True, text=True).stdout.splitlines()[0:1] or ['missing']
+            t['metal_' + sdk] = t['metal_' + sdk][0]
     return t
 
 def xlate_command(path):
