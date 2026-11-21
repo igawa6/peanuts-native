@@ -145,6 +145,10 @@ public final class Companion {
     static boolean screenWanted() { return screenUp && !stopped && !away; }
     private static boolean screenUp;
 
+    /** When this run started (SystemClock.elapsedRealtime): the stats page's run clock (GameScreen) */
+    public static long startedAt() { return startedAt; }
+    private static long startedAt;
+
     /** CompanionScreen is up: its start made the built-in display the top one, which would hand the controller to its window (gameKey passes the keys on, but
      *  the game's own window should have them). The game's activity is started again on its own display: it is singleTask, so that only brings it to the front, and an intent with no title ID
      *  is a no-op in its onNewIntent. Its display, and the controller, are the game's again. */
@@ -196,6 +200,7 @@ public final class Companion {
         // A pack from before main.orig.bin gets the file now, on a thread of its own, before the host starts: the runtime waits for it (dev.peanuts.pack.PackUpgrade)
         try { dev.peanuts.pack.PackUpgrade.atGameStart(game); } catch (RuntimeException e) { Log.w(TAG, "pack upgrade: " + e); }
         stopped = false;
+        startedAt = android.os.SystemClock.elapsedRealtime();
         preparedSeen = false;
         allowed = false;
         away = false;

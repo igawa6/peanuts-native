@@ -2,6 +2,7 @@
 //   pn_host_power        the battery level and charging state, for a package's "@device.battery_pct" / "@device.charging"
 //   pn_host_perf_totals  running frame totals, for "@perf.fps" / "@perf.frametime_ms"
 //   pn_host_aoc_open     an add-on content index of DM_AOC_DIR that is a .nup or a dump, as the runtime's RomFS callbacks, for "aoc:"
+//   Bridge.opMode        the console mode the game sees now, for the launcher's stats page (dev.peanuts.ui.StatsView)
 // Nothing here runs on the game's frame path: the runtime's tick thread asks about once a second (power), twice a second (totals) or once (add-on content).
 #if defined(__ANDROID__)
 #include <jni.h>
@@ -13,6 +14,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include "peanuts_frametime.h"   // pn_ft_read: whether the game has shown a frame (Bridge.opMode)
 #include "peanuts_nup.h"
 #include "peanuts_services.h"   // the parts that only compute (tested on a PC)
 
@@ -28,6 +30,20 @@ void pn_host_battery_set(int percent, int charging) {
     atomic_store(&g_bat_pct, percent < 0 ? -1 : percent > 100 ? 100 : percent); atomic_store(&g_bat_chg, charging != 0); atomic_store(&g_bat_t, mono_ns());
 }
 JNIEXPORT void JNICALL Java_dev_peanuts_Bridge_battery(JNIEnv *env, jclass cls, jint percent, jboolean charging) { (void)env; (void)cls; pn_host_battery_set(percent, charging); }
+
+// ---- console mode -------------------------------------------------------------------------------------------------------------------------------------------
+// What oe::GetOperationMode answers the game now (dm/host/hle_oe.c): 1 docked (console), 0 handheld. It changes while the game runs when the player picks the
+// other Console mode in the in-game panel (nxhost_graphics_mode_set), so the stats page asks it rather than the setting.
+// -1 until the game has shown a frame: dm_opmode() keeps the first value it reads, and in the generic host its default is the runtime profile's (g_profile,
+// loaded at the start of nxhost_main). The stats page asks from the moment the game's window opens, before that (during the shader preparing step too): an
+// early ask fixed the mode at the zeroed profile's 0, so a game set to Docked ran handheld (Kirby and the Forgotten Land on the AYN Thor, 2026-11-21). Once a
+// frame is shown the profile is long loaded and the game has asked itself, so this ask cannot change what it sees.
+int dm_opmode(void);
+JNIEXPORT jint JNICALL Java_dev_peanuts_Bridge_opMode(JNIEnv *env, jclass cls) {
+    (void)env; (void)cls;
+    float last;
+    return pn_ft_read(&last, 1) > 0 ? dm_opmode() : -1;
+}
 
 static int read_line(const char *path, char *out, size_t n) {
     FILE *f = fopen(path, "re"); if (!f) return 0;
