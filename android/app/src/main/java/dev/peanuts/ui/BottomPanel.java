@@ -58,6 +58,8 @@ final class BottomPanel extends Presentation {
     private LinearLayout cardBox;
     private TextView cardTile, cardName, cardState, cardLine1, cardLine2;
     private LinearLayout cardMark, cardLine1Row;
+    private LinearLayout cardStats;   // a ready game's play time: Total, Last run, Last played (dev.peanuts.launch.PlayTime)
+    private final TextView[] statValue = new TextView[3];
     private View cardBadge;
     private PUi.Action cardPrimary, cardSecond;
     private BottomScreen.Card shownCard, slidingTo;
@@ -256,6 +258,8 @@ final class BottomPanel extends Presentation {
         PUi.add(info, cardLine2, 4);
         top.addView(info, PUi.weight());
         cardBox.addView(top);
+        cardStats = stats(c);
+        if (wide) PUi.add(info, cardStats, 12); else PUi.add(cardBox, cardStats, 14);
 
         cardPrimary = PUi.action(c, 0, "Play", PUi.Kind.PRIMARY, v -> act(v, shownCard == null || slidingTo != null ? null : shownCard.primary, true));   // not mid-slide: that card is leaving
         setKey(cardPrimary, "A");
@@ -408,7 +412,16 @@ final class BottomPanel extends Presentation {
         cardBadge.setVisibility(hasComp ? View.VISIBLE : View.GONE);
         ((LinearLayout.LayoutParams) cardLine1.getLayoutParams()).leftMargin = hasComp ? PUi.dp(c, 8) : 0;
         String l1 = ready ? (hasComp ? "Companion " + k.companion : "") : toBuild ? k.found : "This app version does not include this game.";
-        String l2 = ready ? played(k.played) : toBuild ? k.space : "";
+        long last = Math.max(k.played, k.play == null ? 0 : k.play.last);
+        boolean stats = ready && last > 0;   // the tiles say when it was last played; before any play, nothing
+        cardStats.setVisibility(stats ? View.VISIBLE : View.GONE);
+        if (stats) {
+            String none = "\u2014";
+            statValue[0].setText(k.play == null ? none : dev.peanuts.launch.PlayLedger.compact(k.play.ms));
+            statValue[1].setText(k.play == null || k.play.lastRun <= 0 ? none : dev.peanuts.launch.PlayLedger.compact(k.play.lastRun));
+            statValue[2].setText(playedShort(last));
+        }
+        String l2 = ready ? (stats ? "" : played(k.played)) : toBuild ? k.space : "";
         setLine(cardLine1, cardLine1Row, l1);
         setLine(cardLine2, cardLine2, l2);
         cardPrimary.setVisibility(k.primary != null ? View.VISIBLE : View.GONE);
@@ -582,8 +595,8 @@ final class BottomPanel extends Presentation {
         cardMark.setContentDescription(k.state);
     }
 
-    private static void setLine(TextView t, View row, String s) {
-        boolean has = s != null && !s.isEmpty();
+    private static void setLine(TextView t, View row, CharSequence s) {
+        boolean has = s != null && s.length() > 0;
         t.setText(has ? s : "");
         row.setVisibility(has ? View.VISIBLE : View.GONE);
     }
@@ -594,6 +607,44 @@ final class BottomPanel extends Presentation {
         tile.setText(n.isEmpty() ? "?" : n.substring(0, n.offsetByCodePoints(0, 1)).toUpperCase(Locale.ROOT));
         PUi.tileIcon(tile, null);
         if (icon != null) PUi.tileIcon(tile, icon);
+    }
+
+    /** Three stat tiles side by side, a value over its label: Total, Last run, Last played */
+    private LinearLayout stats(Context c) {
+        LinearLayout row = PUi.row(c);
+        String[] labels = {"TOTAL", "LAST RUN", "LAST PLAYED"};
+        for (int i = 0; i < 3; i++) {
+            LinearLayout t = column(c);
+            t.setGravity(Gravity.CENTER_HORIZONTAL);
+            t.setPadding(PUi.dp(c, 6), PUi.dp(c, 10), PUi.dp(c, 6), PUi.dp(c, 9));
+            t.setBackground(PUi.round(PUi.col(c, R.color.bn_bg), PUi.dp(c, 10), 0, 0));
+            TextView v = PUi.text(c, "", 18, i == 0 ? R.color.bn_accent : R.color.bn_text, 700);
+            v.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+            v.setSingleLine(true);
+            v.setGravity(Gravity.CENTER);
+            statValue[i] = v;
+            t.addView(v);
+            TextView l = PUi.text(c, labels[i], 11, R.color.bn_text_2, 600);
+            l.setLetterSpacing(0.08f);
+            l.setSingleLine(true);
+            l.setGravity(Gravity.CENTER);
+            PUi.add(t, l, 2);
+            LinearLayout.LayoutParams lp = PUi.weight();
+            if (i > 0) lp.leftMargin = PUi.dp(c, 8);
+            row.addView(t, lp);
+        }
+        return row;
+    }
+
+    /** "TODAY", "YESTERDAY", "3D AGO", else the date ("NOV 14") */
+    private static String playedShort(long at) {
+        Calendar now = Calendar.getInstance(), then = Calendar.getInstance();
+        then.setTimeInMillis(at);
+        int days = daysBetween(then, now);
+        if (days <= 0) return "TODAY";
+        if (days == 1) return "YESTERDAY";
+        if (days < 7) return days + "D AGO";
+        return new java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(new java.util.Date(at)).toUpperCase(java.util.Locale.US);
     }
 
     /** "Last played yesterday" and the like; empty if never */

@@ -46,6 +46,7 @@ public final class BottomScreen {
         String state = "";              // the cover's own words
         String companion;               // ready: the companion's version, null if none
         long played;                    // ready: last Play, 0 if never
+        dev.peanuts.launch.PlayLedger.Entry play;   // ready: its play time (dev.peanuts.launch.PlayTime), null if never played with this app
         String found = "", space = "";  // to build: what the scan found
         Runnable primary, second;       // A and Y, null if none
         String primaryLabel = "", secondLabel = "";
@@ -145,6 +146,15 @@ public final class BottomScreen {
         lastCardAt = now;
         pendingCard = () -> { pendingCard = null; setup = false; card = c; building = c.kind == Card.K_BUILDING ? b : null; show(); };
         if (rested) pendingCard.run(); else UI.postDelayed(pendingCard, 90);
+    }
+
+    /** The shown card's total play time read again (Library.playTimesAgain, Home's resume after a game): its line is written again when it changed */
+    static void playTime(String titleId, dev.peanuts.launch.PlayLedger.Entry e) {
+        Card c = card;
+        if (c == null || c.kind != Card.K_READY || !c.titleId.equalsIgnoreCase(titleId) || e == null) return;
+        if (c.play != null && c.play.ms == e.ms && c.play.lastRun == e.lastRun) return;
+        c.play = e;
+        if (launch == null) show();
     }
 
     /** Build progress; null: the build is gone */
