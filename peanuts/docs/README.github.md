@@ -28,7 +28,7 @@ too.
 
 <!-- PEANUTS begin: the Supported games table, written by peanuts/scripts/games_catalog.py from peanuts/games.tsv, peanuts/release-titles.txt and the profiles. Edit peanuts/games.tsv, not this table -->
 
-Peanuts Native 0.1.6 includes 52 games. The Companion column shows whether a game appears in the Eden Duo Companions catalog, and the Contributor column the community members who brought a game to Peanuts Native. Updates are shown as version numbers or numeric update IDs.
+Peanuts Native 0.1.6 includes 52 games, and 1 more is coming in 0.1.7 (marked in the table). The Companion column shows whether a game appears in the Eden Duo Companions catalog, and the Contributor column the community members who brought a game to Peanuts Native. Updates are shown as version numbers or numeric update IDs.
 
 | Game | Title ID | Game update | Companion | Contributor |
 |---|---|---|---|---|
@@ -84,6 +84,7 @@ Peanuts Native 0.1.6 includes 52 games. The Companion column shows whether a gam
 | STEINS;GATE RE:BOOT | `01008BC024FDE000` | 1.0.3, 1.0.4 | No | ⭐<br><a href="https://github.com/skyhong2002"><img src="https://img.shields.io/badge/skyhong2002-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="skyhong2002"></a> |
 | NieR:Automata The End of YoRHa Edition (Asian release) | `0100B8E016F76000` | 1.0.3 | No |  |
 | Hyrule Warriors: Age of Calamity | `01002B00111A2000` | 1.3.0 | No |  |
+| SPY×ANYA: Operation Memories (coming in 0.1.7) | `010089B01AB44000` | 1.0.1 | No | ⭐<br><a href="https://github.com/nomnomab"><img src="https://img.shields.io/badge/nomnomab-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="nomnomab"></a> |
 
 <!-- PEANUTS end: the Supported games table -->
 

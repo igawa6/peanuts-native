@@ -53,7 +53,8 @@
     "010051C0134F8000",
     "01008BC024FDE000",
     "0100B8E016F76000",
-    "01002B00111A2000"
+    "01002B00111A2000",
+    "010089B01AB44000"
   ],
   "games": [
     {
@@ -785,6 +786,27 @@
       "contributors": [],
       "profile": "dm/games/010099A00BC1E000/game.tsv",
       "note": "dm/games/010099A00BC1E000/README.md"
+    },
+    {
+      "title_id": "010089B01AB44000",
+      "name": "SPY×ANYA: Operation Memories",
+      "profile_name": "SPY×ANYA Operation Memories",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.0.1"
+        }
+      ],
+      "readme_update": "1.0.1",
+      "package": "v65536",
+      "companion": false,
+      "since": "0.1.7",
+      "contributors": [
+        "nomnomab"
+      ],
+      "profile": "dm/games/010089B01AB44000/game.tsv",
+      "note": "dm/games/010089B01AB44000/README.md"
     },
     {
       "title_id": "01008BC024FDE000",
