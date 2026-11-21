@@ -593,6 +593,47 @@ public final class PUi {
         public Setting value(CharSequence s) { value.setText(s); value.setVisibility(s == null || s.length() == 0 ? View.GONE : View.VISIBLE); return this; }
     }
 
+    /** A choice of a few words side by side in one rounded track (Recommended | Custom): the picked one on banana yellow. pick gets the index when the player picks another */
+    public static final class Segmented extends LinearLayout {
+        private final TextView[] items;
+        private int selected;
+
+        public Segmented(Context c, String[] labels, int sel, java.util.function.IntConsumer pick) {
+            super(c);
+            setOrientation(HORIZONTAL);
+            setBackground(round(col(c, R.color.bn_tint), dp(c, 14), col(c, R.color.bn_card_stroke), dp(c, 1)));
+            int p = dp(c, 3);
+            setPadding(p, p, p, p);
+            items = new TextView[labels.length];
+            for (int k = 0; k < labels.length; k++) {
+                int i = k;
+                TextView t = text(c, labels[k], 14, R.color.bn_text, 700);
+                t.setGravity(Gravity.CENTER);
+                t.setSingleLine(true);
+                t.setEllipsize(TextUtils.TruncateAt.END);
+                t.setMinHeight(dp(c, 40));
+                t.setPadding(dp(c, 10), 0, dp(c, 10), 0);
+                t.setClickable(true);
+                t.setFocusable(true);
+                t.setOnClickListener(v -> { if (i != selected) { select(i); pick.accept(i); } });
+                items[k] = t;
+                addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            }
+            select(sel);
+        }
+
+        public void select(int k) {
+            selected = k;
+            Context c = getContext();
+            for (int i = 0; i < items.length; i++) {
+                boolean on = i == k;
+                items[i].setBackground(on ? round(col(c, R.color.bn_banana), dp(c, 11), 0, 0) : ripple(c, round(Color.TRANSPARENT, dp(c, 11), 0, 0)));
+                items[i].setTextColor(col(c, on ? R.color.bn_on_banana : R.color.bn_text_2));
+                items[i].setSelected(on);
+            }
+        }
+    }
+
     // ---- Dialogs ----
 
     /** A dialog whose content scrolls (a short screen, the folded phone, landscape): every custom dialog view goes through here */

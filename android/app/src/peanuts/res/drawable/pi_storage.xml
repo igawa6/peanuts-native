@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Peanuts icon, generated from icons.py. Do not edit by hand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M9 3.5h8a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-11Z" android:strokeColor="?attr/pnIconInk" android:strokeWidth="1.75"
+        android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000"/>
+    <path android:pathData="M10 6.5H10A0.75 0.75 0 0 1 10.75 7.25V9.25A0.75 0.75 0 0 1 10 10H10A0.75 0.75 0 0 1 9.25 9.25V7.25A0.75 0.75 0 0 1 10 6.5Z" android:fillColor="?attr/pnIconKernel"/>
+    <path android:pathData="M13 6.5H13A0.75 0.75 0 0 1 13.75 7.25V9.25A0.75 0.75 0 0 1 13 10H13A0.75 0.75 0 0 1 12.25 9.25V7.25A0.75 0.75 0 0 1 13 6.5Z" android:fillColor="?attr/pnIconKernel"/>
+    <path android:pathData="M16 6.5H16A0.75 0.75 0 0 1 16.75 7.25V9.25A0.75 0.75 0 0 1 16 10H16A0.75 0.75 0 0 1 15.25 9.25V7.25A0.75 0.75 0 0 1 16 6.5Z" android:fillColor="?attr/pnIconKernel"/>
+</vector>

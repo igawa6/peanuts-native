@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.Random;
 
 /**
- * The player's own Miis (Settings › Miis): each one a name, a create ID and the fields of a console CharInfo (nn::mii, 0x58 bytes), kept in files/mii/miis.tsv. Every
+ * The player's own Miis (Settings › Users › Miis): each one a name, a create ID and the fields of a console CharInfo (nn::mii, 0x58 bytes), kept in files/mii/miis.tsv. Every
  * save also writes files/mii/database.bin for the host ("PNMII1\0\0", a u32 count, the CharInfo records; dm/host/hle_mii.c reads it as DM_MII_DB), where games list
  * these Miis as the console's own. The ranges are the ones CharInfoRaw::Verify checks; a value outside them is clamped, so a game never refuses a Mii.
  * No Android classes: MiiStoreJvmTest runs it on the JVM.
@@ -151,6 +151,13 @@ public final class MiiStore {
         return cleanName(base + " 2");
     }
 
+    /** A create ID as 32 lower-case hex digits (miis.tsv's first column; a profile picture names its Mii by it) */
+    public static String hex(byte[] id) {
+        StringBuilder b = new StringBuilder();
+        for (byte x : id) b.append(String.format(Locale.ROOT, "%02x", x & 0xff));
+        return b.toString();
+    }
+
     private static final SecureRandom RNG = new SecureRandom();
     static byte[] newCreateId() {   // a UUID version 4, as the mii service makes create IDs
         byte[] b = new byte[16]; RNG.nextBytes(b);
@@ -207,9 +214,7 @@ public final class MiiStore {
         db.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(n).array());
         for (int i = 0; i < n; i++) {
             Mii m = miis.get(i);
-            StringBuilder hex = new StringBuilder();
-            for (byte x : m.createId) hex.append(String.format(Locale.ROOT, "%02x", x & 0xff));
-            sb.append(hex).append('\t').append(cleanName(m.name)).append('\t');
+            sb.append(hex(m.createId)).append('\t').append(cleanName(m.name)).append('\t');
             boolean first = true;
             for (Field fd : FIELDS) { if (!first) sb.append(','); first = false; sb.append(fd.key).append('=').append(m.get(fd.key)); }
             sb.append('\n');

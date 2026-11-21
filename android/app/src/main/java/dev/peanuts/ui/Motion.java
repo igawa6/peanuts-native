@@ -303,6 +303,18 @@ final class Motion {
         if (s != 0) d.getWindow().setWindowAnimations(s);
     }
 
+    private static int drawerStyle = -1, drawerStyleReduced = -1;
+
+    /** Settings' drawer of the sections (a phone, SettingsPage): in with a fade from 8 % to the left (ENTER), out the same way (EXIT); the fade alone under
+     *  reduced motion. Found by name as the sheets' are */
+    static void drawer(Dialog d) {
+        if (d == null || d.getWindow() == null) return;
+        Context c = d.getContext();
+        if (drawerStyle < 0) { drawerStyle = id(c, "PeanutsDrawer", "style"); drawerStyleReduced = id(c, "PeanutsDrawerReduced", "style"); }
+        int s = reduced || !enabled ? drawerStyleReduced : drawerStyle;
+        if (s != 0) d.getWindow().setWindowAnimations(s);
+    }
+
     /**
      * Right after a game's activity was started: Home fades out (EXIT) over the game's window, which is black until its first frame, so the launch reads as
      * a fade through black. The system runs it, so a busy main thread during the launch does not hold it. Called when the launch call returned, whether it

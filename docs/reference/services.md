@@ -212,6 +212,15 @@ Most service calls can be found before they crash, before the first boot or the 
 - **Check:** on Wonder's Switch 2 Edition the second user's save folder was made and mounted, and was the first user's until `Unmount` freed the name; with that, not yet run. The `UserSelectionSettings` layout (the 8 Uids, the skip flag at 0x80) is the console's as documented, not yet read from a game's code.
 - **Found on:** [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md): its save files are per user (asked for on its Switch 2 Edition).
 
+<!-- PEANUTS begin: the users' profile pictures -->
+### Users' profile pictures
+
+- **Symptom:** (PEANUTS) a game that shows the user's picture (`account::LoadProfileImage`, for a save slot or a player card) shows none, or its own placeholder.
+- **Cause:** the host kept no profile pictures: `LoadProfileImage` failed for every user.
+- **Fix:** `hle_account.c` gives the picture of the user asked for from `DM_USER_IMAGES/<uid>.jpg`, the 256 x 256 JPEG the console keeps for each user; a file larger than the console's 128 KiB, or not a JPEG, is refused with a red line, and a user without a file fails as before. The Android launcher writes the files from Settings › Users (`dev.peanuts.users.UserImages`): one of the player's Miis or one of the firmware's own pictures (system data AvatarImage `010000000000080A`, `chara/*.szs`, read by the importer with the shared fonts) on a background colour; `dev.peanuts.build.GameEnv` sets `DM_USER_IMAGES` when the folder exists.
+- **Check:** with two users and a picture for one, `DM_USERS`, `DM_USER` and `DM_USER_IMAGES` reach the host (Pokémon Legends: Z-A, AYN Thor, 2026-11-21). No game in the table has yet been seen calling `LoadProfileImage`, so the picture in a game is not yet confirmed.
+<!-- PEANUTS end -->
+
 ### System data stand-in for the MiiModel archive
 
 - **Symptom:** abort in `fs::detail::GetFileSystemProxyServiceObject` under `fs::QueryMountSystemDataCacheSize` (`main+0x8f23bc`).

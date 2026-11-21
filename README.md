@@ -176,6 +176,8 @@ See [CONTRIBUTING.md](peanuts/docs/CONTRIBUTING.md) for adding a game, fixing a 
 Peanuts Native is a fork of [Banana Native](https://git.eden-emu.dev/moceure/BananaNative) by moceure, which does the
 real work of running Switch games natively on Android and is built on [nxnative](https://github.com/seedds/nxnative)
 by seedds (MIT). Some fixes are adapted from [nx2android](https://github.com/shirai91/nx2android) (MIT).
+The Miis are drawn with the colour tables and face layout of [vee](https://github.com/j0lol/vee) (MIT) and their textures decoded with
+[bcdec](https://github.com/iOrange/bcdec) (MIT). <!-- PEANUTS: the Mii drawing's sources (android/NOTICE.md) -->
 
 The companion runtime and package format come from [Eden Duo](https://github.com/igawa6/eden-duo).
 

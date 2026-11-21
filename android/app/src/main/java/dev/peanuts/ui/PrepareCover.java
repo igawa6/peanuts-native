@@ -10,8 +10,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Outline;
-import android.graphics.Paint;
-import android.graphics.Path;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewOutlineProvider;
@@ -153,29 +151,18 @@ public final class PrepareCover extends FrameLayout {
     }
 
     /**
-     * The app's peanut (res/drawable/ic_banana.xml of the peanuts source set: the same shell, 108 units across) split along its seam: a crack runs down it
+     * The app's peanut (PeanutArt: the shell of res/drawable/ic_banana.xml of the peanuts source set, 108 units across) split along its seam: a crack runs down it
      * over the first two fifths of the progress, then the halves swing apart about the foot and show the two kernels. It rocks a little all the while, so the
      * screen is seen to be alive between two counts (still when the system's animations are off).
      */
     private static final class Peanut extends View {
-        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), line = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path shell = new Path(), shade = new Path(), left = new Path(), right = new Path(), crack = new Path();
-        private static final float[] ZIG = {54, 18, 57, 27, 51, 36, 57, 45, 52, 54, 57, 63, 51, 72, 56, 81, 54, 92};   // the seam, top to foot
+        private final PeanutArt art = new PeanutArt();
         private float open, shown;   // the progress asked for, and the one drawn (eased towards it)
         private float rock;
         private ValueAnimator anim;
 
         Peanut(Context c) {
             super(c);
-            shell.moveTo(54, 20); shell.cubicTo(65, 20, 71, 29, 69, 39); shell.cubicTo(68, 46, 62, 50, 58, 54); shell.cubicTo(62, 58, 69, 62, 70, 71);
-            shell.cubicTo(72, 82, 65, 90, 54, 90); shell.cubicTo(43, 90, 36, 82, 38, 71); shell.cubicTo(39, 62, 46, 58, 50, 54); shell.cubicTo(46, 50, 40, 46, 39, 39);
-            shell.cubicTo(37, 29, 43, 20, 54, 20); shell.close();
-            shade.moveTo(58, 54); shade.cubicTo(62, 58, 69, 62, 70, 71); shade.cubicTo(72, 82, 65, 90, 54, 90); shade.cubicTo(49, 90, 45, 88, 42, 85);
-            shade.cubicTo(50, 85, 59, 80, 61, 70); shade.cubicTo(63, 62, 60, 56, 58, 54); shade.close();
-            left.moveTo(0, 0); right.moveTo(108, 0);
-            for (int i = 0; i < ZIG.length; i += 2) { left.lineTo(ZIG[i], ZIG[i + 1]); right.lineTo(ZIG[i], ZIG[i + 1]); }
-            left.lineTo(0, 108); left.close(); right.lineTo(108, 108); right.close();
-            line.setStyle(Paint.Style.STROKE); line.setStrokeJoin(Paint.Join.ROUND); line.setStrokeCap(Paint.Cap.ROUND);
             setLayerType(LAYER_TYPE_SOFTWARE, null);   // clipPath of the halves, on every device
         }
 
@@ -201,41 +188,7 @@ public final class PrepareCover extends FrameLayout {
             c.rotate(k, 54, 90);
             float crackT = Math.min(1f, shown / 0.4f), swing = Math.max(0f, (shown - 0.4f) / 0.6f);
             float deg = 30f * swing * swing * (3 - 2 * swing);   // eased
-            if (swing > 0) {   // the kernels, under the halves
-                fill.setColor(0xFFB5532A); fill.setAlpha((int) (255 * Math.min(1f, swing * 2)));
-                c.drawOval(45, 27, 63, 51, fill); c.drawOval(44, 58, 64, 84, fill);
-                fill.setColor(0xFFD9825A); fill.setAlpha((int) (255 * Math.min(1f, swing * 2)));
-                c.drawOval(49, 30, 54, 40, fill); c.drawOval(48, 62, 54, 73, fill);
-                fill.setAlpha(255);
-            }
-            half(c, left, -deg);
-            half(c, right, deg);
-            if (crackT > 0 && swing < 1) {   // the seam, as far as it has run
-                crack.rewind();
-                float end = 18 + (92 - 18) * crackT;
-                crack.moveTo(ZIG[0], ZIG[1]);
-                for (int i = 2; i < ZIG.length; i += 2) {
-                    if (ZIG[i + 1] <= end) { crack.lineTo(ZIG[i], ZIG[i + 1]); continue; }
-                    float f = (end - ZIG[i - 1]) / (ZIG[i + 1] - ZIG[i - 1]);
-                    crack.lineTo(ZIG[i - 2] + (ZIG[i] - ZIG[i - 2]) * f, end);
-                    break;
-                }
-                line.setColor(0xFF5E3A17); line.setStrokeWidth(1.8f); line.setAlpha((int) (255 * (1 - swing)));
-                c.save(); c.clipPath(shell); c.drawPath(crack, line); c.restore();
-                line.setAlpha(255);
-            }
-            c.restore();
-        }
-
-        private void half(Canvas c, Path side, float deg) {
-            c.save();
-            c.rotate(deg, 54, 90);
-            c.clipPath(side);
-            fill.setColor(0xFFD9A066); c.drawPath(shell, fill);
-            fill.setColor(0xFFC08A52); c.drawPath(shade, fill);
-            line.setColor(0xFF8C5A2B); line.setStrokeWidth(2f); c.drawPath(shell, line);
-            fill.setColor(0xFF8C5A2B);
-            c.drawOval(48, 27.2f, 52.4f, 32.8f, fill); c.drawOval(60, 30.7f, 63.6f, 35.3f, fill); c.drawOval(46, 65.7f, 49.6f, 70.3f, fill); c.drawOval(59, 72.2f, 63.4f, 77.8f, fill);
+            art.draw(c, crackT, swing, deg, 255);
             c.restore();
         }
     }

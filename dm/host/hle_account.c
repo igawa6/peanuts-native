@@ -187,7 +187,28 @@ HLE_FORCE("_ZN2nn7account16GetUserExistenceEPbRKNS0_3UidE", "whether a user exis
     *out = user_index(uid) >= 0; return RES_OK;
 }
 HLE_FORCE("_ZN2nn7account15ShowUserCreatorEv", "user creation applet; users are added in the launcher's settings", Result, h_acc_ShowCreator, void) { DM_APPLET("user creator"); return RES_OK; }
-HLE_FORCE("_ZN2nn7account16LoadProfileImageEPmPvmRKNS0_3UidE", "user profile image; the host has none (fails)", Result, h_acc_LoadImage, uint64_t *n, void *buf, uint64_t sz, const Uid *uid) {
+// PEANUTS begin: the users' profile pictures (Settings › Users, dev.peanuts.users.UserImages): DM_USER_IMAGES=<folder> with <uid>.jpg, the 256 x 256 JPEG the console
+// keeps for each user. LoadProfileImage gives a game its bytes (the console's size limit is 128 KiB); a user without one fails as before
+#define USER_IMAGE_MAX (128u << 10)
+static int user_image(const Uid *uid, void *buf, uint64_t cap, uint64_t *n) {
+    const char *d = getenv("DM_USER_IMAGES");
+    if (!d || !*d || !uid || user_index(uid) < 0) return -1;
+    char h[33], p[1100]; uid_hex(uid, h);
+    snprintf(p, sizeof p, "%s/%s.jpg", d, h);
+    FILE *f = fopen(p, "rb");
+    if (!f) return -1;
+    uint8_t *b = malloc(USER_IMAGE_MAX + 1);
+    size_t got = b ? fread(b, 1, USER_IMAGE_MAX + 1, f) : 0;
+    fclose(f);
+    if (!b || got < 4 || got > USER_IMAGE_MAX || b[0] != 0xff || b[1] != 0xd8) { free(b); LOG("[RED] account: %s is not a JPEG of at most 128 KiB: no picture", p); return -1; }
+    if (buf && cap) memcpy(buf, b, got < cap ? got : cap);
+    if (n) *n = got;
+    free(b);
+    return 0;
+}
+// PEANUTS end
+HLE_FORCE_BIG("_ZN2nn7account16LoadProfileImageEPmPvmRKNS0_3UidE", "user profile image: the user's picture from the launcher (DM_USER_IMAGES), else none (fails)", Result, h_acc_LoadImage, uint64_t *n, void *buf, uint64_t sz, const Uid *uid) {   // PEANUTS: big stack (fopen), the picture
+    if (!user_image(uid, buf, sz, n)) return RES_OK;   // PEANUTS: the user's picture
     (void)buf; (void)sz; (void)uid; if (n) *n = 0; return RES_FAIL;
 }
 // The save-data thumbnail is what the system's data management screen shows next to a save (The Great Ace Attorney Chronicles, SDK 10); the host has no such screen and keeps none

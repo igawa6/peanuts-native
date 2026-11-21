@@ -71,7 +71,7 @@ class Catalog(unittest.TestCase):
         path = ROOT / 'peanuts/games.json'
         self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['about'], self.catalog['about'])
         want = catalog_mod.outputs(warn=lambda m: None)
-        self.assertEqual(sorted(want), sorted(('peanuts/games.json',) + catalog_mod.READMES), 'a README lost its Supported games markers')
+        self.assertEqual(sorted(want), sorted(('peanuts/games.json', catalog_mod.APP_COPY) + catalog_mod.READMES), 'a README lost its Supported games markers')
         stale = [n for n, t in want.items() if (ROOT / n).read_text(encoding='utf-8') != t]
         if stale:
             self.skipTest(f'out of date: {", ".join(stale)} (a game, a version or a companion changed): catalog.yml writes them on main, or '

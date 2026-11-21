@@ -632,12 +632,13 @@ typedef struct FontJob {
     uint8_t *data[6]; size_t size[6];   // decode first; an invalid import must not replace any installed font
     char why[2][256];   // required font's read/decryption failure, not a missing archive (issue #22)
     int got_mii, nmii; char mii_name[16][64]; uint8_t *mii_data[16]; size_t mii_size[16];   // PEANUTS: MiiModel 0100000000000802's files (optional)
+    int got_avatar, navatar; char (*av_name)[64]; uint8_t **av_data; size_t *av_size;   // PEANUTS: AvatarImage 010000000000080A's chara pictures (optional)
 } FontJob;   // got_cjk: cjk_sc, cjk_sc_ext, cjk_tc, cjk_kr (optional)
 // The firmware's Chinese and Korean shared fonts, written beside the two the app needs: a game set to one of those languages asks the console for them (types 1 to 4 of
 // the shared font service) and drew most characters as "?" with the standard font (Pokemon Shield with a Chinese save). FontKorean 0100000000000812 (one file),
 // FontChineseTraditional 0100000000000813 (one file), FontChineseSimple 0100000000000814 (the base file and an "ext" one). Not required: a firmware without them still gives the two
 static int read_bfttf(const NxNode *f, uint8_t **data, size_t *size);
-static int font_all(const FontJob *fj) { return fj->got_std && fj->got_ext && fj->got_cjk[0] && fj->got_cjk[1] && fj->got_cjk[2] && fj->got_cjk[3] && fj->got_mii; }   // nothing left to look for
+static int font_all(const FontJob *fj) { return fj->got_std && fj->got_ext && fj->got_cjk[0] && fj->got_cjk[1] && fj->got_cjk[2] && fj->got_cjk[3] && fj->got_mii && fj->got_avatar; }   // nothing left to look for (PEANUTS: MiiModel, AvatarImage)
 static void font_try_cjk(FontJob *fj, NxNca *n) {
     int base = n->title_id == 0x0100000000000814ull ? 0 : n->title_id == 0x0100000000000813ull ? 2 : n->title_id == 0x0100000000000812ull ? 3 : -1;
     if (base < 0) return;
@@ -673,18 +674,39 @@ static void font_try_mii(FontJob *fj, NxNca *n) {
     if (ok && k) { fj->nmii = k; fj->got_mii = 1; return; }
     for (int i = 0; i < k; i++) { free(fj->mii_data[i]); fj->mii_data[i] = NULL; }
 }
-// <fonts dir>/../miimodel, through miimodel.tmp: the old folder is replaced only by a complete one
-static void font_write_mii(FontJob *fj, const char *out_dir) {
-    if (!fj->got_mii) return;
+// The console's own profile pictures, AvatarImage 010000000000080A: its RomFS keeps them as chara/*.szs, each a Yaz0-packed 256 x 256 RGBA picture with a
+// transparent background. Written to <fonts dir>/../avatar/chara for Settings › Users (dev.peanuts.users.FirmwarePictures), which unpacks them when shown.
+// Optional, as MiiModel: a firmware without it still gives the fonts
+#define AVATAR_MAX 256
+static void font_try_avatar(FontJob *fj, NxNca *n) {
+    if (fj->got_avatar || n->title_id != 0x010000000000080Aull) return;
+    int s = nx_nca_find_section(n, NX_FS_ROMFS); NxNode *root = s >= 0 ? nx_romfs_tree(n, s) : NULL;
+    if (!root) return;
+    NxNode *chara = nx_node_find(root, "chara");
+    if (!fj->av_name) { fj->av_name = calloc(AVATAR_MAX, sizeof *fj->av_name); fj->av_data = calloc(AVATAR_MAX, sizeof *fj->av_data); fj->av_size = calloc(AVATAR_MAX, sizeof *fj->av_size); }
+    int ok = fj->av_name && fj->av_data && fj->av_size && chara && chara->is_dir, k = 0;
+    for (int i = 0; ok && i < chara->nkids; i++) {
+        NxNode *f = chara->kids[i]; size_t l = strlen(f->name);
+        if (f->is_dir || l < 5 || l >= 64 || strcmp(f->name + l - 4, ".szs") || !mii_name_ok(f->name)) continue;
+        if (k == AVATAR_MAX || nx_node_read_whole(f, &fj->av_data[k], 4u << 20)) { ok = 0; break; }
+        snprintf(fj->av_name[k], 64, "%s", f->name); fj->av_size[k] = (size_t)f->size; k++;
+    }
+    nx_node_free(root);
+    if (ok && k) { fj->navatar = k; fj->got_avatar = 1; return; }
+    for (int i = 0; i < k; i++) { free(fj->av_data[i]); fj->av_data[i] = NULL; }
+}
+// A set of files into <fonts dir>/../<sub>, through <sub>.tmp: the old folder is replaced only by a complete one (sub may be two levels, "avatar/chara")
+static void font_write_set(const char *out_dir, const char *sub, int n, char (*names)[64], uint8_t **data, size_t *size) {
     char parent[1100], dir[1200], tmp[1200]; snprintf(parent, sizeof parent, "%s", out_dir);
     char *sl = strrchr(parent, '/'); if (sl) *sl = 0; else snprintf(parent, sizeof parent, ".");
-    snprintf(dir, sizeof dir, "%s/miimodel", parent); snprintf(tmp, sizeof tmp, "%s/miimodel.tmp", parent);
+    snprintf(dir, sizeof dir, "%s/%s", parent, sub); snprintf(tmp, sizeof tmp, "%s/%s.tmp", parent, sub);
+    { char up[1200]; snprintf(up, sizeof up, "%s", dir); char *u = strrchr(up, '/'); if (u && u > up + strlen(parent)) { *u = 0; if (nx_mkdir(up, 0755) && errno != EEXIST) return; } }
     if (nx_mkdir(tmp, 0755) && errno != EEXIST) return;
     int ok = 1;
-    for (int i = 0; i < fj->nmii && ok; i++) {
-        char p[1300]; snprintf(p, sizeof p, "%s/%s", tmp, fj->mii_name[i]);
+    for (int i = 0; i < n && ok; i++) {
+        char p[1300]; snprintf(p, sizeof p, "%s/%s", tmp, names[i]);
         FILE *o = fopen(p, "wb"); if (!o) { ok = 0; break; }
-        ok = fwrite(fj->mii_data[i], 1, fj->mii_size[i], o) == fj->mii_size[i]; if (fclose(o)) ok = 0;
+        ok = fwrite(data[i], 1, size[i], o) == size[i]; if (fclose(o)) ok = 0;
     }
     if (ok) {
         DIR *d = opendir(dir); struct dirent *e;
@@ -694,6 +716,8 @@ static void font_write_mii(FontJob *fj, const char *out_dir) {
     if (!ok) { DIR *d = opendir(tmp); struct dirent *e;
         if (d) { while ((e = readdir(d))) if (e->d_name[0] != '.') { char p[1300]; snprintf(p, sizeof p, "%s/%s", tmp, e->d_name); remove(p); } closedir(d); rmdir(tmp); } }
 }
+static void font_write_mii(FontJob *fj, const char *out_dir) { if (fj->got_mii) font_write_set(out_dir, "miimodel", fj->nmii, fj->mii_name, fj->mii_data, fj->mii_size); }
+static void font_write_avatar(FontJob *fj, const char *out_dir) { if (fj->got_avatar) font_write_set(out_dir, "avatar/chara", fj->navatar, fj->av_name, fj->av_data, fj->av_size); }
 // PEANUTS end
 static int read_bfttf(const NxNode *f, uint8_t **data, size_t *size) {
     uint8_t *b = NULL; int rc = -1;
@@ -718,6 +742,7 @@ static int font_try_nca_fd(FontJob *fj, int fd, uint64_t off, uint64_t size) {
     int rc = 0;
     if (n.key_ok) font_try_cjk(fj, &n);
     if (n.key_ok) font_try_mii(fj, &n);   // PEANUTS: MiiModel
+    if (n.key_ok) font_try_avatar(fj, &n);   // PEANUTS: AvatarImage (the console's profile pictures)
     if (n.title_id == 0x0100000000000810ull || n.title_id == 0x0100000000000811ull) {
         int std = n.title_id == 0x0100000000000811ull;
         int s = nx_nca_find_section(&n, NX_FS_ROMFS);
@@ -847,9 +872,12 @@ int nximport_firmware_fonts(const char *firmware_dir, const char *out_dir) {
         if (rename(tmp, path)) { nx_err("cannot replace %s: %s", path, strerror(errno)); remove(tmp); rc = -1; }
     }
     if (!rc) font_write_mii(&fj, out_dir);   // PEANUTS: MiiModel beside the fonts, when the firmware has it
+    if (!rc) font_write_avatar(&fj, out_dir);   // PEANUTS: the profile pictures too
 done:
     for (int i = 0; i < 6; i++) free(fj.data[i]);
     for (int i = 0; i < fj.nmii; i++) free(fj.mii_data[i]);   // PEANUTS
+    for (int i = 0; i < fj.navatar; i++) free(fj.av_data[i]);   // PEANUTS
+    free(fj.av_name); free(fj.av_data); free(fj.av_size);   // PEANUTS
     return rc;
 }
 

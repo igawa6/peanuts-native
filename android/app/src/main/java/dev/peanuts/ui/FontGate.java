@@ -26,7 +26,7 @@ final class FontGate {
     static String refusal(Activity a, String titleId, String name) {
         if (PeanutsPrefs.hasFonts(a)) { GameEnv.ensureFonts(a, titleId); return null; }
         GameEnv.ensureDefaults(a, titleId);   // without the fonts too: a line retired from the game's env is out before this start (ensureFonts does it above)
-        return needs(titleId) ? name + " stops at startup with Android's fonts. Add your firmware first (Settings › Library › Firmware), then play." : null;
+        return needs(titleId) ? name + " stops at startup with Android's fonts. Add your firmware first (Settings › Console › Firmware), then play." : null;
     }
 
     /** Runs {@code go} at once when the game can start; else a dialog with "Choose firmware…" and "Play anyway" (which runs it) */

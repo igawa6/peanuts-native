@@ -25,7 +25,8 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
    - `android/app/build.gradle` — applicationId / label (`-PnxAppId=<suffix>`: a development build beside the app, with its own data); (2026-11-18) `androidBuildsOf` and its use in `buildsOf`: a profile's `android_builds <version> ...` row names the builds this app builds and plays when not all of the profile's (the launcher reads the others as a version it does not have; the host and the packer still know every build row).
    - `android/app/src/main/AndroidManifest.xml` — new Peanuts-owned activities/services/aliases, each its own marked block (already used for
      `CatalogActivity` and `GameHold`; 2026-11-13 added the `dev.peanuts.launch.LaunchActivity` alias, `peanuts/docs/LAUNCHERS.md`; 2026-11-18 the
-     `dev.peanuts.build.BuildLogProvider` provider, `${applicationId}.buildlog`, read-only: Share build log's bundles).
+     `dev.peanuts.build.BuildLogProvider` provider, `${applicationId}.buildlog`, read-only: Share build log's bundles; 2026-11-21 the Users and Miis
+     activities `dev.peanuts.mii.MiiEditor`, `dev.peanuts.users.PictureActivity` and `dev.peanuts.users.WhoPlaysActivity`, one line each, Rounds 46-48).
    - `android/app/src/main/java/dev/nxnative/android/AppStorage.java` — (2026-11-13) `pack()` prefers an existing pack already in the app's own storage,
      else a build folder's `<title ID>/pack` when the user set one (`PeanutsPrefs.buildPackDir`; Settings › Library › Build folder); (2026-11-13,
      code mods) the class and `pack()` made `public` so `dev.peanuts.build.ModdedBuild`/`Prepare` can ask for a modded variant's own pack folder by
@@ -60,6 +61,26 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      Readiness check's "Pick a GPU driver" open `dev.peanuts.ui.DriverActivity` instead of `GpuDriver.dialog`, two lines; the page itself and its
      manifest entry are Peanuts-owned. The Game settings row and the system-driver launch warning also open the page with a title ID.
      The activity result refreshes the game settings. Installs still go through `GpuDriver.install`. `peanuts/UPSTREAM-EDITS.md` Round 22.
+   - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-21, Settings in ten sections) one line at the end of `buildSettings()`:
+     `dev.peanuts.ui.SettingsPage.lay(this, content)` moves the rows upstream built, by their titles, into the sections of `dev.peanuts.ui.SettingsSections`
+     and shows one, with a sidebar of them on a window 600 dp wide or more, tiles of them on a tablet and a drawer on a phone. The rows, their listeners and
+     `refreshSettings()` stay upstream's. And one line in `onBackPressed()`: `SettingsPage.onBack(this)` takes a tablet's Back from a section's page to
+     the tiles. `peanuts/UPSTREAM-EDITS.md` Round 44.
+   - `android/app/src/main/java/dev/nxnative/android/PadFocus.java` — (2026-11-21, the controller's focus on buttons and tabs) `watch()` puts the focus
+     frame on through `dev.peanuts.ui.FocusFrame.at`, which draws it where the view shows: a one-line, centred text (every button, Segmented tab and chip)
+     scrolls far inside itself, and a view draws its foreground in those scrolled coordinates, so the frame was off screen there and About's Check for
+     updates showed no focus at all. The frame also counts as the view's focus look, so Android adds no grey highlight. `peanuts/UPSTREAM-EDITS.md` Round 44.
+   - `android/app/src/main/java/dev/nxnative/android/BananaBackgroundView.java` — (2026-11-21, Peanuts cracked) one line at the start of `drawBanana`:
+     `dev.peanuts.ui.Crack.draw(...)` draws the first 900 ms of a pop as the app's peanut cracking open (PeanutArt) in a Peanuts build while the system's
+     animations are on; the burst stays upstream's otherwise, and so do the gone and grow-back phases. `peanuts/UPSTREAM-EDITS.md` Round 45.
+   - `android/app/src/main/java/dev/nxnative/android/GameActivity.java` — (2026-11-21, Who's playing?) the users line in `start()`'s env: the preselected
+     user (`DM_USER`) is `dev.peanuts.users.WhoPlaysActivity.startUser(...)`, the user picked before the game started, else upstream's default.
+     `peanuts/UPSTREAM-EDITS.md` Round 48.
+   - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-21, Who's playing?) `onCreate`'s `GameReturn.back` line: when no game
+     comes back, `dev.peanuts.users.WhoPlaysActivity.appOpened(...)` asks who plays first (the app's icon, two users or more); and in the Peanuts block
+     `headerButtons`, `dev.peanuts.users.ProfileButton` after Settings: the user playing now, with Profile and switching. Round 48.
+   - `dm/host/hle_account.c` — (2026-11-21, the users' pictures) a marked block before `LoadProfileImage` (`user_image`: `DM_USER_IMAGES/<uid>.jpg`) and one
+     line in it; too much for a one-line hook, as `pack_android.py`'s, so block-marked. `peanuts/UPSTREAM-EDITS.md` Round 49.
 3. **Settings go through upstream's own mechanisms**: `env.txt` keys named `PN_*`, `settings.tsv` rows, `DM_CTL` lines. No new settings UI inside upstream classes.
 4. **Never reformat or "fix" upstream files.** A general fix belongs upstream as a PR to Banana Native (its AGENTS.md prefers general changes), then it arrives by rebase.
 5. **Branches:** `upstream/android` is Banana Native; `peanuts` is this overlay, always a linear set of commits on top of a Banana Native tag. History is rewritten on every update (rebase, never merge).
@@ -220,3 +241,35 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
   Paradise compressed with nsz 5.0.0: the `.nup` of the NSPs, of a solid set, of a block set and of a mixed set are one file (SHA-256 the same, 11.05
   GiB); import 30.8 s from the NSPs, 41.7 s from blocks, 64.3 s from solid; peak memory 321 to 403 MiB. A Build in the test app from the solid set ran
   to Ready in 8 min 4 s; Stop while unpacking left nothing behind. UPSTREAM-EDITS Round 29; HOOKS.md "Compressed dumps".
+- 2026-11-21 (Settings in ten sections, the canvas "Peanuts Settings Redesign", page App-Look): Settings shows one of ten sections at a time, Library,
+  Console, Graphics, Controls, Screens, Users, App, Help, Developer and About, instead of one long page whose Library card mixed folders, keys, haptics,
+  both screens and Miis. A window 600 dp wide or more (the Thor's top screen, a phone held sideways) has the sections in a sidebar at the left, the
+  selected one on banana yellow, and the rows at the right; a tablet (its smaller side 600 dp or more) opens Settings on the ten sections as tiles across
+  the screen (the canvas's board "Variante B, wie Eden"), a tile opens its section's page and Back goes to the tiles again; a narrow phone has the
+  section's page with a button of three lines that opens a drawer of the sections. Every row keeps upstream's look and listener; its tile and each section
+  show the Peanuts icons (`android/app/src/peanuts/res/drawable/pi_*.xml`, the kernel in the accent). Console's icon is a console with its two
+  controllers; Screens' is two screens on a device with a second screen, one screen on any other. The rows of Screens and Console mode show what they
+  are set to (`SettingsSections.BY_VALUE`): the second screen on, left to Android or showing the cover, where the game plays after a swap, a turning or a
+  sideways phone, a sun or a moon, a TV or the console; the icon changes with the value. The section that shows is kept while the app runs. `nav to=settings section=` of the control interface picks a section. UPSTREAM-EDITS
+  Round 44; test `peanuts/tests/test_settings_sections.py`.
+- 2026-11-21 (Settings on the second display): while Settings shows, the launcher's page on the second display explains what the focus is on. A
+  section's entry: the section, its line and its rows with their values now. A row: its icon, what it does (`dev.peanuts.ui.SettingsHelp`), its value now
+  and its app default; a switch row shows Off | On there, and a tap flips the switch on the top screen. A row tapped on the top screen is explained too, and
+  a value that changes updates the page in place. Leaving Settings gives the display back to its logo. No upstream hook: `SettingsPage` watches the focus
+  of the launcher's window, `BottomScreen.explain` and `BottomPanel`'s explanation page draw it; a page may hand a view of its own instead
+  (`BottomScreen.Explain.view`, for the Users section of package 3). `PUi.Segmented` is upstream's `Ui.Segmented`, copied.
+  Test `peanuts/tests/test_settings_explain.py`.
+- 2026-11-21 (one search over every setting): each section's page has a search button. Its sheet finds the rows of all ten sections by Advanced's
+  rule (every word in the row's title, section, group, value or what it does; `dev.peanuts.ui.SettingsSearch`), the titles first, and below them
+  Advanced's own rows that match (upstream's `AdvancedTable.visible`, reached by reflection in `AdvancedPort`). A row of Settings jumps to its section
+  and place, with the focus on it or a short highlight; one of Advanced's opens Advanced with the words in its search field. No upstream hook. Test
+  `peanuts/tests/test_settings_search.py`.
+- 2026-11-21 (About and Peanuts cracked): Settings › About has a Segmented of Overview (the badge, name, version and build tag, what the app is, Check for
+  updates, GitHub, Questions and answers, and Peanuts cracked: the app's own peanut cracked open, its halves opening and closing slowly, over the count),
+  Games (the game catalog, `peanuts/games.json`, which `games_catalog.py` also writes as the raw resource `peanuts_games.json`: All, New in the version,
+  With a companion), Credits (the makers, the contributors with davdxpx first) and Licenses (Built on, In this app, each opening its page). On the second
+  display About shows the big peanut, the count and the next milestone. Peanuts cracked replaces "Bananas Popped": upstream's tap counter, all time, plus
+  25 for a build of a game version not built before and 1 for every 1,000 shaders it prepared (Import again of that version adds nothing), 5 for every hour
+  played (a run's time from its start to its process's end, at most 6 h), 10 for a game's first start and 5 for the first own Mii (`dev.peanuts.ui.Cracked`,
+  `CrackedCount`). A tapped background peanut cracks open (`Crack`) instead of bursting. `PrepareCover`'s peanut is `PeanutArt` now, shared by all three.
+  UPSTREAM-EDITS Round 45; test `peanuts/tests/test_peanuts_cracked.py`.

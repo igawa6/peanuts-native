@@ -12,6 +12,7 @@ call `Haptics` themselves, and both would play.
 |---|---|
 | `MainActivity.build()` | `Ui.page(this, frame, 900)` — 640 → 900 dp: four covers per row on a handheld |
 | `MainActivity.buildSettings()` | `dev.peanuts.ui.LibrarySettings.add(this, content);` before the Updates section |
+| `MainActivity.buildSettings()` | `dev.peanuts.ui.SettingsPage.lay(this, content);` last: the rows into the ten sections (`SettingsSections`), a sidebar or a drawer of them |
 | `MainActivity.refresh()` | `dev.peanuts.ui.Library.fill(this, gameBox, games, Ondevice.cardView(), Ondevice::shows, this::gameCard, this::manage, this::refresh);` in place of the "Your games" block |
 | `MainActivity.manage()` | the `🔨 Build again` row → `dev.peanuts.ui.GameSheet.open(this, g.titleId)` |
 | `MainActivity.onActivityResult()` | `if (dev.peanuts.ui.LibrarySettings.result(this, request, result, data)) return;` first (requests 60–66) |
@@ -33,6 +34,16 @@ call `Haptics` themselves, and both would play.
   through `LibrarySettings.result` (requests 65, 66).
 - `LibrarySettings` — Settings › Library: folders, keys, firmware, Rescan, Haptics (System / Off), Motion (System / Reduced), Companions; the pickers
   (also the first-run card's and the sheet's).
+- `SettingsPage`, `SettingsSections`, `Icons` — Settings in ten sections: the table of which row goes where (by title; a row it does not know goes to
+  the section of its old heading, under More), the page that shows one section (a sidebar on a window 600 dp wide or more, a drawer on a phone), and the
+  Peanuts icons (`pi_*` drawables, their two colours from a style; found by name, so a build without the Peanuts resources keeps its emoji).
+- `SettingsHelp` — what each Settings row does and its app default, for the second display's explanation of the row the focus is on
+  (`BottomScreen.explain`, `BottomPanel`'s explanation page).
+- `AboutPage`, `AboutData`, `Cracked`, `CrackedCount`, `CrackedPeanut`, `Crack`, `PeanutArt` — Settings › About and Peanuts cracked: the four tabs, the
+  count and its rules (upstream's tap counter plus builds, shaders, play time and firsts), the app's peanut (PrepareCover's, shared), cracked open on About
+  and on a tapped background peanut (`BananaBackgroundView.drawBanana`'s one PEANUTS line).
+- `SettingsSearch`, `AdvancedPort` — Settings' one search: the matching and order (Advanced's rule over every row), and Advanced's own search and page
+  reached by reflection (`AdvancedSettings.table`, `AdvancedTable.visible`, `MainActivity.openAdvanced`).
 - `Haptics`, `Motion`: the launcher's feedback, six haptic words (TICK, CLICK, HEAVY, EDGE, DONE, REJECT) and six motion tokens (SNAP, FOCUS, ENTER, EXIT,
   EMPHASIS, PROGRESS), called from `Library`, `GameSheet`, `LibrarySettings` and `CompanionVersions`, never from inside `PUi` (it stays a verbatim copy). No
   upstream hook: the D-pad's focus haptic rides on the key listeners the library's own views have, the app-in-front flag and the focus after a game on

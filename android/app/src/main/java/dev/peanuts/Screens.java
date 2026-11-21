@@ -10,7 +10,7 @@ import android.util.Log;
 import android.view.Display;
 
 /**
- * Settings › Library › Swap screens (GitHub issue #131). Some dual-screen setups attach the top screen over USB-C, so Android lists the built-in bottom
+ * Settings › Screens › Swap screens (GitHub issue #131). Some dual-screen setups attach the top screen over USB-C, so Android lists the built-in bottom
  * screen as its default display and the clip-on top one as an external display (the Retroid Pocket 5 with its Dual Screen Add-On). With the setting on,
  * a game starts on the external display and its companion takes the built-in one (Companion.secondDisplay). Off, nothing changes.
  */
@@ -22,6 +22,7 @@ public final class Screens {
      * rejects the launch, retry on the launcher's display with the original intent.
      */
     public static void startGame(Activity launcher, Intent intent) {
+        if (dev.peanuts.users.WhoPlaysActivity.ask(launcher, intent)) return;   // Who's playing? first, with two or more users (Settings › Users); it starts the game
         Display d = PeanutsPrefs.swapScreens(launcher) ? external(launcher) : null;
         if (d != null) {
             Intent external = new Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

@@ -77,7 +77,7 @@ public final class MainActivity extends Activity {
         setContentView(frame);
         PadFocus.watch(getWindow());   // a controller: the focus frame (PadFocus)
         build();
-        if (saved == null) { setIntent(gated(getIntent())); fromIntent(getIntent()); dev.peanuts.GameReturn.back(this, getIntent()); /* PEANUTS: Home made anew by the app's icon while a game runs (GameReturn) */ }   // start() reads no_pause from getIntent() too
+        if (saved == null) { setIntent(gated(getIntent())); fromIntent(getIntent()); if (!dev.peanuts.GameReturn.back(this, getIntent())) dev.peanuts.users.WhoPlaysActivity.appOpened(this, getIntent()); /* PEANUTS: Home made anew by the app's icon while a game runs (GameReturn); else, opened by the icon, "Who's playing?" first with two users or more (dev.peanuts.users) */ }   // start() reads no_pause from getIntent() too
         GpuGl.probe(this, () -> { if (!isFinishing() && settingsGame != null) gameSettingsAgain(); });   // the GPU's name and, before any readiness check, the system driver's facts for the recommendations
         Updater.onStart(this);   // the release app: a newer release on GitHub opens the update popup (once per process start: not on a resume or a rotation)
         dev.peanuts.ctl.Ctl.attach(this);   // PEANUTS: control commands that waited for this screen run now (they come from dev.peanuts.ctl's own queue, never from this intent)
@@ -185,6 +185,7 @@ public final class MainActivity extends Activity {
     @SuppressWarnings("deprecation")
     @Override public void onBackPressed() {
         if (ReleasePage.back(this)) return;   // the release page over Home
+        if (dev.peanuts.ui.SettingsPage.onBack(this)) return;   // PEANUTS: a tablet's Settings: from a section's page back to the tiles of the sections (dev.peanuts.ui.SettingsPage)
         if (advancedOpen) closeAdvanced();
         else if (settingsPage || settingsGame != null) page(false);
         else super.onBackPressed();
@@ -267,6 +268,9 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMarginStart(Ui.dp(this, 10));
         row.addView(settings, lp);
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        mp.setMarginStart(Ui.dp(this, 10));
+        row.addView(dev.peanuts.users.ProfileButton.make(this, () -> page(true)), mp);   // the user playing now, with two users or more: Profile and switching (dev.peanuts.users)
         return row;
     }
     // PEANUTS end
@@ -451,6 +455,7 @@ public final class MainActivity extends Activity {
         t.setTextIsSelectable(true);
         Ui.add(about, t, 10);
         refreshSettings();
+        dev.peanuts.ui.SettingsPage.lay(this, content);   // PEANUTS: these rows in ten sections, one shown: a sidebar of them on a wide window, a drawer on a phone (dev.peanuts.ui.SettingsPage)
     }
 
     /** A settings group's card of rows, under its section label */

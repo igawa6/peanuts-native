@@ -39,6 +39,8 @@ atomics in `AstOptimizer.cs`, of else-ifs for SPIR-V and of TMML's negative LOD,
 
 The six default Miis (`mii_defs` in `dm/host/hle_mii.c`, `MiiStore.DEFAULTS` in the launcher's Mii editor) are the console's default Mii parameters as [Ryujinx](https://github.com/Ryubing/Ryujinx) (MIT, Copyright (c) Ryujinx Team and Contributors) and [Eden](https://git.eden-emu.dev/eden-emu/eden) (`src/core/hle/service/mii/types/raw_data.cpp`, GPL-3.0-or-later) hold them, converted to CharInfo values; the MIT permission notice is in [dm/third_party/ryujinx/LICENSE.txt](../dm/third_party/ryujinx/LICENSE.txt). Thanks to them. <!-- PEANUTS -->
 
+The launcher draws the Miis (`android/app/src/main/java/dev/peanuts/mii/`) with the colour tables and the face's layout of [vee](https://github.com/j0lol/vee) by Jo Null (MIT or Apache-2.0, used here under MIT: "Copyright (c) Jo Null"), which took them from the decompilation of the Wii U's face library (FFL), and `MiiPixels.java` ports the BC4, BC5 and BC7 decoders of [bcdec](https://github.com/iOrange/bcdec) by Sergii Kudlai (MIT: "Copyright (c) 2022 Sergii Kudlai"); the MIT permission notice is in [LICENSE](../LICENSE). The Mii parts themselves are read from the player's own firmware at run time and are no part of this code. Thanks to them. <!-- PEANUTS -->
+
 The Legend of Zelda: Ocarina of Time's cheat file (`dm/games/0400486024DEC000/cheats/E0F3CCFAF50065AE.txt`) takes its list of game-data keys (which records hold the
 rupees, the ammunition and the tokens) from [NX2navi-Trainer](https://github.com/Miragui/NX2navi-Trainer) by Miragui (MIT); no code of it is used: the pointer chain,
 the record layout and the key function were found again in the game's code (the game note's "Cheats"). Thanks to them.

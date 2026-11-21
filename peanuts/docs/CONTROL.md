@@ -65,7 +65,7 @@ rest of the file.
 | `list` | `-e cmd list` | The same, and the library rows alone into `ctl/library.json` |
 | `scan` | `-e cmd scan` | Settings › Library › Rescan. `screen.home.scanning` goes false when it has ended |
 | `nav` | `-e cmd nav -e to home -e filter ready -e find zelda` | Home, with the filter (`all`, `building`, `ready`, `build`, `not_in_app`) and the Find text (`-e find_clear true` empties it) |
-| | `-e cmd nav -e to settings -e section System` | Settings, scrolled to a heading (`Library`, `Updates`, `Display`, `Controls`, `Performance and picture`, `System`, `Help`, `About`; before the update to Banana Native v0.3.26 the three in the middle were one, `Game defaults`) |
+| | `-e cmd nav -e to settings -e section Graphics` | Settings with that section showing (`Library`, `Console`, `Graphics`, `Controls`, `Screens`, `Users`, `App`, `Help`, `Developer`, `About`), or scrolled to one of its groups (`-e section Picture`). The old long page's headings still lead to the section that has their rows now (`System` to `Console`, `Performance and picture` and `Game defaults` to `Graphics`, `Display` to the group of Screens). `data.section` says which shows |
 | | `-e cmd nav -e to game -e title_id 0100F2C0115B6000 -e tab storage` | A listed game's page and tab (`performance`, `game`, `saves`, `storage`) |
 | `build` | `-e cmd build -e title_id 0100F2C0115B6000` | The game sheet's Build with the files the sheet would choose: the base, the update chosen earlier (else the newest found), the DLC found, the companion as its switch stands. First build only. Refused with `wrong_version` when the sheet would ask "Build anyway?" |
 | `reimport` | `-e cmd reimport -e title_id 0100F2C0115B6000 -e confirm true` | The game sheet's Import again: the game's `.nup` is made again from its dumps (the base, the update chosen earlier or else the newest found, the DLC found now), then the game is built. The new file is written beside the old one and replaces it only when the import is complete. See below |
@@ -145,7 +145,7 @@ with `reimport`, or with `job` `do=try_anyway` to build without those shaders.
 | `upscaler` | `nearest`, `bilinear`, `fsr1`, `native`, `sgsr1` (one game: also `default`) | yes; not for a game on the DLSS stand-in or with Resolution presets |
 | `fps_cap` | `default`, `own`, supported numeric target. Limited profiles offer supported targets from 20/30/40/45/60/90/120. A profile with fps_limit_min 30 rejects 20; unsupported rates are rejected. Game owned uses the game's own pacing and requires restart when entering/leaving it. `default` uses 60 for adjustable profiles. | yes; native-only games accept `own`/`default` |
 | `overlay` | `on`, `off` | no |
-| `keep_screen_on` | `on`, `off` (Settings › System › Keep the screen on while preparing) | no |
+| `keep_screen_on` | `on`, `off` (Settings › Screens › Keep the screen on while preparing) | no |
 
 A value outside the list is `bad_value`, another key `unknown_key`, a row the game does not have
 `not_for_this_game`. `data.effective` says `now` or `next_start`.
@@ -161,7 +161,7 @@ is old (`written` says when). What the app cannot tell for sure is null or left 
 |---|---|
 | top | `schema` (1), `written` (ms), `seq` |
 | `app` | `package`, `version`, `build_id` (as Home's header shows it), `commit`, `keys`, `firmware`, `folders` (`game`, `update`, `dlc`, `build`, `app`: each `path` and `free` bytes, null when not set), `gpu_driver` (the default's label, or `system`), `gate` |
-| `screen` | `in_front`, `activity`, `page` (`home`, `settings`, `game`, `advanced`: Settings › Advanced or a game's Advanced page, over either; `to=home` and `to=settings` close it), `home` (`filter`, `find`, `show_hidden`, `scanning`), `game_page` (`title_id`, `tab`), `sheet` (`title_id` of the open game sheet), `screens_off` |
+| `screen` | `in_front`, `activity`, `page` (`home`, `settings`, `game`, `advanced`: Settings › Advanced or a game's Advanced page, over either; `to=home` and `to=settings` close it), `home` (`filter`, `find`, `show_hidden`, `scanning`), `game_page` (`title_id`, `tab`), `settings_section` (the section of Settings that shows: `library`, `console`, `graphics`, `controls`, `screens`, `users`, `app`, `help`, `developer`, `about`; `hub` while a tablet shows the tiles of the sections), `sheet` (`title_id` of the open game sheet), `screens_off` |
 | `library` | one row a game: `title_id`, `name`, `state` (`ready`, `build`, `building`, `not_in_app`), `listed` (it is in Home's list), `game` (the .nup, dump or file), `pack`, `has_companion`, `companion` (`package`, `version`). `library_read` says when the rows were read (at most 30 s old, read anew by `status`, a scan's end and a build's end) |
 | `job` | the Prepare job the launcher shows, from its `job.json`: `title_id`, `name`, `state` (`pending`, `running`, `paused`, `failed`, `done`), `process_alive`, `interrupted`, `paused_reason`, `step`, `counts` (per step: `state`, `done`, `total`), `percent`, `eta_s`, `eta`, `text` (the card's line), `error`, `error_detail`, `fix`, `cause` (`addon_not_imported` or null), `try_anyway`, `updated`, `job_file`, `log` |
 | `build` | the library's build of this app process: `running`, `title_id`, `name`, `step` (`import`, `prepare`, `companion`, `done`), `percent`, `detail`, `started`, and after its end `ended`, `failed`, `error`, `code` |
