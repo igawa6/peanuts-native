@@ -60,6 +60,12 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      Readiness check's "Pick a GPU driver" open `dev.peanuts.ui.DriverActivity` instead of `GpuDriver.dialog`, two lines; the page itself and its
      manifest entry are Peanuts-owned. The Game settings row and the system-driver launch warning also open the page with a title ID.
      The activity result refreshes the game settings. Installs still go through `GpuDriver.install`. `peanuts/UPSTREAM-EDITS.md` Round 22.
+   - `dm/gfx/vk_android/vka_dev.c`, `vka_present.c` — (2026-11-18, aarch64 Linux, `peanuts/docs/LINUX.md`) Banana Native 0.3.40's own three `#ifdef NX_LINUX`
+     blocks (its #335: the window's surface extensions and surface from `linux/host/front_sdl.c`; display timing off unless `NX_VK_DISPLAY_TIMING=1`), each marked
+     `PEANUTS(linux)`, same code as upstream's. The Android build never defines `NX_LINUX`.
+   - `linux/` — (2026-11-18) Banana Native v0.3.43's `linux/` (the aarch64 Linux host and its AppImage launcher); files byte-identical to that tag are on
+     `peanuts/upstream-unmarked.txt`. Peanuts' edits there are marked `PEANUTS(linux)`: `linux/host/CMakeLists.txt` (the `dm/peanuts` host sources and
+     runtime, C++, the generic host `GAME=generic`), `aarch64-clang.cmake` (clang++). `.gitignore`: three marked lines.
 3. **Settings go through upstream's own mechanisms**: `env.txt` keys named `PN_*`, `settings.tsv` rows, `DM_CTL` lines. No new settings UI inside upstream classes.
 4. **Never reformat or "fix" upstream files.** A general fix belongs upstream as a PR to Banana Native (its AGENTS.md prefers general changes), then it arrives by rebase.
 5. **Branches:** `upstream/android` is Banana Native; `peanuts` is this overlay, always a linear set of commits on top of a Banana Native tag. History is rewritten on every update (rebase, never merge).
@@ -169,6 +175,10 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
   never keys, game files, saves or packs. `BuildLogProvider` serves it read-only; the sheet offers Share (the chooser on the app's display) and Save to
   a folder (request 71 through `LibrarySettings.result`). Entry points: Home's stopped build card, the Prepare card and its Manage sheet, the game's
   Storage tab, Settings › Share log, and ctl `share_build_log`. Tests: `dm/tools/tests/test_android_build_log.py` (`BuildLogJvmTest`).
+- 2026-11-18 (aarch64 Linux AppImage, `peanuts/docs/LINUX.md`): Banana Native 0.3.43's `linux/` (its Linux host and AppImage launcher) with the Peanuts host
+  sources and the generic host (every Switch 1 profile through one `nxhost_generic`); `peanuts/linux/build-appimage.sh` stages the launcher under Peanuts' names
+  and adds .nsp/.xci import with the player's own keys (`peanuts/linux/pn_launcher.py`). The companion is off on Linux (one screen). Tested on an AYN Odin 2
+  Pro (Turnip): see the pull request that added LINUX.md.
 - 2026-11-19 (game catalog and issue forms): `peanuts/games.json` is the machine-readable list of the games this version ships, written by
   `peanuts/scripts/games_catalog.py` from `peanuts/release-titles.txt` (which games), each `dm/games/<title ID>/game.tsv` (the builds Android
   plays, `android_builds` respected, and the package) and `peanuts/games.tsv` (the table's order, the name players know, a display
