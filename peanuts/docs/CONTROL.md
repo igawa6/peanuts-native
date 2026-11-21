@@ -69,6 +69,7 @@ rest of the file.
 | | `-e cmd nav -e to game -e title_id 0100F2C0115B6000 -e tab storage` | A listed game's page and tab (`performance`, `game`, `saves`, `storage`) |
 | `build` | `-e cmd build -e title_id 0100F2C0115B6000` | The game sheet's Build with the files the sheet would choose: the base, the update chosen earlier (else the newest found), the DLC found, the companion as its switch stands. First build only. Refused with `wrong_version` when the sheet would ask "Build anyway?" |
 | `reimport` | `-e cmd reimport -e title_id 0100F2C0115B6000 -e confirm true` | The game sheet's Import again: the game's `.nup` is made again from its dumps (the base, the update chosen earlier or else the newest found, the DLC found now), then the game is built. The new file is written beside the old one and replaces it only when the import is complete. See below |
+| `import_pack` | `-e cmd import_pack -e title_id 0100F2C0115B6000 -e path /sdcard/Download/banana-pack-0100F2C0115B6000-0.zip` | The game sheet's Import pack… for a game that is not built yet, with a path instead of the picker: a `.zip` made by Export pack…, or a pack folder. It never replaces a pack. See below |
 | `prepare` | `-e cmd prepare -e title_id 0100F2C0115B6000` | Storage › Prepare again for a listed game, without its question. A dialog the app answers with is the refusal (`refused`, its text in `message`) |
 | `job` | `-e cmd job -e do pause` (or `stop`) | The button of the card that shows: Stop on the build card, Pause on the Prepare card |
 | | `-e cmd job -e do resume` (or `retry`) | Resume or Retry: a stopped build builds on; a Prepare job's own button is pressed |
@@ -136,6 +137,26 @@ A build that stops because shaders come with DLC that was not imported ends with
 `addon_missing` (and `job.cause` `addon_not_imported`): the app no longer goes on by itself there. Answer
 with `reimport`, or with `job` `do=try_anyway` to build without those shaders.
 
+### `import_pack`
+
+The pack goes where the game's next Build puts its own (its Build destination, else the app's pack folder for
+the game), with the checks and dialogs of the sheet: its pack.tsv must name the game; against a dump folder or
+`.nup` its code must be of that file's build, and the game is then ready to play; for a game Build still
+imports from an NSP or XCI its version must be the one Build uses (the update chosen earlier, else the newest
+found, else the base), and Build then makes the `.nup` and takes the pack. `last_result` is `pending` while the
+pack is copied and checked; then `ok` with what the "Pack imported" dialog says, or `refused` with the
+sentence of "Pack not imported". Both dialogs stay on the screen, as after the sheet's button.
+
+| Code | Meaning |
+|---|---|
+| `pack_there` | The game's pack folder holds a pack already. This command replaces none: the sheet's Import pack… does, after the user picked the file |
+| `built` | The game is built: its page's Storage tab has Import pack… |
+| `no_file` | `path` is neither a file nor a folder |
+| `no_base`, `file_gone` | No base game was found, or its file is gone (scan first) |
+| `no_access` | The app has no All files access |
+| `refused` | The pack was not imported: `message` is why (another game's pack, another version or build, a build that stopped part way, no room). Nothing was changed |
+| `busy`, `unknown_title`, `not_in_app` | As `build` (`busy` also while the game's pack is being imported or exported) |
+
 ### Settings `set` takes
 
 | Key | Values | For one game |
@@ -174,7 +195,8 @@ Ready can be `build` here.
 ## Not offered, and why
 
 - Deleting or replacing anything else: removing a game, a job's files or a pack, storage cleanup, saves
-  (backup, restore, import, delete), importing a pack. A typo must not cost a save or an hour's build.
+  (backup, restore, import, delete), importing a pack over one that is there (`import_pack` puts one only
+  where there is none). A typo must not cost a save or an hour's build.
   (`reimport` replaces one `.nup` by one made from the same dumps, and asks first.)
 - Anything that puts code or host switches into the game from a file: GPU driver installs, mods, the extra
   environment, env files. (`game ctl` reaches only a game that already runs.)

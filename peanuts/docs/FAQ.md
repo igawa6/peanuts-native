@@ -309,6 +309,7 @@ Do not remove the card during a build or while a game from it runs.
 | **Build again** | Hold the cover › **Storage** tab | Opens that sheet for a built game. You then tap **Rebuild**. |
 | **Prepare again** | Hold the cover › **Storage** tab, only for a game added as a dump folder | Remakes only the parts of the pack that do not fit, from the dump. It does not import or touch the companion. |
 | **Build with mods** | Hold the cover › **Game** tab › **Mods** | Makes a separate build that carries code mods. See [Mods](#mods). |
+| **Import pack…** | The sheet of a game that is not built, under Build; for a built game, hold the cover › **Storage** tab | Puts in a pack made on a computer or exported from another phone. See [below](#can-i-use-a-pack-made-on-a-computer-or-on-another-phone). |
 
 A tap on a ready cover plays the game, so the way to its sheet is hold the cover › **Storage** › **Build again**.
 
@@ -353,6 +354,16 @@ Yes. Files compressed with nsz (`.nsz`, `.xcz`) build like `.nsp` and `.xci`, al
 ### Can I build on a PC or a Mac instead?
 
 Yes. A script prepares the game on a computer and pushes it to the device over USB debugging. See [BUILDER.md](BUILDER.md). It is tested end to end on macOS and on Linux. Windows is written but not yet tested. Games that make shaders while they run, for example Fire Emblem: Three Houses and Octopath Traveler 0, must be built on the device.
+
+### Can I use a pack made on a computer or on another phone?
+
+Yes. A game's pack is what Build makes: its code for this app and its shaders. **Export pack…** on a built game's **Storage** tab writes it as one `.zip`, and the desktop builder makes one too ([BUILDER.md](BUILDER.md)).
+
+- For a game that is not built yet, open its sheet and tap **Import pack…** under Build. Pick the `.zip`, or the pack's folder (the one with `pack.tsv` and `shaders/`).
+- When the game is a dump folder or a `.nup`, the pack is checked against that file and the game is ready to play at once.
+- When the game is still an `.nsp` or `.xci`, the pack must be made from the version Build uses: the update the sheet shows, or the base game. Then tap **Build**: it makes the `.nup` and uses the pack, so the shaders are not translated again.
+- The app checks everything before it replaces anything. A pack of another game, of another version or of another build is refused with what to do next, and nothing is changed.
+- A built game has **Import pack…** on its **Storage** tab.
 
 ### How do updates and DLC work?
 

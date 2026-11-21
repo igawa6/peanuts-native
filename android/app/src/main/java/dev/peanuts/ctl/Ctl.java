@@ -380,6 +380,7 @@ public final class Ctl {
                 case "scan": scan(a, res); break;
                 case "build": build(a, res, r.titleId(true), false); break;
                 case "reimport": reimport(a, r, res); break;
+                case "import_pack": importPack(a, r, res); break;
                 case "prepare": prepare(a, r, res); break;
                 case "play": play(a, r, res); break;
                 case "job": job(a, r, res); break;
@@ -484,6 +485,21 @@ public final class Ctl {
         if (CtlPort.building(a, id)) { res.ok("The import started: the old .nup is replaced when the new one is complete, then the game is built. Its progress is under \"build\"."); return; }
         buildWait = res;
         UI.postDelayed(() -> { if (buildWait == res) { buildWait = null; done(res.fail("refused", "The import did not start.")); } }, 1000);
+    }
+
+    /**
+     * The game sheet's Import pack… without the picker (GitHub issue #44): the pack (a .zip made by Export pack…, or a pack folder) for a game that is not built
+     * yet, with the same checks and dialogs. Pending while it is imported; then ok with what the "Pack imported" dialog says, or refused with its sentence
+     */
+    private static void importPack(Activity a, Request r, Result res) throws Request.Bad, ReflectiveOperationException {
+        String id = r.titleId(true);
+        home(a);
+        String[] no = CtlPort.importPack(a, id, r.need("path"), out -> {
+            if (out[0] == null) res.ok(out[1]);
+            else res.fail(out[0], out[1]);
+            done(res);
+        });
+        if (no != null) throw new Request.Bad(no[0], no[1]);
     }
 
     private static void watch() { dialog = null; watching = true; }

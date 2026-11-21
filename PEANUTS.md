@@ -220,3 +220,21 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
   Paradise compressed with nsz 5.0.0: the `.nup` of the NSPs, of a solid set, of a block set and of a mixed set are one file (SHA-256 the same, 11.05
   GiB); import 30.8 s from the NSPs, 41.7 s from blocks, 64.3 s from solid; peak memory 321 to 403 MiB. A Build in the test app from the solid set ran
   to Ready in 8 min 4 s; Stop while unpacking left nothing behind. UPSTREAM-EDITS Round 29; HOOKS.md "Compressed dumps".
+- 2026-11-20 (GitHub issue #44, Import pack… before the first build): a game's sheet has **Import pack…** under Build while the game is not built
+  (upstream's Import pack… is on a built game's Storage tab, so a fresh install had nowhere to import a pack made on a PC or exported from another
+  phone). `dev.peanuts.pack.PackImport` runs upstream's own steps (`PackZip.titleOf`, `stage`, `swapIn`, `BuildCheck`) through reflection
+  (`dev.peanuts.pack.Upstream`, no upstream file changed): the pack goes where the game's next Build puts its own (its Build destination, else
+  `AppStorage.pack`), staged beside it. It must be the sheet's game; against a dump folder or `.nup` its build must be that file's, and the game then
+  gets its list entry (ready to play); for an NSP or XCI not imported yet its version must be the one Build uses, and Build takes it
+  (`dev.peanuts.build.Prepare` step 3). Refused with nothing written: another game's pack, another version or build, a running game of the title, an
+  export or import on the Storage tab, another list entry on the same pack folder, an unfinished Prepare job of the game. The words are
+  `dev.peanuts.pack.FirstImport`'s, the sheet's button and dialogs `dev.peanuts.ui.PackImportUi`; the sheet's Build waits for an import. The control
+  interface's `import_pack` does the same with a path and never replaces a pack (`peanuts/docs/CONTROL.md`). Tests:
+  `peanuts/tests/test_first_import.py` (the whole import on the JVM with upstream's PackZip, Pack and BuildCheck; the reflected names against
+  upstream's sources; the hand-over: a `.nup` of the pack's build where Build writes it gets the imported pack from upstream's PackFind and
+  BuildCheck, one of another build none). Emulator, fake packs only: a pack folder and a `.zip` into the sheet's NSP game and dump-folder game, the
+  refusals for another version and another game, Export pack…, the app's data cleared, the `.zip` imported again before the first build: ready to
+  play. AYN Thor (test app, a fake pack): the sheet's Import pack… through the system picker into the build folder, ready to play. AYN Thor
+  (2026-11-21, test app with the real packer, a game built once, its pack exported and the build deleted): the `.zip` imported on the sheet of the
+  NSP before the first build, the question before replacing it and the replacement, then Build: the `.nup` made and the pack taken as it was ("The
+  pack beside the game fits: nothing to prepare", 13 s instead of 5.5 min, no shader translated again), and the game started with it.

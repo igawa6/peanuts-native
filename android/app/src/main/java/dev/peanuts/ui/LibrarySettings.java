@@ -287,6 +287,7 @@ public final class LibrarySettings {
     /** MainActivity.onActivityResult's first line: true when the request was one of this package's (handled, whatever the result) */
     public static boolean result(Activity a, int request, int result, Intent data) {
         if (BuildLogUi.result(a, request, result, data)) return true;   // Share build log's Save to a folder (REQ_SAVE 71)
+        if (PackImportUi.result(a, request, result, data)) return true;   // the game sheet's Import pack… (72, 73)
         if (request < REQ_KEYS || request > REQ_MOD_ZIP) return false;
         if (result != Activity.RESULT_OK || data == null || data.getData() == null) return true;
         Uri u = data.getData();
@@ -324,14 +325,16 @@ public final class LibrarySettings {
             case REQ_DLC_DIR: PeanutsPrefs.dlcDir(a, p); break;
             default: return true;
         }
-        if (!Environment.isExternalStorageManager()) {
-            new AlertDialog.Builder(a).setTitle("Allow file access").setMessage("The app needs All files access to read " + p + ". Allow it, then come back.")
-                    .setPositiveButton("Open settings", (d, w) -> openAccessSettings(a)).setNegativeButton("Later", null).show();
-        }
+        if (!Environment.isExternalStorageManager()) askAccess(a, "The app needs All files access to read " + p + ". Allow it, then come back.");
         refreshRows();
         Library.changed(a);
         if (request != REQ_FIRMWARE) Library.rescan(a);
         return true;
+    }
+
+    /** "Allow file access": why, and the button to the app's All files access page */
+    static void askAccess(Activity a, String why) {
+        new AlertDialog.Builder(a).setTitle("Allow file access").setMessage(why).setPositiveButton("Open settings", (d, w) -> openAccessSettings(a)).setNegativeButton("Later", null).show();
     }
 
     /** As upstream's MainActivity.openAccessSettings: the app's own All files access page, else the list */

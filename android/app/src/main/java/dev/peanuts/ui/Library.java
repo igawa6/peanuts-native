@@ -666,6 +666,9 @@ public final class Library {
     /** The library of this activity, null when its Home was never drawn */
     static Library of(Activity a) { return current != null && current.a == a ? current : null; }
     static Library now() { return current; }
+
+    /** The activity this library draws in */
+    Activity activity() { return a; }
     static Build buildNow() { return build; }
     static List<CompanionPort.Item> catalogNow() { return catalog; }
     String filterName() { return FILTER_NAMES[filter]; }
@@ -1531,6 +1534,7 @@ public final class Library {
     /** The sheet's Build: the state to the pipeline; the card shows the rest. Returns why it could not start, or null */
     String startBuild(GameSheet.State s) {
         if (BuildPipeline.running() != 0) return "A build is running now. Wait for it to finish.";
+        if (dev.peanuts.pack.PackImport.busy(s.titleId)) return "A pack of " + s.name + " is being imported. Wait for it to finish, then build.";   // GitHub issue #44: the import writes the pack folder this build would use
         // Keys and firmware fonts are a one-time setup requirement (owner, 2026-11-13), checked here as a cheap file-presence gate for every entry point
         // that can start a build (the sheet's Build/Build anyway/Rebuild, and Resume below): GameSheet already disables its Build button for the same
         // reason, so this is only a last line of defense, never a per-build re-validation against the importer.

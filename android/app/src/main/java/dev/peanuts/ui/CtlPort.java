@@ -150,6 +150,24 @@ public final class CtlPort {
         return why == null ? null : new String[] {"refused", why};
     }
 
+    /**
+     * The sheet's Import pack… with a path instead of the picker (the control interface's import_pack): {code, sentence} when it cannot start, else null, and
+     * answer gets {null, what "Pack imported" says} or {"refused", the sentence} once the import ended (both dialogs show, as from the sheet). It never
+     * replaces a pack (peanuts/docs/CONTROL.md, "Not offered"): a game whose pack folder holds one already is refused with pack_there
+     */
+    public static String[] importPack(Activity a, String titleId, String path, java.util.function.Consumer<String[]> answer) {
+        Library lib = Library.of(a);
+        LibraryScanner.Title t = lib == null ? null : lib.title(titleId);
+        String[] no = PackImportUi.refusal(a, lib, t, titleId);
+        if (no != null) return no;
+        File source = new File(path);
+        if (!source.isFile() && !source.isDirectory()) return new String[] {"no_file", path + " is neither a file nor a folder."};
+        dev.peanuts.pack.FirstImport.Game g = PackImportUi.game(a, t, GameSheet.storedUpdate(a, t));
+        if (new File(g.target, "pack.tsv").isFile()) return new String[] {"pack_there", g.target + " holds a pack already, and this command replaces none. Import the pack on the game's sheet."};
+        PackImportUi.start(a, g, source, answer::accept);
+        return null;
+    }
+
     /** Whether the library's build of this title runs now */
     public static boolean building(Activity a, String titleId) {
         Library l = Library.of(a);

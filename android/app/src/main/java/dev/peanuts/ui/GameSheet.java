@@ -235,6 +235,13 @@ public final class GameSheet {
             again.setEnabled(!building);
             PUi.add(box, again, 4, PUi.wrap());
         }
+        // Import pack… before the first build (GitHub issue #44): a pack made on a PC or exported from another phone goes where this Build would put its own
+        // (PackImportUi). A built game has it on its page's Storage tab (upstream's PackUi)
+        if (PackImportUi.offered(title)) {
+            View imp = PUi.button(a, "Import pack…", PUi.Kind.QUIET, Haptics.on(Haptics.Word.TICK, v -> PackImportUi.offer(a, lib, title, chosenUpdate)));
+            imp.setEnabled(!building);
+            PUi.add(box, imp, 4, PUi.wrap());
+        }
     }
 
     // ---- Import again (dev.peanuts.build.Reimport) ----
@@ -561,6 +568,13 @@ public final class GameSheet {
         List<String> l = new ArrayList<>();
         for (File f : extraDlc) l.add(f.getPath());
         PeanutsPrefs.chosenDlc(a, title.titleId, l);
+    }
+
+    /** Closes the open sheet when it is this title's (an imported pack made the game ready: Build is no longer its next step) */
+    static void closeIfOpen(String titleId) {
+        GameSheet s = current;
+        if (s == null || s.dialog == null || !s.title.titleId.equalsIgnoreCase(titleId)) return;
+        try { s.dialog.dismiss(); } catch (RuntimeException e) { /* its activity is gone */ }
     }
 
     /** The title of the open sheet, null when none is open (dev.peanuts.ctl's status file) */
