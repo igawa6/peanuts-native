@@ -88,6 +88,7 @@ Peanuts Native 0.1.6 includes 52 games. The Companion column shows whether a gam
 | STEINS;GATE RE:BOOT | `01008BC024FDE000` | 1.0.3, 1.0.4 | No |
 | NieR:Automata The End of YoRHa Edition (Asian release) | `0100B8E016F76000` | 1.0.3 | No |
 | Hyrule Warriors: Age of Calamity | `01002B00111A2000` | 1.3.0 | No |
+| Digimon Story Time Stranger | `010062E01FE0C000` | 1.2.2 | No |
 
 <!-- PEANUTS end: the Supported games table -->
 

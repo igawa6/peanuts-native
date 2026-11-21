@@ -1113,6 +1113,68 @@ def cpk_shaders(path, rel, ents, out):
             print(f'[RED] /{rel}/{e[0]}: {x}; not scanned', flush=True); continue
         scan_blob(d, f'/{rel}/{e[0]}', out)
 
+# PEANUTS begin: Media.Vision's MVGL archives in their 64-bit layout (Digimon Story Time Stranger, 010062E01FE0C000: 176,835 entries in app_0.nx64.mvgl, 6.2 GB; mvgl.py).
+# Read whole, the 6.2 GB archive failed on macOS (one read() of more than 2 GB: OSError EINVAL) and gave no shader. Its shaders are the archive's 'shad' entries (the archive's own type
+# field, not a file name): 28,354 vertex and 28,354 pixel shaders, each one LZ4 block holding an NX?S container (nxsh_shader)
+MVGL = b'MDB1'
+def mvgl_jobs(files, parts=64):
+    """Every 'shad' entry of every 64-bit MVGL archive, in ranges of about equal stored length. → ([(path, rel, entry names), …], the archive paths)"""
+    import mvgl
+    arcs = []
+    for p, r in files:
+        if not p.lower().endswith('.mvgl'): continue
+        with open(p, 'rb') as f: h = f.read(0x20)
+        if h[:4] != MVGL or not mvgl.wide(h): continue   # the 32-bit layout (Cyber Sleuth, an OpenGL game) is scanned as before
+        a = mvgl.Archive(p); a.f.close()
+        arcs.append((p, r, [(n, a.files[n][2]) for n in sorted(a.files) if n.endswith('.shad')]))
+    jobs, step = [], max(1, sum(c for _, _, es in arcs for _, c in es) / parts)
+    for p, r, es in arcs:
+        cur, size = [], 0
+        for n, c in es:
+            cur.append(n); size += c
+            if size >= step: jobs.append((p, r, (MVGL, tuple(cur)))); cur, size = [], 0
+        if cur: jobs.append((p, r, (MVGL, tuple(cur))))
+    return jobs, {p for p, _, _ in arcs}
+
+def nxsh_shader(d, label):
+    """One NX?S container (NXVS vertex, NXFS pixel): +0x04 its length, +0x0c / +0x10 the control section's offset and length, +0x14 / +0x18 the code area's"""
+    n, _, co, cn, ko, kn = field(d, '<IIIIII', 4, f'{label} NX?S header')
+    if n != len(d): red(f'{label}: the NX?S header says {n:#x} bytes, the entry has {len(d):#x}')
+    ctl, code = span(d, co, cn, f'{label} control section'), span(d, ko, kn, f'{label} code area')
+    st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code) if code[:4] == GFX_MAGIC else None
+    why = check(label, st, ctl, code) if st else 'unknown shader stage'
+    if why: red(f'{label}: {why}')
+    return (label, st, ctl, code)
+
+NXSH = re.compile(rb'NX[VFCGHD]S')
+def nxsh_in(d, label, skip):
+    """Every NX?S container inside d whose header holds (control section at +0x40, the code area after it, both inside its length): the shaders, and each container's span
+    added to skip. Digimon Story Time Stranger keeps its engine's own shaders in main as such containers (172 pixel, 28 vertex, 2 compute), the first scene's among them; the
+    control-section heuristic of raw_shaders paired none of them (the code area lies after the control section's assembly text, not at its own length)"""
+    out = []
+    for m in NXSH.finditer(d):
+        a = m.start()
+        if a & 3 or a + 0x1c > len(d): continue
+        n, _, co, cn, ko, kn = struct.unpack_from('<IIIIII', d, a + 4)
+        if co != 0x40 or not (0x40 <= ko and ko + kn <= n) or a + n > len(d) or d[a + co:a + co + 4] != CTL_MAGIC or co + cn > ko: continue
+        ctl, code = d[a + co:a + co + cn], d[a + ko:a + ko + kn]
+        st = 'cs' if code[:4] == CS_MAGIC else sph_stage(code) if code[:4] == GFX_MAGIC else None
+        if not st or check(label, st, ctl, code): continue
+        out.append((f'{label}#NXSH@{a:#x}', st, ctl, code)); skip.append((a, a + n))
+    return out
+
+def mvgl_shaders(path, rel, names, out):
+    """A range of a 64-bit MVGL archive's 'shad' entries (mvgl_jobs): an NX?S container is read by its header, anything else scanned like a loose file"""
+    import mvgl
+    a = mvgl.Archive(path)
+    try:
+        for n in names:
+            d, label = a.read(n), f'/{rel}/' + n.replace('\\', '/')
+            if d[:2] == b'NX' and d[3:4] == b'S': out.append(nxsh_shader(d, label))
+            else: scan_blob(d, label, out)
+    finally: a.f.close()
+# PEANUTS end
+
 # PEANUTS: Split Diablo III packages by byte range.
 D3CPK = b'D3CPK'   # job tag of a Diablo III package's byte range (d3cpk_jobs)
 def d3cpk_jobs(files, parts=64):
@@ -2226,8 +2288,9 @@ def raw_shaders(d, label, known=()):
         size, _, first, _ = glslc_layout(d, m.start())
         if (0 if first == 0xa8 else 0x760) < size <= len(d) - m.start(): skip.append((m.start(), m.start() + size))
     for m in re.finditer(b'BNSH\0\0\0\0', d): skip.append((m.start(), m.start() + struct.unpack_from('<I', d, m.start() + 0x1c)[0]))
+    nx = nxsh_in(d, label, skip)   # PEANUTS(upstream-candidate): Media.Vision's NX?S containers, read by their headers (Digimon Story Time Stranger: 202 in main)
     ctls = [c for m in re.finditer(re.escape(CTL_MAGIC), d) if not (c := m.start()) & 3 and not any(a <= c < b for a, b in skip) and d[c:c + struct.unpack_from('<I', d, c + 0x20)[0]] not in known]
-    if not ctls: return []
+    if not ctls: return nx   # PEANUTS(upstream-candidate): nx, was []
     rel, code_of, cset = rel_targets(d), {}, set(ctls)
     for s, c in rel.items():
         if c not in cset or c in code_of: continue
@@ -2251,7 +2314,7 @@ def raw_shaders(d, label, known=()):
             code = d[k:k + n]; st = glslc_stage(ctl, code) if k >= 0 and CTL_MAGIC not in code else None
             if st and not check(label, st, ctl, code): out.append((f'{label}#RAW@{c:#x}', st, ctl, code)); why = None; break
         if why: print(f'[RED] {label} control section @{c:#x}: {why}; left out', flush=True)
-    return out
+    return nx + out   # PEANUTS(upstream-candidate): nx
 
 ONEPACK = b'ONEPACK\0'
 def fb_field(d, t, i):
@@ -3491,6 +3554,9 @@ def scan_file_in(args):
     if len(args) > 2 and head[:4] == CPK:   # entries of a CRI CPK (cpk_jobs)
         cpk_shaders(path, rel, args[2], found)
         return rel, uniq_keys(found), var_pairs(found), trees
+    if len(args) > 2 and head[:4] == MVGL and args[2][0] == MVGL:   # PEANUTS: 'shad' entries of a 64-bit MVGL archive (mvgl_jobs)
+        mvgl_shaders(path, rel, args[2][1], found)
+        return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and head[:4] == KPKA:   # entries of an RE Engine PAK (kpka_jobs)
         kpka_shaders(path, rel, args[2], found)
         return rel, uniq_keys(found), var_pairs(found), trees
@@ -4262,9 +4328,10 @@ def scan_jobs(files, want=None, mains=(), nros=()):
     ah_jobs, arhs = arh_jobs(files)   # Monolith's ARH1/ARD archives and embedded XBC1/HCPS programs
     fb_jobs, fbs = frostbite_jobs(files)   # EA SPORTS FC 27's Frostbite bundles, Oodle Leviathan decoded by the game's own decoder in the Mac host
     pd_jobs, pdats = pdat_jobs(by_head)
+    mv_jobs, mvgls = mvgl_jobs(by_head)   # PEANUTS: Digimon Story Time Stranger's 64-bit MVGL archives
     # PEANUTS: Schedule package ranges alongside other split jobs.
-    big += pak_jobs + tr_jobs + ue_jobs + bd_jobs + arc_jobs + pz_jobs + ck_jobs + d3_jobs + cr_jobs + zp_jobs + ah_jobs + fb_jobs + pd_jobs
-    files = [(p, r) for p, r in files if not linkdata_jobs(p, r) and p not in paks and p not in trp and p not in uep and p not in bdts and p not in arcs and p not in pkzs and p not in cpks and p not in d3s and p not in cras and p not in zips and p not in arhs and p not in fbs and p not in pdats]
+    big += pak_jobs + tr_jobs + ue_jobs + bd_jobs + arc_jobs + pz_jobs + ck_jobs + d3_jobs + cr_jobs + zp_jobs + ah_jobs + fb_jobs + pd_jobs + mv_jobs   # PEANUTS: + mv_jobs
+    files = [(p, r) for p, r in files if not linkdata_jobs(p, r) and p not in paks and p not in trp and p not in uep and p not in bdts and p not in arcs and p not in pkzs and p not in cpks and p not in d3s and p not in cras and p not in zips and p not in arhs and p not in fbs and p not in pdats and p not in mvgls]   # PEANUTS: and mvgls
     if want is not None: big, files = [j for j in big if j[1] in want], [f for f in files if f[1] in want]
     return big, files
 

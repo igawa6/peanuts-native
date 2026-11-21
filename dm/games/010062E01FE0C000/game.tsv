@@ -1,0 +1,62 @@
+# Game profile of Digimon Story Time Stranger (Switch, update 1.2.2 = v262144, with its add-on content). PEANUTS: a Peanuts Native profile (Banana Native has none for this title).
+# Format: see dm/games/README.md
+# Media.Vision's engine on NVN, SDK 20.5.21, CRIWARE sound and movies; every game file is in MVGL archives (*.nx64.mvgl, the 64-bit layout: mvgl.py) and two CRI CPK archives.
+# The shaders are the archives' 'shad' entries, NXVS / NXFS containers of one NVN control section and code area each (shader_split.py mvgl_jobs). Started as a provisional profile
+# (dm/games/profile_guess.py): the memory keys are the survey's guess, not measured
+
+# ---- Identity ----
+title_id	010062E01FE0C000
+program_id	010062E01FE0C000
+
+# ---- App ----
+name	Digimon Story Time Stranger
+ipa	DigimonStoryTimeStranger.ipa
+app_category	public.app-category.role-playing-games
+
+# ---- Versions ----
+build	v262144	1.2.2	main=135c83cdea06aec2d858e1bc7d53d72f	subsdk0=a870a783a09f57256d3630b73485398e	sdk=c668ae02ea221e429677aa61d3dab7c6
+package	v262144
+shader_versions	v262144
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	app_0.nx64.mvgl
+zip_store	.cpk:.mvgl:.metallib
+
+# ---- Memory ----
+# the NPDM declares 20 MB of system resource (virtual address memory) and main sets a heap: a 5 GB block with a large alias region; the heap check sizes the heap region from the heap the game asks for
+mem_reserve	0x140000000
+mem_alias	0x118000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 20 MB of system resource
+sys_resource	0x1400000
+# the rewritten modules (main 51.4 MB, subsdk0 13.7 MB, sdk 7.2 MB) are larger than the default 64 MB of used memory (profile_guess.mem_used)
+mem_used	0x4a00000
+
+# ---- Shader split ----
+shader_groups	/=romfs
+shader_note	Digimon Story Time Stranger shaders
+
+# ---- Frame rate ----
+# PEANUTS: FPSLocker Warehouse's config for this build (v4, 010062E01FE0C000/135C83CDEA06AEC2.yaml), main 1.2.2 only. The host's frame limit picks the rate: 60 by default,
+# the launcher's choices up to 120, and Game owned for the game's own rate (no row applied). The frame time (µs) and the frame rate the game keeps in main's data:
+fps_limit	60
+fps_limit_max	120
+fpslocker	135c83cdea06aec2d858e1bc7d53d72f	step_ticks_u32	@0x1425cd0	1	1000000:1
+fpslocker	135c83cdea06aec2d858e1bc7d53d72f	target_i32	@0x1425c98	1	0
+# Dynamic resolution: main+0x9d6868 / +0x9d687c loaded x21 with the address of a table of two modes, three floats each (main+0x9d6884 reads table[mode * 12]).
+# The plan points x21 at the auxiliary data page instead (adrp x21, its page; add x21, x21, #0), whose mode 0 follows the limit: fps + 2, 1000 / (fps + 5) and 0.78 of that;
+# mode 1 keeps the config's constants (56, 16.949152, 13). The data words before the first frame are the config's defaults (25, 35.714287, 28)
+fpslocker_plan	135c83cdea06aec2d858e1bc7d53d72f	m0x9d6868	554e00b0	p21:0x0
+fpslocker_plan	135c83cdea06aec2d858e1bc7d53d72f	m0x9d687c	b5fa40f9	b5020091
+fpslocker_plan	135c83cdea06aec2d858e1bc7d53d72f	d0x0	-	0000c841
+fpslocker_plan	135c83cdea06aec2d858e1bc7d53d72f	d0x4	-	6edb0e42
+fpslocker_plan	135c83cdea06aec2d858e1bc7d53d72f	d0x8	-	0000e041
+fpslocker_plan	135c83cdea06aec2d858e1bc7d53d72f	d0xc	-	00006042
+fpslocker_plan	135c83cdea06aec2d858e1bc7d53d72f	d0x10	-	dd978741
+fpslocker_plan	135c83cdea06aec2d858e1bc7d53d72f	d0x14	-	00005041
+fpslocker	135c83cdea06aec2d858e1bc7d53d72f	target_offset_f32	%0x0	1	2:1
+fpslocker	135c83cdea06aec2d858e1bc7d53d72f	frame_offset_ms_f32	%0x4	1	5:1
+fpslocker	135c83cdea06aec2d858e1bc7d53d72f	frame_offset_ms_f32	%0x8	1	5:0.78
