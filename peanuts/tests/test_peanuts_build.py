@@ -118,6 +118,31 @@ class Build(unittest.TestCase):
             got = self.decode_case(self.ROWS, env={'DM_OODLE_OOZ': str(w) + '-none'})
             self.assertIn('is not a file', got['0100000000000004'])
 
+    def test_cluster_warning(self):
+        """A shader cache on a drive with large allocation units (exFAT's 1 MiB) is warned about, at the nearest folder that exists; a local disk's 4 KiB,
+        and a drive statvfs cannot read, are not"""
+        real = os.statvfs
+        seen = []
+        def fake(unit):
+            def f(p): seen.append(str(p)); return type('S', (), {'f_frsize': unit})()
+            return f
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                missing = Path(d, 'Game [0100000000000001]-work', 'android-shaders', 'lib')
+                os.statvfs = fake(1 << 20)
+                w = pb.cluster_warning(missing)
+                self.assertTrue(w.startswith('[RED] ')); self.assertIn('1024 KiB', w); self.assertIn('--shader-cache', w)
+                self.assertEqual(seen[-1], d)   # the folder that exists
+                os.statvfs = fake(4096)
+                self.assertIsNone(pb.cluster_warning(missing))
+                os.statvfs = fake(pb.BIG_CLUSTER)
+                self.assertIsNotNone(pb.cluster_warning(missing))
+                def broken(p): raise OSError('no drive')
+                os.statvfs = broken
+                self.assertIsNone(pb.cluster_warning(missing))
+        finally:
+            os.statvfs = real
+
     def test_real_worker_build(self):
         """build_unoodle on this machine: the worker, or a reason; never an exception. (peanuts/tests/test_unoodle.py tests the worker itself)"""
         with contextlib.redirect_stdout(io.StringIO()): exe, why = pb.build_unoodle()

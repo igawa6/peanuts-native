@@ -498,6 +498,24 @@ def pack(target, extra, dry):
     return done
 
 
+BIG_CLUSTER = 256 * 1024   # an allocation unit at least this large makes the shader cache's one file per shader cost far more than its bytes
+
+
+def cluster_warning(folder):
+    """The warning for a shader library cache in <folder> on a drive with large allocation units, else None. The cache keeps one result file per shader
+    (vk_android_build.py results/, a few KB each, kept for the next build), and each file takes at least one unit: on an exFAT drive with 1 MiB clusters,
+    Mario Kart 8 Deluxe's 59,302 files took 58 GB for under 1 GB of data. Read with statvfs at the nearest folder that exists; None where it cannot be read
+    (Windows, a missing drive)"""
+    p = Path(folder)
+    while not p.exists() and p != p.parent: p = p.parent
+    try: unit = os.statvfs(p).f_frsize
+    except (AttributeError, OSError): return None
+    if unit < BIG_CLUSTER: return None
+    return (f'[RED] the shader library cache {folder} is on a drive whose allocation unit is {unit // 1024} KiB (exFAT and FAT drives often have 1 MiB): '
+            f'the cache keeps one small file per shader, so it can take tens of GB there for under 1 GB of data (each file takes {unit // 1024} KiB). '
+            'Put the .nup on a local disk (--nup), or the cache (-- --shader-cache DIR); the game files themselves can stay where they are')
+
+
 def main():
     argv = sys.argv[1:]
     extra = []
@@ -568,6 +586,9 @@ def main():
     for k, v in pc.items():
         ENV[k] = v
         say(f'  {k}={v}')
+    cache = Path(pack_extra[pack_extra.index('--shader-cache') + 1]) if '--shader-cache' in pack_extra[:-1] else \
+        target.resolve().parent / f'{app or target.stem}-work' / 'android-shaders' / 'lib'
+    if warn := cluster_warning(cache): say(warn)
     t = time.monotonic()
     done = pack(target, pack_extra, args.dry_run)
     timings['pack'] = time.monotonic() - t

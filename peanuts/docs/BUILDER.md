@@ -130,6 +130,46 @@ The shader translator needs .NET. The builder points the tools it starts at the 
 - The title's icon goes beside the `.nup` as `<the .nup's name without .nup>.png` (`nximport_cli icon`, from the base file, else the update). It is written for `.nsp`, `.xci`, `.nsz` and `.xcz` inputs, also when the `.nup` is reused and only the PNG is missing (`--force-nup` writes it again). A failure is a warning, not an error. `--push` copies it beside the `.nup` on the phone, where the Peanuts library takes it as the game's icon when the game has none yet: it must be a PNG of at most 4 MiB, and once the library has an icon for a title it keeps it. Since issue #158 the `.nup` also carries the icon itself (its base package's meta block, which `nximport` writes); the library reads the PNG beside it first, then the icon inside.
 - The pack goes to `<folder of the .nup>/<TITLE ID>-work/android-pack`.
 - The importer is built into `peanuts/.build/nximport`, the Oodle worker into `peanuts/.build/ooz` and `_nxaes` into `peanuts/.build/pymod` (all git-ignored).
+- **Keep the `.nup` (and so the work folder) or at least the shader cache on a local disk, not on an exFAT or FAT drive.** The shader library's cache
+  (`<TITLE ID>-work/android-shaders/lib/v-<V>/results`) keeps one small file per shader for the next build, and each file takes at least one allocation
+  unit. External drives formatted exFAT on macOS often have 1 MiB units: on one, Mario Kart 8 Deluxe's 59,302 files took 58 GB for under 1 GB of data,
+  Pokémon Brilliant Diamond's 28 GB, and FINAL FANTASY RESONANCE filled the drive at a quarter of its 73,496 shaders. The builder prints a `[RED]` line
+  before the pack when the cache would go on a drive with units of 256 KiB or more (statvfs; not on Windows). Pass `--nup <folder on a local disk>`, or
+  `-- --shader-cache <folder>`; the game files can stay on the drive, as they are only read. A finished library does not need its `results` folder: deleting
+  it frees the space, and the next build of the same game still reuses the library (it is rebuilt only when the chain or the profile changes).
+
+## Using every core
+
+The pack has three steps that can run in parallel, each with its own setting. Pass the `pack_android.py` ones after `--`:
+
+| Step | Setting | Default |
+|---|---|---|
+| Code rewrite | `-j N`: modules rewritten at once (each also splits some of its own work over `DM_REWRITE_J`, set from the cores) | 2 |
+| Shader split | the environment's `J`: processes | 8 |
+| Shader library | `-J N`: shaders translated at once | 8 |
+
+The library's Python half holds one interpreter lock, so `-J` alone keeps it near one core. `DMSH_VK_PROCS=N` splits it over N worker interpreters
+([android/SHADERS.md](../../android/SHADERS.md), worker interpreters), which need the translator and the validator as libraries, named by `XLATE` and
+`SPIRV_VAL`. On macOS:
+
+```sh
+cd dm/gfx/tools/dmsh_xlate_android
+mkdir -p obj && python3 ../xlate_tree.py > obj/tree.sha        # the library carries the tree it was built from; vk_android_build.py checks it
+LIBRARY_PATH=$(brew --prefix openssl@3)/lib:$(brew --prefix brotli)/lib \
+  dotnet publish dmsh_xlate_android.csproj -c Release -r osx-arm64 -p:NativeLib=Shared -p:OutputType=Library -o <folder>   # the .NET 10 SDK (brew install dotnet)
+```
+
+Then, with the packer environment's Python itself (not through `peanuts-build.command`: its environment check runs `XLATE` as a program, fails on the
+library, and then makes the environment again):
+
+```sh
+J=10 XLATE=<folder>/dmsh_xlate.dylib SPIRV_VAL=<env>/lib/libSPIRV-Tools-shared.dylib DMSH_VK_PROCS=10 \
+  <env>/bin/python peanuts/scripts/peanuts_build.py "Game folder" --nup <folder on a local disk> --push -- -j 10 -J 10
+```
+
+`sysctl -n hw.ncpu` gives the number of cores. Rebuild the library after a change to the translator's sources (`xlate_tree.py --check-lib <library>` says
+whether it still matches). Measured on an Apple Silicon Mac: Mario Kart 8 Deluxe's library (29,651 shaders) in 114 s with 4 workers against about 540 s
+with the defaults, the same `dmsh_vk.lib` byte for byte; FINAL FANTASY RESONANCE's whole pack (73,496 shaders, Unreal) in 16 minutes with 4 workers, most of it the library.
 
 ## Status
 
