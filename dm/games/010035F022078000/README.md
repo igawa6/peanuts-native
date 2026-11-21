@@ -3,13 +3,21 @@
 
 Base 1.0.0 (`v0`), SDK 14.3.0 (`14_3_0`), Unreal Engine 4.27 (IoStore containers beside `.pak` archives, `FMallocBinned3`), NVN, CRIWARE sound and Sofdec VP9 movies.
 
-**Status:** boots and plays battles on Android (tested on Xiaomi `25053PC47I`, Adreno 825, Turnip `Turnip_Adreno_Driver_T30_Mr_Purple_666_` and Qualcomm system driver) at 30 fps (`bUseFixedFrameRate=True`, `FixedFrameRate=30.0` in `DefaultEngine.ini`) with sound, movies and save commits working.
+**Status:** boots and plays battles on Android (tested on Xiaomi `25053PC47I`, Adreno 825, Turnip `Turnip_Adreno_Driver_T30_Mr_Purple_666_` and Qualcomm system driver) at 60 fps (`fps_target 60`, `fps_modes 60`, [`patches.py`](patches.py) bypassing `bUseFixedFrameRate`) with sound, movies and save commits working.
 
 ## Builds
 
 | Version | Display | `main` | `subsdk0` (`NintendoSDK_movie`) | `sdk` (`nnSdk`) |
 |---|---|---|---|---|
 | `v0` | `1.0.0` | `764daf48e0d3500e369c1baffa5159d6` | `c781dd63daf0ddcdb9975da50a198f93` | `2aef2cffb104ee7c9e212fd2f4c731e9` |
+
+## Frame rate
+
+- **Current:** 60 fps (`fps_target 60`, `fps_modes 60`, [`patches.py`](patches.py) on `v0` `main` `764daf48e0d3500e369c1baffa5159d6`).
+- `DefaultEngine.ini` sets `bUseFixedFrameRate=True` and `FixedFrameRate=30.0`, while `SwitchDeviceProfiles.ini` sets `rhi.SyncInterval=2`.
+- Raising `t.MaxFPS` / `rhi.SyncInterval` (`hle_fpslock.c`) alone leaves the game at 30 fps; cutting only the 5 `bUseFixedFrameRate` (`[GEngine+0x9c4]` bit 6) branches in `UEngine::UpdateTimeAndHandleMaxTickRate` (`0x4094f30`, `0x4094fb0`, `0x4095190`, `0x4095248`, `0x4095278`) reaches 60 fps at 2× speed because 6 Spike Chunsoft functions (`0x17dbc80`, `0x17dcaf0`, `0x17ea0b0`, `0x1817390`, `0x196bf38`, `0x3b34398`) still read bit 6 and fall back to the 30 Hz step.
+- Cutting all 11 bit-6 checks routes both `UpdateTimeAndHandleMaxTickRate` (elapsed `DeltaTime`) and Spike Chunsoft's `1.0f / 60.0f` battle step (`0x17dbc84`, `0x17ea0b4`) onto the 60 Hz path; `fps_modes 60` restricts the Android launcher selector to 60 fps (and `Game owned`) so the fixed 60 Hz battle step does not run fast at higher caps.
+- Measured on Xiaomi `25053RT47C` (Adreno 825, Turnip `26.3.0-T30`, Android 17): `60.0` fps (`16.7 ms` frame time), `0` audio underruns across 62,000+ callbacks, and 1.00× battle clock speed (`180 → 171` in `00:09` real time).
 
 ## Shaders
 
