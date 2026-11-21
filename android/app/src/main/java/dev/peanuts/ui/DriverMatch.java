@@ -50,7 +50,7 @@ final class DriverMatch {
 
     /** One file's families: its own name, else (when no file of the release names one) the release's name, its notes, the repository's name */
     static TreeSet<String> forFile(String file, List<String> releaseFiles, String release, String notes, String repo) {
-        if (file.toLowerCase(Locale.ROOT).startsWith("mali-panvk-")) return new TreeSet<>(List.of(MALI));
+        if (file.toLowerCase(Locale.ROOT).contains("panvk")) return new TreeSet<>(List.of(MALI));   // mali-panvk-..., panvk_faux123_..., Mesa-PanVK-...
         TreeSet<String> own = families(file.replaceAll("(?i)\\.zip$", ""));
         if (!own.isEmpty()) return own;
         if ("Balemuni/Balemunis-Aurora".equals(repo)) return new TreeSet<>(List.of("6xx", "7xx", "8xx"));

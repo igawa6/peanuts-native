@@ -542,9 +542,18 @@ The first start on a new driver can stutter or show objects late, because each d
 
 If the game closes with **The GPU driver stopped responding, so the game had to close.**, that driver does not work for this game: pick another.
 
-### Can a Mali or other non-Adreno device use Turnip?
+### Can a Mali or other non-Adreno device use a custom driver?
 
-No. The custom drivers the app can install are for Adreno GPUs only. On a Mali, Xclipse or PowerVR GPU the system driver is the only choice. If it lacks what a game needs, the app says so before the game starts (**Not ready for this game**), and that device cannot draw the game yet. Non-Adreno devices are untested.
+Turnip is for Adreno GPUs only. A Mali or Immortalis GPU can use PanVK, the open Mesa driver for Arm GPUs, from **PanVK faux123** or **PanVK for Mali** under **Add a driver**. On a Xclipse or PowerVR GPU the system driver is the only choice.
+
+On a Mali GPU the phone's own driver has no placed memory maps. The app needs them to show the game's picture: without them the screen stays black while the game runs, and the app says so before the game starts (**Not ready for this game**). So on a Mali phone, **System** is no way out. Not every PanVK build has placed memory maps either:
+
+- **PanVK faux123** v1.1.5 and later: placed memory maps on Mali-G57 and G77, as its release notes say. On a Retroid Pocket 4 Pro (Mali-G77) v1.1.6 passed every check of the app and the game started. In Banana Native's device reports, a phone with a Mali-G720 ran Ocarina of Time on v1.1.6 at 50 to 60 fps.
+- **PanVK for Mali**: its newer builds report placed memory maps, but with Arm's kernel driver mapping them fails. The app checks this before the game starts and says so.
+
+When you try a PanVK build, open Settings › **Readiness check**. The line **GPU and driver** must end in **custom driver** and the driver's name. If it ends in **the system's driver**, the PanVK build did not load on this phone, and the start-up notice says so too.
+
+Whether games draw correctly past the start on PanVK is not known yet. Mali devices are untested by the developer, so a report with the Readiness check's **Copy report** and the game's log helps.
 
 ### What do the Readiness check and the Graphics self-test tell me?
 
@@ -745,7 +754,7 @@ Once it reads **Ready**, every start of the game uses the mods that are on: the 
 
 After a crash the app shows the reason it knows, with a **Share log** button.
 
-For a black screen, try another GPU driver first. On a device whose system driver is older than Vulkan 1.3, install a custom driver. Then run the **Graphics self-test**. If it passes and the game is still black, report it with the log.
+For a black screen, try another GPU driver first. On a device whose system driver is older than Vulkan 1.3, install a custom driver. On a Mali GPU, see **Can a Mali or other non-Adreno device use a custom driver?** Then run the **Graphics self-test**. If it passes and the game is still black, report it with the log.
 
 ### The build ran out of storage or memory. What now?
 

@@ -18,7 +18,7 @@ MANIFEST = REPO / 'android/app/src/main/AndroidManifest.xml'
 class Match(unittest.TestCase):
     def test_jvm(self):
         with tempfile.TemporaryDirectory(prefix='drivermatch_') as t:
-            subprocess.run(['javac', '-encoding', 'UTF-8', '-Xlint:all', '-Werror', '-d', t, str(UI / 'DriverMatch.java'),
+            subprocess.run(['javac', '-encoding', 'UTF-8', '-Xlint:all', '-Werror', '-d', t, str(UI / 'DriverMatch.java'), str(UI / 'MaliDriver.java'),
                             str(REPO / 'android/app/src/jvmtest/java/dev/peanuts/ui/DriverMatchJvmTest.java')], check=True)
             r = subprocess.run(['java', '-cp', t, 'dev.peanuts.ui.DriverMatchJvmTest'], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

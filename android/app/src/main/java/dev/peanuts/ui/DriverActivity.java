@@ -73,6 +73,7 @@ public final class DriverActivity extends Activity {
         ABOUT.put("StevenMXZ/Adreno-Tools-Drivers", "Turnip builds and Qualcomm's own drivers, most of them for Adreno 8xx.");
         ABOUT.put("Balemuni/Balemunis-Aurora", "Turnip builds for Adreno, including an edition tuned for Snapdragon 8 Gen 2.");
         ABOUT.put("JimVulkan/mali-panvk", "Mesa PanVK builds for supported Mali and Immortalis GPUs with Arm's kbase kernel driver.");
+        ABOUT.put("faux123/panvk-faux123-driver-rp4pro", "PanVK builds for Mali-G57, G77, G610 and G710. From v1.1.5 with placed memory maps on G57 and G77.");
     }
 
     static final class Asset {
@@ -203,7 +204,7 @@ public final class DriverActivity extends Activity {
         String family = DriverMatch.family(gpu);
         if (gpu != null) PUi.add(content, PUi.small(this, "This phone's GPU is " + gpu + ". "
                 + (family == null ? "Check each release's supported GPUs."
-                : family.equals(DriverMatch.MALI) ? "Check PanVK release notes for your GPU model."
+                : family.equals(DriverMatch.MALI) ? MaliDriver.hint()
                 : "Look for drivers made for Adreno " + family + ".")), 8);
         LinearLayout sources = PUi.add(content, PUi.listCard(this), 8);
         String[][] all = new String[0][];

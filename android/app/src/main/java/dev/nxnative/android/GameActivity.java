@@ -710,7 +710,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             for (Readiness.Check c : fails) placed |= "ext.VK_KHR_map_memory2".equals(c.fact) || "ext.VK_EXT_map_memory_placed".equals(c.fact) || "feature.memoryMapPlaced".equals(c.fact);
             GpuDriver.Info drv = GpuDriver.selected(this, id);
             boolean custom = Readiness.customDriversFit(f);   // the custom drivers are Adreno drivers: no help on another GPU (its reported vendor ID)
-            if (placed && drv == null && !custom) m.append(".\n\nThis GPU's own driver has no placed memory maps, so nothing is drawn: the screen stays black while the game runs. "
+            if (placed && dev.peanuts.ui.MaliDriver.arm(f)) m.append(dev.peanuts.ui.MaliDriver.advice(drv == null ? null : drv.label(), f));   // PEANUTS: on Mali a PanVK build with placed maps, never System (#262)
+            else if (placed && drv == null && !custom) m.append(".\n\nThis GPU's own driver has no placed memory maps, so nothing is drawn: the screen stays black while the game runs. "
                     + "The custom drivers the app can install are for Adreno GPUs only, so this phone cannot draw the game yet.");
             else if (placed) m.append(".\n\nWith this GPU driver (").append(drv == null ? "System" : drv.label()).append(") nothing is drawn: the screen stays black while the game runs. ")
                     .append(drv == null ? "Pick a custom driver that has placed memory maps" : "Pick System (the phone's own driver)")

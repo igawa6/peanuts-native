@@ -68,6 +68,27 @@ public final class DriverMatchJvmTest {
         eq("Mali and Immortalis", DriverMatch.words(panvkFamilies));
         eq(true, DriverMatch.otherGpu(panvkFamilies, DriverMatch.family("Adreno 740")));
         eq(false, DriverMatch.otherGpu(panvkFamilies, DriverMatch.family("Mali-G715")));
+        // PEANUTS begin: faux123's and other PanVK packages name no "mali-panvk-" (#262)
+        String faux = "panvk_faux123_v1.1.8.adpkg.zip";
+        eq("[mali]", DriverMatch.forFile(faux, List.of(faux), "panvk_faux123 v1.1.8", "", "faux123/panvk-faux123-driver-rp4pro"));
+        eq("[mali]", DriverMatch.forFile("Mesa-PanVK-Android-v26.3.1-795ca7ff.adpkg.zip", List.of(), "Mesa PanVK panvk-kbase-v26.3.1", "", "zenithblue-oss/panvk-kbase-android"));
+
+        // MaliDriver: an Arm GPU by its vendor ID or its name; the start-up notice never sends a Mali phone to System
+        java.util.Map<String, String> mali = new java.util.HashMap<>();
+        mali.put("gpu.vendor", "0x13b5"); mali.put("gpu.name", "Mali-G615 MC2"); mali.put("driver.custom", "");
+        eq(true, MaliDriver.arm(mali));
+        eq(true, MaliDriver.arm(java.util.Map.of("gpu.name", "Immortalis-G925")));
+        eq(false, MaliDriver.arm(java.util.Map.of("gpu.vendor", "0x5143", "gpu.name", "Adreno (TM) 740")));
+        eq(false, MaliDriver.arm(null));
+        for (String s : new String[] {MaliDriver.advice(null, mali), MaliDriver.advice("PanVK X", mali), MaliDriver.advice("PanVK X", java.util.Map.of("gpu.name", "Mali-G77", "driver.custom", "PanVK_X"))}) {
+            eq(false, s.contains("Pick System"));
+            eq(false, s.contains("·") || s.contains("—") || s.contains("–"));
+        }
+        eq(true, MaliDriver.advice("PanVK X", mali).contains("did not load"));
+        eq(false, MaliDriver.advice("PanVK X", java.util.Map.of("gpu.name", "Mali-G77", "driver.custom", "PanVK_X")).contains("did not load"));
+        eq(false, MaliDriver.advice("PanVK X", null).contains("did not load"));   // no facts: nothing said about loading
+        // PEANUTS end
+
         String universal = "Balemuni_Apex_v2_UNIVERSAL.zip";
         eq("[6xx, 7xx, 8xx]", DriverMatch.forFile(universal, List.of(universal, "Balemuni_Apex_v2_ULTIMATE_SD8Gen2.zip"),
                 "Balemuni Apex V2", "", "Balemuni/Balemunis-Aurora"));
