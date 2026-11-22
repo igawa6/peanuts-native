@@ -1,4 +1,5 @@
 # Game profile of 13 Sentinels: Aegis Rim (Switch, base game v0 + update 1.10 = v65536). In bring-up: on the Mac a new game gets through the prologue into the first battle
+# PEANUTS: plays on Android too (AYN Thor, Turnip) with no change to this profile (the note's Android section)
 # Format: see dm/games/README.md
 # Vanillaware's own engine, SDK 11.4.3 (sdk and subsdk0 are byte-identical to Metroid Dread's), NVN; all data is in 6 CRI CPK archives (ROBO_*.CPK), audio is CRI ADX2 (acb / awb), movies are CRI USM.
 # The shaders are not in RomFS: 838 GLSLC compiler outputs (magic 0x19866891) are compiled into main's read-only segment and referenced from a table in .data (read by shader_split.py glslc_shaders)

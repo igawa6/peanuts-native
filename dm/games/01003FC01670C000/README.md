@@ -4,6 +4,16 @@ Update 1.10 (v65536) over the base game, SDK 11.4.3. Vanillaware's own engine on
 
 The Asian release (Japanese, Korean, Chinese) has its own title ID and `main` build, and its own profile: [01008D7016438000](../01008D7016438000/README.md). The Japanese eShop release (Japanese only) has its own title ID, SDK (10.8.2) and builds of every module, and its own profile: [010045C014650000](../010045C014650000/README.md).
 
+<!-- PEANUTS begin: Android -->
+## Android
+
+**Current: plays on Android, with no profile change.** AYN Thor (Adreno 740), Turnip 27.0.0-R2 through `DM_VK_DRIVER`, 2026-11-22: update 1.10 (main build `4B632573CA5C160E`), 65 s from the start. 60 fps (59.7 median, p50 16.75 ms, 5 of 3,888 frames dropped; GPU busy p50 3.9 ms, p90 7.8 ms a frame; recording 1.5 ms a frame), about 2.9 GB footprint, GPU memory up to 1.8 GB (placed pools 1,676 MiB), no red line besides the Metal statistics stubs. The picture looked right on the device.
+
+- All 751 shaders translate for Vulkan (375 pixel, 376 vertex, every vertex shader padded for the cover pixel shader).
+- The large pool did not trouble the driver: no gralloc failure and no device loss with the host's placed pools.
+- Not tested: Qualcomm's system driver, the game's H.264 movies (none played in the logged run), battles, saving and loading on Android.
+<!-- PEANUTS end -->
+
 ## What it needs
 
 | Setting | Where | Why |
@@ -62,3 +72,4 @@ General host changes first needed here; each applies to every game:
 - Cheats: the community list's install entry writes 0 to both the #01 / #02 flags on every pass, after those two in file order, so with it on the flags read 0 at the end of each pass. Check in play whether it must be turned off once its code is in.
 - `game.tsv` still describes the game as "In bring-up" (the Mac reaching the first battle), while AGENTS.md lists it as playable on the iPhone.
 - `game.tsv`: only the merged 1.10 copy is extracted; the base game's own build IDs are added when needed.
+- PEANUTS, Android: the system driver, the movies, battles and saving are not checked yet ([Android](#android)).
