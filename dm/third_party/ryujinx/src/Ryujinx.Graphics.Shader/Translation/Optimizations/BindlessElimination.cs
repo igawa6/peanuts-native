@@ -83,6 +83,106 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             }
         }
 
+        // PEANUTS: a handle the game's compiler spilled to local memory (STL) and reloads (LDL) before the access. Ryujinx does not follow values through local memory,
+        // so such an access had no handle source and was removed: Hogwarts Legacy's Niagara GPU simulation (c8974ea070ce1208) lost 55 of its particle data image
+        // accesses, its particles never aged or died, and a spell's effect stayed on screen as a bright disc. A load from a constant word of local memory takes the c[2]
+        // word every store to that word writes, when they all write the same one (through phis; undefined leaves are paths where nothing was stored) and no store
+        // to local memory has a computed address. Anything else keeps the old path
+        public static void ForwardLocalHandles(BasicBlock[] blocks, IGpuAccessor gpuAccessor)
+        {
+            Dictionary<int, List<Operand>> stored = new();
+
+            foreach (BasicBlock block in blocks)
+            {
+                foreach (INode node in block.Operations)
+                {
+                    if (node is Operation op && op.Inst == Instruction.Store && op.StorageKind == StorageKind.LocalMemory)
+                    {
+                        Operand offset = op.GetSource(1);
+
+                        if (offset.Type != OperandType.Constant)
+                        {
+                            return;   // a store at a computed address may write any word
+                        }
+
+                        if (!stored.TryGetValue(offset.Value, out List<Operand> values))
+                        {
+                            stored[offset.Value] = values = new();
+                        }
+
+                        values.Add(op.GetSource(2));
+                    }
+                }
+            }
+
+            if (stored.Count == 0)
+            {
+                return;
+            }
+
+            int forwarded = 0;
+
+            foreach (BasicBlock block in blocks)
+            {
+                foreach (INode node in block.Operations)
+                {
+                    if (node is TextureOperation texOp && (texOp.Flags & TextureFlags.Bindless) != 0 && texOp.GetSource(0).AsgOp is Operation)
+                    {
+                        Operand handle = LocalHandle(texOp.GetSource(0), stored, 0);
+
+                        if (handle != null)
+                        {
+                            texOp.SetSource(0, handle);
+                            forwarded++;
+                        }
+                    }
+                }
+            }
+
+            if (forwarded != 0)
+            {
+                gpuAccessor.Log($"Bindless handles taken through local memory: {forwarded}.");
+            }
+        }
+
+        private static Operand LocalHandle(Operand operand, Dictionary<int, List<Operand>> stored, int depth)
+        {
+            if (IsC2Word(operand))
+            {
+                return operand;
+            }
+
+            if (depth > 4 || operand.AsgOp is not Operation op || op.Inst != Instruction.Load || op.StorageKind != StorageKind.LocalMemory ||
+                op.GetSource(1).Type != OperandType.Constant || !stored.TryGetValue(op.GetSource(1).Value, out List<Operand> values))
+            {
+                return null;
+            }
+
+            Operand one = null;
+
+            foreach (Operand value in values)
+            {
+                foreach (Operand leaf in PhiLeaves(value))
+                {
+                    if (leaf.Type == OperandType.Undefined)
+                    {
+                        continue;
+                    }
+
+                    Operand word = LocalHandle(leaf, stored, depth + 1);
+
+                    if (word == null || (one != null && one.Value != word.Value))
+                    {
+                        return null;
+                    }
+
+                    one = word;
+                }
+            }
+
+            return one;
+        }
+
         // nxnative: NVN keeps every texture and image handle in c[2]. When a handle reaches the instruction through phis whose other inputs are not made of c[2]
         // words (undefined, or another value the compiler kept in the same register on a path where the predicated read does not run: float arithmetic, texture
         // results, uniform words), the read can only name a texture those c[2] words give. Unreal's Niagara vertex factories read particle attributes this way, under a
