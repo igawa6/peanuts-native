@@ -298,6 +298,7 @@ static int init_once(void) {
     VLOG("attachment feedback loops (VK_EXT_attachment_feedback_loop_layout + _dynamic_state): %s", V.fb_loop ? "on: a draw sampling its own attachment says so (DM_VK_FB_LOOP=0: off)" :
          x_fbl ? "extensions without the features" : fbl_env && !strcmp(fbl_env, "0") ? "off (DM_VK_FB_LOOP=0)" : "not on this device");
     fp_wrap_compiles();
+    void vka_pso_spv_rec_hook(void); vka_pso_spv_rec_hook();   // PEANUTS(upstream-candidate): DM_VK_PSO_FAIL_DUMP (under the pfb hook: it records the final rewritten words, vka_pso.c)
     vka_shader_pfb_hook();   // (over the FPCR wrapper: the module it makes is the rewritten one)
     if (!vk.vkMapMemory2KHR) vk.vkMapMemory2KHR = (PFN_vkMapMemory2KHR)vk.vkGetDeviceProcAddr(V.dev, "vkMapMemory2");   // core in 1.4
     if (!vk.vkUnmapMemory2KHR) vk.vkUnmapMemory2KHR = (PFN_vkUnmapMemory2KHR)vk.vkGetDeviceProcAddr(V.dev, "vkUnmapMemory2");

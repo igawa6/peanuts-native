@@ -2097,3 +2097,16 @@ Tears of the Kingdom's Depths caves drew chunks with another chunk's vertices fo
 | `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1 each | the entry and its symptom line | `<!-- PEANUTS -->` |
 
 Tests: the `t_android_*` suite; on the AYN Thor (Turnip v26.2.0-R5), the owner's Depths cave save: per-frame cave draw count changes 906 → 11 in about 1,300 frames. Upstream candidate: yes (the replay code is upstream's).
+
+### Round 25, DM_VK_PSO_FAIL_DUMP (2026-11-19)
+
+A graphics pipeline the driver refuses (`vkCreateGraphicsPipelines` returning `VK_ERROR_INITIALIZATION_FAILED`) was reported as one `[RED]` line with no way to see why. `DM_VK_PSO_FAIL_DUMP=<dir>` (Android, restart, off) writes each refused pipeline's final SPIR-V per stage to `<dir>/<vertex key>_<fragment key>_<stage>.spv` for `spirv-val`, logs the pipeline state under the red line and counts the refusals per vertex key. It is a diagnostic for any game, so it is an upstream candidate for Banana Native. It has not been run on a device from this tree.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_pso.c` | 6 | the refused-pipeline table, the state dump, the SPIR-V recorder hook | `PEANUTS(upstream-candidate)` (begin / end around the larger blocks) |
+| `dm/gfx/vk_android/vka_dev.c` | 1 | the recorder hook call | `PEANUTS(upstream-candidate)` |
+| `dm/gfx/vk_android/vka_ctl.c` | 1 | the restart-only table entry | `PEANUTS(upstream-candidate)` |
+| `android/TESTING.md` | 1 | the switch's paragraph | `<!-- PEANUTS(upstream-candidate) -->` |
+| `docs/env_switches.tsv` | 1 | the switch's row | `[PEANUTS]` |
+| `docs/advanced_settings.tsv` | 1 | its developer row (a test requires one per env_switches row) | allow-listed in `peanuts/upstream-unmarked.txt` |
