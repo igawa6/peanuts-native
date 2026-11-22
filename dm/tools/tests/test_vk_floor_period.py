@@ -95,7 +95,8 @@ int main(void) {
         with tempfile.TemporaryDirectory() as td:
             src, exe = Path(td) / 'floor.c', Path(td) / 'floor'
             src.write_text(harness)
-            built = subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', str(src), '-o', str(exe)], capture_output=True, text=True)
+            # GCC -Werror=address warns on &weak_fn when defined in the same TU.
+            built = subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-address', str(src), '-o', str(exe)], capture_output=True, text=True)
             self.assertEqual(built.returncode, 0, built.stderr)
             ran = subprocess.run([str(exe)], capture_output=True, text=True)
             self.assertEqual(ran.returncode, 0, ran.stderr)
