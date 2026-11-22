@@ -2097,3 +2097,15 @@ Tears of the Kingdom's Depths caves drew chunks with another chunk's vertices fo
 | `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1 each | the entry and its symptom line | `<!-- PEANUTS -->` |
 
 Tests: the `t_android_*` suite; on the AYN Thor (Turnip v26.2.0-R5), the owner's Depths cave save: per-frame cave draw count changes 906 → 11 in about 1,300 frames. Upstream candidate: yes (the replay code is upstream's).
+
+### Round 25, NVN1 storage-first-use (2026-11-19)
+
+On an NVN1 host a texture whose storage the game wrote from the CPU before the texture's first sample was treated as GPU content and cleared (`zero image over data`): FINAL FANTASY XII THE ZODIAC AGE's target circles and lines sampled alpha 0.0%. `storage_sampled_content` in `dm/gfx/vk_android/vka_tex.c` now takes the storage at the first use when it holds data (the NVN2 rule's NVN1 arm) and keeps all-zero storage as before; the rule itself is a pure function in `dm/gfx/vk_android/vka_texcontent.h` with a host test. The rule holds for any NVN1 game, so it is an upstream candidate for Banana Native. Other NVN1 games have not been run after it.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_tex.c` | 5 | `storage_sampled_content` and its call sites | `PEANUTS(upstream-candidate)` (begin / end around the rewritten block) |
+| `dm/gfx/vk_android/vka_texcontent.h` (new) | whole file | the pure first-use rule | line 1 `PEANUTS(upstream-candidate)` |
+| `dm/host/tests/t_android_texcontent.c` (new) | whole file | its host test | line 1 `PEANUTS(upstream-candidate)` |
+| `dm/host/tests/Makefile` | 3 | the test joins the run and the build rule | `PEANUTS(upstream-candidate)` comment before each hunk |
+| `docs/reference/nvn-objects.md` | 1 | the "Switch 1: uncompressed storage the CPU wrote before a texture's first sample" entry | `<!-- PEANUTS(upstream-candidate) -->` |

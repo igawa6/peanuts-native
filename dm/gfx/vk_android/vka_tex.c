@@ -27,6 +27,7 @@
 #include "vka_texown.h"
 #include "vka_sampfilter.h"   // PEANUTS
 #include "vka_tbuf.h"   // PEANUTS: which GPU writes keep a texel buffer from being read through the CPU's copy
+#include "vka_texcontent.h"   // PEANUTS: which first-sampled textures take their content from their storage, NVN2 and NVN1 (dm/host/tests/t_android_texcontent.c)
 #include "vka_wbfollow.h"
 #include "vka_block_linear_spv.h"   // PEANUTS: the block-linear write-back shader (block_linear.comp)
 #include "../nvn/nvn_tex.h"
@@ -710,6 +711,13 @@ static int mem_any_mapped(const uint8_t *c, const tex_t *t) {
 // flags 0x24) into reused slots before nvnTextureInitialize and never flushes them: as zero images its ground beside the roads came out flat and untextured. A texture first used
 // as an attachment, a copy destination or a shader image stays GPU content. The rule and the finding follow kartnative (pahorema/kartnative, MIT: "Switch 2: uncompressed storage
 // the CPU wrote before a texture's first sample", nvn_mtl.m tex_cpu_content). DM_VK_STORAGE_FIRST_USE=0 turns it off (to measure it)
+// PEANUTS(upstream-candidate) begin: the NVN1 arm of the first-sample storage rule (storage_sampled_content, vka_texcontent.h)
+// Switch 1 (NVN1) runs the same rule with one more condition (measured 2026-11-20 on FINAL FANTASY XII THE ZODIAC AGE): its memory is not coherent, so the rule
+// follows the storage only where it shows the CPU's work: data in the storage at the texture's first use (vka_texcontent.h). FFXII stores its target rings that way: a
+// 128x128 RGBA8 texture (serial 1118, no packaged layout, no WriteTexels) in a CPU_CACHED | GPU_CACHED | COMPRESSIBLE pool (flags 0xa4), the storage holding data when
+// the game first sampled it: the host made a zero image and every target circle and line drew transparent. An all-zero storage keeps the old behaviour (a Switch 1
+// game with a reused slot's leftovers must not upload them: the game overwrites the texture on the GPU, which ends the tracking as gpu_owned). The game's texture
+// carries NVN_TEXTURE_FLAGS_COMPRESSIBLE, as its whole UI pool does; the NVN1 arm takes it (a texture the CPU fills holds plain texels), the NVN2 arm keeps it out.
 static _Thread_local int g_first_sampled;
 static _Thread_local int g_first_copy_src;   // PEANUTS: a first use as a copy source (vka_tex_get_src: copy_t2t, texture → buffer), for tex_dirty_upload's first-use tracking (storage_mode)
 static int img_pool_dead(vka_img *im);
@@ -717,15 +725,18 @@ static int gpu_image_over(const uint8_t *mem) {   // caller holds g_tmu; images 
     int k; for (vka_img *im = mem ? live_first(mem, &k) : NULL; im; im = live_next(im, mem, &k)) if (im->mem == mem && im->gpu_owned && !img_pool_dead(im)) return 1;
     return 0;
 }
-static int nvn2_sampled_content(const tex_t *t, const vka_fmt *f, unsigned pf, int sampled) {
-    static int on = -1; if (on < 0) on = VKA_ENV("DM_VK_STORAGE_FIRST_USE", 1) != 0 && vka_nvn2();   // (vka_nvn2: captures too)
-    const nvn_texdesc *d = &t->d;
-    if (!on || !sampled || !t->pool || t->has_layout || compressed(f) || f->kind >= 3) return 0;
-    if (pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL)) return 0;
-    if (d->flags & (NVN_TEXTURE_FLAGS_IMAGE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET | NVN_TEXTURE_FLAGS_SPARSE)) return 0;
+static int storage_sampled_content(const tex_t *t, const vka_fmt *f, unsigned pf, int sampled, const uint8_t *c) {
+    static int on = -1; if (on < 0) on = VKA_ENV("DM_VK_STORAGE_FIRST_USE", 1) != 0;   // the rule's two arms (NVN2's and NVN1's): off to measure them
+    if (!on) return 0;
+    int n2 = vka_nvn2();   // (vka_nvn2: captures too)
+    // has_data 1: the header's NVN2 arm ignores it (coherent memory is tracked from zeros too, and reading the storage here would cost every texture made);
+    // the NVN1 arm's data check is the mem_any below, at the first use only (vka_texcontent.h)
+    if (!t->pool || !vka_tc_sampled_content(n2, t->d.flags, pf, t->has_layout, compressed(f), f->kind, sampled, 1)) return 0;
+    if (!n2 && !mem_any_mapped(c, t)) return 0;
     return !gpu_image_over(t->mem);
 }
-static uint64_t g_nvn2_first[2];   // textures taken from their storage at a first sample (nvn2_sampled_content): [0] with data, [1] storage all zero (tracked from zeros)
+static uint64_t g_nvn2_first[2];   // textures taken from their storage at a first sample (storage_sampled_content): [0] with data, [1] storage all zero (tracked from zeros, NVN2 only)
+// PEANUTS(upstream-candidate) end
 static int storage_mode(const tex_t *t, const uint8_t *c, const vka_fmt *f, int cpuw, int sampled, int copy_src) {   // PEANUTS: copy_src (vka_tex_get_src). c: the storage's content as the GPU will see it (t->mem or gw_content's copy)
     const nvn_texdesc *d = &t->d;
     if (!t->mem || d->samples > 1 || f->kind >= 3) return ST_ZERO;   // PEANUTS: TARGET_BUFFER dropped from this early-out (buffer textures tracked below)
@@ -753,10 +764,10 @@ static int storage_mode(const tex_t *t, const uint8_t *c, const vka_fmt *f, int 
     else if (is_vid) want = ST_TRACK;
     else if (comp && !(d->flags & (NVN_TEXTURE_FLAGS_IMAGE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_SPARSE))
              && (mem_any_mapped(c, t) || dirty_first)) want = ST_TRACK;   // PEANUTS: dirty_first, a block-compressed texture still empty at its first use
-    else if (nvn2_sampled_content(t, f, pf, sampled)) {
+    else if (storage_sampled_content(t, f, pf, sampled, c)) {   // PEANUTS(upstream-candidate): the rule's two arms, NVN2 and NVN1
         int any = mem_any_mapped(c, t); uint64_t k = g_nvn2_first[!any]++; want = ST_TRACK;
-        if (any && k < 4) VLOG("texture serial %llu %ux%ux%u format %#x pool flags %#x: written by the CPU before its first use, a sample (NVN2): uploaded from its storage, re-uploaded when it changes (%llu so far, %llu more with empty storage)",
-                               (unsigned long long)t->serial, d->width, d->height, d->depth, d->format, pf, (unsigned long long)k + 1, (unsigned long long)g_nvn2_first[1]);
+        if (any && k < 4) VLOG("texture serial %llu %ux%ux%u format %#x pool flags %#x: written by the CPU before its first use, a sample (%s): uploaded from its storage, re-uploaded when it changes (%llu so far, %llu more with empty storage)",
+                               (unsigned long long)t->serial, d->width, d->height, d->depth, d->format, pf, vka_nvn2() ? "NVN2" : "NVN1", (unsigned long long)k + 1, (unsigned long long)g_nvn2_first[1]);
     }
     else if (!(d->flags & NVN_TEXTURE_FLAGS_COMPRESSIBLE) && t->pool && ((pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_CPU_UNCACHED)) || nvn_flushed(t->mem, t->L.size))
              && mem_any_mapped(c, t)) want = ST_FILL;
@@ -3347,7 +3358,7 @@ static void write_tex(int id, VkCommandBuffer cb, VkWriteDescriptorSet *w, VkDes
     if (eager) {
         pthread_mutex_unlock(&g_tmu);
         nvn_pool_use(1);
-        g_first_sampled = !e->img;   // (a texture ID in the sampled table: a first use here is a sample, nvn2_sampled_content)
+        g_first_sampled = !e->img;   // (a texture ID in the sampled table: a first use here is a sample, storage_sampled_content)   // PEANUTS(upstream-candidate)
         im = treg_dead(id, e) ? NULL : vka_tex_get(&e->t, cb);
         g_first_sampled = 0;
         nvn_pool_use(0);
