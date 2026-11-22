@@ -4,6 +4,14 @@ The SDK's movie library (`movie::Decoder`, `movie::Extractor`), which the host t
 
 ## Decoder lifecycle
 
+<!-- PEANUTS: SDK 1.3.1's movie module -->
+### SDK 1.3.1's movie::Buffer getters without const
+
+- **Symptom:** `FATAL movie: missing SDK symbol _ZNK5movie6Buffer4DataEv` and an abort (`CRASH sig=6`) when the game's first movie starts.
+- **Cause:** SDK 1.3.1's movie module declares `movie::Buffer::Data`, `Capacity` and `Size` without `const` (`_ZN5movie6Buffer4DataEv`, subsdk4+0x2db30c), where later SDKs have `_ZNK…`: the same functions and calling convention under another mangled name. `hle_movie.c` looked up only the `const` names and stopped the game.
+- **Fix:** `msym2` takes the `const` name, else the older one.
+- **Found on:** [LEGO CITY UNDERCOVER](../../dm/games/010085500130A000/README.md#resolved) (SDK 1.3.1, H.264 movies in MP4): its opening movie plays.
+
 ### The SDK's hardware decoder opens nvdrv
 
 - **Symptom:** abort in NVIDIA's video path (`NvRmChannelOpen` → `NvOsDrvOpen`).
