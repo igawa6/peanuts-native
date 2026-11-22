@@ -2097,3 +2097,47 @@ Tears of the Kingdom's Depths caves drew chunks with another chunk's vertices fo
 | `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1 each | the entry and its symptom line | `<!-- PEANUTS -->` |
 
 Tests: the `t_android_*` suite; on the AYN Thor (Turnip v26.2.0-R5), the owner's Depths cave save: per-frame cave draw count changes 906 → 11 in about 1,300 frames. Upstream candidate: yes (the replay code is upstream's).
+
+### Round 25 (2026-11-19) — shader_split.py raw_shaders neighbour rule
+
+`dm/gfx/tools/shader_split.py` takes the offline programs whose code area the game's code never
+addresses. FFXII The Zodiac Age's `main` (0100EB100AB42000) has 7 control sections — 0xfc4dec, 0xfc732c,
+0xfc9ab4, 0xfce4ac, 0xfd0d40, 0xfd34a4, 0xfd5e08 — whose code area lies directly before them (0x300, 0x300,
+0x100, 0x300, 0x200, 0x200 and 0x200 bytes, the length each control section's +0x704 gives): no relocation
+slot points at either of a pair and no adrp + add builds an address near one, so `raw_shaders` printed
+`[RED] ... no code area ...; left out` for all 7 and the game then asked the host for exactly those programs
+and drew black screens. The host's `DM_NVN_SHDUMP` captures of them equal the control section and the area
+before it, byte for byte. Where the built-address rule finds no candidate, `raw_shaders` now takes the
+neighbour that passes its stage and length checks — and only when exactly one of the two neighbours passes
+them, so a control section with two neighbours that both look right stays ambiguous and is left out as
+before. `dm/tools/tests/test_raw_shaders_adjacent.py` builds a synthetic image (no relocations, no adrp) and
+pins the taken neighbour, the two valid neighbours, the neighbour that fails the checks, and the built-address
+rule still taking the nearer area when the code builds both. Upstream candidate: yes — a general reader
+change for offline shaders the code reaches by offset alone, no game-specific branch.
+
+The same scan now also takes control sections at offsets that are not 4-byte aligned. After that first change
+the split found 7 programs in main, yet the game's runtime asked the host for 7 *different* keys and only 3 of
+them were in the new table. The runtime's captured programs sit at odd offsets: control 0xfca50d with its code
+area (0x200 bytes) at 0xfca30d = c − n, control 0xfd1699 with its code area (0x100 bytes) at 0xfd1599 — and
+`if not (c := m.start()) & 3` never looked at them, without one [RED] line to say so. An unaligned match is
+collected with the same skip ranges and `known` filter as an aligned one and goes through the adjacent-neighbour
+fallback only: no `code_of` table lookup and no `built`/adrp evidence, those are for aligned records. It is taken
+only when exactly one neighbour passes the stage and length checks (the rule above), and it is dropped when it
+lies inside the bytes of a program already taken — its control section's or its code area's, tracked in `taken` —
+so no program is taken twice. An unaligned match with no valid neighbour prints nothing: that line would be
+[RED] for a control section that was never one, a control magic at an odd offset being very often just bytes.
+The aligned path and every aligned [RED] line are unchanged, byte for byte. Measured on the same main: 23
+programs, 7 aligned (the seven above, unchanged) and 16 unaligned, and the key `shader_split.skey` computes over
+a taken control section and code area includes the runtime's two captured keys 6db47b250e545e02 (control
+0xfca50d) and 3933ce26c4dbd8eb (control 0xfd1699), their control and code bytes equal to the host's captures
+byte for byte; the two runtime keys never captured, 59241958cbf8ccf2 and f8052db57514646c, appear as unaligned
+matches at 0xfc4293 and 0xfc5b45 as expected. `test_raw_shaders_adjacent.py` covers it: an unaligned control
+section with a valid code area before it is found; one with no valid neighbour is not taken and prints no [RED]
+line; a second control magic inside the bytes of a taken program is not taken a second time; and the aligned
+[RED] case is unchanged beside an unaligned match. Upstream candidate: yes — the same general reader change
+extended to unaligned offsets, no game-specific branch.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/shader_split.py` | 3 (5 in a one-line-context diff) | `raw_shaders`: the fallback candidate list for a control section with no built-address evidence, the unaligned control-section collection and its neighbour pass with the `taken` ranges (declared on a marked line), and the docstring's sentences on them | `PEANUTS(upstream-candidate)` |
+| `dm/tools/tests/test_raw_shaders_adjacent.py` (new) | whole file | the eight cases on a synthetic module image; a new file; the first line of its docstring carries the marker | `PEANUTS(upstream-candidate)` |
