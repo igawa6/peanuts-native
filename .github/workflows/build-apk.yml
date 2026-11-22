@@ -1,0 +1,65 @@
+# Builds a development APK of Peanuts Native on a GitHub-hosted runner and publishes it as a release asset.
+# The packer stage (Python home + translator + validator libraries) comes from the stage-assets branch: it is taken
+# from the official 0.1.5 APK, so nothing here recompiles Python, .NET or SPIRV-Tools.
+name: build-apk
+
+on:
+  workflow_dispatch:
+    inputs:
+      games:
+        description: Title IDs the APK runs (comma separated)
+        default: "0100000000010000"
+      app_id:
+        description: App id suffix (lower-case letters and digits), installs beside the official app
+        default: "perf"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          ref: stage-assets
+          path: _stage_src
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK components
+        run: |
+          set -e
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "ndk;28.2.13676358" "platforms;android-36" "build-tools;36.0.0" "cmake;3.22.1"
+
+      - name: Unpack the packer stage
+        run: |
+          mkdir -p "$RUNNER_TEMP/stagework"
+          tar xzf _stage_src/stage.tar.gz -C "$RUNNER_TEMP/stagework"
+          ls "$RUNNER_TEMP/stagework/stage/lib"
+
+      - name: Build the APK
+        working-directory: android/app
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace \
+            -PnxApp=peanuts -PnxAppId="${{ inputs.app_id }}" -PnxGames="${{ inputs.games }}" \
+            -PnxPackStage="$RUNNER_TEMP/stagework/stage" apk
+
+      - name: Publish the APK as a release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK="$(ls android/app/out/*.apk | head -1)"
+          ls -la "$APK"
+          TAG="perf-${{ github.run_number }}"
+          gh release create "$TAG" "$APK" --target "${{ github.sha }}" \
+            --title "Build $TAG" --notes "Development build of ${{ github.ref_name }} at ${{ github.sha }}"
