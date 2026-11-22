@@ -783,7 +783,7 @@ static uint64_t mem_hash(const uint8_t *p, uint64_t n) { uint64_t h = 1469598103
 //     know at recording (shader stores, texture → buffer copies), and images first used before the write
 // Images whose content is the GPU's (gpu_owned: render targets, copy destinations) keep it, as for CPU writes
 enum { GW_COPY, GW_FILL, GW_UPDATE, GW_OPAQUE };
-typedef struct { uint64_t lo, hi, src, seq, fence; uint32_t kind, value; uint8_t *data; } gw_t;
+typedef struct { uint64_t lo, hi, src, seq, fence; uint32_t kind, value; uint8_t *data; uint8_t queued; } gw_t;   // PEANUTS: queued (vka_tex_gw_part)
 static gw_t *g_gw; static int g_ngw, g_gwcap; static uint64_t g_gwseq = 1, g_gw_over, g_gw_late;
 static uint64_t g_gw_done;   // PEANUTS: (under g_tmu) vka_done() as the last vka_tex_prepare read it for the done writes it dropped (vka_tex_gw_tbuf_pending)
 static _Atomic int g_gw_tb;   // PEANUTS: the entries of g_gw that are a storage texel buffer's stores (GW_OPAQUE with value 1: vka_tex_gw_tbuf), so vka_tex_gw_tbuf_pending need not look when there is none. Changed under g_tmu
@@ -977,6 +977,25 @@ static void watch_scan(VkCommandBuffer cb) {   // caller holds g_tmu and nvn_poo
              (unsigned long long)im->serial, (const void *)im->mem, (unsigned long long)im->L.size, im->d.format, im->w, im->h, (unsigned long long)im->up_fence, (unsigned long long)vka_done(), (unsigned long long)vka_fence_last(), keys, why, mp_);
     }
 }
+// PEANUTS(upstream-candidate): a part of a long submission (vka_exec.c chunk) goes to the queue before the submission is committed: the writes recorded so far are on the GPU,
+// which may have made them by the time a later part's upload reads the storage, though they have no fence yet (marked queued)
+void vka_tex_gw_part(void) {
+    pthread_mutex_lock(&g_tmu);
+    for (int i = g_ngw - 1; i >= 0 && !g_gw[i].fence && !g_gw[i].queued; i--) g_gw[i].queued = 1;
+    pthread_mutex_unlock(&g_tmu);
+}
+// PEANUTS(upstream-candidate): whether the source [s, s + n) of the pending copy at i may already hold a later write's bytes: a write after it in recording order over its
+// source that is on the GPU (queued in a part, or in a submission not known done) may have run, and with it the copy, so the copy cannot be made again from memory
+// (it would move bytes twice). LEGO CITY UNDERCOVER's texture heap defragmenter moves a run of textures up in 16 KiB copies, highest first, each one's source the next
+// one's destination; a texture made at its new place in a later part of the same submission was uploaded with every copy made twice: its menu boxes were cut short
+static int gw_src_overwritten(int i, uint64_t s, uint64_t n, uint64_t done) {
+    for (int j = i + 1; j < g_ngw; j++) {
+        const gw_t *x = &g_gw[j];
+        if (x->fence ? x->fence <= done : !x->queued) continue;   // done (memory has it, and the copy before it too), or not on the GPU yet (memory has neither)
+        if (x->lo < s + n && x->hi > s) return 1;
+    }
+    return 0;
+}
 void vka_tex_gw_commit(uint64_t fence) {   // the writes recorded since the last commit belong to this submission
     pthread_mutex_lock(&g_tmu);
     for (int i = g_ngw - 1; i >= 0 && !g_gw[i].fence; i--) g_gw[i].fence = fence;
@@ -999,6 +1018,8 @@ static uint8_t *gw_content(const uint8_t *mem, uint64_t n, uint64_t *seen) {
         else {   // a copy: its source as the GPU will read it, which an earlier pending write over the source would change (then the write lands later: re-uploaded)
             const uint8_t *s = (const uint8_t *)(uintptr_t)(w->src + (lo - w->lo));
             for (int j = 0; j < i; j++) { const gw_t *x = &g_gw[j]; if ((!x->fence || x->fence > done) && x->lo < w->src + (hi - w->lo) && x->hi > w->src + (lo - w->lo)) { if (w->seq - 1 < cap) cap = w->seq - 1; break; } }
+            // PEANUTS(upstream-candidate): its source maybe moved on already by a later write on the GPU: left as memory holds it, and uploaded again once the copy is done
+            if (gw_src_overwritten(i, w->src + (lo - w->lo), hi - lo, done)) { if (w->seq - 1 < cap) cap = w->seq - 1; continue; }
             memmove(c + (lo - a), s, hi - lo);
         }
     }
@@ -1026,7 +1047,7 @@ int vka_tex_gw_read(uint64_t addr, uint64_t n, void *out) {
                 const gw_t *x = &g_gw[j];
                 if ((!x->fence || x->fence > done) && x->lo < w->src + (hi - w->lo) && x->hi > w->src + (lo - w->lo)) { ok = 0; break; }
             }
-            if (!ok) break;
+            if (!ok || gw_src_overwritten(i, w->src + (lo - w->lo), hi - lo, done)) { ok = 0; break; }   // PEANUTS(upstream-candidate): (gw_src_overwritten)
             if (c) dm_guest_read_mapped(c + (lo - a), (uintptr_t)(w->src + (lo - w->lo)), (size_t)(hi - lo));
         } else if (c && w->kind == GW_FILL) {
             for (uint64_t k = lo; k < hi; k++) { uint32_t v = w->value; c[k - a] = ((const uint8_t *)&v)[(k - w->lo) & 3]; }
@@ -2591,6 +2612,69 @@ static int tiled_wb_record(VkCommandBuffer cb, vka_img *im, uint32_t levels) {
     if (n < 16 || !(n & 255))
         VLOG("block-linear write-back #%u serial %llu %ux%u format %#x mips %#x at %p",
              n + 1, (unsigned long long)im->serial, im->w, im->h, im->d.format, levels, im->mem);
+    return 1;
+}
+
+// PEANUTS(upstream-candidate): LEGO CITY UNDERCOVER moves texture storage with GPU buffer copies (its heap defragmenter); a buffer -> texture copy's result was only in the VkImage, so the moved
+// bytes were stale and the texture made at the new address was uploaded from them (half noise, half black). On the Switch a copy into a texture writes its storage: here the copy's source
+// is packed into the level's block-linear storage by the compute shader of tiled_wb_record, recorded at the copy's place in the queue (a later copy out of the storage reads it right).
+// Whole levels of a 2D texture (any layer, block-compressed or not) in a CPU-accessible, placed, non-sparse pool; returns 1 when the storage was written, 0 when it was left (the copy stands
+// alone, as before). sbuf / soff: the copy's source in the placed memory, row: its row stride in bytes, span: the bytes it reads
+int vka_tex_b2t_mirror(VkCommandBuffer cb, const vka_img *im, const tex_t *t, unsigned level, unsigned layer, const NVNcopyRegion *r, VkBuffer sbuf, VkDeviceSize soff, size_t row, size_t span) {
+    static _Atomic int partial_log, skip_log;
+    if (!VKA_ENV("DM_VK_B2T_MIRROR", 1)) return 0;
+    // PEANUTS(upstream-candidate): why a copy was not mirrored: the first 16 skips, each with its reason and the values it was decided on (LEGO CITY UNDERCOVER: textures still black after the mirror)
+    #define B2T_SKIP(why, ...) do { if (atomic_fetch_add(&skip_log, 1) < 16) VLOG("buffer -> texture copy into serial %llu %ux%u format %#x level %u layer %u: not mirrored into its storage: " why, \
+        (unsigned long long)(im ? im->serial : 0), im ? im->w : 0, im ? im->h : 0, t ? t->d.format : 0, level, layer, ##__VA_ARGS__); return 0; } while (0)
+    if (!V.push_desc) B2T_SKIP("no push descriptors");
+    if (!im || !t) B2T_SKIP("no image or texture");
+    if (im->par) B2T_SKIP("a level child image");
+    if (!t->mem || !t->pool) B2T_SKIP("no storage (mem %p pool %p)", (void *)t->mem, (const void *)t->pool);
+    if (im->samples > 1 || im->f.kind >= 3) B2T_SKIP("samples %u, format kind %d", (unsigned)im->samples, (int)im->f.kind);
+    unsigned flags = t->d.flags, pf = 0; int sparse = 0;
+    if (flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET | NVN_TEXTURE_FLAGS_SPARSE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_IMAGE)) B2T_SKIP("texture flags %#x", flags);
+    if (t->d.target != NVN_TEXTURE_TARGET_2D && t->d.target != NVN_TEXTURE_TARGET_2D_ARRAY && t->d.target != NVN_TEXTURE_TARGET_CUBEMAP && t->d.target != NVN_TEXTURE_TARGET_CUBEMAP_ARRAY) B2T_SKIP("target %d", (int)t->d.target);   // PEANUTS(upstream-candidate): a cube map is layered 2D (nvn_deswizzle_geom gives each face its base)
+    if (level >= t->d.levels) B2T_SKIP("level %u of %u", level, (unsigned)t->d.levels);
+    { uint64_t live = im->pgen ? nvn_pool_live(im->pool, &pf, &sparse) : 0;
+      if (!im->pgen || live != im->pgen || sparse || (pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL))) B2T_SKIP("pool: image pgen %llu live %llu sparse %d pool flags %#x", (unsigned long long)im->pgen, (unsigned long long)live, sparse, pf); }
+    uint32_t row_bytes, rows, slices, bpb; uint64_t base; unsigned th, td;
+    int grc = nvn_deswizzle_geom(&t->d, level, layer, &row_bytes, &rows, &slices, &base, &th, &td, &bpb);
+    if (grc || td || slices != 1 || bpb != im->f.bpb || base % 4 || !bpb) B2T_SKIP("geometry: rc %d td %u slices %u bpb %u (image %u) base %#llx", grc, td, slices, bpb, (unsigned)im->f.bpb, (unsigned long long)base);
+    int bw = im->f.bw ? im->f.bw : 1, bh = im->f.bh ? im->f.bh : 1;
+    uint32_t wb = (uint32_t)((r->width + bw - 1) / bw) * bpb, hb = (uint32_t)((r->height + bh - 1) / bh);
+    if (r->xoffset || r->yoffset || wb != row_bytes || hb != rows) {   // a part of the level: the shader packs whole levels only
+        if (atomic_fetch_add(&partial_log, 1) < 16) VLOG("buffer -> texture copy into serial %llu %ux%u format %#x level %u layer %u: a part of the level, not mirrored: region %d,%d %dx%d (%u x %u blocks bytes/rows), the level %u bytes x %u rows, block %dx%d",
+                                                           (unsigned long long)im->serial, im->w, im->h, t->d.format, level, layer, r->xoffset, r->yoffset, r->width, r->height, wb, hb, row_bytes, rows, bw, bh);
+        return 0;
+    }
+    uint32_t gobs = nvn_tex_level_gobs(&t->d, level);
+    uint64_t bytes = (uint64_t)gobs * ((rows + (8u << th) - 1) >> (3 + th)) * (512u << th), groups = (bytes / 4 + 63) / 64;
+    if (!gobs) B2T_SKIP("no GOBs");
+    if (row % 4 || row < row_bytes || row_bytes % 4 || soff % 4) B2T_SKIP("source: row %zu (level row %u), source offset %#llx", row, row_bytes, (unsigned long long)soff);
+    if (base + bytes > t->L.size) B2T_SKIP("level storage %#llx + %#llx beyond the texture's %#llx", (unsigned long long)base, (unsigned long long)bytes, (unsigned long long)t->L.size);
+    if (groups > V.props.limits.maxComputeWorkGroupCount[0]) B2T_SKIP("%llu workgroups, limit %u", (unsigned long long)groups, V.props.limits.maxComputeWorkGroupCount[0]);
+    if (!tiled_wb_pipeline()) B2T_SKIP("the block-linear pipeline was not made");
+    VkDeviceSize align = V.props.limits.minStorageBufferOffsetAlignment, dst_off = 0, so = soff; VkBuffer dst;
+    if (!vka_addr((uintptr_t)t->mem + base, bytes, &dst, &dst_off, NULL)) B2T_SKIP("the level storage %p + %#llx (%#llx bytes) is not in placed guest RAM", (void *)t->mem, (unsigned long long)base, (unsigned long long)bytes);   // PEANUTS(upstream-candidate): the level alone, not all of the texture: what a lazily placed pool has placed in one piece
+    if (dst_off % 4) B2T_SKIP("storage offset %#llx not 4-byte aligned", (unsigned long long)dst_off);
+    VkDeviceSize dst_base = dst_off / align * align, dst_bytes = dst_off - dst_base + bytes, src_base = so / align * align, src_bytes = so - src_base + span;
+    if (dst_bytes > V.props.limits.maxStorageBufferRange || src_bytes > V.props.limits.maxStorageBufferRange) B2T_SKIP("storage range %#llx / source range %#llx over the limit %#x", (unsigned long long)dst_bytes, (unsigned long long)src_bytes, V.props.limits.maxStorageBufferRange);
+    #undef B2T_SKIP
+    vka_barrier(cb);   // the source: written by the transfers before it; the storage: read by the copies before it
+    VkDescriptorBufferInfo buffers[2] = {{sbuf, src_base, src_bytes}, {dst, dst_base, dst_bytes}};
+    VkWriteDescriptorSet writes[2];
+    for (uint32_t i = 0; i < 2; i++)
+        writes[i] = (VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstBinding = i, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &buffers[i]};
+    uint32_t g[] = {(uint32_t)((so - src_base) / 4), (uint32_t)((dst_off - dst_base) / 4), row_bytes, (uint32_t)(row / 4), rows, gobs, th, (uint32_t)(bytes / 4), (uint32_t)nvn_gob_switch2};
+    vk.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_tiled_wb_pipe);
+    vk.vkCmdPushDescriptorSetKHR(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_tiled_wb_layout, 0, 2, writes);
+    vk.vkCmdPushConstants(cb, g_tiled_wb_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof g, g);
+    vk.vkCmdDispatch(cb, (uint32_t)groups, 1, 1);
+    vka_barrier(cb);   // later copies and reads of the storage see it
+    vka_tex_gw_opaque((uint64_t)(uintptr_t)t->mem + base, bytes);   // other images over the range are uploaded again once the write is done (the copy's own image is gpu_owned: it keeps its content)
+    static _Atomic unsigned logs; unsigned n = atomic_fetch_add(&logs, 1);
+    if (n < 8 || !(n & 1023)) VLOG("buffer -> texture copy #%u into serial %llu %ux%u format %#x level %u layer %u: mirrored into its block-linear storage %p+%#llx (%#llx bytes)", n + 1, (unsigned long long)im->serial, im->w, im->h,
+                                   im->d.format, level, layer, (void *)t->mem, (unsigned long long)base, (unsigned long long)bytes);
     return 1;
 }
 

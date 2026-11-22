@@ -1465,8 +1465,10 @@ NVN(nvnCommandBufferSetViewports, void, NVNcommandBuffer *c, int first, int n, c
     p_viewports *r = REC(c, OP_VIEWPORTS, p_viewports); r->first = first; r->n = n;
     for (int i = 0; i < n; i++) memcpy(r->v[i], v + 4 * i, 16);
 }
-NVN(nvnCommandBufferSetScissor, void, NVNcommandBuffer *c, int x, int y, int w, int h) { *REC(c, OP_SCISSOR, p_scissor) = (p_scissor){x, y, w, h}; }
-NVN(nvnCommandBufferSetDepthRange, void, NVNcommandBuffer *c, float n, float f) { *REC(c, OP_DEPTH_RANGE, p_depth_range) = (p_depth_range){n, f}; }
+NVN(nvnCommandBufferSetScissor, void, NVNcommandBuffer *c, int x, int y, int w, int h) {
+    *REC(c, OP_SCISSOR, p_scissor) = (p_scissor){x, y, w, h}; }
+NVN(nvnCommandBufferSetDepthRange, void, NVNcommandBuffer *c, float n, float f) {
+    *REC(c, OP_DEPTH_RANGE, p_depth_range) = (p_depth_range){n, f}; }
 NVN(nvnCommandBufferBindProgram, void, NVNcommandBuffer *c, const NVNprogram *p, int stages) {
     *REC(c, OP_BIND_PROGRAM, p_bind_program) = (p_bind_program){(const prog_t *)p, stages};
 }
@@ -1573,14 +1575,38 @@ NVN(nvnCommandBufferBarrier, void, NVNcommandBuffer *c, int bits) { *(int32_t *)
 NVN(nvnCommandBufferSetTexturePool, void, NVNcommandBuffer *c, const NVNtexturePool *p) { REC(c, OP_SET_TEX_POOL, p_set_pool)->pool = (const dpool_t *)p; CB(c)->tex_base = dpool_base(&g_tpt, p); }
 NVN(nvnCommandBufferSetSamplerPool, void, NVNcommandBuffer *c, const NVNsamplerPool *p) { REC(c, OP_SET_SAMP_POOL, p_set_pool)->pool = (const dpool_t *)p; CB(c)->samp_base = dpool_base(&g_spt, p); }
 
+// PEANUTS begin: the bytes a buffer ↔ texture copy reads or writes in its buffer, as the replay computes them (vka_exec.c copy_bt): rows SetCopyRowStride apart (tightly packed
+// without it), layers or slices SetCopyImageStride apart. The copy used to name its address with no length, which a shader-code pool reads as the rest of the pool:
+// LEGO CITY UNDERCOVER's 1 MiB texture uploads from its 2 GiB pool asked for 272 MiB across 13 parts, more than one join takes (DM_VK_PLACE_JOIN_MB), so every copy that
+// crossed two parts failed ("buffer → texture copy source … is not in placed guest RAM") and the game drew black. 0 when the format is not known (the rest of the pool, as before)
+static uint64_t copy_span(const NVNcommandBuffer *c, const NVNtexture *t, const NVNcopyRegion *r) {
+    int bw, bh, bpb = t ? nvn_fmt_bpb(((const tex_t *)t)->d.format, &bw, &bh) : 0;
+    if (bpb <= 0 || !r || r->width <= 0 || r->height <= 0) return 0;
+    uint64_t wb = (uint64_t)((r->width + bw - 1) / bw) * (uint64_t)bpb, rows = (uint64_t)((r->height + bh - 1) / bh), nz = r->depth > 0 ? (uint64_t)r->depth : 1;
+    uint64_t row = CB(c)->copy_row > 0 ? (uint64_t)CB(c)->copy_row : wb, img = CB(c)->copy_img > 0 ? (uint64_t)CB(c)->copy_img : row * rows;
+    return img * (nz - 1) + row * (rows - 1) + wb;
+}
+// PEANUTS end
+// PEANUTS(upstream-candidate): LEGO CITY UNDERCOVER moves texture storage with GPU buffer copies, so a buffer -> texture copy is mirrored into the texture's storage on the GPU (vka_tex.c
+// vka_tex_b2t_mirror, DM_VK_B2T_MIRROR). A lazily placed pool (vka_mem.c) places only what a command names, and the copy names its source buffer alone: the destination's storage is asked for
+// here, in one piece (mtl_pool_need joins parts), so the replay finds it placed. Only for what the mirror takes (block-linear, 2D-like, CPU-accessible pool); a no-op on the Metal host
+static void b2t_need(const tex_t *o) {
+    static int on = -1;
+    if (on < 0) { const char *e = getenv("DM_VK_B2T_MIRROR"); on = e && *e ? atoi(e) != 0 : 1; }
+    if (!on || !o || !o->mem || !o->pool || !o->L.size || o->d.samples > 1 || (o->pool->flags & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL))
+        || (o->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET | NVN_TEXTURE_FLAGS_SPARSE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_IMAGE))
+        || (o->d.target != NVN_TEXTURE_TARGET_2D && o->d.target != NVN_TEXTURE_TARGET_2D_ARRAY && o->d.target != NVN_TEXTURE_TARGET_CUBEMAP && o->d.target != NVN_TEXTURE_TARGET_CUBEMAP_ARRAY)) return;
+    mtl_pool_need(o->mem, o->L.size, "the storage of a buffer -> texture copy's destination");
+}
 NVN(nvnCommandBufferCopyBufferToTexture, void, NVNcommandBuffer *c, NVNbufferAddress src, const NVNtexture *t, const NVNtextureView *v,
     const NVNcopyRegion *r, int flags) {
-    shp_bind(SHK_COPY, src, 0);
+    shp_bind(SHK_COPY, src, copy_span(c, t, r));   // PEANUTS: the bytes it reads (copy_span)
+    b2t_need(CTX(t));   // PEANUTS(upstream-candidate): the destination's storage placed for the mirror (b2t_need)
     p_copy_b2t *o = REC_SNAP(c, OP_COPY_B2T, p_copy_b2t, 1); o->src = src; o->tex = tex_snap(o, SNAP_OFF(p_copy_b2t), 0, t, (uint64_t)__builtin_return_address(0)); copy_view(&o->view, &o->has_view, v); o->r = *r; o->flags = flags;
 }
 NVN(nvnCommandBufferCopyTextureToBuffer, void, NVNcommandBuffer *c, const NVNtexture *t, const NVNtextureView *v, const NVNcopyRegion *r,
     NVNbufferAddress dst, int flags) {
-    shp_bind(SHK_COPY, dst, 0);
+    shp_bind(SHK_COPY, dst, copy_span(c, t, r));   // PEANUTS: the bytes it writes (copy_span)
     p_copy_b2t *o = REC_SNAP(c, OP_COPY_T2B, p_copy_b2t, 1); o->src = dst; o->tex = tex_snap(o, SNAP_OFF(p_copy_b2t), 0, t, (uint64_t)__builtin_return_address(0)); copy_view(&o->view, &o->has_view, v); o->r = *r; o->flags = flags;
 }
 // Clear a texture region with the given value (float / unsigned integer versions; mask = channel write mask)
@@ -1603,8 +1629,8 @@ NVN(nvnCommandBufferDrawTexture, void, NVNcommandBuffer *c, NVNtextureHandle h, 
     if (sid) sid += (uint64_t)CB(c)->samp_base;
     *REC(c, OP_DRAW_TEX, p_draw_tex) = (p_draw_tex){tid | sid << 20, *d, *s};
 }
-NVN(nvnCommandBufferSetCopyRowStride, void, NVNcommandBuffer *c, ptrdiff_t st) { p_copy_stride *o = REC(c, OP_COPY_STRIDE, p_copy_stride); o->stride = st; o->image = 0; }
-NVN(nvnCommandBufferSetCopyImageStride, void, NVNcommandBuffer *c, ptrdiff_t st) { p_copy_stride *o = REC(c, OP_COPY_STRIDE, p_copy_stride); o->stride = st; o->image = 1; }   // Link's Awakening
+NVN(nvnCommandBufferSetCopyRowStride, void, NVNcommandBuffer *c, ptrdiff_t st) { p_copy_stride *o = REC(c, OP_COPY_STRIDE, p_copy_stride); o->stride = st; o->image = 0; CB(c)->copy_row = st; }   // PEANUTS: copy_row
+NVN(nvnCommandBufferSetCopyImageStride, void, NVNcommandBuffer *c, ptrdiff_t st) { p_copy_stride *o = REC(c, OP_COPY_STRIDE, p_copy_stride); o->stride = st; o->image = 1; CB(c)->copy_img = st; }   // Link's Awakening; PEANUTS: copy_img   // Link's Awakening
 NVN(nvnCommandBufferSetBlendColor, void, NVNcommandBuffer *c, const float *v) { memcpy(REC(c, OP_BLEND_COLOR, p_blend_color)->rgba, v, 16); }
 
 // ---------- State objects: packed in place (nvn_obj.h) ----------

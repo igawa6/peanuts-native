@@ -447,6 +447,15 @@ The guest address space, heaps, pools, virtual address memory and the allocators
 - **Open:** a pool placed whole after parts is not joined ([above](#large-pools-placed-whole-for-one-buffer-in-them-android)). A system call that reads or writes the range during the join, between the free and the placed map, fails with EFAULT instead of waiting, as during a compaction.
 - **Found on:** [Pokémon Pokopia](../../dm/games/0400A3A01EE4C000/README.md#android) (v655360, v0.2.6) on a player's Lenovo TB321FU (Adreno 750, Turnip): `0x41a99dab00+0x20a60` across two parts of its 3.4 GiB pool at 32 s, then four index buffers in that pool skipped at 168 s, reported as "a Pokémon has missing textures". A second log the same week: `0x41a79f9080+0x6888` in the same pool.
 
+<!-- PEANUTS(upstream-candidate): buffer ↔ texture copies name their own bytes -->
+### A buffer ↔ texture copy names only the bytes it copies (Android)
+
+- **Symptom:** every frame black or textures missing, with `[RED] vk: memory pool <addr>+<size>: <addr>+<len> (a command naming an address in a shader-code pool) lies across N of its parts, …, which are not joined (more than DM_VK_PLACE_JOIN_MB)` and then `[RED] vk: buffer → texture copy source at <addr> (<n> bytes) is not in placed guest RAM`, where `<len>` runs to the end of the pool.
+- **Cause:** `CopyBufferToTexture` and `CopyTextureToBuffer` named their buffer address with no length (`hle_nvn.c` `shp_bind(SHK_COPY, src, 0)`), which a shader-code pool reads as the rest of the pool. A game that uploads its textures from one large pool asked for hundreds of MiB per copy, far more than one join takes ([A range given to the GPU across two placed parts of a pool](#a-range-given-to-the-gpu-across-two-placed-parts-of-a-pool-android)), so its parts stayed apart and each copy whose bytes crossed two parts failed in the replay (`vka_exec.c` `copy_bt` needs the span in one piece).
+- **Fix:** the copy names the bytes it reads or writes, computed as the replay computes them (`hle_nvn.c` `copy_span`): the region's rows of the texture format's blocks, `SetCopyRowStride` apart, layers or slices `SetCopyImageStride` apart, both tracked per command buffer (`cmd_t` `copy_row` / `copy_img`); a format the host does not know keeps the old length. The two or three parts such a range lies across are joined at the next submission as for any other buffer.
+- **Open:** a copy recorded in the same submission that places its parts still runs before the join (one 4 MiB copy while LEGO CITY UNDERCOVER's first level loads).
+- **Found on:** [LEGO CITY UNDERCOVER](../../dm/games/010085500130A000/README.md#resolved) (its whole GPU heap is one 2 GiB pool): 1 MiB uploads asked for 272 MiB across 13 parts, and every frame was black until this.
+
 ### A log line inside a placed-memory swap stops every thread (Android)
 
 - **Symptom:** on the phone a game stops for good, not crashed: no more frames, and the log stops in the middle of the frame statistics (no audio lines, no control lines, no watchdog line either).
