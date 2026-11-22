@@ -4,6 +4,16 @@ Update 1.4.2 (v393216) over the base game, SDK 8.2.0. Nintendo EPD Tokyo's engin
 
 On the Mac: the opening course, the cutscene that follows it and the title menu; the first save, the Episode 1 book and Plucky Pass Beginnings; the Special Episode's book (add-on content 1). 60 fps with no red line. Three minutes in a course: about 950 MB resident and 690 MB of Metal allocations, flat.
 
+<!-- PEANUTS begin: Android -->
+## Android
+
+**Current: plays on Android, with no profile change.** AYN Thor (Adreno 740), Turnip 27.0.0-R2 through `DM_VK_DRIVER`, 2026-11-22: update 1.4.2 (main build `41EAE379C103E9A5`) with both add-ons, from a new save through the opening course, about six minutes. 60 fps (p50 16.74 ms, 6 of 22,188 frames dropped; GPU busy p50 3.5 ms a frame), about 1.2 GB footprint, two save commits, no red line besides the Metal statistics stubs. The audio's 3 underruns all come at startup, none in play. The picture matched the Switch: no magenta block from agl's post effect (program 987) and no other fault seen. The only long frame over 35 ms is the first run's 28 pipelines at 33.9 s, which the pipeline cache then keeps.
+
+- All 7,258 shaders translate for Vulkan, the fin fur geometry shader too (the Thor reports geometry shaders).
+- **Frame rate: the game's own 60 only.** Its logic steps once a frame: `main` exports no delta time, and `al` advances actions and skeletal animations by a per-frame rate (`al::setActionFrameRate`, `al::setSklAnimFrameRate`). `nso_code.sead_find` finds no sead frame-rate controller in this build (its sead has none), so `fps_decouple sead` cannot apply, and FPSLocker Warehouse has no plan for the title. A cap above 60 would run it fast and one below slow, so the profile adds no `fps_limit_max` or `fps_limit_present`. Frame generation (LSFG) can show more frames without changing the game's speed; not tested.
+- Not tested: Qualcomm's system driver, touch blocks and the pointer, docked mode, the courses after the opening and the add-on books on Android.
+<!-- PEANUTS end -->
+
 ## What it needs
 
 | Setting | Where | Why |
@@ -45,4 +55,5 @@ General host changes first needed here; each applies to every game:
 
 ## Open
 
-- The fin fur geometry shader does not build.
+- The fin fur geometry shader does not build on Metal (it builds for Vulkan on Android). <!-- PEANUTS -->
+- PEANUTS, Android: the system driver, touch, docked mode and the courses after the opening are not checked yet ([Android](#android)).

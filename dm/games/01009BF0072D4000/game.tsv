@@ -1,4 +1,6 @@
 # Game profile of Captain Toad: Treasure Tracker (Switch, base game v0 + update 1.4.2 = v393216). Plays on the Mac and on the iPhone
+# PEANUTS: plays on Android too (AYN Thor, Turnip). No fps_limit_max / fps_limit_present / fps_decouple: the game steps its logic once a frame and its sead has no
+# frame-rate controller, so a cap other than its own 60 changes its speed (the note's Android section)
 # Format: see dm/games/README.md
 # Nintendo EPD Tokyo's engine (the al library over sead / agl, as Super Mario 3D World and Super Mario Odyssey; NintendoWare G3d / Ui2d / Vfx / Atk), SDK 8.2.0 (the sdk build Link's Awakening 1.1.0 runs), NVN;
 # main exports its symbols (48,804 defined). RomFS is almost entirely Yaz0-compressed SARC archives (.szs).
