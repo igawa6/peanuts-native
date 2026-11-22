@@ -1017,7 +1017,7 @@ static VkImageAspectFlags copy_aspect(const vka_img *im, const char *what) {
 // Buffer ↔ texture: c->src is the buffer's guest address. Rows are SetCopyRowStride bytes apart (tightly packed without it), layers / slices SetCopyImageStride
 static void copy_bt(const p_copy_b2t *c, int to_tex) {
     if (!c->tex) return;
-    vka_img *im = vka_tex_get(c->tex, g_cb);
+    vka_img *im = to_tex ? vka_tex_get(c->tex, g_cb) : vka_tex_get_src(c->tex, g_cb);
     if (!im) return;
     if (to_tex) vka_tex_own(im, g_cb);
     // PEANUTS: DM_RES_SCALE: the buffer's texels are the texture's size, so a scaled image is made 1x first (and its shape stays 1x: vka_resscale.inc)
@@ -1168,7 +1168,7 @@ static int t2t_depth_draw(vka_img *s, vka_img *d, VkImageSubresourceLayers ss, V
 }
 static void copy_t2t(const p_copy_t2t *c) {
     if (!c->src || !c->dst) return;
-    vka_img *s = vka_tex_get(c->src, g_cb), *d = vka_tex_get(c->dst, g_cb);
+    vka_img *s = vka_tex_get_src(c->src, g_cb), *d = vka_tex_get(c->dst, g_cb);
     if (!s || !d) return;
     vka_tex_own(d, g_cb);
     // PEANUTS: the copy goes by the formats of the two textures the game named, not by their images'. A texture may be a view of an image of another format (textures of

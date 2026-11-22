@@ -706,6 +706,7 @@ static int mem_any_mapped(const uint8_t *c, const tex_t *t) {
 // as an attachment, a copy destination or a shader image stays GPU content. The rule and the finding follow kartnative (pahorema/kartnative, MIT: "Switch 2: uncompressed storage
 // the CPU wrote before a texture's first sample", nvn_mtl.m tex_cpu_content). DM_VK_STORAGE_FIRST_USE=0 turns it off (to measure it)
 static _Thread_local int g_first_sampled;
+static _Thread_local int g_first_copy_src;
 static int img_pool_dead(vka_img *im);
 static int gpu_image_over(const uint8_t *mem) {   // caller holds g_tmu; images of finalized pools do not count (a new pool may lie at the same address)
     int k; for (vka_img *im = mem ? live_first(mem, &k) : NULL; im; im = live_next(im, mem, &k)) if (im->mem == mem && im->gpu_owned && !img_pool_dead(im)) return 1;
@@ -720,7 +721,7 @@ static int nvn2_sampled_content(const tex_t *t, const vka_fmt *f, unsigned pf, i
     return !gpu_image_over(t->mem);
 }
 static uint64_t g_nvn2_first[2];   // textures taken from their storage at a first sample (nvn2_sampled_content): [0] with data, [1] storage all zero (tracked from zeros)
-static int storage_mode(const tex_t *t, const uint8_t *c, const vka_fmt *f, int cpuw, int sampled) {   // c: the storage's content as the GPU will see it (t->mem or gw_content's copy)
+static int storage_mode(const tex_t *t, const uint8_t *c, const vka_fmt *f, int cpuw, int sampled, int copy_src) {   // c: the storage's content as the GPU will see it (t->mem or gw_content's copy)
     const nvn_texdesc *d = &t->d;
     if (!t->mem || d->samples > 1 || f->kind >= 3) return ST_ZERO;   // PEANUTS: TARGET_BUFFER dropped from this early-out (buffer textures tracked below)
     // A sparse virtual pool's texture (nvn_mtl.m tex_from_storage): a sampled one holds what the CPU wrote into the physical pages mapped behind it (streamed textures), read
@@ -730,13 +731,16 @@ static int storage_mode(const tex_t *t, const uint8_t *c, const vka_fmt *f, int 
     if (sp) return sparse_sampled(t, f) ? ST_SPARSE : ST_ZERO;
     int linear = (d->flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET)) != 0, comp = compressed(f);
     int is_vid = t->mem && dm_codec_is_video_mem(t->mem, t->L.size, NULL);
+    int dirty_first = DM_GAME_TEX_DIRTY_UPLOAD && (sampled || copy_src) && t->pool && !t->has_layout
+                      && !(d->flags & (NVN_TEXTURE_FLAGS_IMAGE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_SPARSE))
+                      && !(pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL)) && !gpu_image_over(t->mem);
     int want = ST_ZERO;
     if (cpuw || t->has_layout) want = ST_TRACK;
     else if (linear && t->pool) want = ST_TRACK;
     else if (d->target == NVN_TEXTURE_TARGET_BUFFER && t->pool) want = ST_TRACK;   // PEANUTS: a buffer texture's rows (img_create_): its elements as the CPU writes them, like a linear texture's rows
     else if (is_vid) want = ST_TRACK;
     else if (comp && !(d->flags & (NVN_TEXTURE_FLAGS_IMAGE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_SPARSE))
-             && (mem_any_mapped(c, t) || (DM_GAME_TEX_DIRTY_UPLOAD && sampled && !(pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL)) && !gpu_image_over(t->mem)))) want = ST_TRACK;
+             && (mem_any_mapped(c, t) || dirty_first)) want = ST_TRACK;
     else if (nvn2_sampled_content(t, f, pf, sampled)) {
         int any = mem_any_mapped(c, t); uint64_t k = g_nvn2_first[!any]++; want = ST_TRACK;
         if (any && k < 4) VLOG("texture serial %llu %ux%ux%u format %#x pool flags %#x: written by the CPU before its first use, a sample (NVN2): uploaded from its storage, re-uploaded when it changes (%llu so far, %llu more with empty storage)",
@@ -744,9 +748,7 @@ static int storage_mode(const tex_t *t, const uint8_t *c, const vka_fmt *f, int 
     }
     else if (!(d->flags & NVN_TEXTURE_FLAGS_COMPRESSIBLE) && t->pool && ((pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_CPU_UNCACHED)) || nvn_flushed(t->mem, t->L.size))
              && mem_any_mapped(c, t)) want = ST_FILL;
-    else if (DM_GAME_TEX_DIRTY_UPLOAD && sampled && t->pool && !t->has_layout
-             && !(d->flags & (NVN_TEXTURE_FLAGS_IMAGE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_SPARSE))
-             && !(pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL)) && !gpu_image_over(t->mem)) want = ST_TRACK;
+    else if (dirty_first) want = ST_TRACK;
     // No later CPU writes to follow: a pool the CPU cannot access, a virtual pool (its pages are not the storage's), storage outside every tracked pool, or tracking off
     int trk = VKA_ENV("DM_VK_TEX_TRACK", 1) != 0;   // live: textures made from now on
     if (want == ST_TRACK && !is_vid && (!trk || (pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL)) || !nvn_dirty_span(t->mem, t->L.size))) want = ST_FILL;
@@ -1726,7 +1728,7 @@ static void bc_sync_queue_locked(vka_img *src) {
 static int first_mode(const tex_t *t, const vka_fmt *f, int cpu) {
     int samples = t->d.samples > 1 ? t->d.samples : 1, vpool = t->pool && pool_sparse(t->pool);
     uint64_t seen; uint8_t *c = samples == 1 && t->mem && !vpool ? gw_content(t->mem, t->L.size, &seen) : NULL;   // the content the mode's "holds data" checks look at
-    int mode = samples == 1 ? storage_mode(t, c ? c : t->mem, f, cpu, g_first_sampled) : ST_ZERO;
+    int mode = samples == 1 ? storage_mode(t, c ? c : t->mem, f, cpu, g_first_sampled, g_first_copy_src) : ST_ZERO;
     free(c);
     return mode;
 }
@@ -2019,6 +2021,12 @@ static vka_img *level_child(const tex_t *t, const vka_fmt *f) {
     return NULL;
 }
 
+vka_img *vka_tex_get_src(const tex_t *t, VkCommandBuffer cb) {
+    int prev = g_first_copy_src; g_first_copy_src = 1;
+    vka_img *im = vka_tex_get(t, cb);
+    g_first_copy_src = prev;
+    return im;
+}
 vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
     if (!t || !t->serial || !vka_ok()) return NULL;
     pthread_mutex_lock(&g_tmu);
