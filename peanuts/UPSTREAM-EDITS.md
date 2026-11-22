@@ -1230,6 +1230,20 @@ module; 16 a module is checked off the device (a 15-array pixel shader of the ga
 
 Checked on the AYN Thor (Turnip Gen8 V38) with Hogwarts Legacy only; on the tree before Round 17; on this tree `t_android_shlib` passes (clang with ASan and UBSan) and the app builds, and it has not run on a device yet. Not run: the Odin 2, Qualcomm's driver, other games. No shader-chain file is changed. The switch has its row in `docs/advanced_settings.tsv`.
 
+**A bindless handle spilled to local memory** ([A bindless handle spilled to local memory](../docs/reference/shaders.md#a-bindless-handle-spilled-to-local-memory)); a shader-chain change: `DMSH_CHAIN` cdcf140b1558 → a4be58721e5e, `DMSH_VK_CHAIN` 1e00fca09d0f → 31ab5778a1f0, the ABI (3d4e8bb1e1e8) unchanged, so a library of the previous version plays while its game is prepared again:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Translation/Optimizations/BindlessElimination.cs` | 1 | `ForwardLocalHandles` / `LocalHandle`: a load from a constant local-memory word takes the c[2] word every store to that word writes, when they all write the same one and no local-memory store has a computed address | `// PEANUTS:` |
+| `dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Translation/Optimizations/Optimizer.cs` | 1 | the pass runs after `GlobalToStorage` | `// PEANUTS:` |
+| `dm/third_party/ryujinx/README.md` | 1 line | the change in the list of local changes | plain text |
+| `dm/gfx/tools/dmsh_xlate_bin/Ryujinx.Graphics.Shader.dll`, `dm/gfx/tools/dmsh_chain.lock`, `dm/gfx/nvn/dmsh_chain.h`, `dm/gfx/nvn/dmsh_chain_vk.h` | generated | the PC translator's shader library rebuilt from this tree (.NET SDK 10.0.404; the other DLLs unchanged) and the versions that follow | allow-listed |
+| `dm/games/0400C3F00006E000/vk_delta.tsv` | 1 row | the version row follows `DMSH_VK_CHAIN` | allow-listed |
+| `dm/games/0100F7E00C70E000/vk_delta.tsv` (new) | whole file | Hogwarts Legacy's delta manifest of 31ab5778a1f0 (`vk_android_build.py --publish-delta` of a full build, `from 1e00fca09d0f 105`); its two `-` rows excuse the two shaders that do not build | allow-listed |
+| `docs/reference/shaders.md`, `dm/games/0100F7E00C70E000/README.md` | 1 entry, 3 lines | the entry and the game note's lines | `<!-- PEANUTS -->` / the note's |
+
+Checked off the device: a full build of Hogwarts Legacy 1.0.5's library before and after (Linux, `vk_android_build.py`): 65,045 of 65,047 both times, 83,431 modules valid for spirv-val, 103 entries differ; in `c8974ea070ce1208` the 55 `Failed to find handle source` notes go to 0 and its 22 bindings stay as they were. Not run on a device for this branch.
+
 ## Breath of the Wild 1.6.0
 
 | Files | Change | Marker |
