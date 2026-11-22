@@ -38,7 +38,7 @@ enum { BLK_SHIFT = 10, BLK = 1 << BLK_SHIFT, NBLK = 256, MAX_RANGE = BLK * NBLK 
 // PEANUTS (upstream nxnative's fix, "A pool registered over memory an earlier pool held counts older stamps as written"): born is the clock when the range was registered.
 // A page's generation starts at 0 then, so a stamp taken before that (content checked in a pool this memory held before, or while no pool held it) saw no newer generation
 // although the game wrote there in between without a fault: a stamp older than born counts as written (nvn_dirty_since_span, nvn_dirty_bounds_since)
-typedef struct { uintptr_t base, end, mem; _Atomic uint8_t *state; _Atomic uint64_t *gen; uint8_t *ever; size_t cap; _Atomic int live, red; _Atomic uint64_t born; } range_t;   // red: a write protection in it failed (logged once)
+typedef struct { uintptr_t base, end, mem; _Atomic uint8_t *state; _Atomic uint64_t *gen; uint8_t *ever; size_t cap; _Atomic int live, red; _Atomic uint64_t born; _Atomic size_t nprot; } range_t;   // PEANUTS(upstream-candidate): red: a write protection in it failed (logged once); nprot: >= PG_PROT/PG_BUSY pages + in-flight nvn_dirty_protect calls
 static _Atomic(range_t *) g_blk[NBLK];
 static inline range_t *rg(int i) { return &atomic_load_explicit(&g_blk[i >> BLK_SHIFT], memory_order_acquire)[i & (BLK - 1)]; }
 static _Atomic int g_nr;
@@ -120,6 +120,7 @@ static int unprotect_page(range_t *r, uintptr_t p) {
     if (mp(r->base + (p << g_shift), g_pg, PROT_READ | PROT_WRITE)) { atomic_store(&r->state[p], PG_PROT); return 1; }
     stamp_page(r, p);
     atomic_store(&r->state[p], PG_NONE);
+    atomic_fetch_sub(&r->nprot, 1);   // PEANUTS(upstream-candidate)
     return 0;
 }
 // Unprotect one page of a range: if protected, unprotect and stamp it; if another thread is changing its protection, wait for it to finish and look again -- if the other side was setting read-only, the page is PROT after the wait and still has to be unprotected
@@ -165,19 +166,22 @@ static int on_fault(void *addr, int is_write, void *uc) {
 // Unprotect pages p..q of a range with one mprotect per run of protected pages (a host write over a whole texture, e.g. WriteTexels, used to make one system call per 16 KB page:
 // Link's Awakening, about 275 a frame). Pages another thread is changing are handled one by one after the run so far is finished, so no BUSY page is held while waiting
 static void release_pages(range_t *r, uintptr_t p, uintptr_t q, _Atomic uint64_t *count) {
+    if (!atomic_load(&r->nprot)) return;   // PEANUTS(upstream-candidate): skip ranges with no protected pages or in-flight protect
     uintptr_t run = 0; int open = 0;
     for (uintptr_t i = p; i <= q + 1; i++) {
-        uint8_t st = PG_PROT; int took = i <= q && atomic_compare_exchange_strong(&r->state[i], &st, PG_BUSY);
+        uint8_t st = i <= q ? atomic_load(&r->state[i]) : PG_NONE;   // PEANUTS(upstream-candidate): avoid CAS on PG_NONE pages
+        int took = st == PG_PROT && atomic_compare_exchange_strong(&r->state[i], &st, PG_BUSY);
         if (took) { if (!open) { run = i; open = 1; } continue; }
         if (open) {
             if (mp(r->base + (run << g_shift), (i - run) << g_shift, PROT_READ | PROT_WRITE)) {
                 // Linux changes protection mapping by mapping, so part of the run may have become writable: page by page, each page's state as it ends up
                 for (uintptr_t k = run; k < i; k++) {
                     if (mp(r->base + (k << g_shift), g_pg, PROT_READ | PROT_WRITE)) { atomic_store(&r->state[k], PG_PROT); continue; }   // still read-only: the write faults and is reported
-                    stamp_page(r, k); atomic_store(&r->state[k], PG_NONE); if (count) atomic_fetch_add(count, 1);
+                    stamp_page(r, k); atomic_store(&r->state[k], PG_NONE); atomic_fetch_sub(&r->nprot, 1); if (count) atomic_fetch_add(count, 1);   // PEANUTS(upstream-candidate)
                 }
             } else {
                 for (uintptr_t k = run; k < i; k++) { stamp_page(r, k); atomic_store(&r->state[k], PG_NONE); }
+                atomic_fetch_sub(&r->nprot, i - run);   // PEANUTS(upstream-candidate)
                 if (count) atomic_fetch_add(count, i - run);
             }
             open = 0;
@@ -190,7 +194,7 @@ static void prep_write(void *addr, size_t len) {
     if (!len) return;
     for (int i = 0; i < n; i++) {
         range_t *r = rg(i);
-        if (!live_at(i) || e <= r->base || a >= r->end) continue;
+        if (!live_at(i) || e <= r->base || a >= r->end || !atomic_load(&r->nprot)) continue;   // PEANUTS(upstream-candidate)
         uintptr_t lo = a > r->base ? a : r->base, hi = e < r->end ? e : r->end;
         uintptr_t p = (lo - r->base) >> g_shift, q = (hi - 1 - r->base) >> g_shift;
         if (g_bmask) block_bounds(r, &p, &q);
@@ -256,7 +260,7 @@ void nvn_dirty_add_range(const void *mem, size_t size) {
     } else {
         memset((void *)state, 0, np); memset((void *)gen, 0, np * sizeof *gen); memset(ever, 0, np);
     }
-    r->base = base; r->end = end; r->mem = (uintptr_t)mem; r->state = state; r->gen = gen; r->ever = ever; atomic_store(&r->red, 0);
+    r->base = base; r->end = end; r->mem = (uintptr_t)mem; r->state = state; r->gen = gen; r->ever = ever; atomic_store(&r->red, 0); atomic_store(&r->nprot, 0);
     atomic_store_explicit(&r->born, atomic_fetch_add(&g_now, 1) + 1, memory_order_relaxed); atomic_fetch_add(&g_now, 1);   // PEANUTS: published by the release store of live below; stamps taken from now on are past it
     if (slot == n) atomic_store(&g_nr, n + 1);
     atomic_store_explicit(&r->live, 1, memory_order_release);
@@ -282,6 +286,7 @@ void nvn_dirty_protect(const void *addr, size_t len) {
     pthread_mutex_lock(&g_slot_mu);
     range_t *r = len ? find_span((uintptr_t)addr, len) : NULL;
     if (!r) { pthread_mutex_unlock(&g_slot_mu); return; }
+    atomic_fetch_add(&r->nprot, 1);   // PEANUTS(upstream-candidate): in-flight guard: nprot stays non-zero until every transition in this call finishes
     uintptr_t a = (uintptr_t)addr, p = (a - r->base) >> g_shift, q = (a + len - 1 - r->base) >> g_shift;
     if (g_bmask) block_bounds(r, &p, &q);
     // Consecutive pages are merged into one mprotect (per-page calls reach thousands per frame on the first upload of large textures; character select page startup frame 5: 4888 calls).
@@ -302,11 +307,14 @@ void nvn_dirty_protect(const void *addr, size_t len) {
         if (took && !open) { run = i; open = 1; }
         if (!took && open) {
             uintptr_t ra = r->base + (run << g_shift); size_t rn = (i - run) << g_shift; int err = mp(ra, rn, PROT_READ);
-            if (!err) { for (uintptr_t k = run; k < i; k++) { if (atomic_load(&r->gen[k]) == GEN_UNPROT) stamp_page(r, k); atomic_store(&r->state[k], PG_PROT); } }
-            else {
+            if (!err) {
+                atomic_fetch_add(&r->nprot, i - run);   // PEANUTS(upstream-candidate): count before publishing PG_PROT so an immediate unprotect cannot underflow
+                for (uintptr_t k = run; k < i; k++) { if (atomic_load(&r->gen[k]) == GEN_UNPROT) stamp_page(r, k); atomic_store(&r->state[k], PG_PROT); }
+            } else {
                 int rerr = mp(ra, rn, PROT_READ | PROT_WRITE);
                 for (uintptr_t k = run; k < i; k++) {
                     int w = !rerr || !mp(r->base + (k << g_shift), g_pg, PROT_READ | PROT_WRITE);
+                    if (!w) atomic_fetch_add(&r->nprot, 1);   // PEANUTS(upstream-candidate): stays PROT: count before publishing PG_PROT
                     atomic_store(&r->gen[k], GEN_UNPROT); atomic_store(&r->state[k], w ? PG_NONE : PG_PROT); nstuck += !w;
                 }
                 atomic_fetch_add(&g_now, 1);
@@ -316,6 +324,7 @@ void nvn_dirty_protect(const void *addr, size_t len) {
         }
         if (!took && i <= q && st == PG_BUSY && busy_wait(r, i)) i--;   // this page again
     }
+    atomic_fetch_sub(&r->nprot, 1);   // PEANUTS(upstream-candidate)
     int red = nfail && !atomic_exchange(&r->red, 1); uintptr_t rb = r->base, re = r->end, rm = r->mem;
     pthread_mutex_unlock(&g_slot_mu);
     if (red) {

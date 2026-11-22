@@ -11,6 +11,11 @@ module_t *g_mod; int g_nmod;                            // host symbols that cra
 void svc_thread_dump(void) {}
 int dm_guest_as_contains(uintptr_t address) { (void)address; return 0; } // Tests use host-thread stacks.
 void dm_vi_layer_crop(int c[4]) { c[0] = c[1] = c[2] = c[3] = 0; }   // no vi layer crop in unit tests (hle_vi.c)
+int dm_fps_hold60(void) { return 0; }
+uint64_t dm_guest_unmapped(uintptr_t a, size_t n) { (void)a; (void)n; return 0; }
+void dm_thread_native_wait(int entering) { (void)entering; }
+void dm_vi_frame_queued(uint64_t frame) { (void)frame; }
+int nxhost_fps_limit_get(void) { return 0; }
 void crash_install(void);
 void nvn_present_config(int hz, int display_mode);
 #include <fcntl.h>
@@ -809,6 +814,174 @@ int main(void) {
         }
         EXPECT("WriteTexels region write byte-identical to a whole-level round trip (15 cases)", 0, bad); EXPECT("WriteTexels region case count", 15, n);
         P(nvnMemoryPoolFinalize)(&wtp);
+    }
+
+    // 6c2b. WriteTexels bounded dirty prep: writing 1x1 texels into a write-protected texture prepares only the touched page(s) with 0 page faults,
+    //       marks the texture dirty, and preserves all neighboring texels; multi-block, 2D array, 3D fallback, and mirror paths behave identically while PG_PROT.
+    {
+        size_t map_sz = 4u << 20;
+        uint8_t *pmem = mmap(NULL, map_sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        EXPECT("6c2b pool mmap succeeded", 1, pmem != MAP_FAILED);
+        NVNmemoryPoolBuilder pb2; NVNmemoryPool pp2;
+        P(nvnMemoryPoolBuilderSetDevice)(&pb2, &dev); P(nvnMemoryPoolBuilderSetDefaults)(&pb2);
+        P(nvnMemoryPoolBuilderSetStorage)(&pb2, pmem, map_sz); P(nvnMemoryPoolBuilderSetFlags)(&pb2, 0x24);
+        P(nvnMemoryPoolInitialize)(&pp2, &pb2);
+
+        // 1. 1024x512 RGBA8 (2 MiB) 1x1 writes under PG_PROT
+        NVNtextureBuilder tb2; NVNtexture t2;
+        P(nvnTextureBuilderSetDevice)(&tb2, &dev); P(nvnTextureBuilderSetDefaults)(&tb2);
+        P(nvnTextureBuilderSetTarget)(&tb2, NVN_TEXTURE_TARGET_2D);
+        P(nvnTextureBuilderSetSize2D)(&tb2, 1024, 512);
+        P(nvnTextureBuilderSetFormat)(&tb2, NVN_FORMAT_RGBA8);
+        P(nvnTextureBuilderSetStorage)(&tb2, &pp2, 0);
+        P(nvnTextureInitialize)(&t2, &tb2);
+        const tex_t *tt2 = (const tex_t *)&t2;
+        EXPECT("6c2b 1024x512 RGBA8 texture is tracked", 1, nvn_dirty_tracked(tt2->mem, tt2->L.size));
+        nvn_dirty_protect(tt2->mem, tt2->L.size);
+        uint64_t stamp = nvn_dirty_now(), f0, p0, f1, p1, f2, p2, f3, p3;
+        nvn_dirty_stats(&f0, &p0);
+
+        uint8_t px1[4] = {0x11, 0x22, 0x33, 0x44};
+        NVNcopyRegion r1 = {13, 5, 0, 1, 1, 1};
+        P(nvnTextureWriteTexels)(&t2, NULL, &r1, px1);
+        nvn_dirty_stats(&f1, &p1);
+        EXPECT("6c2b 1x1 write triggers 0 page faults", 0, (long long)(f1 - f0));
+        EXPECT("6c2b 1x1 write prepares exactly 1 host page", 1, (long long)(p1 - p0));
+        EXPECT("6c2b 1x1 write marks texture dirty", 1, nvn_dirty_since(tt2->mem, tt2->L.size, stamp));
+
+        // Repeat at same texel: page is already unprotected -> 0 new preps, 0 faults
+        uint8_t px2[4] = {0xaa, 0xbb, 0xcc, 0xdd};
+        P(nvnTextureWriteTexels)(&t2, NULL, &r1, px2);
+        nvn_dirty_stats(&f2, &p2);
+        EXPECT("6c2b repeat 1x1 write triggers 0 faults", 0, (long long)(f2 - f0));
+        EXPECT("6c2b repeat 1x1 write prepares 0 pages", 0, (long long)(p2 - p1));
+
+        // Distant texel in another page: prepares 1 page, 0 faults
+        uint8_t px3[4] = {0x55, 0x66, 0x77, 0x88};
+        NVNcopyRegion r3 = {900, 450, 0, 1, 1, 1};
+        P(nvnTextureWriteTexels)(&t2, NULL, &r3, px3);
+        nvn_dirty_stats(&f3, &p3);
+        EXPECT("6c2b distant 1x1 write triggers 0 faults", 0, (long long)(f3 - f0));
+        EXPECT("6c2b distant 1x1 write prepares 1 page", 1, (long long)(p3 - p2));
+
+        uint8_t *lin = malloc(1024u * 512u * 4u);
+        nvn_deswizzle(&tt2->d, 0, 0, tt2->mem, lin, 1024u * 4u);
+        EXPECT("6c2b first texel bytes exact", 0, memcmp(lin + (5u * 1024u + 13u) * 4u, px2, 4));
+        EXPECT("6c2b neighboring texel untouched", 0, memcmp(lin + (5u * 1024u + 14u) * 4u, (uint8_t[4]){0}, 4));
+        EXPECT("6c2b distant texel bytes exact", 0, memcmp(lin + (450u * 1024u + 900u) * 4u, px3, 4));
+
+        // Multi-block region while PG_PROT: zero faults, dirty detected, byte-identical to whole-level patch
+        nvn_dirty_protect(tt2->mem, tt2->L.size);
+        stamp = nvn_dirty_now();
+        nvn_dirty_stats(&f0, &p0);
+        uint8_t *reg_src = malloc(200u * 100u * 4u);
+        for (size_t i = 0; i < 200u * 100u * 4u; i++) reg_src[i] = (uint8_t)((i * 17u + 3u) & 0xff);
+        NVNcopyRegion r4 = {10, 10, 0, 200, 100, 1};
+        P(nvnTextureWriteTexels)(&t2, NULL, &r4, reg_src);
+        nvn_dirty_stats(&f1, &p1);
+        EXPECT("6c2b multi-block write triggers 0 faults", 0, (long long)(f1 - f0));
+        EXPECT("6c2b multi-block write prepares bounded pages (< whole texture)", 1, p1 > p0 && (p1 - p0) < tt2->L.size / (size_t)getpagesize());
+        EXPECT("6c2b multi-block write marks dirty", 1, nvn_dirty_since(tt2->mem, tt2->L.size, stamp));
+        for (uint32_t y = 0; y < 100; y++) memcpy(lin + ((10u + y) * 1024u + 10u) * 4u, reg_src + y * 200u * 4u, 200u * 4u);
+        uint8_t *want2 = malloc(tt2->L.size);
+        memcpy(want2, tt2->mem, tt2->L.size);
+        nvn_swizzle(&tt2->d, 0, 0, lin, 1024u * 4u, want2);
+        EXPECT("6c2b multi-block write byte-identical", 0, memcmp(want2, tt2->mem, tt2->L.size));
+        free(reg_src); free(want2); free(lin);
+        P(nvnTextureFinalize)(&t2);
+
+        // 2. 2-layer 2D array while PG_PROT
+        NVNtexture t_arr;
+        P(nvnTextureBuilderSetDefaults)(&tb2);
+        P(nvnTextureBuilderSetTarget)(&tb2, NVN_TEXTURE_TARGET_2D_ARRAY);
+        P(nvnTextureBuilderSetSize3D)(&tb2, 64, 64, 2);
+        P(nvnTextureBuilderSetFormat)(&tb2, NVN_FORMAT_RGBA8);
+        P(nvnTextureBuilderSetStorage)(&tb2, &pp2, 0x220000);
+        P(nvnTextureInitialize)(&t_arr, &tb2);
+        const tex_t *tt_arr = (const tex_t *)&t_arr;
+        nvn_dirty_protect(tt_arr->mem, tt_arr->L.size);
+        stamp = nvn_dirty_now(); nvn_dirty_stats(&f0, &p0);
+        uint8_t arr_src[8 * 8 * 4];
+        for (size_t i = 0; i < sizeof arr_src; i++) arr_src[i] = (uint8_t)(i + 9);
+        NVNtextureView vw_arr; P(nvnTextureViewSetDefaults)(&vw_arr); P(nvnTextureViewSetLayers)(&vw_arr, 1, 1);
+        NVNcopyRegion r_arr = {5, 5, 0, 8, 8, 1};
+        P(nvnTextureWriteTexels)(&t_arr, &vw_arr, &r_arr, arr_src);
+        nvn_dirty_stats(&f1, &p1);
+        EXPECT("6c2b 2D array write triggers 0 faults", 0, (long long)(f1 - f0));
+        EXPECT("6c2b 2D array write marks dirty", 1, nvn_dirty_since(tt_arr->mem, tt_arr->L.size, stamp));
+        uint8_t lin_arr[64 * 64 * 4];
+        nvn_deswizzle(&tt_arr->d, 0, 1, tt_arr->mem, lin_arr, 64 * 4);
+        int arr_ok = 1;
+        for (int y = 0; y < 8; y++) if (memcmp(lin_arr + ((5 + y) * 64 + 5) * 4, arr_src + y * 8 * 4, 8 * 4)) arr_ok = 0;
+        EXPECT("6c2b 2D array layer 1 pixels exact", 1, arr_ok);
+        P(nvnTextureFinalize)(&t_arr);
+
+        // 3. 3D texture fallback while PG_PROT
+        NVNtexture t_3d;
+        P(nvnTextureBuilderSetDefaults)(&tb2);
+        P(nvnTextureBuilderSetTarget)(&tb2, NVN_TEXTURE_TARGET_3D);
+        P(nvnTextureBuilderSetSize3D)(&tb2, 16, 16, 4);
+        P(nvnTextureBuilderSetFormat)(&tb2, NVN_FORMAT_RGBA8);
+        P(nvnTextureBuilderSetStorage)(&tb2, &pp2, 0x260000);
+        P(nvnTextureInitialize)(&t_3d, &tb2);
+        const tex_t *tt_3d = (const tex_t *)&t_3d;
+        nvn_dirty_protect(tt_3d->mem, tt_3d->L.size);
+        stamp = nvn_dirty_now(); nvn_dirty_stats(&f0, &p0);
+        uint8_t src_3d[4 * 4 * 2 * 4];
+        for (size_t i = 0; i < sizeof src_3d; i++) src_3d[i] = (uint8_t)(0x40 + i);
+        NVNcopyRegion r_3d = {2, 3, 1, 4, 4, 2};
+        P(nvnTextureWriteTexels)(&t_3d, NULL, &r_3d, src_3d);
+        nvn_dirty_stats(&f1, &p1);
+        EXPECT("6c2b 3D fallback write triggers 0 faults", 0, (long long)(f1 - f0));
+        EXPECT("6c2b 3D fallback write marks dirty", 1, nvn_dirty_since(tt_3d->mem, tt_3d->L.size, stamp));
+        uint8_t lin_3d[16 * 16 * 4 * 4];
+        nvn_deswizzle(&tt_3d->d, 0, 0, tt_3d->mem, lin_3d, 16 * 4);
+        int ok3d = 1;
+        for (int z = 0; z < 2; z++)
+            for (int y = 0; y < 4; y++)
+                if (memcmp(lin_3d + ((size_t)(1 + z) * 16u + (size_t)(3 + y)) * 16u * 4u + 2u * 4u,
+                           src_3d + ((size_t)z * 4u + (size_t)y) * 4u * 4u, 4u * 4u)) ok3d = 0;
+        EXPECT("6c2b 3D fallback pixels exact", 1, ok3d);
+        P(nvnTextureFinalize)(&t_3d);
+
+        // 4. Mirror b2t and t2t while destination is PG_PROT
+        NVNtexture t_ms, t_md;
+        P(nvnTextureBuilderSetDefaults)(&tb2);
+        P(nvnTextureBuilderSetTarget)(&tb2, NVN_TEXTURE_TARGET_2D);
+        P(nvnTextureBuilderSetSize2D)(&tb2, 32, 32);
+        P(nvnTextureBuilderSetFormat)(&tb2, NVN_FORMAT_RGBA8);
+        P(nvnTextureBuilderSetStorage)(&tb2, &pp2, 0x280000);
+        P(nvnTextureInitialize)(&t_ms, &tb2);
+        P(nvnTextureBuilderSetStorage)(&tb2, &pp2, 0x2a0000);
+        P(nvnTextureInitialize)(&t_md, &tb2);
+        const tex_t *tts = (const tex_t *)&t_ms, *ttd = (const tex_t *)&t_md;
+        uint8_t b2t_src[16 * 16 * 4];
+        for (size_t i = 0; i < sizeof b2t_src; i++) b2t_src[i] = (uint8_t)(i ^ 0x5a);
+        nvn_dirty_protect(ttd->mem, ttd->L.size);
+        stamp = nvn_dirty_now(); nvn_dirty_stats(&f0, &p0);
+        NVNcopyRegion r_m = {4, 4, 0, 16, 16, 1};
+        EXPECT("6c2b mirror_b2t succeeds while PG_PROT", 0, nvn_tex_mirror_b2t(ttd, 0, 0, &r_m, b2t_src, 16 * 4, sizeof b2t_src));
+        nvn_dirty_stats(&f1, &p1);
+        EXPECT("6c2b mirror_b2t triggers 0 faults", 0, (long long)(f1 - f0));
+        EXPECT("6c2b mirror_b2t marks destination dirty", 1, nvn_dirty_since(ttd->mem, ttd->L.size, stamp));
+
+        P(nvnTextureWriteTexels)(&t_ms, NULL, &r_m, b2t_src);
+        nvn_dirty_protect(ttd->mem, ttd->L.size);
+        stamp = nvn_dirty_now(); nvn_dirty_stats(&f0, &p0);
+        NVNcopyRegion r_m2 = {8, 8, 0, 16, 16, 1};
+        EXPECT("6c2b mirror_t2t succeeds while PG_PROT", 0, nvn_tex_mirror_t2t(tts, 0, 0, &r_m, ttd, 0, 0, &r_m2));
+        nvn_dirty_stats(&f1, &p1);
+        EXPECT("6c2b mirror_t2t triggers 0 faults", 0, (long long)(f1 - f0));
+        EXPECT("6c2b mirror_t2t marks destination dirty", 1, nvn_dirty_since(ttd->mem, ttd->L.size, stamp));
+        uint8_t lin_md[32 * 32 * 4];
+        nvn_deswizzle(&ttd->d, 0, 0, ttd->mem, lin_md, 32 * 4);
+        int ok_m = 1;
+        for (int y = 0; y < 16; y++) if (memcmp(lin_md + ((8 + y) * 32 + 8) * 4, b2t_src + y * 16 * 4, 16 * 4)) ok_m = 0;
+        EXPECT("6c2b mirror_t2t pixels exact", 1, ok_m);
+
+        P(nvnTextureFinalize)(&t_ms); P(nvnTextureFinalize)(&t_md);
+        P(nvnMemoryPoolFinalize)(&pp2);
+        munmap(pmem, map_sz);
     }
 
     // 6c3. GPU copies mirrored into the destination's storage (nvn_tex_mirror_t2t / nvn_tex_mirror_b2t, the streamer's level copies): a region of a level copied from a texture of other
