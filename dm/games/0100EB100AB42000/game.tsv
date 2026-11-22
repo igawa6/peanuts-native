@@ -1,0 +1,39 @@
+# Provisional game profile of FINAL FANTASY XII THE ZODIAC AGE (Switch, base game 1.0.0, v0), Square Enix / Virtuos PhyreEngine, SDK 6.4.0, NVN.
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Written from a survey of the game files (scripts/build_ipa_from_nsp.py with dm/games/profile_guess.py); packed on a PC and tried on one handheld (see README.md). The keys below
+# are the survey's guesses, not measured here: the memory keys are the values FINAL FANTASY X/X-2 HD Remaster measured for the same engine, and the game ran with them. README.md beside this file.
+# Format: see dm/games/README.md
+
+# ---- Identity ----
+title_id	0100EB100AB42000
+program_id	0100EB100AB42000
+
+# ---- App ----
+name	FINAL FANTASY XII THE ZODIAC AGE
+ipa	FinalFantasyXIIZodiacAge.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+# 1.0.0: the base game's control data (control.nacp +0x3060); v0, no update packed
+build	v0	1.0.0	main=598723c7a3d439356b5efb2f8bbcb807	subsdk0=b2bfdeddd143de2d821031fe668d097b	sdk=e29be8ad6778527aa248310d0c71a8a5
+package	v0
+shader_versions	v0
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	FFXII_TZA.vbf
+zip_store	.mkv:.vbf:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: a 3328 MB heap region
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon (Big Brain Academy: Brain vs. Brain sets a heap only then)
+sys_resource	0x0
+
+# ---- Shader split ----
+shader_groups	/gamedata/=gamedata /filesizetables/=filesizetables
+shader_note	Phyre NVN effects in FFXII_TZA.vbf (LZ4 blocks) and loose .fpo programs (provisional profile)
