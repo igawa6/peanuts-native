@@ -10,6 +10,7 @@
 
 static int checks, fails, events;
 #define CHECK(c, msg) do { checks++; if (!(c)) { fails++; fprintf(stderr, "FAIL: %s (line %d)\n", msg, __LINE__); } } while (0)
+Result dm_audren_serve(sf_req *r) { (void)r; return 0; } int dm_audren_served(void) { return 0; }   // PEANUTS: hle_sf.c's audio renderer service (hle_audren_svc.c), not served here
 uint32_t hle_new_event(uint32_t *write_end) { events++; if (write_end) *write_end = 0x2000 + events; return 0x1000 + events; }
 
 // A CMIF request for command cmd on a non-domain session (HIPC type 4, no special header, no descriptors): the data words from +8, "SFCI" at +0x10

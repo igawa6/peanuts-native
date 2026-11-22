@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <sys/wait.h>
 #include "../hle_audren.c"
+int dm_audren_served(void) { return 0; }   // PEANUTS: the host's audio renderer service (hle_audren_svc.c), not served here
 
 // PEANUTS(upstream-candidate): nxnative 18b435ac38 / a334797d12, more than one audio renderer (the stubs and tests of the two commits; capture and up_3_2 take the renderer)
 enum { SAMPLES = 240, NMIX = 8, NCMD = 6 };

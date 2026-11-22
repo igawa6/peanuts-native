@@ -20,6 +20,7 @@ static void work_free(void *p) {
 #define posix_memalign work_alloc
 #define free work_free
 #include "../hle_audren.c"
+int dm_audren_served(void) { return 0; }   // PEANUTS: the host's audio renderer service (hle_audren_svc.c), not served here
 #undef posix_memalign
 #undef free
 

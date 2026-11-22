@@ -15,9 +15,12 @@
 #define SF_MAX 64
 // A service's own answer to a command: its result, and a kernel handle to copy to the client in *copy (0: none). NULL: success, zeroed output (olsc:u)
 typedef Result (*sf_answer)(unsigned cmd, uint32_t *copy);
-static struct { char name[16]; int used, domain; uint64_t seen; sf_answer answer; } g_sf[SF_MAX];   // PEANUTS: seen is a 64-bit set of the objects / commands logged
+static struct { char name[16]; int used, domain; uint64_t seen; sf_answer answer; sf_serve serve; unsigned next_obj; } g_sf[SF_MAX];   // PEANUTS: seen is a 64-bit set of the objects / commands logged; serve, next_obj: services that read their requests (hle.h sf_req)
 static pthread_mutex_t g_sf_mu = PTHREAD_MUTEX_INITIALIZER;
 static const char *const sf_served[] = {"olsc:u", "caps:su", "caps:u", "caps:a", "caps:c", "caps:sc", "caps:ss", "bt", "btm:u"};   // PEANUTS(upstream-candidate): offline Bluetooth
+// PEANUTS: services that read their requests and answer with data (hle.h sf_req), each only when its condition holds (the audio renderer service: an SDK with no renderer of its own)
+Result dm_audren_serve(sf_req *r); int dm_audren_served(void);   // hle_audren_svc.c
+static struct { const char *name; sf_serve serve; int (*when)(void); } const sf_serving[] = {{"audren:u", dm_audren_serve, dm_audren_served}};
 
 static int sf_slot(uint32_t h) {
     unsigned i = h - SF_H0;
@@ -28,9 +31,14 @@ static uint32_t sf_new(const char *name, int domain, sf_answer answer) {
     unsigned i = 0; while (i < SF_MAX && g_sf[i].used) i++;
     if (i == SF_MAX) die("sf: more than %d host service sessions", SF_MAX);
     strlcpy(g_sf[i].name, name, sizeof g_sf[i].name); g_sf[i].used = 1; g_sf[i].domain = domain; g_sf[i].seen = 0; g_sf[i].answer = answer;
+    g_sf[i].serve = NULL; g_sf[i].next_obj = 2;   // PEANUTS
     pthread_mutex_unlock(&g_sf_mu);
     return SF_H0 + i;
 }
+// PEANUTS begin: sessions of services that read their requests (hle.h)
+uint32_t sf_new_session(const char *name, sf_serve serve) { uint32_t h = sf_new(name, 0, NULL); g_sf[h - SF_H0].serve = serve; return h; }
+unsigned sf_new_object(int slot) { pthread_mutex_lock(&g_sf_mu); unsigned o = g_sf[slot].next_obj++; pthread_mutex_unlock(&g_sf_mu); return o; }
+// PEANUTS end
 
 // PEANUTS begin (upstream-candidate): Scarlet and Violet 4.0.0 initialize BLE during boot. Model a console with no nearby or connected devices.
 // Command and reply layouts checked against nx2android v0.4.0's hle_sf.c and its Scarlet bring-up.
@@ -96,6 +104,8 @@ HLE_FORCE("_ZN2nn2sf4hipc31InitializeHipcServiceResolutionEv", "service name res
 HLE_FORCE("_ZN2nn2sf4hipc29FinalizeHipcServiceResolutionEv", "service name resolution (sm)", void, h_sf_FinRes, void) {}
 HLE_FORCE_BIG("_ZN2nn2sf4hipc20ConnectToHipcServiceEPNS_3svc6HandleEPKc", "connect to a service through sm → a host session for the services the host serves", Result, h_sf_Connect,   // PEANUTS: big stack (LOG)
           uint32_t *out, const char *name) {
+    for (size_t k = 0; k < sizeof sf_serving / sizeof *sf_serving; k++)   // PEANUTS: services that read their requests
+        if (!strncmp(name, sf_serving[k].name, 8) && sf_serving[k].when()) { *out = sf_new_session(sf_serving[k].name, sf_serving[k].serve); LOG("sf: %s → host session %#x (served by the host)", sf_serving[k].name, *out); return RES_OK; }
     for (size_t k = 0; k < sizeof sf_served / sizeof *sf_served; k++)
         if (!strncmp(name, sf_served[k], 8)) { *out = sf_new(sf_served[k], 0, NULL); LOG("sf: %s → host session %#x", sf_served[k], *out); return RES_OK; }   // PEANUTS(upstream-candidate): Bluetooth has command-specific replies
     LOG("[RED] sf: the game connects to service %.8s itself, which the host does not serve", name);
@@ -104,6 +114,7 @@ HLE_FORCE_BIG("_ZN2nn2sf4hipc20ConnectToHipcServiceEPNS_3svc6HandleEPKc", "conne
 HLE_FORCE("_ZN2nn2sf4hipc24CloseClientSessionHandleENS_3svc6HandleE", "close a session (kernel handle) → the host session", void, h_sf_Close, uint32_t h) {
     int i = sf_slot(h);
     if (i < 0) { LOG("[RED] sf: CloseClientSessionHandle on %#x, not a host session", h); return; }
+    if (g_sf[i].serve) { sf_req r = {.name = g_sf[i].name, .slot = i, .domain = g_sf[i].domain, .obj = 0, .cmd = SF_CLOSE}; g_sf[i].serve(&r); }   // PEANUTS: the service drops the session's objects
     pthread_mutex_lock(&g_sf_mu); g_sf[i].used = 0; pthread_mutex_unlock(&g_sf_mu);
 }
 // Control requests: the pointer buffer is the server's receive buffer for X descriptors (none: the host reads them in place), the domain conversion makes the session's object 1, a duplicate
@@ -121,7 +132,7 @@ HLE_FORCE("_ZN2nn2sf4hipc6client22ConvertSessionToDomainEPNS0_4cmif18CmifDomainO
 HLE_FORCE("_ZN2nn2sf4hipc6client16DuplicateSessionEPNS_3svc6HandleES4_", "control request: clone a session → a new host session to the same service", Result, h_sf_Dup, uint32_t *out, uint32_t h) {
     int i = sf_slot(h);
     if (i < 0) { LOG("[RED] sf: DuplicateSession on %#x, not a host session", h); return RES_FAIL; }
-    *out = sf_new(g_sf[i].name, g_sf[i].domain, g_sf[i].answer); return RES_OK;
+    *out = sf_new(g_sf[i].name, g_sf[i].domain, g_sf[i].answer); g_sf[*out - SF_H0].serve = g_sf[i].serve; return RES_OK;   // PEANUTS: serve
 }
 HLE_FORCE("_ZN2nn2sf4hipc6client18DuplicateSessionExEPNS_3svc6HandleES4_j", "control request: clone a session (with a tag) → a new host session to the same service", Result, h_sf_DupEx,
           uint32_t *out, uint32_t h, unsigned tag) { (void)tag; return h_sf_Dup(out, h); }
@@ -133,7 +144,9 @@ HLE_FORCE_BIG("_ZN2nn2sf4hipc15SendSyncRequestENS_3svc6HandleEPvm", "send a requ
     uint8_t *base = (uint8_t *)m;
     unsigned type = m[0] & 0xffff, nx = m[0] >> 16 & 15, nabw = (m[0] >> 20 & 15) + (m[0] >> 24 & 15) + (m[0] >> 28 & 15), ndw = m[1] & 0x3ff;
     uint32_t *p = m + 2;
-    if (m[1] >> 31) { uint32_t sh = *p++; p += (sh & 1 ? 2 : 0) + (sh >> 1 & 15) + (sh >> 5 & 15); }   // special header: process ID, copy and move handles
+    uint32_t *copies = NULL; unsigned ncopies = 0;   // PEANUTS: the copied handles, for services that read their requests
+    if (m[1] >> 31) { uint32_t sh = *p++; p += (sh & 1 ? 2 : 0); copies = p; ncopies = sh >> 1 & 15; p += (sh >> 1 & 15) + (sh >> 5 & 15); }   // special header: process ID, copy and move handles
+    uint32_t *desc = p;   // PEANUTS: X, then A, B, W descriptors
     p += nx * 2 + nabw * 3;
     size_t data = (size_t)((uint8_t *)p - base), cm = (data + 15) & ~(size_t)15;
     int dom = g_sf[i].domain && (type == 4 || type == 6);
@@ -145,7 +158,10 @@ HLE_FORCE_BIG("_ZN2nn2sf4hipc15SendSyncRequestENS_3svc6HandleEPvm", "send a requ
     if (trace) { char hx[3 * 0x80 + 1] = ""; for (unsigned k = 0; k < 0x80 && k < size; k++) snprintf(hx + 3 * k, 4, "%02x ", base[k]); LOG("sf: %s request: %s", g_sf[i].name, hx); }
     if (type == 2) return 0xf601u;   // HIPC Close: the session ends, and the kernel answers the closed-session result (SDK 21's client sends one for a session it is done with: Star Fox's camera session)
     if (type != 4 && type != 6) { LOG("[RED] sf: %s: HIPC message type %u not served", g_sf[i].name, type); return 0xe401u; }
-    if (dtype == 2) { memset(base, 0, 16); return RES_OK; }   // a domain object closed: nothing to answer
+    if (dtype == 2) {   // a domain object closed: nothing to answer
+        if (g_sf[i].serve) { sf_req r = {.name = g_sf[i].name, .slot = i, .domain = 1, .obj = obj, .cmd = SF_CLOSE}; g_sf[i].serve(&r); }   // PEANUTS
+        memset(base, 0, 16); return RES_OK;
+    }
     if (magic != 0x49434653) { LOG("[RED] sf: %s: request without SFCI (%#x)", g_sf[i].name, magic); return 0xe401u; }
     unsigned key = (obj & 0xff) << 16 | (cmd & 0xffff);   // log each object / command once
     pthread_mutex_lock(&g_sf_mu); uint64_t bit = 1ull << ((key * 2654435761u) >> 26); int first = !(g_sf[i].seen & bit); g_sf[i].seen |= bit; pthread_mutex_unlock(&g_sf_mu);   // PEANUTS: a set, not the last key
@@ -153,6 +169,31 @@ HLE_FORCE_BIG("_ZN2nn2sf4hipc15SendSyncRequestENS_3svc6HandleEPvm", "send a requ
     uint32_t copy = 0, move = 0, child = 0, value = 0;
     const char *name = g_sf[i].name;
     Result res = RES_OK;
+    // PEANUTS begin: a service that reads its request (hle.h sf_req): its arguments, buffers and handles in, its data, handle and object out
+    static __thread sf_req rq;
+    if (g_sf[i].serve) {
+        memset(&rq, 0, sizeof rq);
+        rq.name = name; rq.slot = i; rq.domain = dom; rq.obj = obj; rq.cmd = cmd & 0xffff;
+        size_t raw = hin + 16, raw_end = data + ndw * 4;
+        if (dom) { size_t pay = *(uint16_t *)(base + cm + 2); if (cm + 16 + pay < raw_end) raw_end = cm + 16 + pay; }
+        rq.in = base + raw; rq.nin = raw_end > raw ? raw_end - raw : 0;
+        for (unsigned k = 0; k < ncopies && k < 8; k++) rq.copy_in[rq.ncopy_in++] = copies[k];
+        uint32_t *q = desc;
+        for (unsigned k = 0; k < nx; k++, q += 2)
+            if (k < 4) rq.x[rq.nx++] = (sf_buf){q[1] | (uint64_t)(q[0] >> 12 & 15) << 32 | (uint64_t)(q[0] >> 6 & 7) << 36, q[0] >> 16};
+        unsigned na = m[0] >> 20 & 15, nb = m[0] >> 24 & 15;
+        for (unsigned k = 0; k < na + nb; k++, q += 3) {
+            sf_buf b = {q[1] | (uint64_t)(q[2] >> 28 & 15) << 32 | (uint64_t)(q[2] >> 2 & 7) << 36, q[0] | (uint64_t)(q[2] >> 24 & 15) << 32};
+            if (k < na) { if (rq.na < 4) rq.a[rq.na++] = b; } else if (rq.nb < 4) rq.b[rq.nb++] = b;
+        }
+        unsigned cf = m[1] >> 10 & 15, nc = cf == 2 ? 1 : cf > 2 ? cf - 2 : 0;   // receive list: after the data words
+        uint32_t *c = (uint32_t *)(base + data) + ndw;
+        for (unsigned k = 0; k < nc && (uint8_t *)(c + 2) <= base + size; k++, c += 2)
+            if (k < 4) rq.c[rq.nc++] = (sf_buf){c[0] | (uint64_t)(c[1] & 0xffff) << 32, c[1] >> 16};
+        res = g_sf[i].serve(&rq);
+        copy = rq.copy; move = rq.move; child = rq.child;
+    } else
+    // PEANUTS end
     if (g_sf[i].answer) res = g_sf[i].answer(cmd & 0xffff, &copy);
     else if (!strcmp(name, "bt") || !strcmp(name, "btm:u") || !strcmp(name, "btm:core"))
         res = bluetooth_answer(name, dom, obj, cmd, &copy, &move, &child, &value);
@@ -166,7 +207,12 @@ HLE_FORCE_BIG("_ZN2nn2sf4hipc15SendSyncRequestENS_3svc6HandleEPvm", "send a requ
     if (move) { m[1] |= 1u << 31; m[2] = 1u << 5; m[3] = move; }
     size_t out = 0x10 + (dom ? 16 : 0);
     uint32_t *o = (uint32_t *)(base + out); o[0] = 0x4f434653; o[1] = ver; o[2] = res; o[3] = 0;   // "SFCO"; a domain's out-object count before it stays 0
-    if (child) { m[4] = 1; o[4] = child; }
+    // PEANUTS: the service's raw output, then its object after it, both within the message buffer (end)
+    size_t room = end > out + 16 + 4 ? end - out - 16 - 4 : 0, nout = g_sf[i].serve ? (rq.nout < sizeof rq.out ? rq.nout : sizeof rq.out) : 0;
+    if (nout > room) { LOG("[RED] sf: %s command %u: %zu bytes of output do not fit the %llu-byte message; cut to %zu", name, cmd & 0xffff, nout, (unsigned long long)size, room); nout = room; }
+    if (nout) memcpy(o + 4, rq.out, nout);
+    size_t after = (nout + 3) / 4;
+    if (child) { m[4] = 1; o[4 + after] = child; }
     if (value) o[4] = value;
     // PEANUTS end
     return RES_OK;

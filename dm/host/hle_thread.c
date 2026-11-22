@@ -1459,6 +1459,14 @@ uint32_t hle_new_event(uint32_t *write_end) {   // A new kernel event, as svcCre
     pthread_mutex_lock(&G); uint32_t r = h_new(O_EVENT_R, e); if (write_end) *write_end = h_new(O_EVENT_W, e); pthread_mutex_unlock(&G);
     return r;
 }
+// PEANUTS: a host service's event (hle_new_event's write end), signaled from a host thread (the audio renderer service's 5 ms event, hle_audren_svc.c); 0 once the handle is closed
+int hle_signal_event_handle(uint32_t write_end) {
+    pthread_mutex_lock(&G);
+    event_t *e = h_peek(write_end, O_EVENT_W);   // a closed handle is the service's normal end, not an error
+    if (e) { e->signaled = 1; wake_sync_waiters(e); }
+    pthread_mutex_unlock(&G);
+    return e != NULL;
+}
 uint64_t hle_system_event_binding(void *ev) {
     uint64_t id = 0;
     pthread_mutex_lock(&g_se_lock);
