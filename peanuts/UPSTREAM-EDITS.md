@@ -2178,3 +2178,16 @@ On an NVN1 host a texture whose storage the game wrote from the CPU before the t
 | `dm/host/tests/t_android_texcontent.c` (new) | whole file | its host test | line 1 `PEANUTS(upstream-candidate)` |
 | `dm/host/tests/Makefile` | 3 | the test joins the run and the build rule | `PEANUTS(upstream-candidate)` comment before each hunk |
 | `docs/reference/nvn-objects.md` | 1 | the "Switch 1: uncompressed storage the CPU wrote before a texture's first sample" entry | `<!-- PEANUTS(upstream-candidate) -->` |
+
+### Round 25, DM_VK_PSO_FAIL_DUMP (2026-11-19)
+
+A graphics pipeline the driver refuses (`vkCreateGraphicsPipelines` returning `VK_ERROR_INITIALIZATION_FAILED`) was reported as one `[RED]` line with no way to see why. `DM_VK_PSO_FAIL_DUMP=<dir>` (Android, restart, off) writes each refused pipeline's final SPIR-V per stage to `<dir>/<vertex key>_<fragment key>_<stage>.spv` for `spirv-val`, logs the pipeline state under the red line and counts the refusals per vertex key. It is a diagnostic for any game, so it is an upstream candidate for Banana Native. It has not been run on a device from this tree.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_pso.c` | 6 | the refused-pipeline table, the state dump, the SPIR-V recorder hook | `PEANUTS(upstream-candidate)` (begin / end around the larger blocks) |
+| `dm/gfx/vk_android/vka_dev.c` | 1 | the recorder hook call | `PEANUTS(upstream-candidate)` |
+| `dm/gfx/vk_android/vka_ctl.c` | 1 | the restart-only table entry | `PEANUTS(upstream-candidate)` |
+| `android/TESTING.md` | 1 | the switch's paragraph | `<!-- PEANUTS(upstream-candidate) -->` |
+| `docs/env_switches.tsv` | 1 | the switch's row | `[PEANUTS]` |
+| `docs/advanced_settings.tsv` | 1 | its developer row (a test requires one per env_switches row) | allow-listed in `peanuts/upstream-unmarked.txt` |

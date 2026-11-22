@@ -20,7 +20,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/resource.h>
+#include <sys/stat.h>   // PEANUTS(upstream-candidate): mkdir (DM_VK_PSO_FAIL_DUMP)
 #include <errno.h>
+#include <stdarg.h>   // PEANUTS(upstream-candidate): va_list (fail_log_add)
 #include <time.h>
 
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
@@ -161,6 +163,25 @@ static vka_pck_stamp g_pck;   // the shaders the file was read with that this li
 static uint64_t pck_hash_of(void *ctx, uint64_t key) { (void)ctx; return vka_shader_content(key); }
 static VkPipelineCache g_pc; static char g_pc_path[1024], g_pw_path[1100]; static uint64_t g_made, g_saved_at, g_save_ns; static double g_create_ms;
 static uint64_t g_ngfx, g_ncs, g_nfail, g_ncs_over, g_create_ns, g_frame_made;   // all pipelines made (frame path, background and prewarm); g_frame_made / g_create_ns: on the frame path only
+// PEANUTS(upstream-candidate) begin: every graphics pipeline the driver refused, counted under its vertex key (full_pipeline's failures): the "failed pipelines by vertex key" line logged with
+// "pipelines up to frame" names which shader keys fail and how often. Bounded: the first 64 distinct keys seen; counted under g_mu (where g_nfail is incremented)
+static struct { uint64_t key; uint32_t n; } g_failkey[64];
+// Append fmt to a bounded log buffer, printing it with prefix when the buffer fills: these diagnostic lines outgrow one VLOG buffer.
+// Every entry is short, so an entry that does not fit the partial buffer always fits the emptied one
+static size_t fail_log_add(char *st, size_t o, size_t cap, const char *prefix, const char *fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    int w = vsnprintf(st + o, cap - o, fmt, ap);
+    va_end(ap);
+    if (w < 0) return o;
+    if ((size_t)w >= cap - o) {
+        VLOG("%s%s", prefix, st);
+        st[0] = 0; o = 0;
+        va_start(ap, fmt); w = vsnprintf(st, cap, fmt, ap); va_end(ap);
+        if (w < 0) return 0;
+    }
+    return o + (size_t)w < cap ? o + (size_t)w : cap - 1;
+}
+// PEANUTS(upstream-candidate) end
 static uint64_t g_probe_hit, g_probe_miss, g_probe_miss_ns;          // GPL: the cache-only try before a link (VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT)
 static _Atomic uint64_t g_save_ns_total, g_hy_draws, g_pw_wait_ns;
 // PEANUTS: startup pipeline prewarm and its progress counters.
@@ -371,6 +392,18 @@ void mtl_pso_line(char *out, size_t n) {
     if (V.gpl && k > 0 && (size_t)k + 3 < n) { memcpy(out + k, "; ", 3); vka_gpl_line(out + k + 2, n - (size_t)k - 2); }
     size_t o = strlen(out); char a[960]; vka_pso_async_line(a, sizeof a);   // PEANUTS: 960, was 200: the line was cut before the counts of the draws not skipped (vka_gfx_pipeline_now)
     if (a[0] && o + 2 < n) snprintf(out + o, n - o, "; %s", a);
+    // PEANUTS(upstream-candidate) begin: the refused pipelines counted per vertex key, logged with the counters above (which shader keys the driver refuses, DM_VK_PSO_FAIL_DUMP's diagnosis)
+    pthread_mutex_lock(&g_mu);
+    uint64_t nfail = g_nfail;
+    uint64_t keys[64]; unsigned counts[64]; int nf = 0;
+    for (int i = 0; i < 64 && nf < 64; i++) if (g_failkey[i].n) { keys[nf] = g_failkey[i].key; counts[nf] = g_failkey[i].n; nf++; }
+    pthread_mutex_unlock(&g_mu);
+    if (nfail && nf) {
+        char st[1024]; st[0] = 0; size_t q = 0;
+        for (int i = 0; i < nf; i++) q = fail_log_add(st, q, sizeof st, "failed pipelines by vertex key: ", "%s%016llx x%u", i ? ", " : "", (unsigned long long)keys[i], counts[i]);
+        if (st[0]) VLOG("failed pipelines by vertex key: %s", st);
+    }
+    // PEANUTS(upstream-candidate) end
     // PEANUTS: the prefetch and the frame path's links on a line of their own, when they changed (the line above is already cut by some callers)
     { static char last[520]; char b[520]; vka_pso_prefetch_line(b, sizeof b); if (b[0] && strcmp(b, last)) { memcpy(last, b, sizeof last); VLOG("%s", b); } }
 }
@@ -591,6 +624,44 @@ void vka_pso_builds_log(void) {
     }
     if (!n) VLOG("  being made now: no pipeline");
 }
+// PEANUTS(upstream-candidate) begin: DM_VK_PSO_FAIL_DUMP=<dir> (restart): the final SPIR-V of every stage of a pipeline the driver refuses. The hook wraps vkCreateShaderModule under
+// vka_shader_pfb_hook, so it sees the words the driver is given (after every rewrite) and copies pCode for the refused pipelines' .spv files.
+// With the switch unset the hook is never installed and nothing is recorded
+static PFN_vkCreateShaderModule g_spv_csm_next; static PFN_vkDestroyShaderModule g_spv_dsm_next;
+static const char *g_spv_dir;
+typedef struct { VkShaderModule m; void *code; size_t size; } spv_rec;
+static spv_rec *g_spv; static size_t g_spv_n, g_spv_cap; static int g_spv_mkdir;
+static pthread_mutex_t g_spv_mu = PTHREAD_MUTEX_INITIALIZER;
+static VkResult VKAPI_CALL csm_spv_rec(VkDevice d, const VkShaderModuleCreateInfo *ci, const VkAllocationCallbacks *a, VkShaderModule *m) {
+    VkResult r = g_spv_csm_next(d, ci, a, m);
+    if (!r && m && *m && ci && ci->pCode && ci->codeSize) {
+        void *cp = malloc(ci->codeSize);
+        if (cp) {
+            memcpy(cp, ci->pCode, ci->codeSize);
+            pthread_mutex_lock(&g_spv_mu);
+            if (g_spv_n == g_spv_cap) { size_t nc = g_spv_cap ? 2 * g_spv_cap : 256; spv_rec *n = realloc(g_spv, nc * sizeof *n); if (n) { g_spv = n; g_spv_cap = nc; } }
+            if (g_spv_n < g_spv_cap) g_spv[g_spv_n++] = (spv_rec){*m, cp, ci->codeSize};
+            else free(cp);
+            pthread_mutex_unlock(&g_spv_mu);
+        }
+    }
+    return r;
+}
+static void VKAPI_CALL dsm_spv_rec(VkDevice d, VkShaderModule m, const VkAllocationCallbacks *a) {
+    if (m) { pthread_mutex_lock(&g_spv_mu);
+             for (size_t i = 0; i < g_spv_n; i++) if (g_spv[i].m == m) { free(g_spv[i].code); g_spv[i] = g_spv[--g_spv_n]; break; }
+             pthread_mutex_unlock(&g_spv_mu); }
+    g_spv_dsm_next(d, m, a);
+}
+void vka_pso_spv_rec_hook(void) {
+    g_spv_dir = getenv("DM_VK_PSO_FAIL_DUMP");
+    if (!g_spv_dir || !*g_spv_dir) { g_spv_dir = NULL; return; }   // switch unset: record nothing
+    if (!vk.vkCreateShaderModule || vk.vkCreateShaderModule == csm_spv_rec || !vk.vkDestroyShaderModule) return;
+    g_spv_csm_next = vk.vkCreateShaderModule; vk.vkCreateShaderModule = csm_spv_rec;
+    g_spv_dsm_next = vk.vkDestroyShaderModule; vk.vkDestroyShaderModule = dsm_spv_rec;
+    VLOG("DM_VK_PSO_FAIL_DUMP=%s: the SPIR-V of every pipeline the driver refuses is written there", g_spv_dir);
+}
+// PEANUTS(upstream-candidate) end
 // The whole pipeline (optimized), with creation feedback (core in 1.3) for the line of a slow one: whether the pipeline cache had it and each stage's share. how: NULL = on the
 // frame path (counted as the frame's), else where it was made (" in the background", " (prewarm)")
 static VkPipeline full_pipeline(pstate *P, vka_shader *const sh[VKA_NSTAGE], const char *how) {
@@ -607,7 +678,12 @@ static VkPipeline full_pipeline(pstate *P, vka_shader *const sh[VKA_NSTAGE], con
     P->ci.pNext = fbi.pNext;
     uint64_t dns = now_ns() - t0; double ms_ = dns / 1e6;
     pthread_mutex_lock(&g_mu);
-    if (r) { p = VK_NULL_HANDLE; g_nfail++; } else { g_ngfx++; g_made++; if (!how) g_frame_made++; }
+    if (r) { p = VK_NULL_HANDLE; g_nfail++;
+        uint64_t fk = pre0 ? pre0->key : 0; int fs2 = -1;   // PEANUTS(upstream-candidate): the refused pipeline counted under its vertex (mesh) key
+        for (int i = 0; i < 64; i++) if (g_failkey[i].n && g_failkey[i].key == fk) { fs2 = i; break; }
+        if (fs2 >= 0) g_failkey[fs2].n++;
+        else for (int i = 0; i < 64; i++) if (!g_failkey[i].n) { g_failkey[i].key = fk; g_failkey[i].n = 1; break; }
+    } else { g_ngfx++; g_made++; if (!how) g_frame_made++; }
     g_create_ms += ms_; if (!how) g_create_ns += dns;   // made in the background or by prewarm: not the frame's time
     pthread_mutex_unlock(&g_mu);
     if (!how && !r && ms_ > 1000) vka_pso_save(2);   // a slow one on the frame path: saved within seconds, not at the next submission (see vka_pso_save)
@@ -621,6 +697,47 @@ static VkPipeline full_pipeline(pstate *P, vka_shader *const sh[VKA_NSTAGE], con
             if (!P->mesh && sh[2] && o < sizeof mid) o += (size_t)snprintf(mid + o, sizeof mid - o, " geometry %016llx", (unsigned long long)sh[2]->key);
             VRED("graphics pipeline (%s %016llx%s fragment %016llx, %u colour targets, topology %u): %d; its draws are skipped", P->mesh ? "mesh" : "vertex",
                  pre ? (unsigned long long)pre->key : 0ull, mid, sh[1] ? (unsigned long long)sh[1]->key : 0ull, P->ri.colorAttachmentCount, P->mesh ? 0u : P->ia.topology, r);
+            // PEANUTS(upstream-candidate) begin: the whole state the driver was given, under the red line (diagnostic: what the refused pipelines' create info holds)
+            char st[1024]; size_t q = 0; st[0] = 0;
+            const char *pl = "  failed pipeline state: ";
+            for (uint32_t i = 0; i < P->ns; i++)
+                q = fail_log_add(st, q, sizeof st, pl, "%s%s %p spec %s subgroup size %s;", i ? "," : "", stage_name(P->ss[i].stage), (void *)(uintptr_t)P->ss[i].module,
+                                 P->ss[i].pSpecializationInfo ? "yes" : "no", P->ss[i].pNext ? "yes" : "no");
+            q = fail_log_add(st, q, sizeof st, pl, " topology %u", (unsigned)P->ia.topology);
+            for (uint32_t i = 0; i < P->vi.vertexAttributeDescriptionCount; i++)
+                q = fail_log_add(st, q, sizeof st, pl, " a%u:b%u:f%u:o%u", P->va[i].location, P->va[i].binding, (unsigned)P->va[i].format, P->va[i].offset);
+            for (uint32_t i = 0; i < P->vi.vertexBindingDescriptionCount; i++)
+                q = fail_log_add(st, q, sizeof st, pl, " b%u:s%u:r%u", P->vb[i].binding, (unsigned)P->vb[i].stride, (unsigned)P->vb[i].inputRate);
+            q = fail_log_add(st, q, sizeof st, pl, " divisors %u", P->vds.vertexBindingDivisorCount);
+            for (uint32_t i = 0; i < P->ri.colorAttachmentCount && i < 8; i++)
+                q = fail_log_add(st, q, sizeof st, pl, " cf%u:f%u", i, (unsigned)P->cf[i]);
+            q = fail_log_add(st, q, sizeof st, pl, " depth f%u stencil f%u", (unsigned)P->ri.depthAttachmentFormat, (unsigned)P->ri.stencilAttachmentFormat);
+            q = fail_log_add(st, q, sizeof st, pl, " samples %u a2c %d", (unsigned)P->ms.rasterizationSamples, (int)P->ms.alphaToCoverageEnable);
+            if (P->bs.attachmentCount > 0)
+                q = fail_log_add(st, q, sizeof st, pl, " blend0 en %d s%u d%u o%u sa%u da%u oa%u mask 0x%x", (int)P->cb[0].blendEnable, (unsigned)P->cb[0].srcColorBlendFactor,
+                                 (unsigned)P->cb[0].dstColorBlendFactor, (unsigned)P->cb[0].colorBlendOp, (unsigned)P->cb[0].srcAlphaBlendFactor, (unsigned)P->cb[0].dstAlphaBlendFactor,
+                                 (unsigned)P->cb[0].alphaBlendOp, (unsigned)P->cb[0].colorWriteMask);
+            q = fail_log_add(st, q, sizeof st, pl, " depthclamp %d polygonmode %u", (int)P->rs.depthClampEnable, (unsigned)P->rs.polygonMode);
+            if (st[0]) VLOG("  failed pipeline state: %s", st);
+            // PEANUTS(upstream-candidate) end
+            // PEANUTS(upstream-candidate) begin: DM_VK_PSO_FAIL_DUMP=<dir>: the recorded final words of each stage, one .spv per stage of the refused pipeline (for spirv-val)
+            if (g_spv_dir) {
+                uint64_t keyv = pre ? pre->key : 0, keyf = sh[1] ? sh[1]->key : 0;
+                pthread_mutex_lock(&g_spv_mu);
+                if (!g_spv_mkdir) { g_spv_mkdir = 1; mkdir(g_spv_dir, 0777); }
+                for (uint32_t i = 0; i < P->ns; i++) {
+                    const void *code = NULL; size_t sz = 0;
+                    for (size_t j = 0; j < g_spv_n; j++) if (g_spv[j].m == P->ss[i].module) { code = g_spv[j].code; sz = g_spv[j].size; break; }
+                    char path[1200];
+                    snprintf(path, sizeof path, "%s/%016llx_%016llx_%s.spv", g_spv_dir, (unsigned long long)keyv, (unsigned long long)keyf, stage_name(P->ss[i].stage));
+                    if (!code) { VLOG("  failed pipeline stage %s: module %p was not recorded", stage_name(P->ss[i].stage), (void *)(uintptr_t)P->ss[i].module); continue; }
+                    FILE *f = fopen(path, "wb");
+                    if (f) { fwrite(code, 1, sz, f); fclose(f); VLOG("  failed pipeline stage %s: %zu bytes written to %s", stage_name(P->ss[i].stage), sz, path); }
+                    else VRED("DM_VK_PSO_FAIL_DUMP: cannot write %s (%d)", path, errno);
+                }
+                pthread_mutex_unlock(&g_spv_mu);
+            }
+            // PEANUTS(upstream-candidate) end
         }
     }
     else if (P->mesh) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 32) VLOG("mesh pipeline: task %016llx mesh %016llx fragment %016llx, %.1f ms%s", sh[6] ? (unsigned long long)sh[6]->key : 0ull,

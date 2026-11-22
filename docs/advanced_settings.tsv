@@ -678,6 +678,7 @@ DM_VK_PREWARM_WHY	developer	Diagnostics			text			both
 DM_VK_PROF	developer	Diagnostics			text			both						
 DM_VK_PRUNE_MS	developer	Graphics			text			both						
 DM_VK_PSO_ASYNC	advanced	Performance	Background pipelines		toggle			game		Game settings > Background pipelines				
+DM_VK_PSO_FAIL_DUMP	developer	Diagnostics			text			both						
 DM_VK_PSO_FAIR_MS	developer	Performance			text			both						
 DM_VK_PSO_LINK_NOW	developer	Performance			text			both						
 DM_VK_PSO_ORDER	developer	Performance			text			both						
