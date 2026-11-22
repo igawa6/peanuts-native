@@ -1244,6 +1244,17 @@ module; 16 a module is checked off the device (a 15-array pixel shader of the ga
 
 Checked on the AYN Thor (Turnip Gen8 V38) with Hogwarts Legacy only; on the tree before Round 17; on this tree `t_android_shlib` passes (clang with ASan and UBSan) and the app builds, and it has not run on a device yet. Not run: the Odin 2, Qualcomm's driver, other games. No shader-chain file is changed. The switch has its row in `docs/advanced_settings.tsv`.
 
+**A bindless handle spilled to local memory** ([A bindless handle spilled to local memory](../docs/reference/shaders.md#a-bindless-handle-spilled-to-local-memory)); a shader-chain change: the translator binary, `dmsh_chain.lock` and the chain headers are left to the maintainer's rebuild (the ABI does not change, so a library of the previous version plays while its game is prepared again):
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Translation/Optimizations/BindlessElimination.cs` | 1 | `ForwardLocalHandles` / `LocalHandle`: a load from a constant local-memory word takes the c[2] word every store to that word writes, when they all write the same one and no local-memory store has a computed address | `// PEANUTS:` |
+| `dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Translation/Optimizations/Optimizer.cs` | 1 | the pass runs after `GlobalToStorage` | `// PEANUTS:` |
+| `dm/third_party/ryujinx/README.md` | 1 line | the change in the list of local changes | plain text |
+| `docs/reference/shaders.md`, `dm/games/0100F7E00C70E000/README.md` | 1 entry, 2 lines | the entry and the game note's lines | `<!-- PEANUTS -->` / the note's |
+
+Checked off the device: a full build of Hogwarts Legacy 1.0.5's library with 0.1.7's translator and with one built from this change (Linux, `vk_android_build.py`): 65,045 of 65,047 both times, 83,431 modules valid for spirv-val, 103 entries differ (all compute); in `c8974ea070ce1208` the 55 `Failed to find handle source` notes go to 0 and its 22 bindings stay as they were. Not run on a device in this exact form.
+
 ## Breath of the Wild 1.6.0
 
 | Files | Change | Marker |
