@@ -2097,3 +2097,13 @@ Tears of the Kingdom's Depths caves drew chunks with another chunk's vertices fo
 | `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1 each | the entry and its symptom line | `<!-- PEANUTS -->` |
 
 Tests: the `t_android_*` suite; on the AYN Thor (Turnip v26.2.0-R5), the owner's Depths cave save: per-frame cave draw count changes 906 → 11 in about 1,300 frames. Upstream candidate: yes (the replay code is upstream's).
+
+### Round 25, android_replay.py finds the Android SDK on Linux (2026-11-19)
+
+`dm/tools/android_replay.py` took the SDK root from the macOS location, `~/Library/Android/sdk`, so on Linux the NDK and cmake paths it builds from that
+root did not exist. It now takes the first existing directory of `$ANDROID_HOME`, `$ANDROID_SDK_ROOT`, the macOS location and `~/Android/Sdk`, and falls
+back to the macOS location when none exists, which is the old behaviour. The fix holds for any host, so it is an upstream candidate for Banana Native.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/tools/android_replay.py` | 1 | the SDK lookup: first existing of `$ANDROID_HOME`, `$ANDROID_SDK_ROOT`, the macOS and Linux SDK directories | `PEANUTS(upstream-candidate)` |
