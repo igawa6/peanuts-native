@@ -60,9 +60,14 @@ brief, these are listed here rather than marked:
 | `dm/gfx/tools/vk_android_spv.py` (2026-11-14, second edit) | `buffer_textures_split`: a buffer texture the translator declares as a combined image and sampler of Dim Buffer becomes a plain sampled Buffer image (UNIFORM_TEXEL_BUFFER, no sampler); `OP_IMAGE` constant (OCTOPATH TRAVELER 0: 6,749 compute, 2,090 vertex and 74 pixel shaders' bindings read as unbound) | feeds `DMSH_VK_CHAIN` | Yes — a general fix: Vulkan has no combined descriptor of a texel buffer |
 | `dm/gfx/tools/vk_android_build.py` (2026-11-14, second edit) | calls `buffer_textures_split` before reflection; the kinds `TEX_DYN` / `SAMP_DYN` for Ryujinx's `<stage>_tb_cb0_40000000` / `_s_cb0_40000000` fallback arrays (profile key `tex_dyn_slots`) | feeds `DMSH_VK_CHAIN` | Yes, with the host side (vka_bind.c) |
 | `dm/gfx/nvn/dmsh_abi_vk.h` | `DMSH_VK_KIND_TEX_DYN` (23) and `DMSH_VK_KIND_SAMP_DYN` (24) | feeds `DMSH_VK_CHAIN` and `DMSH_VK_ABI` | Yes, with the two edits above |
+| `dm/gfx/tools/vk_android_spv.py` (2026-11-21) | `dual_source`: a float `vec4` output 1 (`Location 0`, `Index 1`) is written through a Private shadow variable that is copied whole to the new Output variable before each return, instead of per component (FINAL FANTASY XII THE ZODIAC AGE: Qualcomm 512.676 refused 25 of 94 pipelines with `VK_ERROR_INITIALIZATION_FAILED`; Turnip accepts both forms) | feeds `DMSH_VK_CHAIN`; the change moves it (`dmsh_chain_vk.h` e084efc69b46 → 55c71414d9fc, regenerated; `DMSH_VK_ABI` stays 3d4e8bb1e1e8: old libraries keep playing while the delta runs). The hunk carries a `PEANUTS(upstream-candidate)` marker as well | Yes — a general fix: no game-specific branch; any dual-source shader on that driver |
 
 `dm/gfx/tools/vk_android_delta.py` is untouched; it is an exception by the same rule if a future change
 touches it.
+
+The 2026-11-21 `vk_android_spv.py` edit's test, `test_dual_source_whole_store` and its `FS_DUAL` module in `dm/tools/tests/test_vk_android_abi.py`,
+is marked `PEANUTS(upstream-candidate)` and goes upstream with it. No `vk_android_same.tsv` row: the library's bytes for a dual-source
+shader change by design, so there is no same-bytes claim to record.
 
 Since the update to Banana Native v0.3.26 (Round 17) `dm/gfx/nvn/dmsh_abi_vk.h` also differs from upstream's in one number: upstream's new kind
 `DMSH_VK_KIND_IMG_UBO` is 25 here (23 upstream), because 23 and 24 are this fork's `TEX_DYN` and `SAMP_DYN` in every library its releases built.
