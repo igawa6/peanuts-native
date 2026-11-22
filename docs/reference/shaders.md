@@ -206,6 +206,15 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Fix:** `shader_split.py` lists a file that starts with `IGA\x1a` by its own tables (`iga_entries`), decodes every file in it (`iga_member`) and takes the GLSLC outputs of those that hold the magic (`iga_shaders`). Which blocks are compressed comes from the block table alone: a stored block can begin with bytes that read as a small length (65 files of this game have one). Each output is one stage, so the vertex shaders get the pixel input cover ([Single-stage programs paired with a cover](#single-stage-programs-paired-with-a-cover)).
 - **Found on:** [Crash Team Racing Nitro-Fueled](../../dm/games/0100F9F00C696000/README.md): 401 archives, 74,311 files, 2,582 outputs in the 86 shader files of `shaders_nx.pak`, 1,933 unique shaders; none in the other 400.
 
+### BNSH files in TT Games' DAT archives
+
+<!-- PEANUTS(upstream-candidate): the TT Games DAT reader, first met on LEGO CITY UNDERCOVER -->
+
+- **Symptom:** the split finds only the GLSLC outputs in `main` (`shaders: 331 …; sources main 331`), and the RomFS is a few multi-GB `GAME*.DAT` files (an update adds `PATCH.DAT`) whose first u32 has its top bit set.
+- **Cause:** TT Games' engine keeps its files in DAT archives: the first u32 gives the index's place (`((v ^ 0xffffffff) << 8) + 0x100` with the top bit set), the big-endian index (`.CC40TAD`, version -11) a name table, a name tree of 12-byte entries and a 16-byte entry per file (u64 offset, stored length, length with bit 31 set when compressed). A compressed file is a run of `RFPK` chunks (u32 stored length, u32 length; equal lengths mean stored), each a RefPack-like stream with its own bit layout (the game's `unref`), or `ZIPX` chunks (RC4, the key the chunk's length; the `.txt` files). The shaders are BNSH files of one stage each in the `.nnx_shaders` resources, which no stored byte shows.
+- **Fix:** `shader_split.py` lists every archive by its index (`ttdat_jobs`, `dm/gfx/tools/ttdat.py`), decodes each file in ranges of about equal length and scans it as a loose file (`ttdat_shaders`). The decoder is the game's `unref` op for op. In pure Python the full split of the five archives (14.7 GB of files) takes about an hour on 8 threads. Test: `test_split_ttdat.py`.
+- **Found on:** [LEGO CITY UNDERCOVER](../../dm/games/010085500130A000/README.md): 5 archives, 75,792 files, 24,393 shaders (23,731 first found in 1,053 of the 3,527 `.nnx_shaders` files, 662 in `main`).
+
 ### Gust's chunked zlib `.gz` files
 
 - **Symptom:** every frame black, the title screen included, while the game runs at full rate and draws (about 19,000 NVN calls a frame), with `[RED] shader … is not in the shader map` (26 keys in the first minute) and `program has no vertex shader`; the dumped shaders (`DM_NVN_SHDUMP`) match no file byte for byte, and some differ from a split shader only in the control section's compile information (+0x7d0), which is a sign of another GLSLC compile of the same source, not of a shared section.

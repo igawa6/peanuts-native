@@ -1252,6 +1252,35 @@ def mvgl_shaders(path, rel, names, out):
     finally: a.f.close()
 # PEANUTS end
 
+# PEANUTS: TT Games' DAT archives (ttdat.py), LEGO CITY UNDERCOVER.
+TTDAT = 'TT Games DAT'   # job tag of a range of a DAT archive's files (ttdat_jobs)
+def ttdat_jobs(files, parts=64):
+    """Every file of every TT Games DAT archive (found by its index, not its name) in ranges of about equal length: LEGO CITY UNDERCOVER's five, 14.7 GB of files, 61,000 of them RFPK-
+    compressed; its shaders are BNSH files in the .nnx_shaders resources, but no file name is relied on. → ([(path, rel, (TTDAT, files)), …], the DAT paths)"""
+    import ttdat
+    dats = []
+    for p, r in files:
+        if not ttdat.is_ttdat(p): continue
+        try: dats.append((p, r, ttdat.files(p)))
+        except (ValueError, struct.error) as e: print(f'[RED] /{r}: the DAT index cannot be read ({e}); scanned as one file', flush=True)
+    jobs, step = [], max(sum(e[3] for _, _, es in dats for e in es) / parts, 1)
+    for p, r, es in dats:
+        cur, size = [], 0
+        for e in es:
+            cur.append(e); size += e[3]
+            if size >= step: jobs.append((p, r, (TTDAT, tuple(cur)))); cur, size = [], 0
+        if cur: jobs.append((p, r, (TTDAT, tuple(cur))))
+    return jobs, {p for p, _, _ in dats}
+
+def ttdat_shaders(path, rel, ents, out):
+    """A range of a DAT archive's files (ttdat_jobs), each decoded (RFPK / ZIPX chunks, or stored) and scanned like a loose file; labels /<DAT>/<path in the archive>"""
+    import ttdat
+    with open(path, 'rb') as f:
+        for e in ents:
+            try: d = ttdat.read(path, e, f)
+            except ValueError as x: print(f'[RED] /{rel}/{e[0]}: {x}; not scanned', flush=True); continue
+            scan_blob(d, f'/{rel}/{e[0]}', out)
+
 # PEANUTS: Split Diablo III packages by byte range.
 D3CPK = b'D3CPK'   # job tag of a Diablo III package's byte range (d3cpk_jobs)
 def d3cpk_jobs(files, parts=64):
@@ -3651,6 +3680,9 @@ def scan_file_in(args):
     if len(args) > 2 and args[2][0] == D3CPK:   # a byte range of a Diablo III package (d3cpk_jobs)
         d3cpk_shaders(path, rel, args[2][1], args[2][2], found)
         return rel, uniq_keys(found), var_pairs(found), trees
+    if len(args) > 2 and args[2][0] == TTDAT:   # PEANUTS: files of a TT Games DAT archive (ttdat_jobs)
+        ttdat_shaders(path, rel, args[2][1], found)
+        return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and head[:4] == CPK:   # entries of a CRI CPK (cpk_jobs)
         cpk_shaders(path, rel, args[2], found)
         return rel, uniq_keys(found), var_pairs(found), trees
@@ -4438,9 +4470,10 @@ def scan_jobs(files, want=None, mains=(), nros=()):
     fb_jobs, fbs = frostbite_jobs(files)   # EA SPORTS FC 27's Frostbite bundles, Oodle Leviathan decoded by the game's own decoder in the Mac host
     pd_jobs, pdats = pdat_jobs(by_head)
     mv_jobs, mvgls = mvgl_jobs(by_head)   # PEANUTS: Digimon Story Time Stranger's 64-bit MVGL archives
+    tt_jobs, tts = ttdat_jobs(by_head)   # PEANUTS: LEGO CITY UNDERCOVER's TT Games DAT archives
     # PEANUTS: Schedule package ranges alongside other split jobs.
-    big += pak_jobs + tr_jobs + ue_jobs + bd_jobs + arc_jobs + pz_jobs + ck_jobs + d3_jobs + cr_jobs + zp_jobs + ah_jobs + fb_jobs + pd_jobs + mv_jobs   # PEANUTS: + mv_jobs
-    files = [(p, r) for p, r in files if not linkdata_jobs(p, r) and p not in paks and p not in trp and p not in uep and p not in bdts and p not in arcs and p not in pkzs and p not in cpks and p not in d3s and p not in cras and p not in zips and p not in arhs and p not in fbs and p not in pdats and p not in mvgls]   # PEANUTS: and mvgls
+    big += pak_jobs + tr_jobs + ue_jobs + bd_jobs + arc_jobs + pz_jobs + ck_jobs + d3_jobs + cr_jobs + zp_jobs + ah_jobs + fb_jobs + pd_jobs + mv_jobs + tt_jobs   # PEANUTS: + mv_jobs, + tt_jobs
+    files = [(p, r) for p, r in files if not linkdata_jobs(p, r) and p not in paks and p not in trp and p not in uep and p not in bdts and p not in arcs and p not in pkzs and p not in cpks and p not in d3s and p not in cras and p not in zips and p not in arhs and p not in fbs and p not in pdats and p not in mvgls and p not in tts]   # PEANUTS: and mvgls, and tts
     if want is not None: big, files = [j for j in big if j[1] in want], [f for f in files if f[1] in want]
     return big, files
 
