@@ -2191,3 +2191,13 @@ A graphics pipeline the driver refuses (`vkCreateGraphicsPipelines` returning `V
 | `android/TESTING.md` | 1 | the switch's paragraph | `<!-- PEANUTS(upstream-candidate) -->` |
 | `docs/env_switches.tsv` | 1 | the switch's row | `[PEANUTS]` |
 | `docs/advanced_settings.tsv` | 1 | its developer row (a test requires one per env_switches row) | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+### Round 25, android_replay.py finds the Android SDK on Linux (2026-11-19)
+
+`dm/tools/android_replay.py` took the SDK root from the macOS location, `~/Library/Android/sdk`, so on Linux the NDK and cmake paths it builds from that
+root did not exist. It now takes the first existing directory of `$ANDROID_HOME`, `$ANDROID_SDK_ROOT`, the macOS location and `~/Android/Sdk`, and falls
+back to the macOS location when none exists, which is the old behaviour. The fix holds for any host, so it is an upstream candidate for Banana Native.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/tools/android_replay.py` | 1 | the SDK lookup: first existing of `$ANDROID_HOME`, `$ANDROID_SDK_ROOT`, the macOS and Linux SDK directories | `PEANUTS(upstream-candidate)` |

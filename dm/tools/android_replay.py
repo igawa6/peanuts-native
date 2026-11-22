@@ -12,7 +12,11 @@ reads the capture and the pack's shader library from /sdcard, keeps its own pipe
 import argparse, os, shlex, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SDK = os.path.expanduser('~/Library/Android/sdk')
+# PEANUTS(upstream-candidate): The SDK location differs by OS (macOS ~/Library/Android/sdk, Linux ~/Android/Sdk) and by
+# environment ($ANDROID_HOME/$ANDROID_SDK_ROOT), so pick the first that exists.
+SDK = next((p for p in (os.environ.get('ANDROID_HOME'), os.environ.get('ANDROID_SDK_ROOT'),
+                         os.path.expanduser('~/Library/Android/sdk'), os.path.expanduser('~/Android/Sdk'))
+            if p and os.path.isdir(p)), os.path.expanduser('~/Library/Android/sdk'))
 NDK = os.path.join(SDK, 'ndk', '28.2.13676358')
 CMAKE = os.path.join(SDK, 'cmake', '3.31.5', 'bin')
 PHONE_DIR = '/data/local/tmp/nxreplay'
