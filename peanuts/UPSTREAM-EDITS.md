@@ -2161,3 +2161,15 @@ method, no game-specific branch.
 |---|---|---|---|
 | `dm/gfx/tools/vbf.py` | 2 | `read`: a compressed block zlib rejects is decoded as LZ4 (`lz4.block` imported lazily inside the fallback, `LZ4BlockError` → `invalid VBF compressed block`); the module docstring names the three block kinds | `PEANUTS(upstream-candidate)` |
 | `dm/gfx/tests/test_vbf.py` | 2 | `test_lz4_compressed_and_raw_blocks` and its `lz4.block` import | `PEANUTS(upstream-candidate)` |
+
+### Round 25, NVN1 storage-first-use (2026-11-19)
+
+On an NVN1 host a texture whose storage the game wrote from the CPU before the texture's first sample was treated as GPU content and cleared (`zero image over data`): FINAL FANTASY XII THE ZODIAC AGE's target circles and lines sampled alpha 0.0%. `storage_sampled_content` in `dm/gfx/vk_android/vka_tex.c` now takes the storage at the first use when it holds data (the NVN2 rule's NVN1 arm) and keeps all-zero storage as before; the rule itself is a pure function in `dm/gfx/vk_android/vka_texcontent.h` with a host test. The rule holds for any NVN1 game, so it is an upstream candidate for Banana Native. Other NVN1 games have not been run after it.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_tex.c` | 5 | `storage_sampled_content` and its call sites | `PEANUTS(upstream-candidate)` (begin / end around the rewritten block) |
+| `dm/gfx/vk_android/vka_texcontent.h` (new) | whole file | the pure first-use rule | line 1 `PEANUTS(upstream-candidate)` |
+| `dm/host/tests/t_android_texcontent.c` (new) | whole file | its host test | line 1 `PEANUTS(upstream-candidate)` |
+| `dm/host/tests/Makefile` | 3 | the test joins the run and the build rule | `PEANUTS(upstream-candidate)` comment before each hunk |
+| `docs/reference/nvn-objects.md` | 1 | the "Switch 1: uncompressed storage the CPU wrote before a texture's first sample" entry | `<!-- PEANUTS(upstream-candidate) -->` |
