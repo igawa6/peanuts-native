@@ -39,6 +39,9 @@ The rewritten modules take 186 MB, more than the default 64 MB of used memory, s
 
 ## Found on this game
 
+- Resolved (on the Thor with Turnip 27.0.0 R2, 2026-11-22: "Zald" reaches the game's "Is "Zald" okay?" question; the system driver not run): every character name was refused ("That name cannot be used", issue 292). The game's name check reads the profanity filter's word list version 0, the host's old answer, as "no filter" and refuses the name: [`ngc::ProfanityFilter::GetContentVersion` reports a word list](../../../docs/reference/services.md#ngcprofanityfiltergetcontentversion-reports-a-word-list).
+- Found while looking for that: the name entry registers a `swkbd::SetTextCheckCallback` callback, which the host never called (it is called now and accepts the name), and SDK 18.3.5 moved the keyboard's work buffer to `+0x518`: [The software keyboard's text check and the argument layout of later SDKs](../../../docs/reference/services.md#the-software-keyboards-text-check-and-the-argument-layout-of-later-sdks).
+
 - `[RED] NVN unimplemented function called: nvnCommandBufferSetSubpixelPrecisionBias` and `…SetConservativeRasterDilate`, about 30 times each up to character creation, every call with zero arguments (the defaults); nothing on screen depends on them so far.
 
 ## Open

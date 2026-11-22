@@ -169,7 +169,10 @@ HLE_FORCE("_ZN2nn3ngc15ProfanityFilterC1Ev", "profanity filter, the word list is
 }
 HLE_FORCE("_ZN2nn3ngc15ProfanityFilterD1Ev", "profanity filter", void, h_ngc_Dtor, void *self) { (void)self; }
 HLE_FORCE("_ZN2nn3ngc15ProfanityFilter10InitializeEPvm", "profanity filter init; the host has no word list", Result, h_ngc_Init, void *self, void *work, uint64_t sz) { (void)self; (void)work; (void)sz; return RES_OK; }
-HLE_FORCE("_ZN2nn3ngc15ProfanityFilter17GetContentVersionEv", "word list version; the host returns 0", uint32_t, h_ngc_Ver, void *self) { (void)self; return 0; }
+// The SDK asks the ngc service for the version of the word list (system data; SDK 18.3.5 sdk+0x39c3b8, through the service object's vtable +0x20). A Switch always has a word list,
+// so the version is never 0, and games read 0 as "no filter": STORY OF SEASONS: Grand Bazaar refused every name the player typed (main+0x2bd13bc: version 0 → the name check
+// reports a failure, "That name cannot be used", issue 292). The host's empty word list is version 1
+HLE_FORCE("_ZN2nn3ngc15ProfanityFilter17GetContentVersionEv", "word list version; the host's empty list is version 1 (0 reads as no filter)", uint32_t, h_ngc_Ver, void *self) { (void)self; return 1; }
 HLE_FORCE("_ZN2nn3ngc15ProfanityFilter19CheckProfanityWordsEPjjPPKcm", "profanity check; never a hit", Result, h_ngc_Check, void *self, uint32_t *masks, uint32_t pat, const char **words, uint64_t n) {
     (void)self; (void)pat; (void)words;
     for (uint64_t i = 0; i < n; i++) masks[i] = 0;
