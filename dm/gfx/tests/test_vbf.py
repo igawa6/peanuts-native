@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import zlib
+import lz4.block  # PEANUTS(upstream-candidate): lz4.block builds and breaks the LZ4 blocks of the test below.
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 os.environ.setdefault('DM_GAME', '010015100B514000')
@@ -38,6 +39,27 @@ class Vbf(unittest.TestCase):
             self.assertEqual(len(entries), 1)
             with path.open('rb') as f: self.assertEqual(vbf.read(f, entries[0]), payload)
             path.write_bytes(path.read_bytes()[:-2])
+            with path.open('rb') as f:
+                with self.assertRaises(ValueError): vbf.read(f, entries[0])
+
+    # PEANUTS(upstream-candidate): FFXII The Zodiac Age's VBF blocks are LZ4, not zlib: cover the decoder's fallback.
+    def test_lz4_compressed_and_raw_blocks(self):
+        payload = bytes(range(256)) * 256 + b'last block' * 100
+        compressed = lz4.block.compress(payload[65536:], store_size=False)
+        names = b'a.fx.phyre\0'
+        hlen = 16 + 64 + 4 + len(names) + 4
+        header = bytearray(struct.pack('<4sIQ', b'SRYK', hlen, 1) + bytes(32))
+        header += struct.pack('<IIQQQ', 0, 0, len(payload), hlen, 0)
+        header += struct.pack('<I', len(names) + 4) + names + struct.pack('<2H', 0, len(compressed))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'test.vbf'; path.write_bytes(header + payload[:65536] + compressed)
+            entries = vbf.entries(path)
+            self.assertEqual(len(entries), 1)
+            with path.open('rb') as f: self.assertEqual(vbf.read(f, entries[0]), payload)
+            corrupted = bytearray(path.read_bytes())
+            start = hlen + 65536
+            corrupted[start:start + len(compressed)] = b'\xff' * len(compressed)
+            path.write_bytes(bytes(corrupted))
             with path.open('rb') as f:
                 with self.assertRaises(ValueError): vbf.read(f, entries[0])
 

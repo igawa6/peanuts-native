@@ -2141,3 +2141,20 @@ extended to unaligned offsets, no game-specific branch.
 |---|---|---|---|
 | `dm/gfx/tools/shader_split.py` | 3 (5 in a one-line-context diff) | `raw_shaders`: the fallback candidate list for a control section with no built-address evidence, the unaligned control-section collection and its neighbour pass with the `taken` ranges (declared on a marked line), and the docstring's sentences on them | `PEANUTS(upstream-candidate)` |
 | `dm/tools/tests/test_raw_shaders_adjacent.py` (new) | whole file | the eight cases on a synthetic module image; a new file; the first line of its docstring carries the marker | `PEANUTS(upstream-candidate)` |
+
+### Round 25 (2026-11-19) — vbf.py LZ4 blocks
+
+FFXII The Zodiac Age's `FFXII_TZA.vbf` (Virtuos SRYK) has the same layout as FFX's archives — 64 KB blocks, a
+16-bit stored length per block, length == uncompressed size means raw — but its compressed blocks are raw LZ4
+blocks, not zlib: `vbf.read` aborted with zlib's `Error -3 ... incorrect header check`. Verified on the real
+archive: `lz4.block.decompress(block, uncompressed_size=n)` returned exactly n bytes for 17,206 of 17,206
+sampled compressed blocks; FFX's blocks stay zlib. The zlib path is unchanged and runs first; LZ4 is only the
+fallback when zlib rejects the block, and any failure stays the existing `ValueError` messages.
+`dm/gfx/tests/test_vbf.py` builds a small SRYK archive with one LZ4 block and one raw block, and its corrupted
+LZ4 block raises `ValueError`. Upstream candidate: yes — a general reader change for one more Virtuos compression
+method, no game-specific branch.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/vbf.py` | 2 | `read`: a compressed block zlib rejects is decoded as LZ4 (`lz4.block` imported lazily inside the fallback, `LZ4BlockError` → `invalid VBF compressed block`); the module docstring names the three block kinds | `PEANUTS(upstream-candidate)` |
+| `dm/gfx/tests/test_vbf.py` | 2 | `test_lz4_compressed_and_raw_blocks` and its `lz4.block` import | `PEANUTS(upstream-candidate)` |

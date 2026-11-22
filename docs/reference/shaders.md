@@ -32,7 +32,7 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 ### Phyre NVN effects in Virtuos VBF archives
 
 - **Symptom:** the shader split finds no game programs despite loose `.fx.phyre` effects and multi-GB `.vbf` archives.
-- **Cause:** Phyre stores GPU code immediately before its control section, often at unaligned offsets inside `RYHP` effect containers. Virtuos `SRYK` archives keep the effects in 64 KB zlib or raw blocks. These are neither BNSH nor whole GLSLC outputs.
+- **Cause:** Phyre stores GPU code immediately before its control section, often at unaligned offsets inside `RYHP` effect containers. Virtuos `SRYK` archives keep the effects in 64 KB zlib or raw blocks. These are neither BNSH nor whole GLSLC outputs. The codec of a compressed archive is the archive's own: zlib in FINAL FANTASY X/X-2 HD Remaster, raw LZ4 in FINAL FANTASY XII THE ZODIAC AGE. <!-- PEANUTS(upstream-candidate): the LZ4 codec was met on FINAL FANTASY XII THE ZODIAC AGE. -->
 - **Fix:** `vbf.py` reads the Switch archive's two hash tables, file records, names and block lengths through the RomFS adapter. The split reads compiled effects and shader members without extracting textures or audio. `phyre_shaders` verifies the adjacent code header, the control's code length and stage, and preserves the original bytes and keys. Single-stage vertex programs use a pixel-input cover for padding.
 - **Found on:** [FINAL FANTASY X/X-2 HD Remaster](../../dm/games/0100BC300CB48000/README.md); base and both supplied DLC packs yield 5,752 unique shaders.
 - **Check:** `test_vbf.py` covers raw and zlib blocks, shared/missing members, truncation, unaligned effects, loose shader keys and inconsistent lengths. All 5,752 programs translate on the Mac.
