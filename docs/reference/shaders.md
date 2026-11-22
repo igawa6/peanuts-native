@@ -325,6 +325,14 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Fix:** the reader (`raw_shaders`) takes them. Both neighbours can pass the header and length checks, so it takes only a code area the code builds the address of, the nearest one to the control section's.
 - **Found on:** [Advance Wars 1+2: Re-Boot Camp](../../dm/games/0100300012F2A000/README.md) (Unity 2020.2 with Bink 2's Unity plugin). Of 25 `main`s on hand no other has such control sections.
 
+### Embedded programs in main that no code points at (adjacent code area, unaligned control section)
+
+<!-- PEANUTS(upstream-candidate): offline programs embedded in `main` that no relocation and no built address points at, found by the neighbour rule; first met on FINAL FANTASY XII THE ZODIAC AGE. -->
+
+- **Symptom:** the packed shader library has no program for a key the game binds at run time (`[RED] shader <key> is not in the shader map`), the scene draws black while sound and cutscenes play, and the split prints no `[RED]` line about it, so nothing says where the program is.
+- **Cause:** the game builds such programs from NVN control sections embedded in `main` with their code area immediately before them, and no relocation slot points at them and no `adrp` + `add` pair in the code builds their addresses, the two kinds of evidence `raw_shaders` uses for a control section that is in no GLSLC output and no BNSH file. Half of them sit at offsets that are not 4-byte aligned (here `main` +`0xfca50d` with its code area at `0xfca30d`, and `+0xfd1699` with its code at `+0xfd1599`), which the aligned scan never looked at.
+- **Fix:** `raw_shaders` takes them on the neighbour rule: a control section with no built-address evidence keeps the neighbour that passes the stage and length checks, and only when exactly one of the two neighbours passes them. A control magic at an odd offset is very often just bytes, so one with no passing neighbour is left out in silence. Unaligned matches are collected with the same skip ranges (GLSLC outputs, BNSH files) and the same `known` filter as the aligned ones, lengths bounded to the module, and a match inside a program already taken is not taken a second time.
+
 ### SNVN program records in Retro Studios' RFRM forms
 
 - **Symptom:** the provisional split finds only `main`'s 294 GLSLC outputs; the 3D scene and the title logo are magenta, with `[RED] shader … is not in the shader map` lines.

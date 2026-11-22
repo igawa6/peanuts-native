@@ -2357,7 +2357,11 @@ def raw_shaders(d, label, known=()):
     from, which lies right after the control section's own length (control +0x20, at 16-byte alignment) or right before it. Only a code area the code builds the address of is taken: both neighbours
     can look right, so the one whose address the code builds nearest to the control section's (within 1 KB) is taken: main+0x4a2c670 is a compute shader whose code is the 0x100 bytes before it (adds 0x20 apart,
     main+0x1548014 / +0x1548034); after it lies another vertex shader's code area, whose first 0x100 bytes pass the header and length checks, and that area is the vertex shader main+0x4a2d290 takes from
-    before itself (main+0x1548358 / +0x1548374, 0x324 bytes from the first). Compute code areas have no header (SDK 10), so the stage is glslc_stage's, and a headerless one is checked by its length only, never
+    before itself (main+0x1548358 / +0x1548374, 0x324 bytes from the first). PEANUTS(upstream-candidate): where the code builds no address at all (FINAL FANTASY XII THE ZODIAC AGE's 7 offline programs, whose code area lies right before
+    the control section), the neighbour that passes the stage and length checks is taken, and only when exactly one of the two neighbours passes them. Control sections found at unaligned offsets (the rest of
+    that game's programs, at main+0xfca50d and +0xfd1699, whose code areas lie 0x200 and 0x100 bytes before them) are taken only by that neighbour rule, and left out in silence when no neighbour passes, a
+    control magic at an odd offset being very often just bytes. Compute code areas have no header (SDK 10), so the stage is
+    glslc_stage's, and a headerless one is checked by its length only, never
     across a control section. known: the control sections the other readers took from this main (Celeste's MonoGame effect in main holds some outside any GLSLC output or BNSH file), left out.
     Of 25 mains on hand only that one has such control sections, so the tables of every other game stay as they were"""
     skip = []
@@ -2367,7 +2371,13 @@ def raw_shaders(d, label, known=()):
     for m in re.finditer(b'BNSH\0\0\0\0', d): skip.append((m.start(), m.start() + struct.unpack_from('<I', d, m.start() + 0x1c)[0]))
     nx = nxsh_in(d, label, skip)   # PEANUTS(upstream-candidate): Media.Vision's NX?S containers, read by their headers (Digimon Story Time Stranger: 202 in main)
     ctls = [c for m in re.finditer(re.escape(CTL_MAGIC), d) if not (c := m.start()) & 3 and not any(a <= c < b for a, b in skip) and d[c:c + struct.unpack_from('<I', d, c + 0x20)[0]] not in known]
-    if not ctls: return nx   # PEANUTS(upstream-candidate): nx, was []
+    # PEANUTS(upstream-candidate): the rest of FINAL FANTASY XII THE ZODIAC AGE's offline programs sit at offsets that are not 4-byte aligned (control 0xfca50d with its code area at 0xfca30d,
+    # control 0xfd1699 with its code area at 0xfd1599), which the aligned scan above never looks at. Such a match is collected with the same skip ranges and known filter and taken only by the
+    # neighbour rule at the end: no data record points at an unaligned control section and the game's code builds the address of none, so the table lookup and the built-address evidence stay
+    # with the aligned records. One with no valid neighbour is left out in silence, a control magic at an odd offset being very often just bytes. taken: the control sections and code areas of the
+    # programs taken, so a match inside an already taken program does not take it a second time.
+    raws = [c for m in re.finditer(re.escape(CTL_MAGIC), d) if (c := m.start()) & 3 and c + 0x708 <= len(d) and not any(a <= c < b for a, b in skip) and d[c:c + struct.unpack_from('<I', d, c + 0x20)[0]] not in known]
+    if not ctls and not raws: return nx   # PEANUTS(upstream-candidate): nx, was []
     rel, code_of, cset = rel_targets(d), {}, set(ctls)
     for s, c in rel.items():
         if c not in cset or c in code_of: continue
@@ -2382,15 +2392,39 @@ def raw_shaders(d, label, known=()):
             if struct.unpack_from('<QQQ', d, s + 16) == (0, control_len, code_len) and d[code:code + 4] == CS_MAGIC and code + code_len <= len(d):
                 code_of[c] = code
     built = adrp_targets(d, min(ctls) - 0x100000, max(ctls) + 0x100000) if any(c not in code_of for c in ctls) else {}
-    out = []
+    out, taken = [], []   # PEANUTS(upstream-candidate): taken: the control sections and code areas of the programs taken
     for c in ctls:
         nctl, n = struct.unpack_from('<I', d, c + 0x20)[0], struct.unpack_from('<I', d, c + 0x704)[0]
         ctl, why = d[c:c + nctl], 'no code area: no data record points at one, and the code builds the address of none right after or right before it'
         near = lambda k: min(abs(a - b) for a in built[k] for b in built[c])   # how close the code builds this code area's address to the control section's
-        for k in ([code_of[c]] if c in code_of else sorted((k for k in ((c + nctl + 15) & ~15, c - n) if k in built and c in built and near(k) < 0x400), key=near)):
+        neigh = ((c + nctl + 15) & ~15, c - n)
+        cand = [code_of[c]] if c in code_of else sorted((k for k in neigh if k in built and c in built and near(k) < 0x400), key=near)
+        chosen = c in code_of or bool(cand)   # where the code area is comes from the code, not from which neighbour looks right
+        if not cand:
+            # PEANUTS(upstream-candidate): FINAL FANTASY XII THE ZODIAC AGE's 7 offline programs build no address at all (no relocation slot points at them and
+            # no adrp + add builds one near them), so a control section with no built-address evidence keeps the neighbour that passes the stage and length checks.
+            cand = [k for k in neigh if 0 <= k and k + n <= len(d) and CTL_MAGIC not in d[k:k + n]]
+        found = []
+        for k in cand:
             code = d[k:k + n]; st = glslc_stage(ctl, code) if k >= 0 and CTL_MAGIC not in code else None
-            if st and not check(label, st, ctl, code): out.append((f'{label}#RAW@{c:#x}', st, ctl, code)); why = None; break
+            if st and not check(label, st, ctl, code):
+                found.append((st, code, k))
+                if chosen: break
+        if not chosen and len(found) != 1: found = []   # both neighbours pass the checks, so which one the control section owns stays unknown
+        for st, code, k in found: out.append((f'{label}#RAW@{c:#x}', st, ctl, code)); taken += [(c, c + nctl), (k, k + n)]; why = None
         if why: print(f'[RED] {label} control section @{c:#x}: {why}; left out', flush=True)
+    for c in raws:
+        nctl, n = struct.unpack_from('<I', d, c + 0x20)[0], struct.unpack_from('<I', d, c + 0x704)[0]
+        if any(a <= c < b for a, b in taken) or not 0x760 <= nctl <= len(d) - c or not 0x80 <= n <= len(d) - c: continue   # inside a program already taken, or lengths no control section has
+        ctl = d[c:c + nctl]
+        found = []
+        for k in ((c + nctl + 15) & ~15, c - n):
+            if not 0 <= k or k + n > len(d) or CTL_MAGIC in d[k:k + n]: continue
+            code = d[k:k + n]; st = glslc_stage(ctl, code)
+            if st and not check(label, st, ctl, code): found.append((st, code, k))
+        if len(found) != 1: continue   # no neighbour passes, or both do: taken only when exactly one passes, as for an aligned control section, and left out in silence
+        st, code, k = found[0]
+        out.append((f'{label}#RAW@{c:#x}', st, ctl, code)); taken += [(c, c + nctl), (k, k + n)]
     return nx + out   # PEANUTS(upstream-candidate): nx
 
 ONEPACK = b'ONEPACK\0'
