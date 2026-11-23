@@ -121,6 +121,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [DRAGON BALL: Sparking! ZERO](010035F022078000/README.md) | `010035F022078000` | 1.0.0 (base) | 14.3.0 | Unreal Engine 4.27 | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Kirby's Return to Dream Land Deluxe](01006B601380E000/README.md) | `01006B601380E000` | 1.0.0 (base) | 13.3.5 | HAL Laboratory's engine (NintendoWare) | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [LEGO CITY UNDERCOVER](010085500130A000/README.md) | `010085500130A000` | 1.0.3 | 1.3.1 | TT Games' engine (Nu2) | NVN <!-- PEANUTS: Peanuts-only profile --> |
+| [LEGO MARVEL Super Heroes](01006F600FFC8000/README.md) | `01006F600FFC8000` | 1.0.1 | 9.3.1 | TT Games' engine (Nu2), Havok | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Luigi's Mansion 3](0100DCA0064A6000/README.md) | `0100DCA0064A6000` | 1.4.0 | 7.3.2 | Next Level Games' engine | NVN |
 | [Mario Kart 8 Deluxe](0100152000022000/README.md) | `0100152000022000` | 4.0.0, 4.0.1 | 4.4.0 | Nintendo (sead / agl / gsys, NintendoWare, Pia) | NVN |
 | [Mario Kart World](0400C3F00006E000/README.md) | `0400C3F00006E000` | 1.8.0 (Switch 2; plays on Android) | 21.4.0 (Ounce) | Nintendo EPD (sead / agl / gsys) | NVN2 |

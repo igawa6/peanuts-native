@@ -1,0 +1,44 @@
+# Game profile of LEGO MARVEL Super Heroes (Switch, update 1.0.1 = v65536 over the base game 1.0.0 = v0)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# TT Games / Warner Bros. Games, TT Games' own engine (Nu2, as LEGO CITY UNDERCOVER: DAT archives, NuUbershader), SDK 9.3.1, NVN, Havok; GLSLC in subsdk0, the movie module in subsdk1.
+# Status: provisional profile (dm/games/profile_guess.py from the survey, peanuts/docs/NEW-GAME.md); the note (README.md) says what is a guess
+
+# ---- Identity ----
+title_id	01006F600FFC8000
+program_id	01006F600FFC8000
+
+# ---- App ----
+name	LEGO MARVEL Super Heroes
+ipa	LegoMarvelSuperHeroes.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v65536	1.0.1	main=5d769abcad9f2743805a77e138efc900	subsdk0=0e0956c8d8d7489bf178e9efd9055a3b	subsdk1=5a7ada8dd7447c10aa244944f64d0aff	sdk=ad3fdfbd62a5f4b082d385ffe420d440
+package	v65536
+shader_versions	v65536
+android_builds	v65536
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 subsdk1 sdk
+romfs_marker	GAME.DAT
+zip_store	.dat:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: a 3328 MB heap region
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon (Big Brain Academy: Brain vs. Brain sets a heap only then)
+sys_resource	0x0
+
+# ---- Shader split ----
+shader_groups	/=romfs
+shader_note	LEGO MARVEL Super Heroes shaders
+
+# ---- Frame rate ----
+# the game presents at 30 (present interval 2); its engine steps by measured frame time (GameFramework, FrameworkEnvironment::SetFrameTime, as LEGO CITY UNDERCOVER), so the launcher's frame limit is offered (experimental; Game owned until the player picks a rate, which needs fps_limit_max above 60: Profile.optInPresentRate)
+fps_limit_max	120
+fps_limit_present	1
