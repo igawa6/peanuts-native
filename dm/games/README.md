@@ -130,6 +130,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Mario vs. Donkey Kong](0100B99019412000/README.md) | `0100B99019412000` | 1.0.1 (cartridge base) | 15.3.0 | Nintendo (sead / agl / gsys) | NVN |
 | [Metroid Dread](010093801237C000/README.md) | `010093801237C000` | 2.1.0 | 11.4.3 | MercurySteam's engine | NVN |
 | [Metroid Prime Remastered](010012101468C000/README.md) | `010012101468C000` | 1.0.0 (base) | 12.3.1 | Retro Studios' engine | NVN |
+| [Minecraft Dungeons II](0100A7C01B792000/README.md) | `0100A7C01B792000` | 1.1.3.0 | 20.5.15 | Unreal Engine 5.6.1 (IoStore), Wwise | NVN <!-- PEANUTS: Peanuts-only profile; runs on Turnip, system driver untested --> |
 | [Monster Hunter Rise](0100B04011742000/README.md) | `0100B04011742000` | 16.0.2 | 11.4.3 | Capcom's RE Engine | NVN |
 | [Monster Sanctuary](0100A0F00DA68000/README.md) | `0100A0F00DA68000` | 2.1.0 (provisional, packed on a PC, not run on a device) | 9.4.1 | Unity 2018.4.23f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile, provisional --> |
 | [Monster Train 2](010051701FB46000/README.md) | `010051701FB46000` | 1.1.1 | 18.3.5 | Unity 2022.3.54f1 IL2CPP | NVN |
