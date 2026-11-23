@@ -666,12 +666,15 @@ $(B)/t_pkp_aspect: t_pkp_aspect.c ../android/pkp_aspect.c ../hle.h ../dm.h $(GAM
 # (hle_hid.c dm_pad_raw / dm_pad_gate), over t_hid.c's stand-ins. t_peanuts_host: dm/peanuts/peanuts.c's tick thread, presence, pad reads and guarded reads
 PN_ASIF = -D__ANDROID__=1 -D__aarch64__=1 -D_ASM_X86_SIGCONTEXT_H -include stdbool.h
 .PHONY: peanuts-host
-peanuts-host: $(B)/t_peanuts_stopworld $(B)/t_peanuts_padgate $(B)/t_peanuts_host $(B)/t_peanuts_frametime $(B)/t_peanuts_graph
+peanuts-host: $(B)/t_peanuts_stopworld $(B)/t_peanuts_padgate $(B)/t_peanuts_host $(B)/t_peanuts_frametime $(B)/t_peanuts_graph $(B)/t_peanuts_opt $(B)/t_peanuts_mem $(B)/t_peanuts_bottleneck
 	$(B)/t_peanuts_stopworld
 	TMPDIR="$(abspath $(B))" $(B)/t_peanuts_padgate
 	$(B)/t_peanuts_host "$(abspath $(B))"
 	$(B)/t_peanuts_frametime
 	$(B)/t_peanuts_graph
+	$(B)/t_peanuts_opt
+	$(B)/t_peanuts_mem
+	$(B)/t_peanuts_bottleneck
 ifeq ($(shell uname -s),Linux)
 run: peanuts-host
 endif
@@ -688,6 +691,14 @@ $(B)/t_peanuts_frametime: t_peanuts_frametime.c ../../peanuts/peanuts_frametime.
 # t_peanuts_graph: the host's drawing of the overlay's frame-time bars (peanuts_graph.c, included): background, columns, colours, premultiplied bytes, the block path.
 $(B)/t_peanuts_graph: t_peanuts_graph.c ../../peanuts/peanuts_graph.c ../../peanuts/peanuts_graph.h ../../peanuts/peanuts_frametime.c ../../peanuts/peanuts_frametime.h | $(B)
 	$(CLANG) -O1 -g -Wall -Wno-unused-function -o $@ t_peanuts_graph.c -lpthread -lm
+# t_peanuts_opt, t_peanuts_mem, t_peanuts_bottleneck: the experimental-optimization switches (PN_OPTS), the memory-pressure reader and the frame-limit classifier (peanuts_opt.c,
+# peanuts_mem.c, peanuts_bottleneck.c, included as the other peanuts tests include theirs)
+$(B)/t_peanuts_opt: t_peanuts_opt.c ../../peanuts/peanuts_opt.c ../../peanuts/peanuts_opt.h | $(B)
+	$(CLANG) -O1 -g -Wall -Wno-unused-function -o $@ t_peanuts_opt.c -lpthread -lm
+$(B)/t_peanuts_mem: t_peanuts_mem.c ../../peanuts/peanuts_mem.c ../../peanuts/peanuts_mem.h ../../peanuts/peanuts_opt.c ../../peanuts/peanuts_opt.h | $(B)
+	$(CLANG) -O1 -g -Wall -Wno-unused-function -o $@ t_peanuts_mem.c -lpthread -lm
+$(B)/t_peanuts_bottleneck: t_peanuts_bottleneck.c ../../peanuts/peanuts_bottleneck.c ../../peanuts/peanuts_bottleneck.h | $(B)
+	$(CLANG) -O1 -g -Wall -Wno-unused-function -o $@ t_peanuts_bottleneck.c -lpthread -lm
 # t_peanuts_syncstress: a hunt for lost wake-ups in hle_thread.c's waits and signals with real threads (single cases, then a storm of SYNC_SECS seconds; with --stops the
 # game is stopped and resumed throughout): make GAME=<id> peanuts-sync [SYNC_SECS=300] [SYNC_ARGS=--stops]. peanuts-sync-control builds the host's old condition
 # variable order (-DDM_TEST_CV_OLD_ORDER, a lost wake-up that is known) and passes when the test catches it
