@@ -36,6 +36,7 @@ class RewriteWorkers(unittest.TestCase):
                 self.assertIn('[RED] DM_REWRITE_J must be a positive integer', r.stderr)
                 self.assertNotIn('Traceback', r.stderr)
 
+    @unittest.skipUnless(hasattr(os, 'killpg'), 'POSIX: a fork pool, its process group and SIGTERM (Windows: test_windows_parallel.py)')   # PEANUTS(upstream-candidate)
     def test_sigterm_reaps_the_active_pool(self):
         # patch_nso is a command-line program: extract its real pool helper and process signal handler, as the spin tests extract its analysis.
         tree = ast.parse(SOURCE.read_text())

@@ -34,4 +34,4 @@ The survey's guess for Unreal: `mem_reserve 0x1028000000`, `mem_alias 0x10000000
 
 ## Found on this game
 
-Nothing yet.
+- **A pack made on Windows keeps most of the PC's threads idle** (the rewrite of `main` serial for most of its 17 minutes, the shaders on about one core): [Packing](../../../docs/reference/packing.md#a-pack-made-on-windows-keeps-most-of-the-pcs-threads-idle).

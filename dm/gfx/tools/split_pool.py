@@ -12,7 +12,10 @@ import collections, concurrent.futures as cf, os, pickle, subprocess, sys, threa
 
 BOOT = r'''
 import os, pickle, runpy, sys, traceback, types
-r, w = os.fdopen(int(sys.argv[1]), 'rb'), os.fdopen(int(sys.argv[2]), 'wb')
+if os.name == 'nt':   # PEANUTS(upstream-candidate): Windows passes the pipes as inherited handles (PipePool), not descriptors
+    import msvcrt
+    r, w = os.fdopen(msvcrt.open_osfhandle(int(sys.argv[1]), os.O_RDONLY), 'rb'), os.fdopen(msvcrt.open_osfhandle(int(sys.argv[2]), 0), 'wb')
+else: r, w = os.fdopen(int(sys.argv[1]), 'rb'), os.fdopen(int(sys.argv[2]), 'wb')
 path, tool, *script = pickle.load(r)
 sys.path[:] = path
 def serve():
@@ -41,6 +44,20 @@ def _fileno(stream):
     except (AttributeError, OSError, ValueError): return None
 
 
+def _start(args, cr, cw, pass_fds, out, err):
+    """A worker reading jobs from descriptor cr and writing answers to cw, its stdout and stderr this process's. PEANUTS(upstream-candidate): Windows has no
+    pass_fds: the pipes' handles are made inheritable and handed to that worker alone (handle_list), and the worker opens them by handle (BOOT). Before, the
+    pool could not start there, so vk_android_build.py ran every shader in one interpreter and its Python half on one core (CPU at 25-50 % with J=8)"""
+    if os.name != 'nt':
+        return subprocess.Popen(args + [str(cr), str(cw)], pass_fds=(cr, cw, *pass_fds), stdin=subprocess.DEVNULL, stdout=out, stderr=err)
+    if pass_fds: raise ValueError('pass_fds: a Windows worker receives only its two pipes')
+    import msvcrt
+    hs = [msvcrt.get_osfhandle(fd) for fd in (cr, cw)]
+    for h in hs: os.set_handle_inheritable(h, True)
+    si = subprocess.STARTUPINFO(); si.lpAttributeList = {'handle_list': list(hs)}   # subprocess adds the standard handles
+    return subprocess.Popen(args + [str(h) for h in hs], startupinfo=si, close_fds=True, stdin=subprocess.DEVNULL, stdout=out, stderr=err)
+
+
 class PipePool:
     """J worker processes of command (a list: the program and its leading arguments), each running tool's module as __mp_main__ and initializer(*initargs) first.
     pass_fds: descriptors of this process the workers need too (shader_split.py: a .nup read through DM_NUP_FD).
@@ -55,7 +72,7 @@ class PipePool:
             for _ in range(J):
                 cr, pw = os.pipe()   # jobs: this process writes pw, the worker reads cr
                 pr, cw = os.pipe()   # answers: the worker writes cw, this process reads pr
-                try: p = subprocess.Popen(list(command) + ['-c', BOOT, str(cr), str(cw)], pass_fds=(cr, cw, *pass_fds), stdin=subprocess.DEVNULL, stdout=out, stderr=err)
+                try: p = _start(list(command) + ['-c', BOOT], cr, cw, pass_fds, out, err)
                 finally: os.close(cr); os.close(cw)
                 self.workers.append((p, os.fdopen(pw, 'wb'), os.fdopen(pr, 'rb')))
             for p, w, r in self.workers:   # the tool and the initializer to each, once every worker is started: they import the tool at the same time

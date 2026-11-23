@@ -55,5 +55,5 @@ if __name__ == '__main__':
         if OUT.read_text() != text: sys.exit(f'{OUT.relative_to(REPO)} is out of date: run dm/tools/docs_symptoms.py')
         print(f'{OUT.relative_to(REPO)} is current')
     else:
-        OUT.write_text(text)
+        OUT.write_text(text, encoding='utf-8', newline='\n')   # PEANUTS(upstream-candidate): LF on Windows too (it wrote CR LF there, every line a change)
         print(f'{OUT.relative_to(REPO)}: {text.count(" → [")} symptoms')

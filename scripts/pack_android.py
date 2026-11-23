@@ -106,6 +106,16 @@ def peanuts_env(step):
 # PEANUTS end
 
 
+def windows_shader_workers(py, J):
+    """PEANUTS(upstream-candidate): on Windows, vk_android_build.py's worker processes (DMSH_VK_WORKER, DMSH_VK_WORKERS = J) run through vk_android_win.py, which puts
+    the Windows adaptations into each worker. vk_android_build.py's threads share one interpreter, and the Python half of each shader holds its GIL: Minecraft
+    Dungeons II's 15,826 shaders took 41 minutes there with the CPU at 25-50 % for J=8. Its other ways off the GIL do not run on Windows (DMSH_VK_PROCS needs the
+    translator as a .so). The library is byte-identical to the threads' build (split_pool.PipePool: the parent still writes it). A value in the environment wins"""
+    if not WINDOWS or 'DMSH_VK_WORKER' in os.environ or J < 2: return {}
+    q = lambda p: '"' + str(p).replace('\\', '/') + '"'   # shlex.split (vk_android_build.py) keeps neither backslashes nor unquoted spaces
+    return {'DMSH_VK_WORKER': f'{q(py)} {q(VK_BUILD_WIN)} --pool-worker', 'DMSH_VK_WORKERS': os.environ.get('DMSH_VK_WORKERS', str(J))}
+
+
 def windows_job():
     """Windows: this process and every process it starts from here on (the rewriter, the split, the shader build with its translator and spirv-val) in one job that
     the system ends as a whole when this process ends, however it ends. A GUI's stop is then Popen.terminate() on this process alone (TerminateProcess, which runs
@@ -648,6 +658,11 @@ def rewrite(py, srcs, out, jobs, g, in_process=False, xmod=None):
             print(f'  {m}: done ({time.monotonic() - t0:.1f} s)', flush=True)
         if todo: print('progress 1000 1000 code', flush=True)
         return
+    # PEANUTS(upstream-candidate): each module's rewrite workers by its share of the code to rewrite, not the threads split evenly: main is most of a game's code
+    # (LEGO 2K Drive: 98 of 106 MB), and an even split gave it 2 of 8 threads while sdk and subsdk0, done in seconds, held the rest
+    files = {m: rewriter_src(todo[m][0], out, m) for m in todo}
+    sizes = {m: max(1, os.path.getsize(files[m])) for m in todo}
+    share = {m: max(1, round((os.cpu_count() or 4) * sizes[m] / max(1, sum(sizes.values())))) for m in todo}
     procs = {}
     try:
         pending = list(todo)
@@ -656,7 +671,7 @@ def rewrite(py, srcs, out, jobs, g, in_process=False, xmod=None):
                 m = pending.pop(0); kf = out / f'{m}.android.key'; kf.unlink(missing_ok=True); shutil.rmtree(staging(out, m), ignore_errors=True)
                 print(f'  {m}: rewriting {todo[m][0]}', flush=True)
                 log = open(out / f'rewrite_{m}.log', 'w')
-                procs[m] = (subprocess.Popen([py, str(REPO / 'dm/tools/patch_nso.py'), str(rewriter_src(todo[m][0], out, m)), str(staging(out, m)), m, '--target', 'android', *xargs(m)], env=env, stdout=log, stderr=subprocess.STDOUT), log)   # PEANUTS: xargs
+                procs[m] = (subprocess.Popen([py, str(REPO / 'dm/tools/patch_nso.py'), str(files[m]), str(staging(out, m)), m, '--target', 'android', *xargs(m)], env=dict(env, DM_REWRITE_J=str(share[m])), stdout=log, stderr=subprocess.STDOUT), log)   # PEANUTS: xargs
             for m in list(procs):
                 p, log = procs[m]
                 if p.poll() is None: continue
@@ -931,6 +946,7 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
         swork = shader_work(a, work); swork.mkdir(parents=True, exist_ok=True)   # PEANUTS(upstream-candidate): beside a --shader-cache folder (shader_work)
         env = child_env(DM_GAME=g.id, J=str(a.J), WORK=str(swork))
         env.update(peanuts_env('shaders'))   # PEANUTS: as the phone's shaders step (PackService): zstd 6
+        env.update(windows_shader_workers(py, a.J))   # PEANUTS(upstream-candidate): Windows, the shaders in worker processes
         keys = selected_keys(g.dir)   # a profile with a selected set (shader_seen.tsv): only its shaders, as the phone builds them (PackService, ShaderLibs.selection)
         if keys is not None:
             if not keys: raise Error('the profile\'s shader_seen.tsv names none of the shaders of its shader_map.tsv')   # PEANUTS(upstream-candidate): no substitutions.

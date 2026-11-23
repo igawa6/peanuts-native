@@ -82,7 +82,14 @@ def expand_args(args):
     return out
 
 
-if __name__ == '__main__':
+if __name__ == '__main__' and sys.argv[1:2] == ['--pool-worker']:
+    # PEANUTS(upstream-candidate): a worker process of the build's pool (DMSH_VK_WORKER, split_pool.PipePool), which starts it as `<command> -c <code> <args>`, as
+    # python3: the adaptations above go into the worker too, then the pool's code runs as `python -c` would run it. scripts/pack_android.py sets this command on Windows
+    if sys.argv[2:3] != ['-c'] or len(sys.argv) < 4: sys.exit('usage: vk_android_win.py --pool-worker -c <code> [args...]')
+    if os.name == 'nt' or sys.platform.startswith('linux'): install()
+    code, sys.argv = sys.argv[3], ['-c'] + sys.argv[4:]
+    exec(compile(code, '<pool worker>', 'exec'), {'__name__': '__main__', '__builtins__': builtins})
+elif __name__ == '__main__':
     if os.name == 'nt' or sys.platform.startswith('linux'): install()   # PEANUTS: Linux, for the translator (the repository's apphost is the Mac's)
     sys.argv = [BUILD] + expand_args(sys.argv[1:])
     runpy.run_path(BUILD, run_name='__main__')
