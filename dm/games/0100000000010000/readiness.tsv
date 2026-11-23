@@ -1,0 +1,3 @@
+# What this game needs of an Android phone. The profile is included as a bring-up target so the Android host can be exercised on the S22;
+# Android gameplay/rendering has not been validated for this title yet. Keep it visibly marked as bring-up until a real device run confirms it.
+status	bring-up

@@ -1,0 +1,99 @@
+name: Peanuts Native BUILD MASTER
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/android-beta.yml'
+      - 'android/**'
+      - 'dm/**'
+      - 'peanuts/**'
+      - 'scripts/**'
+      - 'CMakeLists.txt'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: peanuts-android-beta-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build S22-targeted Master APK
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up .NET 10 NativeAOT toolchain
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Configure preinstalled Android SDK
+        shell: bash
+        run: |
+          SDK_ROOT="$HOME/Library/Android/sdk"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "Android SDK command-line tools not found at $SDKMANAGER"
+            find "$SDK_ROOT/cmdline-tools" -maxdepth 3 -name sdkmanager -print 2>/dev/null || true
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Install native build tools
+        run: brew install cmake ninja
+
+      - name: Build Android native stage
+        shell: zsh {0}
+        run: |
+          zsh android/ondevice/build.sh "$RUNNER_TEMP/peanuts-native-work"
+
+      - name: Build Peanuts Native Master APK with all Android-ready game profiles
+        shell: bash
+        run: |
+          cd android/app
+          chmod +x gradlew
+          ./gradlew --no-daemon \
+            -PnxApp=peanuts \
+            -PnxPackStage="$RUNNER_TEMP/peanuts-native-work/stage" \
+            apk
+
+      - name: Locate APK
+        id: apk
+        shell: bash
+        run: |
+          APK="$(find android/app -type f -name '*.apk' -path '*/out/*' | head -n 1)"
+          if [ -z "$APK" ]; then
+            echo "No APK found under android/app/**/out/"
+            find android/app -type f -name '*.apk' -print
+            exit 1
+          fi
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "Found: $APK"
+
+      - name: Upload installable BUILD MASTER APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: peanuts-native-build-master-s22
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14

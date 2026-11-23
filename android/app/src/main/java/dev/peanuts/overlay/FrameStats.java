@@ -14,10 +14,107 @@ public final class FrameStats {
 
     /** Median of ms[0..n) in ms; NaN for no frame */
     public static float median(float[] ms, int n) {
-        if (n <= 0) return Float.NaN;
-        float[] c = Arrays.copyOf(ms, n);
-        Arrays.sort(c);
-        return n % 2 == 1 ? c[n / 2] : (c[n / 2 - 1] + c[n / 2]) / 2f;
+        if (ms == null || n <= 0) return Float.NaN;
+        int limit = Math.min(n, ms.length);
+        float[] valid = new float[limit];
+        int count = 0;
+        for (int i = 0; i < limit; i++) {
+            float value = ms[i];
+            if (Float.isFinite(value) && value > 0f) valid[count++] = value;
+        }
+        if (count == 0) return Float.NaN;
+        Arrays.sort(valid, 0, count);
+        return count % 2 == 1 ? valid[count / 2] : (valid[count / 2 - 1] + valid[count / 2]) / 2f;
+    }
+
+    /**
+     * One-pass frame-time summary for telemetry. The returned array contains
+     * median ms, P95 ms, P99 ms, 1% low FPS, and valid sample count.
+     * Invalid and non-positive samples are ignored. Percentiles need 10 valid samples.
+     */
+    public static float[] summarize(float[] ms, int n) {
+        if (ms == null || n <= 0) return new float[] {Float.NaN, Float.NaN, Float.NaN, Float.NaN, 0f};
+        int limit = Math.min(n, ms.length);
+        float[] valid = new float[limit];
+        int count = 0;
+        for (int i = 0; i < limit; i++) {
+            float value = ms[i];
+            if (Float.isFinite(value) && value > 0f) valid[count++] = value;
+        }
+        if (count == 0) return new float[] {Float.NaN, Float.NaN, Float.NaN, Float.NaN, 0f};
+        Arrays.sort(valid, 0, count);
+        float median = count % 2 == 1 ? valid[count / 2] : (valid[count / 2 - 1] + valid[count / 2]) / 2f;
+        float p95 = Float.NaN, p99 = Float.NaN, oneLow = Float.NaN;
+        if (count >= 10) {
+            int i95 = (95 * count + 99) / 100 - 1;
+            int i99 = (99 * count + 99) / 100 - 1;
+            p95 = valid[i95];
+            p99 = valid[i99];
+            oneLow = 1000f / p99;
+        }
+        return new float[] {median, p95, p99, oneLow, count};
+    }
+
+    /**
+     * Frame-pacing diagnostics over the original sample order. Returns mean frame time,
+     * population standard deviation, mean absolute delta between valid successive frames,
+     * count of frames above 1.5x the median, and that count as a percentage.
+     * Invalid samples are ignored; fewer than two valid samples have no jitter value.
+     */
+    public static float[] pacingSummary(float[] ms, int n) {
+        if (ms == null || n <= 0) return new float[] {Float.NaN, Float.NaN, Float.NaN, 0f, Float.NaN};
+        int limit = Math.min(n, ms.length);
+        float[] valid = new float[limit];
+        int count = 0;
+        double sum = 0.0, sumSquares = 0.0, deltaSum = 0.0;
+        float previous = Float.NaN;
+        int deltas = 0;
+        for (int i = 0; i < limit; i++) {
+            float value = ms[i];
+            if (!Float.isFinite(value) || value <= 0f) continue;
+            valid[count++] = value;
+            sum += value;
+            sumSquares += (double) value * value;
+            if (Float.isFinite(previous)) {
+                deltaSum += Math.abs((double) value - previous);
+                deltas++;
+            }
+            previous = value;
+        }
+        if (count == 0) return new float[] {Float.NaN, Float.NaN, Float.NaN, 0f, Float.NaN};
+        Arrays.sort(valid, 0, count);
+        float median = count % 2 == 1 ? valid[count / 2] : (valid[count / 2 - 1] + valid[count / 2]) / 2f;
+        double mean = sum / count;
+        double variance = Math.max(0.0, sumSquares / count - mean * mean);
+        int stutters = 0;
+        for (int i = 0; i < count; i++) if (valid[i] > median * 1.5f) stutters++;
+        return new float[] {
+                (float) mean,
+                (float) Math.sqrt(variance),
+                deltas > 0 ? (float) (deltaSum / deltas) : Float.NaN,
+                stutters,
+                100f * stutters / count
+        };
+    }
+
+    /**
+     * The requested frame-time percentile in ms (1..99). Invalid/non-positive samples are ignored;
+     * fewer than 10 valid samples return NaN so the HUD does not present unstable short-window data.
+     * The nearest-rank index is ceil(percentile * count / 100) - 1.
+     */
+    public static float percentileFrameTime(float[] ms, int n, int percentile) {
+        if (ms == null || percentile < 1 || percentile > 99 || n < 10) return Float.NaN;
+        int limit = Math.min(n, ms.length);
+        float[] valid = new float[limit];
+        int count = 0;
+        for (int i = 0; i < limit; i++) {
+            float value = ms[i];
+            if (Float.isFinite(value) && value > 0f) valid[count++] = value;
+        }
+        if (count < 10) return Float.NaN;
+        Arrays.sort(valid, 0, count);
+        int index = (percentile * count + 99) / 100 - 1;
+        return valid[index];
     }
 
     /**
@@ -26,12 +123,8 @@ public final class FrameStats {
      * ceil(0.99 * n) is computed as the integer (99n + 99) / 100 to avoid floating-point rounding.
      */
     public static float onePercentLowFps(float[] ms, int n) {
-        if (n < 10) return Float.NaN;
-        float[] c = Arrays.copyOf(ms, n);
-        Arrays.sort(c);
-        int idx = (99 * n + 99) / 100 - 1;
-        float p99 = c[idx];
-        return p99 > 0 ? 1000f / p99 : Float.NaN;
+        float p99 = percentileFrameTime(ms, n, 99);
+        return p99 > 0f ? 1000f / p99 : Float.NaN;
     }
 
     /** The longest DRV value the overlay shows, in chars (the last one is the ellipsis) */
@@ -74,7 +167,7 @@ public final class FrameStats {
     /** The colour of a row's label, by its text (Hud) */
     public static int labelColor(String label) {
         switch (label) {
-            case "FPS": case "THR": case "FT": case "1%L": return LABEL_FPS;
+            case "FPS": case "THR": case "FT": case "1%L": case "P95": case "P99": return LABEL_FPS;
             case "GPU": return LABEL_GPU;
             case "CPU": return LABEL_CPU;
             case "SOC": case "BAT": return LABEL_SOC;

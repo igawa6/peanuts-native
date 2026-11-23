@@ -10,6 +10,32 @@ public final class FrameStatsJvmTest {
         check(Math.abs(FrameStats.median(f, 100) - 33.3f) < 1e-4, "median");
         check(Math.abs(FrameStats.median(new float[] {1, 2, 3, 4}, 4) - 2.5f) < 1e-4, "median even");
         check(Float.isNaN(FrameStats.median(f, 0)), "median empty");
+        check(Math.abs(FrameStats.median(new float[] {Float.NaN, -1f, 10f, 20f, 30f}, 5) - 20f) < 1e-4, "median ignores invalid samples");
+        check(Float.isNaN(FrameStats.median(new float[] {Float.NaN, -1f, 0f}, 3)), "median has no valid samples");
+        float[] summary = FrameStats.summarize(new float[] {Float.NaN, -1f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f}, 12);
+        check(summary[0] == 20f && summary[1] == 20f && summary[2] == 20f && summary[3] == 50f && summary[4] == 10f,
+                "one-pass summary filters invalid values and returns valid count");
+        float[] shortSummary = FrameStats.summarize(new float[] {16f, 17f, 18f}, 3);
+        check(Math.abs(shortSummary[0] - 17f) < 1e-4 && Float.isNaN(shortSummary[1])
+                && Float.isNaN(shortSummary[2]) && Float.isNaN(shortSummary[3]) && shortSummary[4] == 3f,
+                "one-pass summary keeps median but withholds unstable percentiles");
+        check(Math.abs(FrameStats.percentileFrameTime(f, 100, 95) - 33.3f) < 1e-3, "p95 ignores one isolated hitch");
+        float[] steadyPacing = FrameStats.pacingSummary(new float[] {16.67f, 16.67f, 16.67f, 16.67f}, 4);
+        check(Math.abs(steadyPacing[0] - 16.67f) < 1e-3 && steadyPacing[1] < 1e-3
+                && steadyPacing[2] < 1e-3 && steadyPacing[3] == 0f && steadyPacing[4] == 0f,
+                "pacing summary: steady frames have no jitter or stutter");
+        float[] hitchPacing = FrameStats.pacingSummary(new float[] {16.67f, 16.67f, Float.NaN, 16.67f, 50f}, 5);
+        check(Math.abs(hitchPacing[0] - 25f) < 1e-2 && hitchPacing[3] == 1f
+                && Math.abs(hitchPacing[4] - 25f) < 1e-2,
+                "pacing summary: one hitch is detected and invalid samples ignored");
+        check(Float.isNaN(FrameStats.pacingSummary(new float[] {Float.NaN, -1f}, 2)[0]),
+                "pacing summary: no valid samples");
+        check(Math.abs(FrameStats.percentileFrameTime(f, 100, 99) - 100f) < 1e-3, "p99 catches one isolated hitch");
+        check(Float.isNaN(FrameStats.percentileFrameTime(f, 9, 95)), "p95 needs a stable sample window");
+        check(Float.isNaN(FrameStats.percentileFrameTime(f, 100, 100)), "p100 is not a percentile request");
+        float[] dirty = {Float.NaN, -1f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f, 20f};
+        check(Math.abs(FrameStats.percentileFrameTime(dirty, dirty.length, 95) - 20f) < 1e-3, "p95 ignores invalid samples");
+        check(Math.abs(FrameStats.onePercentLowFps(dirty, dirty.length) - 50f) < 1e-3, "1% low ignores invalid samples");
         check(Math.abs(FrameStats.onePercentLowFps(f, 100) - 1000f / 33.3f) < 1e-2, "1% low: one hitch in 100 is not the low");
         check(Math.abs(FrameStats.onePercentLowFps(f, 100) - 30f) < 0.1f, "1% low ~ 30 fps at a steady 30");
         check(Float.isNaN(FrameStats.onePercentLowFps(f, 9)), "n < 10");
@@ -18,6 +44,7 @@ public final class FrameStatsJvmTest {
         for (int i = 0; i < 90; i++) h[i] = 33.3f;
         for (int i = 90; i < 100; i++) h[i] = 100f;
         check(Math.abs(FrameStats.onePercentLowFps(h, 100) - 10f) < 1e-3, "1% low: 10 hitches in 100 give 10 fps");
+        check(Math.abs(FrameStats.percentileFrameTime(h, 100, 95) - 100f) < 1e-3, "p95 catches recurring slow frames");
         float[] u = new float[512];
         for (int i = 0; i < 512; i++) u[i] = 33.3f;
         u[7] = 400f;
@@ -49,7 +76,7 @@ public final class FrameStatsJvmTest {
         check(FrameStats.levelOf(c) == 2 && FrameStats.bucketOf(c) == 7, "decode red top bar");
         check(FrameStats.levelOf(p1.charAt(0)) == 0, "decode green");
         check(FrameStats.labelColor("FPS") == 0xFF7FD4FF && FrameStats.labelColor("THR") == 0xFF7FD4FF && FrameStats.labelColor("FT") == 0xFF7FD4FF
-                && FrameStats.labelColor("1%L") == 0xFF7FD4FF, "label colour: FPS group");
+                && FrameStats.labelColor("1%L") == 0xFF7FD4FF && FrameStats.labelColor("P99") == 0xFF7FD4FF, "label colour: FPS group");
         check(FrameStats.labelColor("GPU") == 0xFFA5E37A, "label colour: GPU");
         check(FrameStats.labelColor("CPU") == 0xFF5FA8FF, "label colour: CPU");
         check(FrameStats.labelColor("SOC") == 0xFFFF9E5E && FrameStats.labelColor("BAT") == 0xFFFF9E5E, "label colour: SOC and BAT");
