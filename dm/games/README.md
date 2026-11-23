@@ -210,6 +210,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [TRIANGLE STRATEGY](0100CC80140F8000/README.md) | `0100CC80140F8000` | 1.1.1 | 12.3.2 | Unreal Engine 4.27 | NVN |
 | [Unicorn Overlord](010069401ADB8000/README.md) | `010069401ADB8000` | 1.05 | 16.2.4 | Vanillaware's engine | NVN |
 | [Unicorn Overlord, Asian release](010054B01AD92000/README.md) | `010054B01AD92000` | 1.05 | 16.2.4 | Vanillaware's engine | NVN |
+| [WarioWare: Get It Together!](0100563010E0C000/README.md) | `0100563010E0C000` | 1.0.0 | 10.4.1 | NintendoWare Bezel Engine 1.50 | NVN <!-- PEANUTS: Peanuts-only profile; plays on an AYN Thor (Turnip) -->
 | [Well Dweller](0100217023F6C000/README.md) | `0100217023F6C000` | 1.0.0 | 22.2.0 | GameMaker Studio 2 (its runner) | OpenGL |
 | [Xenoblade Chronicles: Definitive Edition](0100FF500E34A000/README.md) | `0100FF500E34A000` | 1.1.2 | 9.3.1 | Monolith's engine | NVN |
 | [Xenoblade Chronicles 2](0100E95004038000/README.md) | `0100E95004038000` | 2.1.0 | 3.5.0 | Monolith's engine | NVN |

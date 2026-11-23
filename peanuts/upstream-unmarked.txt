@@ -263,3 +263,10 @@ dm/games/0100F7E00C70E000/vk_prewarm.bin	a prewarm seed list made by dm/tools/vk
 dm/games/010065301A2E0000/vk_prewarm.bin	a prewarm seed list made by dm/tools/vk_prewarm.py seed from this fork's runs on an AYN Thor (Turnip), 2026-11-22: binary, and tied to this host's pipeline key layout, so upstream's own seed for the game (it has none today) would replace it
 dm/games/01006000040C2000/vk_prewarm.bin	a prewarm seed list made by dm/tools/vk_prewarm.py seed from this fork's runs on an AYN Thor (Turnip), 2026-11-22: binary, and tied to this host's pipeline key layout, so upstream's own seed for the game (it has none today) would replace it
 dm/games/0100C49025D3E000/vk_prewarm.bin	a prewarm seed list made by dm/tools/vk_prewarm.py seed from this fork's runs on an AYN Thor (Turnip), 2026-11-21: binary, and tied to this host's pipeline key layout, so upstream's own seed for the game (it has none today) would replace it
+dm/games/0100563010E0C000/shader_map.tsv	a whole profile this fork added (WarioWare: Get It Together!, provisional, from a survey of the game files): every line is Peanuts'
+dm/games/0100563010E0C000/shader_map.tsv.conflicts.tsv	a whole profile this fork added (WarioWare: Get It Together!, provisional, from a survey of the game files): every line is Peanuts'
+dm/games/0100563010E0C000/shader_facts.tsv	a whole profile this fork added (WarioWare: Get It Together!, provisional, from a survey of the game files): every line is Peanuts'
+dm/games/0100563010E0C000/shader_pairs.tsv	a whole profile this fork added (WarioWare: Get It Together!, provisional, from a survey of the game files): every line is Peanuts'
+dm/games/0100563010E0C000/pso_pairs.tsv	a whole profile this fork added (WarioWare: Get It Together!, provisional, from a survey of the game files): every line is Peanuts'
+dm/games/0100563010E0C000/pso_manifest.tsv	a whole profile this fork added (WarioWare: Get It Together!, provisional, from a survey of the game files): every line is Peanuts'
+dm/games/0100563010E0C000/bf_want.tsv	a whole profile this fork added (WarioWare: Get It Together!, provisional, from a survey of the game files): every line is Peanuts'
