@@ -12,6 +12,9 @@ on:
       app_id:
         description: App id suffix (lower-case letters and digits), installs beside the official app
         default: "perf"
+      host_opt:
+        description: Optimization level of the host's C (1 as the Mac host, 2 or 3 for an A/B build; PEANUTS)
+        default: "1"
 
 permissions:
   contents: write
@@ -51,7 +54,7 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace \
-            -PnxApp=peanuts -PnxAppId="${{ inputs.app_id }}" -PnxGames="${{ inputs.games }}" \
+            -PnxApp=peanuts -PnxAppId="${{ inputs.app_id }}" -PnxGames="${{ inputs.games }}" -PnxHostOpt="${{ inputs.host_opt }}" \
             -PnxPackStage="$RUNNER_TEMP/stagework/stage" apk
 
       - name: Publish the APK as a release asset

@@ -121,6 +121,12 @@ target_compile_options(dav1d PRIVATE -O2 -w -fvisibility=hidden)
 target_compile_definitions(dav1d PRIVATE _GNU_SOURCE)
 
 # One host: target <tgt> with the profile of <game> compiled in. The game profile header, as dm/host/Makefile makes it (game.py header), goes into gen/<game>
+# PEANUTS: the optimization level of the host's own C (the services, threads, memory manager, audio renderer; the Vulkan replay is -O2 below either way). The Mac host's
+# -O1 is the default and the level the unit tests run at; -DNX_HOST_OPT=2 or 3 (Gradle -PnxHostOpt) is an A/B build for a phone, not measured yet
+set(NX_HOST_OPT "1" CACHE STRING "optimization level of the host's C: 1 (default), 2 or 3")
+if(NOT NX_HOST_OPT MATCHES "^[123]$")
+  message(FATAL_ERROR "NX_HOST_OPT must be 1, 2 or 3, not ${NX_HOST_OPT}")
+endif()
 function(nxhost_add tgt game)
   set(GAME_H ${GEN}/${game}/game_profile.h)
   add_custom_command(OUTPUT ${GAME_H}
@@ -140,7 +146,7 @@ function(nxhost_add tgt game)
   target_compile_definitions(${tgt} PRIVATE _GNU_SOURCE DM_NUP_ZSTD DM_NSP_DIRECT NX_COOP_VENDOR=${NX_COOP_VENDOR} $<$<BOOL:${NX_LSFG}>:NX_LSFG>)   # PEANUTS: DM_NSP_DIRECT (the reader of dumps is linked: NSP_C above)
   # As the Mac host (-O1 -g -Wall -Wno-unused-function). Hidden visibility: the assembly reaches C symbols with adrp, which a shared library allows only for symbols it binds itself
   # -Wno-format: the host prints uint64_t with %ll* (unsigned long long on Darwin, unsigned long on Linux: the same 64 bits)
-  target_compile_options(${tgt} PRIVATE -O1 -g -Wall -Wno-unused-function -Wno-format -fvisibility=hidden)
+  target_compile_options(${tgt} PRIVATE -O${NX_HOST_OPT} -g -Wall -Wno-unused-function -Wno-format -fvisibility=hidden)   # PEANUTS: -O1 unless -DNX_HOST_OPT=2|3
   # The replay's draw path runs per draw (thousands a frame): -O2 there (the rest stays at the Mac host's -O1, a later option wins)
   file(GLOB VKA_C ${GFX}/vk_android/*.c)
   set_source_files_properties(${VKA_C} PROPERTIES COMPILE_OPTIONS -O2)
@@ -170,7 +176,7 @@ function(nxhost_add_generic tgt)
   set_target_properties(${tgt} PROPERTIES LINKER_LANGUAGE CXX)
   target_include_directories(${tgt} PRIVATE ${GEN_INC} ${GEN} ${PROFILE_DIR} ${GFX}/nvn/include ${TP}/vulkan-headers/include ${TP}/libvpx ${TP}/libvpx/config ${TP}/dav1d/include ${TP}/stb_vorbis ${HOST} ${NX_COOP_VENDOR_DIR})   # (the co-op module, as the per-title hosts)
   target_compile_definitions(${tgt} PRIVATE _GNU_SOURCE DM_NUP_ZSTD DM_NSP_DIRECT NX_COOP_VENDOR=${NX_COOP_VENDOR} $<$<BOOL:${NX_LSFG}>:NX_LSFG>)   # PEANUTS: DM_NSP_DIRECT (the reader of dumps is linked: NSP_C above)
-  target_compile_options(${tgt} PRIVATE -O1 -g -Wall -Wno-unused-function -Wno-format -fvisibility=hidden)
+  target_compile_options(${tgt} PRIVATE -O${NX_HOST_OPT} -g -Wall -Wno-unused-function -Wno-format -fvisibility=hidden)   # PEANUTS: -O1 unless -DNX_HOST_OPT=2|3
   file(GLOB VKA_C ${GFX}/vk_android/*.c)
   set_source_files_properties(${VKA_C} PROPERTIES COMPILE_OPTIONS -O2)
   target_link_options(${tgt} PRIVATE -Wl,-Bsymbolic -Wl,--no-undefined -Wl,--error-limit=0 -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libnxhost.map)
