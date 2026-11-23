@@ -13,8 +13,8 @@ on:
         description: App id suffix (lower-case letters and digits), installs beside the official app
         default: "perf"
       host_opt:
-        description: Optimization level of the host's C (1 as the Mac host, 2 or 3 for an A/B build; PEANUTS)
-        default: "1"
+        description: Optimization level of the host's C (1 as the Mac host, 2, 3 or fast = -Ofast; PEANUTS: the project builds with fast)
+        default: "fast"
 
 permissions:
   contents: write
