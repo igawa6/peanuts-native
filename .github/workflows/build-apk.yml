@@ -53,9 +53,21 @@ jobs:
         working-directory: android/app
         run: |
           chmod +x gradlew
+          set -o pipefail
           ./gradlew --no-daemon --stacktrace \
             -PnxApp=peanuts -PnxAppId="${{ inputs.app_id }}" -PnxGames="${{ inputs.games }}" -PnxHostOpt="${{ inputs.host_opt }}" \
-            -PnxPackStage="$RUNNER_TEMP/stagework/stage" apk
+            -PnxPackStage="$RUNNER_TEMP/stagework/stage" apk 2>&1 | tee "$RUNNER_TEMP/gradle.log"   # PEANUTS: the log is kept for the failure step below
+
+      # PEANUTS: when the build fails, the lines that say why become annotations of the run, which the API shows without downloading the log
+      - name: Why the build failed
+        if: failure()
+        run: |
+          f="$RUNNER_TEMP/gradle.log"; [ -f "$f" ] || exit 0
+          grep -n -E "error:|undefined reference|What went wrong|Execution failed|FAILED|Caused by|cannot find symbol|fatal error|CMake Error" "$f" | head -40 | cut -c1-300 > "$RUNNER_TEMP/why.txt" || true
+          msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/why.txt" | awk 'BEGIN{ORS="%0A"}{print}')
+          echo "::error title=Gradle log::${msg}"
+          tail -n 25 "$f" | cut -c1-300 | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}{print}' > "$RUNNER_TEMP/tail.txt"
+          echo "::error title=Gradle log tail::$(cat "$RUNNER_TEMP/tail.txt")"
 
       - name: Publish the APK as a release asset
         env:
