@@ -68,6 +68,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → `game` | unused 272-byte slot pool: 4,194,304 → 65,536 slots | address space | gap | judgement | 1 | [Mario + Rabbids® Sparks of Hope](../../dm/games/0100317013770000/README.md) | Sparks of Hope's own init (Kingdom Battle has none) |
 | `build` → `sdk` | rows the rules would add the alignment cuts to (2d369d99, 12f16103, 311deab1) | address space | blocked: the games that reach them (Pokémon Brilliant Diamond, Monster Hunter Rise, 13 Sentinels: Aegis Rim; Brain Memory Training Academy; Ace Attorney Investigations Collection) have no Mac build: run one per build with the alignment cuts | checked: the rules resolved on each build's sdk, 2026-10-29 and 2026-10-30 | 13 | [sdk_patches.py](../../dm/tools/sdk_patches.py) | the rules give these builds the same node area cut and the three alignment cuts more; each row keeps the alignment out |
 | `build` → `sdk` | rows of builds not on the game drive (56ec2474, 9c73fb73, e01950c5) | address space | blocked: no copy on the drive to compare | judgement | 3 | [sdk_patches.py](../../dm/tools/sdk_patches.py) | likely what the rules give (each names one of their implementations) |
+| `build` → `engine` | ThreadedStreamBuffer load-acquires | race | blocked: no game files of those games on the drive to compare | judgement | 2 | [FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition](../../dm/games/0100CE4010AAC000/README.md); [Pokémon Mystery Dungeon: Rescue Team DX](../../dm/games/01003D200BAA2000/README.md) | the race is in Unity 2018.4's ThreadedStreamBuffer, engine code other Unity games of that era ship (Cuphead, AI: THE SOMNIUM FILES, Raging Loop): a function-matched rule per Unity version |
 | `build` → `game` | Game Freak's frame time of present interval 2 at a fixed address (Pokémon Sword and Shield) | frame rate | blocked: one version of each game on hand | checked: Sword main a3b75bcd3311385a and Shield main a16802625e7826bf (1.3.2): the same offset in both | 2 | [Pokémon Shield](../../dm/games/01008DB008C2C000/README.md); [Pokémon Sword](../../dm/games/0100ABF008968000/README.md) | the game's own table of frame times by present interval (16666667, 33333334, 50000000 ... ns as 64-bit words), which a search for those values could find in any build |
 | `build` → `game` | Unity BucketAllocator ALLOC_BUCKET: 255 blocks of 4 MB → 63 | address space | blocked: no extracted main of either Subnautica on the game drive to fingerprint | checked: the bucket allocator of five Unity 2021 and later mains (not Subnautica's), 2026-10-29 | 2 | [Subnautica](../../dm/games/0100429011144000/README.md); [Subnautica: Below Zero](../../dm/games/010014C011146000/README.md) | Unity 2019's constructor call takes the block count as a constant; Unity 2021 and later read the bucket sizes from boot.config with a default of one block (Cult of the Lamb, Monster Train 2, Blasphemous 2, BALL x PIT, Donkey Kong Country Returns HD; checked 2026-10-29) and need no cut, so no Unity rule. A function-matched rule could carry it over the game's updates |
 | `build` → `host` | resource heap size +16 KB (ExpHeap create size, main+0x130514) | memory | blocked: the native NVN2 sizes of a recorded indexed draw are not established (nxnative #1580) | judgement | 1 | [Super Mario Bros. Wonder - Nintendo Switch 2 Edition](../../dm/games/040015100B514001/README.md) | the shortfall comes from the host's NVN2 command-memory accounting (nxnative #1580); a correct host representation would make the cut unnecessary for every build |
@@ -76,7 +77,6 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → `engine` | Frostbite's frame regulator at a fixed pointer | frame rate | blocked: one Frostbite game here | judgement | 1 | [EA SPORTS FC 27](../../dm/games/0100C49025D3E000/README.md) | engine code other Frostbite games ship (the simulation's own rate is already set by name) |
 | `build` → `engine` | Next Level Games' frame limiter target at a fixed address | frame rate | blocked: one game on that engine here | judgement | 1 | [Luigi's Mansion 3](../../dm/games/0100DCA0064A6000/README.md) | the studio's engine, which its other games ship |
 | `build` → `engine` | RE Engine's frame limit at a fixed pointer | frame rate | blocked: one RE Engine game here | judgement | 1 | [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md) | engine code other RE Engine games ship |
-| `build` → `engine` | ThreadedStreamBuffer load-acquires | race | blocked: no game files of those games on the drive to compare | judgement | 1 | [FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition](../../dm/games/0100CE4010AAC000/README.md) | the race is in Unity 2018.4's ThreadedStreamBuffer, engine code other Unity games of that era ship (Cuphead, AI: THE SOMNIUM FILES, Raging Loop): a function-matched rule per Unity version |
 | `build` → `game` | 60 fps frame step (112 sites) | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [ASTRAL CHAIN](../../dm/games/01007300020FA000/README.md) | the game's own clock and timers (a community 60 fps mod on the host's frame step) |
 | `build` → `game` | 60 fps frame step and render scale | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md) | the game's own timing object |
 | `build` → `game` | 60 fps frame step and render scale (ksys::VFR) | frame rate | blocked: frame-step stubs have no function-matched form yet | judgement | 1 | [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) | the game's own frame code; the frame-step state page is general |
@@ -139,6 +139,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Persona 5 Royal](#persona-5-royal) | 0 | 0 | 0 | 0 | 1 | `build` → `game` |
 | [Pokemon Pokopia](#pokemon-pokopia) | 0 | 3 | 0 | 0 | 1 | `build` → `game` |
 | [Pokémon Brilliant Diamond](#pokémon-brilliant-diamond) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
+| [Pokémon Mystery Dungeon: Rescue Team DX](#pokémon-mystery-dungeon-rescue-team-dx) | 131 | 0 | 0 | 0 | 0 | `build` → `engine` |
 | [Pokémon Shield](#pokémon-shield) | 4 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
 | [Pokémon Shining Pearl](#pokémon-shining-pearl) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Pokémon Sword](#pokémon-sword) | 0 | 0 | 0 | 0 | 1 | `build` → `game` |
@@ -637,6 +638,145 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 
 - **1.3.0 `main`** `94ceae32…`
   - host [hle_fpslock.c:106](../../dm/host/hle_fpslock.c#L106): engine frame limit set to fps_target: Unity targetFrameRate
+
+### Pokémon Mystery Dungeon: Rescue Team DX
+
+[Pokémon Mystery Dungeon: Rescue Team DX](../../dm/games/01003D200BAA2000/README.md), `01003D200BAA2000`, [patches.py](../../dm/games/01003D200BAA2000/patches.py).
+
+- **`build` → `engine`**, race, blocked: no game files of those games on the drive to compare, judgement: ThreadedStreamBuffer load-acquires. The race is in Unity 2018's ThreadedStreamBuffer, engine code other Unity games of that era ship (Cuphead, AI: THE SOMNIUM FILES, Raging Loop, FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition): a function-matched rule per Unity version would cover them; here 131 sites of main 1.0.0 are listed
+
+- **1.0.0 `main`** `ca19d069…` ([patches.py:17](../../dm/games/01003D200BAA2000/patches.py#L17))
+  - cut `+0x1684440`: stream reader going to sleep: ldr w8,[x8] → ldar (write position after the store-release of "reader sleeping")
+  - cut `+0x16851b8`: stream writer going to sleep: ldr w9,[x9] → ldar (read position after the store-release of "writer sleeping")
+  - cut `+0x1684d98`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1684e88`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a8ffb0`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a903f4`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a90a00`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a90d98`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a90f50`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a91238`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a92534`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a92a50`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a92e98`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a93038`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a931b8`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a93270`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a932d8`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a93350`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a93d64`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a93e7c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9400c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9413c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9462c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a949b8`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a94c2c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a94d34`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a94f90`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a95270`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a954a4`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a95750`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a95a28`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a95b64`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a95fac`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a960cc`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a96238`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a964f0`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a96718`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a969c8`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a96b18`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a974bc`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9768c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a97810`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9792c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a97a5c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a98140`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a98338`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a98408`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a98730`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a98bd8`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a98d04`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a991b0`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a992dc`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a99a10`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a99b2c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9a160`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9a28c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9a404`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9a620`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9a9d0`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9ad70`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9aeec`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9afac`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9b4e8`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9ba50`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9bb28`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9c224`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9cce4`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9ce40`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9d744`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9d84c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9da48`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9e2b4`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9e5fc`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9e838`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9fe30`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1a9fff4`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa0280`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa0438`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa0684`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa08a4`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa0ca0`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa0fac`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa1108`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa1290`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa1660`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa1a3c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa1bb0`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa1dd8`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aa2114`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1aaa240`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1f2b75c`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1f2b8dc`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1f2b998`: stream writer: ldr w8,[x8] → ldar ("reader sleeping" after the store-release of the write position)
+  - cut `+0x1684a4c`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1684b44`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa3ff4`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa4100`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa477c`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa4830`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa49a4`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa4b68`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa4c64`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa4df0`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa5424`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa5510`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa55d0`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa56a0`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa5770`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa583c`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa5c08`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa5d3c`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa5d70`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa68bc`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa6af8`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa7110`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa7df0`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa8b8c`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa8bb8`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa914c`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa9208`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa938c`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa93e8`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa9488`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa951c`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa955c`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa9994`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa9ac8`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa9ce0`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa9db4`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa9ebc`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
+  - cut `+0x1aa9f44`: stream reader: ldr w8,[x8] → ldar ("writer sleeping" after the store-release of the read position)
 
 ### Pokémon Shield
 
