@@ -369,6 +369,19 @@ class Tables(unittest.TestCase):
                 self.assertTrue((REPO / f).is_file(), r['doc'])
                 if a: self.assertIn(a, test_docs.anchors(REPO / f), r['doc'])
 
+    def test_catchup_stall_rule(self):   # PEANUTS: a frame held by the game's own threads with the GPU idle and nothing loading (Kirby's mode-0 catch-up, GitHub issue #153)
+        rows = L.load_rules(); m = L.Matcher(rows)
+        stall = ("[dm] [longframe] frame 3068 (105.93 s) whole frame 226.4 ms, submit+present 0.1 ms, GPU 5.0 ms (busy; span 5.0 ms, 0.1 waiting for the recording); "
+                 "new pipelines 0 + shader libraries 0, 0.0 ms in all; texture uploads 0 first + 0 re-uploads, 0.0 MB / 0.0 ms; "
+                 "guest waits 226.0 (longest 226.0: condvar, ended by 0x100e 'Thread_0x00000072C8B7D98C'), sleeps 0.0, service waits 0.1")
+        self.assertEqual(rows[m.search(stall)]['id'], 'game-catchup-stall')
+        loading = stall.replace('texture uploads 0 first', 'texture uploads 556 first')
+        pipelines = stall.replace('new pipelines 0 ', 'new pipelines 80 ')
+        hitch = stall.replace('whole frame 226.4 ms', 'whole frame 51.6 ms').replace('guest waits 226.0', 'guest waits 51.3')
+        for line in (loading, pipelines, hitch):
+            i = m.search(line)
+            self.assertTrue(i < 0 or rows[i]['id'] != 'game-catchup-stall', line[:60])
+
     def test_noise(self):
         rows = L.load_noise()
         self.check_table(rows, ('id', 'regex', 'note'))
