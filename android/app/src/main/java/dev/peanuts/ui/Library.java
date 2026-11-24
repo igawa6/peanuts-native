@@ -50,6 +50,7 @@ import java.io.File;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -785,16 +786,18 @@ public final class Library {
             }
         }
         Collections.sort(bl, (x, y) -> Boolean.compare(y.game != null && shows.test(y.game), x.game != null && shows.test(x.game)));   // upstream's Prepare first, like its card
-        Collections.sort(rd, (x, y) -> x.used() != y.used() ? Long.compare(y.used(), x.used()) : x.name().compareToIgnoreCase(y.name()));
-        Collections.sort(bd, (x, y) -> x.name().compareToIgnoreCase(y.name()));
-        Collections.sort(np, (x, y) -> x.name().compareToIgnoreCase(y.name()));
+        playTimes = dev.peanuts.launch.PlayTime.all(a);   // once per render: Sort by play time and the bottom screen's card of a focused cover
+        noteAdded(rows);
+        String sort = PeanutsPrefs.librarySort(a);
+        Comparator<Row> order = LibrarySort.order(sort, Row::name, Row::used, this::added, this::playMs);
+        List<Row> allRows = LibrarySort.all(bl, rd, bd, np, order, PeanutsPrefs.librarySortGrouped(a));   // sorts rd, bd and np too
         List<Row> show = new ArrayList<>();   // the cover grid: one grid, the filters are the sections (the Building filter shows the full cards instead)
         switch (filter) {
             case BUILDING: break;
             case READY: show.addAll(rd); break;
             case BUILD: show.addAll(bd); break;
             case NO_PROFILE: show.addAll(np); break;
-            default: show.addAll(bl); show.addAll(rd); show.addAll(bd); show.addAll(np);
+            default: show.addAll(allRows);
         }
         int hidden = hiddenGameCount();
         int cols = coverColumns();
@@ -859,6 +862,16 @@ public final class Library {
         }
         chips.addView(chipRow, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         top.addView(chips, PUi.weight());
+        // icon only: a label would push the filter chips off a handheld's row; the sheet shows the order in use
+        android.widget.ImageView sortB = PUi.iconButton(a, R.drawable.ic_sort, "Sort: " + LibrarySort.label(sort),
+                PUi.Kind.QUIET, Haptics.on(Haptics.Word.CLICK, v -> sortDialog()));
+        sortB.setImageDrawable(PUi.icon(a, R.drawable.ic_sort, R.color.bn_accent));
+        sortB.setOnKeyListener(shoulders);
+        focusRing(sortB, Color.TRANSPARENT);
+        track(sortB, "sort", null);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(PUi.dp(a, 44), PUi.dp(a, 44)); slp.leftMargin = PUi.dp(a, 4);
+        slp.gravity = android.view.Gravity.CENTER_VERTICAL;
+        top.addView(sortB, slp);
         Button findB = PUi.button(a, find.isEmpty() ? "Find" : PUi.joined("Find", find), PUi.Kind.QUIET, Haptics.on(Haptics.Word.CLICK, v -> findDialog()));
         findB.setCompoundDrawablesRelativeWithIntrinsicBounds(PUi.icon(a, R.drawable.ic_search, R.color.bn_accent), null, null, null);
         findB.setCompoundDrawablePadding(PUi.dp(a, 6));
@@ -892,7 +905,6 @@ public final class Library {
 
         int cell = (Math.min(widthDp(), 900) - 40 - PUi.GAP * (cols - 1)) / cols;   // Banana's 20 dp gutters and 12 dp gaps
         List<View> cells = new ArrayList<>();
-        playTimes = dev.peanuts.launch.PlayTime.all(a);   // once per render: the bottom screen's card of a focused cover (bottom)
         for (Row r : show) cells.add(coverCell(r, cell));
         grid(cells, cols, 16);
         boolean first = lastCells == 0 && !cells.isEmpty();   // the grid shows after an empty one (the first scan ended): it enters as after a filter change
@@ -909,6 +921,7 @@ public final class Library {
     private String signature(List<Row> show, View pc, Build b, boolean buildCard, int building, int all, int ready, int toBuild, int noProfile, int hidden, int cols) {
         StringBuilder s = new StringBuilder(64 + show.size() * 48);
         s.append(gen).append('|').append(filter).append('|').append(find).append('|').append(showHidden).append('|').append(hidden).append('|').append(cols).append('|').append(widthDp())
+                .append('|').append(PeanutsPrefs.librarySort(a)).append(PeanutsPrefs.librarySortGrouped(a))
                 .append('|').append(all).append(',').append(ready).append(',').append(toBuild).append(',').append(noProfile).append(',').append(building)
                 .append('|').append(scanning ? PeanutsPrefs.roots(a).size() : -1).append('|').append(PeanutsPrefs.gameDir(a))
                 .append('|').append(pc == null ? 0 : System.identityHashCode(pc)).append('|').append(buildCard);
@@ -1028,6 +1041,70 @@ public final class Library {
         focusGrid = true;
         animateNext = true;
         render();
+    }
+
+    // ---- Sort ----
+
+    /** When each game came into the library (LibrarySort.firstSeen, kept in PeanutsPrefs), by title ID: read again once per list (gen) for Recently added */
+    private final Map<String, Long> addedAt = new HashMap<>();
+    private int addedGen = -1;
+
+    /** Reads every game's first-seen time and keeps one for each game the library has not seen before (its file's time, else now) */
+    private void noteAdded(List<Row> rows) {
+        if (addedGen == gen) return;
+        addedGen = gen;
+        addedAt.clear();
+        Map<String, Long> fresh = new HashMap<>();
+        long now = System.currentTimeMillis();
+        for (Row r : rows) {
+            long t = PeanutsPrefs.firstSeen(a, r.id());
+            if (t <= 0) {
+                File f = r.title != null ? (r.title.launch != null ? r.title.launch : r.title.base != null ? r.title.base.file : null)
+                        : r.entry != null && !r.entry.gameDir.isEmpty() ? new File(r.entry.gameDir) : null;
+                t = LibrarySort.firstSeen(f == null ? 0 : f.lastModified(), now);
+                fresh.put(r.id(), t);
+            }
+            addedAt.put(r.id(), t);
+        }
+        if (!fresh.isEmpty()) PeanutsPrefs.firstSeen(a, fresh);
+    }
+
+    private long added(Row r) { Long t = addedAt.get(r.id()); return t == null ? 0 : t; }
+
+    private long playMs(Row r) {
+        dev.peanuts.launch.PlayLedger.Entry e = playTimes.get(r.id().toUpperCase(Locale.ROOT));
+        return e == null ? 0 : e.ms;
+    }
+
+    private void sortDialog() {
+        String cur = PeanutsPrefs.librarySort(a);
+        LinearLayout wrap = new LinearLayout(a);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        android.widget.RadioGroup g = new android.widget.RadioGroup(a);
+        for (int i = 0; i < LibrarySort.MODES.length; i++) {
+            android.widget.RadioButton rb = new android.widget.RadioButton(a);
+            rb.setId(View.generateViewId());
+            rb.setText(LibrarySort.HINTS[i] == null ? LibrarySort.LABELS[i] : PUi.joined(LibrarySort.LABELS[i], LibrarySort.HINTS[i]));
+            rb.setMinHeight(PUi.dp(a, 48));
+            rb.setTag(LibrarySort.MODES[i]);
+            g.addView(rb);
+            if (i == LibrarySort.index(cur)) rb.setChecked(true);
+        }
+        wrap.addView(g, PUi.fill());
+        android.widget.Switch apart = new android.widget.Switch(a);
+        apart.setText("Keep Ready, Build needed and Not supported yet apart");
+        apart.setChecked(PeanutsPrefs.librarySortGrouped(a));
+        apart.setMinHeight(PUi.dp(a, 48));
+        PUi.add(wrap, apart, 8);
+        g.setOnCheckedChangeListener((x, id) -> {
+            View v = g.findViewById(id);
+            if (v == null) return;
+            Haptics.play(v, Haptics.Word.CLICK);
+            PeanutsPrefs.librarySort(a, (String) v.getTag());
+            animateNext = true; render();
+        });
+        apart.setOnCheckedChangeListener((x, on) -> { Haptics.play(x, Haptics.Word.CLICK); PeanutsPrefs.librarySortGrouped(a, on); animateNext = true; render(); });
+        PUi.sheet(a, "Sort", wrap).setPositiveButton("Done", null).show();
     }
 
     private void findDialog() {

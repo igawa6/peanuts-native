@@ -173,6 +173,8 @@ If the home screen says **No games found in …**, put your files in that folder
 
 The filters at the top are **All**, **Building** (only while something builds), **Ready**, **Build needed** and **Not Supported Yet**. **Wrong version** and **File gone** games are under **Build needed**. **Find** searches by name.
 
+**Sort** (the icon beside Find) orders the games by **Last played** (the default), **Name A–Z**, **Recently added** or **Play time**. Recently added goes by when the library first found the game (for games it already had before this, the time of the game's file), so importing a game again does not move it. With **Keep Ready, Build needed and Not supported yet apart** on (the default), **All** shows Ready games first, then Build needed, then Not Supported Yet, each in the chosen order; off, it shows one list. Games that are building stay at the top either way. The app remembers your choice.
+
 ### What does "Wrong version" mean, and how do I fix it?
 
 Every supported game has a profile in the app, and the profile lists the game versions it was made for. The app compares the version of your update with that list. With no update, it compares the base game's version. **Wrong version** means your version is not on the list.

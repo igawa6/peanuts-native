@@ -157,6 +157,12 @@ public final class PeanutsPrefs {
      *  (a clip-on top screen that Android lists as the external display, GitHub issue #131). dev.peanuts.Screens applies it */
     public static boolean swapScreens(Context c) { return of(c).getBoolean("swap_screens", false); }
     public static void swapScreens(Context c, boolean on) { of(c).edit().putBoolean("swap_screens", on).apply(); }
+    /** Home's Sort: "last" (default: last played, then A–Z), "az", "added" (newest game file first) or "time" (most play time first) */
+    public static String librarySort(Context c) { return of(c).getString("library_sort", "last"); }
+    public static void librarySort(Context c, String mode) { of(c).edit().putString("library_sort", mode).apply(); }
+    /** Home's Sort: true (default) = Ready, Build needed and Not supported yet stay apart in All, the order applies inside each; false = one list */
+    public static boolean librarySortGrouped(Context c) { return of(c).getBoolean("library_sort_grouped", true); }
+    public static void librarySortGrouped(Context c, boolean on) { of(c).edit().putBoolean("library_sort_grouped", on).apply(); }
 
     /** The roots the library scans: the game folder first, then the update and DLC folders when set and different, then the build folder (walked the same
      *  two levels deep, so its {@code <title ID>/<name>.nup} entries are found) */
@@ -179,6 +185,14 @@ public final class PeanutsPrefs {
     private static String key(String titleId, String what) { return "t." + titleId.toUpperCase(Locale.ROOT) + "." + what; }
 
     /** The update file the user chose for a title (null: the newest found) */
+    /** When Home first saw the game (dev.peanuts.ui.LibrarySort.firstSeen; Sort's Recently added), 0 before that */
+    public static long firstSeen(Context c, String titleId) { return of(c).getLong(key(titleId, "first_seen"), 0); }
+    /** Keeps first-seen times by title ID, in one write */
+    public static void firstSeen(Context c, java.util.Map<String, Long> seen) {
+        SharedPreferences.Editor e = of(c).edit();
+        for (java.util.Map.Entry<String, Long> s : seen.entrySet()) e.putLong(key(s.getKey(), "first_seen"), s.getValue());
+        e.apply();
+    }
     public static String chosenUpdate(Context c, String titleId) { return of(c).getString(key(titleId, "update"), null); }
     public static void chosenUpdate(Context c, String titleId, String path) { put(c, key(titleId, "update"), path); }
 
