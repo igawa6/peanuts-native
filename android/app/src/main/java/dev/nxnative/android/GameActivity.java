@@ -123,7 +123,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         tag = overlayText(Gravity.TOP | Gravity.START, 1f);
         tag.setText(Prefs.buildTag(this));
         tag.setTypeface(Typeface.DEFAULT_BOLD);
-        tag.setVisibility(overlayOn() && Prefs.overlayItem(this, "tag") ? View.VISIBLE : View.GONE);
+        tag.setVisibility(overlayOn() && dev.peanuts.overlay.Hud.tagOn(this) ? View.VISIBLE : View.GONE);   // PEANUTS: Hud.tagOn (off by default under the pill)
         root.addView(tag, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START));
         // The log block may grow at most up to the tag's bottom edge (its top margin), so a long log never runs under the tag
         tag.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
@@ -399,7 +399,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (stopped || paused) { ui.postDelayed(this::fpsTick, 2000); return; }   // nothing to show: no readings (thermal, battery, the host's counters) while suspended
         if (started && resumedNow) presentationDeadlineUpdate();   // PEANUTS: reuse the active 500 ms tick, after the mode request
         boolean on = overlayOn() && !dev.peanuts.ui.GameScreen.hidesOverlay(this);   // PEANUTS: && !GameScreen.hidesOverlay (the second screen's stats page is up)
-        CharSequence t = on ? stats.tick() : null, g = on && Prefs.overlayItem(this, "tag") ? tag.getText() : null;
+        CharSequence t = on ? stats.tick() : null, g = on && dev.peanuts.overlay.Hud.tagOn(this) ? tag.getText() : null;   // PEANUTS: Hud.tagOn (off by default under the pill)
         dev.peanuts.ui.GameScreen.buildTag(tag.getText());   // PEANUTS: the stats page always names the build (whatever the overlay's own tag switch says)
         boolean host = tagBlock.host(g) & fpsBlock.host(t);   // both every time: a block that is off empties its corner
         fps.setVisibility(!host && t != null ? View.VISIBLE : View.GONE);

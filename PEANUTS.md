@@ -51,6 +51,7 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      and motion inside a game's page) one call into `dev.peanuts.ui.Feel` per widget kind: a row's tap, a switch, a button, a segmented choice, a
      rail entry, a choice dialog's list and confirm button, the page's and a tab's entrance, Play. Additive only; `peanuts/UPSTREAM-EDITS.md` Round 7.
    - `android/app/src/main/java/dev/nxnative/android/Overlay.java` — (2026-11-17, SoC temperature) one `ITEMS` row (`soc`) and three lines in `tick()`: the flag, the `&& !soc` in the early return, and one call into `dev.peanuts.overlay.SocTemp.append(s)` (the line; `SocZones` reads `/sys/class/thermal`). Additive only. (2026-11-17, label / value table) two more `ITEMS` rows (`graph`, `driver`), `&& !dev.peanuts.overlay.Hud.extra(ctx)` in the early return, and `return dev.peanuts.overlay.Hud.table(...)` in place of `return s;` (Hud hands `s` back when the style is "classic").
+   - `android/app/src/main/java/dev/nxnative/android/Overlay.java` — (2026-11-24, the pill) one `PEANUTS begin` / `end` block in `Block.draw`: for slot 1, `dev.peanuts.overlay.Hud.margins(...)` gives the margins as locals over the inset fields (the pill floats 6 dp off the edges with a round background, a centred block is centred, a left one has its side margin on the left).
    - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` (`overlayItems()`), `SidePanel.java` (the Overlay section) — (2026-11-17) one line each right after `Overlay.rows(...)`: `dev.peanuts.overlay.HudSettings.rows(<ctx>, box);` (the Style and Preset choices).
    - Share build log (2026-11-18, `dev.peanuts.ui.BuildLogUi`, `peanuts/UPSTREAM-EDITS.md` Round 24): `MainActivity.java` Settings › Share log's listener is
      `dev.peanuts.ui.BuildLogUi.shareLog(this, this::shareLog)` (the newest build instead, when a build log changed after the newest run), and one row after the
@@ -65,6 +66,7 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      through `MainActivity.shareLog(File, File)` by reflection.
    - `SidePanel.java` `look()` — (2026-11-17) one line after the `look(box, ...)` call: `dev.peanuts.ui.PanelPolish.apply(box);   // PEANUTS: ...` (segmented short radio groups, one look for headings, notes and buttons; styling only).
    - `android/app/src/main/java/dev/nxnative/android/GameActivity.java` — (2026-11-17) one line after `GpuDriver.env(...)`: `dev.peanuts.overlay.Hud.driver(...)` with the selected driver's label, else `Readiness.driverWord` of the system facts (null reads "System"), for the table's DRV row.
+   - `android/app/src/main/java/dev/nxnative/android/GameActivity.java` — (2026-11-24, the pill) the build tag's two `Prefs.overlayItem(this, "tag")` reads (`onCreate`, `fpsTick`) are `dev.peanuts.overlay.Hud.tagOn(this)`, each marked.
    - `android/app/src/main/java/dev/nxnative/android/GameActivity.java` — (2026-11-24) two lines in `fpsTick()`: `&& !dev.peanuts.ui.GameScreen.hidesOverlay(this)` on the overlay's `on` (the overlay over the game hides while the second screen shows the stats page, Overlay › With bottom stats, on by default) and `dev.peanuts.ui.GameScreen.buildTag(tag.getText())` (the stats page names the build at its bottom right).
    - `android/app/src/main/cpp/nxlaunch.c` — (2026-11-17, overlay graph in realtime) in `Java_dev_nxnative_android_Native_overlaySet`, one line before `nxhost_overlay_set`: `if (peanuts_ovl_block) peanuts_ovl_block(...)` (JNI entry points forwarded to `dm/peanuts`), with `#pragma weak peanuts_ovl_block` and its prototype beside the other weak host symbols. `android/host/CMakeLists.txt`: one line compiling `dm/peanuts/peanuts_graph.c`; `android/host/libnxhost.map`: one line exporting `peanuts_ovl_block` (the host exports only `nxhost_*` and `Java_*`). `dm/peanuts/peanuts.c`: `pn_graph_frame();` in `peanuts_tick`.
    - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-17, the GPU driver page) Settings' GPU driver row and the
@@ -354,3 +356,18 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
 - 2026-11-22 (the review of PR #336): the steady and the user clock read the real-time clock once a run and advance it with `CLOCK_BOOTTIME`, so a correction of
   the phone's clock (network or carrier time) can no longer make a span within a run negative; it reaches the game at its next start. `hle_time.c` `host_rt_ns`;
   `t_peanuts_time` case 8. UPSTREAM-EDITS Round 54.
+- 2026-11-24 (the overlay's pill): Overlay › Style is Pill (the default), Table or Classic. The pill (`Hud.pill`) is one line, plain: white values, grey units,
+  warm light icons (`IconSpan`, drawn in code) on its own background (`PillBg`: a dark peanut brown with a top sheen, a thin
+  rim in the shell's #D9A066 and a soft inner glow); yellow and red only mark a problem (the fps number in the frame time's colour, TEMP, BAT and RAM
+  by their levels), and the bars on pace are light grey for every style (`HistogramSpan`, `peanuts_graph.c`). Its histogram is 6 chars of the newest 20 frames (the
+  host splits the box into as many columns, `Bridge.graphBars` / `pn_graph_bars`; the table keeps 48). Its 100 % is 1.5 times the overlay's 8 sp (`PILL_BASE`; Table and Classic keep 8 sp). A pill wider than 75 % of the game's window is made
+  smaller from the next tick (`Hud.fitTo`, from the width the view laid out against the GameActivity window's; a `[overlay] pill fit` log line when it changes):
+  no cut at the edge, room for the build tag. Everything is one size; the fps number is bold, and a thin line (`IconSpan.SEP`)
+  splits the frames' group (graph, 1%L) from the phone's (temperature, battery, RAM), whose values are a dimmer white. Presets (`HudSettings.pillItems`): Minimal the fps; Normal the
+  fps, the graph and the temperature; Full adds the throttle dot, 1%L, the battery and RAM; Custom the item switches (1%L with the graph). TEMP, BAT and RAM also show
+  when they turn yellow or red (BAT and RAM only while their switch is on: `Overlay.tick` reads nothing else). Before the player picks one, the pill uses Normal and
+  sits at the top centre; Table and Classic keep Full and the top right. Position has six places (`Hud.CORNERS` / `CORNER_IDS`, the host's `VKO_TOP_CENTER` and
+  `VKO_BOTTOM_CENTER`; `pn_graph_corner` accepts 4 and 6, a bottom place is bit 2). The pill floats 6 dp off the edges with round ends, and a centred or left block
+  takes the corner's side margin on the right side (`Hud.margins`, one hook in `Overlay.Block.draw`). Players who never picked a style see the pill after the update. The build tag is off by default under the pill (`Hud.tagOn`,
+  used by `GameActivity` in two marked lines; a player's own switch wins, and only the Full preset turns it on there).
+  Tests: `t_android_ovl`, `t_peanuts_graph`, `dm/tools/tests/test_android_hud.py` (`test_pill`).

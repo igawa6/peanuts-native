@@ -303,6 +303,10 @@ final class Overlay {
             int w = view.getMeasuredWidth(), h = view.getMeasuredHeight();
             if (w <= 0 || h <= 0) return Native.overlaySet(slot, null, 0, 0, 0);
             view.layout(0, 0, w, h);
+            // PEANUTS begin: the stats block's margins and background from its place and style (dev.peanuts.overlay.Hud.margins): the pill floats off the edges, a centred block is centred
+            int[] pm = slot == 1 ? dev.peanuts.overlay.Hud.margins(view, h, this.inL, this.inT, this.inR) : null;   // PEANUTS: Hud.margins
+            int inL = pm != null ? pm[0] : this.inL, inT = pm != null ? pm[1] : this.inT, inR = pm != null ? pm[2] : this.inR;
+            // PEANUTS end
             int bw = w + inL + inR, bh = h + inT;   // the margin is empty pixels at the block's top and its side(s)
             if (bm == null || bm.getWidth() < bw || bm.getHeight() < bh) {   // a little larger than asked, so a block a few pixels wider does not need a new one
                 bm = Bitmap.createBitmap(Math.max(bw + 32, bm != null ? bm.getWidth() : 0), Math.max(bh + 16, bm != null ? bm.getHeight() : 0), Bitmap.Config.ARGB_8888);
