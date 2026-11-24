@@ -5,7 +5,7 @@ Base 1.0.0 (v0), SDK 13.3.0, Unreal Engine 4.27, NVN. The profile covers `main`,
 
 ## Android bring-up
 
-The UE4 replacement allocator must preserve the virtual-page alignment of over-aligned requests. Without that fix the audio SDK can run out of space inside the configuration buffer before the title screen ([allocator fix](https://github.com/igawa6/peanuts-native/pull/236)). Its DSP work buffer is separate.
+The UE4 replacement allocator must preserve the virtual-page alignment of over-aligned requests. Without that fix the audio SDK can run out of space inside the configuration buffer before the title screen ([allocator fix](https://github.com/igawa6/peanuts-native/pull/236), on main since 0.1.7). Its DSP work buffer is separate.
 
 Two fresh Normal games were tested on an Odin 2 with Turnip v27 R1 on 2026-11-20 (UTC):
 
