@@ -2097,3 +2097,7 @@ Tears of the Kingdom's Depths caves drew chunks with another chunk's vertices fo
 | `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1 each | the entry and its symptom line | `<!-- PEANUTS -->` |
 
 Tests: the `t_android_*` suite; on the AYN Thor (Turnip v26.2.0-R5), the owner's Depths cave save: per-frame cave draw count changes 906 → 11 in about 1,300 frames. Upstream candidate: yes (the replay code is upstream's).
+
+### Fire Emblem Engage SDK alignment backport (2026-11-24)
+
+`dm/tools/sdk_patches.py` removes the fixed Engage SDK row so the existing node-area and 2 MiB alignment rules can apply. The SDK matches the same cuts as Banana Native `android`. The edit and the [game note](../dm/games/0100A6301214E000/README.md#memory) carry `PEANUTS` markers. The patch index is generated. Take upstream's matching behavior at the next sync.

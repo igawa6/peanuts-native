@@ -7,7 +7,7 @@ Update 2.0.0 (v327680) over the base game, SDK 12.3.7. Unity 2020.3.18f1 IL2CPP 
 | Setting | Where | Why |
 |---|---|---|
 | `QualitySettings.set_vSyncCount` argument → 1 | [`patches.py`](patches.py) `CUTS`, `main` `8c08b971…` at `main+0x32f92d4` | the game's own 60 fps path; see [Frame rate](#frame-rate) |
-| Node area cut 1 GB → 62 MB | `dm/tools/sdk_patches.py`, `sdk` build `56ec2474…` (`sdk+0x346430`, `sdk+0x3464cc`) | the alias region ran out of address space minutes into play; see [Memory](#memory) |
+| Node area cut 1 GB → 62 MiB and 2 MiB alignment for regions of 4 MiB and up | `dm/tools/sdk_patches.py`, SDK-wide rules matched on `56ec2474…` | gives Unity's allocator room in the alias region; see [Memory](#memory) | <!-- PEANUTS -->
 | 5 GB guest layout: `mem_reserve 0x140000000`, `mem_alias 0x118000000`, `mem_stack 0x10000000`, `app_pool 0xA0000000` | [`game.tsv`](game.tsv) | 256 MB in front + 4.375 GB alias region + 256 MB stack region + 128 MB heap region, with a 2.5 GB pool reported. 5 GB is the total proven on a phone |
 | `shader_groups` `engine` / `assets` | `game.tsv` | `data.unity3d` and `Resources/` are the engine's built-ins, `StreamingAssets/` the Addressables bundles |
 | `depth_mode zero` | `game.tsv` | the game sets the near = 0 depth mode, so the pipeline bases made before it runs (the NSP script's Mac prebuild, and a [pipeline archive made offline](../../../docs/development.md#the-pipeline-archive-made-offline) for the iPhone when one is built with `DM_PSO_GPUS`) take its vertex shaders' `main0_z` entries (the host itself follows the mode the game sets) |
@@ -21,6 +21,9 @@ No `pad_layout`: the virtual gamepad starts in the 2D layout. `present_interval`
 - Measured on the Mac (holding Down for 0.45 s in the save list): 60 fps with the cut and the original 30 fps both move 6 slots; without the cut, 60 fps forced by `DM_PRESENT_INTERVAL=display` reaches the end (9 or more): frame-counted logic speeds up.
 
 ## Memory
+
+<!-- PEANUTS -->
+- **Android Somniel load, open for device verification of the alignment backport.** Peanuts Native 0.1.7 applies the node-area cut through a fixed SDK row. That row bypasses the SDK-wide alignment rule, and the 2.44 GiB StandardAllocator region begins at alias +0.75 GiB on Android. On an Odin 3 Pro with Turnip Gen8 V39, the stock 4.375 GiB alias reproduced the TLSF null write at `main+0x9a4664` on loading a Somniel save. With `DM_ALIAS_SIZE=0x158000000`, the same load succeeded and 20 min 12 s of Somniel play ran at 59.6–59.8 game fps. Both arms used the 2.5 GiB application pool. Removing the fixed row matches both the node-area and 2 MiB alignment rules against the exact SDK, as in Banana Native. The controlled run exercises the runtime alias override on 0.1.7. Testing a rebuilt pack with the alignment rules at the stock alias size remains open.
 
 - The NPDM declares 16 MB of system resource, so `IsVirtualAddressMemoryEnabled` is true: `nninitStartup` hands all free memory (application pool − 64 MB) to StandardAllocator as one address region in the alias region (1 GB aligned). Unity's low-level virtual allocator (vtable at `main+0x61ffeb0`; reserve `main+0x9aa0f4` → `nn::os::AllocateAddressRegion`) also takes regions itself, each aligned by size (2.25 MB takes 4 MB, 16.25 MB takes 20 MB): about 1.05 GB in the prologue battle. Engage never calls `SetHeapSize`; thread stacks are placed at random in the stack region.
 - Measured (prologue to the battle, 12 minutes): StandardAllocator commits only 0.58 GB and Unity's own regions 0.97 GB, 1.55 GB in all. So the pool is reported as 2.5 GB (StandardAllocator about 2.44 GB, four times its use). Reserved address space peaks at 3.47 GB of 4.31 GB.

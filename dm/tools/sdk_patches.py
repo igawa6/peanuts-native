@@ -19,15 +19,7 @@ CUTS = {
     (0x34e0c8, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000'),
     (0x34e164, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000'),
   ],
-  # Fire Emblem Engage 2.0.0 (v327680) sdk: AddressRegionManager node area 0x3fe00000 (about 1 GB) → 0x3e00000 (62 MB).
-  # The constructor (sdk+0x346420) carves the node area out of the start of the alias region (a unit heap of 0x30-byte nodes, mapped only as used) before AllocateAddressRegion hands out regions.
-  # The hardware alias region is 64 GB, so the 1 GB does not matter there; the host's alias region is only 5.375 GB (iOS caps a single reservation at 6 GB), and after StandardAllocator's 3.14 GB block (1 GB aligned)
-  # Unity's low-level virtual allocator (main+0x9aa0f4 → AllocateAddressRegion) had only about 1.2 GB left; about 357 s into the prologue battle it got no region → returned 0 → null write crash at main+0x9a4664.
-  # 62 MB holds about 1.35 million nodes (a few hundred regions are live in measurements). Both movs must change together: +0x346430 sets the node area limit, +0x3464cc registers it as an occupied region.
-  '56ec24747ec9e7f19b3efb062483a19d': [
-    (0x346430, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000'),
-    (0x3464cc, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000'),
-  ],
+  # PEANUTS: Fire Emblem Engage 2.0.0 (56ec2474…) uses MATCH_CUTS, as in Banana Native. A fixed row suppresses the 2 MiB alignment rule.
   # Ace Attorney Investigations Collection 1.0.0.2 (v131072) sdk (SDK 17.5.3): the same node area cut as Engage's. Without it nninitStartup's StandardAllocator::Initialize(nullptr, pool − used)
   # (main+0x874b6c, virtual address memory) aborts at its first CentralHeap::Init: the 1 GB-aligned region of 3.14 GB did not fit in the 4.375 GB alias region after the node area.
   # The constructor is at sdk+0x139458 (limit = alias start + 0x3fe00000 at +0x28, a unit heap of 0x30-byte nodes, the area then registered as occupied)
@@ -221,7 +213,8 @@ BINDING = [
      'checked': "the rules resolved on each build's sdk, 2026-10-29 and 2026-10-30",
      'why': 'the rules give these builds the same node area cut and the three alignment cuts more; each row keeps the alignment out',
      'blocked': 'the games that reach them (Pokémon Brilliant Diamond, Monster Hunter Rise, 13 Sentinels: Aegis Rim; Brain Memory Training Academy; Ace Attorney Investigations Collection) have no Mac build: run one per build with the alignment cuts'},
-    {'what': 'rows of builds not on the game drive (56ec2474, 9c73fb73, e01950c5)', 'now': 'build', 'goal': 'sdk', 'purpose': 'address space',
+    # PEANUTS: Engage's SDK has been checked against both SDK-wide rules.
+    {'what': 'rows of builds not on the game drive (9c73fb73, e01950c5)', 'now': 'build', 'goal': 'sdk', 'purpose': 'address space',
      'why': 'likely what the rules give (each names one of their implementations)',
      'blocked': 'no copy on the drive to compare'},
     {'what': 'VammManager node area and alignment, SDK 4.4.0 (9de92bad)', 'now': 'build', 'goal': 'sdk', 'purpose': 'address space',
