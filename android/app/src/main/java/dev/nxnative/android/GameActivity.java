@@ -1014,7 +1014,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     // PEANUTS: DM_SUSTAINED_PERF=1 (env.txt): Android's sustained performance mode for this window, which keeps the clocks at a level the phone can hold instead of bursting
     // and throttling. Off by default: it can lower the peak. A device that does not declare the feature may do nothing with it
     private void sustainedPerformance() {
-        boolean declared = getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_SUSTAINED_PERFORMANCE_MODE);
+        boolean declared = getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_SUSTAINED_PERFORMANCE);
         try { getWindow().setSustainedPerformanceMode(true); }
         catch (RuntimeException e) { Native.note("[nxlaunch] DM_SUSTAINED_PERF: " + e); return; }
         Native.note("[nxlaunch] DM_SUSTAINED_PERF=1: sustained performance mode requested" + (declared ? "" : " (this device does not declare the feature: it may do nothing)"));
