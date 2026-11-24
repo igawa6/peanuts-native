@@ -120,6 +120,11 @@ public final class GameStats {
         return thermal;
     }
 
+    /** Whether the overlay over the game hides because the second screen shows the stats page (GameScreen, Hud.hideForStats): only while that page is really up */
+    public static boolean hidesTop(boolean setting, boolean playing, boolean statsPage, boolean windowShown, boolean displayOn) {
+        return setting && playing && statsPage && windowShown && displayOn;
+    }
+
     /**
      * The worst frame time of each of {@code buckets} time buckets, oldest first, into out (NaN for a bucket with no frame): the 30-second graph. Frame i
      * took ms[i] and ended at endNs[i] (oldest first); bucket j holds the frames that ended in [(first + j) * bucketNs, (first + j + 1) * bucketNs).

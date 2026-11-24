@@ -70,7 +70,7 @@ import dev.peanuts.overlay.SocTemp;
  * Burn-in guard (the AYN Thor's bottom screen is AMOLED, and this page stays still for hours), each switchable in the sheet (PeanutsPrefs.statsGuard), all on by
  * default: a black page (its pixels are off; the page takes the dark theme's colours then), the pixel shifter (the page goes round a circle of 8 pixels, a pixel
  * every 30 s: GameStats.orbit), dimmer fixed labels, a dim after 10 minutes without a touch and black after 30 but for a small moving dot. A touch brings it back
- * (and does nothing else).
+ * (and does nothing else). The build tag always shows small at the bottom right (GameScreen.buildTag), whatever the overlay over the game shows.
  */
 public final class StatsView extends FrameLayout {
     private static final long TICK_MS = 250;
@@ -98,6 +98,8 @@ public final class StatsView extends FrameLayout {
     private Num fps, pace, frame, gpu, soc, watts;
     private Meter mGpu, mCpu, mSoc, mBat, mRam;
     private Graph graph;
+    private TextView buildTag;   // the build tag, always (buildTag(CharSequence))
+    private CharSequence buildTagText;
     private final Map<String, View> tiles = new HashMap<>();
     private boolean bigTiles;   // Simple's larger tiles (tileView)
 
@@ -345,6 +347,20 @@ public final class StatsView extends FrameLayout {
         if (simple) card.setGravity(Gravity.CENTER_VERTICAL);
         content.addView(new Capped(c, PUi.dp(c, wide ? 640 : 560), box, simple),
                 new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, simple ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+        // the build tag: small, bottom right, in content's bottom padding (below the card, never over it; content draws outside its padding), a child of content so
+        // the pixel shifter moves it with the page
+        buildTag = new TextView(c);
+        buildTag.setTextSize(10);
+        buildTag.setTextColor(labelCol);
+        buildTag.setTypeface(Typeface.MONOSPACE);
+        buildTag.setSingleLine(true);
+        buildTag.setIncludeFontPadding(false);
+        buildTag.setPadding(PUi.dp(c, 4), 0, PUi.dp(c, 4), 0);
+        buildTag.setText(buildTagText);
+        buildTag.setVisibility(buildTagText == null ? View.GONE : View.VISIBLE);
+        FrameLayout.LayoutParams tagLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.END);
+        tagLp.bottomMargin = -pad + PUi.dp(c, 2);   // the tag (about 12 dp) fits in the padding (16 or 24 dp) under the card
+        content.addView(buildTag, tagLp);
         addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         sheet = sheet(c);
         sheet.setVisibility(sheetOpen ? View.VISIBLE : View.GONE);
@@ -362,6 +378,13 @@ public final class StatsView extends FrameLayout {
         bindHeader();
         lastTail = Float.NaN;
         if (was) { graph.live(graphRuns()); ui.removeCallbacks(tick); ticks = 0; ui.post(tick); }
+    }
+
+    /** The build tag, moved here from over the game while the overlay hides for this page (GameScreen.buildTag); null hides it */
+    public void buildTag(CharSequence t) {
+        if (t == null ? buildTagText == null : buildTagText != null && t.toString().contentEquals(buildTagText)) return;
+        buildTagText = t;
+        if (buildTag != null) { buildTag.setText(t); buildTag.setVisibility(t == null ? GONE : VISIBLE); }
     }
 
     /** The game's name and cover; the run's clock starts at {@code since} (SystemClock.elapsedRealtime) */

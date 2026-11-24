@@ -66,6 +66,8 @@ public final class HudSettings {
                 v -> p.edit().putString(Hud.CORNER, v).apply());
         choice(c, box, "Size", new String[] {"75%", "100%", "125%", "150%", "200%"}, new String[] {"75", "100", "125", "150", "200"}, () -> String.valueOf(p.getInt(Hud.SCALE, 100)),
                 v -> p.edit().putInt(Hud.SCALE, Integer.parseInt(v)).apply());
+        choice(c, box, "With bottom stats", new String[] {"Hide", "Show"}, new String[] {"hide", "show"}, () -> p.getBoolean(Hud.HIDE_FOR_STATS, true) ? "hide" : "show",
+                v -> p.edit().putBoolean(Hud.HIDE_FOR_STATS, v.equals("hide")).apply());
         // the item switches stay in the box (their listeners write the preferences) but are shown only for Custom
         sync[0] = () -> {
             boolean custom = "custom".equals(p.getString(Hud.PRESET, DEFAULT_PRESET));

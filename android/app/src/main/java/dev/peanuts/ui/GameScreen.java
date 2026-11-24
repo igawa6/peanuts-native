@@ -72,6 +72,20 @@ public final class GameScreen extends Presentation {
         try { s.dismiss(); } catch (RuntimeException ignored) { }
     }
 
+    /** The stats page is up on the second display (GameStats.hidesTop's inputs but the setting); false with a companion, the cover, while loading, away or with that display off */
+    public static boolean statsShowing() {
+        GameScreen s = shown;
+        if (s == null || s.stats == null) return false;
+        Display d = s.getDisplay();
+        return GameStats.hidesTop(true, mode == PLAYING, s.stats.getVisibility() == android.view.View.VISIBLE, s.isShowing(), d != null && d.getState() != Display.STATE_OFF);
+    }
+
+    /** The overlay over the game hides now (GameActivity.fpsTick): Overlay › With bottom stats is on (Hud.hideForStats) and the stats page is up */
+    public static boolean hidesOverlay(android.content.Context c) { return dev.peanuts.overlay.Hud.hideForStats(c) && statsShowing(); }
+
+    /** The build tag (GameActivity.fpsTick), always shown small on the stats page; null: none */
+    public static void buildTag(CharSequence tag) { if (shown != null && shown.stats != null) shown.stats.buildTag(tag); }
+
     /** After the companion's window is up, so the display never shows Android's launcher between the two */
     public static void closeSoon() { UI.postDelayed(GameScreen::close, 250); }
 

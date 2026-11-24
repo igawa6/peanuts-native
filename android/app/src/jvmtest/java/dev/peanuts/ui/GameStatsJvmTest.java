@@ -95,6 +95,12 @@ public final class GameStatsJvmTest {
         check(out[0] == 40f && out[1] == 70f && Float.isNaN(out[2]) && out[3] == 33f, "worst: per bucket, an empty bucket NaN");
         GameStats.worst(wm, we, 5, 1, 4, 500, out);
         check(out[0] == 70f && Float.isNaN(out[1]) && out[2] == 33f && Float.isNaN(out[3]), "worst: from a later first bucket, older frames left out");
+        check(GameStats.hidesTop(true, true, true, true, true), "hides top: all on");
+        check(!GameStats.hidesTop(false, true, true, true, true), "hides top: setting off");
+        check(!GameStats.hidesTop(true, false, true, true, true), "hides top: not playing");
+        check(!GameStats.hidesTop(true, true, false, true, true), "hides top: no stats page");
+        check(!GameStats.hidesTop(true, true, true, false, true), "hides top: window not shown");
+        check(!GameStats.hidesTop(true, true, true, true, false), "hides top: display off");
         System.out.println("ok");
     }
 }

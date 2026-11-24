@@ -27,7 +27,10 @@ public final class Hud {
     /** The launcher's SharedPreferences file (Prefs.of); a test checks it against Prefs.java */
     static final String PREFS = "launcher";
     static final String STYLE = "pn_overlay_style", PRESET = "pn_overlay_preset", CORNER = "pn_overlay_corner", SCALE = "pn_overlay_scale";
-    /** The corner keys, in the host's order (vka_ovl.h: VKO_TOP_LEFT, VKO_TOP_RIGHT, VKO_BOTTOM_LEFT, VKO_BOTTOM_RIGHT) */
+    static final String HIDE_FOR_STATS = "pn_overlay_hide_for_stats";
+
+    /** Overlay › With bottom stats: the overlay over the game hides while the second screen shows the stats page (dev.peanuts.ui.GameScreen.statsShowing), on by default */
+    public static boolean hideForStats(Context c) { return prefs(c).getBoolean(HIDE_FOR_STATS, true); }    /** The corner keys, in the host's order (vka_ovl.h: VKO_TOP_LEFT, VKO_TOP_RIGHT, VKO_BOTTOM_LEFT, VKO_BOTTOM_RIGHT) */
     static final String[] CORNERS = {"tl", "tr", "bl", "br"};
     private static int sentCorner = -1;
 

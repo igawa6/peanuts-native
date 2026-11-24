@@ -32,6 +32,15 @@ class Wiring(unittest.TestCase):
         for k in ('GameStats.orbit(', 'GameStats.DIM_MS', 'GameStats.OFF_MS', 'onInterceptTouchEvent', 'PeanutsPrefs.statsGuard(', 'PeanutsPrefs.statsShown('):
             self.assertIn(k, s)
 
+    def test_top_overlay_hides(self):
+        a = (REPO / 'android/app/src/main/java/dev/nxnative/android/GameActivity.java').read_text()
+        for k in ('GameScreen.hidesOverlay(this)', 'GameScreen.buildTag('):
+            self.assertIn(k, a)
+        self.assertIn('Hud.hideForStats(c) && statsShowing()', (UI / 'GameScreen.java').read_text())
+        self.assertIn('GameStats.hidesTop(', (UI / 'GameScreen.java').read_text())
+        self.assertIn('Hud.HIDE_FOR_STATS', (REPO / 'android/app/src/main/java/dev/peanuts/overlay/HudSettings.java').read_text())
+        self.assertIn('public void buildTag(', (UI / 'StatsView.java').read_text())
+
     def test_readings(self):
         s = (UI / 'StatsView.java').read_text()
         for k in ('BATTERY_PROPERTY_CURRENT_NOW', 'BATTERY_PROPERTY_CHARGE_COUNTER', 'GameStats.drainPerHour(', 'device.hasGpu()', 'GameStats.throttle(',
