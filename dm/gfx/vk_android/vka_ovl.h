@@ -8,6 +8,7 @@
 
 enum { VKO_ROT90 = 2, VKO_ROT180 = 4, VKO_ROT270 = 8 };   // VkSurfaceTransformFlagBitsKHR's values; anything else is no turn
 enum { VKO_TOP_LEFT = 0, VKO_TOP_RIGHT = 1, VKO_BOTTOM_LEFT = 2, VKO_BOTTOM_RIGHT = 3 };
+enum { VKO_CENTER = 4, VKO_TOP_CENTER = 4, VKO_BOTTOM_CENTER = 6 };   // PEANUTS: the middle of the top or bottom edge (the launcher's Top / Bottom center); bit 2 is the bottom, as for the corners
 typedef struct { int x, y, w, h; float pc[6]; } vko_draw;   // the viewport (whole pixels of the swapchain image) and the push constants
 
 // 1 = something to draw (o filled), 0 = an empty block or display. A block larger than the display is cut to it (its top-left part stays)
@@ -16,6 +17,7 @@ static inline int vko_place(int pre, int W, int H, int ew, int eh, int corner, i
     if (bh > eh) bh = eh;
     if (bw <= 0 || bh <= 0 || tw <= 0 || th <= 0) return 0;
     int dx = corner & 1 ? ew - bw : 0, dy = corner & 2 ? eh - bh : 0;   // the block on the display
+    if (corner & VKO_CENTER) dx = (ew - bw) / 2;   // PEANUTS: a centred block (VKO_TOP_CENTER, VKO_BOTTOM_CENTER)
     int a, b, c, d, e, f;   // the block's own (ul, vl) = (a px + b py + e, c px + d py + f) for the viewport's (px, py)
     switch (pre) {
     case VKO_ROT90:  o->x = W - (dy + bh); o->y = dx; o->w = bh; o->h = bw; a = 0; b = 1; e = 0; c = -1; d = 0; f = 1; break;
