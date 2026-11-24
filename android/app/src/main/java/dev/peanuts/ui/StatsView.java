@@ -61,7 +61,7 @@ import dev.peanuts.overlay.SocTemp;
  *     clock and its cap (DeviceStats, sysfs; a tile hides where its files do not read), the SoC's temperature, the power in watts with the battery's level and
  *     time left (its current, voltage and charge counter; the level's fall an hour where the current does not read), the game's RAM (its CPU side and its GPU
  *     memory; the label the phone's RAM in use over its whole RAM, the meter the game's share, the rest in use faint behind it, the free part empty) and the
- *     run's clock. The meters mark the run's peak, and SOC names it when it is above now.</li>
+ *     run's clock. The meters mark the run's peak, and TEMP names it when it is above now.</li>
  * </ul>
  * What shows is the player's (StatsConfig: the presets Simple, Normal and Full, or items picked by hand), from the gear's sheet, kept for every game
  * (PeanutsPrefs.statsShown). Frame times come from the host (Bridge.frameTimes, on whether or not the overlay is); the numbers update 4 times a second and roll to
@@ -277,7 +277,7 @@ public final class StatsView extends FrameLayout {
             return unit(Math.round(v) + "%", mhz > 0 ? " " + mhz + "MHz" : "");
         }, "\u2014", 5f);
         vCpu = tileView(c, StatsConfig.CPU, "CPU", cCpu, mCpu);
-        soc = new Num(tileView(c, StatsConfig.SOC, "SOC", cSoc, mSoc), v -> Math.round(v) + "\u00B0", "\u2014", 2f);
+        soc = new Num(tileView(c, StatsConfig.SOC, "TEMP", cSoc, mSoc), v -> Math.round(v) + "\u00B0", "\u2014", 2f);
         vBat = tileView(c, StatsConfig.BAT, "BATTERY", cBat, mBat);
         watts = new Num(vBat, v -> unit((wasCharging ? "+" : "") + String.format(Locale.ROOT, "%.1f", v), "W"), "\u2014", 0.5f);
         vRam = tileView(c, StatsConfig.RAM, "GAME RAM", cMem, mRam);
@@ -601,7 +601,7 @@ public final class StatsView extends FrameLayout {
         mSoc.set(t == SocTemp.NONE ? 0f : t / 100f, socLv > 0 ? warn(socLv) : cSoc);
         mSoc.peak(socPeak == SocTemp.NONE ? -1f : socPeak / 100f);
         // the peak named when it is 3 degrees above now: a run that warmed and cooled again
-        ((TextView) soc.view.getTag()).setText(t != SocTemp.NONE && socPeak >= t + 3 ? "SOC ▲" + socPeak + "°" : "SOC");
+        ((TextView) soc.view.getTag()).setText(t != SocTemp.NONE && socPeak >= t + 3 ? "TEMP \u25B2" + socPeak + "\u00B0" : "TEMP");
 
         battery(c);
         memory(c);

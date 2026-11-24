@@ -23,7 +23,7 @@ public final class StatsConfig {
     public static final String[] ITEMS = {PILLS, PACE, GRAPH, FRAME, LOW, GPU, CPU, SOC, BAT, RAM, RUN};
     public static final String[] TILES = {FRAME, LOW, GPU, CPU, SOC, BAT, RAM, RUN};
     /** The sheet's names for the items, in ITEMS' order */
-    public static final String[] NAMES = {"Header pills", "On pace", "Graph", "Frame", "1% low", "GPU", "CPU", "SoC", "Battery", "Game RAM", "This run"};
+    public static final String[] NAMES = {"Header pills", "On pace", "Graph", "Frame", "1% low", "GPU", "CPU", "Temp", "Battery", "Game RAM", "This run"};
 
     public static final String SIMPLE = "simple", NORMAL = "normal", FULL = "full", CUSTOM = "custom";
     public static final String[] PRESETS = {SIMPLE, NORMAL, FULL};

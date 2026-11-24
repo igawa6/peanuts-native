@@ -107,7 +107,7 @@ public final class Hud {
         if (item(c, "soc")) {
             int t = SocTemp.celsius();
             if (t != SocZones.NONE) {
-                Row r = new Row("SOC", t + "°");
+                Row r = new Row("TEMP", t + "°");
                 r.color = t >= SocTemp.HOT ? LEVEL[2] : t >= 70 ? LEVEL[1] : WHITE;
                 rows.add(r);
             }
