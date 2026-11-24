@@ -9,6 +9,9 @@
 //   nximport_cli cat <file.nup> <entry path> <out file>
 // --keys defaults to $NX_KEYS, else ~/.switch/prod.keys.
 #define _POSIX_C_SOURCE 200809L
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE   // macOS hides struct rusage's ru_maxrss under _POSIX_C_SOURCE
+#endif
 #include "nximport.h"
 #include "nx_internal.h"
 #include <signal.h>
