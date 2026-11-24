@@ -139,5 +139,13 @@ jobs:
         run: |
           APK="${{ steps.apk.outputs.path }}"
           TAG="master-${{ github.run_number }}"
-          gh release create "$TAG" "$APK" --target "${{ github.sha }}" \
-            --title "Master build $TAG" --notes "BUILD MASTER of ${{ github.ref_name }} at ${{ github.sha }}"
+          echo "gh: $(command -v gh || echo missing); apk: $(ls -la "$APK" 2>&1)"
+          set +e
+          OUT=$(gh release create "$TAG" "$APK" --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "Master build $TAG" --notes "BUILD MASTER of ${{ github.ref_name }} at ${{ github.sha }}" 2>&1)
+          RC=$?
+          echo "$OUT"
+          if [ $RC -ne 0 ]; then
+            echo "::error title=release failed (exit $RC)::$(printf '%s' "$OUT" | head -c 1500 | tr '\n' ' ')"
+            exit $RC
+          fi
