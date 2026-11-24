@@ -2796,3 +2796,7 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### OCTOPATH TRAVELER II 1.1.1, Android section of its note
+
+`dm/games/0100A3501946E000/README.md` (Banana Native's note for the profile) gets an `## Android` section, marked `PEANUTS:`, with what a PC-built pack and eight cold-start runs on an AYN Thor (Turnip 27.0.0-R2) showed: the profile plays at 60 fps, a first launch with no pipeline cache draws Hikari's opening green (the case of the rendering note on skipped draws), the system driver loses the device after New Game, and the stalls seen. No `game.tsv` key, shader table, seed or code changed; a prewarm seed of 918 keys was left out because the contributing rules keep seeds out of commits (offered on issue #515). The release list and the catalog row are not touched here. Upstream candidate: no.
