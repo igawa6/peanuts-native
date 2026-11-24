@@ -16,3 +16,7 @@ Frame rate: the game steps by elapsed time. A two-second walk ends at the same p
 First launch: `vk_prewarm.bin` holds the pipeline keys of a Turnip run. With it a cold start prepares the shader parts of 1,271 programs in about 8 seconds, and the first scenes draw without pipelines made late; the next start takes about 1 second.
 
 System driver: the stock Qualcomm driver starts the game and draws the title screen, menus and HUD, but the 3D field stays black, also on a second start. Use Turnip.
+
+## Found on this game
+
+- [GPU timestamps per submission segment](../../../docs/reference/frame-rate.md#gpu-timestamps-per-submission-segment): the dynamic resolution reads the GPU time between the frame's timestamp reports, which span submissions; with one time per submission it held the scene at 800x450 of the 1600x900 targets, which the game upscaled into a blurred picture with dark smears around foliage and painted-looking rock faces (Eden on the same Thor drew them sharp). `gpu_timestamps segment` in the profile: 1600x900, GPU p50 8.3 ms / p95 17.9 ms, frame time p95 17.7 ms, 60 fps held in the field on the Thor with Turnip T30 (resolved, 2026-11-24). Found by dumping the scene's targets (the scene filled their top-left quarter), after the textures' mip levels and samplers were ruled out.

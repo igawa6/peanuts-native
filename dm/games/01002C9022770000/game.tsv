@@ -25,3 +25,8 @@ shader_note	Trails in the Sky 1st Chapter shaders
 
 # PEANUTS: the game steps by elapsed time (the same walk covers the same ground at 30 and 60 fps); its own limit is 60, so display pacing caps up to 60 are offered as experimental.
 fps_limit_present	1
+
+# PEANUTS: the dynamic resolution reads the GPU time between the frame's timestamp reports (nvnCommandBufferReportCounter). With one time per submission it measured the
+# time between submissions' completions, display waits included, and held the scene at its minimum, 800x450 of the 1600x900 targets; each report taking its segment's GPU
+# time lets it render 1600x900 on the Thor (GPU p50 8.3 ms, 60 fps held). See the note's "Found on this game"
+gpu_timestamps	segment

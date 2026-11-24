@@ -2796,3 +2796,16 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### Trails in the Sky 1st Chapter: segment GPU timestamps (2026-11-26)
+
+The game's dynamic resolution reads the GPU time between its frame's timestamp reports, which span submissions; with one time per submission (the default)
+it held the scene at 800x450 of its 1600x900 targets. The profile key `gpu_timestamps segment` (upstream's, as Breath of the Wild uses it) fixes it.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `docs/reference/frame-rate.md` | 2 | "GPU timestamps per submission segment": the opposite symptom (a dynamic resolution held at its minimum) and the game under Found on | `<!-- PEANUTS(upstream-candidate): ... -->` |
+| `docs/agents/game-patches.md`, `docs/agents/symptoms.md` | generated | `dm/tools/docs_patches.py`, `dm/tools/docs_symptoms.py` | (generated) |
+
+Peanuts' own files, no marker: `dm/games/01002C9022770000/game.tsv` (the key, with a `# PEANUTS:` comment) and its note. Upstream candidate: the reference
+entry's new symptom; the key itself is this Peanuts-only profile's.
