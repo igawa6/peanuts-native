@@ -101,6 +101,11 @@ public final class GameStatsJvmTest {
         check(!GameStats.hidesTop(true, true, false, true, true), "hides top: no stats page");
         check(!GameStats.hidesTop(true, true, true, false, true), "hides top: window not shown");
         check(!GameStats.hidesTop(true, true, true, true, false), "hides top: display off");
+        check(GameStats.aim(120, 1000f / 119f) == 120, "aim: near a 120 cap");
+        check(GameStats.aim(90, 1000f / 88f) == 90, "aim: near a 90 cap");
+        check(GameStats.aim(120, 1000f / 60f) == 60, "aim: far below the cap, the common rate");
+        check(GameStats.aim(0, 1000f / 30f) == 30, "aim: no cap, the common rate");
+        check(GameStats.aim(120, Float.NaN) == 0, "aim: no frames, none");
         System.out.println("ok");
     }
 }

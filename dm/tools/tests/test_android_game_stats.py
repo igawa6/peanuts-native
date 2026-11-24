@@ -47,6 +47,14 @@ class Wiring(unittest.TestCase):
                   'Choreographer.getInstance().postFrameCallback', 'GameStats.newFrames('):
             self.assertIn(k, s)
 
+    def test_controls(self):
+        a = (REPO / 'android/app/src/main/java/dev/nxnative/android/GameActivity.java').read_text()
+        for k in ('dev.peanuts.ui.GameControls.host(peanutsControls())', 'dev.peanuts.ui.GameControls.host(null)', 'Native.graphicsModeSet(-1, 1 - m)', 'Native.fpsCapSet(v)'):
+            self.assertIn(k, a)
+        s = (UI / 'StatsView.java').read_text()
+        for k in ('openControl(v, true)', 'openControl(v, false)', 'GameControls.host()', 'popup != null', 'h.capRunning()', 'fpsBlock'):
+            self.assertIn(k, s)
+
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')
 class GameStatsJvm(unittest.TestCase):

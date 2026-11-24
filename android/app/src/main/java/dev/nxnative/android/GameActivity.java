@@ -90,6 +90,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        dev.peanuts.ui.GameControls.host(peanutsControls());   // PEANUTS: the stats page's console mode and frame rate cap pop-ups
         fitOrientation();
         // PEANUTS: the game stays behind the lock screen (GitHub issue #198: after the lid closed it was drawn over the lock screen, which then had no way to the PIN
         // prompt). Only a control command asks for it (--ez show_when_locked true, as Ondevice's), for test runs on a phone that locks
@@ -1116,6 +1117,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      * The game itself is left as it is: onStop has suspended it
      */
     @Override protected void onDestroy() {
+        dev.peanuts.ui.GameControls.host(null);   // PEANUTS: no game, no controls on the stats page
         runningDisplayMode.clear(this);   // PEANUTS: release this game window's display request
         dev.peanuts.Companion.stop();   // PEANUTS
         dev.peanuts.launch.PlayTime.flush(this);   // PEANUTS: total play time, what is still in memory
@@ -1301,6 +1303,63 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     // default), and by the in-game panel's Pause. The host keeps it suspended (clock, graphics, guest threads, audio, focus Background) until unpause() ----
     private boolean paused, stopped;
     private TextView pausedView;
+
+    // PEANUTS begin: the second screen's stats page sets the console mode and the frame rate cap (dev.peanuts.ui.GameControls), with the same calls as
+    // SidePanel's Console mode and Frame rate cap rows
+    private dev.peanuts.ui.GameControls.Host peanutsControls() {
+        GameActivity act = this;
+        return new dev.peanuts.ui.GameControls.Host() {
+            @Override public int consoleMode() { return ScreenMode.fixed(titleId()) != null ? -1 : ScreenMode.mode(act, titleId()); }
+            @Override public void consoleMode(int m) {
+                if (ScreenMode.fixed(titleId()) != null) return;
+                ScreenMode.set(act, titleId(), m);
+                if (!Native.graphicsModeSet(-1, 1 - m)) Native.note("Console mode: this host cannot change it while the game runs; it applies at the next start");
+            }
+            @Override public int[] caps() { return Prefs.limited(titleId()) ? FrameRateCaps.menu() : new int[] {0, 120, 90, 60, 45, 40, 30, 20, 15}; }
+            @Override public String capLabel(int v) {   // short, for a button: paceLabel without its "(experimental)", which capNote says once
+                if (Prefs.limited(titleId())) return v == FrameRateCaps.GAME_OWNED ? "Game owned" : (v <= 0 ? 60 : v) + " fps";
+                return v == 0 ? "Game owned" : v + " fps";
+            }
+            @Override public boolean capOffered(int v) { return !Prefs.limited(titleId()) || FrameRateCaps.contains(Prefs.paceCaps(titleId()), v); }
+            @Override public int cap() {
+                if (Prefs.limited(titleId())) return Prefs.paceCap(act, titleId());
+                if (Prefs.ownRate(act, titleId())) return 0;
+                int live = Integer.parseInt(Native.fpsCapStatus().split(" ")[0]);
+                int cur = live >= 0 ? live : Prefs.fpsCap(act, titleId());
+                return cur < 0 ? 0 : cur;
+            }
+            @Override public void cap(int v) {
+                Prefs.fpsCap(act, titleId(), v);
+                if (!Prefs.limited(titleId())) { Native.fpsCapSet(v); return; }
+                if (v != FrameRateCaps.GAME_OWNED && !gameOwnedAtStart() && !fpsRestartRequired(v)) {
+                    Native.fpsLimitSet(v > 0 ? v : 60);
+                    Profile p = Profile.of(titleId());
+                    if (p != null && p.usesFpsModeTarget()) Native.fpsCapSet(p.fpsModeTarget(v));
+                }
+            }
+            @Override public int capRunning() {   // SidePanel.refresh's restart test: a pick that needs a restart leaves the start's cap running
+                int v = cap();
+                if (!Prefs.limited(titleId())) return v;
+                boolean pending = fpsRestartRequired(v) || (v == FrameRateCaps.GAME_OWNED) != gameOwnedAtStart();
+                if (!pending) return v;
+                // the limit the host holds now (fpsCapStatus' fourth: a pick applied live since the start), else the start's
+                String[] f = Native.fpsCapStatus().split(" ");
+                int held = f.length > 3 ? Integer.parseInt(f[3]) : 0;
+                return held > 0 ? held : fpsModeAtStart;
+            }
+            @Override public int capRate(int v) {
+                if (Prefs.limited(titleId())) return v == FrameRateCaps.GAME_OWNED ? 0 : v <= 0 ? 60 : v;
+                return Math.max(v, 0);
+            }
+            @Override public String capNote() {
+                if (!Prefs.limited(titleId())) return null;
+                int v = cap();
+                String restart = capRunning() != v ? "Restart the game to apply " + Prefs.paceLabel(v) + ". " : "";
+                return restart + "Above 60 fps is experimental. Switching to or from Game owned applies on the next start.";
+            }
+        };
+    }
+    // PEANUTS end
 
     private String titleId() { return String.valueOf(getIntent().getStringExtra("title_id")); }
 
