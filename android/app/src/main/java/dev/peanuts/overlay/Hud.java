@@ -30,7 +30,9 @@ public final class Hud {
     static final String HIDE_FOR_STATS = "pn_overlay_hide_for_stats";
 
     /** Overlay › With bottom stats: the overlay over the game hides while the second screen shows the stats page (dev.peanuts.ui.GameScreen.statsShowing), on by default */
-    public static boolean hideForStats(Context c) { return prefs(c).getBoolean(HIDE_FOR_STATS, true); }    /** The corner keys, in the host's order (vka_ovl.h: VKO_TOP_LEFT, VKO_TOP_RIGHT, VKO_BOTTOM_LEFT, VKO_BOTTOM_RIGHT) */
+    public static boolean hideForStats(Context c) { return prefs(c).getBoolean(HIDE_FOR_STATS, true); }
+
+    /** The corner keys, in the host's order (vka_ovl.h: VKO_TOP_LEFT, VKO_TOP_RIGHT, VKO_BOTTOM_LEFT, VKO_BOTTOM_RIGHT) */
     static final String[] CORNERS = {"tl", "tr", "bl", "br"};
     private static int sentCorner = -1;
 
