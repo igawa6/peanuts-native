@@ -441,7 +441,7 @@ DM_TEST_SWKBD_LAG_MS	developer	Diagnostics			text			both
 DM_TEST_TRANSFORM_FEEDBACK	internal	Diagnostics			text			both						test harness
 DM_TEST_UP_LEAK	developer	Diagnostics			text			both						
 DM_TEST_UP_LOST	developer	Diagnostics			text			both						
-DM_THERMAL_CAP	internal	Game			text			both						Mac or iOS only
+DM_THERMAL_CAP	internal	Game			text			both						Mac, iOS; Android: a profile's thermal_cap [PEANUTS]
 DM_THR	developer	Diagnostics			text			both						
 DM_THRCPU	internal	Diagnostics			text			both						Mac or iOS only
 DM_TIME	developer	Game			text			both						
@@ -644,6 +644,7 @@ DM_VK_PASS_CLEARS	developer	Graphics			text			both
 DM_VK_PASS_KEEP	developer	Graphics			text			both						
 DM_VK_PCACHE	developer	Diagnostics			text			both						
 DM_VK_PCACHE_KEEP	developer	Memory			text			both						
+DM_VK_PCACHE_SAVE_BIG_S	developer	Memory			text			both						The large pipeline cache's save interval [PEANUTS]
 DM_VK_PCACHE_SAVE_S	developer	Memory			text			both						
 DM_VK_PCACHE_SAVE_SLOW_S	developer	Memory			text			both						
 DM_VK_PFB_SPV_DIR	internal	Diagnostics			text			both						test harness

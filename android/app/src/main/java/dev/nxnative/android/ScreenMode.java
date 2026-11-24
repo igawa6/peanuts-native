@@ -6,6 +6,7 @@ package dev.nxnative.android;
 // MainActivity's Settings, the card Performance and picture: "Game defaults" before Banana Native v0.3.22).
 
 import android.content.Context;
+import android.view.InputDevice;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -31,6 +32,21 @@ final class ScreenMode {
 
     /** Handheld by default here although the profile says docked: Link's Awakening's 1920x1080 frame took the Thor's GPU 15 ms at the 90th percentile and play dipped to 50 fps; handheld holds 60 */
     private static final Set<String> PREFER_HANDHELD = Set.of("01006BB00C6F0000");
+
+    /** PEANUTS: Handheld by default on a phone (no built-in gamepad) of 12 GB or less (Prefs.lowRam): Hogwarts Legacy docked on a Galaxy S24 Ultra (11 GB) froze for 1.2-3 s
+     *  four times in a minute through Hogsmeade, each with a burst of the low-memory killer, at GPU 22-24 ms a frame; handheld held 30 fps in two minutes of the same walk with
+     *  no frame over 135 ms and GPU 20 ms at a lower clock (2026-11-24). Devices with more RAM keep docked, and so do handhelds: a 12 GB AYN Thor reports about the same total
+     *  memory as the 12 GB S24 Ultra, so no RAM cutoff tells them apart, and the Thor held 30 docked at GPU 13-17 ms. A handheld is a device with a built-in gamepad */
+    private static final Set<String> PREFER_HANDHELD_LOW_RAM = Set.of("0100F7E00C70E000");
+    private static int ownMode(Context c, String id) { return own(id) == 1 || PREFER_HANDHELD_LOW_RAM.contains(id) && Prefs.lowRam(c) && !builtInPad() ? 1 : 0; }
+    /** A gamepad that is part of the device (InputDevice.isExternal false): a handheld such as the AYN Thor; a phone has none */
+    static boolean builtInPad() {
+        for (int id : InputDevice.getDeviceIds()) {
+            InputDevice d = InputDevice.getDevice(id);
+            if (d != null && !d.isExternal() && (d.getSources() & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD) return true;
+        }
+        return false;
+    }
 
     /** The mode the host starts the game in without a line (its profile's op_mode) */
     static int profile(String id) { return HANDHELD.contains(id) ? 1 : 0; }
@@ -58,7 +74,7 @@ final class ScreenMode {
 
     static int mode(Context c, String id) {
         int g = global(c);
-        return Prefs.of(c).getInt(Prefs.gameKey(KEY, id), g < 0 ? own(id) : g) == 1 ? 1 : 0;
+        return Prefs.of(c).getInt(Prefs.gameKey(KEY, id), g < 0 ? ownMode(c, id) : g) == 1 ? 1 : 0;   // PEANUTS: ownMode (12 GB or less)
     }
 
     static void set(Context c, String id, Integer v) {
@@ -81,7 +97,7 @@ final class ScreenMode {
         if (fx != null && fx.isEmpty()) return null;
         if (fx != null) return new Ui.Setting(a, "📺", "Console mode", null).value(fx);
         Ui.Setting s = new Ui.Setting(a, "📺", "Console mode", v -> {
-            String[] labels = {"Default (" + (global(a) < 0 ? "this game: " + SHORT[own(id)] : "Settings: " + SHORT[global(a)]) + ")", NAMES[0], NAMES[1]};
+            String[] labels = {"Default (" + (global(a) < 0 ? "this game: " + SHORT[ownMode(a, id)] /* PEANUTS: ownMode */ : "Settings: " + SHORT[global(a)]) + ")", NAMES[0], NAMES[1]};
             new PadFocus.Builder(a).setTitle("Console mode · " + g.name).setSingleChoiceItems(labels, own(a, id) ? mode(a, id) + 1 : 0, (x, w) -> {
                 set(a, id, w == 0 ? null : w - 1);
                 x.dismiss();

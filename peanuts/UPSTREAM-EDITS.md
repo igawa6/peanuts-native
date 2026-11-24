@@ -2796,3 +2796,31 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+### Hogwarts Legacy on phones: an opt-in thermal cap that says so, fewer saves of a large pipeline cache, Handheld on a 12 GB phone (2026-11-24, rebased on 0.1.8)
+
+Hogsmeade on a Galaxy S24 Ultra (Adreno 750, Turnip Gen8 V39, 11 GB) did not hold 30 fps and froze for seconds. In 0.1.7 the launcher did not start the game Game owned (it ran uncapped, 24-37 fps, until the phone reached a severe thermal status with the GPU held at 231 of 1,000 MHz); 0.1.8's frame limit list (`fps_limit_present` counts, bc6aac5e) fixes that, and `fps_owned_default` stays as a safety net. The thermal cap read no thermal state on Android and did not reach a frame limit held by FPSLocker rows. Each pipeline cache save of 2 or 3 new pipelines copied and wrote the whole 72 MB cache and stopped the game for 2.8 s. Docked, the low-memory killer's bursts froze it for 1.2-3 s.
+
+Review of the first version (igawa6, 2026-11-24): the thermal cap reached every game on Android with nothing on screen to explain a 30; the save wait was a hard-coded 600 s for every game, parts-only saves included. Now the thermal cap is opt-in per game (`thermal_cap 1` → `DM_THERMAL_CAP=1`; without it Android reads no thermal status, as before), the cap status has a fifth field (held for heat) that the in-game panel and the stats page show, the hold is logged, the state is sampled at any limit (no extra 30 s after a raise), the status is read at most once a second; the save wait applies only to a cache over 32 MB with 1 to 31 new pipelines, `DM_VK_PCACHE_SAVE_BIG_S` (150 s); the Handheld default leaves out devices with a built-in gamepad.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/0100F7E00C70E000/game.tsv` | 1 | `fps_owned_default 1` (a safety net since 0.1.8), `thermal_cap 1` | `# PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/FrameRateCaps.java` | 1 | `limited` counts `ownedByDefault` | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/Profile.java` | 2 | `thermalCap`, column 43 | `PEANUTS` |
+| `android/app/build.gradle` | 1 | `thermal_cap` as `NX_PROFILES` column 43 | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/GameActivity.java` | 3 | `DM_THERMAL_CAP=1` for a profile's `thermal_cap`; `heldForHeat` (the cap status' fifth); the stats page's `heldForHeat` and `capNote` | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/Prefs.java` | 1 | `HEAT_TEXT` | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/SidePanel.java` | 2 | `refresh`: the held-for-heat line, for the frame limit list and the cap list | `PEANUTS` |
+| `dm/gfx/vk_android/vka_perf.c` | 1 | the thermal manager looked up once from any thread (`th_status`); `dm_thermal_now` on iOS's scale (severe = serious), only with `DM_THERMAL_CAP` set and not 0, read at most once a second | `PEANUTS` |
+| `dm/gfx/nvn/hle_nvn.c` | 3 | `thermal_capped`: opt-in on Android, its log line names the frame limit too; `dm_thermal_capped` for the host | `PEANUTS` |
+| `dm/host/hle_fpslock.c` | 1 | `limit_raw`: a limit above 30 holds 30 while the thermal cap holds, the cap asked at any limit, the hold logged; weak `dm_thermal_capped` for the host tests (`DM_TEST_THERMAL`: the test's own) | `PEANUTS` |
+| `dm/host/android/input_android.c` | 2 | `nxhost_fps_cap_status`: the fifth field, held for heat | `PEANUTS` |
+| `dm/host/tests/t_fpslock.c` | 4 | `thermal_check`: `limit_raw` under the thermal cap | `PEANUTS` |
+| `dm/gfx/vk_android/vka_pso.c` | 4 | `vka_pso_save`: a cache over 32 MB (`g_pc_bytes`, its last read or save) with 1 to 31 new pipelines waits `DM_VK_PCACHE_SAVE_BIG_S` (or `DM_VK_PCACHE_SAVE_S` if longer); parts-only saves, slow pipelines and the saves at suspend and at the end are not held | `PEANUTS` |
+| `docs/env_switches.tsv`, `docs/advanced_settings.tsv` | 2, 2 | `DM_THERMAL_CAP` on Android; `DM_VK_PCACHE_SAVE_S`'s large-cache exception, `DM_VK_PCACHE_SAVE_BIG_S` (new) | `[PEANUTS]` in the text |
+| `dm/games/README.md`, `dm/tools/docs_patches.py` | 1, 1 | the `thermal_cap` key | `<!-- PEANUTS -->`, `# PEANUTS` |
+| `dm/games/0100F7E00C70E000/README.md` | 1 | Frame rate: Game owned since 0.1.8, the thermal cap, the Handheld default | `<!-- PEANUTS -->` |
+| `android/app/src/main/java/dev/nxnative/android/ScreenMode.java` | 3 | `PREFER_HANDHELD_LOW_RAM`, `ownMode`, `builtInPad` (Hogwarts Legacy on a phone of 12 GB or less) | Peanuts' own file |
+| `android/app/src/main/java/dev/peanuts/ui/GameControls.java`, `StatsView.java` | 1, 1 | `Host.heldForHeat`; the cap pill's "30 FPS (HOT)" | Peanuts' own files |
+
+Tests: `dm/host/tests/t_fpslock.c` (new `thermal_check`: a limit of 45, 60 or 120 holds 30 while hot, 20 and 30 stay, no limit stays 0, the cap is asked at 30 and at none, a limit raised after cooling is not held, a frame step holds 30) and `t_resolution`, built with the NDK for arm64 Android and run under qemu (the version of `limit_raw` that skipped the check at 30 or less fails `thermal_check`); the Python suite and `env_switches.py --check` with the same results as on 0.1.8 itself. On the Galaxy S24 Ultra (first version), Hogsmeade, the same scripted minute of walking: before, interval 1, 16-37 fps, two 2.8 s freezes at pipeline cache saves of 4.5 s; Game owned, docked, interval 2 at 30 fps with four 1.2-3 s freezes at low-memory-killer bursts; Game owned, handheld, two minutes at 30.0 fps, interval 2 100 %, no frame over 135 ms, thermal status 1-2. Upstream candidate: yes (the thermal state, the limit and the cache saves are upstream's code).

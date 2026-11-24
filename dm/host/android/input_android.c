@@ -639,10 +639,12 @@ void nxhost_codecs_log(void) {
 
 // ---- Frame rate cap ----
 void dm_fps_target_set(int t, const char *src); int dm_fps_target(void); int dm_fps_lock_rates(void); int nvn_game_fps(void); int nxhost_fps_limit_get(void);
+int dm_thermal_capped(void);   // PEANUTS: hle_nvn.c
 void nxhost_fps_cap_set(int fps) { dm_fps_target_set(fps, "the launcher's in-game panel"); }
 int nxhost_fps_cap_status(char *buf, int n) {
     int loaded = dm_main_build()[0] != 0, cap = dm_fps_target(), rates = loaded ? dm_fps_lock_rates() : 0;   // the limiters are looked for once, so only after main is loaded
     // the fourth: the rate the frame limit holds (hle_fpslock.c nxhost_fps_limit_get; a frame-step game holds 60, 30 or 20 only, so 45 and 40 run at 30), 0 = none
-    if (buf && n > 0) snprintf(buf, (size_t)n, "%d %d %d %d", cap, rates, loaded ? nvn_game_fps() : 0, loaded ? nxhost_fps_limit_get() : 0);
+    // PEANUTS: the fifth: 1 while the thermal cap holds rates above 30 at 30 (hle_nvn.c dm_thermal_capped; opt-in, a profile's thermal_cap), for the in-game panel and the stats page
+    if (buf && n > 0) snprintf(buf, (size_t)n, "%d %d %d %d %d", cap, rates, loaded ? nvn_game_fps() : 0, loaded ? nxhost_fps_limit_get() : 0, loaded && dm_thermal_capped());   // PEANUTS: the fifth
     return cap;
 }

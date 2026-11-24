@@ -2217,6 +2217,7 @@ __attribute__((weak)) int dm_movie_playing(void) { return 0; }   // hle_movie.c:
 // Thermal cap (iOS): while the device is thermally serious or worse (NSProcessInfo thermalState >= 2) the frame step holds 30 fps, and it goes back to the cap after the device
 // has been fair or better for THERMAL_CALM_NS, so it does not flap. At "serious" iOS caps the GPU clock to about a third: Breath of the Wild's vistas (about 3,000 G-buffer draws)
 // then took 17-26 ms a frame and dropped a frame in most windows; a steady 30 instead also lets the device cool. DM_THERMAL_CAP=0 turns it off; the Mac reports no thermal state
+// PEANUTS: on Android it is opt-in (DM_THERMAL_CAP=1, which the launcher sets for a profile with thermal_cap 1) and holds a frame limit above 30 as well (hle_fpslock.c limit_raw)
 #define THERMAL_CALM_NS 30000000000ull
 static int thermal_capped(void) {
     // Acquire, present and the display-link configuration can ask on different
@@ -2225,13 +2226,17 @@ static int thermal_capped(void) {
     static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
     static int on = -1, capped; static uint64_t last, calm_since;
     pthread_mutex_lock(&mu);
+#ifdef __ANDROID__
+    if (on < 0) { const char *e = getenv("DM_THERMAL_CAP"); on = e && *e && strcmp(e, "0") != 0; }   // PEANUTS: opt-in on Android (a profile's thermal_cap 1 sets DM_THERMAL_CAP=1; vka_perf.c dm_thermal_now)
+#else
     if (on < 0) { const char *e = getenv("DM_THERMAL_CAP"); on = !(e && !strcmp(e, "0")); }
+#endif
     if (on) {
         uint64_t now = now_ns();
         if (now - last >= 1000000000ull) {   // the thermal state is read once a second
             last = now;
             int th = dm_thermal_now();
-            if (th >= 2) { calm_since = 0; if (!capped) { capped = 1; LOG("[nvn] thermal state %d: the frame step holds 30 fps until the device is fair again for %llu s (DM_THERMAL_CAP=0 turns this off)", th, THERMAL_CALM_NS / 1000000000ull); } }
+            if (th >= 2) { calm_since = 0; if (!capped) { capped = 1; LOG("[nvn] thermal state %d: frame rates above 30 (the frame step, a frame limit) hold 30 fps until the device is fair again for %llu s (DM_THERMAL_CAP=0 turns this off)", th, THERMAL_CALM_NS / 1000000000ull); } }   // PEANUTS: not only the frame step (hle_fpslock.c limit_raw)
             else if (capped) { if (!calm_since) calm_since = now; else if (now - calm_since >= THERMAL_CALM_NS) { capped = 0; LOG("[nvn] thermal state %d for %llu s: back to the frame rate cap", th, THERMAL_CALM_NS / 1000000000ull); } }
         }
     }
@@ -2239,6 +2244,7 @@ static int thermal_capped(void) {
     pthread_mutex_unlock(&mu);
     return result;
 }
+int dm_thermal_capped(void) { return thermal_capped(); }   // PEANUTS: hle_fpslock.c limit_raw (a frame limit above 30 holds 30 while capped), the cap status (input_android.c nxhost_fps_cap_status: held for heat)
 __attribute__((weak)) int dm_fps_limit_step(void) { return 0; }   // hle_fpslock.c; graphics unit tests have no host
 static int fps_step_cap(void) {
     // PEANUTS: Elapsed-time hooks pace independently of whole steps.

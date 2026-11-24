@@ -690,6 +690,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // PEANUTS: and a game that starts at its default limit (FrameRateCaps.defaultLimit), which its profile's own limit (none for opt-in present pacing) is not
             if (Prefs.chosenFpsCap(this, id) || FrameRateCaps.ownedBefore(prof)) { int pace = Prefs.paceCap(this, id); env.add("DM_FPS_LIMIT=" + limitRate(pace)); }   // PEANUTS: limitRate, at most the display's highest rate
         } else if (cap >= 0) env.add("DM_FPS_TARGET=" + cap);
+        if (prof != null && prof.thermalCap) env.add("DM_THERMAL_CAP=1");   // PEANUTS: thermal_cap: rates above 30 hold 30 while the phone is hot (opt-in; an env.txt DM_THERMAL_CAP=0 comes later and wins)
         if (Prefs.steps(id) && Prefs.hold60(this, id)) env.add("DM_FPS_HOLD60=1");   // Hold 60 fps: one step a frame at the cap of 60 (the in-game panel changes it live)
         String gpuNote = GpuDriver.env(this, id, env);   // the game's GPU driver, else the main screen's (DM_VK_DRIVER)
         dev.peanuts.overlay.Hud.driver(GpuDriver.selected(this, id) != null ? GpuDriver.selected(this, id).label() : Readiness.driverWord(Prefs.facts(this, Recommend.SYSTEM)));   // PEANUTS: the overlay's DRV row
@@ -1425,6 +1426,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     // SidePanel's Console mode and Frame rate cap rows
     /** PEANUTS: the rates the host holds now (Native.fpsCapStatus' second), as SidePanel.refresh takes them: none in a build without a cap, -1 (not known: the last run's,
      *  or the profile's) until the game presents (its main is not known before) */
+    /** PEANUTS: whether the thermal cap holds rates above 30 at 30 now (Native.fpsCapStatus' fifth; a profile's thermal_cap) */
+    static boolean heldForHeat() {
+        try { String[] f = Native.fpsCapStatus().split(" "); return f.length > 4 && f[4].equals("1"); } catch (RuntimeException e) { return false; }
+    }
     static int liveRates() {
         try {
             String[] f = Native.fpsCapStatus().split(" ");
@@ -1484,7 +1489,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 if (Prefs.limited(titleId())) return v == FrameRateCaps.GAME_OWNED ? 0 : v <= 0 ? 60 : v;
                 return Math.max(v, 0);
             }
+            @Override public boolean heldForHeat() { return GameActivity.heldForHeat(); }   // PEANUTS
             @Override public String capNote() {
+                if (heldForHeat()) return Prefs.HEAT_TEXT;   // PEANUTS: the thermal cap holds the rate, whatever was picked
                 if (!Prefs.limited(titleId())) return null;
                 int v = cap();
                 boolean pending = fpsRestartRequired(v) || (v == FrameRateCaps.GAME_OWNED) != gameOwnedAtStart();

@@ -641,7 +641,24 @@ static int fps_limit_start(void) {
     if (atomic_compare_exchange_strong(&g_fps_limit, &was, l)) { g_fps_limit_src = e ? "DM_FPS_LIMIT" : "game profile fps_limit"; if (l) LOG("main: frame limit %d fps (%s)", l, g_fps_limit_src); }
     return atomic_load(&g_fps_limit);
 }
-static int limit_raw(void) { int l = atomic_load(&g_fps_limit); if (l < 0) l = fps_limit_start(); return fpslocker_effective(l > 0 ? l : 0); }
+// PEANUTS: the thermal cap (hle_nvn.c thermal_capped: serious or worse, back after 30 s fair; on Android only for a game that opts in, vka_perf.c dm_thermal_now) holds a
+// limit above 30 at 30, as the player's own choice of 30 would: the frame step's games had it, a limit through FPSLocker rows (Hogwarts Legacy) did not. A game without a
+// limit keeps its own rate. The state is sampled whatever the limit, so the 30 calm seconds also count while the limit is 30 or less: a limit raised after the device has
+// cooled is not held for another 30 s. The hold logs when it starts and when the device has cooled (a limit lowered to 30 or less while hot logs as itself)
+int dm_thermal_capped(void);
+#ifndef DM_TEST_THERMAL
+__attribute__((weak)) int dm_thermal_capped(void) { return 0; }   // hle_nvn.c; host unit tests have no graphics layer (t_fpslock has its own)
+#endif
+static int limit_raw(void) {
+    int l = atomic_load(&g_fps_limit); if (l < 0) l = fps_limit_start();
+    static _Atomic int held; int hot = dm_thermal_capped(), h = hot && l > 30;
+    if (atomic_exchange(&held, h) != h) {
+        if (h) LOG("main: frame limit %d fps held at 30 while the device is hot (thermal cap; DM_THERMAL_CAP=0 turns it off)", l);
+        else if (!hot) LOG("main: frame limit %d fps again (thermal cap over)", l);
+    }
+    if (h) l = 30;
+    return fpslocker_effective(l > 0 ? l : 0);
+}
 // A game with a frame step (the rewriter's stubs, a state page: loader.c) steps its game time by the vsyncs the host hands it each frame (hle_nvn.c fstep_tick). The limiter
 // alone held such a game's frames to the limit while the game went on stepping by its own interval: Ocarina of Time (0400486024DEC000) kept interval 1 (1/60 s a frame) at
 // the profile's 30 fps limit and ran at half speed, and at 25 fps uncapped at 0.4. So for such a game the limit is the frame step's cap, in whole vsyncs: 60, 30 or 20 fps

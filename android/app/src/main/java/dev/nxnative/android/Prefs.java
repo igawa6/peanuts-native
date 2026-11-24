@@ -192,6 +192,8 @@ final class Prefs {
     static final String HOLD60_TEXT = "Off: the game drops to 30 fps when it cannot keep 60, as on the console. On: the game always runs its 60 fps mode and the app does not hold frames, so it never drops to 30; the frame rate is less even and the game runs a little slower while under 60. Only with the 60 fps cap";
     // PEANUTS: Include opt-in presentation caps in the game settings.
     static boolean limited(String titleId) { return FrameRateCaps.limited(Profile.of(titleId)); }
+    /** PEANUTS: the in-game panel's and the stats page's line while the thermal cap holds (Native.fpsCapStatus' fifth: a profile's thermal_cap) */
+    static final String HEAT_TEXT = "Held at 30 fps while the phone is hot; the chosen rate comes back 30 s after it has cooled.";
     /** The profile's default frame limit (game.tsv fps_limit), 0 without one */
     static int profileLimit(String titleId) { Profile p = Profile.of(titleId); return p == null ? 0 : p.fpsLimit; }
     /** A saved cap as one of PACE_CAPS: the highest at or below it, 20 below that (the main screen's 15 for the other games). Since 20 was added a saved 20 or 15 (only the main

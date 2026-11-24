@@ -169,12 +169,31 @@ void vka_perf_frame(double period_s) {
 #include "vka_pace.h"
 void vka_worker_waits(uint64_t *room_ns, uint64_t *sub_ns); uint64_t vka_worker_sub_cpu(void); void mtl_stats(uint64_t *passes, uint64_t *draws);
 const char *vka_floor_state(int *pct, int *res); void vka_present_rates(int *fps, double *hz);
+static void *th_mgr; static int (*th_st)(void *); static float (*th_hr)(void *, int);   // PEANUTS: the thermal manager, looked up once (th_status)
+static void th_look(void) { void *h = dlopen("libandroid.so", RTLD_NOW); void *(*acq)(void) = h ? (void *(*)(void))dlsym(h, "AThermal_acquireManager") : NULL;
+    if (acq) { th_mgr = acq(); th_st = (int (*)(void *))dlsym(h, "AThermal_getCurrentThermalStatus"); th_hr = (float (*)(void *, int))dlsym(h, "AThermal_getThermalHeadroom"); } }
+static int th_status(void) { static pthread_once_t once = PTHREAD_ONCE_INIT; pthread_once(&once, th_look); return th_mgr && th_st ? th_st(th_mgr) : -1; }   // PEANUTS: once, from any thread
 static int pace_thermal(float *headroom) {   // the thermal status (-1: not available) and the headroom (NaN when the platform has none)
-    static int looked; static void *mgr; static int (*st)(void *); static float (*hr)(void *, int);
-    if (!looked) { looked = 1; void *h = dlopen("libandroid.so", RTLD_NOW); void *(*acq)(void) = h ? (void *(*)(void))dlsym(h, "AThermal_acquireManager") : NULL;
-                   if (acq) { mgr = acq(); st = (int (*)(void *))dlsym(h, "AThermal_getCurrentThermalStatus"); hr = (float (*)(void *, int))dlsym(h, "AThermal_getThermalHeadroom"); } }
-    *headroom = mgr && hr ? hr(mgr, 0) : __builtin_nanf("");
-    return mgr && st ? st(mgr) : -1;
+    int s = th_status();
+    *headroom = th_mgr && th_hr ? th_hr(th_mgr, 0) : __builtin_nanf("");
+    return s;
+}
+// PEANUTS: the thermal state on iOS's scale (0 nominal, 1 fair, 2 serious, 3 critical) for hle_nvn.c's thermal cap (frame rates above 30 hold 30 while serious or worse) and
+// its probes' gates. Opt-in on Android: only with DM_THERMAL_CAP set and not 0 (the launcher sets 1 for a profile with thermal_cap 1, Hogwarts Legacy), else -1 (none) as
+// before, so every other game runs as it did. Light and moderate are fair, severe serious, critical and above critical. The status is a binder call: read at most once a
+// second (callers ask once a second, and the probe gates on every frame). A Galaxy S24 Ultra at severe (skin 45 C) had its GPU capped at 231 of 1,000 MHz (kgsl
+// max_gpuclk) while Hogwarts Legacy ran uncapped at 24-37 fps (2026-11-24)
+int dm_thermal_now(void) {
+    static _Atomic int on = -1, cached = -1; static _Atomic uint64_t at;
+    int o = atomic_load_explicit(&on, memory_order_relaxed);
+    if (o < 0) { const char *e = getenv("DM_THERMAL_CAP"); o = e && *e && strcmp(e, "0") != 0; atomic_store_explicit(&on, o, memory_order_relaxed); }
+    if (!o) return -1;
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); uint64_t t = (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec + 1, a = atomic_load_explicit(&at, memory_order_relaxed);
+    if (!a || t - a >= 1000000000ull) {   // two threads may both read it at the turn of a second: harmless
+        int s = th_status();
+        atomic_store_explicit(&cached, s < 0 ? -1 : s >= 4 ? 3 : s == 3 ? 2 : s >= 1 ? 1 : 0, memory_order_relaxed); atomic_store_explicit(&at, t, memory_order_relaxed);
+    }
+    return atomic_load_explicit(&cached, memory_order_relaxed);
 }
 static void pace_cpu(char *b, size_t n) {   // "now/cap" MHz of each cpufreq policy
     size_t o = 0; b[0] = 0;

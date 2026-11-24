@@ -868,6 +868,7 @@ public final class StatsView extends FrameLayout {
 
     /** The cap pill's text: the cap the game runs at ("120 FPS", "GAME OWNED"), and the picked one while it waits for a restart ("120 \u2192 90 FPS", "60 FPS \u2192 GAME") */
     private static String capText(GameControls.Host h) {
+        if (h.heldForHeat()) return "30 FPS (HOT)";   // held for heat: its pop-up's line says until when
         int run = h.capRunning(), picked = h.cap();
         String a = h.capLabel(run).toUpperCase(Locale.ROOT);
         if (picked == run || picked == -1) return a;

@@ -893,8 +893,10 @@ final class SidePanel extends FrameLayout {
             boolean startedOwned = act instanceof GameActivity && ((GameActivity)act).gameOwnedAtStart();
             boolean restart = act instanceof GameActivity ? ((GameActivity)act).fpsRestartRequired(chosen) : (chosen == FrameRateCaps.GAME_OWNED) != startedOwned;
             String runs = Prefs.screenRunsNote(act, game());   // PEANUTS: a stored 90 or 120 above the display's highest rate runs at that rate
-            fpsNow.setVisibility(restart || other || runs != null ? VISIBLE : GONE);
-            if (restart) fpsNow.setText("Restart the game to apply " + Prefs.paceLabel(chosen) + ".");
+            boolean heat = f.length > 4 && f[4].equals("1");   // PEANUTS: held for heat (the thermal cap; a profile's thermal_cap)
+            fpsNow.setVisibility(heat || restart || other || runs != null ? VISIBLE : GONE);   // PEANUTS: heat
+            if (heat) fpsNow.setText(Prefs.HEAT_TEXT);   // PEANUTS
+            else if (restart) fpsNow.setText("Restart the game to apply " + Prefs.paceLabel(chosen) + ".");
             else if (other) fpsNow.setText("This game moves in whole frames: " + chosen + " fps runs at " + held + " fps, at full game speed.");
             else if (runs != null) fpsNow.setText(runs);
         } else {
@@ -912,7 +914,7 @@ final class SidePanel extends FrameLayout {
             String s = cap < 0 ? "This build has no frame rate cap."
                     : now <= 0 ? "Starting…"
                     : own ? "This game picks its own frame rate."
-                    : "Now " + now + " fps" + (cap > 0 ? ", capped at " + cap : ", the game's own") + ".";
+                    : "Now " + now + " fps" + (cap > 0 ? ", capped at " + cap : ", the game's own") + "." + (f.length > 4 && f[4].equals("1") ? " " + Prefs.HEAT_TEXT : "");   // PEANUTS: held for heat
             fpsNow.setText(s);
         }
         if (lsfgNow != null) { String st = Native.frameGenStatus(); int sp = st.indexOf(' '); lsfgNow.setText("Now: " + (sp > 0 ? st.substring(sp + 1) : st)); }

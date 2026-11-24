@@ -26,6 +26,8 @@ public final class GameControls {
         int capRate(int v);
         /** A line under the caps, or null */
         String capNote();
+        /** The thermal cap holds the game's rate at 30 now (a profile's thermal_cap): the cap pill says HOT */
+        default boolean heldForHeat() { return false; }
     }
 
     private static volatile Host host;
