@@ -476,9 +476,9 @@ static int swap_sync_cb(const char *p, const struct stat *st, int f, struct FTW 
 }
 static int swap_sync_tree(const char *p) { return nftw(p, swap_sync_cb, 16, FTW_DEPTH | FTW_PHYS); }
 // PEANUTS end
-// RENAME_EXCHANGE where the filesystem has it (app-private ext4/f2fs). Shared storage (/sdcard, a FUSE mount) answers EINVAL, and renaming a DIRECTORY there costs
-// about 1.2 s each (measured on the phone; a file rename is 10 ms), so three directory renames made a commit take 4 s. There b is brought to a's content by FILE
-// operations under a roll-forward journal instead: marker b.pend1 (holds a's path) is written once a is complete; stage 1 deletes what b has and a lacks; b.pend2
+// b is brought to a's content in place, by FILE operations under a roll-forward journal, on every filesystem. Not RENAME_EXCHANGE, even where the filesystem has it
+// (app-private ext4/f2fs): exchanging the directories gives b a new inode, and a folder sync tool (Syncthing) watching b with inotify keeps watching the swapped-out
+// one, so it never sees a commit (#485). Renaming a DIRECTORY on shared storage (/sdcard, FUSE) also costs about 1.2 s (a file rename 10 ms). The journal: marker b.pend1 (holds a's path) is written once a is complete; stage 1 deletes what b has and a lacks; b.pend2
 // replaces b.pend1; stage 2 renames a's files over b's (each rename atomic), and the markers go. A crash after the marker is finished at the next mount
 // (plat_swap_recover), a crash before it leaves b untouched, so b ends as the old version or the new one, never a mix. a is left empty (the callers delete it).
 static int swap_stage1(const char *a, const char *b) {   // remove from b what a does not have
@@ -545,8 +545,6 @@ static int swap_apply(const char *a, const char *b, int stage1) {
 }
 int plat_rename_swap(const char *a, const char *b) {
     if (swap_sync_tree(a)) return -1;   // PEANUTS: a's files on the storage before anything points at them (#195)
-    if (!syscall(SYS_renameat2, AT_FDCWD, a, AT_FDCWD, b, 2 /* RENAME_EXCHANGE */)) { swap_dir_sync(b); return 0; }   // PEANUTS: the exchange too
-    if (errno != EINVAL && errno != ENOSYS && errno != EXDEV && errno != ENOTSUP) return -1;
     char m1[4200]; if (snprintf(m1, sizeof m1, "%s.pend1", b) >= (int)sizeof m1) { errno = ENAMETOOLONG; return -1; }
     if (swap_marker(m1, a)) return -1;                                  // from here on the commit is rolled forward, also after a crash
     return swap_apply(a, b, 1);

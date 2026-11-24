@@ -264,7 +264,7 @@ static Result mount_ex(const char *name, const char *dir, int ro, int txn, int s
         g_mnt[s].txn_root = g_mnt[k].txn_root;
     } else if (txn) {
         char work[1100], neu[1100]; snprintf(work, sizeof work, "%s.work", dir); snprintf(neu, sizeof neu, "%s.new", dir);
-        plat_swap_recover(dir);   // a commit killed inside the file-level swap that stands in for RENAME_EXCHANGE on shared storage is finished (plat_rename_swap)
+        plat_swap_recover(dir);   // a commit killed inside the file-level swap (plat_rename_swap on Android: the save folder is updated in place) is finished
         mkdir(dir, 0755);
         const char *why = NULL;
         if (!access(work, F_OK) && rm_tree(work)) why = "cannot clear the work directory left over from last time";

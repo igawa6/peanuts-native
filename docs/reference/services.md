@@ -175,6 +175,14 @@ Most service calls can be found before they crash, before the first boot or the 
 - **Fix:** `plat_android.c` reports `EOPNOTSUPP` from `getxattr` / `removexattr` as `ENODATA` (`PLAT_ENOATTR`): on a filesystem with no attributes, none is present, as `plat.h` promises. Setting one still fails; FUSE `/sdcard` is case-insensitive, so two guest names differing only in case (a `.dm-case-N` alias, which needs the attribute) still cannot be created there (open; no game has needed it).
 - **Found on:** [Donkey Kong Bananza](../../dm/games/040074A01BF12000/README.md) on Android, a new game in the play app (its save had only `config.sav`); the test seed already had the slot folder `0`.
 
+### Commits keep the Android save folder itself
+
+- **Symptom:** Android, a folder sync tool (Syncthing) watching `files/saves/<id>` never sees a save the game made; the files reach the other device only at its next full rescan (hourly by default). The log reads `save commit #N: …/<id>.work swapped atomically into …/<id>`.
+- **Cause:** a commit swapped `<id>.new` and `<id>` with `renameat2(RENAME_EXCHANGE)` where the filesystem had it (app-private ext4 / f2fs). That gives `<id>` a new inode; an inotify watch stays on the old one, which the commit then deletes, so the tool hears nothing.
+- **Fix:** `plat_rename_swap` (`plat_android.c`) brings `<id>` to the new version in place on every filesystem, with the roll-forward journal shared storage already used (`.pend1`: delete what the new version lacks; `.pend2`: rename its files over the old ones, each rename atomic; the launcher's restore, [Save backups](../../android/TESTING.md#save-backups), keeps the same format). The folder stays, each file arrives as a rename into it, and a crash still leaves the old version or the new one. The work folder's reclone after a failed save write takes the same path.
+- **Check:** `dm/tools/tests/test_android_saves.py` `HostSwap` commits a version with a subfolder and a removed file and checks the folder's inode, its files, and that no marker stays.
+- **Found on:** [The Legend of Zelda: Link's Awakening](../../dm/games/01006BB00C6F0000/README.md) on Android 13 (Snapdragon 8 Gen 2), saves synced with Syncthing ([issue #485](https://github.com/igawa6/peanuts-native/issues/485)).
+
 ### Save data size queries
 
 - **Symptom:** SIGSEGV at address 0 in `nn::fs::GetSaveDataSizeMax`, about 13 minutes into a new game.
