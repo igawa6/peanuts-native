@@ -13,9 +13,16 @@ on:
       - 'CMakeLists.txt'
       - 'pyproject.toml'
   workflow_dispatch:
+    inputs:
+      app_id:
+        description: App id suffix (lower-case letters and digits); one id for every module's app, so each one updates the one before (PEANUTS)
+        default: "master"
+      host_opt:
+        description: Optimization level of the host's C (1, 2, 3 or fast = -Ofast without finite-math-only; PEANUTS)
+        default: "fast"
 
 permissions:
-  contents: read
+  contents: write   # PEANUTS: the APK is also published as a release asset
 
 concurrency:
   group: peanuts-android-beta-${{ github.ref }}
@@ -65,17 +72,40 @@ jobs:
       - name: Build Android native stage
         shell: zsh {0}
         run: |
-          zsh android/ondevice/build.sh "$RUNNER_TEMP/peanuts-native-work"
+          setopt pipefail
+          zsh android/ondevice/build.sh "$RUNNER_TEMP/peanuts-native-work" 2>&1 | tee "$RUNNER_TEMP/stage.log"
 
       - name: Build Peanuts Native Master APK with all Android-ready game profiles
         shell: bash
         run: |
           cd android/app
           chmod +x gradlew
-          ./gradlew --no-daemon \
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace \
             -PnxApp=peanuts \
+            -PnxAppId="${{ inputs.app_id || 'master' }}" \
+            -PnxHostOpt="${{ inputs.host_opt || 'fast' }}" \
             -PnxPackStage="$RUNNER_TEMP/peanuts-native-work/stage" \
-            apk
+            apk 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+
+      # PEANUTS: on a failed build, the errors of the logs as an annotation (readable through the API by clients that cannot fetch the log itself)
+      - name: Show the build errors
+        if: failure()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, os, re
+          out = []
+          for f in sorted(glob.glob(os.environ["RUNNER_TEMP"] + "/*.log")):
+              lines = open(f, errors="replace").read().splitlines()
+              hit = [l[:260] for l in lines if re.search(r"error:|FAILED|What went wrong|Execution failed|undefined reference|fatal error|\[RED\]|No such file|not found|Could not", l, re.I)][:25]
+              out.append("== " + os.path.basename(f) + " (" + str(len(lines)) + " lines)")
+              out += hit
+              out.append("-- tail --")
+              out += [l[:240] for l in lines[-20:]]
+          msg = "\n".join(out)[:60000].replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+          print("::error title=build errors::" + msg)
+          PY
 
       - name: Locate APK
         id: apk
@@ -97,3 +127,13 @@ jobs:
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 14
+
+      # PEANUTS: a link to download the APK without the Actions artifact zip
+      - name: Publish the APK as a release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK="${{ steps.apk.outputs.path }}"
+          TAG="master-${{ github.run_number }}"
+          gh release create "$TAG" "$APK" --target "${{ github.sha }}" \
+            --title "Master build $TAG" --notes "BUILD MASTER of ${{ github.ref_name }} at ${{ github.sha }}"
