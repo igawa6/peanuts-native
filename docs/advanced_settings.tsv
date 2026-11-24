@@ -307,6 +307,8 @@ DM_PAD_MERGE	internal	Input			text			both						Mac or iOS only
 DM_PAD_MOTION	developer	Input			text			both						
 DM_PATCH_FRONT	developer	Game			text			both						
 DM_PATCH_VARIANT	developer	Game			text			both						
+DM_PC_SAMPLE	developer	Diagnostics			text			both						
+DM_PC_SAMPLE_DUMP_S	developer	Diagnostics			text			both						
 DM_PHONE_MOTION	internal	Input			text			both						Mac or iOS only
 DM_PKP_ASPECT	developer	Diagnostics			text			both						
 DM_POSE_GET	developer	Diagnostics			text			both						

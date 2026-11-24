@@ -20,6 +20,9 @@ on:
       host_opt:
         description: Optimization level of the host's C (1, 2, 3 or fast = -Ofast without finite-math-only; PEANUTS)
         default: "fast"
+      host_lto:
+        description: ThinLTO of the host's C (ON or OFF; PEANUTS)
+        default: "ON"
 
 permissions:
   contents: write   # PEANUTS: the APK is also published as a release asset
@@ -85,6 +88,7 @@ jobs:
             -PnxApp=peanuts \
             -PnxAppId="${{ inputs.app_id || 'master' }}" \
             -PnxHostOpt="${{ inputs.host_opt || 'fast' }}" \
+            -PnxHostLto="${{ inputs.host_lto || 'ON' }}" \
             -PnxPackStage="$RUNNER_TEMP/peanuts-native-work/stage" \
             apk 2>&1 | tee "$RUNNER_TEMP/gradle.log"
 

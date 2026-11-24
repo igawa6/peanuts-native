@@ -79,6 +79,7 @@ list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_frametime.c)   # PEANUTS: the time
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_opt.c)   # PEANUTS: the switches of the experimental optimizations, read from PN_OPTS (peanuts_opt.h)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_mem.c)   # PEANUTS: the memory-pressure level for caches that can shrink (peanuts_mem.h)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_bottleneck.c)   # PEANUTS: the classifier of what limits the frame rate (peanuts_bottleneck.h)
+list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_pcsamp.c)   # PEANUTS: where the CPU time goes, by sampling (DM_PC_SAMPLE; peanuts_pcsamp.h)
 # PEANUTS begin: the RomFS read straight from the player's dumps (DM_ROMFS=nsp:..., dm/peanuts/peanuts_nsp.h, DM_NSP_DIRECT below): the image over the dumps and
 # the three files of the importer that read them (keys, containers, NCA sections, AES, LZ4; dm/peanuts/import). Their AES and SHA paths for arm64 are picked at
 # run time and carry their own target attributes, so no file needs a flag for them; -O2 as the importer's own build (the cipher and the decoder are the cost of a read)
@@ -134,6 +135,32 @@ if(NX_HOST_OPT STREQUAL "fast")
 else()
   set(NX_HOST_OPT_FLAGS -O${NX_HOST_OPT})
 endif()
+# The Vulkan replay's draw path was -O2 beside the host's -O1: at an optimized level it takes that level too
+if(NX_HOST_OPT STREQUAL "1")
+  set(NX_VKA_OPT_FLAGS -O2)
+else()
+  set(NX_VKA_OPT_FLAGS ${NX_HOST_OPT_FLAGS})
+endif()
+# ThinLTO across the host's files (inlining between the services, the memory manager and the replay), on by default at an optimized level: -DNX_HOST_LTO=OFF to leave it.
+# -moutline-atomics: the atomics (the host's locks and futex waits) call helpers that use the CPU's large-system extension (LSE) where it has it, and the old load/store
+# pairs where it does not; no baseline raise, so every phone still runs the library
+if(NX_HOST_OPT STREQUAL "1")
+  set(_nx_lto_default OFF)
+else()
+  set(_nx_lto_default ON)
+endif()
+set(NX_HOST_LTO ${_nx_lto_default} CACHE BOOL "ThinLTO of the host's C")
+set(NX_HOST_CPU_FLAGS "")
+set(NX_HOST_LINK_FLAGS "")
+if(NX_HOST_OPT STREQUAL "1")
+  # unchanged
+else()
+  list(APPEND NX_HOST_CPU_FLAGS -moutline-atomics)
+endif()
+if(NX_HOST_LTO)
+  list(APPEND NX_HOST_CPU_FLAGS -flto=thin)
+  list(APPEND NX_HOST_LINK_FLAGS -flto=thin)
+endif()
 function(nxhost_add tgt game)
   set(GAME_H ${GEN}/${game}/game_profile.h)
   add_custom_command(OUTPUT ${GAME_H}
@@ -153,11 +180,11 @@ function(nxhost_add tgt game)
   target_compile_definitions(${tgt} PRIVATE _GNU_SOURCE DM_NUP_ZSTD DM_NSP_DIRECT NX_COOP_VENDOR=${NX_COOP_VENDOR} $<$<BOOL:${NX_LSFG}>:NX_LSFG>)   # PEANUTS: DM_NSP_DIRECT (the reader of dumps is linked: NSP_C above)
   # As the Mac host (-O1 -g -Wall -Wno-unused-function). Hidden visibility: the assembly reaches C symbols with adrp, which a shared library allows only for symbols it binds itself
   # -Wno-format: the host prints uint64_t with %ll* (unsigned long long on Darwin, unsigned long on Linux: the same 64 bits)
-  target_compile_options(${tgt} PRIVATE ${NX_HOST_OPT_FLAGS} -g -Wall -Wno-unused-function -Wno-format -fvisibility=hidden)   # PEANUTS: -O1 unless -DNX_HOST_OPT=2|3
+  target_compile_options(${tgt} PRIVATE ${NX_HOST_OPT_FLAGS} ${NX_HOST_CPU_FLAGS} -g -Wall -Wno-unused-function -Wno-format -fvisibility=hidden)   # PEANUTS: -O1 unless -DNX_HOST_OPT=2|3
   # The replay's draw path runs per draw (thousands a frame): -O2 there (the rest stays at the Mac host's -O1, a later option wins)
   file(GLOB VKA_C ${GFX}/vk_android/*.c)
-  set_source_files_properties(${VKA_C} PROPERTIES COMPILE_OPTIONS -O2)
-  target_link_options(${tgt} PRIVATE -Wl,-Bsymbolic -Wl,--no-undefined -Wl,--error-limit=0 -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libnxhost.map)
+  set_source_files_properties(${VKA_C} PROPERTIES COMPILE_OPTIONS "${NX_VKA_OPT_FLAGS}")
+  target_link_options(${tgt} PRIVATE ${NX_HOST_LINK_FLAGS} -Wl,-Bsymbolic -Wl,--no-undefined -Wl,--error-limit=0 -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libnxhost.map)
   set_target_properties(${tgt} PROPERTIES LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/libnxhost.map)
   target_link_libraries(${tgt} PRIVATE vpx dav1d zstddec aaudio mediandk android log m dl z)   # libvulkan.so is opened at run time (vka_dev.c)
 endfunction()
@@ -183,10 +210,10 @@ function(nxhost_add_generic tgt)
   set_target_properties(${tgt} PROPERTIES LINKER_LANGUAGE CXX)
   target_include_directories(${tgt} PRIVATE ${GEN_INC} ${GEN} ${PROFILE_DIR} ${GFX}/nvn/include ${TP}/vulkan-headers/include ${TP}/libvpx ${TP}/libvpx/config ${TP}/dav1d/include ${TP}/stb_vorbis ${HOST} ${NX_COOP_VENDOR_DIR})   # (the co-op module, as the per-title hosts)
   target_compile_definitions(${tgt} PRIVATE _GNU_SOURCE DM_NUP_ZSTD DM_NSP_DIRECT NX_COOP_VENDOR=${NX_COOP_VENDOR} $<$<BOOL:${NX_LSFG}>:NX_LSFG>)   # PEANUTS: DM_NSP_DIRECT (the reader of dumps is linked: NSP_C above)
-  target_compile_options(${tgt} PRIVATE ${NX_HOST_OPT_FLAGS} -g -Wall -Wno-unused-function -Wno-format -fvisibility=hidden)   # PEANUTS: -O1 unless -DNX_HOST_OPT=2|3
+  target_compile_options(${tgt} PRIVATE ${NX_HOST_OPT_FLAGS} ${NX_HOST_CPU_FLAGS} -g -Wall -Wno-unused-function -Wno-format -fvisibility=hidden)   # PEANUTS: -O1 unless -DNX_HOST_OPT=2|3
   file(GLOB VKA_C ${GFX}/vk_android/*.c)
-  set_source_files_properties(${VKA_C} PROPERTIES COMPILE_OPTIONS -O2)
-  target_link_options(${tgt} PRIVATE -Wl,-Bsymbolic -Wl,--no-undefined -Wl,--error-limit=0 -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libnxhost.map)
+  set_source_files_properties(${VKA_C} PROPERTIES COMPILE_OPTIONS "${NX_VKA_OPT_FLAGS}")
+  target_link_options(${tgt} PRIVATE ${NX_HOST_LINK_FLAGS} -Wl,-Bsymbolic -Wl,--no-undefined -Wl,--error-limit=0 -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libnxhost.map)
   set_target_properties(${tgt} PROPERTIES LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/libnxhost.map)
   target_link_libraries(${tgt} PRIVATE vpx dav1d zstddec aaudio mediandk android log m dl z)
 endfunction()
