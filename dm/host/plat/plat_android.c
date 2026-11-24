@@ -14,6 +14,16 @@
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include "plat_guestmap.h"
+#include <errno.h>
+// PEANUTS: DM_THP=1 (read once) asks the kernel for transparent huge pages on the guest block (madvise MADV_HUGEPAGE): fewer TLB misses for a game that walks big
+// arrays, but the resident size grows where the game touches memory sparsely, so it is off by default. A kernel without them answers EINVAL and the run goes on
+static void guest_thp(void *p, size_t size) {
+    static int on = -1;
+    if (on < 0) { const char *e = getenv("DM_THP"); on = e && atoi(e) > 0; }
+    if (!on) return;
+    if (madvise(p, size, MADV_HUGEPAGE)) LOG("DM_THP: MADV_HUGEPAGE on the guest block failed (errno %d): this kernel does not give it huge pages", errno);
+    else LOG("DM_THP: huge pages requested for the guest block (%zu bytes); the resident size can grow where the game touches memory sparsely", size);
+}
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -120,6 +130,7 @@ void *plat_mem_reserve(size_t size) {
     } else if (at != want) LOG("guest block: %#llx was taken, reserved at %#llx", (unsigned long long)want, (unsigned long long)at);
     if ((uint64_t)(uintptr_t)p + size > GUEST_VA_END) LOG("[RED] guest block %p+%#zx ends above %#llx (the 39-bit user space)", p, size, GUEST_VA_END);
     plat_mem_name_guest(p, size);
+    guest_thp(p, size);   // PEANUTS: DM_THP
     return p;
 }
 // Its name in /proc/self/maps (fails quietly where the kernel has no anonymous VMA names). The kernel merges two neighbouring anonymous mappings only when their names are

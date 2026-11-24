@@ -36,6 +36,7 @@ def signStore = System.getenv('NX_SIGN_STORE'), signAlias = System.getenv('NX_SI
 if ((nxLive || nxRelease) && !(signStore && signAlias && signPass && new File(signStore).isFile()))   // PEANUTS: nxRelease too
     throw new GradleException('nxLive and nxRelease need the release key: NX_SIGN_STORE (an existing keystore), NX_SIGN_ALIAS and NX_SIGN_PASS')   // PEANUTS: nxRelease too
 def nxLabel = providers.gradleProperty('nxLabel').getOrElse(nxApp ? "Banana Native $nxApp" : '')
+def nxHostPgo = providers.gradleProperty('nxHostPgo').getOrElse('')   // PEANUTS: -PnxHostPgo=<file.profdata>: a merged LLVM profile the host is compiled with (none yet)
 def nxHostLto = providers.gradleProperty('nxHostLto').getOrElse('ON')   // PEANUTS: -PnxHostLto=OFF leaves ThinLTO of the host out (it is on at -O2 and above)
 if (!(nxHostLto ==~ /ON|OFF/)) throw new GradleException("nxHostLto must be ON or OFF, not $nxHostLto")   // PEANUTS
 def nxHostOpt = providers.gradleProperty('nxHostOpt').getOrElse('fast')   // PEANUTS: -PnxHostOpt=1|2|3|fast compiles the host's C at -O1 / -O2 / -O3 / -Ofast (the app's default is fast; the Mac unit tests stay at -O1)
@@ -354,10 +355,10 @@ android {
                 // PEANUTS: -PnxGenericHost=true builds one libnxhost.so/libnxlaunch.so that loads any of nxGames' profiles at
                 // run time, instead of a compiled-in pair per title - gated here, not on by default, so the per-title path (today's APK) stays available.
                 if (nxGenericHost) {
-                    arguments '-DNX_GENERIC_HOST=ON', '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON', "-DNX_LSFG=${nxLsfg ? 'ON' : 'OFF'}", "-DNX_HOST_OPT=$nxHostOpt", "-DNX_HOST_LTO=$nxHostLto"
+                    arguments '-DNX_GENERIC_HOST=ON', '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON', "-DNX_LSFG=${nxLsfg ? 'ON' : 'OFF'}", "-DNX_HOST_OPT=$nxHostOpt", "-DNX_HOST_LTO=$nxHostLto", "-DNX_HOST_PGO_USE=$nxHostPgo"
                     targets(*(['nxhost', 'nxlaunch', 'nxadreno', 'hook_impl', 'main_hook'] + (nxApp == 'peanuts' ? ['nximport'] : [])))
                 } else {
-                    arguments "-DNX_GAMES=${nxGames.join(',')}", '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON', "-DNX_LSFG=${nxLsfg ? 'ON' : 'OFF'}", "-DNX_HOST_OPT=$nxHostOpt", "-DNX_HOST_LTO=$nxHostLto"
+                    arguments "-DNX_GAMES=${nxGames.join(',')}", '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON', "-DNX_LSFG=${nxLsfg ? 'ON' : 'OFF'}", "-DNX_HOST_OPT=$nxHostOpt", "-DNX_HOST_LTO=$nxHostLto", "-DNX_HOST_PGO_USE=$nxHostPgo"
                     // a host and its shim per game, then the custom GPU drivers' loader and hooks (DM_VK_DRIVER)
                     targets(*(nxGames.collectMany { ["nxhost_$it".toString(), "nxlaunch_$it".toString()] } + ['nxadreno', 'hook_impl', 'main_hook'] + (nxApp == 'peanuts' ? ['nximport'] : [])))   // PEANUTS: the importer library
                 }

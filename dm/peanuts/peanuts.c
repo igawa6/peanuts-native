@@ -39,6 +39,7 @@ typedef struct { uint64_t addr; uint64_t last; } cand_t;
 #include "peanuts_frametime.h"
 #include "peanuts_graph.h"
 #include "peanuts_pcsamp.h"   // PEANUTS: DM_PC_SAMPLE
+#include "peanuts_threads.h"   // PEANUTS: DM_THREADS
 static void rt_tick(void);   // the companion runtime, below
 static PnRt *_Atomic g_rt;   // set once (rt_start, on the presenting thread); read by the tick thread, the page's UI thread (touch, presence) and the lifecycle's thread
 static void rt_ui_publish(void *u, uint32_t w, uint32_t h, const uint32_t *px);
@@ -295,6 +296,7 @@ static void refresh(void) {
 void peanuts_tick(void) {
     pn_ft_note();   // the frame time first: it runs whatever the rest of this tick does
     pn_pcsamp_start_once();   // PEANUTS: the program-counter sampler, once, when DM_PC_SAMPLE asks for it
+    pn_thr_tick();   // PEANUTS: the rules of DM_THREADS for the CPUs, nice value and I/O priority of the host's threads, about once a second
     pn_graph_frame();   // the overlay graph's new bar (peanuts_graph.c)
     g_frames++;
     rt_tick();   // the companion runtime: started at the first presented frame after main is loaded; its ticks come from a timer of its own (rt_thread)

@@ -80,6 +80,7 @@ list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_opt.c)   # PEANUTS: the switches o
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_mem.c)   # PEANUTS: the memory-pressure level for caches that can shrink (peanuts_mem.h)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_bottleneck.c)   # PEANUTS: the classifier of what limits the frame rate (peanuts_bottleneck.h)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_pcsamp.c)   # PEANUTS: where the CPU time goes, by sampling (DM_PC_SAMPLE; peanuts_pcsamp.h)
+list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_threads.c)   # PEANUTS: rules by thread name for the CPUs, nice value and I/O priority (DM_THREADS; peanuts_threads.h)
 # PEANUTS begin: the RomFS read straight from the player's dumps (DM_ROMFS=nsp:..., dm/peanuts/peanuts_nsp.h, DM_NSP_DIRECT below): the image over the dumps and
 # the three files of the importer that read them (keys, containers, NCA sections, AES, LZ4; dm/peanuts/import). Their AES and SHA paths for arm64 are picked at
 # run time and carry their own target attributes, so no file needs a flag for them; -O2 as the importer's own build (the cipher and the decoder are the cost of a read)
@@ -156,6 +157,14 @@ if(NX_HOST_OPT STREQUAL "1")
   # unchanged
 else()
   list(APPEND NX_HOST_CPU_FLAGS -moutline-atomics)
+endif()
+# Profile-guided optimization: with a merged LLVM profile (an instrumented run on a phone, llvm-profdata merge) the host is compiled with it. Nothing to use yet: the option is
+# the one place a profile enters, -DNX_HOST_PGO_USE=<file.profdata> (Gradle -PnxHostPgo=<file>); unset or a missing file: no profile
+set(NX_HOST_PGO_USE "" CACHE FILEPATH "a merged LLVM profile (.profdata) the host is compiled with")
+if(NX_HOST_PGO_USE AND EXISTS "${NX_HOST_PGO_USE}")
+  list(APPEND NX_HOST_CPU_FLAGS -fprofile-use=${NX_HOST_PGO_USE} -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date)
+elseif(NX_HOST_PGO_USE)
+  message(WARNING "NX_HOST_PGO_USE: ${NX_HOST_PGO_USE} does not exist: no profile used")
 endif()
 if(NX_HOST_LTO)
   list(APPEND NX_HOST_CPU_FLAGS -flto=thin)

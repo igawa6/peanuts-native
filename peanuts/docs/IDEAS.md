@@ -3,6 +3,27 @@
 One rule for all of them: an idea that changes behaviour lands behind a switch and is off unless a measurement says otherwise. An idea is "measured" only when a capture on a
 real phone shows it helped; code that compiles and passes its unit tests is "landed", nothing more.
 
+## Module 1 (CPU): final state
+
+Built into the master APK, all behind switches that are off unless noted, none of it measured on a phone yet:
+
+| Idea | What | Switch |
+|------|------|--------|
+| C1 | the host's C at `-Ofast` (with `-fno-finite-math-only`, the host tests NaN and infinity on purpose), the Vulkan replay at the same level | Gradle `-PnxHostOpt` (default `fast`) |
+| C2 | ThinLTO across the host | `-PnxHostLto` (default `ON`) |
+| C3 | `-moutline-atomics`: LSE atomics where the CPU has them, the old pairs where not; no baseline raise | with `nxHostOpt` above 1 |
+| I8 | sampler of where the CPU time goes, the game's memory against the rest of the host | `DM_PC_SAMPLE` |
+| I3, I7, I21, I54, I57 | rules by thread name for the CPUs, nice value and I/O priority (the replay, encoder, present, compile and upload threads, the movie pump) | `DM_THREADS` |
+| I23 | transparent huge pages on the guest block | `DM_THP` |
+| C6 | sustained performance mode of the game's window | `DM_SUSTAINED_PERF` |
+| R26 | the place a PGO profile enters; no profile exists yet | `-PnxHostPgo` |
+
+Already in the host: R17, R19, R20, R25, R46, C5 (ADPF), C26 (game category), the core placement experiments `DM_VK_AFF_REPLAY` and `DM_VK_AFF_ALL`, `DM_NVN_CPUPROF`.
+
+Not done, with the reason: I19 symbol ordering (needs a start-up profile from a phone); I22 futex priority inheritance (changes how the guest's mutexes wait, no inversion seen); I24 own allocator (bionic's scudo; a risk to stability with nothing measured); I52 userfaultfd (replaces the host's mprotect-based dirty tracking, large and risky); I53 clock from the counter (the guest reads the counter in hardware, the host's clock reads are not hot); I55, I58, I59 (nothing measured to save; the CPU clocks are in the pace log already); C4 (bionic's memcpy and friends are already NEON).
+
+Waits for the embedded emulator (MD6): R18 JIT, R21 Dynarmic, R22 block linking, R23 fastmem, R24 superinstructions.
+
 ## Read first: much of the first list already exists
 
 Reading the host after the first batch showed that most of the GPU, memory and pacing ideas were already built. The project's own switches are catalogued in

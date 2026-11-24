@@ -417,6 +417,7 @@ DM_SPLIT_SELECTED	developer	Packing			text			both
 DM_SPLIT_SPILL	developer	Diagnostics			text			both						
 DM_SPLIT_TARGETED	developer	Packing			text			both						
 DM_SPLIT_WORKER	developer	Diagnostics			text			both						
+DM_SUSTAINED_PERF	developer	Game			text			both						
 DM_SVC	developer	Diagnostics			text			both						
 DM_SYMCHECK	developer	Diagnostics			text			both						
 DM_TBUF_ALIGN	internal	Diagnostics			text			both						Mac or iOS only
@@ -444,8 +445,10 @@ DM_TEST_TRANSFORM_FEEDBACK	internal	Diagnostics			text			both						test harness
 DM_TEST_UP_LEAK	developer	Diagnostics			text			both						
 DM_TEST_UP_LOST	developer	Diagnostics			text			both						
 DM_THERMAL_CAP	internal	Game			text			both						Mac or iOS only
+DM_THP	developer	Game			text			both						
 DM_THR	developer	Diagnostics			text			both						
 DM_THRCPU	internal	Diagnostics			text			both						Mac or iOS only
+DM_THREADS	developer	Performance			text			both						
 DM_TIME	developer	Game			text			both						
 DM_TIME_OFFSET	developer	Game			text			both						
 DM_TOUCH_HAPTICS	developer	Input			text			both						

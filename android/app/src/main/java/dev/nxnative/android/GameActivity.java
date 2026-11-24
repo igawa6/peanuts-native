@@ -926,6 +926,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             dev.peanuts.build.ShaderCapture.environment(this, env);   // PEANUTS: isolated silent capture, after user overrides
             for (String k : Readiness.unknownSwitches(user, KNOWN_SWITCHES)) unknownNotes.add(Readiness.unknownLine(k, switchFrom(k, files, id), KNOWN_SWITCHES));
             boolean stretch = false;
+            boolean sustained = false;   // PEANUTS: DM_SUSTAINED_PERF
             String testCrash = null;
             int picSize = PictureFit.SIZE_MAX;
             float picAspect = 16f / 9f;
@@ -933,6 +934,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             for (String kv : env) {   // the last line wins, as for the host
                 if (kv.startsWith("DM_OVERLAY=")) overlayEnv = !kv.substring(11).trim().equals("0");
                 if (kv.startsWith("DM_VK_STRETCH=")) stretch = envOn(kv.substring(14));
+                if (kv.startsWith("DM_SUSTAINED_PERF=")) sustained = envOn(kv.substring(18));   // PEANUTS
                 if (kv.startsWith("DM_VK_PICTURE_SIZE=")) picSize = PictureFit.size((int) envNum(kv.substring(19)));
                 if (kv.startsWith("DM_VK_PICTURE_ASPECT=")) {   // w:h, as the present reads it
                     String[] wh = kv.substring(21).trim().split(":");
@@ -947,6 +949,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             String[] args = {"nxhost", packDir.getPath()};
             int r = Native.start(args, env.toArray(new String[0]), log.getPath(), files.getPath());
             if (r != 0) throw new IOException("the host did not start (" + r + (r == -1 ? ": a start was already tried in this process" : "") + ")");
+            if (sustained) sustainedPerformance();   // PEANUTS: DM_SUSTAINED_PERF
             // PEANUTS MASTER: collect real game-frame, GPU, process CPU/RAM and Android thermal samples independently of the visible HUD.
             if (masterTelemetry == null) { masterTelemetry = new MasterTelemetry(this, id, LogProvider.dir(this)); masterTelemetry.start(); }
             // Rumble (Game settings, Settings) once the host has its environment and the log (Native.start): its DM_RUMBLE / DM_RUMBLE_GAIN are read then, and the
@@ -1007,6 +1010,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static String runCtl;
     /** A numeric switch's value as the host reads it: a number other than 0 is on */
     static boolean envOn(String v) { return envNum(v) != 0; }
+
+    // PEANUTS: DM_SUSTAINED_PERF=1 (env.txt): Android's sustained performance mode for this window, which keeps the clocks at a level the phone can hold instead of bursting
+    // and throttling. Off by default: it can lower the peak. A device that does not declare the feature may do nothing with it
+    private void sustainedPerformance() {
+        boolean declared = getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_SUSTAINED_PERFORMANCE_MODE);
+        try { getWindow().setSustainedPerformanceMode(true); }
+        catch (RuntimeException e) { Native.note("[nxlaunch] DM_SUSTAINED_PERF: " + e); return; }
+        Native.note("[nxlaunch] DM_SUSTAINED_PERF=1: sustained performance mode requested" + (declared ? "" : " (this device does not declare the feature: it may do nothing)"));
+    }
     static double envNum(String v) { try { return Double.parseDouble(v.trim()); } catch (NumberFormatException e) { return 0; } }
 
     /** Whether the running game takes live switches (DM_CTL): the in-game panel says "applies at the next start" otherwise */
