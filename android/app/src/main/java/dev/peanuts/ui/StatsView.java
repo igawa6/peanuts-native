@@ -659,7 +659,7 @@ public final class StatsView extends FrameLayout {
         int mode = Bridge.opModeSafe();   // the in-game panel can change it while the game runs
         modeText.setText((mode == 1 ? "DOCKED" : mode == 0 ? "HANDHELD" : "LIVE") + (GameControls.host() != null && GameControls.host().consoleMode() >= 0 ? " \u25BE" : ""));
         state();
-        if (infoLine != null) infoLine.setText(driver.getText() + (cause >= 0 ? " \u00B7 " + thrText.getText() : ""));
+        if (infoLine != null) infoLine.setText(cause >= 0 ? PUi.joined(driver.getText(), thrText.getText()) : driver.getText());
     }
 
     /** The state pill (GameStats.cause). A new cause shows once it has held two readings in a row, so a single slow second does not flash it */
