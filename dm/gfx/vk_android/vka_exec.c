@@ -21,7 +21,8 @@ typedef struct { uint64_t serial; p_set_rt rt; int has_rt; p_scissor sc; int has
 static qstate S;
 enum { NQS = 8 };
 static qstate g_qs[NQS]; static int g_nqs;
-enum { NSLOT = 8 };
+enum { NSLOT = VKA_NSLOT };   // PEANUTS(upstream-candidate): was 8 (vka.h VKA_NSLOT)
+_Static_assert(NSLOT <= 64, "g_rc_subf keeps the fences of the latest 64 submissions: a slot must be reused within them");
 enum { NCHUNK = 32 };
 static struct { VkCommandBuffer cb; uint64_t fence; VkCommandBuffer x[NCHUNK]; VkFence vf; int vf_on; } g_slot[NSLOT];   // vf: set when its commit had no timeline signal (vf_on)   // x: the command buffers a submission goes on in once it hands its first part to the queue (chunk)
 static unsigned g_slot_i;
@@ -403,7 +404,7 @@ static struct { PFN_vkCreateQueryPool create; PFN_vkCmdResetQueryPool reset; PFN
 static VkQueryPool g_qp; static int g_ts_ok = -1; static double g_ts_ns;   // nanoseconds per tick
 enum { GRING = 64 };
 static struct { _Atomic uint64_t frame, ns, t0, t1, span; _Atomic int pending; } g_gpu[GRING];
-static uint64_t g_slot_frame[8]; static uint8_t g_slot_ts[8]; static uint32_t g_slot_parts[8]; static uint32_t g_part_seen;
+static uint64_t g_slot_frame[NSLOT]; static uint8_t g_slot_ts[NSLOT]; static uint32_t g_slot_parts[NSLOT]; static uint32_t g_part_seen;   // PEANUTS(upstream-candidate): by slot (were [8])
 enum { QPS = 2 * (NCHUNK + 1) };   // queries a slot: a top and a bottom per part
 static int ts_init(void) {
     if (g_ts_ok >= 0) return g_ts_ok;

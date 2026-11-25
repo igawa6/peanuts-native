@@ -211,6 +211,10 @@ Also gated, but not `#ifdef`-paired with upstream code (new Peanuts-owned files/
     instead of `Engine/…` (found on Tetris Effect: Connected, `dm/games/0100DE501433A000/README.md`). No change on macOS or Linux
 13. `dm/tools/docs_patches.py` writes `docs/agents/game-patches.md` with `newline='\n'`: on Windows `Path.write_text` translated every line end to CR LF,
     so a regeneration showed the whole page changed. No change on macOS or Linux
+14. `dm/gfx/vk_android/vka.h`, `vka_exec.c`, `vka_draw.c`: the replay's command buffer slots, 8 to 64 (`VKA_NSLOT`, shared by the
+    submission ring and its descriptor pools; the slot timing arrays sized by it). With 8, a game with many small submissions a frame had its
+    recording and the GPU take turns (Digimon Story Time Stranger, 104 a frame: 48-52 fps at limit 60, 58.5-60 with 64 slots on the Thor).
+    Entry: `docs/reference/frame-rate.md` "Command buffer slots for games that submit often"
 
 `dm/host/hle_fpslock.c`'s new `EXTRA_VSYNCS_U8` lock kind is also upstream-worthy infra; its two
 per-game rows (Link's Awakening, Echoes of Wisdom) should instead move to a Peanuts-owned

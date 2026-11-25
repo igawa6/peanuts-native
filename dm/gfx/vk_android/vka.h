@@ -185,6 +185,11 @@ int vka_wait_done(uint64_t fence, uint64_t timeout_ns);
 int vka_worker_cpu_wait(uint64_t fence);    // vka_worker.c: a CPU thread is about to block on fence (parked queues and gates that hold it back go on once the worker is stuck)
 void vka_worker_cpu_wait_end(int was);      // ... and is no longer blocked (was: what vka_worker_cpu_wait returned)
 uint64_t vka_worker_cpu_blocked(void);       // the highest fence CPU threads block on now (0: none)
+// PEANUTS(upstream-candidate): the replay's command buffer slots (vka_exec.c), each with its own descriptor pools (vka_draw.c). A submission reuses the slot of
+// the one VKA_NSLOT commits back once that one is done, so the recording runs at most this many submissions ahead of the GPU. With 8, a game that submits often
+// had its recording and the GPU take turns: Digimon Story Time Stranger makes about 104 small submissions a frame, and its replay waited 8-9 ms a frame for the GPU
+// while the GPU sat idle about as long (docs/reference/frame-rate.md, "Command buffer slots for games that submit often"). At most 64 (vka_exec.c g_rc_subf)
+enum { VKA_NSLOT = 64 };
 // The GPU-wait trace (vka_worker.c, DM_VK_QS_TRACE): the last events of the queue scheduler and the submissions, printed when a GPU hang is declared
 enum { QT_SUB = 1, QT_PARK, QT_PASS, QT_RELEASE, QT_GATE, QT_FORCE, QT_SIGNAL, QT_COMMIT, QT_PART, QT_LAND, QT_PRESENT, QT_CPU_WAIT, QT_SUBMIT_ERR, QT_SLOT };
 void vka_tex_slot_counts(uint64_t *writes, uint64_t *changes);   // vka_tex.c: pool table slot writes, and of them changes of a slot's view
