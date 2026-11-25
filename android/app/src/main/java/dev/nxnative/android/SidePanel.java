@@ -99,6 +99,8 @@ final class SidePanel extends FrameLayout {
     void padButtons(int[] cb) { confirm = cb[0]; back = cb[1]; }
 
     boolean isOpen() { return open; }
+    /** A dialog the panel opened (padDialog): while it shows, the controller's keys belong to it (padKey) and not to the rows behind it */
+    private AlertDialog ctlDialog;
     void toggle() { if (open) close(); else open(); }
     /** Opened or closed by a controller (GameActivity: Home, or − and + held): opened, the focus on its first row, out of touch mode */
     void padToggle() { if (open) close(); else { open(); post(this::ensureFocus); } }
@@ -133,6 +135,10 @@ final class SidePanel extends FrameLayout {
      */
     boolean padKey(KeyEvent e) {
         int k = e.getKeyCode();
+        if (ctlDialog != null && ctlDialog.isShowing()) {   // PEANUTS: a dialog on the panel (Stop the game?, Player 1): the pad drives the dialog, not the rows behind it
+            ctlDialog.dispatchKeyEvent(e);
+            return true;
+        }
         if (k == KeyEvent.KEYCODE_BACK) return false;   // the activity's Back closes the panel
         boolean press = e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0, up = e.getAction() == KeyEvent.ACTION_UP;
         int dir = PadPanel.ofKey(k);
@@ -247,6 +253,8 @@ final class SidePanel extends FrameLayout {
      * button as confirm and the right one as back. Its focus starts on the safe choice (negative), so a confirm press does nothing that cannot be undone
      */
     private AlertDialog padDialog(AlertDialog d) {
+        ctlDialog = d;   // PEANUTS: from now on the pad's keys go to this dialog (padKey), not to the rows behind it
+        d.setOnDismissListener(x -> { if (ctlDialog == x) ctlDialog = null; });   // PEANUTS: the panel takes the pad back
         d.setOnKeyListener((di, k, e) -> {
             if (k != confirm && k != back) return false;
             if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
