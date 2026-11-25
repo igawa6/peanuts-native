@@ -777,23 +777,27 @@ def variants(g):
     return [(v[0], (v[1] if len(v) > 1 and v[1] else 'main').replace(',', ' ').split()) for v in g.values('variant') if v and v[0]]
 
 
-def rewrite_variants(py, srcs, out, g, in_process=False, modded=()):   # PEANUTS: modded
+def rewrite_variants(py, srcs, out, g, in_process=False, modded=(), xmod=None):   # PEANUTS: modded, xmod
     """Each variant row's modules rewritten again with DM_PATCH_VARIANT=<name> (patch_nso.py VARIANT_CUTS: a game's native 4:3 mod) into out/<name>/,
     keyed '<the module's rewrite_key> variant=<name>' (the launcher's PackCheck checks it the same way); a module whose key matches is kept. Both versions
     stay in the pack, so the launcher's Game settings › Aspect ratio switches between them without another Prepare: the host loads a module from
     out/<name>/ when DM_PATCH_VARIANT=<name> (loader.c)"""
+    xmod = xmod or {}   # PEANUTS: {module: layout file}, as rewrite() takes it
     for v, mods in variants(g):
         if not v.isalnum(): raise Error(f'{g.id}: variant name {v!r} is not a plain folder name')
         vout = out / v; vout.mkdir(exist_ok=True)
         for m in mods:
             if m not in srcs: raise Error(f'{g.id}: variant {v} names module {m}, which the profile does not have')
-            key = rewrite_key(srcs[m], g) + f' variant={v}'; kf = vout / f'{m}.android.key'
+            key = rewrite_key(srcs[m], g)
+            if m in xmod: key = xmod_keys([key], xmod[m])[0]   # PEANUTS: a module with cross-module branches, keyed as rewrite() keys it
+            key += f' variant={v}'; kf = vout / f'{m}.android.key'
             if (vout / f'{m}.patched.bin').is_file() and kf.is_file() and kf.read_text().strip() == key:
                 print(f'  {m} ({v}): unchanged, kept'); continue
             kf.unlink(missing_ok=True); shutil.rmtree(staging(vout, m), ignore_errors=True)
+            (vout / f'{m}.xmod.tsv').unlink(missing_ok=True)   # PEANUTS: an earlier build's table, which the loader would apply; this rewrite writes it again when m has one (cross_module removes the pack's own the same way)
             print(f'  {m} ({v}): rewriting', flush=True)
             t0, src, log = time.monotonic(), rewriter_src(srcs[m], out, m), vout / f'rewrite_{m}.log'
-            args = [str(src), str(staging(vout, m)), m, '--target', 'android']
+            args = [str(src), str(staging(vout, m)), m, '--target', 'android'] + (['--xmod', str(xmod[m])] if m in xmod else [])   # PEANUTS: its <m>.xmod.tsv in out/<name>/ too, which the loader reads there (xmod_apply)
             if in_process: rc = run_in_process(REPO / 'dm/tools/patch_nso.py', args, {'DM_GAME': g.id, 'DM_REWRITE_J': '1', 'DM_PATCH_VARIANT': v}, log)
             else:
                 with open(log, 'w') as f:
@@ -1309,7 +1313,7 @@ def main():
                 rewrite(sys.executable, srcs | nros, out, max(1, a.j), g, a.in_process, xmod_files)   # PEANUTS: xmod_files
                 for _m, _src in (srcs | nros).items():   # PEANUTS: what each module was made from, for the next build's rewrite_reuse.keep (issue #120)
                     if _m not in (xmod_files or {}): pn_reuse().record(_m, _src, out, g, REWRITER)
-                rewrite_variants(sys.executable, srcs, out, g, a.in_process, set(mod_exefs) | set(patched))   # game.tsv variant rows (a native 4:3 mod) into <pack>/<variant>/; PEANUTS: none of a mod's modules
+                rewrite_variants(sys.executable, srcs, out, g, a.in_process, set(mod_exefs) | set(patched), xmod_files)   # game.tsv variant rows (a native 4:3 mod) into <pack>/<variant>/; PEANUTS: none of a mod's modules
             finally: shutil.rmtree(out / '.nup-src', ignore_errors=True)   # the module copies a NUP game's rewrite read (rewriter_src)
             place_nros(work / 'android-nro' if nros else None, out)
         if a.code_only: print(f'done: the modules in {out} (--code-only: pack.tsv and the shaders unchanged)'); return
