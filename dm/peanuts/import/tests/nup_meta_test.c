@@ -9,6 +9,7 @@
 //   a NACP whose only title is French, without a display version, beside an "icon" that is no image: the French title, no icon, no version
 //   an update without its base: the first package carries the application's records
 //   a base and its update by default (no nximport_set_keep_base): the base package is left out, the update is standalone and carries the application's records
+//   a base, its update and 100 add-ons (102 inputs, more than the 64 the writer once took, #570): every add-on is a package of the .nup, which verifies
 #define _GNU_SOURCE
 #include <ftw.h>
 #include <stdint.h>
@@ -194,6 +195,18 @@ int main(int argc, char **argv) {
     { size_t len; uint8_t *b = extract(nup, "update/131072/romfs/b.txt", dir, &len);
       CHECK(b && len == 5 && !memcmp(b, "hello", 5), "a file of the update's RomFS reads"); free(b); }
     free(v.b);
+
+    // ---- many add-ons: more inputs and packages than the writer's old fixed arrays held (#570)
+    printf("a base, its update and 100 add-ons\n");
+    { enum { NA = 100 }; static FxAddon many[NA]; const char *in[NA + 2] = { base_q, upd }; char tag[32];
+      for (int i = 0; i < NA; i++) { snprintf(tag, sizeof tag, "many-dlc-%03d", i + 1); fx_addon(&k, dir, tag, TID, i + 1, 0, 3, &many[i]); in[i + 2] = many[i].path; }
+      snprintf(nup, sizeof nup, "%s/many-addons.nup", dir);
+      CHECK(!nximport_write_nup(nup, in, NA + 2, tid, NULL, NULL), "the .nup of 102 inputs is made (%s)", nximport_last_error());
+      CHECK(!nximport_verify_nup(nup, NULL, NULL), "and it verifies (%s)", nximport_last_error());
+      int addons = 0; memset(&v, 0, sizeof v); if (!view(nup, &v)) { for (uint32_t p = 0; p < v.npk; p++) addons += pkg(&v, p).kind == 2; }
+      CHECK(v.npk == NA + 1 && addons == NA && pkg_of(&v, 1) >= 0, "101 packages: the update and all 100 add-ons (%u packages, %d add-ons)", v.npk, addons);
+      free(v.b);
+      for (int i = 0; i < NA; i++) { for (int f = 0; f < many[i].nf; f++) free((void *)many[i].f[f].data); free(many[i].f); } }
 
     free(na); free(nb); free(nf); free(icon_en); free(icon_ja); free(icon_up);
     for (int i = 0; i < dlc.nf; i++) free((void *)dlc.f[i].data); free(dlc.f);
