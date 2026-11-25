@@ -421,12 +421,15 @@ public final class GamePage {
         @Override public boolean dispatchKeyEvent(KeyEvent e) { return playKey(e) || super.dispatchKeyEvent(e); }
     }
 
-    /** Y plays (its press and its release are taken; Play runs on the release); in Mods &amp; Cheats Y stays its rows' (their details) */
+    /** Y plays (its press and its release are taken; Play runs on the release of a press the page saw, PressPair); in Mods &amp; Cheats Y stays its rows' (their details) */
     private static boolean playKey(KeyEvent e) {
         if (e.getKeyCode() != KeyEvent.KEYCODE_BUTTON_Y || GameAreas.MODS.equals(area) || play == null || !play.isShown()) return false;
-        if (e.getAction() == KeyEvent.ACTION_UP && e.getRepeatCount() == 0) play.performClick();
+        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) yPress.down(e.getDownTime());
+        else if (e.getAction() == KeyEvent.ACTION_UP && yPress.up(e.getDownTime())) play.performClick();   // not the release of the Library's Y that opened the page (#599)
         return true;
     }
+
+    private static final PressPair yPress = new PressPair();
 
     private static View paneTarget() {
         LinearLayout p = pane;

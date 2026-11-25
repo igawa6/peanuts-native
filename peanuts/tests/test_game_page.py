@@ -25,6 +25,14 @@ class Jvm(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertRegex(r.stdout, r'^ok \d+')
 
+    def test_press_pair_jvm(self):   # issue #599: Y's release plays only for a press the page saw
+        with tempfile.TemporaryDirectory(prefix='presspair_') as t:
+            subprocess.run(['javac', '-encoding', 'UTF-8', '-Xlint:all', '-Werror', '-d', t, str(UI / 'PressPair.java'),
+                            str(APP / 'jvmtest/java/dev/peanuts/ui/PressPairJvmTest.java')], check=True)
+            r = subprocess.run(['java', '-cp', t, 'dev.peanuts.ui.PressPairJvmTest'], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertRegex(r.stdout, r'^ok \d+')
+
     def test_help_jvm(self):
         with tempfile.TemporaryDirectory(prefix='gamehelp_') as t:
             subprocess.run(['javac', '-encoding', 'UTF-8', '-Xlint:all', '-Werror', '-d', t, str(UI / 'GameAreas.java'), str(UI / 'GameHelp.java'),
@@ -77,6 +85,10 @@ class Wiring(unittest.TestCase):
     def test_y_plays_but_not_in_mods_and_cheats(self):
         page = (UI / 'GamePage.java').read_text(encoding='utf-8')
         self.assertIn('e.getKeyCode() != KeyEvent.KEYCODE_BUTTON_Y || GameAreas.MODS.equals(area)', page)
+        body = page[page.index('private static boolean playKey(KeyEvent e) {'):]
+        body = body[:body.index('\n    }\n')]
+        self.assertIn('yPress.down(e.getDownTime())', body, 'the page notes the press it sees')
+        self.assertIn('yPress.up(e.getDownTime())) play.performClick()', body, 'and plays only on that press\'s release, not the Library\'s Y that opened it (#599)')
         ys = [l.strip() for l in page.splitlines() if '"Y"' in l]
         self.assertTrue(all('PLAY = {"Y", "Play"}' in l for l in ys), f'Y only in the keys of the second screen, no Y glyph on the Play button: {ys}')
 
