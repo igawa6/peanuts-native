@@ -2796,3 +2796,16 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### Sea of Stars (`01008C0016544000`): base `v0` (`1.0.45861`), update `v983040` (`3.0.60151`), and Android memory/driver profile
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/01008C0016544000/game.tsv` | 3 | `build` rows for `v0` (`1.0.45861`) and `v983040` (`3.0.60151`), `package v983040`, `shader_versions v0 v983040`; Android memory layout (`mem_reserve 0x498000000`, `mem_alias 0x400000000`, `mem_stack 0x80000000`, `app_pool 0xCD500000`); `recommend` Turnip on Qualcomm `< 512.800` | `# PEANUTS:` / `# PEANUTS begin..end` |
+| `dm/games/01008C0016544000/README.md` | 4 | notes for `v0` and `v983040` union shaders, Android memory/stack findings, Turnip 20+ minute verification, and Qualcomm `512.762.41` test results | `<!-- PEANUTS: -->` |
+| `dm/games/README.md` | 1 | Sea of Stars table row updated to `1.0.45861 / 2.0.59001 / 3.0.60151` | `<!-- PEANUTS: ... -->` |
+| `dm/games/01008C0016544000/shader_optional.tsv` (new) | whole file | 1,543 `1.0.45861 (v0) only` keys dropped in `v786432`/`v983040` | `# PEANUTS:` header |
+| `dm/games/01008C0016544000/readiness.tsv` (new) | whole file | `status playable`, `ram_gib 10`, and `library_caps.py` shader capability rows | `# PEANUTS:` header |
+| `dm/games/01008C0016544000/{shader_map,shader_facts,shader_pairs,pso_pairs}.tsv` | generated | `v0` + `v983040` union tables from `shader_split.py` | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+Added `01008C0016544000` (`Sea of Stars`, `0.1.9`, `Alliance-Sky`) to `peanuts/release-titles.txt` and `peanuts/games.tsv` after 20+ minutes of verified 60 fps Turnip play on OnePlus 13R (`v983040`).
