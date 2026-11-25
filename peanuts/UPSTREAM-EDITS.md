@@ -2778,6 +2778,7 @@ stripped, the Python files have the same AST).
 | `android/app/src/jvmtest/java/dev/peanuts/overlay/FrameStatsJvmTest.java` | 1 | the stats temperature labelled TEMP (c0ae14e7) | `PEANUTS` on its first line |
 | `dm/gfx/nvn/hle_nvn.c` 1, `dm/gfx/nvn/nvn_obj.h` 1, `dm/gfx/tests/t_nvn.c` 1 | as listed | the NVNsampler layout agl hashes (g0giberry, #521) | `PEANUTS` |
 | `dm/gfx/nvn/hle_nvn.c` 3, `dm/gfx/tests/t_dirty_mpfail.c` 4, `dm/gfx/tests/t_dirty_race.c` 2, `dm/gfx/tests/t_nvn.c` 2, `dm/tools/tests/test_vka_write_region.py` (new) | as listed | bounded WriteTexels dirty prep and coalesced region writes (ts-miller, #403) | `PEANUTS` |
+| `dm/gfx/nvn/nvn_dirty.c` 3, `dm/gfx/tests/t_dirty_mpfail.c` 5, `dm/gfx/tests/t_dirty_race.c` 2 | as listed | #403's per-range count of protected pages and its two skips removed: LEGO MARVEL Super Heroes drew its streets as noise (#618) | `PEANUTS` |
 | `dm/gfx/nvn/hle_nvn.c` | 1 | `nvnCommandBufferSetScissor` / `SetDepthRange` over two lines each, in the texture storage round (540d0cd6) | `PEANUTS` |
 | `dm/gfx/vk_android/vka_perf.c` | 2 | the frame cap's period for the GPU floor and the ADPF target (ts-miller, #220; one function, `vka_cap_period_clamp`, since 2a65603b) | `PEANUTS` |
 | `dm/tools/tests/test_vk_floor_period.py` | new file | the frame cap in the GPU clock floor (ts-miller, #220) | `PEANUTS` on its first line |

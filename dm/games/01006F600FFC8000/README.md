@@ -34,9 +34,9 @@ The survey's guess: `main` sets a heap of at most the pool − 64 MB (`mem_reser
 ## Open
 
 - **Open: one `[RED] vk: buffer → texture copy source at 0x40cb3fb000 (524288 bytes) is not in placed guest RAM`** in the first run, at 189 s in Sand Central Station: a 512 KiB copy into a 1024x1024 texture (format 0x42) whose storage was not in placed guest RAM either. Nothing looked wrong on screen; it did not come back in the second run. Not looked into ([A buffer ↔ texture copy names only the bytes it copies](../../../docs/reference/memory.md#a-buffer--texture-copy-names-only-the-bytes-it-copies-android) is the closest known case).
-- **Open: only Turnip was run**, not the system driver.
+- **Open: only Turnip was run in play**, not the system driver (2026-11-25: the opening cutscene on the Thor's system driver drew right).
 - Longer play: other levels, the open-world Manhattan hub, two players.
 
 ## Found on this game
 
-Nothing yet.
+- [Textures drawn as noise after a skip on a count of protected pages](../../../docs/reference/nvn-objects.md#textures-drawn-as-noise-after-a-skip-on-a-count-of-protected-pages) (#618, resolved in the host; the cause is open there): from 0.1.8 the streets of Sand Central drew as noise in one colour cast, on an Adreno 740 and an Adreno 825; cutscenes were right. <!-- PEANUTS -->
