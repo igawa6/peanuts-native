@@ -84,3 +84,4 @@ From the survey, before any rewrite: `main` 31,608,846 instructions (120.6 MB of
 - [A texel buffer's copy bound again after its submission](../../../docs/reference/rendering.md#a-texel-buffers-copy-bound-again-after-its-submission-android)
 - [The sdk's Opus decoder read the game's libopus tables](../../../docs/reference/audio.md#the-sdks-opus-decoder-read-the-games-libopus-tables)
 - [A table of handles longer than the translator's 32-element array](../../../docs/reference/shaders.md#a-table-of-handles-longer-than-the-translators-32-element-array-android)
+- [Prepare stops at "Finishing the pack" with EPERM on `dmsh_vk.lib.partial` on a microSD card](../../../docs/reference/packing.md#prepare-stops-at-finishing-the-pack-with-eperm-on-dmsh_vklibpartial-on-a-microsd-card-android)
