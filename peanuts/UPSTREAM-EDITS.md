@@ -148,6 +148,7 @@ not edited (see table above).
 | `docs/env_switches.tsv` | fixed (drift + new rows) | n/a (docs) |
 | `scripts/pack_android.py` | **fixed this pass (2026-11-13)** — `--modules`/`--mod-exefs`/`--mod-patches`, block-marked (Round 5) | no (Peanuts-specific: code mods, DESIGN-MODS.md) |
 | `scripts/pack_android.py` | marked (2026-11-14, PR #13): the AppleDouble skip in `split_shaders`/`swap_in`, `peanuts_env` | partly: the AppleDouble skip yes (summary 11); `peanuts_env` no |
+| `scripts/pack_android.py`, `docs/reference/packing.md`, `dm/games/0100F7E00C70E000/README.md` | marked `PEANUTS(upstream-candidate)` (2026-11-25, issue #495): `copy_time` (block), its calls in `copy_counted` and `pack_shaders`, the `errno` import; the reference entry and Hogwarts Legacy's "Found on this game" line | **yes** (summary 14) |
 | `docs/guides/pc-mac-packing.md` | marked (`<!-- PEANUTS begin/end -->` section: send the pack to the phone) | no (Peanuts-specific) |
 
 ## Generic host runtime-profile sites
@@ -211,6 +212,10 @@ Also gated, but not `#ifdef`-paired with upstream code (new Peanuts-owned files/
     instead of `Engine/…` (found on Tetris Effect: Connected, `dm/games/0100DE501433A000/README.md`). No change on macOS or Linux
 13. `dm/tools/docs_patches.py` writes `docs/agents/game-patches.md` with `newline='\n'`: on Windows `Path.write_text` translated every line end to CR LF,
     so a regeneration showed the whole page changed. No change on macOS or Linux
+14. `scripts/pack_android.py` `copy_time` (issue #495): the shader library's and the stamp's copies into the pack take only src's modification time,
+    not `shutil.copystat` / `copy2`. A microSD card or a USB drive on Android refuses `os.utime` (EPERM), which stopped Prepare at "Finishing the pack"
+    after the whole build; there the copy is kept without its time and the next pack copies it again
+    (`docs/reference/packing.md`, found on Hogwarts Legacy, `dm/games/0100F7E00C70E000/README.md`)
 
 `dm/host/hle_fpslock.c`'s new `EXTRA_VSYNCS_U8` lock kind is also upstream-worthy infra; its two
 per-game rows (Link's Awakening, Echoes of Wisdom) should instead move to a Peanuts-owned

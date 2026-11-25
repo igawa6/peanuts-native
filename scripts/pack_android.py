@@ -30,7 +30,7 @@
 # unfinished: the launcher refuses it, the next run rewrites it). Libraries of other versions in the pack's shaders/ are kept.
 # --code-only rewrites the modules and stops (pack.tsv, game.tsv and the shaders untouched); --keep-code packs without rewriting (the phone's two steps).
 # Usage: pack_android.py <game folder | .nup file> [--version N] [--out DIR] [-j N] [--shader-cache DIR] [--shader-pkg DIR] [--shader-python PY] [-J N] [--no-shaders] [--code-only | --keep-code] [--in-process]   (exit 1 on error)
-import argparse, errno, hashlib, os, runpy, shutil, signal, struct, subprocess, sys, tempfile, time   # PEANUTS: struct (cross_module), tempfile (shader selection)
+import argparse, errno, hashlib, os, runpy, shutil, signal, struct, subprocess, sys, tempfile, time   # PEANUTS: struct (cross_module), tempfile (shader selection); PEANUTS(upstream-candidate): errno (copy_time, #495)
 from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'scripts')); sys.path.insert(0, str(REPO / 'dm/games'))
@@ -65,6 +65,7 @@ def stage(text, every=0.0):
     print(f'stage: {text}', flush=True)
 
 
+# PEANUTS(upstream-candidate) begin: copy_time, a copy's modification time without copystat, kept where the storage refuses it (#495)
 def copy_time(src, dst):
     """dst takes src's modification time, by which a later pack sees that its copy is current (pack_shaders: the same size and time). Only the time: the
     permission bits and flags shutil.copystat would also copy mean nothing on shared storage. A microSD card or a USB drive on Android refuses to set a file's
@@ -75,18 +76,19 @@ def copy_time(src, dst):
     except OSError as e:
         if e.errno not in (errno.EPERM, errno.EACCES, errno.ENOTSUP, errno.ENOSYS): raise
         print(f'{dst}: this storage does not keep a copied file\'s time ({errno.errorcode.get(e.errno, e.errno)}); a later pack copies it again', flush=True)
+# PEANUTS(upstream-candidate) end
 
 
 def copy_counted(src, dst, what):
     """A copy in 8 MiB pieces with 'stage: <what>: <n> of <m> MB' at most twice a second, and src's time where the storage keeps it (copy_time): the shader
-    library (700 MB for Ocarina of Time) to shared storage"""
+    library (700 MB for Ocarina of Time) to shared storage"""   # PEANUTS(upstream-candidate): src's time by copy_time (#495)
     total = os.path.getsize(src); done = 0
     stage(f'{what}: 0 of {total >> 20:,} MB')
     with open(src, 'rb') as i, open(dst, 'wb') as o:
         while b := i.read(8 << 20):
             o.write(b); done += len(b)
             stage(f'{what}: {done >> 20:,} of {total >> 20:,} MB', 0.5)
-    copy_time(src, dst)
+    copy_time(src, dst)   # PEANUTS(upstream-candidate): not shutil.copystat, which stops on a microSD card (#495)
 
 
 def child_env(**kw):
@@ -1081,7 +1083,7 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
         if d_.is_file() and d_.stat().st_size == s_.stat().st_size and d_.stat().st_mtime_ns == s_.stat().st_mtime_ns: continue
         tmp = d_.with_name(f + '.partial')
         if f == VK_LIB: copy_counted(s_, tmp, 'copying the shaders into the build')  # PEANUTS: build text in the player's words (0.1.8)
-        else: shutil.copyfile(s_, tmp); copy_time(s_, tmp)   # not copy2: its copystat stops on a microSD card (copy_time, #495)
+        else: shutil.copyfile(s_, tmp); copy_time(s_, tmp)   # PEANUTS(upstream-candidate): not copy2, whose copystat stops on a microSD card (copy_time, #495)
         os.replace(tmp, d_)   # replace: Windows' rename does not take an existing name
     others = sorted(o.name for o in (out / 'shaders').iterdir() if o.name != name and o.name.startswith(VK_PREFIX) and o.is_dir())
     if others:   # kept: another APK (the test and the play app, an older build) may load one of them from this pack; delete by hand to save the space
