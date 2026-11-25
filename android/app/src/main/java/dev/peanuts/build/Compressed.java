@@ -53,13 +53,17 @@ public final class Compressed {
     }
 
     /**
-     * An importer error about a compressed file in a player's words (what did not finish, that nothing changed when unchanged, what to do), or null when it
-     * is not one. The importer's own message goes to the log as it is.
+     * An importer error about a compressed file, or about a game file that was cut off, in a player's words (what did not finish, that nothing changed when
+     * unchanged, what to do), or null when it is not one. The importer's own message goes to the log as it is.
      */
     public static String failure(String message, String name, boolean unchanged) {
         if (message == null) return null;
         String m = message.toLowerCase(Locale.ROOT), file = fileIn(message);
         String game = name == null || name.isEmpty() ? "the game" : name, same = unchanged ? " Nothing was changed." : "";
+        // any game file shorter than the contents its own table lists (nx_nca.c): Retry cannot help, a new copy does (issues #488, #674)
+        if (m.contains("lies outside its file"))
+            return fileIn(message, "A game file") + " is cut off, so " + game + " was not imported." + same
+                    + " The file is shorter than its own contents say, so it was not copied or downloaded completely. Copy the file again, then build the game again.";
         if (!m.contains(".ncz") && !m.contains(".nsz") && !m.contains(".xcz") && !m.contains("compressed")) return null;
         if (m.contains("keys inside"))
             return file + " does not match your keys, so " + game + " was not imported." + same + " Compress the game again from your own dump, or build from the uncompressed file.";
@@ -71,11 +75,14 @@ public final class Compressed {
     }
 
     /** The file an importer message names first (its messages start "<file name>: " or "<file name> is"), else "The compressed game file" */
-    static String fileIn(String message) {
+    static String fileIn(String message) { return fileIn(message, "The compressed game file"); }
+
+    /** The same, with another name for a file it cannot name */
+    static String fileIn(String message, String otherwise) {
         int c = message.indexOf(": "), s = message.indexOf(" is ");
         int end = c < 0 ? s : s < 0 ? c : Math.min(c, s);
         String f = end > 0 ? message.substring(0, end).trim() : "";
         String l = f.toLowerCase(Locale.ROOT);
-        return l.endsWith(".nsz") || l.endsWith(".xcz") || l.endsWith(".nsp") || l.endsWith(".xci") ? f : "The compressed game file";
+        return l.endsWith(".nsz") || l.endsWith(".xcz") || l.endsWith(".nsp") || l.endsWith(".xci") ? f : otherwise;
     }
 }

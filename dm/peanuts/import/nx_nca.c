@@ -658,10 +658,14 @@ static int find_titlekey(const NxContainer *c, const uint8_t rights[16], uint8_t
 int nx_nca_open(NxNca *n, const NxContainer *c, const NxEntry *e) { return nx_nca_open_store(n, c, e, NULL); }
 int nx_nca_open_store(NxNca *n, const NxContainer *c, const NxEntry *e, NxStore *store) {
     memset(n, 0, sizeof *n); n->fd = c->fd; n->base_off = e->off; n->size = store ? store->size : e->size; n->store = store;
-    snprintf(n->id, sizeof n->id, "%.40s", e->name);
+    snprintf(n->id, sizeof n->id, "%.64s", e->name);   // the whole name: a meta NCA's, <32 hex digits>.cnmt.nca, is 41 characters (cut to 40, players saw ".cnmt.nc")
     if (!nx_keys.loaded) { nx_err("keys not loaded (nximport_keys)"); return -1; }
     if (n->size < 0xC00) { nx_err("%s: too small for an NCA", n->id); return -1; }
-    if (!store) { struct stat st; if (!fstat(n->fd, &st) && ((uint64_t)st.st_size < e->off || e->size > (uint64_t)st.st_size - e->off)) { nx_err("%s: lies outside its file (%llu + %llu > %llu): a cut-off dump?", n->id, (unsigned long long)e->off, (unsigned long long)e->size, (unsigned long long)st.st_size); return -1; } }
+    // A container shorter than the NCAs its table lists was cut off when it was copied (issues #488, #674): the message starts with the container's file name,
+    // which the app's card names to the player (dev.peanuts.build.Compressed.failure)
+    if (!store) { struct stat st; if (!fstat(n->fd, &st) && ((uint64_t)st.st_size < e->off || e->size > (uint64_t)st.st_size - e->off)) {
+        const char *leaf = c->path, *s = strrchr(leaf, '/'), *b = strrchr(leaf, '\\'); if (b && (!s || b > s)) s = b; if (s) leaf = s + 1;
+        nx_err("%s: %s lies outside its file (%llu + %llu > %llu bytes): the file is cut off", leaf, n->id, (unsigned long long)e->off, (unsigned long long)e->size, (unsigned long long)st.st_size); return -1; } }
     if (nca_read(n, n->hdr, 0xC00, 0)) return -1;
     NxAes a1, a2; nx_aes_init(&a1, nx_keys.header_key); nx_aes_init(&a2, nx_keys.header_key + 16);
     nx_aes_xts_decrypt(&a1, &a2, 0, 0x200, n->hdr, n->hdr, 0x400);
