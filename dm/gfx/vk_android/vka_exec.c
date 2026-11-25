@@ -1239,7 +1239,22 @@ static void copy_t2t(const p_copy_t2t *c) {
     VkImageSubresourceLayers ss = {sa, sl, s3 ? 0 : sz0 + (uint32_t)c->sr.zoffset, s3 ? 1 : (uint32_t)nz}, ds = {sa, dl, d3 ? 0 : dz0 + (uint32_t)c->dr.zoffset, d3 ? 1 : (uint32_t)nz};
     if (ss.baseArrayLayer + ss.layerCount > s->layers || ds.baseArrayLayer + ds.layerCount > d->layers) { VRED_ONCE("texture copy layers out of range"); return; }
     if (c->flags & DM_COPY_RESOLVE && s->samples > 1 && d->samples == 1) {
-        VkImageResolve r = {ss, {c->sr.xoffset, c->sr.yoffset, 0}, ds, {c->dr.xoffset, c->dr.yoffset, 0}, {(uint32_t)c->sr.width, (uint32_t)c->sr.height, 1}};
+        // PEANUTS(upstream-candidate): Downsample resolves the part both textures have: the extent is the smaller of the two rectangles, kept inside both images' levels. The recording names
+        // each whole texture (rec_downsample), and a game may resolve a larger multisample target into a smaller texture: Digimon Story Time Stranger keeps its 4x
+        // 1920x1080 scene target in handheld mode, draws a 1280x720 viewport into it and downsamples into 1280x720 textures. Resolved with the source's 1920x1080 extent,
+        // the region ran past the destination (invalid in Vulkan), and Adreno wrote the overflow into the image's own tiles: the left half of the picture in 16-pixel
+        // tiles (issue #552)
+        uint32_t sw, sh, dw, dh; level_size(s, sl, &sw, &sh); level_size(d, dl, &dw, &dh);
+        int64_t rw = c->sr.width < c->dr.width ? c->sr.width : c->dr.width, rh = c->sr.height < c->dr.height ? c->sr.height : c->dr.height;
+        if (rw > (int64_t)sw - c->sr.xoffset) rw = (int64_t)sw - c->sr.xoffset;
+        if (rw > (int64_t)dw - c->dr.xoffset) rw = (int64_t)dw - c->dr.xoffset;
+        if (rh > (int64_t)sh - c->sr.yoffset) rh = (int64_t)sh - c->sr.yoffset;
+        if (rh > (int64_t)dh - c->dr.yoffset) rh = (int64_t)dh - c->dr.yoffset;
+        if (rw <= 0 || rh <= 0 || c->sr.xoffset < 0 || c->sr.yoffset < 0 || c->dr.xoffset < 0 || c->dr.yoffset < 0) { VRED_ONCE("multisample resolve with no region inside both textures: not done"); return; }
+        if ((rw != c->sr.width || rh != c->sr.height)) { static _Atomic int n; if (!atomic_exchange(&n, 1))
+            VLOG("multisample resolve of %dx%d (serial %llu, %u samples) into %dx%d (serial %llu): the %lldx%lld both have", c->sr.width, c->sr.height, (unsigned long long)s->serial, s->samples,
+                 c->dr.width, c->dr.height, (unsigned long long)d->serial, (long long)rw, (long long)rh); }
+        VkImageResolve r = {ss, {c->sr.xoffset, c->sr.yoffset, 0}, ds, {c->dr.xoffset, c->dr.yoffset, 0}, {(uint32_t)rw, (uint32_t)rh, 1}};
         if (sa == VK_IMAGE_ASPECT_COLOR_BIT) vk.vkCmdResolveImage(g_cb, s->img, VK_IMAGE_LAYOUT_GENERAL, d->img, VK_IMAGE_LAYOUT_GENERAL, 1, &r);
         else VRED_ONCE("depth resolve is not on Vulkan yet");
     } else if (c->sr.width == c->dr.width && c->sr.height == c->dr.height && !(c->flags & (NVN_COPY_FLAGS_MIRROR_X_BIT | NVN_COPY_FLAGS_MIRROR_Y_BIT | NVN_COPY_FLAGS_MIRROR_Z_BIT))
