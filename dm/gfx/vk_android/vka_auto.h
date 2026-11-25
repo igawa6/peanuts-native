@@ -34,6 +34,7 @@ static inline int vka_auto_rules(const vka_auto_in *in, vka_auto_rule *o, int ma
     VKA_AUTO_ADD(q && in->mesh_ext, "DM_VK_MESH", 0, "mesh draws through compute");                          // vka_dev.c mesh_qcom
     VKA_AUTO_ADD(in->qcom_old && in->vin_dyn_ext, "DM_VK_VIN_DYN", 0, "driver version before 512.800");     // vka_dev.c
     VKA_AUTO_ADD(in->qcom_old, "DM_VK_PREWARM", 0, "driver version before 512.800");                         // vka_pso.c prewarm
+    VKA_AUTO_ADD(in->qcom_old, "DM_VK_DYN_FILTER", 0, "driver version before 512.800");                      // vka_draw.c; PEANUTS(upstream-candidate)
     VKA_AUTO_ADD(t, "DM_VK_PSO_SLOTS", vkpg_cap_default(1), NULL);                                           // vka_pso.c gate_cap
     VKA_AUTO_ADD(t, "DM_VK_PRESENT_GATE_WAIT", 30, NULL);                                                    // vka_present.c
     VKA_AUTO_ADD(t, "DM_VK_ZSHARE_MAX_MB", 0, NULL);                                                         // vka_tex.c, vka_zshare.h vkz_max

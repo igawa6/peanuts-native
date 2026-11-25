@@ -2796,3 +2796,10 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+## Qualcomm driver before 512.800: auto-disable DM_VK_DYN_FILTER (2026-11-26)
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_draw.c`, `dm/gfx/vk_android/vka_auto.h`, `dm/host/tests/t_android_auto.c` | 1, 1, 3 | Default `DM_VK_DYN_FILTER=0` when `qcom_old` (Qualcomm driver version before 512.800); fixes scrambled blocks and speckles across draws on Qualcomm 512.762.41 (Adreno 750) in OCTOPATH TRAVELER | `PEANUTS(upstream-candidate)` |
+| `docs/advanced_settings.tsv` | 1 | Update `DM_VK_DYN_FILTER` default text to name Qualcomm before 512.800 | generated / allow-listed in `peanuts/upstream-unmarked.txt` |

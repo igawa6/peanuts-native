@@ -26,7 +26,7 @@ int main(void) {
     CHECK((v = val(r, n, "DM_VK_SHUFFLE_LDS")) && !strcmp(v, "1"), "Turnip: shuffles through workgroup memory");
     CHECK((v = val(r, n, "DM_VK_QUAD_SHFL")) && !strcmp(v, "1"), "Turnip: quad shuffles as quad operations");   // PEANUTS
     CHECK((v = val(r, n, "DM_VK_CS_WARM")) && !strcmp(v, "1"), "Turnip: the compute warm-up");   // PEANUTS
-    CHECK(!val(r, n, "DM_VK_MESH") && !val(r, n, "DM_VK_GS_FILL") && !val(r, n, "DM_VK_ONE_LANE") && !val(r, n, "DM_VK_OQ_SPLIT_PASS") && !val(r, n, "DM_VK_PREWARM"),
+    CHECK(!val(r, n, "DM_VK_MESH") && !val(r, n, "DM_VK_GS_FILL") && !val(r, n, "DM_VK_ONE_LANE") && !val(r, n, "DM_VK_OQ_SPLIT_PASS") && !val(r, n, "DM_VK_PREWARM") && !val(r, n, "DM_VK_DYN_FILTER"),   // PEANUTS(upstream-candidate)
           "Turnip: no Qualcomm rule");
     CHECK(n == 8, "Turnip: 8 rules, got %d", n);   // PEANUTS: 8 (DM_VK_QUAD_SHFL, DM_VK_CS_WARM)
 
@@ -37,7 +37,7 @@ int main(void) {
     CHECK((v = val(r, n, "DM_VK_ONE_LANE")) && !strcmp(v, "1"), "Qualcomm: profile's one-lane shaders");
     CHECK((v = val(r, n, "DM_VK_OQ_SPLIT_PASS")) && !strcmp(v, "1"), "Qualcomm: profile's occlusion split pass");
     CHECK(!val(r, n, "DM_VK_MESH_PREPASS_SKIP"), "Qualcomm through compute: the prepass cut does not apply");
-    CHECK(!val(r, n, "DM_VK_PREWARM") && !val(r, n, "DM_VK_VIN_DYN") && !val(r, n, "DM_VK_PSO_SLOTS") && !val(r, n, "DM_VK_CS_WARM") && !val(r, n, "DM_VK_QUAD_SHFL"), "Qualcomm 512.800+: no old-driver or Turnip rule");   // PEANUTS: DM_VK_CS_WARM, DM_VK_QUAD_SHFL
+    CHECK(!val(r, n, "DM_VK_PREWARM") && !val(r, n, "DM_VK_VIN_DYN") && !val(r, n, "DM_VK_DYN_FILTER") && !val(r, n, "DM_VK_PSO_SLOTS") && !val(r, n, "DM_VK_CS_WARM") && !val(r, n, "DM_VK_QUAD_SHFL"), "Qualcomm 512.800+: no old-driver or Turnip rule");   // PEANUTS(upstream-candidate): DM_VK_DYN_FILTER, DM_VK_CS_WARM, DM_VK_QUAD_SHFL
     // ... with its mesh shaders (DM_VK_MESH=1): the prepass cut is on
     n = vka_auto_rules(&(vka_auto_in){.driver_id = VKA_DRV_QCOM, .mesh_ext = 1, .prof_prepass_cut = 3}, r, 16);
     CHECK((v = val(r, n, "DM_VK_MESH_PREPASS_SKIP")) && !strcmp(v, "1"), "Qualcomm with mesh shaders: prepass cut");
@@ -49,6 +49,7 @@ int main(void) {
     n = vka_auto_rules(&(vka_auto_in){.driver_id = VKA_DRV_QCOM, .qcom_old = 1, .vin_dyn_ext = 1, .memu = 1}, r, 16);
     CHECK((v = val(r, n, "DM_VK_PREWARM")) && !strcmp(v, "0"), "old Qualcomm: no prewarm");
     CHECK((v = val(r, n, "DM_VK_VIN_DYN")) && !strcmp(v, "0"), "old Qualcomm: vertex input dynamic state off");
+    CHECK((v = val(r, n, "DM_VK_DYN_FILTER")) && !strcmp(v, "0"), "old Qualcomm: dynamic state filter off");   // PEANUTS(upstream-candidate)
     n = vka_auto_rules(&(vka_auto_in){.driver_id = VKA_DRV_QCOM, .qcom_old = 1, .memu = 1}, r, 16);
     CHECK(!val(r, n, "DM_VK_VIN_DYN"), "old Qualcomm without the extension: nothing to turn off");
 
