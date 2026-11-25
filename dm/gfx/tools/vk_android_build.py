@@ -425,7 +425,7 @@ def type2_sampler(name):
 # The texture half of such a handle: only its first word (handle & 0x3fff) is in c2. dmsh_build.py decode_tex tries both words of a typed handle against c2's tables,
 # and the second one, the sampler ID's word in the game's own uniform buffer, landed on a combined texture row whenever its byte offset was 0x20 + 8 r: The Witcher 3's
 # fp_t_cb720898_2002807C (texture c2 word 0x7C = separate texture 17, sampler ID at c[10] byte 40) was bound to combined slot 1 instead of slot 145, so its deferred
-# light pass read another texture (or none) in place of the screen-space shadow mask; 2,127 bindings of 1,148 shaders (4.04d's library, 327c6383b614).
+# light pass read the game's 4x4 black texture in place of the half-resolution buffer whose .y scales all ambient light (shade near black); 2,127 bindings of 1,148 shaders (4.04d's library, 327c6383b614).
 # → the texture slot (combined r, or DMSH_SEPTEX_SLOT0 + r), or None (not a type-2 handle, or a first word on no texture row)
 def type2_texture(name):
     if not type2_sampler(name): return None
