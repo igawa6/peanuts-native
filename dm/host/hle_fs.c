@@ -271,7 +271,9 @@ static Result mount_ex(const char *name, const char *dir, int ro, int txn, int s
         }
         mkdir(dir, 0755);
         const char *why = NULL;
-        if (!access(work, F_OK) && rm_tree(work)) why = "cannot clear the work directory left over from last time";
+        int fresh = !access(work, F_OK) && !plat_update_tree(dir, work);
+        if (fresh) { if (!access(neu, F_OK) && rm_tree(neu)) why = "cannot clear the .new left over from last time"; }
+        else if (!access(work, F_OK) && rm_tree(work)) why = "cannot clear the work directory left over from last time";
         else if (!access(neu, F_OK) && rm_tree(neu)) why = "cannot clear the .new left over from last time";
         else if (dm_fs_test_fail("mountclone") || plat_clone_tree(dir, work))   // ENOTSUP: HFS+ and exFAT can neither clone nor swap directories (RENAME_SWAP), so no transaction can work on them
             why = errno == ENOTSUP ? "the save folder's filesystem cannot clone directories (save transactions need APFS: set DM_SAVE to a folder on an APFS volume)" : "cloning the work directory failed";
@@ -832,7 +834,8 @@ static Result commit_mount_locked(int i, int *notify_error) {
     char pm1[1200], pm2[1200]; snprintf(pm1, sizeof pm1, "%s.pend1", g_mnt[i].commit); snprintf(pm2, sizeof pm2, "%s.pend2", g_mnt[i].commit);   // PEANUTS
     if (!access(pm1, F_OK) || !access(pm2, F_OK)) { LOG("[RED] save commit: an earlier commit's journal (%s.pend1 / .pend2) could not be finished; this commit is refused (it is finished at the next mount)", g_mnt[i].commit); r = RES_FAIL; }   // PEANUTS
     else if (!access(neu, F_OK) && rm_tree(neu)) { LOG("[RED] save commit: cannot clear the %s left over errno=%d (committed version unchanged)", neu, errno); r = RES_FAIL; }
-    else if (plat_clone_tree(g_mnt[i].dir, neu)) { LOG("[RED] save commit: clonefile %s failed errno=%d (committed version unchanged)", neu, errno); r = RES_FAIL; }
+    else if (plat_clone_changed(g_mnt[i].dir, g_mnt[i].commit, neu)) {   // PEANUTS: a copy of what changed (#571)
+        LOG("[RED] save commit: clonefile %s failed errno=%d (committed version unchanged)", neu, errno); r = RES_FAIL; }
     else if ((sr = plat_rename_swap(neu, g_mnt[i].commit))) {   // PEANUTS: -2: failed after the journal marker, so neu stays for the roll-forward
         LOG("[RED] save commit: %s errno=%d", sr == -2 ? "the in-place update failed after its journal marker (it is finished at the next commit or mount)" : "atomic swap failed (committed version unchanged)", errno);
         if (sr != -2) rm_tree(neu);

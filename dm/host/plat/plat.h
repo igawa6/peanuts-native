@@ -198,6 +198,8 @@ PLAT_FN int plat_clone_tree(const char *from, const char *to);   // copy-on-writ
 // empty, not holding b's old content. -1 with errno: b unchanged. -2 (Android): failed after the journal marker; keep a, plat_swap_recover finishes it
 PLAT_FN int plat_rename_swap(const char *a, const char *b);
 PLAT_FN void plat_swap_recover(const char *b);                    // at mount or before a commit: finish a plat_rename_swap a crash or failure interrupted (Android); nothing elsewhere
+PLAT_FN int plat_clone_changed(const char *from, const char *base, const char *to);
+PLAT_FN int plat_update_tree(const char *from, const char *to);
 // PEANUTS end
 // Extended attributes of the path itself (never followed); an absent one fails with errno PLAT_ENOATTR
 PLAT_FN ssize_t plat_getxattr(const char *path, const char *name, void *buf, size_t n);

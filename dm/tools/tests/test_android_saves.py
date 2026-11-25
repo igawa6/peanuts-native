@@ -105,8 +105,28 @@ def scenarios(root):
     def legacy_old(r):
         s = base(r); o = Path(str(s) + '.old'); shutil.move(str(s), str(o)); return s
 
+    def delta(r):
+        s = base(r); (s / 'keep.bin').write_text('keep'); (s / 'old').mkdir(); (s / 'old/x.bin').write_text('x')
+        a = copy(s, '.new', {'slot0.bin': 'new', 'sub/y.bin': 'y'}); (a / 'empty').mkdir()
+        (a / '.dm-keep').write_bytes(b'\0'.join([b'keep.bin', b'slot0.bin', b'sub/', b'sub/y.bin', b'empty/']) + b'\0'); return s, a
+
+    def delta_pend1(r):
+        s, a = delta(r); Path(str(s) + '.pend1').write_text(str(a)); return s
+
+    def delta_pend2_partial(r):
+        s, a = delta(r); (s / 'stale.bin').unlink(); shutil.rmtree(s / 'old')
+        Path(str(s) + '.pend2').write_text(str(a)); (a / 'slot0.bin').rename(s / 'slot0.bin'); return s
+
+    def delta_done(r):
+        s, a = delta(r); (s / 'stale.bin').unlink(); shutil.rmtree(s / 'old'); (a / 'slot0.bin').rename(s / 'slot0.bin')
+        (s / 'sub').mkdir(); (a / 'sub/y.bin').rename(s / 'sub/y.bin'); (a / 'empty').rename(s / 'empty'); Path(str(s) + '.pend1').write_text(str(a)); return s
+
     return {'pend1': pend1, 'pend2_partial': pend2_partial, 'empty_pend2': empty_pend2, 'pend1_gone': pend1_gone, 'foreign': foreign, 'foreign_dir': foreign_dir,
-            'legacy_old': legacy_old, 'both_markers': both_markers, 'emptied_copy': emptied_copy}
+            'legacy_old': legacy_old, 'both_markers': both_markers, 'emptied_copy': emptied_copy, 'delta_pend1': delta_pend1,
+            'delta_pend2_partial': delta_pend2_partial, 'delta_done': delta_done}
+
+
+DELTA_RESULT = {'keep.bin': b'keep', 'slot0.bin': b'new', 'sub': None, 'sub/y.bin': b'y', 'empty': None}
 
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')
@@ -176,6 +196,7 @@ class LauncherJvm(unittest.TestCase):
                         self.assertFalse(ra.stdout.startswith('refused'), ra.stdout)
                         if name == 'emptied_copy': self.assertEqual((sh / 'slot0.bin').read_text(), 'slot0 new', 'the save survives')
                         if name == 'both_markers': self.assertEqual((sh / 'slot0.bin').read_text(), 'new')
+                        if name.startswith('delta'): self.assertEqual(tree(sh), DELTA_RESULT, name)
                         self.assertFalse(any(k.endswith(('.pend1', '.pend2', '.old', '.restore', '.new')) for k in tree(host)), f'{name}: {list(tree(host))}')
 
 
@@ -229,6 +250,21 @@ class HostSwap(unittest.TestCase):
             subprocess.run([str(x), 'swap', str(a), str(s)], check=True, capture_output=True, text=True)
             self.assertEqual((s / 'sub').stat().st_mode & 0o777, 0o700)
     # PEANUTS end
+
+    def test_delta_commit_touches_only_changes(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            (d / 'recover.c').write_text(HARNESS % swap_code())
+            subprocess.run(['cc', '-std=gnu11', '-w', '-o', str(d / 'swap'), str(d / 'recover.c')], check=True, capture_output=True, text=True)
+            s = scenarios(d)['delta_pend1'](d / 'x')
+            a = Path(str(s) + '.new'); Path(str(s) + '.pend1').unlink()
+            ino, keep = s.stat().st_ino, (s / 'keep.bin').stat().st_ino
+            r = subprocess.run([str(d / 'swap'), 'swap', str(a), str(s)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(tree(s), DELTA_RESULT)
+            self.assertEqual(s.stat().st_ino, ino)
+            self.assertEqual((s / 'keep.bin').stat().st_ino, keep, 'an unchanged file is left where it is')
+            self.assertFalse(Path(str(s) + '.pend1').exists() or Path(str(s) + '.pend2').exists())
 
 
 if __name__ == '__main__':

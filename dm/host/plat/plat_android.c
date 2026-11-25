@@ -426,7 +426,7 @@ int plat_fd_path(int fd, char *out, size_t n) {
     out[k] = 0; return 0;
 }
 // No copy-on-write clone on ext4 / f2fs: a full copy of the tree, with the guest names (xattrs) and times. The target must not exist, as for clonefile
-static int copy_file(const char *from, const char *to, const struct stat *st) {
+static int copy_file(const char *from, const char *to, const struct stat *st, int times) {
     int in = open(from, O_RDONLY | O_CLOEXEC); if (in < 0) return -1;
     int out = open(to, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, st->st_mode & 07777); if (out < 0) { int e = errno; close(in); errno = e; return -1; }
     uint8_t b[65536]; ssize_t k; int r = 0;
@@ -435,7 +435,7 @@ static int copy_file(const char *from, const char *to, const struct stat *st) {
         for (ssize_t o = 0; o < k;) { ssize_t w = write(out, b + o, (size_t)(k - o)); if (w < 0) { if (errno == EINTR) continue; r = -1; break; } o += w; }
         if (r) break;
     }
-    struct timespec t[2] = {st->st_atim, st->st_mtim}; futimens(out, t);
+    if (times) { struct timespec t[2] = {st->st_atim, st->st_mtim}; futimens(out, t); }
     int e = errno; close(in); if (close(out)) r = -1; errno = e; return r;
 }
 static void copy_xattrs(const char *from, const char *to) {
@@ -448,7 +448,7 @@ static void copy_xattrs(const char *from, const char *to) {
 int plat_clone_tree(const char *from, const char *to) {
     struct stat st; if (lstat(from, &st)) return -1;
     if (S_ISLNK(st.st_mode)) { char l[4096]; ssize_t k = readlink(from, l, sizeof l - 1); if (k < 0) return -1; l[k] = 0; return symlink(l, to); }
-    if (!S_ISDIR(st.st_mode)) { if (copy_file(from, to, &st)) return -1; copy_xattrs(from, to); return 0; }
+    if (!S_ISDIR(st.st_mode)) { if (copy_file(from, to, &st, 1)) return -1; copy_xattrs(from, to); return 0; }
     if (mkdir(to, st.st_mode & 07777)) return -1;
     DIR *d = opendir(from); if (!d) return -1;
     int r = 0;
@@ -473,6 +473,133 @@ static void swap_dir_meta(const char *a, const char *b) {
     copy_xattrs(a, b);
 }
 // PEANUTS end
+static int swap_rm_tree(const char *p);
+static int xattrs_same(const char *x, const char *y) {
+    char nx[1024], ny[1024]; ssize_t a = llistxattr(x, nx, sizeof nx), b = llistxattr(y, ny, sizeof ny);
+    if (a < 0) a = 0;
+    if (b < 0) b = 0;
+    if (a != b || memcmp(nx, ny, (size_t)a)) return 0;
+    for (ssize_t o = 0; o < a; o += (ssize_t)strlen(nx + o) + 1) {
+        char vx[1024], vy[1024]; ssize_t k = lgetxattr(x, nx + o, vx, sizeof vx), l = lgetxattr(y, nx + o, vy, sizeof vy);
+        if (k != l || (k > 0 && memcmp(vx, vy, (size_t)k))) return 0;
+    }
+    return 1;
+}
+static int content_same(const char *x, const char *y) {
+    enum { N = 1 << 20 };
+    int fx = open(x, O_RDONLY | O_CLOEXEC), fy = open(y, O_RDONLY | O_CLOEXEC);
+    uint8_t *bx = malloc(N), *by = malloc(N);
+    int same = fx >= 0 && fy >= 0 && bx && by;
+    while (same) {
+        ssize_t k = read(fx, bx, N), l = read(fy, by, N);
+        if (k < 0 || l < 0 || k != l || memcmp(bx, by, (size_t)k)) same = 0;
+        else if (!k) break;
+    }
+    if (fx >= 0) close(fx);
+    if (fy >= 0) close(fy);
+    free(bx); free(by);
+    return same;
+}
+static int file_same(const char *x, const struct stat *sx, const char *y) {
+    struct stat sy; if (lstat(y, &sy) || (sx->st_mode & S_IFMT) != (sy.st_mode & S_IFMT)) return 0;
+    if (S_ISLNK(sx->st_mode)) {
+        char lx[4096], ly[4096]; ssize_t k = readlink(x, lx, sizeof lx), l = readlink(y, ly, sizeof ly);
+        return k >= 0 && k == l && !memcmp(lx, ly, (size_t)k);
+    }
+    if (sx->st_size != sy.st_size || (sx->st_mode & 07777) != (sy.st_mode & 07777) || !xattrs_same(x, y)) return 0;
+    return content_same(x, y);
+}
+static int copy_entry(const char *from, const struct stat *st, const char *to) {
+    if (S_ISDIR(st->st_mode)) return plat_clone_tree(from, to);
+    if (S_ISLNK(st->st_mode)) { char l[4096]; ssize_t k = readlink(from, l, sizeof l - 1); if (k < 0) return -1; l[k] = 0; return symlink(l, to); }
+    if (copy_file(from, to, st, 0)) return -1;
+    copy_xattrs(from, to); return 0;
+}
+typedef struct { char *p; size_t n, cap; } keep_buf;
+static int keep_add(keep_buf *k, const char *rel, int dir) {
+    size_t l = strlen(rel) + (dir ? 1 : 0) + 1;
+    if (k->n + l > k->cap) { size_t c = k->cap ? k->cap * 2 : 65536; while (c < k->n + l) c *= 2; char *q = realloc(k->p, c); if (!q) return -1; k->p = q; k->cap = c; }
+    memcpy(k->p + k->n, rel, strlen(rel)); k->n += strlen(rel);
+    if (dir) k->p[k->n++] = '/';
+    k->p[k->n++] = 0; return 0;
+}
+static int mkdirs_like(const char *from, const char *to, const char *rel) {
+    char r[4096]; snprintf(r, sizeof r, "%s", rel);
+    for (char *s = r; ; s++) {
+        if (*s && *s != '/') continue;
+        char c = *s; *s = 0;
+        char pf[4200], pt[4200]; struct stat st;
+        snprintf(pf, sizeof pf, "%s/%s", from, r); snprintf(pt, sizeof pt, "%s/%s", to, r);
+        if (lstat(pf, &st) || (mkdir(pt, st.st_mode & 07777) && errno != EEXIST)) return -1;
+        copy_xattrs(pf, pt);   // PEANUTS: stage 2 gives b's folder these (swap_dir_meta), so its guest name must come along
+        if (!c) return 0;
+        *s = c;
+    }
+}
+static int clone_changed(const char *from, const char *base, const char *to, const char *rel, keep_buf *k) {
+    char df[4200]; snprintf(df, sizeof df, "%s%s%s", from, *rel ? "/" : "", rel);
+    DIR *d = opendir(df); if (!d) return -1;
+    int r = 0;
+    for (struct dirent *e; !r && (e = readdir(d));) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        char rr[4096], pf[4200], pb[4200], pt[4200]; struct stat st, sb;
+        if (snprintf(rr, sizeof rr, "%s%s%s", rel, *rel ? "/" : "", e->d_name) >= (int)sizeof rr) { errno = ENAMETOOLONG; r = -1; break; }
+        snprintf(pf, sizeof pf, "%s/%s", from, rr); snprintf(pb, sizeof pb, "%s/%s", base, rr); snprintf(pt, sizeof pt, "%s/%s", to, rr);
+        if (lstat(pf, &st)) { r = -1; break; }
+        if (S_ISDIR(st.st_mode)) {
+            if (keep_add(k, rr, 1)) { r = -1; break; }
+            if ((lstat(pb, &sb) || !S_ISDIR(sb.st_mode)) && mkdirs_like(from, to, rr)) { r = -1; break; }
+            r = clone_changed(from, base, to, rr, k);
+        } else {
+            if (keep_add(k, rr, 0)) { r = -1; break; }
+            if (file_same(pf, &st, pb)) continue;
+            if (*rel && mkdirs_like(from, to, rel)) { r = -1; break; }
+            r = copy_entry(pf, &st, pt);
+        }
+    }
+    int er = errno; closedir(d); errno = er; return r;
+}
+int plat_clone_changed(const char *from, const char *base, const char *to) {
+    struct stat st, sb; char m[4200];
+    snprintf(m, sizeof m, "%s/.dm-keep", from);
+    if (lstat(base, &sb) || !S_ISDIR(sb.st_mode) || !lstat(m, &st)) return plat_clone_tree(from, to);
+    if (lstat(from, &st) || mkdir(to, st.st_mode & 07777)) return -1;
+    keep_buf k = {0};
+    int r = clone_changed(from, base, to, "", &k);
+    if (!r) {
+        snprintf(m, sizeof m, "%s/.dm-keep", to);
+        int fd = open(m, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+        if (fd < 0) r = -1;
+        else { for (size_t o = 0; !r && o < k.n;) { ssize_t w = write(fd, k.p + o, k.n - o); if (w < 0) { if (errno != EINTR) r = -1; } else o += (size_t)w; } int e = errno; if (close(fd)) r = -1; errno = e; }
+    }
+    int e = errno; free(k.p); errno = e; return r;
+}
+static int update_tree(const char *from, const char *to) {
+    DIR *d = opendir(to); if (!d) return -1;
+    int r = 0;
+    for (struct dirent *e; !r && (e = readdir(d));) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        char pf[4200], pt[4200]; struct stat sf, st;
+        snprintf(pf, sizeof pf, "%s/%s", from, e->d_name); snprintf(pt, sizeof pt, "%s/%s", to, e->d_name);
+        if (lstat(pt, &st)) continue;
+        if (lstat(pf, &sf) || S_ISDIR(sf.st_mode) != S_ISDIR(st.st_mode) || (S_ISDIR(st.st_mode) && !xattrs_same(pf, pt))) r = swap_rm_tree(pt);
+    }
+    closedir(d);
+    if (r || !(d = opendir(from))) return -1;
+    for (struct dirent *e; !r && (e = readdir(d));) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        char pf[4200], pt[4200]; struct stat sf, st;
+        snprintf(pf, sizeof pf, "%s/%s", from, e->d_name); snprintf(pt, sizeof pt, "%s/%s", to, e->d_name);
+        if (lstat(pf, &sf)) { r = -1; break; }
+        if (S_ISDIR(sf.st_mode)) r = lstat(pt, &st) ? plat_clone_tree(pf, pt) : update_tree(pf, pt);
+        else if (!file_same(pf, &sf, pt)) r = (unlink(pt) && errno != ENOENT) ? -1 : copy_entry(pf, &sf, pt);
+    }
+    int er = errno; closedir(d); errno = er; return r;
+}
+int plat_update_tree(const char *from, const char *to) {
+    struct stat st; if (lstat(to, &st) || !S_ISDIR(st.st_mode)) { errno = ENOENT; return -1; }
+    return update_tree(from, to);
+}
 static int swap_rm_cb(const char *p, const struct stat *st, int f, struct FTW *w) { (void)st; (void)f; (void)w; return remove(p); }
 static int swap_rm_tree(const char *p) { return nftw(p, swap_rm_cb, 16, FTW_DEPTH | FTW_PHYS); }
 // PEANUTS begin: every file and folder of a tree on the storage (fsync). plat_clone_tree's copy leaves its data in the page cache, so a swap, or the journal marker
@@ -493,37 +620,67 @@ static int swap_sync_tree(const char *p) { return nftw(p, swap_sync_cb, 16, FTW_
 // replaces b.pend1; stage 2 renames a's files over b's (each rename atomic), and the markers go. A crash after the marker is finished at the next mount
 // (plat_swap_recover), a crash before it leaves b untouched, so b ends as the old version or the new one, never a mix. a is left empty (the callers delete it); a failure
 // after the marker returns -2 and a must stay for the roll-forward at the next commit or mount.
-static int swap_stage1(const char *a, const char *b) {   // remove from b what a does not have
+typedef struct { char *buf; char **v; size_t n; } swap_keep;
+static int swap_keep_cmp(const void *x, const void *y) { return strcmp(*(char *const *)x, *(char *const *)y); }
+static void swap_keep_free(swap_keep *k) { free(k->buf); free(k->v); memset(k, 0, sizeof *k); }
+static int swap_keep_load(const char *a, swap_keep *k) {
+    memset(k, 0, sizeof *k);
+    char p[4200]; snprintf(p, sizeof p, "%s/.dm-keep", a);
+    int fd = open(p, O_RDONLY | O_CLOEXEC); if (fd < 0) return errno == ENOENT ? 0 : -1;
+    struct stat st; if (fstat(fd, &st)) { close(fd); return -1; }
+    size_t n = (size_t)st.st_size, o = 0;
+    if (!(k->buf = malloc(n + 1))) { close(fd); return -1; }
+    while (o < n) { ssize_t r = read(fd, k->buf + o, n - o); if (r <= 0) { if (r < 0 && errno == EINTR) continue; close(fd); swap_keep_free(k); errno = EIO; return -1; } o += (size_t)r; }
+    close(fd); k->buf[n] = 0;
+    size_t c = 0; for (size_t i = 0; i < n; i++) if (!k->buf[i]) c++;
+    if (!(k->v = malloc((c + 1) * sizeof *k->v))) { swap_keep_free(k); return -1; }
+    for (size_t i = 0; i < n; i += strlen(k->buf + i) + 1) k->v[k->n++] = k->buf + i;
+    qsort(k->v, k->n, sizeof *k->v, swap_keep_cmp);
+    return 1;
+}
+static int swap_keep_has(const swap_keep *k, const char *rel) { const char *p = rel; return bsearch(&p, k->v, k->n, sizeof *k->v, swap_keep_cmp) != NULL; }
+static int swap_stage1(const char *a, const char *b, const swap_keep *k, const char *rel) {   // remove from b what a does not have
     DIR *d = opendir(b); if (!d) return errno == ENOENT ? 0 : -1;
     int r = 0;
     for (struct dirent *e; !r && (e = readdir(d));) {
         if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-        char pa[4096], pb[4096];
-        if (snprintf(pa, sizeof pa, "%s/%s", a, e->d_name) >= (int)sizeof pa || snprintf(pb, sizeof pb, "%s/%s", b, e->d_name) >= (int)sizeof pb) { r = -1; errno = ENAMETOOLONG; break; }
+        char pa[4096], pb[4096], rr[4096];
+        if (snprintf(pa, sizeof pa, "%s/%s", a, e->d_name) >= (int)sizeof pa || snprintf(pb, sizeof pb, "%s/%s", b, e->d_name) >= (int)sizeof pb
+            || snprintf(rr, sizeof rr, "%s%s%s", rel, *rel ? "/" : "", e->d_name) >= (int)sizeof rr - 1) { r = -1; errno = ENAMETOOLONG; break; }
         struct stat sa, sb;
         if (lstat(pb, &sb)) continue;
-        if (lstat(pa, &sa)) r = swap_rm_tree(pb);
-        else if (S_ISDIR(sb.st_mode) && S_ISDIR(sa.st_mode)) r = swap_stage1(pa, pb);
+        if (k->v) {
+            if (!S_ISDIR(sb.st_mode)) { if (!swap_keep_has(k, rr)) r = swap_rm_tree(pb); continue; }
+            size_t l = strlen(rr); rr[l] = '/'; rr[l + 1] = 0;
+            int kept = swap_keep_has(k, rr); rr[l] = 0;
+            r = kept ? swap_stage1(pa, pb, k, rr) : swap_rm_tree(pb);
+        }
+        else if (lstat(pa, &sa)) r = swap_rm_tree(pb);
+        else if (S_ISDIR(sb.st_mode) && S_ISDIR(sa.st_mode)) r = swap_stage1(pa, pb, k, rr);
         else if (S_ISDIR(sb.st_mode) != S_ISDIR(sa.st_mode)) r = swap_rm_tree(pb);   // a file where a directory is or the reverse
     }
     int er = errno; closedir(d); errno = er; return r;
 }
-static int swap_stage2(const char *a, const char *b) {   // move a's files over b's
+static int swap_stage2(const char *a, const char *b, int top) {   // move a's files over b's
     DIR *d = opendir(a); if (!d) return errno == ENOENT ? 0 : -1;
     int r = 0;
     for (struct dirent *e; !r && (e = readdir(d));) {
-        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..") || (top && !strcmp(e->d_name, ".dm-keep"))) continue;
         char pa[4096], pb[4096];
         if (snprintf(pa, sizeof pa, "%s/%s", a, e->d_name) >= (int)sizeof pa || snprintf(pb, sizeof pb, "%s/%s", b, e->d_name) >= (int)sizeof pb) { r = -1; errno = ENAMETOOLONG; break; }
-        struct stat sa; if (lstat(pa, &sa)) continue;
+        struct stat sa, sb; if (lstat(pa, &sa)) continue;
         if (S_ISDIR(sa.st_mode)) {
-            if (mkdir(pb, sa.st_mode & 07777) && errno != EEXIST) r = -1;
-            else { chmod(pb, sa.st_mode & 07777); swap_dir_meta(pa, pb); if (!(r = swap_stage2(pa, pb))) rmdir(pa); }   // PEANUTS: the folder's mode and guest name (xattrs) too
+            if (!lstat(pb, &sb) && !S_ISDIR(sb.st_mode) && swap_rm_tree(pb)) r = -1;
+            else if (mkdir(pb, sa.st_mode & 07777) && errno != EEXIST) r = -1;
+            else { chmod(pb, sa.st_mode & 07777); swap_dir_meta(pa, pb); if (!(r = swap_stage2(pa, pb, 0))) rmdir(pa); }   // PEANUTS: the folder's mode and guest name (xattrs) too
         }
+        else if (!lstat(pb, &sb) && (S_ISDIR(sb.st_mode) ? swap_rm_tree(pb) : unlink(pb))) r = -1;
         else r = rename(pa, pb);
     }
     int er = errno; closedir(d); errno = er; return r;
 }
+static int swap_sync_dirs_cb(const char *p, const struct stat *st, int f, struct FTW *w) { return f == FTW_D || f == FTW_DP ? swap_sync_cb(p, st, f, w) : 0; }
+static int swap_sync_dirs(const char *p) { return nftw(p, swap_sync_dirs_cb, 16, FTW_DEPTH | FTW_PHYS); }
 static int swap_marker(const char *m, const char *a) {
     int fd = open(m, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600); if (fd < 0) return -1;
     size_t n = strlen(a); int r = write(fd, a, n) == (ssize_t)n ? fsync(fd) : -1; int e = errno; close(fd); errno = e; return r;
@@ -550,12 +707,14 @@ static int swap_has_files(const char *a) {
 static int swap_apply(const char *a, const char *b, int stage1) {
     char m1[4200], m2[4200]; snprintf(m1, sizeof m1, "%s.pend1", b); snprintf(m2, sizeof m2, "%s.pend2", b);
     if (stage1) {
-        if (swap_stage1(a, b)) return -1;
+        swap_keep k; if (swap_keep_load(a, &k) < 0) return -1;
+        int r = swap_stage1(a, b, &k, ""); swap_keep_free(&k);
+        if (r) return -1;
         if (swap_marker(m2, a) || unlink(m1)) return -1;
     } else if (unlink(m1) && errno != ENOENT) return -1;   // recovery from .pend2: a .pend1 beside it (a stop between writing .pend2 and unlinking .pend1) goes first
     swap_dir_sync(b);
-    if (swap_stage2(a, b)) return -1;
-    swap_sync_tree(b);   // PEANUTS: stage 2's renames on the storage before .pend2 goes (#195); b is the new version already, so a failure here is not the swap's
+    if (swap_stage2(a, b, 1)) return -1;
+    swap_sync_dirs(b);
     unlink(m2); swap_dir_sync(b); return 0;   // PEANUTS: and .pend2's unlink
 }
 int plat_rename_swap(const char *a, const char *b) {
