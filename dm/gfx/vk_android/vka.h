@@ -518,6 +518,7 @@ typedef struct vka_shader {
     struct vka_memu_sh *memu_d;         // a task / mesh shader drawn through compute: its layout and compute / vertex forms (vka_memu.c), made at its first draw
     uint8_t memu;                       // such a form itself: 1 a task / mesh shader as compute (the arena, records and push constant in its layout), 2 a generated vertex shader (the arena)
     uint64_t chash;                     // its library entry's hash (vka_shlib_entry_hash), for the pipeline cache's stamp (vka_pso.c); 0 = not in the library
+    vkrs_fb rs_fb;                      // PEANUTS: the 2D textures it fetches from or sizes by pixel (vkrs_spv_scan, #703): the ones rs_fetch_fix brings to one scale
     uint8_t rs_fetch;                   // PEANUTS: it reads the support buffer's render_scale[1 + i] (a fetch by pixel or a size query of a 2D texture: vka_resscale.h vkrs_spv_scan), read only while DM_RES_SCALE is on
 } vka_shader;
 // An instanced variant's key (vka_draw.c's instanced runs): its base shader's key XOR this. It is no key of the shader library, and the variant depends on the uniform

@@ -1599,7 +1599,7 @@ static VkBufferView tbuf_view(const vka_shader *sh, int tid, const vka_res *r, i
 // PEANUTS begin: resolution scale: the translated shaders' own scale code (Ryujinx's, vka_resscale.inc) reads the support buffer. render_scale[0] divides gl_FragCoord.xy
 // in a pixel shader: the factor in a pass over scaled targets, so the shader goes on seeing the game's pixels. render_scale[1 + i] scales the integer coordinates of a
 // fetch from the stage's i-th plain 2D texture (and unscales its size query): the library does not say which binding i is, so every entry gets the factor when all the
-// stage's plain 2D textures are scaled images and stays 1 when none is (rs_fetch_fix makes it one or the other); negative in a pixel shader whose pass and textures are
+// stage's plain 2D textures it fetches from or sizes are scaled images (the entries of textures it only samples are not read) and stays 1 when none is (rs_fetch_fix makes it one or the other); negative in a pixel shader whose pass and textures are
 // one size, which makes the helper fetch the pixel's own texel instead of every other one. Only shaders that read those entries are looked at (vka_shader.rs_fetch)
 static struct { uint8_t tx; uint32_t w, h; } g_rsx[VKA_NSTAGE];   // per stage, from rs_fetch_fix: its fetched 2D textures are scaled images, and their size when they have one size
 static int rs_support(const vka_dstate *d, int st, const vka_shader *sh, VkDescriptorBufferInfo *bi) {   // 1 = *bi is a support buffer with the scale in it
@@ -1883,7 +1883,8 @@ static int bind_sets(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], cons
     return sets_push(lay, bp, any_pool);
 }
 // PEANUTS begin: resolution scale: the stages of this draw or dispatch whose shader fetches by pixel (vka_shader.rs_fetch): their plain 2D textures (not arrays, not
-// multisampled) are all scaled images or none is, for rs_support's one factor. A mix scales the scaled ones down for good (RS_WHY_FETCH_MIX), outside any pass.
+// multisampled) that it fetches from or sizes by pixel (vka_shader.rs_fb; one it only samples reads right at any scale, #703) are all scaled images or none is, for
+// rs_support's one factor. A mix scales the scaled ones down for good (RS_WHY_FETCH_MIX), outside any pass.
 // After make_images (every image exists), from the walk
 static void rs_fetch_fix(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) {
     for (int st = 0; st < VKA_NSTAGE; st++) {
@@ -1894,6 +1895,7 @@ static void rs_fetch_fix(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) 
             for (int i = 0; i < n; i++) {
                 if (r[i].what != VKA_R_TEX || !r[i].tid || (r[i].dim & (DMSH_VK_DIM_MASK | DMSH_VK_DIM_ARRAY | DMSH_VK_DIM_MS)) != 1) continue;   // (SPIR-V Dim 2D)
                 if ((i && r[i - 1].binding == r[i].binding) || (i + 1 < n && r[i + 1].binding == r[i].binding)) continue;                       // an array of textures: read without the helper
+                if (!vkrs_fb_has(&s->rs_fb, r[i].binding)) continue;                                                                                // only sampled by normalized coordinates: right at any scale (#703)
                 vka_img *im = vka_tex_id_img(r[i].tid, g_cb); if (!im) continue;
                 if (pass && im->rsc) { vka_rs_st.ctx_key = s->key; if (!vka_tex_rs_down(im, g_cb, RS_WHY_FETCH_MIX)) vka_rs_st.skip++; vka_rs_st.ctx_key = 0; }
                 if (im->rsc) { ns++; if (w && (w != im->w || h != im->h)) same = 0; w = im->w; h = im->h; } else nu++;
