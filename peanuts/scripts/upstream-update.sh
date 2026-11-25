@@ -103,9 +103,14 @@ check_hunks_marked() {
         /PEANUTS(\(upstream-candidate\))? begin/ { b = NR }
         /PEANUTS(\(upstream-candidate\))? end/   { if (b) { print b":"NR; b = 0 } }
     ')
-    git diff -U1 "$base" "$branch" -- "$f" | awk -v spans="$spans" '
+    # The spans go through the environment, not `awk -v`: with two or more spans the value holds
+    # newlines, which macOS's awk (the one-true-awk) rejects ("newline in string"), exiting
+    # non-zero, so a fully marked file was reported as unmarked. ENVIRON is POSIX and reads the
+    # same in gawk and mawk.
+    git diff -U1 "$base" "$branch" -- "$f" | PN_SPANS="$spans" awk '
         BEGIN {
             in_hunk = 0; has_marker = 1; bad = 0
+            spans = ENVIRON["PN_SPANS"]
             nspans = split(spans, lines, "\n")
             for (i = 1; i <= nspans; i++) { split(lines[i], se, ":"); sb[i] = se[1]; sendv[i] = se[2] }
         }
