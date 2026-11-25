@@ -420,6 +420,19 @@ def type2_sampler(name):
     if not m: return None
     slots, h = int(m.group(1)), int(m.group(2), 16); sb = (slots >> 16) - 1
     return (sb - 3, ((h >> 14) & 0x3fff) * 4) if h >> 28 == 2 and slots & 0xffff == 2 and 3 <= sb <= 16 else None
+
+
+# The texture half of such a handle: only its first word (handle & 0x3fff) is in c2. dmsh_build.py decode_tex tries both words of a typed handle against c2's tables,
+# and the second one, the sampler ID's word in the game's own uniform buffer, landed on a combined texture row whenever its byte offset was 0x20 + 8 r: The Witcher 3's
+# fp_t_cb720898_2002807C (texture c2 word 0x7C = separate texture 17, sampler ID at c[10] byte 40) was bound to combined slot 1 instead of slot 145, so its deferred
+# light pass read the game's 4x4 black texture in place of the half-resolution buffer whose .y scales all ambient light (shade near black); 2,127 bindings of 1,148 shaders (4.04d's library, 327c6383b614).
+# → the texture slot (combined r, or DMSH_SEPTEX_SLOT0 + r), or None (not a type-2 handle, or a first word on no texture row)
+def type2_texture(name):
+    if not type2_sampler(name): return None
+    b = (int(re.fullmatch(r'[a-z]+_t\w*?_cb(\d+)_([0-9A-F]+)', name).group(2), 16) & 0x3fff) * 4   # pyright: ignore[reportOptionalMemberAccess]  # (type2_sampler matched it)
+    if abi.C2_TEX <= b < abi.C2_SEPTEX and (b - abi.C2_TEX) % abi.C2_ROW == 0: return (b - abi.C2_TEX) // abi.C2_ROW
+    if abi.C2_SEPTEX <= b < abi.C2_SAMP and (b - abi.C2_SEPTEX) % abi.C2_ROW == 0: return abi.SEPTEX_SLOT0 + (b - abi.C2_SEPTEX) // abi.C2_ROW
+    return None
 # PEANUTS(upstream-candidate) end
 
 
@@ -501,6 +514,7 @@ def classify(stage, r, res, m):
         else:
             img = re.match(r'[a-z]+_i', nm)
             e.update(kind=abi.KIND_IMG if img else abi.KIND_TBUF if desc == spv.VK_UNIFORM_TEXEL else abi.KIND_TEX, reg=d[0])
+            if not img and type2_sampler(nm): e['reg'] = type2_texture(nm)   # PEANUTS(upstream-candidate): the texture from the c2 word alone (type2_texture)
             if e['kind'] == abi.KIND_TEX and e['reg'] in res.get('fetch1d', ()): e['flags'] |= VK['BF_FETCH1D']
     else: e['kind'] = abi.KIND_UNKNOWN
     if desc == spv.VK_COMBINED and e['kind'] in (abi.KIND_TEX, abi.KIND_TEX_UBO):
