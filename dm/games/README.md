@@ -183,6 +183,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Raging Loop](010020400E1C2000/README.md) | `010020400E1C2000` | 1.0.0 (base) | 7.3.2 | Unity 2018.3.10f1 IL2CPP | NVN |
 | [Resident Evil 4](010099A00BC1E000/README.md) | `010099A00BC1E000` | v131072 | 5.4.0 | Capcom's RE4 HD code on nn::gfx (CRI Atom / Mana) | NVN |
 | [Resident Evil 4](0400569027BF4000/README.md) | `0400569027BF4000` | v131072 (Switch 2) | 21.4.3 (Ounce) | RE Engine, Havok, Wwise | NVN2 |
+| [Resident Evil 6](01002A000CD48000/README.md) | `01002A000CD48000` | 2.0.0 | 6.5.0 | Capcom MT Framework | NVN <!-- PEANUTS(upstream-candidate) --> |
 | [Return of the Obra Dinn](010032E00E6E2000/README.md) | `010032E00E6E2000` | 1.0.1 | 8.2.0 | Unity 2017.4.28f1 IL2CPP | NVN |
 | [Rhythm Heaven Groove](0100D9F01D474000/README.md) | `0100D9F01D474000` | 1.0.0 (base) | 21.4.0 | Nintendo's own 2D engine | NVN |
 | [ROMANCE OF THE THREE KINGDOMS 8 REMAKE](0100C2A01A730000/README.md) | `0100C2A01A730000` | 1.1.3 | 17.5.3 | Koei Tecmo's KTGL | NVN |

@@ -1,0 +1,37 @@
+# PEANUTS(upstream-candidate): Resident Evil 6 Android profile for update 2.0.0.
+
+# ---- Identity ----
+title_id	01002A000CD48000
+program_id	01002A000CD48000
+
+# ---- App ----
+name	Resident Evil 6
+ipa	01002a000cd48000.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v131072	2.0.0	main=061d2a06cd700785e987c42ce2d72231	subsdk0=b9c00c0216af9b5b7f958ddbd25271c8	sdk=b2872a7bcc589969fb7afb8e372414e4
+package	v131072
+shader_versions	v131072
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	nativeNXx64/movie/e5120.mp4
+zip_store	.arc:.mfx:.mp4:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: a 3328 MB heap region
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon (Big Brain Academy: Brain vs. Brain sets a heap only then)
+sys_resource	0x0
+# The game sizes its heap as pool − used memory in nninitStartup and does not retry: the three rewritten modules take 0x4a00000 (74 MB), more than the
+# default 64 MB, so SetHeapSize(0xc9400000) got ResultLimitReached and the game memset 64 MB through an unset pointer (into main+0x1d8000). 80 MB = the image plus stacks
+mem_used	0x5000000
+
+# ---- Shader split ----
+shader_groups	/nativeNXx64/=nativenxx64
+shader_note	01002A000CD48000 shaders (provisional profile)
