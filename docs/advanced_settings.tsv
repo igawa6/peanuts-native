@@ -775,6 +775,7 @@ DM_VK_TL_POLL	developer	Diagnostics			text			both
 DM_VK_TS_LOG	developer	Diagnostics			text			both						
 DM_VK_TU_UBWC_HINT	developer	Graphics			text			both						
 DM_VK_UBWC	developer	Graphics			text			both						
+DM_VK_UBWC_RAWVIEW	developer	Graphics			text			both						
 DM_VK_UB_DEFER	developer	Graphics			text			both						
 DM_VK_UB_PEEK	developer	Diagnostics			text			both						
 DM_VK_UB_PEEK_AT	developer	Diagnostics			text			both						
