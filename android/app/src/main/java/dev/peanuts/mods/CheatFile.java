@@ -33,6 +33,17 @@ public final class CheatFile {
 
     public static final int NAME_MAX = 127;   // a header's name, as the host cuts it (CHEAT_NAME_MAX)
 
+    /** A number the player sets for a cheat (the in-game Mods tab's field): the file's own, the range, and the cheat's code lines for a number */
+    public interface Number {
+        long own();
+        long min();
+        long max();
+        /** Shown after the number ("coins"), null for none */
+        String unit();
+        /** The cheat's code lines writing v (v inside min and max); null when it cannot be written */
+        List<String> lines(long v);
+    }
+
     /** What a cheat does, from its opcodes. label: the chip's word */
     public enum Kind {
         CODE("Code"), DATA("Data"), VALUE("Value"), UNSUPPORTED("Not supported");
@@ -54,14 +65,24 @@ public final class CheatFile {
         public final boolean pointers;     // reads a pointer chain (opcode 5)
         public final int valueWord, valueWidth;   // Value: the index of the number's first word in words, and its width in bytes; else -1, 0
         public final long[] words;
+        public final MncfBuild.Cheat mncf;        // the .mncf cheat this one is, for the build that runs (MncfBuild); null for a cheat of an Atmosphère file
+        public final Number number;               // the number the player sets in the in-game tab (Part F's field), null when it has none
 
-        Cheat(String name, String key, String group, boolean master, List<String> lines, long[] words, Shape s) {
+        Cheat(String name, String key, String group, boolean master, List<String> lines, long[] words, Shape s) { this(name, key, group, master, lines, words, s, null, null); }
+
+        Cheat(String name, String key, String group, boolean master, List<String> lines, long[] words, Shape s, MncfBuild.Cheat mncf, MncfBuild.Ready ready) {
             this.name = name; this.key = key; this.group = group; this.master = master; this.lines = Collections.unmodifiableList(lines); this.words = words;
             kind = s.kind; hold = Collections.unmodifiableList(s.hold); why = s.why; codePlaces = s.codePlaces; pointers = s.pointers;
             valueWord = s.valueWord; valueWidth = s.valueWidth;
+            this.mncf = mncf;
+            if (mncf != null && mncf.value != null && ready != null && !mncf.refused()) number = CheatValues.mncf(ready, mncf, lines);
+            else number = CheatValues.plainValue(this) ? CheatValues.atmosphere(this) : null;
         }
 
         public boolean switchable() { return !master && kind != Kind.UNSUPPORTED; }
+
+        /** The .mncf reason it cannot run here (Appendix B, or runtime:&lt;why&gt;), null for one that can and for an Atmosphère cheat */
+        public String reason() { return mncf == null ? null : mncf.reason; }
 
         /** The hold chip's words: "Hold ZL", "Hold B or ZL"; null without a key-press condition */
         public String holdLabel() { return hold.isEmpty() ? null : "Hold " + String.join(" or ", hold); }
@@ -86,6 +107,7 @@ public final class CheatFile {
         public final List<String> restores = new ArrayList<>();  // the hidden "Restore Code" entries
         public final List<String> titles = new ArrayList<>();    // the file's title labels (TID=, BID=)
         public String build;                                     // a first line "build <ID>": its first 16 hex digits, upper case; else null
+        public MncfBuild.Ready mncf;                             // the .mncf file these cheats are of, made ready for the build (MncfBuild); null for an Atmosphère file
 
         /** The cheats a player may switch (not the Not supported ones) */
         public int switchable() { int n = 0; for (Cheat c : cheats) if (c.switchable()) n++; return n; }
@@ -221,6 +243,44 @@ public final class CheatFile {
             p.cheats.add(new Cheat(r.name, key, group, false, r.lines, w, classify(w, textEnd)));
         }
         return p;
+    }
+
+    /**
+     * An .mncf file made ready for the build (MncfBuild.Ready) as the page and the tab read a file: its cheats in the file's order with their groups, their
+     * Atmosphère code for this build (kind and hold buttons from it, as for any file), the refused ones as Not supported with their reason; masters apart;
+     * the file's authors as its credit. Names are made unique as parse makes them ("Name #2"), so a converted file keeps the keys its Atmosphère file had
+     */
+    public static Parsed fromMncf(MncfBuild.Ready r, long textEnd) {
+        Parsed p = new Parsed();
+        p.mncf = r;
+        if (r.file != null) for (String a : r.file.authors()) p.credits.add(a);
+        Map<String, Integer> seen = new HashMap<>();
+        for (MncfBuild.Cheat c : r.cheats) {
+            String name = c.name.length() > NAME_MAX ? c.name.substring(0, NAME_MAX) : c.name;
+            int dup = seen.merge(name, 1, Integer::sum) - 1;
+            String key = dup == 0 ? name : name + " #" + (dup + 1);
+            List<Long> ws = new ArrayList<>();
+            for (String l : c.lines) if (codeLine(l)) words(l, ws);
+            long[] w = new long[ws.size()];
+            for (int i = 0; i < w.length; i++) w[i] = ws.get(i);
+            Shape s = c.refused() ? refusedShape(c.reason) : classify(w, textEnd);
+            String group = c.group;
+            Cheat x = new Cheat(name, key, group, c.master, new ArrayList<>(c.lines), w, s, c, r);
+            if (c.master) {   // not a switch; a refused one is left out (the cheats that require it say why: requires:<id>)
+                if (!c.refused()) p.masters.add(x);
+                continue;
+            }
+            p.cheats.add(x);
+            if (!group.isEmpty() && !p.groups.contains(group)) p.groups.add(group);
+        }
+        return p;
+    }
+
+    private static Shape refusedShape(String reason) {
+        Shape s = new Shape();
+        s.kind = Kind.UNSUPPORTED;
+        s.why = reason;
+        return s;
     }
 
     /** No code, or only end / else words (opcode 2): what cheatslips puts under a group heading */
@@ -369,8 +429,16 @@ public final class CheatFile {
     /** What a cheat changes, in the player's words, for the bottom screen and its details (no developer terms: UI-RULES 5) */
     public static String describe(Cheat c) { return describe(c, c.value()); }
 
-    /** The same, a Value cheat writing value (the number set in the in-game Mods tab, CheatValues) */
+    /** The same, a Value cheat writing value (the number set in the in-game Mods tab, CheatValues); an .mncf cheat's own words (its about) first */
     public static String describe(Cheat c, long value) {
+        if (c.mncf != null && c.mncf.refused()) return MncfWords.reason(c.mncf.reason, c.mncf) + " It stays off.";
+        String d = describeKind(c, value);
+        if (c.number != null && c.kind != Kind.VALUE) d += " Its number is " + value + (c.number.unit() == null ? "" : " " + c.number.unit()) + ".";
+        String about = c.mncf == null || c.mncf.about == null ? null : c.mncf.about.trim();
+        return about == null || about.isEmpty() ? d : (about.matches(".*[.!?]$") ? about : about + ".") + " " + d;
+    }
+
+    private static String describeKind(Cheat c, long value) {
         String hold = c.hold.isEmpty() ? null : String.join(" or ", c.hold);
         switch (c.kind) {
             case UNSUPPORTED:

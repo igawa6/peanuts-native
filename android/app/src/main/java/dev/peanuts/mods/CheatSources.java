@@ -12,12 +12,16 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import io.github.davdxpx.mistel.mncf.ConvertException;
+
 /**
  * The player's cheat sources of a game (SPEC-mod-menu.md, Package B 3) and the one merged file the host reads (DM_CHEATS: &lt;folder&gt;/&lt;build&gt;.txt). No
  * Android classes: CheatLoaderJvmTest runs it. The folder is the launcher's cheats folder of the game (&lt;files&gt;/cheats/&lt;title ID&gt;/, CheatsUi.folder).
  * <ul>
- * <li>Each import is a source: &lt;folder&gt;/sources/&lt;id&gt;/ with its files by build (&lt;BID&gt;.txt, the game's build and any other the pick held) and
- *     source.tsv (its name, where it came from, when it was added, on or off). A source is switched off or removed as a whole.</li>
+ * <li>Each import is a source: &lt;folder&gt;/sources/&lt;id&gt;/ with one cheat file in the Mistel Native Cheat Format, cheats.mncf, for all of its builds,
+ *     and source.tsv (its name, where it came from, when it was added, on or off). An .mncf is kept as it was added (its signature stays good); any other cheat
+ *     file becomes one (MncfConvert), and so do the Atmosphère files an earlier version of the app kept by build ({@link #upgrade}). build/ beside it keeps the
+ *     file made ready for each build the game ran as (MncfBuild). A source is switched off or removed as a whole.</li>
  * <li>The cheats that come with the app (the profile's file in the pack) are one more source, {@link #APP}, whose on / off is &lt;folder&gt;/sources/.app.tsv.</li>
  * <li>{@link #merge}: the enabled sources' cheats of the build, in order (the app's first, then by when they were added, then the mods' files), each source's
  *     masters first and its groups as EdiZon's section markers. Credits, titles, group headings, "Restore Code" entries and Not supported cheats are left out.</li>
@@ -29,7 +33,10 @@ import java.util.Set;
 public final class CheatSources {
     private CheatSources() {}
 
-    public static final String APP = ".app", STATE = "source.tsv", APP_STATE = ".app.tsv";
+    public static final String APP = ".app", STATE = "source.tsv", APP_STATE = ".app.tsv", MNCF = "cheats.mncf";
+
+    /** One conversion at a time: the page's (off the UI thread) and a start's write the same sources, so the second waits and finds them done */
+    private static final Object CONVERTING = new Object();
     public static final String FROM_ZIP = "zip", FROM_FILE = "file", FROM_FOLDER = "folder", FROM_EARLIER = "earlier", FROM_APP = "app", FROM_MOD = "mod";
 
     /** One source */
@@ -38,20 +45,32 @@ public final class CheatSources {
         public final File dir;
         public final long added;
         public final boolean enabled;
-        Source(String id, String name, String from, File dir, long added, boolean enabled) { this.id = id; this.name = name; this.from = from; this.dir = dir; this.added = added; this.enabled = enabled; }
+        final List<String> atmosphere;   // the SHA-256 of each Atmosphère file (its body) it was made from, for sameAs; empty for an .mncf added as it was
+        Source(String id, String name, String from, File dir, long added, boolean enabled, List<String> atmosphere) {
+            this.id = id; this.name = name; this.from = from; this.dir = dir; this.added = added; this.enabled = enabled; this.atmosphere = atmosphere;
+        }
 
-        /** Its files by build (BID → the file), sorted by build */
-        public Map<String, File> files() {
+        /** Its cheat file, for all of its builds */
+        public File file() { return new File(dir, MNCF); }
+
+        /** Its file made ready for the game's build (MncfBuild.of: the kept one, else made now) */
+        public MncfBuild.Ready ready(MncfBuild.Game g) throws IOException { return MncfBuild.of(file(), g); }
+
+        /** The build IDs of main its file names (16 hex digits, upper case); empty when it names none or cannot be read */
+        public List<String> builds() {
+            try {
+                return MncfBuild.builds(io.github.davdxpx.mistel.mncf.Mncf.load(Files.readAllBytes(file().toPath())));
+            } catch (IOException | io.github.davdxpx.mistel.mncf.MncfException | RuntimeException e) {
+                return new ArrayList<>();
+            }
+        }
+
+        /** The Atmosphère files an earlier version of the app kept by build (BID → the file), sorted by build; {@link #upgrade} makes them one .mncf */
+        Map<String, File> txtFiles() {
             Map<String, File> out = new java.util.TreeMap<>();
             File[] l = dir == null ? null : dir.listFiles((d, n) -> n.matches("(?i)[0-9a-f]{16}\\.txt"));
             if (l != null) for (File f : l) out.put(f.getName().substring(0, 16).toUpperCase(Locale.ROOT), f);
             return out;
-        }
-
-        /** Its file of this build, read; null when it has none */
-        public String text(String build) throws IOException {
-            File f = build == null ? null : files().get(build.toUpperCase(Locale.ROOT));
-            return f == null ? null : new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
         }
 
         @Override public String toString() { return id + "(" + name + (enabled ? "" : ", off") + ")"; }
@@ -79,11 +98,13 @@ public final class CheatSources {
         write(f, sb.toString());
     }
 
-    static void write(File f, String text) throws IOException {
+    static void write(File f, String text) throws IOException { write(f, text.getBytes(StandardCharsets.UTF_8)); }
+
+    static void write(File f, byte[] bytes) throws IOException {
         File dir = f.getParentFile();
         if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new IOException("cannot create " + dir);
         File tmp = new File(f.getPath() + ".tmp");
-        Files.write(tmp.toPath(), text.getBytes(StandardCharsets.UTF_8));
+        Files.write(tmp.toPath(), bytes);
         if (!tmp.renameTo(f)) {
             if (!f.delete() || !tmp.renameTo(f)) { tmp.delete(); throw new IOException("cannot write " + f); }
         }
@@ -100,7 +121,9 @@ public final class CheatSources {
             Map<String, String> s = readState(new File(d, STATE));
             long added;
             try { added = Long.parseLong(s.getOrDefault("added", "0")); } catch (NumberFormatException e) { added = 0; }
-            out.add(new Source(d.getName(), s.getOrDefault("name", d.getName()), s.getOrDefault("from", FROM_FILE), d, added, !"0".equals(s.get("enabled"))));
+            List<String> atm = new ArrayList<>();
+            for (String x : s.getOrDefault("atmosphere", "").split(",")) if (!x.trim().isEmpty()) atm.add(x.trim());
+            out.add(new Source(d.getName(), s.getOrDefault("name", d.getName()), s.getOrDefault("from", FROM_FILE), d, added, !"0".equals(s.get("enabled")), atm));
         }
         out.sort((x, y) -> x.added != y.added ? Long.compare(x.added, y.added) : x.id.compareToIgnoreCase(y.id));
         return out;
@@ -158,30 +181,97 @@ public final class CheatSources {
         return t;
     }
 
-    /** The source that has this build's file with this text already (an import of the same file again), null when none */
-    public static Source sameAs(File folder, String build, String text) {
-        String want = body(text);
+    /** The SHA-256 of an Atmosphère file's body (body): what sameAs compares */
+    static String sum(String text) { return MncfBuild.sha256(body(text).getBytes(StandardCharsets.UTF_8)); }
+
+    /** The source made from this Atmosphère file already (an import of the same file again), null when none */
+    public static Source sameAs(File folder, String text) {
+        String want = sum(text);
+        for (Source s : list(folder)) if (s.atmosphere.contains(want)) return s;
+        return null;
+    }
+
+    /** The source whose .mncf has these very bytes already, null when none */
+    public static Source sameMncf(File folder, byte[] bytes) {
+        String want = MncfBuild.sha256(bytes);
         for (Source s : list(folder)) {
-            try { String t = s.text(build); if (t != null && body(t).equals(want)) return s; } catch (IOException ignored) { }
+            try { if (s.file().isFile() && MncfBuild.sha256(Files.readAllBytes(s.file().toPath())).equals(want)) return s; } catch (IOException ignored) { }
         }
         return null;
     }
 
-    /** A new source with these files (BID → text), on. Returns it */
-    public static Source add(File folder, String name, String from, Map<String, String> byBuild, long now) throws IOException {
+    /**
+     * A new source from Atmosphère files (BID → text) made one .mncf (MncfConvert) with what k knows; origin: the pick's name as the player had it. On. Returns
+     * it. IOException when the files cannot be converted or kept (nothing is left behind then)
+     */
+    public static Source add(File folder, String name, String from, Map<String, String> byBuild, long now, MncfConvert.Known k, String origin) throws IOException {
+        String text;
+        try {
+            text = MncfConvert.fromAtmosphere(byBuild, origin, k);
+        } catch (ConvertException e) {
+            throw new IOException("the cheats could not be converted (" + e.code() + ": " + e.getMessage() + ")", e);
+        }
+        List<String> sums = new ArrayList<>();
+        for (String t : byBuild.values()) sums.add(sum(t));
+        return addFile(folder, name, from, text.getBytes(StandardCharsets.UTF_8), now, sums);
+    }
+
+    /** A new source of an .mncf file, kept byte for byte (a signature stays good). On. Returns it */
+    public static Source addMncf(File folder, String name, String from, byte[] mncf, long now) throws IOException {
+        return addFile(folder, name, from, mncf, now, new ArrayList<String>());
+    }
+
+    private static Source addFile(File folder, String name, String from, byte[] mncf, long now, List<String> sums) throws IOException {
         String n = uniqueName(list(folder), name), id = idFor(folder, n);
         File dir = new File(root(folder), id);
         if (!dir.mkdirs()) throw new IOException("cannot create " + dir);
         try {
-            for (Map.Entry<String, String> e : byBuild.entrySet()) write(new File(dir, e.getKey().toUpperCase(Locale.ROOT) + ".txt"), e.getValue().replace("\r\n", "\n"));
+            write(new File(dir, MNCF), mncf);
             Map<String, String> s = new LinkedHashMap<>();
             s.put("name", n); s.put("from", from); s.put("added", String.valueOf(now)); s.put("enabled", "1");
+            if (!sums.isEmpty()) s.put("atmosphere", String.join(",", sums));
             writeState(new File(dir, STATE), s);
         } catch (IOException e) {
             deleteTree(dir);
             throw e;
         }
         return find(folder, id);
+    }
+
+    /** Whether a source is an earlier version's Atmosphère files, not made .mncf yet (upgrade) */
+    public static boolean unconverted(Source s) { return !s.file().isFile() && !s.txtFiles().isEmpty(); }
+
+    /**
+     * The sources an earlier version of the app kept as Atmosphère files by build (&lt;BID&gt;.txt) made one .mncf each, with what k knows; the files are
+     * removed once it is kept. Returns how many were made. A source whose files cannot be converted keeps them (the next look tries again) and is left out of
+     * the merge meanwhile
+     */
+    public static int upgrade(File folder, MncfConvert.Known k) {
+        synchronized (CONVERTING) { return upgradeNow(folder, k); }
+    }
+
+    private static int upgradeNow(File folder, MncfConvert.Known k) {
+        int n = 0;
+        for (Source s : list(folder)) {
+            Map<String, File> txt = s.txtFiles();
+            if (txt.isEmpty() || s.file().isFile()) continue;
+            try {
+                Map<String, String> byBuild = new LinkedHashMap<>();
+                for (Map.Entry<String, File> e : txt.entrySet()) byBuild.put(e.getKey(), new String(Files.readAllBytes(e.getValue().toPath()), StandardCharsets.UTF_8));
+                String text = MncfConvert.fromAtmosphere(byBuild, s.name, k);
+                write(s.file(), text);
+                Map<String, String> st = readState(new File(s.dir, STATE));
+                List<String> sums = new ArrayList<>();
+                for (String t : byBuild.values()) sums.add(sum(t));
+                st.put("atmosphere", String.join(",", sums));
+                writeState(new File(s.dir, STATE), st);
+                for (File f : txt.values()) f.delete();
+                n++;
+            } catch (IOException | ConvertException | RuntimeException e) {
+                new File(s.dir, MNCF).delete();
+            }
+        }
+        return n;
     }
 
     /** A source switched on or off as a whole */
@@ -209,99 +299,48 @@ public final class CheatSources {
     }
 
     /**
-     * The files of upstream's earlier import (&lt;folder&gt;/imported/*.txt, each starting with "build &lt;ID&gt;") made into sources, one a file, by their names'
-     * order, then removed. Returns the new sources (empty: nothing to move)
+     * The files of upstream's earlier import (&lt;folder&gt;/imported/*.txt, each starting with "build &lt;ID&gt;") made into sources, one a file (each an .mncf,
+     * with what k knows), by their names' order, then removed. Returns the new sources (empty: nothing to move)
      */
-    public static List<Source> migrate(File folder, long now) throws IOException {
+    public static List<Source> migrate(File folder, long now, MncfConvert.Known k) throws IOException {
+        synchronized (CONVERTING) { return migrateNow(folder, now, k); }
+    }
+
+    private static List<Source> migrateNow(File folder, long now, MncfConvert.Known k) throws IOException {
         List<Source> out = new ArrayList<>();
         File[] l = new File(folder, "imported").listFiles((d, n) -> n.toLowerCase(Locale.ROOT).endsWith(".txt"));
         if (l == null) return out;
         java.util.Arrays.sort(l, (x, y) -> x.getName().compareToIgnoreCase(y.getName()));
-        int k = 0;
+        int c = 0;
         for (File f : l) {
             String text = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
             CheatFile.Parsed p = CheatFile.parse(text, -1);
             if (p.build == null) continue;
             Map<String, String> files = new LinkedHashMap<>();
             files.put(p.build, text);
-            out.add(add(folder, f.getName().replaceFirst("(?i)\\.txt$", ""), FROM_EARLIER, files, now + k++));
+            String name = f.getName().replaceFirst("(?i)\\.txt$", "");
+            out.add(add(folder, name, FROM_EARLIER, files, now + c++, k, f.getName()));
             if (!f.delete()) throw new IOException("cannot remove " + f);
         }
         new File(folder, "imported").delete();
         return out;
     }
 
-    /** Sources just made (moved: an import of an export, CheatSources.migrate) whose file of this build another source has already: removed again. Returns how many stay */
-    public static int dropDuplicates(File folder, List<Source> moved, String build) {
+    /** Sources just made (moved: an import of an export, CheatSources.migrate) made from a file another source was made from already: removed again. Returns how many stay */
+    public static int dropDuplicates(File folder, List<Source> moved) {
         int stay = 0;
         Set<String> ids = new HashSet<>();
         for (Source m : moved) ids.add(m.id);
         for (Source m : moved) {
             boolean dup = false;
-            try {
-                String t = m.text(build);
-                if (t != null) for (Source o : list(folder)) {
-                    if (o.id.equals(m.id) || ids.contains(o.id) && o.added > m.added) continue;   // a later one of the same batch is not "already there"
-                    String u = o.text(build);
-                    if (u != null && body(u).equals(body(t))) { dup = true; break; }
-                }
-            } catch (IOException ignored) { }
+            for (Source o : list(folder)) {
+                if (o.id.equals(m.id) || ids.contains(o.id) && o.added > m.added) continue;   // a later one of the same batch is not "already there"
+                for (String x : m.atmosphere) if (o.atmosphere.contains(x)) { dup = true; break; }
+                if (dup) break;
+            }
             if (dup) remove(folder, m.id); else stay++;
         }
         return stay;
-    }
-
-    // ---- Export ----
-
-    /**
-     * The sources' files of this build as one .zip in upstream's export format (Cheats.exportZip / readZip): cheats/&lt;source&gt;.txt, each starting with a line
-     * "build &lt;ID&gt;", and toggles.json {"title_id", "build", "cheats" (the game's switch), "on" (the toggles' keys)}. Upstream's Import cheats… takes it back,
-     * and so does an import of the zip as a cheat file (CheatImport: a "build" line). Returns how many files went in
-     */
-    public static int exportZip(java.io.OutputStream os, String titleId, String build, File folder, boolean master, Set<String> on) throws IOException {
-        int n = 0;
-        try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(os)) {
-            if (build != null) for (Source s : list(folder)) {
-                String t = s.text(build);
-                if (t == null) continue;
-                z.putNextEntry(new java.util.zip.ZipEntry("cheats/" + s.id + ".txt"));
-                z.write(withBuild(t, build).getBytes(StandardCharsets.UTF_8));
-                z.closeEntry();
-                n++;
-            }
-            StringBuilder j = new StringBuilder("{\"title_id\": ").append(json(titleId)).append(", \"build\": ").append(json(build == null ? "" : build))
-                    .append(", \"cheats\": ").append(master).append(", \"on\": [");
-            int k = 0;
-            for (String key : on) j.append(k++ == 0 ? "" : ", ").append(json(key));
-            j.append("]}\n");
-            z.putNextEntry(new java.util.zip.ZipEntry("toggles.json"));
-            z.write(j.toString().getBytes(StandardCharsets.UTF_8));
-            z.closeEntry();
-        }
-        return n;
-    }
-
-    /** A file's text with "build &lt;ID&gt;" as its first line (an earlier build line, and empty lines before it, left out) */
-    static String withBuild(String text, String build) {
-        StringBuilder sb = new StringBuilder("build ").append(build).append('\n');
-        boolean first = true;
-        for (String line : text.replace("\r\n", "\n").split("\n", -1)) {
-            if (first && line.trim().isEmpty()) continue;
-            if (first && line.trim().matches("(?i)build\\s+[0-9a-f]{16,}")) { first = false; continue; }
-            first = false;
-            sb.append(line).append('\n');
-        }
-        return sb.toString().replaceAll("\n+$", "\n");
-    }
-
-    private static String json(String s) {
-        StringBuilder sb = new StringBuilder("\"");
-        for (char c : s.toCharArray()) {
-            if (c == '"' || c == '\\') sb.append('\\').append(c);
-            else if (c < 0x20) sb.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
-            else sb.append(c);
-        }
-        return sb.append('"').toString();
     }
 
     // ---- The merged file ----
@@ -311,17 +350,27 @@ public final class CheatSources {
         public final String id, name;
         public final boolean enabled;
         public final CheatFile.Parsed parsed;
-        public Block(String id, String name, boolean enabled, CheatFile.Parsed parsed) { this.id = id; this.name = name; this.enabled = enabled; this.parsed = parsed; }
+        public final String error;     // an .mncf that cannot be used at all: Appendix D's code; else null
+        public final boolean pending;  // its file is not made ready for this build yet (blocks without make): no cheats listed until it is
+        public Block(String id, String name, boolean enabled, CheatFile.Parsed parsed) { this(id, name, enabled, parsed, null, false); }
+        Block(String id, String name, boolean enabled, CheatFile.Parsed parsed, String error, boolean pending) {
+            this.id = id; this.name = name; this.enabled = enabled; this.parsed = parsed; this.error = error; this.pending = pending;
+        }
     }
 
-    /** The merge's blocks of a game: the app's file (appText, null or empty: none) and each player's source that has a file of this build */
-    public static List<Block> blocks(File folder, String appText, boolean appOn, String build, long textEnd) {
+    /**
+     * The merge's blocks of a game: the app's file (appText, null or empty: none) and each player's source, its .mncf made ready for the game's build (g). make:
+     * a file not made ready for it yet is made now (it reads the game's main: seconds for a large game); without, it is a pending block (MncfBuild.prepare makes it)
+     */
+    public static List<Block> blocks(File folder, String appText, boolean appOn, MncfBuild.Game g, long textEnd, boolean make) {
         List<Block> out = new ArrayList<>();
         if (appText != null && !appText.isEmpty()) out.add(new Block(APP, "Comes with the app", appOn, CheatFile.parse(appText, textEnd)));
         for (Source s : list(folder)) {
+            if (!s.file().isFile()) continue;   // Atmosphère files not converted yet (upgrade): left out meanwhile
             try {
-                String t = s.text(build);
-                if (t != null) out.add(new Block(s.id, s.name, s.enabled, CheatFile.parse(t, textEnd)));
+                MncfBuild.Ready r = make ? MncfBuild.of(s.file(), g) : MncfBuild.kept(s.file(), g);
+                if (r == null) { out.add(new Block(s.id, s.name, s.enabled, new CheatFile.Parsed(), null, true)); continue; }
+                out.add(new Block(s.id, s.name, s.enabled, CheatFile.fromMncf(r, textEnd), r.error, false));
             } catch (IOException ignored) { }   // a file that cannot be read: its source has no cheats this time
         }
         return out;
@@ -340,7 +389,33 @@ public final class CheatSources {
         public final String text;
         public final List<Row> rows;
         public final int cheats, masters;   // what the text holds
-        Merged(String text, List<Row> rows, int cheats, int masters) { this.text = text; this.rows = rows; this.cheats = cheats; this.masters = masters; }
+        public final List<Block> blocks;    // every block merged, those without a row too (an .mncf whose cheats cannot work here, one not made ready yet)
+        Merged(String text, List<Row> rows, int cheats, int masters, List<Block> blocks) { this.text = text; this.rows = rows; this.cheats = cheats; this.masters = masters; this.blocks = blocks; }
+
+        /**
+         * An .mncf cheat switched (Mistel's spec, section 7.8), its relations applied to on: switched on, the cheats it requires go on, and the ones it excludes,
+         * the ones that exclude it, and the others of its radio go off, with every cheat that requires one of those. Returns the other keys that changed (empty
+         * for an Atmosphère cheat, and when switched off)
+         */
+        public Set<String> related(Set<String> on, String key, boolean x) {
+            Set<String> changed = new java.util.LinkedHashSet<>();
+            Row me = null;
+            for (Row r : rows) if (r.key.equals(key)) { me = r; break; }
+            if (me == null || me.cheat.mncf == null || !x) return changed;
+            Map<String, Row> byId = new LinkedHashMap<>();
+            for (Row r : rows) if (r.block == me.block && r.cheat.mncf != null && !r.cheat.master) byId.put(r.cheat.mncf.id, r);
+            Set<String> off = new HashSet<>();
+            for (Row r : byId.values()) {
+                if (r == me) continue;
+                MncfBuild.Cheat c = r.cheat.mncf;
+                boolean clash = me.cheat.mncf.excludes.contains(c.id) || c.excludes.contains(me.cheat.mncf.id) || me.cheat.mncf.radio != null && me.cheat.mncf.radio.equals(c.radio);
+                if (clash) off.add(c.id);
+            }
+            for (Row r : byId.values()) if (r != me) for (String req : r.cheat.mncf.requires) if (off.contains(req)) off.add(r.cheat.mncf.id);
+            for (String id : off) { Row r = byId.get(id); if (r != null && on.remove(r.key)) changed.add(r.key); }
+            for (String req : me.cheat.mncf.requires) { Row r = byId.get(req); if (r != null && !off.contains(req) && on.add(r.key)) changed.add(r.key); }
+            return changed;
+        }
 
         /** The key of a block's cheat (by its key in its own file), null when it has none in the merge (Not supported) */
         public String key(String blockId, String ownKey) {
@@ -412,7 +487,7 @@ public final class CheatSources {
             }
             if (open != null) sb.append("[--SectionEnd:").append(open).append("--]\n");
         }
-        return new Merged(sb.toString(), rows, cheats, masters);
+        return new Merged(sb.toString(), rows, cheats, masters, blocks);
     }
 
     /** A group's section in the merged file: the group, with the source's name in front when more than one source is on; null for neither */

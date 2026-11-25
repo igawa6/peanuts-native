@@ -9,6 +9,10 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
    - `android/app/src/main/java/dev/peanuts/` — launcher side: the `Presentation` on the second display, its view, the JNI bridge.
    - `dm/peanuts/` — host side: companion package loader, guest readers, tick, input injection (plain C).
    - `peanuts/` — companion packages, docs, tests, `scripts/`.
+   - `dm/third_party/mistel/` — Mistel's MIT library for `.mncf` cheat files (`io.github.davdxpx.mistel.mncf`), shipped like the other third-party code:
+     only the files of Mistel's `format/lib/java` the launcher needs, never edited here. `peanuts/scripts/mncf-vendor.sh` copies them with Mistel's LICENSE,
+     writes `MISTEL.sha256` (the commit and every file's hash) and the README, and `peanuts/tests/test_mncf_vendor.py` fails on any change to the copy.
+     Fixes go to Mistel first. `android/app/build.gradle` compiles it with the app (one marked `java.srcDirs` line).
 2. **Hooks into upstream files are one-liners, each tagged `PEANUTS`.** A hook is a call-out to Peanuts code, never logic.
    Allowed hook sites (keep this list current):
    - `android/app/src/main/java/dev/nxnative/android/GameActivity.java` — create/destroy the companion `Presentation`; (2026-11-13) one line in

@@ -16,7 +16,8 @@ import java.util.zip.ZipOutputStream;
 /**
  * The cheat loader of the game page (SPEC-mod-menu.md, Package B) on the JVM, driven by peanuts/tests/test_cheat_loader.py. args[0]: an empty folder; args[1]
  * (optional): a real cheat file to read as a smoke test (never part of the repository). Prints "ok" or throws. Covers the parse (groups, masters, credits,
- * restore entries, kinds and hold buttons), the import's layouts and its choice of build, the sources and the merged file.
+ * restore entries, kinds and hold buttons), the import's layouts and its choice of build, the sources (.mncf files: MncfConvert, MncfMain, MncfBuild), the
+ * merged file, the number field, export and packs.
  */
 public final class CheatLoaderJvmTest {
     static final String TID = "0100AAAA0BBB0000", B = "0123456789ABCDEF", OTHER = "FEDCBA9876543210";
@@ -108,6 +109,7 @@ public final class CheatLoaderJvmTest {
         merge(new File(root, "merge-case"));
         status();
         values(new File(root, "values-case"));
+        mncf(new File(root, "mncf-case"));
         if (a.length > 1 && !a[1].isEmpty()) real(new File(a[1]));
         System.out.println("ok");
     }
@@ -361,92 +363,535 @@ public final class CheatLoaderJvmTest {
         check(paths.contains("Fake Pack/atmosphere/contents/" + TID + "/romfs/") && !paths.contains("Fake Pack/atmosphere/contents/" + TID + "/romfs/x/"), "romfs is not walked into: " + paths);
     }
 
+    // ---- A pack's main for the .mncf sources (MncfMain): made up, as patch_nso.py writes one ----
+
+    /** A made-up pack: main.patched.bin (text up to 0x8000, read-only data to 0xC000, data to 0x10000), its layout, and the words SITE's restore code names */
+    static File pack(File dir, String bid, int shift) throws Exception {
+        check(dir.mkdirs() || dir.isDirectory(), "mkdirs " + dir);
+        byte[] img = new byte[0x10000 + shift];
+        new java.util.Random(7).nextBytes(img);
+        for (int i = 0; i < 0x80; i += 4) put(img, shift + 0x7000 + i, 0xD503201FL);   // nop padding a pattern does not match by chance
+        put(img, shift + 0x1000, 0xB9004008L);
+        put(img, shift + 0x1004, 0x94000123L);
+        put(img, shift + 0x2000, 0x52800000L); put(img, shift + 0x2004, 0x52800000L); put(img, shift + 0x2008, 0x2BCA1F01L);
+        put(img, shift + 0x3000, 0x1E2E1000L); put(img, shift + 0x3004, 0x1E201001L);
+        put(img, shift + 0x4000, 0x52800000L); put(img, shift + 0x4004, 0x2BCA1F01L);
+        Files.write(new File(dir, "main.patched.bin").toPath(), img);
+        Files.write(new File(dir, "main.fixups.tsv").toPath(), u(String.format("# PATCH_OFF\t0x%x\n# TEXT_END\t0x%x\n# RO_OFF\t0x%x\n# DATA_OFF\t0x%x\n# BUILD_ID\t%s0000000000000000\n",
+                0x10000 + shift, 0x8000 + shift, 0x8000 + shift, 0xC000 + shift, bid)));
+        return dir;
+    }
+
+    static void put(byte[] b, int at, long w) { for (int i = 0; i < 4; i++) b[at + i] = (byte) (w >>> (8 * i)); }
+
+    static MncfConvert.Known known(File pack, String author) {
+        return new MncfConvert.Known(TID, "Example Game", author, B, Map.of(B, "1.0.0"), MncfConvert.of(pack));
+    }
+
+    static MncfBuild.Game game(String build, File pack) { return new MncfBuild.Game(TID, build, build.equals(B) ? "1.0.0" : null, pack); }
+
+    static io.github.davdxpx.mistel.mncf.MncfFile load(File f) throws Exception { return io.github.davdxpx.mistel.mncf.Mncf.load(Files.readAllBytes(f.toPath())); }
+
     // ---- The sources ----
 
     static void sources(File folder) throws Exception {
+        File pk = pack(new File(folder.getParentFile(), "sources-pack"), B, 0);
+        MncfConvert.Known k = known(pk, "Tester");
         check(CheatSources.list(folder).isEmpty() && CheatSources.appEnabled(folder) == null, "nothing yet");
-        CheatSources.Source s1 = CheatSources.add(folder, "pack", CheatSources.FROM_ZIP, Map.of(B, SITE, OTHER, SMALL), 1000);
-        CheatSources.Source s2 = CheatSources.add(folder, "Pack", CheatSources.FROM_FILE, Map.of(B, SMALL), 2000);
-        CheatSources.Source s3 = CheatSources.add(folder, "../odd/name?", CheatSources.FROM_FOLDER, Map.of(B, SMALL + "[X]\n04000000 00000010 00000001\n"), 1500);
+        CheatSources.Source s1 = CheatSources.add(folder, "pack", CheatSources.FROM_ZIP, Map.of(B, SITE, OTHER, SMALL), 1000, k, "pack.zip");
+        CheatSources.Source s2 = CheatSources.add(folder, "Pack", CheatSources.FROM_FILE, Map.of(B, SMALL), 2000, k, "Pack.txt");
+        CheatSources.Source s3 = CheatSources.add(folder, "../odd/name?", CheatSources.FROM_FOLDER, Map.of(B, SMALL + "[X]\n04000000 00000010 00000001\n"), 1500, k, null);
         List<CheatSources.Source> l = CheatSources.list(folder);
         check(l.size() == 3 && l.get(0).id.equals(s1.id) && l.get(1).id.equals(s3.id) && l.get(2).id.equals(s2.id), "by when they were added: " + l);
         check(s2.name.equals("Pack 2"), "a name is unique without case: " + s2.name);
         check(!s3.id.contains("/") && !s3.id.startsWith("."), "a folder name of its own: " + s3.id);
-        check(s1.files().keySet().equals(Set.of(B, OTHER)) && s1.text(B).equals(SITE) && s1.text("1111111111111111") == null, "its files by build");
-        check(CheatSources.sameAs(folder, B, SMALL.replace("\n", "\r\n")) != null && CheatSources.sameAs(folder, B, "[New]\n04000000 0 1\n") == null, "the same file again is found");
+        // one .mncf a source, for all of its builds, with what is known: the game, the versions, where it came from, who made it
+        String[] kept = s1.dir.list();
+        check(kept != null && java.util.Arrays.asList(kept).containsAll(List.of(CheatSources.MNCF, CheatSources.STATE)) && !new File(s1.dir, B + ".txt").exists(), "an .mncf, no Atmosphère file: " + java.util.Arrays.toString(kept));
+        io.github.davdxpx.mistel.mncf.MncfFile f1 = load(s1.file());
+        check(f1.gameId().equals(TID) && "Example Game".equals(f1.gameName()) && new java.util.HashSet<>(s1.builds()).equals(Set.of(B, OTHER)), "the game and both builds: " + s1.builds());
+        check("1.0.0".equals(MncfBuild.version(f1, B)) && MncfBuild.version(f1, OTHER) == null, "the version the app knows names its build: " + MncfBuild.version(f1, B) + " " + MncfBuild.version(f1, OTHER) + " " + f1.builds().keySet());
+        check(f1.authors().equals(List.of("Example Team")), "the authors its credits name, not the player: " + f1.authors());
+        check("atmosphere".equals(f1.origin().get("format")) && "pack.zip".equals(f1.origin().get("name")) && "example-cheats.com".equals(f1.origin().get("site")), "its origin: " + f1.origin());
+        check(f1.about() != null && f1.about().contains("enjoy"), "its credit lines in about: " + f1.about());
+        check(load(s2.file()).authors().equals(List.of("Tester")), "no credits: the player who adds it");
+        check(load(CheatSources.add(folder, "nobody", CheatSources.FROM_FILE, Map.of(B, "[N]\n04000000 00000020 00000001\n"), 2500,
+                new MncfConvert.Known(TID, null, null, null, null, null), null).file()).authors().isEmpty(), "no credits and no name: no author");
+        CheatSources.remove(folder, "nobody");
+        // a note line Mistel's reader would refuse is kept in about, the file is still converted
+        CheatSources.Source noted = CheatSources.add(folder, "noted", CheatSources.FROM_FILE, Map.of(B, "Made for fun\n[Coins]\n04000000 00001000 00000063\nsee the site\n"), 2600, k, null);
+        check(load(noted.file()).about().contains("Made for fun") && load(noted.file()).about().contains("see the site") && load(noted.file()).cheats().size() == 1, "notes in about");
+        CheatSources.remove(folder, noted.id);
+        check(CheatSources.sameAs(folder, SMALL.replace("\n", "\r\n")) != null && CheatSources.sameAs(folder, "[New]\n04000000 0 1\n") == null, "the same file again is found");
+        check(CheatSources.sameMncf(folder, Files.readAllBytes(s1.file().toPath())) != null && CheatSources.sameMncf(folder, u("format = \"mncf/1\"\n")) == null, "the same .mncf again is found");
         CheatSources.enabled(folder, s2.id, false);
         check(!CheatSources.find(folder, s2.id).enabled && CheatSources.find(folder, s1.id).enabled, "a source off as a whole");
         check(CheatSources.remove(folder, s3.id) && CheatSources.find(folder, s3.id) == null && !CheatSources.remove(folder, "..") && !CheatSources.remove(folder, CheatSources.APP),
                 "a source removed, nothing else");
         CheatSources.appEnabled(folder, false);
         check(Boolean.FALSE.equals(CheatSources.appEnabled(folder)) && CheatSources.list(folder).size() == 2, "the app's state is not a source");
-        // upstream's earlier imports move over
+        // upstream's earlier imports move over, as .mncf
         File old = new File(folder, "imported");
         check(old.mkdirs(), "mkdirs imported");
         Files.write(new File(old, "b old.txt").toPath(), u("build " + B + "\n" + SMALL));
         Files.write(new File(old, "a old.txt").toPath(), u("build " + B + "\n[Y]\n04000000 00000010 00000001\n"));
-        List<CheatSources.Source> moved = CheatSources.migrate(folder, 3000);
-        check(moved.size() == 2 && moved.get(0).name.equals("a old") && moved.get(1).name.equals("b old") && !old.exists(), "imported/ became sources: " + moved);
-        check(CheatSources.migrate(folder, 4000).isEmpty(), "once");
-        // Export cheats…: upstream's format, each source's file of this build with its build line, and the toggles; an import reads it back
-        ByteArrayOutputStream ex = new ByteArrayOutputStream();
-        int n = CheatSources.exportZip(ex, TID, B, folder, true, new java.util.LinkedHashSet<>(List.of("Coins", "Y")));
-        Map<String, String> got = new LinkedHashMap<>();
-        try (java.util.zip.ZipInputStream z = new java.util.zip.ZipInputStream(new ByteArrayInputStream(ex.toByteArray()))) {
-            for (ZipEntry e; (e = z.getNextEntry()) != null; ) got.put(e.getName(), new String(z.readAllBytes(), StandardCharsets.UTF_8));
-        }
-        check(n == 4 && got.size() == 5 && got.containsKey("toggles.json"), "4 sources with a file of this build and the toggles: " + got.keySet());
-        for (Map.Entry<String, String> e : got.entrySet()) if (!e.getKey().equals("toggles.json")) check(e.getKey().startsWith("cheats/") && e.getValue().startsWith("build " + B + "\n"), "a build line first: " + e.getKey());
-        check(got.get("toggles.json").equals("{\"title_id\": \"" + TID + "\", \"build\": \"" + B + "\", \"cheats\": true, \"on\": [\"Coins\", \"Y\"]}\n"), got.get("toggles.json"));
-        List<String> paths = new ArrayList<>();
-        CheatImport.Found back = CheatImport.read(CheatImport.fromZip(new ByteArrayInputStream(ex.toByteArray()), paths), paths, TID, BUILDS, "export.zip");
-        check(back.forGame.size() == 3 && back.otherVersion.isEmpty(), "the export reads back by its build lines (two sources with one text are one file): " + back.forGame);
-        check(CheatSources.withBuild("\n\nbuild 0123456789abcdef\n[A]\n", B).equals("build " + B + "\n[A]\n"), "an earlier build line is replaced");
+        List<CheatSources.Source> moved = CheatSources.migrate(folder, 3000, k);
+        check(moved.size() == 2 && moved.get(0).name.equals("a old") && moved.get(1).name.equals("b old") && !old.exists() && moved.get(0).file().isFile(), "imported/ became sources: " + moved);
+        check(CheatSources.migrate(folder, 4000, k).isEmpty(), "once");
+        // an earlier version of the app kept a source as Atmosphère files by build: it becomes one .mncf, the files go
+        File earlier = new File(CheatSources.root(folder), "earlier");
+        check(earlier.mkdirs(), "mkdirs earlier");
+        Files.write(new File(earlier, B + ".txt").toPath(), u(SITE));
+        Files.write(new File(earlier, OTHER + ".txt").toPath(), u(SMALL));
+        Files.write(new File(earlier, CheatSources.STATE).toPath(), u("name\tEarlier\nfrom\tzip\nadded\t500\nenabled\t1\n"));
+        check(CheatSources.upgrade(folder, k) == 1 && CheatSources.upgrade(folder, k) == 0, "once");
+        CheatSources.Source up = CheatSources.find(folder, "earlier");
+        check(up.file().isFile() && !new File(earlier, B + ".txt").exists() && new java.util.HashSet<>(up.builds()).equals(Set.of(B, OTHER)) && CheatSources.sameAs(folder, SMALL) != null, "an .mncf of both builds: " + up.builds());
         // the export imported again (upstream's Import cheats…: imported/, then sources): what the game has already is not added twice
         int before = CheatSources.list(folder).size();
         check(old.mkdirs(), "mkdirs imported again");
-        Files.write(new File(old, "again.txt").toPath(), u("build " + B + "\n" + SITE));   // s1 keeps SITE without a build line: the same cheats
+        Files.write(new File(old, "again.txt").toPath(), u("build " + B + "\n" + SITE));   // s1 was made from SITE: the same cheats
         Files.write(new File(old, "fresh.txt").toPath(), u("build " + B + "\n[Fresh]\n04000000 00000010 00000001\n"));
         Files.write(new File(old, "fresh2.txt").toPath(), u("build " + B + "\n[Fresh]\n04000000 00000010 00000001\n"));
-        int stay = CheatSources.dropDuplicates(folder, CheatSources.migrate(folder, 5000), B);
+        int stay = CheatSources.dropDuplicates(folder, CheatSources.migrate(folder, 5000, k));
         check(stay == 1 && CheatSources.list(folder).size() == before + 1, "one new source, the copies gone: " + CheatSources.list(folder));
     }
 
     // ---- The merged file ----
 
     static void merge(File folder) throws Exception {
+        File pk = pack(new File(folder.getParentFile(), "merge-pack"), B, 0);
+        MncfConvert.Known k = known(pk, null);
+        MncfBuild.Game g = game(B, pk);
         String app = "[Coins]\n04000000 00001000 00000001\n[Moon]\n04000000 00001004 00000001\n";
-        CheatSources.add(folder, "site", CheatSources.FROM_ZIP, Map.of(B, SITE + "[Coins]\n04000000 00001008 00000001\n"), 1000);
-        CheatSources.Source off = CheatSources.add(folder, "second", CheatSources.FROM_FILE, Map.of(B, "[Moon]\n04000000 00001010 00000001\n[Odd]\n04000000 00001014 00000001\n"), 2000);
-        CheatSources.add(folder, "third", CheatSources.FROM_FILE, Map.of(B, "[Moon]\n04000000 00001018 00000001\n[ODD]\n04000000 0000101C 00000001\n"), 3000);
+        CheatSources.add(folder, "site", CheatSources.FROM_ZIP, Map.of(B, SITE + "[Coins]\n04000000 00001008 00000001\n"), 1000, k, null);
+        CheatSources.Source off = CheatSources.add(folder, "second", CheatSources.FROM_FILE, Map.of(B, "[Moon]\n04000000 00001010 00000001\n[Odd]\n04000000 00001014 00000001\n"), 2000, k, null);
+        CheatSources.add(folder, "third", CheatSources.FROM_FILE, Map.of(B, "[Moon]\n04000000 00001018 00000001\n[ODD]\n04000000 0000101C 00000001\n"), 3000, k, null);
         CheatSources.enabled(folder, off.id, false);
-        CheatSources.Merged m = CheatSources.merge(CheatSources.blocks(folder, app, true, B, 0x200000));
+        CheatSources.Merged m = CheatSources.merge(CheatSources.blocks(folder, app, true, g, 0x8000, true));
         List<String> keys = m.keys();
-        check(keys.equals(List.of("Coins", "Moon", "1. Lots of coins", "2. No item cost", "3. Coins as a number", "4. Fast run (Hold ZL)", "5. High jump (Hold B)",
-                "7. Two buttons", "8. Data in main", "8. Data in main #2", "Coins (site)", "Moon (third)", "ODD (third)")), "the keys, the switched-off source's names kept free: " + keys);
+        check(keys.equals(List.of("Coins", "Moon", "1. Lots of coins", "2. No item cost", "4. Fast run (Hold ZL)", "5. High jump (Hold B)",
+                "7. Two buttons", "8. Data in main", "8. Data in main #2", "Coins (site)", "Moon (third)", "ODD (third)")), "the keys the Atmosphère files had, the switched-off source's names kept free: " + keys);
         check(m.key(off.id, "Moon").equals("Moon (second)") && m.key(off.id, "Odd").equals("Odd"), "a source that is off keeps its names for when it is on again");
-        check(m.key("site", "6. Pause trick") == null, "Not supported has no key");
+        check(m.key("site", "6. Pause trick") == null && m.key("site", "3. Coins as a number") == null, "what cannot run has no key");
+        CheatSources.Block site = null;
+        for (CheatSources.Block b : m.blocks) if (b.id.equals("site")) site = b;
+        check(site != null && site.parsed.mncf != null && site.error == null && !site.pending, "the source's block is its .mncf made ready");
+        CheatFile.Cheat pointer = cheat(site.parsed, "3. Coins as a number"), pause = cheat(site.parsed, "6. Pause trick");
+        check("outside".equals(pointer.reason()) && pointer.kind == CheatFile.Kind.UNSUPPORTED && !pointer.switchable(), "a place outside the made-up main: refused with the spec's reason: " + pointer.reason());
+        check(pause.reason() == null && pause.kind == CheatFile.Kind.UNSUPPORTED && pause.why.startsWith("opcode"), "raw code the host does not run: Not supported, as before");
+        check(CheatFile.describe(pointer).equals("Its place lies outside the game. It stays off."), CheatFile.describe(pointer));
         String t = m.text;
         check(!t.contains("Restore Code") && !t.contains("Pause trick") && !t.contains("Odd width") && !t.contains("www.") && !t.contains("TID=") && !t.contains("20000001"),
-                "credits, titles, headings, Restore Code and Not supported are left out:\n" + t);
+                "credits, titles, headings, Restore Code and what cannot run are left out:\n" + t);
         check(!t.contains("[Moon (second)]"), "a source that is off is not in the file");
         check(t.indexOf("{Setup}") < t.indexOf("[1. Lots of coins]") && t.indexOf("{Setup}") > t.indexOf("[Moon]"), "a source's master comes before its cheats");
-        check(t.contains("[--SectionStart:site: Items--]\n[1. Lots of coins]\n040A0000 00001000 B9004009\n") && t.contains("[--SectionEnd:site: Items--]\n[--SectionStart:site: Moving--]"),
-                "the groups as sections, with the source's name when more than one is on:\n" + t);
-        CheatFile.Parsed again = CheatFile.parse(t, 0x200000);
+        check(t.contains("[--SectionStart:site: Items--]\n[1. Lots of coins]\n04000000 00001000 B9004009\n") && t.contains("[--SectionEnd:site: Items--]\n[--SectionStart:site: Moving--]"),
+                "the groups as sections, with the source's name when more than one is on, the code made from the cheat's patch:\n" + t);
+        check(t.contains("[4. Fast run (Hold ZL)]\n80000100\n04000000 00003000 1E241000\n21000000\n04000000 00003000 1E2E1000\n20000000\n"), "a hold with the original back on release:\n" + t);
+        CheatFile.Parsed again = CheatFile.parse(t, 0x8000);
         java.util.Set<String> low = new java.util.HashSet<>();
         for (CheatFile.Cheat c : again.cheats) check(low.add(c.key.toLowerCase()), "unique without case: " + c.key);
-        check(again.cheats.size() == m.cheats && m.cheats == 13 && again.masters.size() == 1, "the merged file reads back: " + again.cheats.size());
-        check(again.groups.equals(List.of("Comes with the app", "site: Items", "site: Moving", "site: Extras", "site", "third")), "its groups, a cheat outside one under its source's name: " + again.groups);
+        check(again.cheats.size() == m.cheats && m.cheats == 12 && again.masters.size() == 1, "the merged file reads back: " + again.cheats.size());
+        check(again.groups.equals(List.of("Comes with the app", "site: Items", "site: Moving", "site: Extras", "site", "third")), "its groups, EdiZon's sections among them: " + again.groups);
         // one source alone: its groups without its name; a long name still fits a header
         File one = new File(folder.getParentFile(), "merge-one");
-        CheatSources.add(one, "solo", CheatSources.FROM_ZIP, Map.of(B, SITE), 1);
-        check(CheatSources.merge(CheatSources.blocks(one, null, true, B, -1)).text.contains("[--SectionStart:Items--]"), "one source: the group alone");
+        CheatSources.add(one, "solo", CheatSources.FROM_ZIP, Map.of(B, SITE), 1, k, null);
+        check(CheatSources.merge(CheatSources.blocks(one, null, true, g, -1, true)).text.contains("[--SectionStart:Items--]"), "one source: the group alone");
         String longName = "x".repeat(127);
         CheatSources.Merged lm = CheatSources.merge(List.of(
                 new CheatSources.Block("a", "a", true, CheatFile.parse("[" + longName + "]\n04000000 00000010 00000001\n", -1)),
                 new CheatSources.Block("b", "bee", true, CheatFile.parse("[" + longName + "]\n04000000 00000010 00000001\n", -1))));
         check(lm.keys().get(1).length() == 127 && lm.keys().get(1).endsWith(" (bee)"), "a long clashing name is cut to fit: " + lm.keys().get(1).length());
+    }
+
+    // ---- .mncf for the build that runs (MncfMain, MncfBuild, the number field, export, packs) ----
+
+    static final String HAND = String.join("\n",
+            "format = \"mncf/1\"",
+            "name = \"Hand-made\"",
+            "authors = [\"someone\"]",
+            "extensions = { optional = [\"arm64-imm/1\"] }",
+            "",
+            "[game]",
+            "platform = \"switch\"",
+            "id = \"" + TID + "\"",
+            "",
+            "[[cheat]]",
+            "id = \"coins\"",
+            "name = \"Coins by pattern\"",
+            "about = \"Buying keeps your coins\"",
+            "tags = [\"touches_save\"]",
+            "",
+            "  [[cheat.patch]]",
+            "  at = { module = \"main\", find = \"08 40 00 B9 23 01 00 94\" }",
+            "  expect = \"08 40 00 B9\"",
+            "  bytes = \"09 40 00 B9\"",
+            "",
+            "[[cheat]]",
+            "id = \"count\"",
+            "name = \"A count\"",
+            "radio = \"r\"",
+            "",
+            "  [cheat.values.n]",
+            "  type = \"u16\"",
+            "  min = 1",
+            "  max = 500",
+            "  default = 5",
+            "  unit = \"coins\"",
+            "",
+            "  [[cheat.patch]]",
+            "  at = { module = \"main\", find = \"00 00 80 52 00 00 80 52\" }",
+            "  expect = \"00 00 80 52\"",
+            "  encode = { insn = \"movz\", width = 32, rd = 0, value = \"$n\" }",
+            "",
+            "[[cheat]]",
+            "id = \"other\"",
+            "name = \"The other one\"",
+            "radio = \"r\"",
+            "requires = [\"coins\"]",
+            "",
+            "  [[cheat.write]]",
+            "  at = { region = \"heap\", offset = 0x100 }",
+            "  type = \"u32\"",
+            "  value = 1",
+            "",
+            "[[cheat]]",
+            "id = \"view\"",
+            "name = \"A monitor\"",
+            "run = \"monitor\"",
+            "",
+            "  [[cheat.read]]",
+            "  at = { region = \"heap\", offset = 0x100 }",
+            "  type = \"u32\"",
+            "  label = \"N\"",
+            "",
+            "[[cheat]]",
+            "id = \"once\"",
+            "name = \"Once\"",
+            "run = \"once\"",
+            "",
+            "  [[cheat.write]]",
+            "  at = { region = \"heap\", offset = 0x104 }",
+            "  type = \"u32\"",
+            "  value = 2",
+            "",
+            "[[cheat]]",
+            "id = \"gone\"",
+            "name = \"Not in this version\"",
+            "",
+            "  [[cheat.patch]]",
+            "  at = { module = \"main\", find = \"DE AD BE EF 11 22 33 44\" }",
+            "  expect = \"DE AD BE EF\"",
+            "  bytes = \"00 00 00 00\"",
+            "");
+
+    static void mncf(File root) throws Exception {
+        File pk = pack(new File(root, "pack"), B, 0), po = pack(new File(root, "pack-orig"), B, 0);
+        // MncfMain: the image with the original words back where the rewriter changed them
+        byte[] img = Files.readAllBytes(new File(po, "main.patched.bin").toPath());
+        byte[] orig = java.util.Arrays.copyOfRange(img, 0x1000, 0x1008);
+        put(img, 0x1000, 0x14000000L); put(img, 0x1004, 0x14000001L);   // the rewriter's branches
+        Files.write(new File(po, "main.patched.bin").toPath(), img);
+        Files.write(new File(po, "main.changed.tsv").toPath(), u("# BUILD_ID\t" + B.toLowerCase() + "\n0x1000\t0x8\n"));
+        Files.write(new File(po, "main.orig.bin").toPath(), orig);
+        io.github.davdxpx.mistel.mncf.CodeModule main = MncfMain.of(po);
+        check(main != null && main.image().length == 0x10000 && (main.image()[0x1000] & 0xFF) == 0x08 && main.exclude().isEmpty(), "the original words are back");
+        check(main.sectionStart("code") == 0 && main.sectionEnd("code") == 0x8000 && main.sectionStart("data") == 0xC000 && main.sectionEnd("data") == 0x10000, "the sections");
+        File noOrig = pack(new File(root, "pack-no-orig"), B, 0);
+        Files.write(new File(noOrig, "main.changed.tsv").toPath(), u("# BUILD_ID\t" + B.toLowerCase() + "\n0x1000\t0x8\n"));
+        check(MncfMain.of(noOrig).excluded(0x1000, 4) && !MncfMain.of(noOrig).excluded(0x2000, 4), "without orig.bin the changed runs stay out of every search");
+        check(MncfMain.of(new File(root, "nothing")) == null, "no pack: no main");
+
+        // A file of the player's: its cheats for this build, the spec's reasons, the code for the host
+        File folder = new File(root, "folder");
+        CheatSources.Source s = CheatSources.addMncf(folder, "hand", CheatSources.FROM_FILE, u(HAND), 1);
+        check(java.util.Arrays.equals(Files.readAllBytes(s.file().toPath()), u(HAND)), "an .mncf is kept byte for byte");
+        MncfBuild.Ready r = s.ready(game(B, pk));
+        check(r.error == null && r.buildKey == null && r.signature.equals("unsigned") && r.signer == null && !r.verified(), "no build of its own, unsigned: loaded as any file, no mark");
+        Map<String, MncfBuild.Cheat> by = new LinkedHashMap<>();
+        for (MncfBuild.Cheat c : r.cheats) by.put(c.id, c);
+        check(by.get("coins").reason == null && by.get("coins").lines.equals(List.of("04000000 00001000 B9004009")), "found by its pattern in the game's own main: " + by.get("coins").lines + " " + by.get("coins").reason);
+        check(by.get("count").reason == null && by.get("count").lines.equals(List.of("04000000 00002000 528000A0")) && by.get("count").value != null, "a value in the instruction: " + by.get("count").lines + " " + by.get("count").reason);
+        check(by.get("other").reason == null && by.get("other").lines.equals(List.of("04100000 00000100 00000001")), "a write into the heap: " + by.get("other").lines);
+        check("capability-missing:display".equals(by.get("view").reason), "a monitor: Peanuts has no display yet: " + by.get("view").reason);
+        check("runtime:unsupported:run.once".equals(by.get("once").reason), "run once: a part of the core Atmosphère code cannot say (section 11.1): " + by.get("once").reason);
+        check(MncfWords.reason(by.get("once").reason, by.get("once")).equals("It runs once when you turn it on, which Peanuts cannot do yet."), MncfWords.reason(by.get("once").reason, null));
+        check("pattern-not-found".equals(by.get("gone").reason), by.get("gone").reason);
+        check(new File(s.dir, "build/" + B + ".mncf").isFile() && new File(s.dir, "build/" + B + ".tsv").isFile(), "kept for the build");
+        String pinned = new String(Files.readAllBytes(new File(s.dir, "build/" + B + ".mncf").toPath()), StandardCharsets.UTF_8);
+        check(pinned.contains("at = { module = \"main\", offset = 0x1000 }") && !pinned.contains("08 40 00 B9 23 01 00 94"), "the pinned file has the place as an offset:\n" + pinned);
+        MncfBuild.Ready again = MncfBuild.kept(s.file(), game(B, null));
+        check(again != null && again.cheats.size() == r.cheats.size() && again.cheats.get(0).lines.equals(r.cheats.get(0).lines), "a later start reads the kept one without main");
+        check(MncfBuild.kept(s.file(), game(OTHER, null)) == null, "another build is made again");
+        // made while the pack has no main yet (a game not built): kept, so the page does not look it up again and again; made again once main is there
+        File early = new File(root, "early");
+        CheatSources.Source es = CheatSources.addMncf(early, "hand", CheatSources.FROM_FILE, u(HAND), 1);
+        MncfBuild.Ready e1 = es.ready(game(B, new File(root, "not-built-yet")));
+        check("runtime:no-main".equals(e1.cheats.get(0).reason) && MncfBuild.kept(es.file(), game(B, new File(root, "not-built-yet"))) != null, "kept without main: " + e1.cheats.get(0).reason);
+        check(MncfBuild.kept(es.file(), game(B, pk)) == null && es.ready(game(B, pk)).cheats.get(0).reason == null && MncfBuild.kept(es.file(), game(B, pk)) != null,
+                "made again with the pack's main, its pattern found");
+
+        // The page and the tab: kinds, words, the number field
+        CheatFile.Parsed p = CheatFile.fromMncf(r, 0x8000);
+        CheatFile.Cheat coins = cheat(p, "Coins by pattern"), count = cheat(p, "A count");
+        check(coins.kind == CheatFile.Kind.CODE && coins.number == null && p.credits.equals(List.of("someone")), "a code cheat, its file's author as its credit");
+        check(CheatFile.describe(coins).startsWith("Buying keeps your coins. Changes 1 place"), CheatFile.describe(coins));
+        check(CheatFile.describe(cheat(p, "A monitor")).equals("It shows values from the game, which Peanuts cannot do yet. It stays off."), CheatFile.describe(cheat(p, "A monitor")));
+        check(count.number != null && count.number.own() == 5 && count.number.min() == 1 && count.number.max() == 500 && "coins".equals(count.number.unit()), "the value's range and unit");
+        check(CheatValues.lines(count, 300).equals(List.of("04000000 00002000 52802580")) && CheatValues.lines(count, 9999).equals(CheatValues.lines(count, 500)), "the number made into the instruction, kept inside its range");
+        check(CheatFile.describe(count, 300).endsWith("Its number is 300 coins."), CheatFile.describe(count, 300));
+        File vf = new File(root, "values");
+        check(vf.mkdirs(), "mkdirs values");
+        CheatValues.keep(vf, "A count", count, 42);
+        Map<String, CheatValues.Kept> kv = CheatValues.read(vf);
+        check(kv.get("a count").width == 0 && kv.get("a count").original == 5 && CheatValues.of(kv, "A count", count) == 42, "kept by its value, not by a place in the words");
+        String mt = CheatSources.merge(List.of(new CheatSources.Block("hand", "hand", true, p)), kv).text;
+        check(mt.contains("[A count]\n04000000 00002000 52800540\n"), "a start writes the kept number:\n" + mt);
+        check(CheatValues.patch("[A count]\n04000000 00002000 528000A0\n[Next]\n", "A count", count, 7).equals("[A count]\n04000000 00002000 528000E0\n[Next]\n"), "the tab's patch of the merged file");
+
+        // Relations (section 7.8): on a radio the other goes off; what it requires goes on
+        CheatSources.Merged m = CheatSources.merge(List.of(new CheatSources.Block("hand", "hand", true, p)));
+        Set<String> on = new java.util.LinkedHashSet<>(List.of("A count"));
+        Set<String> changed = m.related(on, "The other one", true);
+        on.add("The other one");
+        check(changed.equals(Set.of("A count", "Coins by pattern")) && on.equals(Set.of("Coins by pattern", "The other one")), "radio and requires: " + changed + " " + on);
+
+        // Another build: the pattern still finds the place, per-build offsets and raw code of other builds do not
+        File pk2 = pack(new File(root, "pack2"), OTHER, 0x100);
+        MncfBuild.Ready r2 = MncfBuild.of(s.file(), game(OTHER, pk2));
+        check(r2.cheats.get(0).lines.equals(List.of("04000000 00001100 B9004009")), "the place moved with the code: " + r2.cheats.get(0).lines);
+        File conv = new File(root, "conv");
+        CheatSources.Source cs = CheatSources.add(conv, "cheatslips", CheatSources.FROM_ZIP, Map.of(B, "[Coins]\n040A0000 00001000 B9004009\n[Restore]\n040A0000 00001000 B9004008\n"), 1, known(pk, null), null);
+        MncfBuild.Ready r3 = MncfBuild.of(cs.file(), game(OTHER, pk2));
+        check(r3.cheats.size() == 1 && r3.cheats.get(0).lines.equals(List.of("04000000 00001100 B9004009")), "an Atmosphère cheat converted with the game's main works on the next build: " + r3.cheats.get(0).lines + " " + r3.cheats.get(0).reason);
+
+        // A place the rewriter changed: refused before the game runs (runtime:rewritten)
+        File pk3 = pack(new File(root, "pack3"), B, 0);
+        Files.write(new File(pk3, "main.changed.tsv").toPath(), u("# BUILD_ID\t" + B.toLowerCase() + "\n0x2000\t0x4\n"));
+        Files.write(new File(pk3, "main.orig.bin").toPath(), java.util.Arrays.copyOfRange(Files.readAllBytes(new File(pk3, "main.patched.bin").toPath()), 0x2000, 0x2004));
+        File rw = new File(root, "rw");
+        MncfBuild.Ready r4 = CheatSources.addMncf(rw, "hand", CheatSources.FROM_FILE, u(HAND), 1).ready(game(B, pk3));
+        check("runtime:rewritten".equals(r4.cheats.get(1).reason) && r4.cheats.get(0).reason == null, "the count's place was rewritten: " + r4.cheats.get(1).reason);
+
+        // A file Peanuts cannot read at all
+        File bad = new File(root, "bad");
+        MncfBuild.Ready r5 = CheatSources.addMncf(bad, "bad", CheatSources.FROM_FILE, u("format = \"mncf/1\"\nname = \"x\"\n"), 1).ready(game(B, pk));
+        check(r5.error != null && r5.error.startsWith("schema") && r5.cheats.isEmpty(), "its error code: " + r5.error);
+        CheatSources.Block bb = CheatSources.blocks(bad, null, true, game(B, pk), -1, true).get(0);
+        check(bb.error != null && bb.parsed.cheats.isEmpty(), "its block says so");
+        check(CheatSources.blocks(conv, null, true, game(B, pk), -1, false).get(0).pending, "not made ready for a build and not to be made now: pending");
+
+        // Export: one source an .mncf with what is on as default = true and the set number as default; several an .mncp
+        CheatSources.Merged em = CheatSources.merge(CheatSources.blocks(folder, null, true, game(B, pk), 0x8000, true));
+        MncfExport.Out one = MncfExport.make(folder, "Example Game", em, Set.of("Coins by pattern"), kv);
+        check(one != null && !one.pack && one.fileName.equals("Example Game cheats.mncf") && one.sources == 1, "one file: " + (one == null ? null : one.fileName));
+        io.github.davdxpx.mistel.mncf.MncfFile ex = io.github.davdxpx.mistel.mncf.Mncf.load(one.bytes);
+        check(ex.cheats().get(0).isDefault() && !ex.cheats().get(1).isDefault() && Long.valueOf(42).equals(ex.cheats().get(1).values().get("n").defaultValue()), "the switches and the number travel with it");
+        check(java.util.Arrays.equals(MncfExport.make(folder, "Example Game", em, Set.of(), new LinkedHashMap<>()).bytes, u(HAND)), "nothing changed: its own bytes, a signature stays good");
+        CheatSources.add(folder, "site", CheatSources.FROM_ZIP, Map.of(B, SITE), 2, known(pk, null), null);
+        MncfExport.Out two = MncfExport.make(folder, "Example Game", CheatSources.merge(CheatSources.blocks(folder, null, true, game(B, pk), 0x8000, true)), Set.of(), kv);
+        check(two.pack && two.fileName.endsWith(".mncp") && two.sources == 2, "two sources: a pack");
+        io.github.davdxpx.mistel.mncf.Pack pack = io.github.davdxpx.mistel.mncf.PackReader.read(two.bytes, MncfBuild.TRUST);
+        check(pack.usable() && pack.files().size() == 2 && pack.files().get(0).status().equals("ok") && pack.files().get(1).status().equals("ok"), "its manifest and hashes read back: " + pack.files());
+        // The export back in: a pack's files, a bare .mncf, one in a zip
+        List<String> paths = new ArrayList<>(), broken = new ArrayList<>();
+        CheatImport.Found back = CheatImport.read(CheatImport.fromPack(two.bytes, paths, broken), paths, TID, BUILDS, "Example Game cheats.mncp");
+        check(back.mncf.size() == 2 && broken.isEmpty() && back.forGame.isEmpty(), "the pack's two files: " + back.mncf);
+        ByteArrayOutputStream to = new ByteArrayOutputStream();   // the same manifest, one file changed after it was packed
+        try (java.util.zip.ZipInputStream zi = new java.util.zip.ZipInputStream(new ByteArrayInputStream(two.bytes)); ZipOutputStream zo2 = new ZipOutputStream(to)) {
+            for (ZipEntry e; (e = zi.getNextEntry()) != null; ) {
+                byte[] d = zi.readAllBytes();
+                if (e.getName().equals(pack.files().get(1).path())) d = (new String(d, StandardCharsets.UTF_8) + "# changed\n").getBytes(StandardCharsets.UTF_8);
+                zo2.putNextEntry(new ZipEntry(e.getName()));
+                zo2.write(d);
+                zo2.closeEntry();
+            }
+        }
+        List<String> b2 = new ArrayList<>();
+        List<CheatImport.In> left = CheatImport.fromPack(to.toByteArray(), new ArrayList<>(), b2);
+        check(left.size() == 1 && b2.size() == 1 && b2.get(0).endsWith(": hash"), "a file changed after packing is left out: " + b2);
+        paths.clear();
+        CheatImport.Found bare = CheatImport.read(List.of(new CheatImport.In("Hand.mncf", u(HAND))), List.of("Hand.mncf"), TID, BUILDS, "Hand.mncf");
+        check(bare.mncf.size() == 1 && bare.mncf.get(0).name().equals("Hand") && bare.mncf.get(0).cheats() == 6 && bare.cheats() == 6, "a bare .mncf");
+        CheatImport.Found otherGame = CheatImport.read(List.of(new CheatImport.In("x.mncf", u(HAND.replace(TID, "0100BBBB0CCC0000")))), List.of("x.mncf"), TID, BUILDS, "x");
+        check(otherGame.mncf.isEmpty() && otherGame.mncfOtherGame.size() == 1, "another game's");
+        CheatImport.Found broken2 = CheatImport.read(List.of(new CheatImport.In("x.mncf", u("format = \"mncf/2\"\n"))), List.of("x.mncf"), TID, BUILDS, "x");
+        check(broken2.mncfBroken.size() == 1 && "format".equals(broken2.mncfBroken.get(0).error), "a file of another version: " + broken2.mncfBroken);
+        ByteArrayOutputStream zo = new ByteArrayOutputStream();
+        try (ZipOutputStream z = new ZipOutputStream(zo)) { z.putNextEntry(new ZipEntry("cheats/Hand.mncf")); z.write(u(HAND)); z.closeEntry(); }
+        paths.clear();
+        CheatImport.Found inZip = CheatImport.read(CheatImport.fromZip(new ByteArrayInputStream(zo.toByteArray()), paths), paths, TID, BUILDS, "hand.zip");
+        check(inZip.mncf.size() == 1 && !inZip.pack, "an .mncf in a zip");
+        check(MncfExport.fileName("A/B: C?", false).equals("A B C cheats.mncf"), MncfExport.fileName("A/B: C?", false));
+        zip(root, folder, pk, kv);
+        limits(root, pk);
+
+        // What a file brings, for the Add dialog: counted from the file itself
+        MncfFacts hf = MncfFacts.of(io.github.davdxpx.mistel.mncf.Mncf.load(u(HAND)));
+        check(hf.cheats == 6 && hf.checked == 3 && hf.patterns == 3 && hf.values == 1 && hf.described == 1 && hf.rawOnly == 0 && hf.versions.isEmpty() && hf.signer == null,
+                "the hand-made file: " + hf.cheats + " " + hf.checked + " " + hf.patterns + " " + hf.values + " " + hf.described);
+        MncfFacts sf = MncfFacts.of(load(CheatSources.find(folder, "site").file()));
+        check(sf.versions.equals(List.of("1.0.0")) && "1.0.0".equals(sf.versionWords()) && sf.rawOnly > 0 && sf.checked > 0, "a converted file: " + sf.versions + " raw " + sf.rawOnly);
+    }
+
+    /** The cheats a source's file made ready for the build can run, by name → their Atmosphère code */
+    static Map<String, List<String>> runnable(File folder, MncfBuild.Game g) throws Exception {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        for (CheatSources.Source s : CheatSources.list(folder)) for (MncfBuild.Cheat c : s.ready(g).cheats) if (c.reason == null && !c.master) out.put(out.containsKey(c.name) ? c.name + " #2" : c.name, c.lines);
+        return out;
+    }
+
+    /** Export as a ZIP for other emulators (folder: the hand-made file and the site's, kv: the count's number 42), then that ZIP added again */
+    static void zip(File root, File folder, File pk, Map<String, CheatValues.Kept> kv) throws Exception {
+        MncfBuild.Game g = game(B, pk);
+        CheatSources.Merged m = CheatSources.merge(CheatSources.blocks(folder, null, true, g, 0x8000, true));
+        MncfExport.Zip z = MncfExport.zip(folder, "Example Game", g, m, kv);
+        check(z != null && z.fileName.equals("Example Game cheats.zip") && MncfExport.zipName("A/B").equals("A B cheats.zip"), "its name");
+        Map<String, String> files = new LinkedHashMap<>();
+        try (java.util.zip.ZipInputStream zi = new java.util.zip.ZipInputStream(new ByteArrayInputStream(z.bytes))) {
+            for (ZipEntry e; (e = zi.getNextEntry()) != null; ) files.put(e.getName(), new String(zi.readAllBytes(), StandardCharsets.UTF_8));
+        }
+        String path = "atmosphere/contents/" + TID + "/cheats/" + B + ".txt", t = files.get(path);
+        check(files.keySet().equals(Set.of(path)) && z.builds.equals(Map.of(B, z.cheats)) && "1.0.0".equals(z.versions.get(B)), "Atmosphère's layout, one file a build: " + files.keySet() + " " + z.builds);
+        Map<String, List<String>> before = runnable(folder, g);
+        // what an Atmosphère file cannot hold, or what does not fit the game, is left out and named; everything else is in
+        Map<String, String> left = new LinkedHashMap<>();
+        for (String[] l : z.left) left.put(l[0], l[1]);
+        check(left.keySet().equals(Set.of("A monitor", "Once", "Not in this version")), "left out: " + left);
+        check(left.get("Once").equals("It runs once when you turn it on, which an Atmosphère file cannot say.") && left.get("A monitor").equals("It shows values from the game, which an Atmosphère file cannot do.")
+                && left.get("Not in this version").equals("Its place was not found in this version of the game."), "and why, from the converter's stable reasons: " + left);
+        // every cheat the file can run here, the raw one Peanuts' host does not run among them; and the pointer whose base lies past the made-up main, which
+        // Peanuts refuses (outside) but whose own raw code for the build the converter writes as it is (spec section 15: it checks what it makes from a
+        // cheat's operations, never a raw entry)
+        check(z.cheats == before.size() + 1 && before.containsKey("6. Pause trick") && t.contains("[3. Coins as a number]"), "what goes in: " + z.cheats + " " + before.keySet());
+        check(t.startsWith("{Setup}\n") && t.indexOf("{") == t.lastIndexOf("{"), "one master code, first:\n" + t);
+        check(t.contains("[A count]\n04000000 00002000 52800540\n"), "the number set in the game's tab (42) in its instruction:\n" + t);
+        check(t.contains("[Items]\n\n[1. Lots of coins]\n") && t.contains("[Extras]\n20000001\n") && t.contains("[6. Pause trick]\n") && !t.contains("SectionStart"),
+                "the groups as the spec writes them (a name, then an entry of only 20000001 where a cheat in no group follows), the raw code as it came:\n" + t);
+        // added again: the same cheats, the same code, for everything that went in
+        List<String> paths = new ArrayList<>();
+        CheatImport.Found back = CheatImport.read(CheatImport.fromZip(new ByteArrayInputStream(z.bytes), paths), paths, TID, BUILDS, z.fileName);
+        check(back.forGame.size() == 1 && back.mncf.isEmpty(), "read back as an Atmosphère file of this game's build: " + back.forGame.size());
+        File again = new File(root, "zip-again");
+        for (Map.Entry<String, Map<String, String>> e : back.sources().entrySet()) CheatSources.add(again, e.getKey(), CheatSources.FROM_ZIP, e.getValue(), 1, known(pk, null), z.fileName);
+        Map<String, List<String>> after = runnable(again, g);
+        before.put("A count", List.of("04000000 00002000 52800540"));   // the number set, now the file's own
+        for (Map.Entry<String, List<String>> e : before.entrySet()) check(e.getValue().equals(after.get(e.getKey())), "the same code for " + e.getKey() + ": " + e.getValue() + " " + after.get(e.getKey()));
+        check(after.keySet().equals(before.keySet()), "the same cheats: " + after.keySet() + " " + before.keySet());
+        MncfBuild.Ready ra = CheatSources.list(again).get(0).ready(g);
+        for (MncfBuild.Cheat c : ra.cheats) if (c.name.equals("1. Lots of coins")) check(c.group.equals("Items"), "its group came back: " + c.group);
+        // a file of two builds: each build's own file, the other build's cheats as their own code for it
+        File two = new File(root, "zip-two");
+        CheatSources.add(two, "both", CheatSources.FROM_ZIP, Map.of(B, "[Coins]\n04000000 00001000 B9004009\n", OTHER, SMALL), 1, known(pk, null), null);
+        MncfExport.Zip z2 = MncfExport.zip(two, "Example Game", g, CheatSources.merge(CheatSources.blocks(two, null, true, g, 0x8000, true)), new LinkedHashMap<>());
+        Map<String, String> f2 = new LinkedHashMap<>();
+        try (java.util.zip.ZipInputStream zi = new java.util.zip.ZipInputStream(new ByteArrayInputStream(z2.bytes))) {
+            for (ZipEntry e; (e = zi.getNextEntry()) != null; ) f2.put(e.getName(), new String(zi.readAllBytes(), StandardCharsets.UTF_8));
+        }
+        // with the game's main every patch is checked before it is written, so the ZIP never writes over other code; without it a pattern cannot be placed
+        String checked = String.join("\n", "format = \"mncf/1\"", "name = \"Checked\"", "", "[game]", "platform = \"switch\"", "id = \"" + TID + "\"", "",
+                "[builds.\"1.0.0\"]", "modules = { main = \"" + B + "\" }", "",
+                "[[cheat]]", "id = \"wrong\"", "name = \"Made for other code\"", "",
+                "  [[cheat.patch]]", "  at = { module = \"main\", offset = 0x1000 }", "  expect = \"DE AD BE EF\"", "  bytes = \"1F 20 03 D5\"", "",
+                "[[cheat]]", "id = \"found\"", "name = \"Found by its pattern\"", "",
+                "  [[cheat.patch]]", "  at = { module = \"main\", find = \"08 40 00 B9 23 01 00 94\" }", "  expect = \"08 40 00 B9\"", "  bytes = \"09 40 00 B9\"", "",
+                "[[cheat]]", "id = \"far\"", "name = \"Far pointer\"", "",
+                "  [[cheat.write]]", "  at = { module = \"main\", offset = 0x200000, path = [0x10] }", "  type = \"u32\"", "  value = 1", "");
+        File ck = new File(root, "zip-checked");
+        CheatSources.addMncf(ck, "checked", CheatSources.FROM_FILE, u(checked), 1);
+        MncfExport.Zip zc = MncfExport.zip(ck, "Example Game", g, null, new LinkedHashMap<>());
+        String tc;
+        try (java.util.zip.ZipInputStream zi = new java.util.zip.ZipInputStream(new ByteArrayInputStream(zc.bytes))) { zi.getNextEntry(); tc = new String(zi.readAllBytes(), StandardCharsets.UTF_8); }
+        Map<String, String> lc = new LinkedHashMap<>();
+        for (String[] l : zc.left) lc.put(l[0], l[1]);
+        check(tc.equals("[Found by its pattern]\n04000000 00001000 B9004009\n") && lc.size() == 2
+                && "The game's code at its place is not what the cheat was made for: it is for another version.".equals(lc.get("Made for other code"))
+                && "Its place lies outside the game.".equals(lc.get("Far pointer")), "checked against main, a pointer's base too: " + tc + " " + lc);
+        MncfExport.Zip zn = MncfExport.zip(ck, "Example Game", game(B, null), null, new LinkedHashMap<>());
+        check(zn.cheats == 2 && zn.left.size() == 1 && zn.left.get(0)[0].equals("Found by its pattern")
+                && zn.left.get(0)[1].equals("Its place is found by the code around it, and Peanuts can look it up only in the version it has built."), "no main: " + zn.left.get(0)[1]);
+        String other = "atmosphere/contents/" + TID + "/cheats/" + OTHER + ".txt";
+        check(f2.keySet().equals(Set.of(path, other)) && f2.get(other).equals("[Coins]\n04000000 00001000 00000063\n") && z2.left.isEmpty()
+                && new ArrayList<>(z2.builds.keySet()).equals(List.of(B, OTHER)), "both builds, the running one first: " + f2 + " " + z2.builds);
+    }
+
+    /** An .mncf of n cheats, each a write of its own place in main (the first in, of them, in group "Few"), and two masters ahead of them */
+    static String many(int n, int in) {
+        StringBuilder sb = new StringBuilder(String.join("\n", "format = \"mncf/1\"", "name = \"Many\"", "", "[game]", "platform = \"switch\"", "id = \"" + TID + "\"", "",
+                "[builds.\"1.0.0\"]", "modules = { main = \"" + B + "\" }", "", ""));
+        for (int m = 0; m < 2; m++) {
+            sb.append("[[cheat]]\nid = \"setup").append(m).append("\"\nname = \"Setup ").append(m).append("\"\nmaster = true\n\n  [[cheat.write]]\n  at = { module = \"main\", offset = 0x")
+                    .append(Integer.toHexString(0x8000 + 4 * m)).append(" }\n  type = \"u32\"\n  value = ").append(m + 1).append("\n\n");
+        }
+        for (int i = 0; i < n; i++) {
+            sb.append("[[cheat]]\nid = \"c").append(i).append("\"\nname = \"Cheat ").append(i).append("\"\n").append(i < in ? "group = \"Few\"\n" : "")
+                    .append("\n  [[cheat.write]]\n  at = { module = \"main\", offset = 0x").append(Integer.toHexString(0x1000 + 4 * i)).append(" }\n  type = \"u32\"\n  value = ").append(i).append("\n\n");
+        }
+        return sb.toString();
+    }
+
+    /** An Atmosphère file whose master writes words places from at, and two cheats: one on the master's first place (so it requires it), one apart */
+    static String withMaster(String name, int at, int words) {
+        StringBuilder sb = new StringBuilder("{" + name + " setup}\n");
+        for (int i = 0; i < words / 3; i++) sb.append(String.format("04000000 %08X 00000001\n", at + 4 * i));
+        sb.append(String.format("\n[%s on the setup]\n04000000 %08X 00000002\n\n[%s apart]\n04000000 %08X 00000003\n", name, at, name, at + 0x800));
+        return sb.toString();
+    }
+
+    /** Atmosphère's limits (spec section 15) in the ZIP, across sources; Peanuts' own engine is not held to them */
+    static void limits(File root, File pk) throws Exception {
+        MncfBuild.Game g = game(B, pk);
+        // more than 127 cheats: Peanuts runs them all, the ZIP has 127 and names the rest; group entries that would leave cheats out are not written
+        File big = new File(root, "zip-many");
+        CheatSources.addMncf(big, "many", CheatSources.FROM_FILE, u(many(130, 3)), 1);
+        MncfBuild.Ready r = CheatSources.list(big).get(0).ready(g);
+        int runs = 0, masters = 0;
+        for (MncfBuild.Cheat c : r.cheats) {
+            if (c.reason == null && !c.master) runs++;
+            if (c.master && c.reason == null && c.lines.size() == 1) masters++;
+        }
+        check(runs == 130 && masters == 2, "Peanuts runs every cheat, each master with its own code: " + runs + " " + masters);
+        MncfExport.Zip z = MncfExport.zip(big, "Example Game", g, null, new LinkedHashMap<>());
+        String t;
+        try (java.util.zip.ZipInputStream zi = new java.util.zip.ZipInputStream(new ByteArrayInputStream(z.bytes))) { zi.getNextEntry(); t = new String(zi.readAllBytes(), StandardCharsets.UTF_8); }
+        check(z.cheats == 127 && z.left.size() == 3 && z.left.get(0)[0].equals("Cheat 127") && z.left.get(0)[1].equals("An Atmosphère file holds at most 127 cheats.")
+                && !t.contains("[Few]") && t.startsWith("{Setup 0}\n04000000 00008000 00000001\n04000000 00008004 00000002\n"), "127 cheats, one master: " + z.cheats + " " + z.left.size());
+        CheatSources.addMncf(new File(root, "zip-few"), "few", CheatSources.FROM_FILE, u(many(5, 3)), 1);
+        MncfExport.Zip zf = MncfExport.zip(new File(root, "zip-few"), "Example Game", g, null, new LinkedHashMap<>());
+        try (java.util.zip.ZipInputStream zi = new java.util.zip.ZipInputStream(new ByteArrayInputStream(zf.bytes))) { zi.getNextEntry(); t = new String(zi.readAllBytes(), StandardCharsets.UTF_8); }
+        check(t.contains("[Few]\n\n[Cheat 0]\n") && t.contains("[Few]\n20000001\n\n[Cheat 3]\n") && zf.cheats == 5, "where there is room, the groups:\n" + t);
+        // the master codes of several sources are one entry of at most 256 words: a master past that stays out, with the cheats of its source that need it
+        File two = new File(root, "zip-masters");
+        CheatSources.add(two, "first", CheatSources.FROM_ZIP, Map.of(B, withMaster("First", 0x1000, 210)), 1, known(pk, null), null);
+        CheatSources.add(two, "second", CheatSources.FROM_ZIP, Map.of(B, withMaster("Second", 0x4000, 210)), 1, known(pk, null), null);
+        MncfExport.Zip zm = MncfExport.zip(two, "Example Game", g, null, new LinkedHashMap<>());
+        try (java.util.zip.ZipInputStream zi = new java.util.zip.ZipInputStream(new ByteArrayInputStream(zm.bytes))) { zi.getNextEntry(); t = new String(zi.readAllBytes(), StandardCharsets.UTF_8); }
+        Map<String, String> left = new LinkedHashMap<>();
+        for (String[] l : zm.left) left.put(l[0], l[1]);
+        check(t.startsWith("{First setup}\n") && !t.contains("00004000 00000001") && t.contains("[Second apart]") && t.contains("[First on the setup]")
+                && left.keySet().equals(Set.of("Second on the setup"))
+                && left.get("Second on the setup").equals("It needs a code that is always on, and that code does not fit in one Atmosphère file beside the others."),
+                "one master of at most 256 words: " + left + "\n" + t.substring(0, Math.min(t.length(), 60)));
+        // a file of 64 KB or more Atmosphère refuses: the cheats that would make it that big stay out; a name keeps the 63 bytes Atmosphère keeps
+        StringBuilder huge = new StringBuilder();
+        for (int i = 0; i < 40; i++) {
+            huge.append(i == 0 ? "[" + "A very long name ".repeat(5).trim() + "]\n" : "[Long " + i + "]\n");
+            for (int k = 0; k < 67; k++) huge.append(String.format("04000000 %08X 00000001\n", 0x1000 + 4 * (67 * i + k)));
+            huge.append('\n');
+        }
+        File hf = new File(root, "zip-huge");
+        CheatSources.add(hf, "huge", CheatSources.FROM_ZIP, Map.of(B, huge.toString()), 1, known(pk, null), null);
+        MncfExport.Zip zh = MncfExport.zip(hf, "Example Game", g, null, new LinkedHashMap<>());
+        byte[] file;
+        try (java.util.zip.ZipInputStream zi = new java.util.zip.ZipInputStream(new ByteArrayInputStream(zh.bytes))) { zi.getNextEntry(); file = zi.readAllBytes(); }
+        t = new String(file, StandardCharsets.UTF_8);
+        boolean allBig = !zh.left.isEmpty();
+        for (String[] l : zh.left) allBig &= l[1].equals("An Atmosphère file can be at most 64 KB, and the cheats before this one fill it.");
+        String first = t.substring(1, t.indexOf(']'));
+        check(file.length < 0x10000 && zh.cheats + zh.left.size() == 40 && zh.cheats > 30 && allBig && zh.left.get(zh.left.size() - 1)[0].equals("Long 39"),
+                "under 64 KB: " + file.length + " " + zh.cheats + " " + zh.left.size());
+        check(first.getBytes(StandardCharsets.UTF_8).length <= 63 && first.startsWith("A very long name A very long name"), "a name of at most 63 bytes: " + first);
     }
 
     // ---- A real file, when one is given (never in the repository) ----

@@ -24,6 +24,10 @@ import dev.peanuts.mods.CheatFile;
 import dev.peanuts.mods.CheatImport;
 import dev.peanuts.mods.CheatPick;
 import dev.peanuts.mods.CheatSources;
+import dev.peanuts.mods.CheatValues;
+import dev.peanuts.mods.MncfBuild;
+import dev.peanuts.mods.MncfConvert;
+import dev.peanuts.mods.MncfExport;
 
 /**
  * PEANUTS: Game settings' Cheat files for every game, on the game's cheat sources (dev.peanuts.mods.CheatSources) instead of upstream's imported/ folder. A
@@ -33,8 +37,9 @@ import dev.peanuts.mods.CheatSources;
  * <li>Import cheat file… takes a .txt or a .zip, Import cheat folder… a folder, each in the Atmosphère, Eden / Yuzu or Ryujinx layout or as a bare build file
  *     (dev.peanuts.mods.CheatImport): the files of the game's build become a source, the other versions' files are kept with it; another game's, a file that
  *     names no build, or another version alone are refused with upstream's words.</li>
- * <li>A source's line: on or off as a whole, or removed. Export cheats… writes the sources in upstream's export format; Import cheats… reads one as before (into
- *     imported/, which a start or this sheet makes sources: CheatSources.migrate).</li>
+ * <li>A source's line: on or off as a whole, or removed. Export cheats… writes the sources as .mncf (one) or .mncp (several: dev.peanuts.mods.MncfExport);
+ *     Import cheats… reads upstream's export zip as before (into imported/, which a start or this sheet makes sources: CheatSources.migrate).</li>
+ * <li>Every source is an .mncf file: an Atmosphère file the player adds is converted with what the app knows of the game ({@link #known}).</li>
  * </ul>
  */
 public final class CheatsBridge {
@@ -77,9 +82,59 @@ public final class CheatsBridge {
         try { return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8); } catch (IOException e) { return null; }
     }
 
-    /** Upstream's imported/ files made sources (once; CheatSources.migrate), quietly: a failure leaves them where they are, and a start reads them there */
-    static void migrate(File folder) {
-        try { CheatSources.migrate(folder, System.currentTimeMillis()); } catch (IOException | RuntimeException e) { android.util.Log.w("peanuts", "cheats: imported files not moved: " + e); }
+    /**
+     * Upstream's imported/ files made sources (once; CheatSources.migrate) and an earlier version's Atmosphère sources made .mncf (CheatSources.upgrade), quietly:
+     * a failure leaves them where they are, and a start tries again
+     */
+    static void migrate(File folder, MncfConvert.Known k) {
+        try { CheatSources.migrate(folder, System.currentTimeMillis(), k); } catch (IOException | RuntimeException e) { android.util.Log.w("peanuts", "cheats: imported files not moved: " + e); }
+        try { CheatSources.upgrade(folder, k); } catch (RuntimeException e) { android.util.Log.w("peanuts", "cheats: earlier sources not converted: " + e); }
+    }
+
+    /**
+     * What a conversion to .mncf knows of the game (MncfConvert.Known): its title ID and name, every build's version the profile names, the pack's build and its
+     * own main (read only when a file is converted), and who adds the file: the name of the user games start with, unless it is still the host's "Player"
+     */
+    public static MncfConvert.Known known(Context c, String titleId, String gameName, String packDir) {
+        Map<String, String> versions = new java.util.LinkedHashMap<>();
+        Profile p = Profile.of(titleId);
+        if (p != null) {
+            try {
+                for (Map.Entry<Long, Map<String, String>> e : p.buildMap().entrySet()) {
+                    String main = e.getValue().get("main"), d = p.display(e.getKey());
+                    if (main != null && main.length() >= 16 && d != null) versions.put(main.substring(0, 16).toUpperCase(Locale.ROOT), d);
+                }
+            } catch (RuntimeException ignored) { }
+        }
+        String author = null;
+        try {
+            String uid = Users.defaultUid(c);
+            for (Users.User u : Users.list(c)) if (u.uid.equals(uid) && !u.name.equals("Player") && !u.name.trim().isEmpty()) author = u.name.trim();
+        } catch (RuntimeException ignored) { }
+        File pack = packDir == null || packDir.isEmpty() ? null : new File(packDir);
+        String build = first(builds(titleId, packDir));
+        return new MncfConvert.Known(titleId, gameName, author, pack != null && dev.peanuts.mods.MncfMain.has(pack) ? build : null, versions, MncfConvert.of(pack));
+    }
+
+    /** Whether the game has files to make .mncf first: upstream's imported files, an earlier version's Atmosphère sources (convert does it) */
+    public static boolean unconverted(Context c, String titleId) {
+        File folder = folder(c, titleId);
+        boolean any = new File(folder, "imported").isDirectory();
+        for (CheatSources.Source s : CheatSources.list(folder)) any |= CheatSources.unconverted(s);
+        return any;
+    }
+
+    /**
+     * Upstream's imported files and an earlier version's Atmosphère sources made .mncf now (CheatSources.migrate, upgrade), with what the app knows of the game.
+     * Never on the main thread: it reads the game's main and looks up every cheat's place in it, up to a minute for a large game (CheatsPage.convert)
+     */
+    public static void convert(Context c, String titleId, String gameName, String packDir) {
+        if (unconverted(c, titleId)) migrate(folder(c, titleId), known(c, titleId, gameName, packDir));
+    }
+
+    /** The game for the .mncf sources (MncfBuild.Game): its build that runs, that build's version, its pack (the game's own main) */
+    public static MncfBuild.Game game(String titleId, String build, String packDir) {
+        return new MncfBuild.Game(titleId, build, version(titleId, build), packDir == null || packDir.isEmpty() ? null : new File(packDir));
     }
 
     private static String first(Set<String> s) { return s.isEmpty() ? null : s.iterator().next(); }
@@ -105,9 +160,26 @@ public final class CheatsBridge {
      * cheat's key; textEnd gives the kinds (CheatFile.parse). The page switches by these keys
      */
     public static CheatSources.Merged merged(Context c, String titleId, String gameDir, String packDir, String build, long textEnd) {
+        return merged(c, titleId, gameDir, packDir, build, textEnd, false);
+    }
+
+    /**
+     * The same; make: a source's .mncf not made ready for the build yet is made now (MncfBuild: it reads the game's main, seconds for a large game, so not on
+     * the main thread); without, it is listed as pending (CheatSources.Block.pending) until {@link #prepare} has made it
+     */
+    public static CheatSources.Merged merged(Context c, String titleId, String gameDir, String packDir, String build, long textEnd, boolean make) {
         String app = appText(packDir, build);
         List<ModCheats.ModFile> mods = ModCheats.of(modDirs(gameDir, titleId, packDir), build, null);
-        return CheatSources.merge(ModCheats.blocks(app == null ? "" : app, folder(c, titleId), build, mods, textEnd));
+        return CheatSources.merge(ModCheats.blocks(app == null ? "" : app, folder(c, titleId), game(titleId, build, packDir), mods, textEnd, make));
+    }
+
+    /** Every source of the game made ready for the build (off the main thread): what a page shows as pending is listed once this is done */
+    public static void prepare(Context c, String titleId, String packDir, String build) {
+        MncfBuild.Game g = game(titleId, build, packDir);
+        for (CheatSources.Source s : CheatSources.list(folder(c, titleId))) {
+            if (!s.file().isFile()) continue;
+            try { s.ready(g); } catch (IOException | RuntimeException e) { android.util.Log.w("peanuts", "cheats: " + s.name + " not made ready for " + build + ": " + e); }
+        }
     }
 
     /** The enabled mods' cheats folders, as GameActivity.start finds them (dev.peanuts.mods.ModRuntime.cheatsDirs beside the game) */
@@ -136,15 +208,16 @@ public final class CheatsBridge {
         try {
             Profile p = Profile.of(titleId);
             if (!CheatSources.appKnown(folder) && (master || p != null && p.cheats)) CheatSources.appEnabled(folder, master);   // only a game that has had the switch writes a state
-            List<CheatSources.Source> moved = CheatSources.migrate(folder, System.currentTimeMillis());
-            if (!moved.isEmpty()) android.util.Log.i("peanuts", "cheats: " + titleId + ": " + moved.size() + " imported file(s) are sources now");
         } catch (IOException | RuntimeException e) {
             android.util.Log.w("peanuts", "cheats: " + titleId + ": the earlier state could not be moved: " + e);
             return master;
         }
+        // upstream's imported files and an earlier version's Atmosphère sources count as they are: the start (ModCheats.install) and the page make them .mncf,
+        // where the pack is known, so the converter has the game's own main for patterns
         if (Boolean.TRUE.equals(CheatSources.appEnabled(folder))) return true;
-        for (CheatSources.Source s : CheatSources.list(folder)) if (s.enabled && !s.files().isEmpty()) return true;
-        return false;
+        for (CheatSources.Source s : CheatSources.list(folder)) if (s.enabled && (s.file().isFile() || CheatSources.unconverted(s))) return true;
+        File[] imported = new File(folder, "imported").listFiles((d, n) -> n.toLowerCase(Locale.ROOT).endsWith(".txt"));
+        return imported != null && imported.length > 0;
     }
 
     // ---- For the in-game Mods tab (dev.peanuts.mods.ModsTab, Part E), in the game's process ----
@@ -175,7 +248,7 @@ public final class CheatsBridge {
     /** CheatsUi.rows (PEANUTS hook): Cheat files, what the game has, opening the sheet. Its tile is the Peanuts folder icon (the sheet imports files and folders) */
     static Ui.Setting filesRow(MainActivity a, Game g, Runnable again) {
         File folder = folder(a, g.titleId);
-        migrate(folder);
+        migrate(folder, known(a, g.titleId, g.name, g.packDir));
         int n = CheatSources.list(folder).size();
         Profile p = Profile.of(g.titleId);
         boolean own = p != null && p.cheats;   // a profile with its own cheat file
@@ -189,7 +262,7 @@ public final class CheatsBridge {
     /** The sheet: the game's own file, each source (a tap: on or off, remove), then Import cheat file…, Import cheat folder…, Export cheats…, Import cheats… */
     static void sheet(MainActivity a, Game g, Runnable again) {
         File folder = folder(a, g.titleId);
-        migrate(folder);
+        migrate(folder, known(a, g.titleId, g.name, g.packDir));
         String build = first(builds(g.titleId, g.packDir));
         Profile p = Profile.of(g.titleId);
         File shipped = g.packDir != null && build != null ? Cheats.packFile(new File(g.packDir), build) : null;
@@ -197,7 +270,7 @@ public final class CheatsBridge {
         List<String> items = new ArrayList<>();
         boolean own = p != null && p.cheats;
         if (own) items.add(shipped != null ? a.getString(R.string.cheats_shipped, shipped.getName()) : a.getString(R.string.cheats_shipped_missing));
-        for (CheatSources.Source s : sources) items.add(sourceLine(s, build));
+        for (CheatSources.Source s : sources) items.add(sourceLine(s, game(g.titleId, build, g.packDir)));
         items.add(a.getString(R.string.cheats_import_file));
         items.add("Import cheat folder…");
         items.add(a.getString(R.string.cheats_export));
@@ -205,31 +278,41 @@ public final class CheatsBridge {
         int base = own ? 1 : 0;
         new PadFocus.Builder(a).setTitle(a.getString(R.string.cheats_files_title)).setItems(items.toArray(new String[0]), (d, w) -> {
             if (w < base) return;   // the game's own file: nothing to do
-            if (w < base + sources.size()) { source(a, folder, sources.get(w - base), build, again); return; }
+            if (w < base + sources.size()) { source(a, folder, sources.get(w - base), game(g.titleId, build, g.packDir), again); return; }
             pendingFor = g;
             pendingAgain = again;
             int k = w - base - sources.size();
             if (k == 0) pick(a, new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), REQ_FILE);
             else if (k == 1) pick(a, new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_FOLDER);
-            else if (k == 2) pick(a, new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip")
-                    .putExtra(Intent.EXTRA_TITLE, Cheats.zipName(g.titleId, new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date()))), REQ_EXPORT);
+            else if (k == 2) pick(a, new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/octet-stream")
+                    .putExtra(Intent.EXTRA_TITLE, MncfExport.fileName(g.name, sources.size() > 1)), REQ_EXPORT);
             else pick(a, new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), REQ_IMPORT_ZIP);
         }).setNegativeButton("Close", null).show();
     }
 
+    /** A source's cheats that can run for this build (its kept .mncf for it; -1 when it was not made ready yet) */
+    static int count(CheatSources.Source s, MncfBuild.Game g) {
+        try {
+            MncfBuild.Ready r = MncfBuild.kept(s.file(), g);
+            if (r == null) return -1;
+            int n = 0;
+            for (MncfBuild.Cheat c : r.cheats) if (!c.master && !c.refused()) n++;
+            return n;
+        } catch (IOException | RuntimeException e) {
+            return 0;
+        }
+    }
+
     /** A source's line in the sheet: its name, how many cheats it has for this build, off */
-    static String sourceLine(CheatSources.Source s, String build) {
-        String t = null;
-        try { t = s.text(build); } catch (IOException ignored) { }
-        String what = t == null ? "for another version" : CheatFile.parse(t, -1).switchable() + " cheats";
+    static String sourceLine(CheatSources.Source s, MncfBuild.Game g) {
+        int n = count(s, g);
+        String what = n < 0 ? "not checked for this build yet" : n == 0 ? "none for this build" : n + " cheats";
         return s.name + " (" + what + (s.enabled ? "" : ", off") + ")";
     }
 
-    private static void source(MainActivity a, File folder, CheatSources.Source s, String build, Runnable again) {
-        String t = null;
-        try { t = s.text(build); } catch (IOException ignored) { }
-        int n = t == null ? 0 : CheatFile.parse(t, -1).switchable();
-        String msg = (t == null ? "None of its cheats are for this game's build: they start to work when the game is that version." : n + " cheats for this game's build.")
+    private static void source(MainActivity a, File folder, CheatSources.Source s, MncfBuild.Game g, Runnable again) {
+        int n = count(s, g);
+        String msg = (n == 0 ? "None of its cheats are for this game's build." : n < 0 ? "Its cheats are checked for this game's build when you open Mods & Cheats." : n + " cheats for this game's build.")
                 + (s.enabled ? " They are listed in the in-game panel from the next start." : " It is off: its cheats are not in the in-game panel.");
         new PadFocus.Builder(a).setTitle(s.name).setMessage(msg)
                 .setPositiveButton(s.enabled ? "Turn off" : "Turn on", (x, y) -> {
@@ -270,9 +353,12 @@ public final class CheatsBridge {
         }
         try {
             if (request == REQ_EXPORT) {
+                String b = first(builds);
+                MncfExport.Out out = MncfExport.make(folder, g.name, b == null ? null : merged(a, g.titleId, g.gameDir, g.packDir, b, textEnd(g.packDir)), Prefs.cheatsOn(a, g.titleId), CheatValues.read(folder));
+                if (out == null) throw new IOException("there are no imported cheats to export");
                 try (OutputStream os = a.getContentResolver().openOutputStream(doc)) {
                     if (os == null) throw new IOException("the place picked cannot be written");
-                    CheatSources.exportZip(os, g.titleId, first(builds), folder, Prefs.cheats(a, g.titleId), Prefs.cheatsOn(a, g.titleId));
+                    os.write(out.bytes);
                 }
                 Toast.makeText(a, a.getString(R.string.cheats_exported), Toast.LENGTH_LONG).show();
             } else {   // upstream's Import cheats…: its zip into imported/, then made sources
@@ -282,7 +368,7 @@ public final class CheatsBridge {
                     c = Cheats.readZip(in, g.titleId, builds);
                 }
                 Cheats.takeZip(folder, c, builds);
-                int n = CheatSources.dropDuplicates(folder, CheatSources.migrate(folder, System.currentTimeMillis()), first(builds));   // its files as sources; one the game has already is not added twice
+                int n = CheatSources.dropDuplicates(folder, CheatSources.migrate(folder, System.currentTimeMillis(), known(a, g.titleId, g.name, g.packDir)));   // its files as sources (.mncf); one the game has already is not added twice
                 if (c.master != null) Prefs.cheats(a, g.titleId, c.master);
                 if (c.on != null) Prefs.cheatsOn(a, g.titleId, c.on);
                 Toast.makeText(a, a.getString(R.string.cheats_zip_done, n), Toast.LENGTH_LONG).show();
@@ -316,11 +402,12 @@ public final class CheatsBridge {
         List<String> added = new ArrayList<>(), same = new ArrayList<>();
         try {
             long now = System.currentTimeMillis();
+            MncfConvert.Known k = known(a, g.titleId, g.name, g.packDir);
             for (Map.Entry<String, Map<String, String>> e : f.sources().entrySet()) {
                 CheatSources.Source had = null;
-                for (Map.Entry<String, String> file : e.getValue().entrySet()) if (builds.contains(file.getKey())) had = CheatSources.sameAs(folder, file.getKey(), file.getValue());
+                for (Map.Entry<String, String> file : e.getValue().entrySet()) if (builds.contains(file.getKey())) had = CheatSources.sameAs(folder, file.getValue());
                 if (had != null) { same.add(had.name); continue; }
-                added.add(CheatSources.add(folder, e.getKey(), r.from, e.getValue(), now++).name);
+                added.add(CheatSources.add(folder, e.getKey(), r.from, e.getValue(), now++, k, r.display != null ? r.display : r.name).name);
             }
         } catch (IOException | RuntimeException e) {
             android.util.Log.w("peanuts", "cheats: keeping a source: " + e);

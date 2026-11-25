@@ -12,6 +12,8 @@ import java.util.Set;
 
 import dev.peanuts.mods.CheatFile;
 import dev.peanuts.mods.CheatSources;
+import dev.peanuts.mods.MncfBuild;
+import dev.peanuts.mods.MncfConvert;
 
 /**
  * PEANUTS: the one merged cheat file a start hands the host (DM_CHEATS), from the game's cheat sources (dev.peanuts.mods.CheatSources: the cheats that come
@@ -29,6 +31,9 @@ import dev.peanuts.mods.CheatSources;
  * <li>A mod's file that cannot be read is left out with a note; the other cheats are installed.</li>
  * <li>Upstream's earlier imports (&lt;folder&gt;/imported/) become sources first (CheatSources.migrate); a toggle kept as "Name (imported)" is given the cheat's new
  *     key as well.</li>
+ * <li>The player's sources are .mncf files (CheatSources): each is made ready for the build that runs (dev.peanuts.mods.MncfBuild, with the game's own main
+ *     from the pack) and goes into the merged file as Atmosphère code, which the host runs as before. Sources an earlier version kept as Atmosphère files
+ *     become .mncf first (CheatSources.upgrade).</li>
  * </ul>
  */
 final class ModCheats {
@@ -100,9 +105,10 @@ final class ModCheats {
      * The merge's blocks: the app's file (shipped) and the player's sources (CheatSources.blocks), upstream's imported files of this build that are still in
      * imported/ (each as a source of its own, by its file name), then the mods' files; textEnd as CheatFile.parse takes it
      */
-    static List<CheatSources.Block> blocks(String shipped, File folder, String build, List<ModFile> mods, long textEnd) {
+    static List<CheatSources.Block> blocks(String shipped, File folder, MncfBuild.Game g, List<ModFile> mods, long textEnd, boolean make) {
         Boolean appOn = CheatSources.appEnabled(folder);
-        List<CheatSources.Block> blocks = CheatSources.blocks(folder, shipped, appOn == null || appOn, build, textEnd);
+        List<CheatSources.Block> blocks = CheatSources.blocks(folder, shipped, appOn == null || appOn, g, textEnd, make);
+        String build = g.build;
         try {
             for (Cheats.Named n : Cheats.importedOf(folder, build)) blocks.add(new CheatSources.Block(IMPORTED + n.label, n.label, true, CheatFile.parse(n.text, textEnd)));
         } catch (IOException e) { /* an imported file that cannot be read: left out, as a source's */ }
@@ -131,10 +137,18 @@ final class ModCheats {
      * added to: the cheats a mod's own .enabled names, the first time they enter the list, and an earlier import's renamed keys (the caller keeps on when it grew)
      */
     static List<Cheats.Entry> install(File shipped, File folder, String build, Set<String> on, List<File> modCheatDirs, List<String> notes) throws IOException {
+        return install(shipped, folder, build, on, modCheatDirs, notes, new MncfConvert.Known(folder.getName(), null, null, null, null, null), new MncfBuild.Game(folder.getName(), build, null, null));
+    }
+
+    /** The same; known: what a conversion of an earlier file knows (CheatsBridge.known), g: the game for the .mncf sources (its pack: the game's own main) */
+    static List<Cheats.Entry> install(File shipped, File folder, String build, Set<String> on, List<File> modCheatDirs, List<String> notes, MncfConvert.Known known, MncfBuild.Game g) throws IOException {
         List<ModFile> mods = of(modCheatDirs, build, notes);
-        List<CheatSources.Source> moved = CheatSources.migrate(folder, System.currentTimeMillis());
+        List<CheatSources.Source> moved = CheatSources.migrate(folder, System.currentTimeMillis(), known);
+        CheatSources.upgrade(folder, known);
         String s = shipped != null ? new String(Files.readAllBytes(shipped.toPath()), StandardCharsets.UTF_8) : "";
-        CheatSources.Merged m = CheatSources.merge(blocks(s, folder, build, mods, -1), dev.peanuts.mods.CheatValues.read(folder));   // with the numbers set in the game's Mods tab
+        List<CheatSources.Block> blocks = blocks(s, folder, g, mods, -1, true);
+        if (notes != null) for (CheatSources.Block b : blocks) if (b.error != null) notes.add("the cheat file of " + b.name + " cannot be used (" + b.error + ")");
+        CheatSources.Merged m = CheatSources.merge(blocks, dev.peanuts.mods.CheatValues.read(folder));   // with the numbers set in the game's Mods tab
         legacyKeys(on, moved, m);
         if (!folder.isDirectory() && !folder.mkdirs()) throw new IOException("cannot create " + folder);
         File[] old = folder.listFiles((d, n) -> n.endsWith(".txt") || n.endsWith(".enabled"));

@@ -852,7 +852,7 @@ public final class GamePage {
                 case GameAreas.GRAPHICS:
                     return GameAreas.line(Boolean.TRUE.equals(f.recommended) ? "Recommended" : null, sv("Resolution"), sv("Upscaler"), sv("Frame rate cap"));
                 case GameAreas.MODS:
-                    return dev.peanuts.mods.CheatsPage.tileLine(a, f.titleId, f.name, f.gameDir, f.packDir);
+                    return dev.peanuts.mods.CheatsPage.tileLine(a, f.titleId, f.name, f.gameDir, f.packDir, f.again);
                 case GameAreas.SAVES:
                     return f.savesLine != null ? f.savesLine : "Back up, restore and import";
                 case GameAreas.OPTIONS: {

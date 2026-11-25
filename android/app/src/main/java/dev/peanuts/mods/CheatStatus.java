@@ -77,7 +77,7 @@ public final class CheatStatus {
     }
 
     /** What a row says while it has the focus (and its details): why it is not possible, else what it changes, and when it waits */
-    public static String line(CheatFile.Cheat c, boolean bad, boolean inHost, String reason) { return line(c, bad, inHost, reason, c.value()); }
+    public static String line(CheatFile.Cheat c, boolean bad, boolean inHost, String reason) { return line(c, bad, inHost, reason, c.number != null ? c.number.own() : c.value()); }
 
     /** The same, a Value cheat writing number (the one set in the tab) */
     public static String line(CheatFile.Cheat c, boolean bad, boolean inHost, String reason, long number) {
@@ -91,6 +91,7 @@ public final class CheatStatus {
 
     /** A refusal in the player's words (the host's detail goes to the log, not here) */
     public static String why(String reason, CheatFile.Cheat c) {
+        if (c.reason() != null) return MncfWords.reason(c.reason(), c.mncf);   // an .mncf cheat that cannot work here: why, before the game ran
         String token = reason == null ? "" : reason.contains(":") ? reason.substring(0, reason.indexOf(':')) : reason;
         switch (token) {
             case "rewritten": return "Peanuts rewrote this place of the game's code while building it, so this cheat cannot change it.";

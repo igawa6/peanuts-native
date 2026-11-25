@@ -16,7 +16,14 @@ APP = REPO / 'android/app/src'
 MODS = APP / 'main/java/dev/peanuts/mods'
 LAUNCHER = APP / 'main/java/dev/nxnative/android'
 TEST = APP / 'jvmtest/java/dev/peanuts/mods/CheatLoaderJvmTest.java'
-CORE = [MODS / 'CheatFile.java', MODS / 'CheatImport.java', MODS / 'CheatSources.java', MODS / 'CheatStatus.java', MODS / 'CheatValues.java']
+CORE = [MODS / 'CheatFile.java', MODS / 'CheatImport.java', MODS / 'CheatSources.java', MODS / 'CheatStatus.java', MODS / 'CheatValues.java',
+        MODS / 'MncfBuild.java', MODS / 'MncfConvert.java', MODS / 'MncfExport.java', MODS / 'MncfFacts.java', MODS / 'MncfMain.java', MODS / 'MncfWords.java']
+MISTEL = REPO / 'dm/third_party/mistel/java'   # Mistel's MIT library for .mncf, shipped unchanged (test_mncf_vendor.py)
+
+
+def compile_mistel(out):
+    """Mistel's library into out (its own code: its warnings are Mistel's to fix, so not -Werror here)"""
+    subprocess.run(['javac', '-nowarn', '-encoding', 'UTF-8', '-d', str(out), *map(str, sorted(MISTEL.rglob('*.java')))], check=True, capture_output=True, text=True)
 UI_FILES = [MODS / 'CheatPick.java', LAUNCHER / 'CheatsBridge.java', MODS / 'CheatsPage.java', MODS / 'CheatImportUi.java',
             MODS / 'ModsTab.java', LAUNCHER / 'ModsPanel.java']   # the words the player reads
 
@@ -26,8 +33,10 @@ class Jvm(unittest.TestCase):
     def test_cheat_loader(self):
         with tempfile.TemporaryDirectory() as t:
             d = Path(t)
-            subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', str(d / 'classes'), *map(str, CORE), str(TEST)],
-                           check=True, capture_output=True, text=True)
+            compile_mistel(d / 'classes')
+            r = subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-cp', str(d / 'classes'), '-d', str(d / 'classes'), *map(str, CORE), str(TEST)],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
             (d / 'work').mkdir()
             args = ['java', '-cp', str(d / 'classes'), 'dev.peanuts.mods.CheatLoaderJvmTest', str(d / 'work')]
             real = os.environ.get('PEANUTS_CHEATS_REAL')
@@ -89,13 +98,13 @@ class Sources(unittest.TestCase):
 
     def test_a_value_cheat_has_a_number(self):   # Part F
         mc = (LAUNCHER / 'ModCheats.java').read_text(encoding='utf-8')
-        self.assertIn('CheatSources.merge(blocks(s, folder, build, mods, -1), dev.peanuts.mods.CheatValues.read(folder))', mc, 'a start writes the kept numbers')
+        self.assertIn('CheatSources.merge(blocks, dev.peanuts.mods.CheatValues.read(folder))', mc, 'a start writes the kept numbers')
         tab = (MODS / 'ModsTab.java').read_text(encoding='utf-8')
         self.assertRegex(tab, r'public View focusSearch\(int direction\)', "the field steps on SidePanel's left / right (its focusSearch)")
         self.assertIn('CheatValues.plain(b.cheat)', tab, 'only a Value cheat with a plain number has the field; a code cheat keeps its words')
         self.assertIn('CheatsBridge.reload()', tab, 'the host reads the merged file again after a new number')
         self.assertIn('setNeutralButton("Reset"', tab, "the details give the file's own number back")
-        self.assertIn('"File: " + b.cheat.value()', tab, "a set number is marked with the file's own beside it")
+        self.assertIn('"File: " + b.cheat.number.own()', tab, "a set number is marked with the file's own beside it")
 
     def test_the_start_merges_the_sources(self):
         mc = (LAUNCHER / 'ModCheats.java').read_text(encoding='utf-8')

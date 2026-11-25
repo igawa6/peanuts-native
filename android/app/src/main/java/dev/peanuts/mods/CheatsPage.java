@@ -41,8 +41,12 @@ import dev.peanuts.ui.PUi;
  *     chips. A switch keeps the toggle for the game's next start (CheatsBridge.on: the toggles the launcher writes into &lt;build&gt;.enabled) and acts at once in a
  *     running game through the in-game panel. A tap on a source opens its sheet: on or off as a whole, other versions, remove.</li>
  * <li>Mods: today's Mods section (dev.peanuts.settings.ModsSection), each mod with "Next start" or "Needs a build".</li>
- * <li>Add: a file (.zip, .txt) or a folder (CheatImportUi); a mod goes to the mod import.</li>
+ * <li>Add: a file (.zip, .txt, .mncf, .mncp) or a folder (CheatImportUi); a mod goes to the mod import. Export, beside Add on the Cheats tab while there are
+ *     sources: the player's sources as .mncf or .mncp.</li>
  * </ul>
+ * Each source is an .mncf file (Mistel Native Cheat Format) made ready for the game's build (MncfBuild): a cheat that cannot work here is listed, off, with
+ * the reason in the player's words (MncfWords); a source signed by a key Peanuts trusts says who signed it, an unsigned one is as any other. A source not made
+ * ready for the build yet (after an update of the game) is made ready off the UI thread, and the page is built again then.
  * On the Thor the bottom screen explains the row the focus is on (BottomScreen.explain): a cheat's kind, what it changes, that it works at once, its source.
  * A, Y and X: switch, details, all off. Nothing here reads or writes a save.
  */
@@ -78,7 +82,7 @@ public final class CheatsPage {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.topMargin = PUi.dp(a, 12);
         box.addView(ui.section("Mods & Cheats"), lp);
-        View row = ui.setting("", "Mods & Cheats", summary(a, g), Feel.row(v -> { gameScroll = scrollY(a); open(a, g, CHEATS, again); }));
+        View row = ui.setting("", "Mods & Cheats", summary(a, g, again), Feel.row(v -> { gameScroll = scrollY(a); open(a, g, CHEATS, again); }));
         if (row instanceof LinearLayout && ((LinearLayout) row).getChildAt(0) instanceof TextView) Icons.tile((TextView) ((LinearLayout) row).getChildAt(0), "mods");
         box.addView(row);
         return box;
@@ -140,11 +144,11 @@ public final class CheatsPage {
         dev.peanuts.settings.ModsSection.listChanged = null;
     }
 
-    /** The tile of the area Mods &amp; Cheats: what the game has (as the Game tab's row said it), or what to do first */
-    public static CharSequence tileLine(Activity a, String titleId, String name, String gameDir, String packDir) {
+    /** The tile of the area Mods &amp; Cheats: what the game has (as the Game tab's row said it), or what to do first; again: the game's page built again */
+    public static CharSequence tileLine(Activity a, String titleId, String name, String gameDir, String packDir, Runnable again) {
         Game g = new Game(titleId, name, gameDir, packDir);
         dev.peanuts.settings.ModsSection.due(a, titleId, name, gameDir, packDir);   // a build with mods that is due starts as when the row showed
-        return summary(a, g);
+        return summary(a, g, again);
     }
 
     static void open(Activity a, Game g, String which, Runnable again) {
@@ -205,6 +209,7 @@ public final class CheatsPage {
         final List<CheatSources.Source> sources;
         final Set<String> on;
         final boolean appHas, appOn;
+        final boolean converting;   // earlier files of the game are being made .mncf (CheatsPage.convert): their sources show in progress
 
         Model(Context c, Game g) {
             this.g = g;
@@ -213,8 +218,10 @@ public final class CheatsPage {
             build = builds.isEmpty() ? null : builds.iterator().next();
             version = build == null ? null : CheatsBridge.version(g.titleId, build);
             textEnd = CheatsBridge.textEnd(g.packDir);
-            CheatsBridge.wanted(c, g.titleId, CheatsBridge.master(c, g.titleId));   // the earlier state moved over once (the app's switch, upstream's imports)
-            merged = build == null ? null : CheatsBridge.merged(c, g.titleId, g.gameDir, g.packDir, build, textEnd);
+            CheatsBridge.wanted(c, g.titleId, CheatsBridge.master(c, g.titleId));   // the earlier state moved over once (the app's switch)
+            // upstream's imports and an earlier version's Atmosphère sources are made .mncf off the UI thread (convert), once a run of the app
+            converting = CheatsBridge.unconverted(c, g.titleId) && (g.titleId.equals(CheatsPage.converting) || !tried.contains(g.titleId));
+            merged = build == null ? null : CheatsBridge.merged(c, g.titleId, g.gameDir, g.packDir, build, textEnd, false);   // the kept ones (prepare makes the others)
             sources = CheatSources.list(folder);
             on = CheatsBridge.on(c, g.titleId);
             appHas = build != null && CheatsBridge.appText(g.packDir, build) != null;
@@ -226,10 +233,14 @@ public final class CheatsPage {
         List<CheatSources.Block> blocks() {
             List<CheatSources.Block> out = new ArrayList<>();
             if (merged != null) for (CheatSources.Row r : merged.rows) if (!out.contains(r.block)) out.add(r.block);
+            if (merged != null) for (CheatSources.Block b : merged.blocks) if (!out.contains(b) && (b.parsed.mncf != null || b.pending || b.error != null)) out.add(b);   // an .mncf whose cheats cannot work here: listed with the reasons
             return out;
         }
 
         CheatSources.Block block(String id) { for (CheatSources.Block b : blocks()) if (b.id.equals(id)) return b; return null; }
+
+        /** Whether a source's file is not made ready for the build yet */
+        boolean pending() { for (CheatSources.Block b : blocks()) if (b.pending) return true; return false; }
 
         /** The cheats the game has now: the switchable ones of the sources that are on */
         int cheats() { return merged == null ? 0 : merged.keys().size(); }
@@ -243,9 +254,11 @@ public final class CheatsPage {
 
     static String count(int n, String one) { return n + " " + one + (n == 1 ? "" : "s"); }
 
-    private static CharSequence summary(Activity a, Game g) {
+    private static CharSequence summary(Activity a, Game g, Runnable again) {
         try {
             Model m = new Model(a, g);
+            convert(a, m, again);
+            if (m.converting) return "Making the cheats ready";
             int mods = modsCount(a, g);
             if (m.build == null) return "Build the game first: cheats are made for one build of it";
             int n = m.cheats(), on = m.onCount();
@@ -286,6 +299,18 @@ public final class CheatsPage {
         android.widget.Button add = PUi.button(a, "Add", PUi.Kind.PRIMARY, Feel.button(v -> CheatImportUi.add(a, g.titleId)));
         android.graphics.drawable.Drawable plus = Icons.get(a, "add", Icons.Ink.ON_BANANA);
         if (plus != null) { plus.setBounds(0, 0, PUi.dp(a, 20), PUi.dp(a, 20)); add.setCompoundDrawables(plus, null, null, null); add.setCompoundDrawablePadding(PUi.dp(a, 6)); add.setPadding(PUi.dp(a, 12), 0, PUi.dp(a, 16), 0); }
+        // Export beside Add, the other way a cheat file goes: the player's sources as .mncf (one) or .mncp (several), with what is on and the numbers set, or
+        // as a ZIP for other emulators (CheatImportUi.export: a dialog with both)
+        int sources = 0;
+        for (CheatSources.Source s : m.sources) if (s.file().isFile()) sources++;
+        int exportable = sources;
+        android.widget.Button export = !tab.equals(CHEATS) || sources == 0 ? null
+                : PUi.button(a, "Export", PUi.Kind.TONAL, Feel.button(v -> CheatImportUi.export(a, g, exportable)));
+        if (export != null) {
+            export.setContentDescription("Export the cheats");
+            android.graphics.drawable.Drawable out = Icons.get(a, "pack_out", Icons.Ink.NORMAL);
+            if (out != null) { out.setBounds(0, 0, PUi.dp(a, 20), PUi.dp(a, 20)); export.setCompoundDrawables(out, null, null, null); export.setCompoundDrawablePadding(PUi.dp(a, 6)); export.setPadding(PUi.dp(a, 12), 0, PUi.dp(a, 16), 0); }
+        }
 
         LinearLayout head = PUi.row(a);
         head.setMinimumHeight(PUi.dp(a, 56));
@@ -303,14 +328,20 @@ public final class CheatsPage {
         head.addView(titles, PUi.weight());
         LinearLayout top = new LinearLayout(a);   // the page's top, kept at the top while the rest scrolls (stick)
         top.setOrientation(LinearLayout.VERTICAL);
-        if (!own) {   // the area's bar: Cheats | Mods, then Add
+        LinearLayout.LayoutParams el = PUi.wrap();
+        el.leftMargin = PUi.dp(a, 10);
+        if (!own) {   // the area's bar: Cheats | Mods, then Export and Add
             LinearLayout bar = PUi.row(a);
             bar.addView(seg, new LinearLayout.LayoutParams(PUi.dp(a, 240), ViewGroup.LayoutParams.WRAP_CONTENT));
             bar.addView(PUi.spacer(a));
-            bar.addView(add, PUi.wrap());
+            if (export != null) bar.addView(export, PUi.wrap());
+            LinearLayout.LayoutParams al = PUi.wrap();
+            al.leftMargin = export != null ? PUi.dp(a, 10) : 0;
+            bar.addView(add, al);
             top.addView(bar);
         } else if (wide) {
             head.addView(seg, new LinearLayout.LayoutParams(PUi.dp(a, 240), ViewGroup.LayoutParams.WRAP_CONTENT));
+            if (export != null) head.addView(export, el);
             LinearLayout.LayoutParams al = PUi.wrap();
             al.leftMargin = PUi.dp(a, 10);
             head.addView(add, al);
@@ -319,6 +350,7 @@ public final class CheatsPage {
             top.addView(head);
             LinearLayout bar = PUi.row(a);
             bar.addView(seg, PUi.weight());
+            if (export != null) bar.addView(export, el);
             LinearLayout.LayoutParams al = PUi.wrap();
             al.leftMargin = PUi.dp(a, 10);
             bar.addView(add, al);
@@ -393,6 +425,48 @@ public final class CheatsPage {
         return false;
     }
 
+    private static String preparing;   // the title whose sources are being made ready for its build (off the UI thread)
+    private static String converting;   // the title whose earlier files are being made .mncf (off the UI thread)
+    private static final Set<String> tried = new java.util.HashSet<>();   // titles converted in this run of the app: a file that cannot be is tried again at the next run, not at once
+
+    /**
+     * A game's earlier files made .mncf (CheatsBridge.convert: upstream's imports, an earlier version's Atmosphère sources) off the UI thread: it reads the game's
+     * main and looks up every cheat's place, up to a minute for a large game, once after an update of the app. Meanwhile the row says so and the source shows in
+     * progress; then the page, or else the game's page (again), is built again
+     */
+    private static void convert(Activity a, Model m, Runnable again) {
+        if (!m.converting || converting != null) return;
+        Game g = m.g;
+        converting = g.titleId;
+        tried.add(g.titleId);
+        android.content.Context app = a.getApplicationContext();
+        new Thread(() -> {
+            try { CheatsBridge.convert(app, g.titleId, g.name, g.packDir); }
+            catch (RuntimeException e) { android.util.Log.w("peanuts", "cheats: earlier files of " + g.titleId + " not made .mncf: " + e); }
+            finally {
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                    converting = null;
+                    if (openFor != null && openFor.titleId.equals(g.titleId)) rebuild();
+                    else if (again != null && !a.isFinishing() && !a.isDestroyed()) again.run();
+                });
+            }
+        }, "peanuts-cheats-convert").start();
+    }
+
+    /** Sources not made ready for the build yet: made ready off the UI thread, then the page again (once a title at a time) */
+    private static void prepare(Activity a, Model m) {
+        if (m.build == null || preparing != null || !m.pending()) return;
+        Game g = m.g;
+        preparing = g.titleId;
+        android.content.Context app = a.getApplicationContext();
+        new Thread(() -> {
+            try { CheatsBridge.prepare(app, g.titleId, g.packDir, m.build); }
+            finally {
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> { preparing = null; if (openFor != null && openFor.titleId.equals(g.titleId)) rebuild(); });
+            }
+        }, "peanuts-cheats-ready").start();
+    }
+
     private static void cheats(Activity a, LinearLayout content, Model m) {
         Game g = m.g;
         LinearLayout first = PUi.add(content, PUi.listCard(a), 12);
@@ -412,10 +486,12 @@ public final class CheatsPage {
         if (m.appHas) { CheatSources.Block b = m.block(CheatSources.APP); any |= source(a, content, m, b, null, b != null ? b.name : "Comes with the app"); }
         for (CheatSources.Source s : m.sources) any |= source(a, content, m, m.block(s.id), s, s.name);
         for (CheatSources.Block b : blocks) if (b.id.startsWith("mod:")) any |= source(a, content, m, b, null, b.name);
+        convert(a, m, null);
+        prepare(a, m);
         if (!any) {
             LinearLayout card = PUi.add(content, PUi.listCard(a), 12);
             PUi.Setting none = new PUi.Setting(a, "", "No cheats yet", Feel.row(v -> CheatImportUi.add(a, g.titleId)))
-                    .value("Add a zip, a text file or a folder with cheats for " + m.versionWords() + " (build " + shortBuild(m.build) + "). Peanuts never downloads any.");
+                    .value("Add a Mistel cheat file (.mncf), or a zip, a text file or a folder with cheats for " + m.versionWords() + " (build " + shortBuild(m.build) + "). Peanuts never downloads any.");
             rowLook(none.view, "folder");
             explainOnFocus(none.view, () -> BottomScreen.explain(a, null));
             card.addView(none.view);
@@ -427,23 +503,44 @@ public final class CheatsPage {
     private static boolean source(Activity a, LinearLayout content, Model m, CheatSources.Block b, CheatSources.Source s, String name) {
         boolean app = s == null && b != null && b.id.equals(CheatSources.APP), mod = b != null && b.id.startsWith("mod:");
         boolean enabled = s != null ? s.enabled : app ? m.appOn : true;
+        if (s != null && b == null && m.converting && CheatSources.unconverted(s)) {   // an earlier version's file being made .mncf (convert): in progress
+            LinearLayout card = PUi.add(content, PUi.listCard(a), 16);
+            PUi.Setting head = new PUi.Setting(a, "", name, null).value(PUi.joined("Cheats for " + m.versionWords(), shortBuild(m.build)));
+            rowLook(head.view, "folder");
+            head.view.addView(chip(a, enabled ? fromWords(s.from) : "Off", false), chipLp(a));
+            card.addView(head.view);
+            android.widget.ProgressBar bar = PUi.progress(a);
+            bar.setIndeterminate(true);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(PUi.dp(a, 58), 0, PUi.dp(a, 12), PUi.dp(a, 6));
+            card.addView(bar, lp);
+            card.addView(cardLine(a, "Becoming a Mistel cheat file, once after this update of Peanuts. Its cheats show here when that is done."));
+            return true;
+        }
         Set<String> otherBuilds = new LinkedHashSet<>();
-        if (s != null) for (String bid : s.files().keySet()) if (!bid.equals(m.build)) otherBuilds.add(bid);
+        if (s != null) for (String bid : s.builds()) if (!bid.equals(m.build)) otherBuilds.add(bid);
         if (b == null && otherBuilds.isEmpty()) return false;
-        CheatFile.Parsed p = b == null ? null : b.parsed;
+        CheatFile.Parsed p = b == null || b.pending || b.error != null || forOther(b.parsed) ? null : b.parsed;
         int n = p == null ? 0 : p.switchable();
 
         LinearLayout card = PUi.add(content, PUi.listCard(a), 16);
+        // a source not made ready for this build yet, or one that cannot be read, may name no other build: its line says what it is instead
         CharSequence line = p != null ? PUi.joined(count(n, "cheat") + " for " + m.versionWords(), shortBuild(m.build))
-                : PUi.joined("For another version", shortBuild(otherBuilds.iterator().next()));
+                : b != null && b.pending ? PUi.joined("Cheats for " + m.versionWords(), shortBuild(m.build))
+                : b != null && b.error != null ? "Cannot be read"
+                : otherBuilds.isEmpty() ? "For another version" : PUi.joined("For another version", shortBuild(otherBuilds.iterator().next()));
         PUi.Setting head = new PUi.Setting(a, "", name, Feel.row(v -> sourceSheet(a, m, b, s, name, otherBuilds))).value(line);
         rowLook(head.view, mod ? "mods" : "folder");
         String from = s == null ? (app ? "Comes with the app" : "From a mod") : fromWords(s.from);
         head.view.addView(chip(a, enabled ? from : "Off", false), chipLp(a));
         explainOnFocus(head.view, () -> explainSource(a, m, b, s, name, enabled, otherBuilds));
         card.addView(head.view);
+        MncfBuild.Ready ready = b == null ? null : b.parsed.mncf;
+        if (ready != null && ready.verified()) card.addView(cardLine(a, "Signed by " + ready.signer + ": its file is as they made it."));
+        if (b != null && b.pending) { card.addView(cardLine(a, "Looking up its cheats in " + m.versionWords() + ".")); return true; }
+        if (b != null && b.error != null) { card.addView(cardLine(a, "Its file cannot be read: it is damaged or of a newer kind. Remove it, or add a newer copy.")); return true; }
         if (p != null && !p.credits.isEmpty()) card.addView(cardLine(a, "Credit: " + CheatFile.credit(p)));
-        if (p != null && p.unsupported() > 0) card.addView(cardLine(a, p.unsupported() + " more " + (p.unsupported() == 1 ? "is" : "are") + " not supported here: listed, and off."));
+        if (p != null && p.unsupported() > 0) card.addView(cardLine(a, p.unsupported() + " more " + (p.unsupported() == 1 ? "is" : "are") + (p.mncf != null ? " not possible here: listed with the reason, and off." : " not supported here: listed, and off.")));
         if (p != null && !p.masters.isEmpty() && enabled) {
             List<String> ms = new ArrayList<>();
             for (CheatFile.Cheat c : p.masters) ms.add(c.name);
@@ -462,6 +559,13 @@ public final class CheatsPage {
             for (CheatFile.Cheat c : e.getValue()) list.addView(cheatRow(a, m, b, c, name, from));
         }
         return true;
+    }
+
+    /** An .mncf block none of whose cheats is for this build (each refused as build-unknown): shown as a source for another version */
+    static boolean forOther(CheatFile.Parsed p) {
+        if (p == null || p.mncf == null || p.cheats.isEmpty() && p.masters.isEmpty()) return p != null && p.mncf != null;
+        for (CheatFile.Cheat c : p.cheats) if (!"build-unknown".equals(c.reason())) return false;
+        return p.masters.isEmpty();
     }
 
     static String fromWords(String from) {
@@ -490,8 +594,7 @@ public final class CheatsPage {
         col.addView(t);
         LinearLayout chips = PUi.row(a);
         chips.setPadding(0, PUi.dp(a, 4), 0, 0);
-        chips.addView(chip(a, c.kind.label, false));
-        if (c.holdLabel() != null) { LinearLayout.LayoutParams lp = PUi.wrap(); lp.leftMargin = PUi.dp(a, 6); chips.addView(chip(a, c.holdLabel(), true), lp); }
+        chips(a, chips, c);
         col.addView(chips);
         row.addView(col, PUi.weight());
         Switch sw = new Switch(a);
@@ -504,8 +607,10 @@ public final class CheatsPage {
         Runnable explain = () -> explainCheat(a, m, c, key, sw.isChecked(), source, from);
         sw.setOnCheckedChangeListener((v, x) -> {
             Feel.toggled(v, x);
+            Set<String> others = m.merged.related(m.on, key, x);   // an .mncf cheat's relations: what it needs on, what it cannot be on with off
             CheatsBridge.on(a, m.g.titleId, key, x);
             if (x) m.on.add(key); else m.on.remove(key);
+            if (!others.isEmpty()) { CheatsBridge.on(a, m.g.titleId, m.on); rebuild(); return; }
             explain.run();
         });
         row.setOnClickListener(v -> { if (can) sw.toggle(); else details(a, c, source, from); });
@@ -518,6 +623,16 @@ public final class CheatsPage {
         row.setOnLongClickListener(v -> { details(a, c, source, from); return true; });
         explainOnFocus(row, explain);
         return row;
+    }
+
+    /** A cheat's chips: its kind ("Not possible here" for an .mncf cheat that cannot work here), its hold buttons, and what its file warns of */
+    private static void chips(Context a, LinearLayout chips, CheatFile.Cheat c) {
+        chips.addView(chip(a, c.reason() != null ? "Not possible here" : c.kind.label, false));
+        if (c.holdLabel() != null) { LinearLayout.LayoutParams lp = PUi.wrap(); lp.leftMargin = PUi.dp(a, 6); chips.addView(chip(a, c.holdLabel(), true), lp); }
+        if (c.mncf != null && c.reason() == null) for (String t : c.mncf.tags) {
+            String w = t.equals("may_crash") ? "May crash the game" : t.equals("touches_save") ? "Changes your save" : null;
+            if (w != null) { LinearLayout.LayoutParams lp = PUi.wrap(); lp.leftMargin = PUi.dp(a, 6); chips.addView(chip(a, w, false), lp); }
+        }
     }
 
     /** X: every cheat of the game off, for the next start and in a running game's panel */
@@ -534,8 +649,7 @@ public final class CheatsPage {
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
         LinearLayout chips = PUi.row(a);
-        chips.addView(chip(a, c.kind.label, false));
-        if (c.holdLabel() != null) { LinearLayout.LayoutParams lp = PUi.wrap(); lp.leftMargin = PUi.dp(a, 6); chips.addView(chip(a, c.holdLabel(), true), lp); }
+        chips(a, chips, c);
         box.addView(chips);
         PUi.add(box, PUi.body(a, CheatFile.describe(c)), 12);
         PUi.add(box, PUi.small(a, "From " + source + (from.startsWith("From ") ? ", " + from.substring(5) : "") + "." + (c.group.isEmpty() ? "" : " In " + c.group + ".")), 8);
@@ -560,14 +674,18 @@ public final class CheatsPage {
         PUi.add(box, PUi.body(a, what + (app ? " They come with the app for this game." : " " + fromWords(s.from) + ".")), 0);
         if (p != null && !p.credits.isEmpty()) PUi.add(box, PUi.small(a, "Credit: " + CheatFile.credit(p)), 8);
         if (!otherBuilds.isEmpty()) {
-            PUi.add(box, PUi.section(a, "For another version"), 16);
+            PUi.add(box, PUi.section(a, "For other versions too"), 16);
             for (String bid : otherBuilds) {
                 String v = CheatsBridge.version(m.g.titleId, bid);
-                int n = 0;
-                try { String text = s.text(bid); if (text != null) n = CheatFile.parse(text, -1).switchable(); } catch (IOException ignored) { }
-                PUi.add(box, PUi.small(a, PUi.joined(count(n, "cheat"), v != null ? v : null, "build " + bid)), 6);
+                PUi.add(box, PUi.small(a, v != null ? v + ", build " + bid : "Build " + bid), 6);
             }
-            PUi.add(box, PUi.small(a, "They start to work when the game is that version."), 6);
+            PUi.add(box, PUi.small(a, "Its cheats for those versions start to work when the game is one of them."), 6);
+        }
+        MncfBuild.Ready ready = b == null ? null : b.parsed.mncf;
+        if (ready != null && ready.file != null) {
+            Map<String, Object> origin = ready.file.origin();
+            Object site = origin == null ? null : origin.get("site"), orig = origin == null ? null : origin.get("name");
+            if (orig != null || site != null) PUi.add(box, PUi.small(a, "Added from " + (orig != null ? orig : site) + (orig != null && site != null ? ", from " + site : "") + "."), 8);
         }
         AlertDialog.Builder d = PUi.sheet(a, name, box).setNegativeButton("Close", null);
         d.setPositiveButton(on ? "Turn off" : "Turn on", Feel.confirm((x, w) -> {

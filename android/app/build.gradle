@@ -380,6 +380,7 @@ android {
         main {
             res.srcDirs += nxPlay || nxLive ? 'src/variant-play/res' : 'src/variant-test/res'
             java.srcDirs += 'src/ondevice/java'
+            java.srcDirs += '../../dm/third_party/mistel/java'   // PEANUTS: Mistel's MIT library for .mncf cheat files, shipped unchanged (dm/third_party/mistel/README.md)
         }
         if (nxApp == 'peanuts') { release { res.srcDirs += 'src/peanuts/res' }; debug { res.srcDirs += 'src/peanuts/res' } }   // PEANUTS: peanut icon/background overlay (a build type's res overrides main's by name)
         // The service and its permissions, merged over the main manifest (a build type's manifest is an overlay)

@@ -26,7 +26,9 @@ import java.util.zip.ZipInputStream;
  * <li>Eden and Yuzu: load/&lt;TID&gt;/&lt;name&gt;/cheats/&lt;BID&gt;.txt, also without load/;</li>
  * <li>Ryujinx: mods/contents/&lt;TID&gt;/&lt;name&gt;/cheats/&lt;BID&gt;.txt;</li>
  * <li>a mod's own folder: &lt;name&gt;/cheats/&lt;BID&gt;.txt;</li>
- * <li>a bare &lt;BID&gt;.txt, or any .txt whose first line is "build &lt;BID&gt;".</li>
+ * <li>a bare &lt;BID&gt;.txt, or any .txt whose first line is "build &lt;BID&gt;";</li>
+ * <li>an .mncf file anywhere in it (the Mistel Native Cheat Format: one file for all of a game's builds), or the .mncf files of an .mncp pack
+ *     ({@link #fromPack}: its manifest and every file's hash checked).</li>
  * </ul>
  * BID is 16 hex digits (the first 8 bytes of main's build ID) or 32. A file whose BID is one of the game's main builds is for the game; any other is "for another
  * version", with its BID; one under another game's TID is left out. A pick with romfs or exefs folders is a mod and goes to the mod import (ModImporter), which
@@ -36,6 +38,8 @@ public final class CheatImport {
     private CheatImport() {}
 
     public static final int MAX_FILE = 256 * 1024, MAX_TXT = 64, MAX_PATHS = 20000;
+    public static final int MAX_MNCF = io.github.davdxpx.mistel.mncf.Mncf.MAX_FILE;   // an .mncf may be larger than an Atmosphère file: the format's own limit
+    public static final int MAX_PACK = 32 * 1024 * 1024;                               // an .mncp read whole (cheat packs are small; a mod's zip is not read this way)
 
     /** A .txt of the pick: its path in it ('/' between folders) and its bytes */
     public static final class In {
@@ -57,14 +61,29 @@ public final class CheatImport {
         @Override public String toString() { return path + ":" + bid + (set != null ? "/" + set : "") + ":" + cheats(); }
     }
 
+    /** One .mncf file found: its path, its bytes as they are (kept so; a signature stays good), the file read (null: it cannot be used, error says why) */
+    public static final class MncfHit {
+        public final String path, error;
+        public final byte[] data;
+        public final io.github.davdxpx.mistel.mncf.MncfFile file;
+        MncfHit(String path, byte[] data, io.github.davdxpx.mistel.mncf.MncfFile file, String error) { this.path = path; this.data = data; this.file = file; this.error = error; }
+        /** Its cheats (not the masters) */
+        public int cheats() { int n = 0; if (file != null) for (io.github.davdxpx.mistel.mncf.Cheat c : file.cheats()) if (!c.isMaster()) n++; return n; }
+        /** The name it is added under: its file's name without .mncf */
+        public String name() { return new File(path).getName().replaceFirst("(?i)\\.mncf$", ""); }
+        @Override public String toString() { return path + ":" + (file == null ? error : cheats() + " cheats"); }
+    }
+
     /** What the pick holds */
     public static final class Found {
         public final List<Hit> forGame = new ArrayList<>(), otherVersion = new ArrayList<>(), otherGame = new ArrayList<>();
         public final List<String> noBuild = new ArrayList<>();   // cheat files that name no build (their paths)
+        public final List<MncfHit> mncf = new ArrayList<>(), mncfOtherGame = new ArrayList<>(), mncfBroken = new ArrayList<>();   // .mncf files: the game's, another game's, unreadable ones
+        public boolean pack;                                      // a pick with pack.toml at its root: an .mncp, read again whole (fromPack)
         public boolean mod;                                       // romfs or exefs folders in it: a mod
         public String name;                                       // the source's name
 
-        public int cheats() { int n = 0; for (Hit h : forGame) n += h.parsed.switchable(); return n; }
+        public int cheats() { int n = 0; for (Hit h : forGame) n += h.parsed.switchable(); for (MncfHit m : mncf) n += m.cheats(); return n; }
         /** The game's cheats that are Not supported (listed, never switched) */
         public int unsupported() { int n = 0; for (Hit h : forGame) n += h.parsed.unsupported(); return n; }
         public int otherCheats() { int n = 0; for (Hit h : otherVersion) n += h.cheats(); return n; }
@@ -141,8 +160,10 @@ public final class CheatImport {
     public static Found read(List<In> files, List<String> paths, String titleId, Set<String> builds, String nameHint) {
         Found f = new Found();
         for (String p : paths) if (modPath(p)) { f.mod = true; break; }
+        for (String p : paths) if (norm(p).equals("pack.toml")) { f.pack = true; break; }
         List<String> taken = new ArrayList<>();   // the game's files' texts: one zip with the same file in two layouts adds it once
         for (In in : files) {
+            if (in.path.toLowerCase(Locale.ROOT).endsWith(".mncf")) { mncf(f, in, titleId); continue; }
             if (in.data.length > MAX_FILE) continue;
             String text = new String(in.data, StandardCharsets.UTF_8);
             if (text.indexOf('\0') >= 0) continue;
@@ -167,6 +188,42 @@ public final class CheatImport {
         return f;
     }
 
+    /** An .mncf of the pick: the game's (its game ID the game's, or that of another program of it), another game's, or one that cannot be used */
+    static void mncf(Found f, In in, String titleId) {
+        String path = norm(in.path);
+        for (MncfHit h : f.mncf) if (java.util.Arrays.equals(h.data, in.data)) return;   // the same file twice in one pick
+        try {
+            io.github.davdxpx.mistel.mncf.MncfFile m = io.github.davdxpx.mistel.mncf.Mncf.load(in.data, MncfBuild.TRUST);
+            MncfHit h = new MncfHit(path, in.data, m, null);
+            if (!"switch".equals(m.platform().name()) || titleId != null && !sameGame(m.gameId(), titleId)) f.mncfOtherGame.add(h);
+            else f.mncf.add(h);
+        } catch (io.github.davdxpx.mistel.mncf.MncfException e) {
+            f.mncfBroken.add(new MncfHit(path, in.data, null, e.code()));
+        }
+    }
+
+    /**
+     * An .mncp pack read whole (Mistel's spec, section 13): its .mncf files whose hash its manifest holds, as the pick's files; paths gets every file it
+     * lists. IOException when the pack cannot be used at all (not a pack, its manifest's signature invalid or revoked); a file whose hash differs or that is
+     * missing is left out and named in broken
+     */
+    public static List<In> fromPack(byte[] zip, List<String> paths, List<String> broken) throws IOException {
+        io.github.davdxpx.mistel.mncf.Pack pack;
+        try {
+            pack = io.github.davdxpx.mistel.mncf.PackReader.read(zip, MncfBuild.TRUST);
+        } catch (io.github.davdxpx.mistel.mncf.MncfException e) {
+            throw new IOException("It is not a cheat pack Peanuts can read (" + e.code() + ").", e);
+        }
+        if (!pack.usable()) throw new IOException("The pack was changed after it was signed, so none of its cheats were added.");
+        List<In> out = new ArrayList<>();
+        for (io.github.davdxpx.mistel.mncf.PackFile pf : pack.files()) {
+            if (paths.size() < MAX_PATHS) paths.add(pf.path());
+            if (!io.github.davdxpx.mistel.mncf.PackFile.OK.equals(pf.status())) { broken.add(pf.path() + ": " + pf.status()); continue; }
+            if (pf.path().toLowerCase(Locale.ROOT).endsWith(".mncf")) out.add(new In(pf.path(), pf.data()));
+        }
+        return out;
+    }
+
     // ---- Reading a pick ----
 
     private static byte[] readMax(InputStream in, int max) throws IOException {
@@ -179,15 +236,16 @@ public final class CheatImport {
         return o.toByteArray();
     }
 
-    /** A zip's .txt files (at most MAX_TXT, each at most MAX_FILE) and every path in it into paths */
+    /** A zip's .txt files (at most MAX_TXT, each at most MAX_FILE) and .mncf files (each at most MAX_MNCF), and every path in it into paths */
     public static List<In> fromZip(InputStream in, List<String> paths) throws IOException {
         List<In> out = new ArrayList<>();
         try (ZipInputStream z = new ZipInputStream(in)) {
             for (ZipEntry e; (e = z.getNextEntry()) != null; ) {
                 String n = e.getName();
                 if (paths.size() < MAX_PATHS) paths.add(n);
-                if (e.isDirectory() || !n.toLowerCase(Locale.ROOT).endsWith(".txt") || out.size() >= MAX_TXT) continue;
-                byte[] b = readMax(z, MAX_FILE);
+                boolean mncf = n.toLowerCase(Locale.ROOT).endsWith(".mncf");
+                if (e.isDirectory() || !mncf && !n.toLowerCase(Locale.ROOT).endsWith(".txt") || out.size() >= MAX_TXT) continue;
+                byte[] b = readMax(z, mncf ? MAX_MNCF : MAX_FILE);
                 if (b != null) out.add(new In(n, b));
             }
         } catch (IllegalArgumentException e) {   // a name the zip's charset cannot read
@@ -212,7 +270,8 @@ public final class CheatImport {
             if (paths.size() >= MAX_PATHS) return;
             paths.add(f.isDirectory() ? p + "/" : p);
             if (f.isDirectory()) { if (!modPath(p)) walk(f, p, depth + 1, out, paths); continue; }
-            if (!f.getName().toLowerCase(Locale.ROOT).endsWith(".txt") || out.size() >= MAX_TXT || f.length() > MAX_FILE) continue;
+            boolean mncf = f.getName().toLowerCase(Locale.ROOT).endsWith(".mncf");
+            if (!mncf && !f.getName().toLowerCase(Locale.ROOT).endsWith(".txt") || out.size() >= MAX_TXT || f.length() > (mncf ? MAX_MNCF : MAX_FILE)) continue;
             out.add(new In(p, Files.readAllBytes(f.toPath())));
         }
     }
