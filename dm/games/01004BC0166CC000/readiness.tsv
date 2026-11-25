@@ -1,2 +1,5 @@
 # PEANUTS: First station encounter cleared on Turnip with the matching bank; later progression is untested.
+# Drivers on the 0.1.8 runtime (AYN Thor, Adreno 740, 2026-11-25, the note): Turnip v27.0.0-R1 draws the station correctly and the first encounter clears;
+# Turnip 27.0.0-R2 plays it but the scene is severely overexposed (near white); the stock Qualcomm driver (Vulkan 1.3.128) boots to the title, then
+# stopped on a SIGBUS in libhwui.so as the station scene began (one run). No readiness fact names a driver build, so this is no row
 status	bring-up
