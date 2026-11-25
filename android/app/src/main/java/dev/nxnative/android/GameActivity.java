@@ -711,7 +711,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         // PEANUTS: aspect_plan rows (aspect_plan.h) are exact-build: pass them, and a shape, only for a main build they name
         boolean aspectPlanOk = prof == null || prof.aspectPlanMatches(BuildCheck.builds(pack).get("main"));
         if (prof != null && aspectPlanOk && !prof.aspectPlan.isEmpty()) env.add("DM_ASPECT_PLAN=" + prof.aspectPlan);
-        runFill = aspectPlanOk && variant == null && ScreenShape.CHOICE.equals(aspect) && GameSettings.fillable(Profile.of(id));   // PEANUTS: Display > Fill at this start
+        runFill = aspectPlanOk && variant == null && ScreenShape.CHOICE.equals(aspect) && GameSettings.fillable(Profile.of(id), BuildCheck.builds(pack).get("main"));   // PEANUTS: Display > Fill at this start
         if (fpsVariantAtStart != null) {   // PEANUTS: the frame rate's variant (its code; its RomFS overlay goes in with the start's other overlays) wins over an aspect variant: one main a run
             env.add("DM_PATCH_VARIANT=" + fpsVariantAtStart);
             env.add("DM_PRESENT_INTERVAL=display");   // the variant is made for one frame a display tick (Animal Crossing: New Horizons' mod sets the swap interval to 1)
@@ -725,7 +725,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             shapeNote = "[nxlaunch] aspect ratio: the profile's aspect rows are for another game version; 16:9 kept";
         } else if (aspect != null && Profile.of(id) != null && Arrays.asList(Profile.of(id).cameraAspects.split(",")).contains(aspect)) {   // a shape the host's camera patch follows (game.tsv aspect rows): the picture at that shape, no variant
             env.add("DM_VK_PICTURE_ASPECT=" + aspect);
-        } else if (ScreenShape.CHOICE.equals(aspect) && GameSettings.fillable(Profile.of(id))) {   // PEANUTS: fillable, so aspect_plan rows alone do (Display › Fill)   // Screen shape: the window's own shape (ScreenShape), read now, once; a 16:9-ish window passes nothing
+        } else if (ScreenShape.CHOICE.equals(aspect) && GameSettings.fillable(Profile.of(id), BuildCheck.builds(pack).get("main"))) {   // PEANUTS: fillable, so aspect_plan rows alone do (Display › Fill)   // Screen shape: the window's own shape (ScreenShape), read now, once; a 16:9-ish window passes nothing
             android.graphics.Rect b = getWindowManager().getCurrentWindowMetrics().getBounds();
             String shape = ScreenShape.ratio(b.width(), b.height(), orientationFixed());
             if (shape != null) env.add("DM_VK_PICTURE_ASPECT=" + shape);

@@ -370,8 +370,8 @@ class CtlTest(unittest.TestCase):
         gs = (REPO / 'android/app/src/main/java/dev/nxnative/android/GameSettings.java').read_text(encoding='utf-8')
         body = ctl[ctl.index('private static void set('):]; body = body[:body.index('\n    }')]
         self.assertIn('drivers ? Up.drivers(app) : null', body)
-        self.assertIn('Up.fillable(id)', body)
-        self.assertLess(body.index('Up.fillable(id)'), body.index('Up.apply('), 'Fill is refused before anything is stored')
+        self.assertIn('Up.fillable(app, id)', body)
+        self.assertLess(body.index('Up.fillable(app, id)'), body.index('Up.apply('), 'Fill is refused before anything is stored')
         self.assertIn('Up.fillUntested(id)', body)
         for call in ('"pinThreadsDefault"', '"pinThreads"', '"hold60"', '"select"', '"choice"', '"setDisplay"', 'bottomScreenInGames(c, false)', 'bottomScreenGamesPage(c,'):
             self.assertIn(call, up)

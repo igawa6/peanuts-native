@@ -307,7 +307,7 @@ public final class Ctl {
         String missing = own ? Up.rowMissing(app, ch.key, id) : null;
         if (missing != null) throw new Request.Bad("not_for_this_game", "The game's settings have no such row: " + missing + ".");
         boolean fill = ch.key.equals("display") && Integer.valueOf(2).equals(ch.value);
-        if (fill && !Up.fillable(id)) throw new Request.Bad("not_for_this_game", "This game has no Fill. Display offers Fit and Stretch.");
+        if (fill && !Up.fillable(app, id)) throw new Request.Bad("not_for_this_game", "This game has no Fill. Display offers Fit and Stretch.");
         Up.apply(app, ch, id);
         res.ok(null).put("key", ch.key).put("stored", ch.value == null ? "default" : ch.key.equals("display") ? Settings.DISPLAYS.get((Integer) ch.value) : ch.value).put("effective", ch.effective);
         if (own) res.put("title_id", id);

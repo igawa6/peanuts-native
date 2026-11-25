@@ -302,9 +302,8 @@ final class Up {
     }
 
     /** Whether Display offers Fill for the game (GameSettings.fillable), and whether its Fill rows are untested on a device (Profile.aspectUntested) */
-    static boolean fillable(String titleId) throws ReflectiveOperationException {
-        Object p = call(k("Profile"), null, "of", new Class<?>[] {String.class}, titleId);
-        return Boolean.TRUE.equals(call(k("GameSettings"), null, "fillable", new Class<?>[] {k("Profile")}, p));
+    static boolean fillable(Context c, String titleId) throws ReflectiveOperationException {   // for the pack's own main build (GameSettings.fillable, #362)
+        return Boolean.TRUE.equals(call(k("GameSettings"), null, "fillable", new Class<?>[] {Context.class, String.class}, c, titleId));
     }
 
     static boolean fillUntested(String titleId) throws ReflectiveOperationException {

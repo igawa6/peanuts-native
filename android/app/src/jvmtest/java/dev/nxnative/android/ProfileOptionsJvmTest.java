@@ -181,6 +181,19 @@ public final class ProfileOptionsJvmTest {
             tmpDir.delete();
         }
 
+        // PEANUTS: Display › Fill for the pack's own main build (issue #362: Breath of the Wild's aspect_plan rows are 1.6.0's; on 1.9.0 Fill started at 16:9)
+        String v160 = "8e9978d50bdd20b4c8395a106c27ffde", v190 = "cd57b23fa4bbad65803d9788c01821ee";
+        Profile fill = Profile.parse(oldLine).get(0);
+        check(!fill.fillable(v160) && !fill.fillable(null), "no aspect rows: no Fill");
+        fill.aspectPlan = v160 + ",ratio_fmov,m0xe0ad68,0018211e;" + v160 + ",ratio_fmov,m0x1271870,00b040bd";
+        check(fill.fillable(v160), "aspect_plan rows of the pack's build: Fill");
+        check(!fill.fillable(v190), "aspect_plan rows of another build: no Fill");
+        check(fill.fillable(null), "the pack's build not known: Fill as the profile has it");
+        fill.cameraAspects = "21:9,4:3";
+        check(fill.fillable(v190), "the host's camera patch (aspect rows) holds for every build");
+        fill.aspectPlan = "";
+        check(fill.fillable(v190), "and with no aspect_plan rows at all");
+
         System.out.println("ok");
     }
 }
