@@ -647,6 +647,7 @@ static void chunk(void) {
         VLOG("part %u of the submission of frame %llu ended at %.3f s: %llu draws%s", part, (unsigned long long)g_frame, now_ns() / 1e9, (unsigned long long)(g_stat_draws - g_chunk_d0), zb); }
     vka_gbar_settle(g_cb);   // a game barrier left pending (vka_gbar.c), in this part: it covers the parts after it
     vka_up_flush(); vka_up_throttle();   // the upload batch goes first: the part may use what it made (vka_dev.c "Upload batches")
+    vka_tex_gw_part();   // PEANUTS(upstream-candidate): the part's GPU writes are on the queue from here (vka_tex.c gw_src_overwritten)
     // With the encoder the part's end, its submit and the next part's reset and begin are made on its thread, in order with the calls before: the replay thread goes on
     if (vka_enc_call(part_submit, &pe, sizeof pe)) { vka_enc_call(part_begin, &pb, sizeof pb); vka_enc_switch(next); }
     else { part_submit(&pe); part_begin(&pb); }
@@ -1047,6 +1048,7 @@ static void copy_bt(const p_copy_b2t *c, int to_tex) {
     const vka_fmt *f = &im->f;
     unsigned lv = c->has_view && c->view.set_levels ? c->view.base_level : 0, l0 = c->has_view && c->view.set_layers ? c->view.min_layer : 0;
     vka_tex_soft_copy(im, to_tex ? (int)lv : -1, g_cb);   // (a soft texture copied from, or into at level 0: made whole first)
+    unsigned lv_game = lv;   // PEANUTS(upstream-candidate): the game's level, for the storage mirror below (vka_img_lv maps it to the image's own)
     if (!vka_img_lv(im, &lv) || c->r.width <= 0 || c->r.height <= 0) return;
     size_t row = S.copy_stride ? (size_t)S.copy_stride : (size_t)((c->r.width + f->bw - 1) / f->bw) * f->bpb, rows = (size_t)(c->r.height + f->bh - 1) / f->bh;
     size_t img = S.copy_img_stride ? (size_t)S.copy_img_stride : row * rows;
@@ -1068,7 +1070,10 @@ static void copy_bt(const p_copy_b2t *c, int to_tex) {
     for (int z = 0; z < (is3d ? 1 : nz) && n < 64; z++)
         rg[n++] = (VkBufferImageCopy){(bounce ? s.off : o) + (is3d ? 0 : z * img), (uint32_t)(row / f->bpb * f->bw), (uint32_t)(img / row * f->bh),
             {asp, lv, is3d ? 0 : l0 + (uint32_t)c->r.zoffset + (uint32_t)z, 1}, {c->r.xoffset, c->r.yoffset, is3d ? c->r.zoffset : 0}, {(uint32_t)c->r.width, (uint32_t)c->r.height, is3d ? (uint32_t)nz : 1}};
-    if (to_tex) { vk.vkCmdCopyBufferToImage(g_cb, bounce ? s.buf : b, im->img, VK_IMAGE_LAYOUT_GENERAL, (uint32_t)n, rg); vka_img_written(im); }
+    if (to_tex) { vk.vkCmdCopyBufferToImage(g_cb, bounce ? s.buf : b, im->img, VK_IMAGE_LAYOUT_GENERAL, (uint32_t)n, rg); vka_img_written(im);
+        // PEANUTS(upstream-candidate): LEGO CITY UNDERCOVER moves texture storage with GPU buffer copies and the copy's result was only in the VkImage: the same bytes into the block-linear storage, in queue order
+        if (!is3d) for (int z = 0; z < nz; z++) if (!vka_tex_b2t_mirror(g_cb, im, c->tex, lv_game, l0 + (unsigned)(c->r.zoffset + z), &c->r, bounce ? s.buf : b, (bounce ? s.off : o) + (VkDeviceSize)z * img, row, row * rows)) break;
+    }
     else {
         vka_tex_gw_opaque(c->src, span);
         vk.vkCmdCopyImageToBuffer(g_cb, im->img, VK_IMAGE_LAYOUT_GENERAL, bounce ? s.buf : b, (uint32_t)n, rg);
@@ -1607,6 +1612,7 @@ static int memu_allowed(uint32_t op) {
     case OP_BIND_VSTREAM: case OP_BIND_VBUF: case OP_BIND_VBUF1: case OP_BIND_UBO: case OP_BIND_UBO_SMALL: case OP_BIND_SSBO: case OP_BIND_TEX: case OP_BIND_TEX1: case OP_BIND_SAMP:
     case OP_BIND_IMG: case OP_STENCIL: case OP_POLY_OFFSET: case OP_SET_TEX_POOL: case OP_SET_SAMP_POOL: case OP_BLEND_COLOR: case OP_DEPTH_CLAMP: case OP_TF_BIND: case OP_TF_STATE:
     case OP_RAST_DISCARD: case OP_VP_SWIZZLE: case OP_PRIM_RESTART: case OP_ALPHA_REF: case OP_PUSH_CONST: return 1;
+    case OP_PATCH_SIZE: return 1;   // PEANUTS(upstream-candidate)
     default: return 0;
     }
 }

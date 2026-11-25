@@ -149,6 +149,7 @@ final class SaveStore {
         int files;
         String source = "";
         int layout = 2;   // 2: main/ and device/ inside; 1 (the first backups): the main save's files themselves
+        String user = "", who = "";   // PEANUTS: the user whose save it is and the name they had then (userOf; the line "user <uid> <name>", which older readers skip)
 
         /** null when the two hold the same paths, kinds, sizes and hashes; else the first difference, in a sentence */
         String diff(Manifest o) { return diff(o, false); }
@@ -243,6 +244,7 @@ final class SaveStore {
         StringBuilder s = new StringBuilder(HEAD + "\n");
         s.append("layout\t").append(m.layout).append('\n').append("source\t").append(m.source).append('\n').append("files\t").append(m.files).append('\n')
                 .append("bytes\t").append(m.bytes).append('\n');
+        if (!m.user.isEmpty()) s.append("user\t").append(m.user).append('\t').append(m.who.replaceAll("\\p{Cntrl}", " ")).append('\n');   // PEANUTS: whose save (userOf)
         for (Map.Entry<String, String> e : m.entries.entrySet()) s.append(e.getValue().replace(' ', '\t')).append('\t').append(e.getKey()).append('\n');
         File tmp = new File(to.getPath() + ".tmp");
         writeSynced(tmp, s.toString().getBytes(StandardCharsets.UTF_8));
@@ -258,6 +260,7 @@ final class SaveStore {
             String[] c = l.split("\t", -1);
             if (c[0].equals("source") && c.length == 2) m.source = c[1];
             else if (c[0].equals("layout") && c.length == 2) m.layout = Integer.parseInt(c[1]);
+            else if (c[0].equals("user") && c.length == 3) { m.user = c[1]; m.who = c[2]; }   // PEANUTS: whose save (userOf)
             else if (c[0].equals("f") && c.length == 4) { m.entries.put(c[3], "f " + c[1] + " " + c[2]); m.files++; m.bytes += Long.parseLong(c[2]); }
             else if (c[0].equals("d") && c.length == 2) m.entries.put(c[1], "d");
         }
@@ -272,11 +275,13 @@ final class SaveStore {
         final long bytes;
         final int files;
         final boolean device;
+        final String user, who;   // PEANUTS: whose save it is (userOf: the manifest's user line, else the folder it was made from) and the name it recorded
 
         Backup(File dir, Manifest m) {
             this.dir = dir;
             name = dir.getName();
             source = m.source;
+            user = userOf(m); who = m.who;   // PEANUTS
             bytes = m.bytes;
             files = m.files;
             device = m.layout >= 2 && m.entries.containsKey(DEVICE);
@@ -357,6 +362,7 @@ final class SaveStore {
         File tmp = new File(backups, PARTIAL + n), dir = new File(backups, n);
         Manifest want = scanParts(parts);
         want.source = save.getAbsolutePath();
+        want.user = userOf(save); want.who = userName(want.user);   // PEANUTS: whose save (userOf)
         try {
             if (!tmp.mkdirs()) throw new IOException("cannot create " + tmp);
             for (Map.Entry<String, File> e : parts.entrySet()) copyTree(e.getValue(), new File(tmp, e.getKey()));
@@ -428,7 +434,11 @@ final class SaveStore {
         try (Lock l = lock(save)) {
             recoverLocked(save);
             Source src = source(from);
-            if (!src.parts.containsKey(DEVICE) && hasFiles(device(save)))
+            // PEANUTS: another user's save is their account save alone, so a backup's device save is not restored into it; and the first user's save takes another
+            // user's without one and keeps its device save, which that other save was played with too (the device save is the game's, every user's: userOf)
+            if (accountOnly(save)) src.parts.remove(DEVICE);
+            if (src.parts.isEmpty()) throw new IOException(from + " holds only a device save, which is every user's: nothing of this user's save to restore");   // PEANUTS
+            if (!src.parts.containsKey(DEVICE) && hasFiles(device(save)) && !fromUser(from, src.manifest))   // PEANUTS: fromUser
                 throw new IOException(from + " has no device save, but " + device(save) + " has one: restoring only the main save would pair it with another device save, so it is not "
                         + "restored. A backup made by this app holds both");
             Restored r = new Restored();
@@ -689,4 +699,50 @@ final class SaveStore {
         String d = name.substring(0, 4) + "-" + name.substring(4, 6) + "-" + name.substring(6, 8) + " " + name.substring(9, 11) + ":" + name.substring(11, 13) + ":" + name.substring(13, 15);
         return d + (name.contains(BEFORE_RESTORE) ? " (automatic, before a restore)" : "");
     }
+
+    // PEANUTS begin: whose save (issue #422). Each user has a save of their own (Users.saveDir: the first user's is the game's save folder, another user's is
+    // <save>_user_<uid> beside it), and the device save (<save>_device) is the game's, every user's, as on the console: another user's save is their account
+    // save alone. A backup records its user in its manifest (Manifest.user); UserSaves names them on the Saves tab, UserSaveDirs lists the folders. Here, not
+    // there, so this class still needs no other file (its JVM tests compile it alone)
+    static final String FIRST_USER = "78626c000000000153574e4154495645";   // Users.FIRST (hle_account.c k_uid): Users has Android classes
+    static final String USER_SUFFIX = "_user_";
+    private static final java.util.regex.Pattern UID = java.util.regex.Pattern.compile("[0-9a-f]{32}");
+
+    /** The user a save folder belongs to: &lt;save&gt;_user_&lt;uid&gt; is that user's; any other folder is a game's own save folder, the first user's */
+    static String userOf(File save) {
+        String n = save.getName();
+        int i = n.length() - USER_SUFFIX.length() - 32;
+        if (i > 0 && n.startsWith(USER_SUFFIX, i) && UID.matcher(n.substring(i + USER_SUFFIX.length())).matches()) return n.substring(i + USER_SUFFIX.length());
+        return FIRST_USER;
+    }
+
+    /** The user of a backup: its manifest's user line, else the folder it was made from (source), else the first user's (every backup made before users) */
+    static String userOf(Manifest m) {
+        if (UID.matcher(m.user).matches()) return m.user;
+        return m.source.isEmpty() ? FIRST_USER : userOf(new File(m.source));
+    }
+
+    /** Whether a save folder is another user's: their account save alone (the device save stays the game's, beside the first user's) */
+    static boolean accountOnly(File save) { return !FIRST_USER.equals(userOf(save)); }
+
+    /**
+     * Whether a restore's source is another user's account save: a user's save folder, or a backup of one. Such a save was played with the game's device save, as
+     * the first user's is, so the first user's save may take it without a device save of its own and keep the one it has
+     */
+    static boolean fromUser(File from, Manifest m) { return accountOnly(from) || !FIRST_USER.equals(userOf(m)); }
+
+    /** Today's users' names by uid, given by UserSaves whenever it reads them: what a backup records as its user's name */
+    private static final Map<String, String> USER_NAMES = new java.util.concurrent.ConcurrentHashMap<>();
+
+    static void userNames(Map<String, String> names) {
+        USER_NAMES.clear();
+        USER_NAMES.putAll(names);
+    }
+
+    /** A user's name as UserSaves last gave it, "" when not known */
+    static String userName(String uid) {
+        String n = USER_NAMES.get(uid);
+        return n == null ? "" : n;
+    }
+    // PEANUTS end
 }

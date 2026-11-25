@@ -34,7 +34,7 @@ final class Profile {
     boolean steps;   // game.tsv has fps_steps rows (build.gradle stepsOf): a framework of whole fixed steps a frame, which Hold 60 fps keeps at one (Prefs.steps)
     boolean presentOnly;   // game.tsv fps_limit_present 1 (build.gradle presentOnlyOf): the frame limit only paces the presents, the game's own logic is not known to follow it (Prefs.presentOnly)
     boolean elapsedFrameStep; // PEANUTS: Android hooks derive game time from elapsed time.
-    boolean ownedByDefault;   // PEANUTS: game.tsv fps_owned_default 1: Game owned until the player picks a rate; the frame limits stay offered (Prefs.paceCap)
+    boolean ownedByDefault;   // PEANUTS: game.tsv fps_owned_default 1: Game owned until the player picked a rate before 0.1.8; it starts at 60 fps now (FrameRateCaps.defaultLimit)
     int fpsLimit;   // game.tsv fps_limit (build.gradle fpsLimitOf): the host's frame limit by default, frames a second (0 = none); the launcher offers a frame limit for it (Prefs.limited)
     String fpsLockerPlan = "";
     String fpsModes = "";   // explicit supported numeric rates; Game owned is always available
@@ -42,6 +42,8 @@ final class Profile {
     String fpsLocker = "";   // reviewed build-gated FPSLocker memory writes, serialized by build.gradle
     int fpsLimitMin = 20;   // checked lower bound for timing correction plans
     int fpsLimitMax = 60;   // launcher-only opt-in to higher caps; does not change the runtime profile ABI
+    int fpsTarget;   // PEANUTS: game.tsv fps_target (build.gradle fpsTargetOf), 0 without one: the host's default target, which a game without a frame limit starts at until the player picks a cap (Prefs.fpsCap)
+    String fpsRates = "";   // PEANUTS: "40,45" when every Android build's main has an engine row of a rate kind (hle_fpslock.c k_locks, build.gradle fpsRatesOf): the fps_target list offers them too (FrameRateCaps.targetCaps)
     boolean drs;   // game.tsv has drs_ctl rows (build.gradle drsOf): the host can steer the game's dynamic resolution (Prefs.drsGame)
     String recommend = "";   // game.tsv recommend rows (build.gradle recommendOf): "<match>|<setting>=<value> …", ';' between them; the recommended settings per phone (Recommend, Prefs.recommended)
     String skipLayers = "";   // game.tsv skip_layers (build.gradle skipLayersOf): pixel shader keys whose draws the Speedhack setting drops (Prefs.skipLayersGame), "" = not offered
@@ -52,7 +54,10 @@ final class Profile {
     String cameraAspects = "";   // game.tsv aspect rows (build.gradle aspectsOf): "21:9,4:3", ',' between them; picture shapes the host's own 3D camera patch follows, with no module variant (Game settings › Aspect ratio)
     String variants = "";   // game.tsv variant rows (build.gradle variantsOf): "<name>=<label>", ',' between them; a native 4:3 mod is "43=4:3" (Game settings › Aspect ratio)
 
-    boolean optInPresentRate() { return presentOnly && fpsLimit == 0 && fpsLimitMax > 60 && !decoupled; } // PEANUTS: Leave present-only high rates opt-in.
+    // PEANUTS: Leave present-only rates opt-in: fps_limit_present with no fps_limit starts at 60 fps (30 without 60: FrameRateCaps.defaultLimit; Game owned before 0.1.8) and offers the frame limits up to fps_limit_max (60 without one).
+    // Before 0.1.8 this also needed fps_limit_max above 60, so the max-60 profiles (Yoshi's Crafted World, Star Ocean The Second Story R, Trails in the Sky 1st
+    // Chapter, Hogwarts Legacy) fell to the fps_target list and lost their caps (fps cap audit B1; FrameRateCaps.legacyLimited keeps the old rule for saved values)
+    boolean optInPresentRate() { return presentOnly && fpsLimit == 0 && !decoupled; }
 
     int[] fpsModeCaps() {
         if (fpsModes.isEmpty()) return new int[0];
@@ -113,6 +118,19 @@ final class Profile {
         for (String v : variants.split(",")) { int eq = v.indexOf('='); if (eq > 0 && v.substring(eq + 1).equals(label)) return v.substring(0, eq); }
         return null;
     }
+    // PEANUTS begin: a frame rate that starts another version of the game's code (game.tsv variant row labelled "<rate>fps": Animal Crossing: New Horizons' 60 fps
+    // speed fix, dm/games/01006F8002326000/speedfix60). The frame limit list's cap of that rate starts the pack's <variant>/ modules and its RomFS overlay, display paced
+    /** The variant the frame rate cap of this rate starts (60 for the stored 0 of the frame limit list), or null when the profile has none for it */
+    String fpsVariant(int rate) {
+        for (String v : variants.split(",")) { int eq = v.indexOf('='); if (eq > 0 && v.substring(eq + 1).equals(rate + "fps")) return v.substring(0, eq); }
+        return null;
+    }
+    /** Whether any frame rate starts a variant: its cap then applies at the next start, from Game owned and back (GameActivity.settingsEnv) */
+    boolean hasFpsVariant() {
+        for (String v : variants.split(",")) if (v.matches("[^=]+=[0-9]+fps")) return true;
+        return false;
+    }
+    // PEANUTS end
     boolean dlss;   // game.tsv has dlss_standin rows (build.gradle dlssOf): the game's DLSS runs on the host's GSR2 stand-in, with its Upscaler modes and sliders (Prefs.dlssGame)
     boolean decoupled;   // game.tsv has fps_decouple rows (build.gradle decoupleOf): the game's speed follows its measured frame rate, so it gets a frame limit (Prefs.paced)
     String romfsChecks = "";   // game.tsv romfs_check rows (build.gradle romfsChecksOf): "<path>|<line>|<expected or main>", ';' between them (RomfsCheck)
@@ -598,6 +616,8 @@ final class Profile {
             p.ownedByDefault = c.length > 38 && c[38].equals("1");   // PEANUTS: fps_owned_default
             p.aspectPlan = c.length > 39 ? c[39] : "";   // PEANUTS: aspect_plan
             p.aspectUntested = c.length > 40 && c[40].equals("1");   // PEANUTS: aspect_plan_untested
+            try { p.fpsTarget = c.length > 41 && !c[41].isEmpty() ? Math.max(0, Integer.parseInt(c[41])) : 0; } catch (NumberFormatException e) { p.fpsTarget = 0; }   // PEANUTS: fps_target
+            p.fpsRates = c.length > 42 ? c[42] : "";   // PEANUTS: the rates the engine rows hold beyond 60, 30, 20 and 15
             out.add(p);
         }
         return Collections.unmodifiableList(out);
@@ -629,15 +649,14 @@ final class Profile {
         if (of(titleId) != null) return null;
         Profile other = otherPrograms(titleId).isEmpty() ? null : otherPrograms(titleId).get(0);
         if (other != null)   // a dump of the game alone, whose other program (a Switch 2 Edition) this APK runs: say what the dump lacks (Pack.playableIdOf)
-            return "This dump has only the Switch game (" + titleId + "). This app version runs its " + other.name + " (" + other.titleId + "), program " + program(other.titleId)
-                    + " of the game, which this dump does not hold. Dump the game again with its Nintendo Switch 2 Edition upgrade, so that the dump holds program "
-                    + program(other.titleId) + " too, then add that dump.";
+            return "These game files hold only the Switch game. This app version runs " + other.name + ", which they do not hold. Dump the game again with its "   // PEANUTS: build text in the player's words (0.1.8)
+                    + "Nintendo Switch 2 Edition upgrade, then add the new game files.";
         return notIncluded(titleId, name);
     }
 
     /** missing's sentence for a title this APK has no profile of, whatever else it has (a dump that holds the other program says only this: DumpLayout.find) */
     static String notIncluded(String titleId, String name) {
-        return "This app version does not include " + (name == null || name.isEmpty() || name.equals(titleId) ? "this game" : name) + " (" + titleId + "). Install a build that includes it.";
+        return "This app version does not include " + (name == null || name.isEmpty() || name.equals(titleId) ? "this game, " + titleId : name) + ". Install an app version that includes it.";   // PEANUTS: build text in the player's words (0.1.8)
     }
 
     /** A title ID without its platform byte (01 Switch, 04 Switch 2): scripts/pack_dump.py TITLE_NUMBER */
@@ -669,6 +688,13 @@ final class Profile {
 
     /** A version of a dump in words: 0 is the base game itself (no update installed; Mario Kart World 1.8.0's supported build), any other an update */
     static String versionName(long version) { return version == 0 ? "the base game" : "update " + version; }
+
+    /** A version for a card's main text: "version 1.8.0" when game.tsv names it, else "" (versionName's "update 458752" is for Details only) */   // PEANUTS: build text in the player's words (0.1.8)
+    static String shownVersion(String titleId, long version) {
+        Profile p = of(titleId);
+        String d = p == null ? null : p.display(version);
+        return d == null ? "" : "version " + d;
+    }
 
     /** Which versions of this game the APK supports, as a sentence for a dump it refuses (DumpCheck): its builds, by display version when game.tsv names one */
     String supported() {

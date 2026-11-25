@@ -328,7 +328,7 @@ def build_problem():
                  'Finding the shaders stopped'),
             pick('stage', 'Where it stopped', [
                 'Importing (reading the NSP, XCI or dump folder)',
-                'Rewriting the game\'s code',
+                'Converting the game\'s code',
                 'Finding or translating the shaders',
                 'Companion (downloading or installing it)',
                 'It finished, but the card still asks to build or prepare',

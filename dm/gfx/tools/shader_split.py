@@ -41,6 +41,7 @@
 #   · control sections loose in main, in no GLSLC output or BNSH file (Advance Wars 1+2: Re-Boot Camp's Bink 2 shaders): paired with their code areas by data records or adjacency, see raw_shaders
 #   · SNVN (Retro Studios, Donkey Kong Country: Tropical Freeze, Metroid Prime Remastered): zlib program records in the SNVN chunks of MaterialArchive.arc, of the MTRL resources in its
 #       .pak archives and of the startup material archive LZSS-compressed in main, see rfrm_shaders and retro_main_forms
+#   · REDengine 3 (The Witcher 3): GLSLC outputs in RDHS material caches and FZLC static caches, see rdhs_shaders and fzlc_shaders   PEANUTS(upstream-candidate): nxnative a4c82979
 #   · BERG (Snowdrop, Mario + Rabbids Sparks of Hope): shader objects in the individually zstd-compressed records of its SDF data slices, see snowdrop_shaders
 #   · bnd2 (Criterion's Bundle 2, Need for Speed: Hot Pursuit Remastered): whole GLSLC outputs in the zlib resources of SHADERS.BNDL, see bnd2_resources and bnd2_shaders
 #   · Heaps (Dead Cells): whole GLSLC outputs in base64 after the GLSL of the engine's shader cache (shaders.cache.nx), inside its PAK archive, see heaps_pak_files and heaps_shaders
@@ -1252,6 +1253,35 @@ def mvgl_shaders(path, rel, names, out):
     finally: a.f.close()
 # PEANUTS end
 
+# PEANUTS: TT Games' DAT archives (ttdat.py), LEGO CITY UNDERCOVER.
+TTDAT = 'TT Games DAT'   # job tag of a range of a DAT archive's files (ttdat_jobs)
+def ttdat_jobs(files, parts=64):
+    """Every file of every TT Games DAT archive (found by its index, not its name) in ranges of about equal length: LEGO CITY UNDERCOVER's five, 14.7 GB of files, 61,000 of them RFPK-
+    compressed; its shaders are BNSH files in the .nnx_shaders resources, but no file name is relied on. → ([(path, rel, (TTDAT, files)), …], the DAT paths)"""
+    import ttdat
+    dats = []
+    for p, r in files:
+        if not ttdat.is_ttdat(p): continue
+        try: dats.append((p, r, ttdat.files(p)))
+        except (ValueError, struct.error) as e: print(f'[RED] /{r}: the DAT index cannot be read ({e}); scanned as one file', flush=True)
+    jobs, step = [], max(sum(e[3] for _, _, es in dats for e in es) / parts, 1)
+    for p, r, es in dats:
+        cur, size = [], 0
+        for e in es:
+            cur.append(e); size += e[3]
+            if size >= step: jobs.append((p, r, (TTDAT, tuple(cur)))); cur, size = [], 0
+        if cur: jobs.append((p, r, (TTDAT, tuple(cur))))
+    return jobs, {p for p, _, _ in dats}
+
+def ttdat_shaders(path, rel, ents, out):
+    """A range of a DAT archive's files (ttdat_jobs), each decoded (RFPK / ZIPX chunks, or stored) and scanned like a loose file; labels /<DAT>/<path in the archive>"""
+    import ttdat
+    with open(path, 'rb') as f:
+        for e in ents:
+            try: d = ttdat.read(path, e, f)
+            except ValueError as x: print(f'[RED] /{rel}/{e[0]}: {x}; not scanned', flush=True); continue
+            scan_blob(d, f'/{rel}/{e[0]}', out)
+
 # PEANUTS: Split Diablo III packages by byte range.
 D3CPK = b'D3CPK'   # job tag of a Diablo III package's byte range (d3cpk_jobs)
 def d3cpk_jobs(files, parts=64):
@@ -2357,7 +2387,11 @@ def raw_shaders(d, label, known=()):
     from, which lies right after the control section's own length (control +0x20, at 16-byte alignment) or right before it. Only a code area the code builds the address of is taken: both neighbours
     can look right, so the one whose address the code builds nearest to the control section's (within 1 KB) is taken: main+0x4a2c670 is a compute shader whose code is the 0x100 bytes before it (adds 0x20 apart,
     main+0x1548014 / +0x1548034); after it lies another vertex shader's code area, whose first 0x100 bytes pass the header and length checks, and that area is the vertex shader main+0x4a2d290 takes from
-    before itself (main+0x1548358 / +0x1548374, 0x324 bytes from the first). Compute code areas have no header (SDK 10), so the stage is glslc_stage's, and a headerless one is checked by its length only, never
+    before itself (main+0x1548358 / +0x1548374, 0x324 bytes from the first). PEANUTS(upstream-candidate): where the code builds no address at all (FINAL FANTASY XII THE ZODIAC AGE's 7 offline programs, whose code area lies right before
+    the control section), the neighbour that passes the stage and length checks is taken, and only when exactly one of the two neighbours passes them. Control sections found at unaligned offsets (the rest of
+    that game's programs, at main+0xfca50d and +0xfd1699, whose code areas lie 0x200 and 0x100 bytes before them) are taken only by that neighbour rule, and left out in silence when no neighbour passes, a
+    control magic at an odd offset being very often just bytes. Compute code areas have no header (SDK 10), so the stage is
+    glslc_stage's, and a headerless one is checked by its length only, never
     across a control section. known: the control sections the other readers took from this main (Celeste's MonoGame effect in main holds some outside any GLSLC output or BNSH file), left out.
     Of 25 mains on hand only that one has such control sections, so the tables of every other game stay as they were"""
     skip = []
@@ -2367,7 +2401,13 @@ def raw_shaders(d, label, known=()):
     for m in re.finditer(b'BNSH\0\0\0\0', d): skip.append((m.start(), m.start() + struct.unpack_from('<I', d, m.start() + 0x1c)[0]))
     nx = nxsh_in(d, label, skip)   # PEANUTS(upstream-candidate): Media.Vision's NX?S containers, read by their headers (Digimon Story Time Stranger: 202 in main)
     ctls = [c for m in re.finditer(re.escape(CTL_MAGIC), d) if not (c := m.start()) & 3 and not any(a <= c < b for a, b in skip) and d[c:c + struct.unpack_from('<I', d, c + 0x20)[0]] not in known]
-    if not ctls: return nx   # PEANUTS(upstream-candidate): nx, was []
+    # PEANUTS(upstream-candidate): the rest of FINAL FANTASY XII THE ZODIAC AGE's offline programs sit at offsets that are not 4-byte aligned (control 0xfca50d with its code area at 0xfca30d,
+    # control 0xfd1699 with its code area at 0xfd1599), which the aligned scan above never looks at. Such a match is collected with the same skip ranges and known filter and taken only by the
+    # neighbour rule at the end: no data record points at an unaligned control section and the game's code builds the address of none, so the table lookup and the built-address evidence stay
+    # with the aligned records. One with no valid neighbour is left out in silence, a control magic at an odd offset being very often just bytes. taken: the control sections and code areas of the
+    # programs taken, so a match inside an already taken program does not take it a second time.
+    raws = [c for m in re.finditer(re.escape(CTL_MAGIC), d) if (c := m.start()) & 3 and c + 0x708 <= len(d) and not any(a <= c < b for a, b in skip) and d[c:c + struct.unpack_from('<I', d, c + 0x20)[0]] not in known]
+    if not ctls and not raws: return nx   # PEANUTS(upstream-candidate): nx, was []
     rel, code_of, cset = rel_targets(d), {}, set(ctls)
     for s, c in rel.items():
         if c not in cset or c in code_of: continue
@@ -2382,15 +2422,39 @@ def raw_shaders(d, label, known=()):
             if struct.unpack_from('<QQQ', d, s + 16) == (0, control_len, code_len) and d[code:code + 4] == CS_MAGIC and code + code_len <= len(d):
                 code_of[c] = code
     built = adrp_targets(d, min(ctls) - 0x100000, max(ctls) + 0x100000) if any(c not in code_of for c in ctls) else {}
-    out = []
+    out, taken = [], []   # PEANUTS(upstream-candidate): taken: the control sections and code areas of the programs taken
     for c in ctls:
         nctl, n = struct.unpack_from('<I', d, c + 0x20)[0], struct.unpack_from('<I', d, c + 0x704)[0]
         ctl, why = d[c:c + nctl], 'no code area: no data record points at one, and the code builds the address of none right after or right before it'
         near = lambda k: min(abs(a - b) for a in built[k] for b in built[c])   # how close the code builds this code area's address to the control section's
-        for k in ([code_of[c]] if c in code_of else sorted((k for k in ((c + nctl + 15) & ~15, c - n) if k in built and c in built and near(k) < 0x400), key=near)):
+        neigh = ((c + nctl + 15) & ~15, c - n)
+        cand = [code_of[c]] if c in code_of else sorted((k for k in neigh if k in built and c in built and near(k) < 0x400), key=near)
+        chosen = c in code_of or bool(cand)   # where the code area is comes from the code, not from which neighbour looks right
+        if not cand:
+            # PEANUTS(upstream-candidate): FINAL FANTASY XII THE ZODIAC AGE's 7 offline programs build no address at all (no relocation slot points at them and
+            # no adrp + add builds one near them), so a control section with no built-address evidence keeps the neighbour that passes the stage and length checks.
+            cand = [k for k in neigh if 0 <= k and k + n <= len(d) and CTL_MAGIC not in d[k:k + n]]
+        found = []
+        for k in cand:
             code = d[k:k + n]; st = glslc_stage(ctl, code) if k >= 0 and CTL_MAGIC not in code else None
-            if st and not check(label, st, ctl, code): out.append((f'{label}#RAW@{c:#x}', st, ctl, code)); why = None; break
+            if st and not check(label, st, ctl, code):
+                found.append((st, code, k))
+                if chosen: break
+        if not chosen and len(found) != 1: found = []   # both neighbours pass the checks, so which one the control section owns stays unknown
+        for st, code, k in found: out.append((f'{label}#RAW@{c:#x}', st, ctl, code)); taken += [(c, c + nctl), (k, k + n)]; why = None
         if why: print(f'[RED] {label} control section @{c:#x}: {why}; left out', flush=True)
+    for c in raws:
+        nctl, n = struct.unpack_from('<I', d, c + 0x20)[0], struct.unpack_from('<I', d, c + 0x704)[0]
+        if any(a <= c < b for a, b in taken) or not 0x760 <= nctl <= len(d) - c or not 0x80 <= n <= len(d) - c: continue   # inside a program already taken, or lengths no control section has
+        ctl = d[c:c + nctl]
+        found = []
+        for k in ((c + nctl + 15) & ~15, c - n):
+            if not 0 <= k or k + n > len(d) or CTL_MAGIC in d[k:k + n]: continue
+            code = d[k:k + n]; st = glslc_stage(ctl, code)
+            if st and not check(label, st, ctl, code): found.append((st, code, k))
+        if len(found) != 1: continue   # no neighbour passes, or both do: taken only when exactly one passes, as for an aligned control section, and left out in silence
+        st, code, k = found[0]
+        out.append((f'{label}#RAW@{c:#x}', st, ctl, code)); taken += [(c, c + nctl), (k, k + n)]
     return nx + out   # PEANUTS(upstream-candidate): nx
 
 ONEPACK = b'ONEPACK\0'
@@ -2562,7 +2626,7 @@ def oodle_said():   # what the host wrote so far
     return _OODLE[1].read().decode(errors='replace')
 
 def oodle_red(comp, n) -> NoReturn:
-    who = 'the ooz worker (DM_OODLE_OOZ; not the game\'s own decoder)' if os.environ.get('DM_OODLE_OOZ') else 'the game\'s decoder in the Mac host'   # PEANUTS: the message names the decoder that failed
+    who = 'the ooz worker (DM_OODLE_OOZ; not the game\'s own decoder)' if os.environ.get('DM_OODLE_OOZ') else 'the game\'s own decoder (run by the app\'s host)'   # PEANUTS: the message names the decoder that failed; the host runs on a phone as on a Mac
     red(f'{who} failed on a {len(comp)} → {n} byte stream; ---- host output ----\n' + oodle_said()[-3000:])   # PEANUTS: who
 
 def oodle(comp, n):
@@ -2981,9 +3045,15 @@ def ungzip(d, label):
     return out
 
 
+# PEANUTS begin: Yaz0 in C (dm/peanuts/pack_worker/nxyaz0.c) where this Python has the module: the phone's Python home (lib-dynload), the PC builder's peanuts/.build/pymod
+try: import _nxyaz0
+except ImportError: _nxyaz0 = None
+# PEANUTS end
+
 def yaz0(s, label='Yaz0'):
     """Yaz0 decompression (Super Mario 3D World + Bowser's Fury: almost all of RomFS is .szs = SARC wrapped in Yaz0). Pure Python runs at about 20–45 MB/s per core, under a minute for the whole 4.7 GB RomFS in parallel, and needs no extra dependency.
     Group header bits: 1 = one literal byte; 0 = back-reference, 2 bytes {length high nibble, 12-bit distance} (distance + 1); length 0 reads one more byte + 0x12, else + 2. Overlapping copies are expanded by their period"""
+    if _nxyaz0 and (d := _nxyaz0.decode(s)) is not None: return d   # PEANUTS: the same bytes in C; None where the loop below stops with an error, which it then names
     n = int.from_bytes(s[4:8], 'big'); out = bytearray(); si = 16
     try:
         while len(out) < n:
@@ -3090,6 +3160,7 @@ def unsized(d, where):
             dec = lz4.frame.decompress(f)
         elif did and did not in ZDICTS: dec = None
         else: dec = unzs_dict(f, did, where) if did else zstd_mod().decompress(f)
+    except (MemoryError, ImportError): raise   # PEANUTS (issue #120): not a property of the bytes; scan_file makes the file unreadable this once, which split_reuse.py never keeps
     except Exception as e: why = str(e) or type(e).__name__
     else:
         if dec is None: why = f'the frame needs zstd dictionary {did}, which Pack/ZsDic.pack.zs does not have'
@@ -3601,6 +3672,62 @@ def scan_file(args):
         print(f'[RED] {why} (its shaders are left out)', flush=True)
         return args[1], {}, set(), ('unreadable', why)
 
+# PEANUTS(upstream-candidate) begin: REDengine 3 shader cache readers, ported from nxnative a4c82979 (The Witcher 3)
+RDHS, FZLC = b'RDHS', b'FZLC'
+
+def rdhs_shaders(path, label):
+    """REDengine 3's shader caches (The Witcher 3: Wild Hunt — Complete Edition, shadernx.cache in content/content0, content/patch0 and each DLC's content/: 28,491 material shaders).
+    From +0, records {u64 hash, u8 1, u32 raw length, u32 stored length, then one zstd frame of the stored length}; each frame is one whole GLSLC output. The records end where the index
+    (material and technique names with their record hashes) begins: the 16-byte footer is {u64 index offset, 'RDHS', u32 version 3}. The records must end exactly at the index"""
+    zstd = zstd_mod(); out = []
+    with open(path, 'rb') as f:
+        size = f.seek(0, 2); f.seek(size - 16); idx, magic, ver = struct.unpack('<Q4sI', f.read(16))
+        if magic != RDHS or ver != 3 or not 0 <= idx <= size - 16: red(f'{label}: footer {magic!r} version {ver}, index {idx:#x}: not a version 3 RDHS shader cache')
+        f.seek(0); d = f.read(idx)
+    pos = n = 0
+    while pos < idx:
+        where = f'{label}: record {n} at {pos:#x}'
+        if pos + 17 > idx: red(f'{where}: header runs past the index at {idx:#x}')
+        flag, raw, stored = struct.unpack_from('<BII', d, pos + 8)
+        start, end = pos + 17, pos + 17 + stored
+        if flag != 1 or stored < 4 or end > idx or d[start:start + 4] != ZSTD_MAGIC:
+            red(f'{where}: flag {flag}, stored {stored}, not a zstd frame inside the records')
+        try: blob = zstd.decompress(d[start:end])
+        except zstd.ZstdError as e: red(f'{where}: invalid zstd frame ({e})')
+        if len(blob) != raw: red(f'{where} decompresses to {len(blob)} bytes, its header says {raw}')
+        got = glslc_shaders(blob, f'{label}@{pos:#x}', need=False)
+        if not got: red(f'{where} holds no whole GLSLC output')
+        out += got; pos = end; n += 1
+    return out
+
+def fzlc_shaders(path, label):
+    """REDengine 3's static shader cache (staticshadernx.cache in content/content0: the 619 engine shaders, lighting, post-processing and all 46 compute shaders; the DLC copies are empty 804-byte
+    stubs). Header {'FZLC', u32 chunk count, u32 first chunk's offset}, then per chunk {u32 stored length, u32 raw length, u32 next chunk's offset}; each chunk is one zstd frame of at most 1 MiB.
+    The GLSLC outputs run across chunk boundaries, so the chunks are joined before the outputs are read"""
+    zstd = zstd_mod()
+    with open(path, 'rb') as f: d = f.read()
+    count, at = field(d, '<II', 4, label)
+    if 12 + 12 * count > at or at > len(d): red(f'{label}: {count} chunks with data at {at:#x} in {len(d)} bytes')
+    parts = []
+    for i in range(count):
+        stored, raw, nxt = struct.unpack_from('<3I', d, 12 + 12 * i)
+        where = f'{label}: chunk {i} at {at:#x}'
+        if not stored:
+            if raw: red(f'{where}: {raw} decoded bytes but no stored data')
+            continue
+        # a chunk whose stored length equals its raw length is kept uncompressed (the DLC stubs: one 28-byte chunk, next offset 0)
+        end = at + stored
+        if end > len(d) or i + 1 < count and nxt != end: red(f'{where}: stored {stored}, next {nxt:#x}: inconsistent')
+        p = d[at:end]
+        if stored != raw:
+            if not p.startswith(ZSTD_MAGIC): red(f'{where}: compressed data has no zstd frame header')
+            try: p = zstd.decompress(p)
+            except zstd.ZstdError as e: red(f'{where}: invalid zstd frame ({e})')
+        if len(p) != raw: red(f'{where} decompresses to {len(p)} bytes, its entry says {raw}')
+        parts.append(p); at = end
+    return glslc_shaders(b''.join(parts), label, need=False)
+# PEANUTS(upstream-candidate) end
+
 def scan_file_in(args):
     path, rel = args[:2]
     stem, ext = os.path.splitext(path)
@@ -3650,6 +3777,9 @@ def scan_file_in(args):
     # PEANUTS: Scan only the assigned Diablo III package range.
     if len(args) > 2 and args[2][0] == D3CPK:   # a byte range of a Diablo III package (d3cpk_jobs)
         d3cpk_shaders(path, rel, args[2][1], args[2][2], found)
+        return rel, uniq_keys(found), var_pairs(found), trees
+    if len(args) > 2 and args[2][0] == TTDAT:   # PEANUTS: files of a TT Games DAT archive (ttdat_jobs)
+        ttdat_shaders(path, rel, args[2][1], found)
         return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and head[:4] == CPK:   # entries of a CRI CPK (cpk_jobs)
         cpk_shaders(path, rel, args[2], found)
@@ -3723,6 +3853,19 @@ def scan_file_in(args):
                 if '.fx' in entry[0] or '/shaders/' in entry[0] or entry[0].endswith(('.vs.bin', '.ps.bin', '.fs.bin')):
                     found += phyre_shaders(vbf.read(f, entry), f'/{rel}/{entry[0]}')
         return rel, uniq_keys(found), var_pairs(found), trees
+    # PEANUTS(upstream-candidate) begin: REDengine 3 caches (nxnative a4c82979)
+    if head[:4] == FZLC:   # REDengine 3's static shader cache (fzlc_shaders)
+        found += fzlc_shaders(path, '/' + rel)
+        return rel, uniq_keys(found), var_pairs(found), trees
+    if head[8:9] == b'\x01' or os.path.basename(rel) == 'shadernx.cache':   # require the footer even under the engine's filename, which also lets us diagnose a damaged first flag
+        with open(path, 'rb') as f:
+            size = f.seek(0, 2)
+            if size >= 16: f.seek(size - 8)
+            tail = f.read(4) if size >= 16 else b''
+        if tail == RDHS:
+            found += rdhs_shaders(path, '/' + rel)
+            return rel, uniq_keys(found), var_pairs(found), trees
+    # PEANUTS(upstream-candidate) end
     # a file read whole: one of LARGE_FILE bytes or more is read by one worker at a time (LARGE_LOCK). Orbitals Deluxe Edition has a 6.4 GB IoStore container and
     # 0.1 to 0.9 GB videos; with every worker holding one, its full scan ran a 32 GB PC out of memory. Their shader markers occur in them by chance, so they are read
     large = head[:4] != ZSTD_MAGIC and LARGE_LOCK is not None and os.path.getsize(path) >= LARGE_FILE
@@ -4083,12 +4226,19 @@ def scan_digest(argv, jobs, sources=None):
         with open(p, 'rb') as f: h.update(hashlib.sha256(f.read()).digest())
     return h.hexdigest()
 
-def pooled(ex, jobs, total, start=0, chunk=1, cache=None):
+def pn_split():   # PEANUTS: dm/peanuts/reuse/split_reuse.py (issue #120): the scan results of unchanged game files, kept across builds; None on a computer (no PN_REUSE_DIR) or with PN_REUSE=0
+    if os.environ.get('PN_REUSE') == '0' or not os.environ.get('PN_REUSE_DIR'): return None
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../peanuts/reuse'))
+    import split_reuse
+    return split_reuse
+
+def pooled(ex, jobs, total, start=0, chunk=1, cache=None, pn=None):   # PEANUTS: pn (split_reuse.Context)
     """scan_file over jobs in the pool, the results in job order, with a 'progress: <done>/<total>' line at most twice a second (the NSP script shows it as
     the stage's count). The count is of the jobs finished in any order: counted in order it would stall behind one slow archive range while the others finish.
     start is the index of the first job among all the split's jobs (the count's start and ScanCache's keys); batches the cache holds whole are not scanned again"""
     cache = cache or ScanCache(None)
-    batches = [(start + i, jobs[i:i + chunk]) for i in range(0, len(jobs), chunk)]
+    if pn: pn.fill(cache, jobs, start, chunk)   # PEANUTS: kept results of unchanged files into the cache (split_reuse.py)
+    batches = pn.batches(jobs, start, chunk, cache) if pn and not pn.off else [(start + i, jobs[i:i + chunk]) for i in range(0, len(jobs), chunk)]   # PEANUTS: pn: each kept job a batch of its own
     kept = {first: r for first, b in batches if (r := cache.cached(first, len(b))) is not None}
     done, shown = start + sum(len(r) for r in kept.values()), 0.0
     if kept: print(f'progress: {done}/{total}', flush=True); shown = time.monotonic()
@@ -4111,7 +4261,9 @@ def pooled(ex, jobs, total, start=0, chunk=1, cache=None):
     finally:
         AT = None
         cache.flush()   # also on an interrupt (KeyboardInterrupt): what finished is kept
-    return [r for first, _ in batches for r in kept[first]]
+    out = [r for first, _ in batches for r in kept[first]]   # PEANUTS: named, for pn below
+    if pn: pn.store(jobs, out, start)   # PEANUTS: the new results kept; split_reuse.Stale when a file scanned to check differs from its kept result
+    return out
 
 
 # PEANUTS begin: a list argument (RomFS, main, DLC) whose paths may hold a comma. The lists were split at every ',', so one game file named with a comma
@@ -4143,9 +4295,9 @@ def main():
         tag = os.path.basename(os.path.dirname(os.path.abspath(romfs))) if i else ''
         stage('listing the game\'s files')
         files += sorted(((os.path.join(dp, f), (tag + '/' if tag else '') + posix_rel(os.path.join(dp, f), romfs)) for dp, _, fs in os.walk(romfs) for f in fs), key=lambda t: t[1])   # by the '/' path: the same order on every system
-        stage('reading the game\'s program')
+        stage('reading the game\'s code')  # PEANUTS: build text in the player's words (0.1.8)
         img = nso_image(mainnso)
-        stage('looking for shaders in the game\'s program')
+        stage('looking for shaders in the game\'s code')
         if not i:
             import unityfs
             try: common = unityfs.common_strings(img)
@@ -4232,12 +4384,12 @@ def main():
         if out is None: print(f'targeted split: not taken, {why}: every file is scanned', flush=True)
     if out is None:
         print(f'split: looking for archives among {len(files):,} RomFS files', flush=True)   # each file is opened (zip_jobs): a minute or more on a large RomFS, before the first progress line
-        stage(f'looking for archives among {len(files):,} files')
+        stage(f'looking for packed files among {len(files):,} files')
         big, todo = scan_jobs(files, mains=main_v, nros=nros)
-        stage(f'reading every file of the game ({len(files):,})')
+        stage(f'reading all {len(files):,} of the game\'s files')
         cd = (os.path.join(rd, 'full') if targeted else rd) if rd else None
         out = split_tables(list(results), big, todo, dumps, J, common, zdicts, ScanCache(cd, scan_digest(inputs, big + todo + mains)) if cd else None)
-    stage('writing the shaders found')
+    stage('saving the shaders found')
     write_outputs(out, pkg, mapout, factsout, pairsout, psopairsout)
     if d := os.environ.get('DM_SPLIT_DIFF_DIR'):   # PEANUTS: the tables written, kept as final.<name> (a profile regenerated from a device's full scan: the build deletes its own copies)
         import shutil
@@ -4438,9 +4590,10 @@ def scan_jobs(files, want=None, mains=(), nros=()):
     fb_jobs, fbs = frostbite_jobs(files)   # EA SPORTS FC 27's Frostbite bundles, Oodle Leviathan decoded by the game's own decoder in the Mac host
     pd_jobs, pdats = pdat_jobs(by_head)
     mv_jobs, mvgls = mvgl_jobs(by_head)   # PEANUTS: Digimon Story Time Stranger's 64-bit MVGL archives
+    tt_jobs, tts = ttdat_jobs(by_head)   # PEANUTS: LEGO CITY UNDERCOVER's TT Games DAT archives
     # PEANUTS: Schedule package ranges alongside other split jobs.
-    big += pak_jobs + tr_jobs + ue_jobs + bd_jobs + arc_jobs + pz_jobs + ck_jobs + d3_jobs + cr_jobs + zp_jobs + ah_jobs + fb_jobs + pd_jobs + mv_jobs   # PEANUTS: + mv_jobs
-    files = [(p, r) for p, r in files if not linkdata_jobs(p, r) and p not in paks and p not in trp and p not in uep and p not in bdts and p not in arcs and p not in pkzs and p not in cpks and p not in d3s and p not in cras and p not in zips and p not in arhs and p not in fbs and p not in pdats and p not in mvgls]   # PEANUTS: and mvgls
+    big += pak_jobs + tr_jobs + ue_jobs + bd_jobs + arc_jobs + pz_jobs + ck_jobs + d3_jobs + cr_jobs + zp_jobs + ah_jobs + fb_jobs + pd_jobs + mv_jobs + tt_jobs   # PEANUTS: + mv_jobs, + tt_jobs
+    files = [(p, r) for p, r in files if not linkdata_jobs(p, r) and p not in paks and p not in trp and p not in uep and p not in bdts and p not in arcs and p not in pkzs and p not in cpks and p not in d3s and p not in cras and p not in zips and p not in arhs and p not in fbs and p not in pdats and p not in mvgls and p not in tts]   # PEANUTS: and mvgls, and tts
     if want is not None: big, files = [j for j in big if j[1] in want], [f for f in files if f[1] in want]
     return big, files
 
@@ -4449,9 +4602,15 @@ def split_tables(results, big, files, dumps, J, common, zdicts, cache, targeted=
     targeted: Fallback when a Unity serialized file wants a type tree, which a bundle the scan left out may lend. direct: the files read at their recorded containers (direct_targets, DIRECT)"""
     keys = {}
     # First pass: every file; Unity bundles carry type trees, and the Shader trees are collected on the way. Second pass: Unity serialized files without type trees are scanned again with the borrowed trees
+    pnm = pn_split()   # PEANUTS: split_reuse.py (issue #120): the plain files' kept results
+    pn = pnm.Context(common, zdicts, direct, KEEP, digest_sources(), ResultUnpickler) if pnm else None   # PEANUTS
     with pool(J, common, {}, zdicts, direct) as ex:   # PEANUTS: direct param above
         n = len(big) + len(files)
-        results += pooled(ex, big, n, cache=cache) + pooled(ex, files, n, len(big), chunk=16, cache=cache)
+        results += pooled(ex, big, n, cache=cache)   # PEANUTS begin: the files with pn; when a file scanned to check differs, all of them scanned again
+        try: results += pooled(ex, files, n, len(big), chunk=16, cache=cache, pn=pn)
+        except Exception as e:
+            if not (pnm and isinstance(e, pnm.Stale)): raise
+            pn.forget(cache); results += pooled(ex, files, n, len(big), chunk=16, cache=cache)   # PEANUTS end
     stage('sorting the shaders found')
     trees, defer = {}, []
     for rel, uniq, pr, extra in results:

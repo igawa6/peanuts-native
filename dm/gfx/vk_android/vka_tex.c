@@ -27,6 +27,7 @@
 #include "vka_texown.h"
 #include "vka_sampfilter.h"   // PEANUTS
 #include "vka_tbuf.h"   // PEANUTS: which GPU writes keep a texel buffer from being read through the CPU's copy
+#include "vka_texcontent.h"   // PEANUTS: which first-sampled textures take their content from their storage, NVN2 and NVN1 (dm/host/tests/t_android_texcontent.c)
 #include "vka_wbfollow.h"
 #include "vka_block_linear_spv.h"   // PEANUTS: the block-linear write-back shader (block_linear.comp)
 #include "../nvn/nvn_tex.h"
@@ -265,6 +266,7 @@ static vka_img *g_big[64]; static int g_nbig;   // large images (DM_VK_BIGIMG_MB
 static vka_img *g_lrz_prev;   // PEANUTS: the depth image of the last pass that had one (vka_lrz_touch), under g_tmu
 static vka_img *g_linger[32]; static int g_nlinger;   // PEANUTS: GPU-drawn images kept past their last texture object (linger_keep below), under g_tmu
 static void linger_prune_locked(void); static void linger_take(vka_img *im);   // PEANUTS
+static void redo_add_locked(vka_img *im), redo_forget_locked(vka_img *im);   // PEANUTS(upstream-candidate): (the re-read queue, "The CPU wrote the texture's storage")
 static void unref_locked(vka_img *im) {
     atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release);
     if (--im->refs) return;
@@ -277,6 +279,7 @@ static void unref_locked(vka_img *im) {
         p->nkids--; if (f > p->last_fence) p->last_fence = f;
         vka_after(f, img_destroy, im);
         unref_locked(p); return; }
+    if (im->cpu_dirty) redo_forget_locked(im);   // PEANUTS(upstream-candidate): the re-read queue holds images by pointer: this one leaves it before it is freed
     live_del(im);
     for (int i = 0; i < g_nbig; i++) if (g_big[i] == im) { g_big[i] = g_big[--g_nbig]; break; }
     g_img_bytes -= im->bytes;
@@ -710,6 +713,13 @@ static int mem_any_mapped(const uint8_t *c, const tex_t *t) {
 // flags 0x24) into reused slots before nvnTextureInitialize and never flushes them: as zero images its ground beside the roads came out flat and untextured. A texture first used
 // as an attachment, a copy destination or a shader image stays GPU content. The rule and the finding follow kartnative (pahorema/kartnative, MIT: "Switch 2: uncompressed storage
 // the CPU wrote before a texture's first sample", nvn_mtl.m tex_cpu_content). DM_VK_STORAGE_FIRST_USE=0 turns it off (to measure it)
+// PEANUTS(upstream-candidate) begin: the NVN1 arm of the first-sample storage rule (storage_sampled_content, vka_texcontent.h)
+// Switch 1 (NVN1) runs the same rule with one more condition (measured 2026-11-20 on FINAL FANTASY XII THE ZODIAC AGE): its memory is not coherent, so the rule
+// follows the storage only where it shows the CPU's work: data in the storage at the texture's first use (vka_texcontent.h). FFXII stores its target rings that way: a
+// 128x128 RGBA8 texture (serial 1118, no packaged layout, no WriteTexels) in a CPU_CACHED | GPU_CACHED | COMPRESSIBLE pool (flags 0xa4), the storage holding data when
+// the game first sampled it: the host made a zero image and every target circle and line drew transparent. An all-zero storage keeps the old behaviour (a Switch 1
+// game with a reused slot's leftovers must not upload them: the game overwrites the texture on the GPU, which ends the tracking as gpu_owned). The game's texture
+// carries NVN_TEXTURE_FLAGS_COMPRESSIBLE, as its whole UI pool does; the NVN1 arm takes it (a texture the CPU fills holds plain texels), the NVN2 arm keeps it out.
 static _Thread_local int g_first_sampled;
 static _Thread_local int g_first_copy_src;   // PEANUTS: a first use as a copy source (vka_tex_get_src: copy_t2t, texture → buffer), for tex_dirty_upload's first-use tracking (storage_mode)
 static int img_pool_dead(vka_img *im);
@@ -717,15 +727,18 @@ static int gpu_image_over(const uint8_t *mem) {   // caller holds g_tmu; images 
     int k; for (vka_img *im = mem ? live_first(mem, &k) : NULL; im; im = live_next(im, mem, &k)) if (im->mem == mem && im->gpu_owned && !img_pool_dead(im)) return 1;
     return 0;
 }
-static int nvn2_sampled_content(const tex_t *t, const vka_fmt *f, unsigned pf, int sampled) {
-    static int on = -1; if (on < 0) on = VKA_ENV("DM_VK_STORAGE_FIRST_USE", 1) != 0 && vka_nvn2();   // (vka_nvn2: captures too)
-    const nvn_texdesc *d = &t->d;
-    if (!on || !sampled || !t->pool || t->has_layout || compressed(f) || f->kind >= 3) return 0;
-    if (pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL)) return 0;
-    if (d->flags & (NVN_TEXTURE_FLAGS_IMAGE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET | NVN_TEXTURE_FLAGS_SPARSE)) return 0;
+static int storage_sampled_content(const tex_t *t, const vka_fmt *f, unsigned pf, int sampled, const uint8_t *c) {
+    static int on = -1; if (on < 0) on = VKA_ENV("DM_VK_STORAGE_FIRST_USE", 1) != 0;   // the rule's two arms (NVN2's and NVN1's): off to measure them
+    if (!on) return 0;
+    int n2 = vka_nvn2();   // (vka_nvn2: captures too)
+    // has_data 1: the header's NVN2 arm ignores it (coherent memory is tracked from zeros too, and reading the storage here would cost every texture made);
+    // the NVN1 arm's data check is the mem_any below, at the first use only (vka_texcontent.h)
+    if (!t->pool || !vka_tc_sampled_content(n2, t->d.flags, pf, t->has_layout, compressed(f), f->kind, sampled, 1)) return 0;
+    if (!n2 && !mem_any_mapped(c, t)) return 0;
     return !gpu_image_over(t->mem);
 }
-static uint64_t g_nvn2_first[2];   // textures taken from their storage at a first sample (nvn2_sampled_content): [0] with data, [1] storage all zero (tracked from zeros)
+static uint64_t g_nvn2_first[2];   // textures taken from their storage at a first sample (storage_sampled_content): [0] with data, [1] storage all zero (tracked from zeros, NVN2 only)
+// PEANUTS(upstream-candidate) end
 static int storage_mode(const tex_t *t, const uint8_t *c, const vka_fmt *f, int cpuw, int sampled, int copy_src) {   // PEANUTS: copy_src (vka_tex_get_src). c: the storage's content as the GPU will see it (t->mem or gw_content's copy)
     const nvn_texdesc *d = &t->d;
     if (!t->mem || d->samples > 1 || f->kind >= 3) return ST_ZERO;   // PEANUTS: TARGET_BUFFER dropped from this early-out (buffer textures tracked below)
@@ -753,10 +766,10 @@ static int storage_mode(const tex_t *t, const uint8_t *c, const vka_fmt *f, int 
     else if (is_vid) want = ST_TRACK;
     else if (comp && !(d->flags & (NVN_TEXTURE_FLAGS_IMAGE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_SPARSE))
              && (mem_any_mapped(c, t) || dirty_first)) want = ST_TRACK;   // PEANUTS: dirty_first, a block-compressed texture still empty at its first use
-    else if (nvn2_sampled_content(t, f, pf, sampled)) {
+    else if (storage_sampled_content(t, f, pf, sampled, c)) {   // PEANUTS(upstream-candidate): the rule's two arms, NVN2 and NVN1
         int any = mem_any_mapped(c, t); uint64_t k = g_nvn2_first[!any]++; want = ST_TRACK;
-        if (any && k < 4) VLOG("texture serial %llu %ux%ux%u format %#x pool flags %#x: written by the CPU before its first use, a sample (NVN2): uploaded from its storage, re-uploaded when it changes (%llu so far, %llu more with empty storage)",
-                               (unsigned long long)t->serial, d->width, d->height, d->depth, d->format, pf, (unsigned long long)k + 1, (unsigned long long)g_nvn2_first[1]);
+        if (any && k < 4) VLOG("texture serial %llu %ux%ux%u format %#x pool flags %#x: written by the CPU before its first use, a sample (%s): uploaded from its storage, re-uploaded when it changes (%llu so far, %llu more with empty storage)",
+                               (unsigned long long)t->serial, d->width, d->height, d->depth, d->format, pf, vka_nvn2() ? "NVN2" : "NVN1", (unsigned long long)k + 1, (unsigned long long)g_nvn2_first[1]);
     }
     else if (!(d->flags & NVN_TEXTURE_FLAGS_COMPRESSIBLE) && t->pool && ((pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_CPU_UNCACHED)) || nvn_flushed(t->mem, t->L.size))
              && mem_any_mapped(c, t)) want = ST_FILL;
@@ -783,7 +796,7 @@ static uint64_t mem_hash(const uint8_t *p, uint64_t n) { uint64_t h = 1469598103
 //     know at recording (shader stores, texture → buffer copies), and images first used before the write
 // Images whose content is the GPU's (gpu_owned: render targets, copy destinations) keep it, as for CPU writes
 enum { GW_COPY, GW_FILL, GW_UPDATE, GW_OPAQUE };
-typedef struct { uint64_t lo, hi, src, seq, fence; uint32_t kind, value; uint8_t *data; } gw_t;
+typedef struct { uint64_t lo, hi, src, seq, fence; uint32_t kind, value; uint8_t *data; uint8_t queued; } gw_t;   // PEANUTS: queued (vka_tex_gw_part)
 static gw_t *g_gw; static int g_ngw, g_gwcap; static uint64_t g_gwseq = 1, g_gw_over, g_gw_late;
 static uint64_t g_gw_done;   // PEANUTS: (under g_tmu) vka_done() as the last vka_tex_prepare read it for the done writes it dropped (vka_tex_gw_tbuf_pending)
 static _Atomic int g_gw_tb;   // PEANUTS: the entries of g_gw that are a storage texel buffer's stores (GW_OPAQUE with value 1: vka_tex_gw_tbuf), so vka_tex_gw_tbuf_pending need not look when there is none. Changed under g_tmu
@@ -977,6 +990,25 @@ static void watch_scan(VkCommandBuffer cb) {   // caller holds g_tmu and nvn_poo
              (unsigned long long)im->serial, (const void *)im->mem, (unsigned long long)im->L.size, im->d.format, im->w, im->h, (unsigned long long)im->up_fence, (unsigned long long)vka_done(), (unsigned long long)vka_fence_last(), keys, why, mp_);
     }
 }
+// PEANUTS(upstream-candidate): a part of a long submission (vka_exec.c chunk) goes to the queue before the submission is committed: the writes recorded so far are on the GPU,
+// which may have made them by the time a later part's upload reads the storage, though they have no fence yet (marked queued)
+void vka_tex_gw_part(void) {
+    pthread_mutex_lock(&g_tmu);
+    for (int i = g_ngw - 1; i >= 0 && !g_gw[i].fence && !g_gw[i].queued; i--) g_gw[i].queued = 1;
+    pthread_mutex_unlock(&g_tmu);
+}
+// PEANUTS(upstream-candidate): whether the source [s, s + n) of the pending copy at i may already hold a later write's bytes: a write after it in recording order over its
+// source that is on the GPU (queued in a part, or in a submission not known done) may have run, and with it the copy, so the copy cannot be made again from memory
+// (it would move bytes twice). LEGO CITY UNDERCOVER's texture heap defragmenter moves a run of textures up in 16 KiB copies, highest first, each one's source the next
+// one's destination; a texture made at its new place in a later part of the same submission was uploaded with every copy made twice: its menu boxes were cut short
+static int gw_src_overwritten(int i, uint64_t s, uint64_t n, uint64_t done) {
+    for (int j = i + 1; j < g_ngw; j++) {
+        const gw_t *x = &g_gw[j];
+        if (x->fence ? x->fence <= done : !x->queued) continue;   // done (memory has it, and the copy before it too), or not on the GPU yet (memory has neither)
+        if (x->lo < s + n && x->hi > s) return 1;
+    }
+    return 0;
+}
 void vka_tex_gw_commit(uint64_t fence) {   // the writes recorded since the last commit belong to this submission
     pthread_mutex_lock(&g_tmu);
     for (int i = g_ngw - 1; i >= 0 && !g_gw[i].fence; i--) g_gw[i].fence = fence;
@@ -999,6 +1031,8 @@ static uint8_t *gw_content(const uint8_t *mem, uint64_t n, uint64_t *seen) {
         else {   // a copy: its source as the GPU will read it, which an earlier pending write over the source would change (then the write lands later: re-uploaded)
             const uint8_t *s = (const uint8_t *)(uintptr_t)(w->src + (lo - w->lo));
             for (int j = 0; j < i; j++) { const gw_t *x = &g_gw[j]; if ((!x->fence || x->fence > done) && x->lo < w->src + (hi - w->lo) && x->hi > w->src + (lo - w->lo)) { if (w->seq - 1 < cap) cap = w->seq - 1; break; } }
+            // PEANUTS(upstream-candidate): its source maybe moved on already by a later write on the GPU: left as memory holds it, and uploaded again once the copy is done
+            if (gw_src_overwritten(i, w->src + (lo - w->lo), hi - lo, done)) { if (w->seq - 1 < cap) cap = w->seq - 1; continue; }
             memmove(c + (lo - a), s, hi - lo);
         }
     }
@@ -1026,7 +1060,7 @@ int vka_tex_gw_read(uint64_t addr, uint64_t n, void *out) {
                 const gw_t *x = &g_gw[j];
                 if ((!x->fence || x->fence > done) && x->lo < w->src + (hi - w->lo) && x->hi > w->src + (lo - w->lo)) { ok = 0; break; }
             }
-            if (!ok) break;
+            if (!ok || gw_src_overwritten(i, w->src + (lo - w->lo), hi - lo, done)) { ok = 0; break; }   // PEANUTS(upstream-candidate): (gw_src_overwritten)
             if (c) dm_guest_read_mapped(c + (lo - a), (uintptr_t)(w->src + (lo - w->lo)), (size_t)(hi - lo));
         } else if (c && w->kind == GW_FILL) {
             for (uint64_t k = lo; k < hi; k++) { uint32_t v = w->value; c[k - a] = ((const uint8_t *)&v)[(k - w->lo) & 3]; }
@@ -1965,9 +1999,9 @@ static void vka_tex_prune_locked(void) {
         if (pool_keep && im->pool_frame == cur_frame) continue;
         if (im->nkids) continue;   // (a level child's parent: its children see its image)
         if (vktl_skip_ws(&cfg, pinned, cur_frame, im->last_frame)) continue;
-        // PEANUTS: + rw_pend: a texture the game only writes (WriteTexels, no draw for two frames) has region writes queued that hold the image by pointer; evicted, it was
-        // freed at once and the next prepare copied into, and released, whatever had taken its memory since (vka.h rw_pend; found after DM_RES_SCALE's first device run)
-        if (vktl_evictable(cur_frame, im->last_frame, im->holds + (int)im->rw_pend, im->gpu_owned, im->is_video && video, im->last_fence && done_fence < im->last_fence, g_psi_shrink))
+        // PEANUTS(upstream-candidate): + rw_pend + cpu_dirty: a texture the game only writes (WriteTexels, no draw for two frames) has region writes or a whole redo upload queued
+        // that hold/need the image; evicted, it was freed at once and the next prepare copied into, and released, whatever had taken its memory since (vka.h rw_pend; found after DM_RES_SCALE's first device run)
+        if (vktl_evictable(cur_frame, im->last_frame, im->holds + (int)im->rw_pend + im->cpu_dirty, im->gpu_owned, im->is_video && video, im->last_fence && done_fence < im->last_fence, g_psi_shrink))
             c[nc++] = (prune_ent){im, im->last_frame, im->gpu_owned != 0};
         else if (im->gpu_owned) { gpu_kept += im->bytes; ngpu_kept++; }
     }
@@ -2173,7 +2207,7 @@ void vka_tex_drop(vka_img *im) {
 }
 vka_img *vka_tex_ref(vka_img *im) { if (im) { pthread_mutex_lock(&g_tmu); im->refs++; im->holds++; im->last_fence = vka_fence_last(); pthread_mutex_unlock(&g_tmu); } return im; }
 static void wb_cancel_locked(vka_img *im);
-static void rw_cancel_locked(vka_img *im);   // PEANUTS: (below, with the region writes' queue)
+static void rw_cancel_locked(vka_img *im, int drop_refs);   // PEANUTS(upstream-candidate): (below, with the region writes' queue)
 void vka_tex_drop_pool(const void *pool) {
     if (!pool) return;
     pthread_mutex_lock(&g_tmu);
@@ -2190,7 +2224,7 @@ void vka_tex_drop_pool(const void *pool) {
             bytes_dropped += im->m.size;
             ndrop++;
             wb_cancel_locked(im);
-            rw_cancel_locked(im);   // PEANUTS: its queued region writes go with it: the count forced below would leave them holding a freed image
+            rw_cancel_locked(im, 0);   // PEANUTS(upstream-candidate): its queued region writes go with it: the count forced below would leave them holding a freed image
             bc_cancel_locked(im);   // PEANUTS: and its bc alias sync entry (the forced count below consumes the queue's reference)
             map_del_im(im);
             im->refs = 1;
@@ -2594,6 +2628,73 @@ static int tiled_wb_record(VkCommandBuffer cb, vka_img *im, uint32_t levels) {
     return 1;
 }
 
+// PEANUTS(upstream-candidate): LEGO CITY UNDERCOVER moves texture storage with GPU buffer copies (its heap defragmenter); a buffer -> texture copy's result was only in the VkImage, so the moved
+// bytes were stale and the texture made at the new address was uploaded from them (half noise, half black). On the Switch a copy into a texture writes its storage: here the copy's source
+// is packed into the level's block-linear storage by the compute shader of tiled_wb_record, recorded at the copy's place in the queue (a later copy out of the storage reads it right).
+// Whole levels of a 2D texture (any layer, block-compressed or not) in a CPU-accessible, placed, non-sparse pool; returns 1 when the storage was written, 0 when it was left (the copy stands
+// alone, as before). sbuf / soff: the copy's source in the placed memory, row: its row stride in bytes, span: the bytes it reads
+int vka_tex_b2t_mirror(VkCommandBuffer cb, const vka_img *im, const tex_t *t, unsigned level, unsigned layer, const NVNcopyRegion *r, VkBuffer sbuf, VkDeviceSize soff, size_t row, size_t span) {
+    static _Atomic int partial_log, skip_log;
+    if (!VKA_ENV("DM_VK_B2T_MIRROR", 1)) return 0;
+    // PEANUTS(upstream-candidate): why a copy was not mirrored: the first 16 skips, each with its reason and the values it was decided on (LEGO CITY UNDERCOVER: textures still black after the mirror)
+    #define B2T_SKIP(why, ...) do { if (atomic_fetch_add(&skip_log, 1) < 16) VLOG("buffer -> texture copy into serial %llu %ux%u format %#x level %u layer %u: not mirrored into its storage: " why, \
+        (unsigned long long)(im ? im->serial : 0), im ? im->w : 0, im ? im->h : 0, t ? t->d.format : 0, level, layer, ##__VA_ARGS__); return 0; } while (0)
+    if (!V.push_desc) B2T_SKIP("no push descriptors");
+    if (!im || !t) B2T_SKIP("no image or texture");
+    if (im->par) B2T_SKIP("a level child image");
+    if (!t->mem || !t->pool) B2T_SKIP("no storage (mem %p pool %p)", (void *)t->mem, (const void *)t->pool);
+    if (im->samples > 1 || im->f.kind >= 3) B2T_SKIP("samples %u, format kind %d", (unsigned)im->samples, (int)im->f.kind);
+    unsigned flags = t->d.flags, pf = 0; int sparse = 0;
+    if (flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET | NVN_TEXTURE_FLAGS_SPARSE | NVN_TEXTURE_FLAGS_COMPRESSIBLE | NVN_TEXTURE_FLAGS_IMAGE)) B2T_SKIP("texture flags %#x", flags);
+    if (t->d.target != NVN_TEXTURE_TARGET_2D && t->d.target != NVN_TEXTURE_TARGET_2D_ARRAY && t->d.target != NVN_TEXTURE_TARGET_CUBEMAP && t->d.target != NVN_TEXTURE_TARGET_CUBEMAP_ARRAY) B2T_SKIP("target %d", (int)t->d.target);   // PEANUTS(upstream-candidate): a cube map is layered 2D (nvn_deswizzle_geom gives each face its base)
+    if (level >= t->d.levels) B2T_SKIP("level %u of %u", level, (unsigned)t->d.levels);
+    { uint64_t live = im->pgen ? nvn_pool_live(im->pool, &pf, &sparse) : 0;
+      if (!im->pgen || live != im->pgen || sparse || (pf & (NVN_MEMORY_POOL_FLAGS_CPU_NO_ACCESS | NVN_MEMORY_POOL_FLAGS_VIRTUAL))) B2T_SKIP("pool: image pgen %llu live %llu sparse %d pool flags %#x", (unsigned long long)im->pgen, (unsigned long long)live, sparse, pf); }
+    uint32_t row_bytes, rows, slices, bpb; uint64_t base; unsigned th, td;
+    int grc = nvn_deswizzle_geom(&t->d, level, layer, &row_bytes, &rows, &slices, &base, &th, &td, &bpb);
+    if (grc || td || slices != 1 || bpb != im->f.bpb || base % 4 || !bpb) B2T_SKIP("geometry: rc %d td %u slices %u bpb %u (image %u) base %#llx", grc, td, slices, bpb, (unsigned)im->f.bpb, (unsigned long long)base);
+    int bw = im->f.bw ? im->f.bw : 1, bh = im->f.bh ? im->f.bh : 1;
+    uint32_t wb = (uint32_t)((r->width + bw - 1) / bw) * bpb, hb = (uint32_t)((r->height + bh - 1) / bh);
+    if (r->xoffset || r->yoffset || wb != row_bytes || hb != rows) {   // a part of the level: the shader packs whole levels only
+        if (atomic_fetch_add(&partial_log, 1) < 16) VLOG("buffer -> texture copy into serial %llu %ux%u format %#x level %u layer %u: a part of the level, not mirrored: region %d,%d %dx%d (%u x %u blocks bytes/rows), the level %u bytes x %u rows, block %dx%d",
+                                                           (unsigned long long)im->serial, im->w, im->h, t->d.format, level, layer, r->xoffset, r->yoffset, r->width, r->height, wb, hb, row_bytes, rows, bw, bh);
+        return 0;
+    }
+    uint32_t gobs = nvn_tex_level_gobs(&t->d, level);
+    uint64_t bytes = (uint64_t)gobs * ((rows + (8u << th) - 1) >> (3 + th)) * (512u << th), groups = (bytes / 4 + 63) / 64;
+    if (!gobs) B2T_SKIP("no GOBs");
+    if (row % 4 || row < row_bytes || row_bytes % 4 || soff % 4) B2T_SKIP("source: row %zu (level row %u), source offset %#llx", row, row_bytes, (unsigned long long)soff);
+    if (base + bytes > t->L.size) B2T_SKIP("level storage %#llx + %#llx beyond the texture's %#llx", (unsigned long long)base, (unsigned long long)bytes, (unsigned long long)t->L.size);
+    if (groups > V.props.limits.maxComputeWorkGroupCount[0]) B2T_SKIP("%llu workgroups, limit %u", (unsigned long long)groups, V.props.limits.maxComputeWorkGroupCount[0]);
+    if (!tiled_wb_pipeline()) B2T_SKIP("the block-linear pipeline was not made");
+    VkDeviceSize align = V.props.limits.minStorageBufferOffsetAlignment, dst_off = 0, so = soff; VkBuffer dst;
+    if (!vka_addr((uintptr_t)t->mem + base, bytes, &dst, &dst_off, NULL)) B2T_SKIP("the level storage %p + %#llx (%#llx bytes) is not in placed guest RAM", (void *)t->mem, (unsigned long long)base, (unsigned long long)bytes);   // PEANUTS(upstream-candidate): the level alone, not all of the texture: what a lazily placed pool has placed in one piece
+    if (dst_off % 4) B2T_SKIP("storage offset %#llx not 4-byte aligned", (unsigned long long)dst_off);
+    VkDeviceSize dst_base = dst_off / align * align, dst_bytes = dst_off - dst_base + bytes, src_base = so / align * align, src_bytes = so - src_base + span;
+    if (dst_bytes > V.props.limits.maxStorageBufferRange || src_bytes > V.props.limits.maxStorageBufferRange) B2T_SKIP("storage range %#llx / source range %#llx over the limit %#x", (unsigned long long)dst_bytes, (unsigned long long)src_bytes, V.props.limits.maxStorageBufferRange);
+    #undef B2T_SKIP
+    vka_barrier(cb);   // the source: written by the transfers before it; the storage: read by the copies before it
+    VkDescriptorBufferInfo buffers[2] = {{sbuf, src_base, src_bytes}, {dst, dst_base, dst_bytes}};
+    VkWriteDescriptorSet writes[2];
+    for (uint32_t i = 0; i < 2; i++)
+        writes[i] = (VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstBinding = i, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &buffers[i]};
+    uint32_t g[] = {(uint32_t)((so - src_base) / 4), (uint32_t)((dst_off - dst_base) / 4), row_bytes, (uint32_t)(row / 4), rows, gobs, th, (uint32_t)(bytes / 4), (uint32_t)nvn_gob_switch2};
+    vk.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_tiled_wb_pipe);
+    vk.vkCmdPushDescriptorSetKHR(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_tiled_wb_layout, 0, 2, writes);
+    vk.vkCmdPushConstants(cb, g_tiled_wb_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof g, g);
+    vk.vkCmdDispatch(cb, (uint32_t)groups, 1, 1);
+    // PEANUTS(upstream-candidate): recorded between the game's dispatches (copy_bt), so their last compute push is no longer what is bound (another layout disturbs set 0): the next
+    // dispatch pushes again (vka_draw.c push_same, DM_VK_PUSH_DEDUP), as after nf_pass and the NaN scan. Without it a dispatch with the same descriptors as the one before the copy
+    // ran with this pass's two storage buffers bound
+    vka_dyn_invalidate();
+    vka_barrier(cb);   // later copies and reads of the storage see it
+    vka_tex_gw_opaque((uint64_t)(uintptr_t)t->mem + base, bytes);   // other images over the range are uploaded again once the write is done (the copy's own image is gpu_owned: it keeps its content)
+    static _Atomic unsigned logs; unsigned n = atomic_fetch_add(&logs, 1);
+    if (n < 8 || !(n & 1023)) VLOG("buffer -> texture copy #%u into serial %llu %ux%u format %#x level %u layer %u: mirrored into its block-linear storage %p+%#llx (%#llx bytes)", n + 1, (unsigned long long)im->serial, im->w, im->h,
+                                   im->d.format, level, layer, (void *)t->mem, (unsigned long long)base, (unsigned long long)bytes);
+    return 1;
+}
+
 void vka_img_written_at(vka_img *im, int color_level, const char *file, int line) {
     if (!im) return;
     if (im->par) {
@@ -2660,19 +2761,28 @@ unsigned mtl_cpu_tex_count(void) {   // live images whose content follows their 
 }
 void mtl_pkg_stats(uint64_t *uploads, uint64_t *reuploads) { if (uploads) *uploads = g_st_up[ST_TRACK] + g_st_up[ST_FILL] + g_st_up[ST_SPARSE]; if (reuploads) *reuploads = g_reup; }
 // The CPU wrote the texture's storage: uploaded at its first use, or again at the next submission unless the GPU has written it since (then the GPU's content wins)
-static uint64_t *g_redo; static int g_nredo, g_redocap;
+// PEANUTS(upstream-candidate): the queue holds the images, not their serials. im->serial is the serial of the texture an image was made for; once the game finalized that
+// texture (mtl_tex_release: map_del) an image taken over by a newer texture of the same storage was not found by it, its entry was skipped with cpu_dirty left set, and
+// redo_add_locked refused it from then on: no CPU write reached it again. An entry is no reference: unref_locked takes an image out (redo_forget_locked) before it is freed,
+// on every path (release, eviction, a finalized pool), and cpu_dirty says whether an image is in the queue at all
+static vka_img **g_redo; static int g_nredo, g_redocap;
 static void redo_add_locked(vka_img *im) {   // (g_tmu held) its guest storage holds a write the next prepare must read again
     if (im && im->par) im = im->par;   // (a level child's storage is its parent's: the parent is uploaded)
     if (!im || im->gpu_owned || im->cpu_dirty) return;
+    if (g_nredo == g_redocap) { int ncap = g_redocap ? g_redocap * 2 : 64; vka_img **nq = realloc(g_redo, (size_t)ncap * sizeof *nq); if (!nq) return; g_redo = nq; g_redocap = ncap; }   // PEANUTS(upstream-candidate)
     im->cpu_dirty = 1;
-    if (g_nredo == g_redocap) { g_redocap = g_redocap ? g_redocap * 2 : 64; g_redo = realloc(g_redo, (size_t)g_redocap * sizeof *g_redo); }
-    g_redo[g_nredo++] = im->serial;
+    g_redo[g_nredo++] = im;   // PEANUTS(upstream-candidate)
 }
+static void redo_forget_locked(vka_img *im) {   // PEANUTS(upstream-candidate): (g_tmu held) im is about to be freed: its entry is emptied (the prepare skips it)
+    for (int i = 0; i < g_nredo; i++) if (g_redo[i] == im) g_redo[i] = NULL;
+    im->cpu_dirty = 0;
+}
+static void rw_fallback_whole_locked(vka_img *im);   // PEANUTS(upstream-candidate)
 void mtl_tex_cpu_written(const tex_t *t) {
     pthread_mutex_lock(&g_tmu);
     smap_ent *e = map_get(t->serial);
     if (!e) cpuw_take(t->serial, 1);
-    else redo_add_locked(e->im);
+    else if (e->im) rw_fallback_whole_locked(e->im);   // PEANUTS(upstream-candidate)
     pthread_mutex_unlock(&g_tmu);
 }
 
@@ -2744,12 +2854,41 @@ static int reg_write_overlap(const tex_region_write_t *a, const tex_region_write
     if (!a->copied || a->im != b->im || a->level != b->level || a->layer != b->layer) return 0;
     return a->x < b->x + (int32_t)b->w && b->x < a->x + (int32_t)a->w && a->y < b->y + (int32_t)b->h && b->y < a->y + (int32_t)a->h;
 }
-// PEANUTS: the region writes queued for im are dropped (caller holds g_tmu), for a caller that gives the image up whatever its references (vka_tex_drop_pool): their
-// entries stay in the queue with no image, which the drain skips; their references go with the image's forced count
-static void rw_cancel_locked(vka_img *im) {
+// PEANUTS(upstream-candidate): drop queued region writes for im (caller holds g_tmu).
+// drop_refs=0 is for vka_tex_drop_pool (which forces im->refs = 1 and destroys it);
+// drop_refs=1 is for coalescing/fallback while im remains live, releasing each entry's reference.
+static void rw_cancel_locked(vka_img *im, int drop_refs) {
     if (!im->rw_pend) return;
-    for (int i = 0; i < g_nreg_writes; i++) if (g_reg_writes[i].im == im) { free(g_reg_writes[i].data); g_reg_writes[i].data = NULL; g_reg_writes[i].im = NULL; g_reg_writes[i].copied = 0; }
+    int dropped = 0;
+    for (int i = 0; i < g_nreg_writes; i++) {
+        if (g_reg_writes[i].im == im) {
+            free(g_reg_writes[i].data);
+            g_reg_writes[i].data = NULL;
+            g_reg_writes[i].im = NULL;
+            g_reg_writes[i].copied = 0;
+            dropped++;
+        }
+    }
     im->rw_pend = 0;
+    while (g_nreg_writes > 0 && !g_reg_writes[g_nreg_writes - 1].im) g_nreg_writes--;
+    if (drop_refs) {
+        for (int i = 0; i < dropped; i++) unref_locked(im);
+    }
+}
+// PEANUTS(upstream-candidate): above this many pending region writes for one image in a single submission, a single whole-image re-upload from guest storage
+// is cheaper than recording hundreds/thousands of vkCmdCopyBufferToImage commands; scaled by storage size so large tile atlases (e.g. 85 MiB) keep region copies.
+static uint32_t rw_coalesce_limit(const vka_img *im) {
+    uint64_t lim = im->L.size >> 14;   // ~1 region copy per 16 KiB (64 for <=1 MiB, 128 for 2 MiB, capped at 2048)
+    if (lim < 64) lim = 64;
+    if (lim > 2048) lim = 2048;
+    return (uint32_t)lim;
+}
+static void rw_fallback_whole_locked(vka_img *im) {
+    // Schedule whole-image upload from guest storage and drop any queued region writes for dst/im so vka_tex_prepare's drain (after g_redo) cannot overwrite it with older bytes.
+    vka_img *dst = im->par ? im->par : im;
+    redo_add_locked(dst);
+    rw_cancel_locked(dst, 1);
+    if (im != dst) rw_cancel_locked(im, 1);
 }
 // PEANUTS begin: the overlap check of a prepare's region copies without the scan of every earlier copy. Metroid Dread redraws its map after Game Over → Continue with one
 // WriteTexels per texel (main+0x160e80), tens of thousands of disjoint 1×1 copies in one prepare; checking each against all before it (O(n²), never an early exit, g_tmu
@@ -2806,7 +2945,8 @@ void mtl_tex_write_region(const tex_t *t, unsigned level, unsigned layer0, const
         pthread_mutex_unlock(&g_tmu);
         return;
     }
-    if (im->gpu_owned || img_pool_dead(im)) {
+    vka_img *owner = im->par ? im->par : im;   // PEANUTS(upstream-candidate)
+    if (im->gpu_owned || owner->gpu_owned || img_pool_dead(im)) {
         pthread_mutex_unlock(&g_tmu);
         return;
     }
@@ -2816,16 +2956,23 @@ void mtl_tex_write_region(const tex_t *t, unsigned level, unsigned layer0, const
     // stores is not followed from here on: if one exists, this is where it shows (the texture stays as WriteTexels left it)
     if (im->track || im->mode == ST_TRACK) { im->track = 0; im->mode = ST_FILL; }
     im->wt = 1;
+    if (owner->cpu_dirty) {
+        // PEANUTS(upstream-candidate): a whole-image re-upload from guest storage is already scheduled, and write_region_bl already wrote the pixels there
+        if (owner->rw_pend) rw_cancel_locked(owner, 1);
+        if (im != owner && im->rw_pend) rw_cancel_locked(im, 1);
+        pthread_mutex_unlock(&g_tmu);
+        return;
+    }
     const vka_fmt *f = &im->f;
     int nz = r->depth ? r->depth : 1;
     // The raw guest bytes are only the image's texels when no conversion lies between them (depth/stencil, video, a mapped format: the whole-image upload handles those),
     // and only valid Vulkan usage inside the image: otherwise the storage holds the write and the next prepare reads all of it
     uint32_t lw = im->w >> level ? im->w >> level : 1, lh = im->h >> level ? im->h >> level : 1;
     // (an image from a finer texture level, a soft or sparse texture's: im->base, its levels are not the texture's; the whole re-upload maps them)
-    if (f->kind >= 3 || im->m.z || im->is_video || im->base || im->rsc /* PEANUTS: a scaled image (DM_RES_SCALE): the region is the texture's pixels; the whole upload makes it 1x first */ || level >= im->levels || layer0 + (unsigned)r->zoffset + (unsigned)nz > im->layers ||
+    if (f->kind >= 3 || im->m.z || im->is_video || im->par || im->base || im->rsc /* PEANUTS: a scaled image (DM_RES_SCALE): the region is the texture's pixels; the whole upload makes it 1x first */ || level >= im->levels || r->zoffset < 0 || nz < 0 || layer0 + (unsigned)r->zoffset + (unsigned)nz > im->layers ||
         r->xoffset < 0 || r->yoffset < 0 || r->width <= 0 || r->height <= 0 ||
         (uint64_t)r->xoffset + (uint64_t)r->width > lw || (uint64_t)r->yoffset + (uint64_t)r->height > lh) {
-        redo_add_locked(im);
+        rw_fallback_whole_locked(im);   // PEANUTS(upstream-candidate)
         pthread_mutex_unlock(&g_tmu);
         return;
     }
@@ -2839,12 +2986,19 @@ void mtl_tex_write_region(const tex_t *t, unsigned level, unsigned layer0, const
         pthread_mutex_unlock(&g_tmu);
         return;
     }
+    if ((uint64_t)im->rw_pend + (uint64_t)(unsigned)nz > rw_coalesce_limit(im)) {   // PEANUTS(upstream-candidate)
+        static int n_rw_coal;
+        if (n_rw_coal++ < 8)
+            VLOG("region write serial %llu (%ux%u): %u pending writes coalesced into whole-image upload",
+                 (unsigned long long)im->serial, im->w, im->h, im->rw_pend);
+        rw_fallback_whole_locked(im);
+        pthread_mutex_unlock(&g_tmu);
+        return;
+    }
     for (int z = 0; z < nz; z++) {
         uint8_t *data = malloc(slice_bytes);
         if (!data) {
-            // the storage holds the write; the next prepare re-reads all of it. Slices queued before this one stay queued: they are copied first and the re-upload follows
-            // in the same order, so the image ends with the storage's content either way
-            redo_add_locked(im);
+            rw_fallback_whole_locked(im);   // PEANUTS(upstream-candidate)
             break;
         }
         for (uint32_t y = 0; y < by; y++) {
@@ -2853,8 +3007,15 @@ void mtl_tex_write_region(const tex_t *t, unsigned level, unsigned layer0, const
                    row_bytes);
         }
         if (g_nreg_writes == g_reg_writes_cap) {
-            g_reg_writes_cap = g_reg_writes_cap ? g_reg_writes_cap * 2 : 32;
-            g_reg_writes = realloc(g_reg_writes, (size_t)g_reg_writes_cap * sizeof *g_reg_writes);
+            int ncap = g_reg_writes_cap ? g_reg_writes_cap * 2 : 32;   // PEANUTS(upstream-candidate)
+            tex_region_write_t *nw = realloc(g_reg_writes, (size_t)ncap * sizeof *g_reg_writes);
+            if (!nw) {
+                free(data);
+                rw_fallback_whole_locked(im);
+                break;
+            }
+            g_reg_writes = nw;
+            g_reg_writes_cap = ncap;
         }
         g_reg_writes[g_nreg_writes++] = (tex_region_write_t){
             .im = im,
@@ -3347,7 +3508,7 @@ static void write_tex(int id, VkCommandBuffer cb, VkWriteDescriptorSet *w, VkDes
     if (eager) {
         pthread_mutex_unlock(&g_tmu);
         nvn_pool_use(1);
-        g_first_sampled = !e->img;   // (a texture ID in the sampled table: a first use here is a sample, nvn2_sampled_content)
+        g_first_sampled = !e->img;   // (a texture ID in the sampled table: a first use here is a sample, storage_sampled_content)   // PEANUTS(upstream-candidate)
         im = treg_dead(id, e) ? NULL : vka_tex_get(&e->t, cb);
         g_first_sampled = 0;
         nvn_pool_use(0);
@@ -3862,7 +4023,7 @@ void vka_tex_prepare(VkCommandBuffer cb, uint64_t fence) {   // PEANUTS: image r
     }
     int n_up = 0;
     for (int i = 0; i < g_nredo; i++) {   // CPU writes to textures that already have an image (WriteTexels): from now on they follow their storage
-        smap_ent *e = map_get(g_redo[i]); vka_img *im = e ? e->im : NULL;
+        vka_img *im = g_redo[i];   // PEANUTS(upstream-candidate): (NULL: freed while queued, redo_forget_locked)
         if (!im || !im->cpu_dirty) continue;
         im->cpu_dirty = 0;
         if (im->gpu_owned || img_pool_dead(im)) continue;

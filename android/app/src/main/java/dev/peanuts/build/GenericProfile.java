@@ -63,7 +63,7 @@ public final class GenericProfile {
             stream = c.getAssets().open(path);
         } catch (FileNotFoundException e) {
             if (!required) return null;
-            throw new IOException("This build has no generic host profile at assets/" + path, e);
+            throw new IOException("This app version is missing a file it needs for this game. Install the app again, then tap Retry.\nNo generic host profile at assets/" + path, e);
         }
         try (InputStream in = stream) {
             return install(in, dest, installed);

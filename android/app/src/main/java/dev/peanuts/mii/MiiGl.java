@@ -55,7 +55,7 @@ public final class MiiGl {
     private EGLContext ctx = EGL14.EGL_NO_CONTEXT;
     private EGLConfig cfg;
     private EGLSurface pbuf = EGL14.EGL_NO_SURFACE;
-    private boolean broken;
+    private final MiiGlRetry retry = new MiiGlRetry();   // after a start that failed: when to try again
     private MiiParts parts;
     private int prog2d, prog3d, quad;
     private final Map<Integer, int[]> textures = new HashMap<>();   // part → {GL texture, channels}
@@ -82,10 +82,10 @@ public final class MiiGl {
             try {
                 if (ready() && EGL14.eglMakeCurrent(dpy, pbuf, pbuf, ctx)) {
                     Head h = head(info, m);
-                    b = offscreen(h, px, yaw, 0, zoom);
-                    h.release();
+                    try { b = offscreen(h, px, yaw, 0, zoom); } finally { h.release(); }
                 }
             } catch (IOException | RuntimeException e) { Log.w(TAG, "Mii picture", e); }
+            catch (OutOfMemoryError e) { Log.w(TAG, "Mii picture: out of memory (" + px + " px)"); b = null; }   // no picture this time; the thread lives on
             Bitmap out = b;
             ui.post(() -> done.accept(out));
         });
@@ -128,6 +128,7 @@ public final class MiiGl {
                 if (head != null) head.release();
                 head = next; shown = info;
             } catch (IOException | RuntimeException e) { Log.w(TAG, "Mii preview", e); }
+            catch (OutOfMemoryError e) { Log.w(TAG, "Mii preview: out of memory"); }   // the Mii shown before stays
             draw();
         }
 
@@ -181,23 +182,23 @@ public final class MiiGl {
     // ---- EGL ----
 
     private boolean ready() {
-        if (broken) return false;
+        if (retry.waiting(System.currentTimeMillis(), dir)) return false;
         if (ctx != EGL14.EGL_NO_CONTEXT) return parts != null;
         try {
             parts = MiiParts.open(dir);
             if (parts == null) return false;
-        } catch (IOException e) { Log.w(TAG, "Mii parts: " + e.getMessage()); broken = true; return false; }
+        } catch (IOException e) { Log.w(TAG, "Mii parts: " + e.getMessage()); return failed(); }
         dpy = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
         int[] v = new int[2];
-        if (dpy == EGL14.EGL_NO_DISPLAY || !EGL14.eglInitialize(dpy, v, 0, v, 1)) { broken = true; return false; }
+        if (dpy == EGL14.EGL_NO_DISPLAY || !EGL14.eglInitialize(dpy, v, 0, v, 1)) { Log.w(TAG, "Mii pictures: no EGL display (" + EGL14.eglGetError() + ")"); return failed(); }
         int[] attr = {EGL14.EGL_RENDERABLE_TYPE, 0x40 /* EGL_OPENGL_ES3_BIT */, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT | EGL14.EGL_WINDOW_BIT,
                 EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8, EGL14.EGL_NONE};
         EGLConfig[] cf = new EGLConfig[1]; int[] n = new int[1];
-        if (!EGL14.eglChooseConfig(dpy, attr, 0, cf, 0, 1, n, 0) || n[0] < 1) { broken = true; return false; }
+        if (!EGL14.eglChooseConfig(dpy, attr, 0, cf, 0, 1, n, 0) || n[0] < 1) { Log.w(TAG, "Mii pictures: no OpenGL ES 3 config"); return failed(); }
         cfg = cf[0];
         ctx = EGL14.eglCreateContext(dpy, cfg, EGL14.EGL_NO_CONTEXT, new int[] {EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE}, 0);
         pbuf = EGL14.eglCreatePbufferSurface(dpy, cfg, new int[] {EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE}, 0);
-        if (ctx == EGL14.EGL_NO_CONTEXT || pbuf == EGL14.EGL_NO_SURFACE || !EGL14.eglMakeCurrent(dpy, pbuf, pbuf, ctx)) { broken = true; return false; }
+        if (ctx == EGL14.EGL_NO_CONTEXT || pbuf == EGL14.EGL_NO_SURFACE || !EGL14.eglMakeCurrent(dpy, pbuf, pbuf, ctx)) { Log.w(TAG, "Mii pictures: no EGL context (" + EGL14.eglGetError() + ")"); return failed(); }
         try {   // which formats this firmware's parts use, once, for the log
             StringBuilder f = new StringBuilder("Mii parts: ").append(parts.textureFile).append(", ").append(parts.shapeFile).append("; formats");
             int[][] probe = {{MiiParts.T_EYE, 0}, {MiiParts.T_EYEBROW, 0}, {MiiParts.T_MOUTH, 0}, {MiiParts.T_GLASS, 1}, {MiiParts.T_MAKEUP, 1}, {MiiParts.T_WRINKLE, 1},
@@ -207,13 +208,29 @@ public final class MiiGl {
         } catch (IOException e) { Log.w(TAG, "Mii parts: " + e.getMessage()); }
         prog2d = program(VS_2D, FS_2D);
         prog3d = program(VS_3D, FS_3D);
-        if (prog2d == 0 || prog3d == 0) { broken = true; return false; }
+        if (prog2d == 0 || prog3d == 0) return failed();
         int[] b = new int[1];
         GLES30.glGenBuffers(1, b, 0); quad = b[0];
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, quad);
         float[] q = {0, -0.5f, 0, 0,  1, -0.5f, 1, 0,  1, 0.5f, 1, 1,  0, 0.5f, 0, 1};   // x, y, s, t: a unit quad whose left edge is x 0
         GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, q.length * 4, floats(q), GLES30.GL_STATIC_DRAW);
+        retry.ok();
         return true;
+    }
+
+    /** The start failed: what it made goes (the context takes its shaders with it), so the next try, when MiiGlRetry says, starts clean; false */
+    private boolean failed() {
+        if (dpy != EGL14.EGL_NO_DISPLAY) {
+            EGL14.eglMakeCurrent(dpy, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT);
+            if (pbuf != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(dpy, pbuf);
+            if (ctx != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(dpy, ctx);
+        }
+        pbuf = EGL14.EGL_NO_SURFACE; ctx = EGL14.EGL_NO_CONTEXT;
+        prog2d = prog3d = quad = 0;
+        textures.clear(); meshes.clear();
+        parts = null;
+        retry.failed(System.currentTimeMillis(), dir);
+        return false;
     }
 
     // ---- Shaders ----
@@ -387,8 +404,15 @@ public final class MiiGl {
 
     private static final int OPAQUE = 0xff000000;
 
+    /** m's head, its parts uploaded; a head that fails half-way (a broken part, out of memory) gives back the textures made for it */
     private Head head(byte[] info, MiiStore.Mii m) throws IOException {
         Head h = new Head();
+        try { build(h, m); }
+        catch (IOException | RuntimeException | OutOfMemoryError e) { h.release(); throw e; }
+        return h;
+    }
+
+    private void build(Head h, MiiStore.Mii m) throws IOException {
         int face = m.get("faceline_type"), hair = m.get("hair_type");
         float[] ft = parts.facelineTransform(face);
         float[] hairAt = {ft[0], ft[1], ft[2]}, noseAt = {ft[3], ft[4], ft[5]}, beardAt = {ft[6], ft[7], ft[8]};
@@ -439,7 +463,6 @@ public final class MiiGl {
         h.body = body(h, m);
         h.bodyColor = OPAQUE | MiiLook.favorite(m.get("favorite_color"));
         h.skin = skin;
-        return h;
     }
 
     private static void grow(Head h, Piece p) {

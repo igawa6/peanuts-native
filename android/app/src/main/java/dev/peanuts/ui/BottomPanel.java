@@ -77,7 +77,7 @@ final class BottomPanel extends Presentation {
     private BottomScreen.BuildInfo shownBuild;
 
     // explanation page (Settings: the row or section the focus is on)
-    private LinearLayout exCard, exNowBox, exChips, exList;
+    private LinearLayout exCard, exNowBox, exChips, exList, exKeys;
     private ImageView exIcon;
     private TextView exTitle, exPlace, exText, exNow, exDefault;
     private PUi.Segmented exSwitch;
@@ -372,8 +372,39 @@ final class BottomPanel extends Presentation {
         PUi.add(exCard, exChips, 12);
         exList = column(c);
         PUi.add(exCard, exList, 4);
+        exKeys = PUi.row(c);   // the controller's keys for what is explained (a game's page), only while one is connected
+        exKeys.setVisibility(View.GONE);
+        PUi.add(exCard, exKeys, 14);
         col.addView(exCard);
         return col;
+    }
+
+    /** The keys of the explanation: each its face button (as Settings' X on the logo page) and what it does, in the accent; none without a controller */
+    private void bindKeys(BottomScreen.Explain e) {
+        if (exKeys == null) return;
+        exKeys.removeAllViews();
+        boolean show = pad && e != null && e.keys != null && !e.keys.isEmpty();
+        exKeys.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show) return;
+        Context c = getContext();
+        int glyph = PUi.dp(c, 22);
+        boolean joined = false;   // the key before has no words of its own: this one is beside it (L R Areas)
+        for (String[] k : e.keys) {
+            ImageView g = new ImageView(c);
+            g.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            g.setImageDrawable(BottomScreen.keyGlyph(c, k[0], 22));
+            LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(glyph, glyph);
+            if (exKeys.getChildCount() > 0) gp.setMarginStart(PUi.dp(c, joined ? 4 : 16));
+            exKeys.addView(g, gp);
+            joined = k.length < 2 || k[1].isEmpty();
+            if (!joined) {
+                TextView t = PUi.text(c, k[1], 14, R.color.bn_accent, 600);
+                t.setSingleLine(true);
+                LinearLayout.LayoutParams tp = PUi.wrap();
+                tp.setMarginStart(PUi.dp(c, 6));
+                exKeys.addView(t, tp);
+            }
+        }
     }
 
     /** Settings › About on this display: the app's peanut cracked open, big, the count, the way to the next milestone and the milestones around it */
@@ -525,6 +556,7 @@ final class BottomPanel extends Presentation {
     void setPad(boolean on) {
         if (on == pad) return;
         pad = on;
+        if (page == EXPLAIN) bindKeys(shownExplain);   // a game's page: its keys come and go with the controller
         if (stage == null) return;   // build() applies it
         View[] v = {cardPrimary.icon, cardSecond.icon, buildStop.icon, buildOpen.icon, settingsBtn};
         if (!Motion.on() || !stage.isShown()) { applyKeys(); return; }
@@ -610,7 +642,7 @@ final class BottomPanel extends Presentation {
             statValue[1].setText(k.play == null || k.play.lastRun <= 0 ? none : dev.peanuts.launch.PlayLedger.compact(k.play.lastRun));
             statValue[2].setText(playedShort(last));
         }
-        String l2 = ready ? (stats ? "" : played(k.played)) : toBuild ? k.space : "";
+        String l2 = ready ? (k.update != null ? k.update : stats ? "" : played(k.played)) : toBuild ? k.space : "";   // a newer update or add-ons found say so first
         setLine(cardLine1, cardLine1Row, l1);
         setLine(cardLine2, cardLine2, l2);
         cardPrimary.setVisibility(k.primary != null ? View.VISIBLE : View.GONE);
@@ -694,6 +726,7 @@ final class BottomPanel extends Presentation {
     private void bindExplain(BottomScreen.Explain e) {
         Context c = getContext();
         shownExplain = e;
+        exCard.animate().cancel();   // a fade still running (another explanation came while it went out) would take the card back to nothing
         exCard.setAlpha(1f);
         exIcon.setImageDrawable(Icons.get(c, e.icon, Icons.Ink.NORMAL));
         exTitle.setText(e.title);
@@ -709,6 +742,7 @@ final class BottomPanel extends Presentation {
         if (now) exNow.setText(e.value);
         exChips.setVisibility(row && e.deflt != null ? View.VISIBLE : View.GONE);
         if (e.deflt != null) exDefault.setText("App default: " + e.deflt);
+        bindKeys(e);
         exList.removeAllViews();
         exList.setVisibility(row ? View.GONE : View.VISIBLE);
         if (!row) for (CharSequence[] r : e.rows) {
@@ -844,6 +878,12 @@ final class BottomPanel extends Presentation {
             LinearLayout.LayoutParams lp = PUi.wrap();
             lp.leftMargin = PUi.dp(c, 8);
             cardMark.addView(cardState, lp);
+        } else if (k.queued) {   // waits in the build queue (issue #348): the cover's quiet pill
+            TextView pill = PUi.text(c, k.state, 12, R.color.bn_text_2, 700);
+            pill.setSingleLine(true);
+            pill.setBackground(PUi.round(PUi.col(c, R.color.bn_card), PUi.dp(c, 999), PUi.col(c, R.color.bn_card_stroke), Math.max(1, PUi.dp(c, 1))));
+            pill.setPadding(PUi.dp(c, 10), PUi.dp(c, 5), PUi.dp(c, 10), PUi.dp(c, 5));
+            cardMark.addView(pill, PUi.wrap());
         } else {
             boolean danger = k.kind == BottomScreen.Card.K_NO_PROFILE || !"Build needed".equals(k.state);
             TextView pill = PUi.text(c, k.state, 12, danger ? R.color.bn_danger : R.color.bn_on_banana, 700);

@@ -1,0 +1,40 @@
+# Game profile of LEGO 2K Drive (Switch, update 1.17 = v1114112 over the base game 1.0 = v0, with its 13 add-on content packs)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Visual Concepts / 2K Games, Unreal Engine 4.27.2 (EpicGames+UnrealEngine-4_27_2 in main; SF_GLSL_SWITCH shaders in two Oodle-compressed shader code archives), SDK 14.3.0, NVN, FMOD sound, Bink movies, PhysX 4.1.2.
+# Status: provisional profile (dm/games/profile_guess.py from the survey, peanuts/docs/NEW-GAME.md); the note (README.md) says what is a guess
+
+# ---- Identity ----
+title_id	0100739018020000
+program_id	0100739018020000
+
+# ---- App ----
+name	LEGO 2K Drive
+ipa	LEGO2KDrive.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v1114112	1.17	main=b75e7d3db78d69c139d53ad109af34e8	subsdk0=c781dd63daf0ddcdb9975da50a198f93	sdk=2aef2cffb104ee7c9e212fd2f4c731e9
+package	v1114112
+shader_versions	v1114112
+android_builds	v1114112
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Artemis/Content/Paks/pakchunk0-Switch.pak
+zip_store	.bank:.bk2:.mp4:.pak:.ttf:.metallib
+
+# ---- Memory ----
+# Unreal: nninitStartup reserves a 62 GB address region and its FMallocBinned3 takes 37 GB of it, so a 64 GB alias region for the bring-up on the Mac. The rewriter cuts the allocator in any Unreal 4 / 5 main (dm/tools/ue_malloc.py) and gives the region what the alias region has room for (dm/tools/ue_region.py), so an iPhone takes a smaller guest block, as Octopath Traveler 0's profile (docs/reference/memory.md)
+mem_reserve	0x1028000000
+mem_alias	0x1000000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 80 MB of system resource
+sys_resource	0x5000000
+
+# ---- Shader split ----
+# the decoded shader code archives: the engine's global shaders and the game's material shaders
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	LEGO 2K Drive shaders

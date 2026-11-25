@@ -16,12 +16,16 @@
 // headers and this line is raised (the unit test t_android_shlib fails meanwhile)
 // PEANUTS: raised for this tree's ABI, which is neither upstream's nor this fork's before: both sides' kinds, IMG_UBO renumbered (dmsh_abi_vk.h: TEX_DYN 23, SAMP_DYN 24,
 // IMG_UBO 25). Upstream's own ABI of v0.3.22-v0.3.26 (4fbeb79f5ab7, IMG_UBO 23) is no row: its 23 is this host's TEX_DYN
-#define VKA_ABI_COMPAT_FOR "3d4e8bb1e1e8"   // PEANUTS: raised for the step of an array read by record (the row cb5a89b39291 below)
+#define VKA_ABI_COMPAT_FOR "288a138fa7d1"   // PEANUTS: raised for the handle-type-2 sampler flag (the row 3d4e8bb1e1e8 below)
 // The rows' ABIs, space-separated, in the table's order: what the launcher reads (build.gradle NX_DMSH_VK_ABI_COMPAT, ShaderLibs.playable)
-#define DMSH_VK_ABI_COMPAT "cb5a89b39291 d9c33f6111c1 228b73bd10f6 674db0a4ff79"   // PEANUTS: cb5a89b39291 and d9c33f6111c1 (the rows below)
+#define DMSH_VK_ABI_COMPAT "3d4e8bb1e1e8 cb5a89b39291 d9c33f6111c1 228b73bd10f6 674db0a4ff79"   // PEANUTS: 3d4e8bb1e1e8, cb5a89b39291 and d9c33f6111c1 (the rows below)
 
 typedef struct { const char *abi; unsigned differs; } vka_abi_compat_row;
 static const vka_abi_compat_row vka_abi_compat[] = {
+    // PEANUTS: before the handle-type-2 sampler flag (2026-11-24; Vulkan chains up to c9337a3f4e01, 0.1.7's c679ddfbc5db among them): the headers differ only in
+    // DMSH_VK_BF_SAMP_RAW (16), a binding flag no library of that ABI sets (bit 16 was never used before); samp_of reads a SAMP_UBO word as a handle without it,
+    // as those libraries mean. Such a library plays as it did (the samplers of handle type 2 still wrong) until its shaders are made again
+    {"3d4e8bb1e1e8", 0},
     // PEANUTS: before the step of an array of handles read by record (2026-11-21; Vulkan chains up to dfebef5d68a9): the headers differ only in the binding
     // record's last 16-bit field before bytes (dmsh_abi_vk.h dmsh_vk_bind: reserved then, 0 in every library; step now, where 0 is the 8 bytes those libraries mean)
     {"cb5a89b39291", 0},

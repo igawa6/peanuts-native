@@ -155,9 +155,9 @@ public final class CompanionVersions {
     private void render() {
         box.removeAllViews();
         if (loading) { PUi.add(box, PUi.body(act, "Loading versions…"), 0); return; }
-        if (loadError != null && versions.isEmpty()) { PUi.add(box, PUi.body(act, "Catalog unavailable: " + loadError), 0); return; }
-        if (root == null) { PUi.add(box, PUi.body(act, "Build the game first: a companion goes beside its pack, so there is nowhere to install one yet."), 0); return; }
-        if (versions.isEmpty()) { PUi.add(box, PUi.body(act, "No companion in the catalog for this game."), 0); return; }
+        if (loadError != null && versions.isEmpty()) { PUi.add(box, PUi.body(act, "The catalog could not be loaded. Check the connection, then open it again."), 0); return; }
+        if (root == null) { PUi.add(box, PUi.body(act, "Build the game first. Its companion is installed next to the build."), 0); return; }
+        if (versions.isEmpty()) { PUi.add(box, PUi.body(act, "No dual-screen companion for this game yet."), 0); return; }
         PUi.add(box, PUi.small(act, busy ? busyText : PUi.joined(versions.size() + (versions.size() == 1 ? " version" : " versions"), "newest first")), 0);
         if (activeVersion != null) {
             LinearLayout actions = PUi.row(act);

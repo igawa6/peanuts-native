@@ -1,0 +1,44 @@
+# Game profile of Minecraft Dungeons II (Switch, update 1.1.3.0 = v131072 over the base game 1.1.1.0 = v0, with its Hero Pack add-on)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Mojang Studios, Unreal Engine 5.6.1 (SDK MW+EpicGames+UnrealEngine-5_6_1 in main; SF_GLSL_SWITCH shaders in two IoStore shader libraries), SDK 20.5.15, NVN, Wwise sound, Havok.
+# Status: provisional profile (dm/games/profile_guess.py from the survey, peanuts/docs/NEW-GAME.md); the note (README.md) says what is a guess
+
+# ---- Identity ----
+title_id	0100A7C01B792000
+program_id	0100A7C01B792000
+
+# ---- App ----
+name	Minecraft Dungeons II
+ipa	MinecraftDungeonsII.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v131072	1.1.3.0	main=c6b32f4d3d4243ff190b082b4f6aea18	subsdk0=3904a8dee6801472d56bd4921378df27	sdk=190030518b5d64e5d87b84bc54661af9
+package	v131072
+shader_versions	v131072
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Dungeons/Content/Paks/Dungeons-Switch.ucas
+zip_store	.cache:.headers:.mp4:.pak:.ttf:.txt:.ucas:.utoc:.metallib
+
+# ---- Memory ----
+# Unreal: nninitStartup reserves a 62 GB address region and its FMallocBinned3 takes 37 GB of it, so a 64 GB alias region for the bring-up on the Mac. The rewriter cuts the allocator in any Unreal 4 / 5 main (dm/tools/ue_malloc.py) and gives the region what the alias region has room for (dm/tools/ue_region.py), so an iPhone takes a smaller guest block, as Octopath Traveler 0's profile (docs/reference/memory.md)
+mem_reserve	0x1028000000
+mem_alias	0x1000000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 20 MB of system resource
+sys_resource	0x1400000
+
+# ---- NVN ----
+# 64 vertex shaders (Unreal's particle vertex factories, as in FINAL FANTASY RESONANCE, the same engine version) pick their texture and sampler slots at run time from c2's tables;
+# the translator cannot trace them to one slot, and without the key their draws were skipped ([RED] dynamic texture handles, first run on the Thor 2026-11-23)
+tex_dyn_slots	on
+
+# ---- Shader split ----
+# The two shader libraries of the IoStore container Dungeons-Switch.utoc / .ucas (uepak.py; the PC build decodes them with unoodle, DM_OODLE_OOZ): the engine's global shaders and the game's material shaders
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	Minecraft Dungeons II shaders

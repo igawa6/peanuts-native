@@ -39,7 +39,10 @@ static int samp_of(const vka_bstate *s, int st, const dmsh_vk_bind *b, unsigned 
     case DMSH_VK_KIND_SAMP_TEX: return b->sreg >= 0 && b->sreg < VKA_NTEX ? SID_OF(s->tex[st][b->sreg]) : 0;   // PEANUTS: SID_OF
     case DMSH_VK_KIND_SAMP: return b->sreg >= 0 && b->sreg < 128 ? SID_OF(s->samp[st][b->sreg]) : 0;   // PEANUTS: SID_OF
     case DMSH_VK_KIND_SAMP_ID: return b->sreg > 0 ? b->sreg : 0;   // a constant of the shader (nvn_mtl.m NVN_RB_SAMPI): taken as it is
-    case DMSH_VK_KIND_SAMP_UBO: return ubo_samp_id(s, (uint32_t)ubo_word(s, st, b->sreg, b->soff + ubo_elem(b, k), 4, rd, ctx));
+    case DMSH_VK_KIND_SAMP_UBO: {
+        uint32_t w = (uint32_t)ubo_word(s, st, b->sreg, b->soff + ubo_elem(b, k), 4, rd, ctx);
+        if (b->flags & DMSH_VK_BF_SAMP_RAW) { int x = (int)(w & 0xfff); return x ? x + s->samp_base : 0; }   // PEANUTS(upstream-candidate): handle type 2, the word is the sampler ID (nvn_mtl.m sampu_id)
+        return ubo_samp_id(s, w); }
     case DMSH_VK_KIND_SAMP_C2A: {   // the handle at c2 byte off + 8 k, ORed with the separate sampler word at soff (nvn_mtl.m NVN_RB_SAMPA)
         uint64_t sw = b->soff != 0xFFFF ? vka_c2_handle(s, st, b->soff) : 0;
         return SID_OF(vka_c2_handle(s, st, b->off + 8u * k) | sw); }   // PEANUTS: SID_OF

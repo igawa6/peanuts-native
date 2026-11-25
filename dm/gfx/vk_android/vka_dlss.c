@@ -116,6 +116,7 @@ static void dpass(VkCommandBuffer cb, int pipe, const VkImageView in[4], const V
     vk.vkCmdPushDescriptorSetKHR(cb, VK_PIPELINE_BIND_POINT_COMPUTE, D.lay, 0, 6, wr);
     vk.vkCmdPushConstants(cb, D.lay, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, pc);
     vk.vkCmdDispatch(cb, (w + 7) / 8, (h + 7) / 8, 1);
+    vka_dyn_invalidate();   // PEANUTS(upstream-candidate): recorded between the game's dispatches (vka_exec.c dlss_eval): the next dispatch pushes again (vka_draw.c push_same), as after nf_pass
     vka_barrier(cb);
 }
 static uint32_t fbits(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }

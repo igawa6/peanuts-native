@@ -33,7 +33,7 @@ public final class ShaderCapture {
     public static File save(Activity a) throws IOException {
         if (!active(a)) return null;
         File save = new File(a.getIntent().getStringExtra(SAVE));
-        if (!save.isDirectory() && !save.mkdirs()) throw new IOException("Cannot make the graphics preparation folder.");
+        if (!save.isDirectory() && !save.mkdirs()) throw new IOException("Finishing graphics setup could not make its folder.");
         return save;
     }
 

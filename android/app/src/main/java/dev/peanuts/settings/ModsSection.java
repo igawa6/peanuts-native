@@ -66,16 +66,23 @@ public final class ModsSection {
     private final String titleId, gameName;
     private final File game, pack, home;   // the dump folder or .nup, its pack (null: not built), and the game's folder the mods are in (ModRuntime.home, as GameActivity finds it)
     private final LinearLayout body;
+    /** Run when a mod was installed or deleted (Mods & Cheats builds its page again: its Mods count); null: nothing to tell */
+    public static Runnable listChanged;
+    private boolean ownInstall = true;   // its own "Install mod…" button: off on Mods & Cheats, whose Add installs a mod (dev.peanuts.mods.CheatImportUi)
 
     /**
      * The section. gameDir and packDir are the game's entry in upstream's list (Game.gameDir, Game.packDir).
      */
-    public static View view(Activity a, String titleId, String gameName, String gameDir, String packDir) {
+    public static View view(Activity a, String titleId, String gameName, String gameDir, String packDir) { return view(a, titleId, gameName, gameDir, packDir, true); }
+
+    /** The section; install: with its own "Install mod…" (Mods & Cheats has Add instead) */
+    public static View view(Activity a, String titleId, String gameName, String gameDir, String packDir, boolean install) {
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
         SectionUi ui = new SectionUi(a);
         box.addView(ui.section("Mods"), SectionUi.lp(0, 12));
         ModsSection s = new ModsSection(a, ui, titleId, gameName, gameDir, packDir);
+        s.ownInstall = install;
         box.addView(s.body, SectionUi.lp(0, 0));
         current = s;
         // the page left, or built again: this section's views are gone, so nothing more is rendered into them (a newer section has taken current by then)
@@ -96,6 +103,23 @@ public final class ModsSection {
         home = pack == null ? null : ModRuntime.home(a, titleId, game, p.getParentFile());
         body = new LinearLayout(a);
         body.setOrientation(LinearLayout.VERTICAL);
+    }
+
+    /**
+     * The game page's Mods & Cheats row (dev.peanuts.mods.CheatsPage.entry), where this section was: a build with mods that is due starts as when the section
+     * showed there ({@link #autoBuild}); nothing is rendered
+     */
+    public static void due(Activity a, String titleId, String gameName, String gameDir, String packDir) {
+        ModsSection s = new ModsSection(a, new SectionUi(a), titleId, gameName, gameDir, packDir);
+        if (current == null || !current.titleId.equals(titleId)) s.autoBuild();
+    }
+
+    /** Mods & Cheats' Add, for a pick that is a mod (romfs, exefs folders): installed as Install mod… installs, into the section on screen; false when none shows */
+    public static boolean installPicked(Activity a, Uri u, String displayName, boolean folder) {
+        if (current == null || current.home == null || importTitle != null) return false;
+        pickFor = current;
+        if (folder) pickedFolder(a, u); else pickedZip(a, u, displayName);
+        return true;
     }
 
     /**
@@ -199,7 +223,7 @@ public final class ModsSection {
 
     /** What a build with mods must wait for: another one, a normal build of any game (one packer serves them all), or an install or a delete, whose files it reads */
     private static boolean busy() {
-        return buildTitle != null || importTitle != null || deleteTitle != null || ModBuildPipeline.running() != 0 || dev.peanuts.build.BuildPipeline.running() != 0;
+        return buildTitle != null || importTitle != null || deleteTitle != null || ModBuildPipeline.running() != 0 || dev.peanuts.build.BuildPipeline.busy();   // busy(): a game builds or waits in the build queue (issue #348): they share one packer
     }
 
     /** Whether the app shows now: Android refuses a foreground service (the build) started by an app in the background */
@@ -254,7 +278,7 @@ public final class ModsSection {
     private void render() {
         body.removeAllViews();
         if (home == null) {
-            View row = ui.setting("🧩", "Mods", "Build the game first", null);
+            View row = icon(ui.setting("🧩", "Mods", "Build the game first", null), "mods");
             row.setEnabled(false);
             row.setAlpha(0.5f);
             body.addView(row, SectionUi.lp(0, 0));
@@ -265,20 +289,33 @@ public final class ModsSection {
         // what an install or a delete left when the app ended in the middle of it: once per run, and never while one goes on (its folders are what a sweep looks for)
         if (deleteTitle == null && importTitle == null && SWEPT.add(home.getPath())) new Thread(() -> ModStore.sweepDeleted(ModRuntime.modsRoot(home), titleId), "peanuts-mod-sweep").start();
         if (importTitle == null && SWEPT.add("the app's cache")) ModImportUi.sweepStaging(a);
-        if (mods.isEmpty() && !importing) body.addView(ui.setting("🧩", "No mods installed", "Files, cheats and code mods from this device", null), SectionUi.lp(0, 0));
-        for (ModStore.Mod m : mods) body.addView(modRow(m, !importing), SectionUi.lp(0, 0));
+        if (mods.isEmpty() && !importing) body.addView(icon(ui.setting("🧩", "No mods installed", "Files, cheats and code mods from this device", null), "mods"), SectionUi.lp(0, 0));
+        boolean built = false;   // the code mods that are on have their build (the chip of a code mod says so)
+        if (ModStore.needsBuild(mods)) { try { Variant v = variant(mods); built = v.stopTitle == null && v.problem == null; } catch (RuntimeException e) { built = false; } }
+        for (ModStore.Mod m : mods) body.addView(modRow(m, !importing, !m.hasCode() ? "Next start" : built && m.enabled ? "Built" : "Needs a build"), SectionUi.lp(0, 0));
         if (titleId.equals(importTitle)) body.addView(ui.setting("📥", "Installing a mod", importText, null), SectionUi.lp(0, 0));
         if (deleting) body.addView(ui.setting("🗑", "Deleting " + deleteName, deleteText + " Install, the switches and Build with mods wait for it.", null), SectionUi.lp(0, 0));
         if (ModStore.needsBuild(mods)) buildRows(mods);
+        if (!ownInstall) return;
         LinearLayout buttons = SectionUi.buttons(a);
         SectionUi.add(buttons, ui.button("Install mod…", SectionUi.PRIMARY, v -> install()), importTitle == null && deleteTitle == null);   // one import or delete at a time: its line is one field
         body.addView(buttons, SectionUi.lp(0, 4));
     }
 
-    /** One mod: its name, what it carries, its switch, and the bin after the switch. The switch and the bin are off while a mod is being installed (its folder is being written) */
-    private View modRow(ModStore.Mod m, boolean enabled) {
+    /** One mod: its name, what it carries, when it applies (a chip: Next start, Needs a build, Built), its switch, and the bin after the switch. The switch and the bin are off while a mod is being installed (its folder is being written) */
+    private View modRow(ModStore.Mod m, boolean enabled, String when) {
         View row = ui.toggle(m.hasCode() ? "⚙️" : "🧩", m.name, what(m), m.enabled, (b, on) -> setEnabled(m, on));
         if (!enabled) setEnabledDeep(row, false);
+        if (row instanceof LinearLayout && ((LinearLayout) row).getChildAt(0) instanceof TextView) dev.peanuts.ui.Icons.tile((TextView) ((LinearLayout) row).getChildAt(0), m.hasCode() ? "build" : "mods");
+        if (row instanceof LinearLayout && when != null) {   // the chip before the switch
+            TextView chip = dev.peanuts.ui.PUi.chip(a, when);
+            chip.setSingleLine(true);
+            if (when.equals("Needs a build")) { chip.setBackground(dev.peanuts.ui.PUi.round(dev.peanuts.ui.PUi.col(a, dev.nxnative.android.R.color.bn_banana), SectionUi.dp(999), 0, 0)); chip.setTextColor(dev.peanuts.ui.PUi.col(a, dev.nxnative.android.R.color.bn_on_banana)); }
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            cp.rightMargin = SectionUi.dp(6);
+            LinearLayout r = (LinearLayout) row;
+            r.addView(chip, Math.max(0, r.getChildCount() - 1), cp);
+        }
         if (row instanceof LinearLayout) {
             TextView bin = new TextView(a);
             bin.setText("🗑");
@@ -292,7 +329,14 @@ public final class ModsSection {
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(SectionUi.dp(44), SectionUi.dp(44));
             p.leftMargin = SectionUi.dp(4);
             ((LinearLayout) row).addView(bin, p);
+            dev.peanuts.ui.Icons.tile(bin, "trash");   // the Peanuts icon in place of the emoji, where the build has the icons
         }
+        return row;
+    }
+
+    /** A row's emoji tile with the Peanuts icon instead (Icons.tile; the emoji stays where the build has no icons) */
+    private static View icon(View row, String name) {
+        if (row instanceof LinearLayout && ((LinearLayout) row).getChildAt(0) instanceof TextView) dev.peanuts.ui.Icons.tile((TextView) ((LinearLayout) row).getChildAt(0), name);
         return row;
     }
 
@@ -367,6 +411,7 @@ public final class ModsSection {
                 if (current != null && ferr != null) current.message("Delete failed", name + ": " + ferr + "\n\nWhat is left of it is removed the next time this page is opened.");
                 if (code) forget(id);
                 if (code) self.autoBuild(); else renderCurrent();   // the code mods that are left on: their build starts by itself when they have none (renders)
+                if (ferr == null && listChanged != null) listChanged.run();
                 poll();   // and a build that waited for this delete
             });
         }, "peanuts-mod-delete").start();
@@ -432,6 +477,7 @@ public final class ModsSection {
         if (!a.isFinishing() && !a.isDestroyed()) new AlertDialog.Builder(a).setTitle("Install mod").setMessage(message).setPositiveButton("OK", null).show();
         if (ok) { forget(s.titleId); s.autoBuild(); } else renderCurrent();
         poll();   // a build that waited for this install
+        if (ok && listChanged != null) listChanged.run();
     }
 
     // ---- Code mods: the build with mods (dev.peanuts.build.ModBuild / ModdedBuild / ModBuildPipeline) and its Play ----

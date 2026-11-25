@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.util.Log;
+import android.view.Display;
 
 import dev.peanuts.ctl.ExitRecord;
 
@@ -40,6 +41,11 @@ public final class GameReturn {
                 .putString("title_id", titleId).putString("name", name == null ? "" : name).putString("game", game).putString("pack", pack).apply();
     }
 
+    /** The game's screen was started on this display (Screens.startGame: Swap screens), Display.INVALID_DISPLAY: on the launcher's own. Kept for {@link #back} */
+    static void startedOn(Context c, int display) {
+        c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt("display", display).apply();
+    }
+
     /** True when {@code launch} is the launcher's plain start and a game runs: its screen was started again, and Home has nothing more to do with this intent. */
     public static boolean back(Activity home, Intent launch) {
         if (launch == null || !Intent.ACTION_MAIN.equals(launch.getAction()) || !launch.hasCategory(Intent.CATEGORY_LAUNCHER)) return false;
@@ -62,8 +68,12 @@ public final class GameReturn {
             i.putExtra(k, v);
         }
         try {
-            home.startActivity(i);
-            Log.i(Companion.TAG, "opened from the launcher while " + p.getString("name", "a game") + " runs: back to the game");
+            // Swap screens started the game on another display (Screens.startGame): it goes back there. A plain start moved its task to Home's display, and the
+            // companion to the other one, so the swap was undone (seen on the AYN Thor, 2026-11-19). That display gone or refused: the start as before
+            int display = p.getInt("display", Display.INVALID_DISPLAY);
+            boolean there = display != Display.INVALID_DISPLAY && Screens.startOn(home, i, display);
+            if (!there) home.startActivity(i);
+            Log.i(Companion.TAG, "opened from the launcher while " + p.getString("name", "a game") + " runs: back to the game" + (there ? " on display " + display : ""));
             return true;
         } catch (RuntimeException e) {
             Log.w(Companion.TAG, "could not go back to the running game: " + e);

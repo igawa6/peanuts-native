@@ -38,6 +38,9 @@ typedef struct { uint64_t addr; uint64_t last; } cand_t;
 #include "rt/peanuts_rt.h"
 #include "peanuts_frametime.h"
 #include "peanuts_graph.h"
+#include "peanuts_audiosync.h"
+#include <time.h>
+__attribute__((weak)) int nvn_game_fps(void);   // dm/gfx/nvn/hle_nvn.c: the game's own frame rate (60, 30 on present interval 2, or the host's cap)
 static void rt_tick(void);   // the companion runtime, below
 static PnRt *_Atomic g_rt;   // set once (rt_start, on the presenting thread); read by the tick thread, the page's UI thread (touch, presence) and the lifecycle's thread
 static void rt_ui_publish(void *u, uint32_t w, uint32_t h, const uint32_t *px);
@@ -294,6 +297,7 @@ static void refresh(void) {
 void peanuts_tick(void) {
     pn_ft_note();   // the frame time first: it runs whatever the rest of this tick does
     pn_graph_frame();   // the overlay graph's new bar (peanuts_graph.c)
+    { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); pn_as_frame((uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec, nvn_game_fps ? nvn_game_fps() : 60); }   // the game's pace for the audio output (peanuts_audiosync.c)
     g_frames++;
     rt_tick();   // the companion runtime: started at the first presented frame after main is loaded; its ticks come from a timer of its own (rt_thread)
     if (g_frames % REFRESH_EVERY) return;

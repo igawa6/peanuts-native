@@ -57,7 +57,9 @@ int main(void) {
 
     // 1. Protection fails with no effect
     uint64_t s = nvn_dirty_now(); g_mode = 1; g_mode_prot = PROT_READ; nvn_dirty_protect(m, len); g_mode = 0;
+    range_t *r = find_span((uintptr_t)m, len);   // PEANUTS: bounded WriteTexels dirty prep, #403 (0.1.8)
     EXPECT("1 failed protection: pages NONE (as mprotect left them)", 4, count_state(m, len, PG_NONE));
+    EXPECT("1 failed protection: nprot is 0", 0, r ? (long long)atomic_load(&r->nprot) : -1);
     EXPECT("1 failed protection: page writable", 1, writable(m + pg));
     EXPECT("1 failed protection: texture counts as written", 1, nvn_dirty_since(m, len, s));
     s = nvn_dirty_now();
@@ -71,6 +73,7 @@ int main(void) {
     // 2. The next protection succeeds: one more upload (the stamp), then tracked as any other
     s = nvn_dirty_now(); nvn_dirty_protect(m, len);
     EXPECT("2 protection succeeds: pages PROT", 4, count_state(m, len, PG_PROT));
+    EXPECT("2 protection succeeds: nprot is 4", 4, r ? (long long)atomic_load(&r->nprot) : -1);   // PEANUTS: bounded WriteTexels dirty prep, #403 (0.1.8)
     EXPECT("2 counts as written once (pages restamped)", 1, nvn_dirty_since(m, len, s));
     s = nvn_dirty_now();
     EXPECT("2 clean afterwards", 0, nvn_dirty_since(m, len, s));
@@ -82,6 +85,7 @@ int main(void) {
     s = nvn_dirty_now(); g_mode = 2; g_mode_prot = PROT_READ; nvn_dirty_protect(m, len); g_mode = 0;
     EXPECT("3 partial failure: first page writable again", 1, writable(m));
     EXPECT("3 partial failure: pages NONE", 4, count_state(m, len, PG_NONE));
+    EXPECT("3 partial failure: nprot is 0", 0, r ? (long long)atomic_load(&r->nprot) : -1);   // PEANUTS: bounded WriteTexels dirty prep, #403 (0.1.8)
     m[0] = 3;
     s = nvn_dirty_now();
     EXPECT("3 texture counts as written", 1, nvn_dirty_since(m, len, s));
@@ -91,8 +95,10 @@ int main(void) {
     g_mode = 1; g_mode_prot = PROT_READ | PROT_WRITE; prep_write(m + pg, 16); g_mode = 0;
     EXPECT("4 failed unprotection: page still read-only", 0, writable(m + pg));
     EXPECT("4 failed unprotection: its state stays PROT", 4, count_state(m, len, PG_PROT));
+    EXPECT("4 failed unprotection: nprot stays 4", 4, r ? (long long)atomic_load(&r->nprot) : -1);   // PEANUTS: bounded WriteTexels dirty prep, #403 (0.1.8)
     prep_write(m + pg, 16);   // succeeds now
     EXPECT("4 retried unprotection: page writable", 1, writable(m + pg));
+    EXPECT("4 retried unprotection: nprot drops to 3", 3, r ? (long long)atomic_load(&r->nprot) : -1);
     EXPECT("4 ... and counted as written", 1, nvn_dirty_since(m, len, s));
 
     printf("t_dirty_mpfail: %s\n", g_fail ? "FAILED" : "all passed");

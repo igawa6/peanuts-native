@@ -1,6 +1,6 @@
 # How it works
 
-Back to the [main page](../../.github/README.md).
+Back to the [main page](../banana-native-README.github.md). <!-- PEANUTS: upstream's .github/README.md and README.md are kept in docs/ (banana-native-README*.md) -->
 
 Banana Native works in the spirit of Wine: it reproduces no console hardware. The game's own ARM64 code runs directly
 on the phone's CPU, as an Android process. Banana Native supplies its own implementation of the system interfaces that

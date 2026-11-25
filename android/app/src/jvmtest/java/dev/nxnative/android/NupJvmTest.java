@@ -402,7 +402,7 @@ public final class NupJvmTest {
             check(PickedPath.forHost("/x/romfs", stand, 7).equals("/x/romfs"), "another path as it is");
             lost[0] = true;
             try { Nup.open(stand); check(false, "a lost file opens"); } catch (IOException e) { check(e.getMessage().contains("no longer open"), "a lost file: " + e.getMessage()); }
-            check(String.valueOf(DumpLayout.find(stand).error).contains("no longer open"), "a lost file says so: " + DumpLayout.find(stand).error);
+            check(String.valueOf(DumpLayout.find(stand).error).contains("The app cannot open " + stand.getName() + ". Pick it again"), "a lost file says so: " + DumpLayout.find(stand).error);   // PEANUTS: build text in the player's words (0.1.8)
         } finally {
             Nup.opener = null;
         }

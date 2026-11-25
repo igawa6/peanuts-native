@@ -1,12 +1,12 @@
 # Videos and device reports
 
-Back to the [main page](../../.github/README.md).
+Back to the [main page](../banana-native-README.github.md). <!-- PEANUTS: upstream's .github/README.md and README.md are kept in docs/ (banana-native-README*.md) -->
 
 Videos are welcome. To make yours useful to viewers:
 
 - Say the app version (for example v0.2.0), the phone, its chip and RAM, and the GPU driver.
 - Turn on the performance overlay so the frame rate is visible, and say whether frame generation is on.
-- Mention the [known problems](../../.github/README.md#games) of the game you show, so viewers know which ones are
+- Mention the [known problems](../banana-native-README.github.md#games) of the game you show, so viewers know which ones are <!-- PEANUTS: upstream's .github/README.md and README.md are kept in docs/ (banana-native-README*.md) -->
   already known.
 - Link the [project page](https://git.eden-emu.dev/moceure/BananaNative) for downloads: releases are only published
   there, and copies elsewhere may be modified.

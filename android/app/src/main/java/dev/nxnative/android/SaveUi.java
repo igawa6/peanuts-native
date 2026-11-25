@@ -77,8 +77,9 @@ final class SaveUi {
     /** The Manage sheet's line under Back up saves */
     static String backupLine(Context c, Game g) { return exports(c, g) ? "As a .zip, to a place you pick" : "To " + backups(g); }
 
-    private static boolean ready(MainActivity a, Game g, String what) {
-        File save = Folders.save(a, g);
+    static boolean ready(MainActivity a, Game g, String what) {   // PEANUTS: not private (UserSaves.copy)
+        File save = UserSaves.save(a, g);   // PEANUTS: the picked user's save (UserSaves), the game's own save folder for the first user
+        if (!UserSaves.ready(a, g, what)) return false;   // PEANUTS: a removed user's save is not restored or imported into
         if (save != null && !CopyPlan.inApp(AppStorage.root(a), save.getPath()) && a.needAccess()) return false;   // a save folder on shared storage (picked in Folders)
         if (busy(g.titleId)) { a.error("A save backup or restore of " + g.name + " is still working."); return false; }
         if (gameRunning(a, g)) { a.error(g.name + " is running (it holds its save): stop it first (its in-game panel › Stop the game), then " + what + ". The game may be writing its save."); return false; }
@@ -86,7 +87,7 @@ final class SaveUi {
     }
 
     /** Runs work off the main thread with a wait dialog; done gets null or the error */
-    private static void run(MainActivity a, Game g, String wait, Work work, Done done) {
+    static void run(MainActivity a, Game g, String wait, Work work, Done done) {   // PEANUTS: not private (UserSaves.copy)
         if (!take(g.titleId)) return;
         AlertDialog w = new PadFocus.Builder(a).setMessage(wait).setCancelable(false).show();
         new Thread(() -> {
@@ -99,6 +100,7 @@ final class SaveUi {
                 give(g.titleId);
                 w.dismiss();
                 done.done(fr, fe);
+                UserSaves.changed(a, g);   // PEANUTS: the Saves tab's user cards again (their sizes)
             });
         }, "nx-save").start();
     }
@@ -113,18 +115,18 @@ final class SaveUi {
 
     static void backup(MainActivity a, Game g) {
         if (!ready(a, g, "back up")) return;
-        File save = Folders.save(a, g);
-        if (!hasSave(save)) { a.error(g.name + " has no save yet: nothing to back up."); return; }
+        File save = UserSaves.save(a, g);   // PEANUTS: the picked user's save
+        if (!hasSave(save)) { a.error(UserSaves.noSave(a, g) + " yet: nothing to back up."); return; }   // PEANUTS: UserSaves.noSave (upstream: g.name + " has no save")
         if (exports(a, g)) {   // the picker first: the backup is made when the user has said where its zip goes
             pendingFor = g;
             Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/zip")
-                    .putExtra(Intent.EXTRA_TITLE, SaveZip.zipName(g.titleId, stamp()));
+                    .putExtra(Intent.EXTRA_TITLE, UserSaves.zipName(a, g, stamp()));   // PEANUTS: the user's name in it (upstream: SaveZip.zipName(g.titleId, stamp()))
             Toast.makeText(a, "Pick where the backup goes (a .zip)", Toast.LENGTH_LONG).show();
             a.startActivityForResult(i, CREATE_EXPORT);
             return;
         }
         File to = backups(g);
-        run(a, g, "Backing up " + g.name + "'s save…", () -> SaveStore.backup(save, to, stamp()), (r, err) -> {
+        run(a, g, "Backing up " + UserSaves.saveOf(a, g, "save") + "…", () -> UserSaves.locked(a, g, save, () -> SaveStore.backup(save, to, stamp())), (r, err) -> {   // PEANUTS: whose; the game's lock for another user's
             if (err != null) { Ui.explain(a, "No backup made", "The save could not be backed up. It was only read, never changed.", err + "\nSave: " + save).setPositiveButton("OK", null).show(); return; }
             SaveStore.Backup b = (SaveStore.Backup) r;
             Ui.explain(a, "Saves backed up", b.files + " files, " + SaveStore.size(b.bytes) + (b.device ? ", with the device save" : "") + ", checked file by file. "
@@ -133,34 +135,39 @@ final class SaveUi {
     }
 
     // PEANUTS begin: Delete save data (the game page's Saves tab). The save is backed up first, checked, where Back up saves puts its copies (or in app
-    // storage when backups go out as a .zip), so Restore saves can bring it back; then every file of the save's parts is deleted and the game starts as new
+    // storage when backups go out as a .zip), so Restore saves can bring it back; then every file of the save's parts is deleted and the game starts as new.
+    // With users it is the picked user's save (UserSaves, #422); the device save, every user's, stays then
     static void delete(MainActivity a, Game g) {
         if (!ready(a, g, "delete the save")) return;
-        File save = Folders.save(a, g);
-        if (save == null || !hasSave(save)) { a.error(g.name + " has no save: nothing to delete."); return; }
+        File save = UserSaves.save(a, g);   // the picked user's save (UserSaves)
+        boolean keepDevice = save != null && UserSaves.several(a, g) && SaveStore.hasFiles(SaveStore.device(save));   // with users the device save is every user's: it stays
+        if (save == null || !(keepDevice ? SaveStore.hasFiles(save) : hasSave(save))) { a.error(UserSaves.noSave(a, g) + ": nothing to delete."); return; }
         String st = stamp();
         File to = target(a, g);
-        Ui.confirmDanger(a, "Delete " + g.name + "'s save data?", "The game starts from the beginning the next time. The save is backed up first (checked), so "
-                + "Restore saves can bring it back. No backup is deleted."
-                + (Users.list(a).size() > 1 ? "\n\nThis is the save of the first user (" + Users.list(a).get(0).name + "). The saves of the other users (Settings › Users) are in folders of "
-                        + "their own beside it and stay as they are, as Back up saves and Restore saves leave them." : "")   // (upstream's users, since Banana Native v0.3.22: Users.saveDir)
+        String whom = UserSaves.forWhom(a, g);   // taken now: a removed user's save, once deleted, is no longer on the tab
+        Ui.confirmDanger(a, "Delete " + UserSaves.saveOf(a, g, "save data") + "?", (UserSaves.removed(a, g) ? "" : "The game starts from the beginning" + whom + " the next time. ") + "The save is backed up first (checked), so "
+                + "Restore saves can bring it back. No backup is deleted." + UserSaves.deleteNote(a, g)
+                + (keepDevice ? " The game's device save, which every user shares, stays as it is." : "")
                 + "\n\nSave: " + save + "\nBackup of it: " + new File(to, st),
                 "Delete", () -> {
                     if (!ready(a, g, "delete the save")) return;
-                    run(a, g, "Backing up, then deleting " + g.name + "'s save…", () -> {
+                    run(a, g, "Backing up, then deleting " + UserSaves.saveOf(a, g, "save") + "…", () -> UserSaves.locked(a, g, save, () -> {
                         SaveStore.Backup b = SaveStore.backup(save, to, st);
                         try (SaveStore.Lock l = SaveStore.lock(save)) {   // the save's lock again for the delete (a game started since the backup holds it: nothing is deleted then)
-                            for (File part : SaveStore.parts(save).values()) { File[] kids = part.listFiles(); if (kids != null) for (File k : kids) wipe(k); }
+                            for (java.util.Map.Entry<String, File> part : SaveStore.parts(save).entrySet()) {
+                                if (keepDevice && part.getKey().equals(SaveStore.DEVICE)) continue;
+                                File[] kids = part.getValue().listFiles(); if (kids != null) for (File k : kids) wipe(k);
+                            }
                         }
                         return b;
-                    }, (r, err) -> {
+                    }), (r, err) -> {
                         if (err != null) {
                             Ui.explain(a, "Save not deleted", r == null && !hasSave(save) ? "The save is gone, but something went wrong at the end." : "Something went wrong. What is left of the save is as it was; "
                                     + "if a backup was made it is in Restore saves.", err + "\nSave: " + save).setPositiveButton("OK", null).show();
                             return;
                         }
                         SaveStore.Backup b = (SaveStore.Backup) r;
-                        Ui.explain(a, "Save data deleted", g.name + " starts from the beginning. The old save (" + b.files + " files, " + SaveStore.size(b.bytes)
+                        Ui.explain(a, "Save data deleted", g.name + " starts from the beginning" + whom + ". The old save (" + b.files + " files, " + SaveStore.size(b.bytes)
                                 + ") is in Restore saves.", b.dir.getPath()).setPositiveButton("OK", null).show();
                     });
                 });
@@ -176,10 +183,10 @@ final class SaveUi {
     /** The backup made in app storage, then written as a zip to the picked document, read back and checked */
     private static void exportTo(MainActivity a, Game g, Uri doc) {
         if (!ready(a, g, "back up")) return;
-        File save = Folders.save(a, g);
+        File save = UserSaves.save(a, g);   // PEANUTS: the picked user's save
         ContentResolver cr = a.getContentResolver();
-        run(a, g, "Backing up " + g.name + "'s save…", () -> {
-            SaveStore.Backup b = SaveStore.backup(save, appBackups(a, g), stamp());
+        run(a, g, "Backing up " + UserSaves.saveOf(a, g, "save") + "…", () -> {   // PEANUTS: whose
+            SaveStore.Backup b = (SaveStore.Backup) UserSaves.locked(a, g, save, () -> SaveStore.backup(save, appBackups(a, g), stamp()));   // PEANUTS: the game's lock for another user's
             try (OutputStream o = cr.openOutputStream(doc, "wt")) {
                 if (o == null) throw new IOException("the picked place gave nothing to write to");
                 SaveZip.write(b.dir, o);
@@ -210,15 +217,15 @@ final class SaveUi {
         List<SaveStore.Backup> l = new ArrayList<>();
         if (Environment.isExternalStorageManager()) l.addAll(SaveStore.list(backups(g)));
         if (!SaveStore.same(appBackups(a, g), backups(g))) l.addAll(SaveStore.list(appBackups(a, g)));
-        l.sort((x, y) -> y.name.compareTo(x.name));
+        l.sort(UserSaves.order(a, g));   // PEANUTS: the picked user's backups first, each part newest first (upstream: newest first)
         String[] labels = new String[l.size() + 1];
         for (int i = 0; i < l.size(); i++) {
             SaveStore.Backup b = l.get(i);
             String from = b.source.isEmpty() ? "" : "\nfrom " + new File(b.source).getParentFile().getName() + "/" + new File(b.source).getName();
-            labels[i] = SaveStore.when(b.name) + "\n" + b.files + " files, " + SaveStore.size(b.bytes) + (b.device ? " (with the device save)" : "") + from;
+            labels[i] = UserSaves.label(a, g, b) + SaveStore.when(b.name) + "\n" + b.files + " files, " + SaveStore.size(b.bytes) + (b.device ? " (with the device save)" : "") + from;   // PEANUTS: whose save it is (UserSaves.label)
         }
         labels[l.size()] = "Import save… (a .zip or a folder)";
-        new PadFocus.Builder(a).setTitle(l.isEmpty() ? "No backups of " + g.name + " here yet" : "Restore " + g.name + "'s save from")
+        new PadFocus.Builder(a).setTitle(l.isEmpty() ? "No backups of " + g.name + " here yet" : "Restore " + UserSaves.saveOf(a, g, "save") + " from")   // PEANUTS: whose
                 .setItems(labels, (d, w) -> {
                     if (w == l.size()) importPick(a, g);
                     else confirm(a, g, l.get(w).dir, SaveStore.when(l.get(w).name), null);
@@ -229,7 +236,7 @@ final class SaveUi {
     /** Import save…: a .zip or a folder, through the system picker */
     static void importPick(MainActivity a, Game g) {
         if (!ready(a, g, "import")) return;
-        new PadFocus.Builder(a).setTitle("Import " + g.name + "'s save from")
+        new PadFocus.Builder(a).setTitle("Import " + UserSaves.saveOf(a, g, "save") + " from")   // PEANUTS: whose
                 .setItems(new String[] {"A .zip (from Back up saves, or a zipped save folder)", "A save folder"}, (d, w) -> {
                     pendingFor = g;
                     if (w == 0) {
@@ -316,16 +323,16 @@ final class SaveUi {
     }
 
     private static void confirm(MainActivity a, Game g, File from, String what, Runnable after) {
-        File save = Folders.save(a, g);
+        File save = UserSaves.save(a, g);   // PEANUTS: the picked user's save
         String why = SaveStore.refuseSource(from, save);
         if (why != null) { if (after != null) after.run(); a.error("Not restored: " + why + "."); return; }
         String st = stamp();
         File to = target(a, g);
-        Ui.confirmDanger(a, "Restore " + g.name + "'s save?", "Your current save is replaced with " + what + ". It is backed up first (checked), so Restore "
-                + "saves… can undo this. No backup is deleted.\n\nSave: " + save + "\nBackup of it: " + new File(to, st + SaveStore.BEFORE_RESTORE),
+        Ui.confirmDanger(a, "Restore " + UserSaves.saveOf(a, g, "save") + "?", UserSaves.yours(a, g) + " is replaced with " + what + ". It is backed up first (checked), so Restore "   // PEANUTS: whose
+                + "saves… can undo this. No backup is deleted." + UserSaves.restoreNote(a, g, from) + "\n\nSave: " + save + "\nBackup of it: " + new File(to, st + SaveStore.BEFORE_RESTORE),   // PEANUTS: restoreNote
                 "Restore", () -> {
                     if (!ready(a, g, "restore")) { if (after != null) after.run(); return; }
-                    run(a, g, "Restoring " + g.name + "'s save…", () -> SaveStore.restore(from, save, to, st), (r, err) -> {
+                    run(a, g, "Restoring " + UserSaves.saveOf(a, g, "save") + "…", () -> UserSaves.locked(a, g, save, () -> SaveStore.restore(from, save, to, st)), (r, err) -> {   // PEANUTS: whose; the game's lock for another user's
                         if (after != null) after.run();
                         if (err != null) {
                             Ui.explain(a, "Not restored", "The save is as it was" + (SaveStore.pending(save) ? ", but for a swap that finishes at the next backup, restore or game start" : "")

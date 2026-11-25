@@ -82,14 +82,14 @@ class Build(unittest.TestCase):
             with self.assertRaises(SystemExit): pb.check_device_steps(app, 'Game')
             pb.check_device_steps(app, 'Game', {'DM_UE_DECODE': ''}) if marker == '/ue_shaders/' else None   # the Unreal step done here: not refused
 
-    def decode_case(self, rows, env=None, linux=True, unoodle=('/w/unoodle', ''), nxaes=('/w/pymod', '')):
+    def decode_case(self, rows, env=None, linux=True, unoodle=('/w/unoodle', ''), nxaes=('/w/pymod', ''), mac=False):
         """pc_decode for the made-up profiles {title ID: a shader_map.tsv row} with the builds stubbed -> {title ID: its settings, or the refusal's text}"""
         keep = {k: os.environ.pop(k, None) for k in ('DM_OODLE_OOZ', 'DM_OODLE_HOST', 'DM_OODLE_MODULES', 'DM_UE_SHADERS', 'PYTHONPATH')}
-        real = pb.REPO, pb.LINUX, pb.build_unoodle, pb.build_nxaes, pb.PC_DECODE
+        real = pb.REPO, pb.LINUX, pb.MAC, pb.build_unoodle, pb.build_nxaes, pb.PC_DECODE
         out = {}
         try:
             with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
-                pb.REPO, pb.LINUX, pb.build_unoodle, pb.build_nxaes = Path(d), linux, lambda: unoodle, lambda: nxaes
+                pb.REPO, pb.LINUX, pb.MAC, pb.build_unoodle, pb.build_nxaes = Path(d), linux, mac, lambda: unoodle, lambda: nxaes
                 pb.PC_DECODE = {'0100000000000001': True, '0100000000000002': True, '0100000000000003': False}
                 os.environ.update(env or {})
                 for app, row in rows.items():
@@ -97,7 +97,7 @@ class Build(unittest.TestCase):
                     try: out[app] = pb.pc_decode(app, 'Game')
                     except SystemExit as e: out[app] = str(e)
         finally:
-            pb.REPO, pb.LINUX, pb.build_unoodle, pb.build_nxaes, pb.PC_DECODE = real
+            pb.REPO, pb.LINUX, pb.MAC, pb.build_unoodle, pb.build_nxaes, pb.PC_DECODE = real
             for k, v in keep.items():
                 os.environ.pop(k, None)
                 if v is not None: os.environ[k] = v
@@ -115,7 +115,7 @@ class Build(unittest.TestCase):
         self.assertEqual(got['0100000000000004'], {})
 
     def test_pc_decode_not_available(self):
-        """Not Linux: nothing changes. No worker: the Oodle game stops before the import, the Unreal one is left to check_device_steps' refusal. No _nxaes: the same"""
+        """Neither Linux nor macOS: nothing changes. No worker: the Oodle game stops before the import, the Unreal one is left to check_device_steps' refusal. No _nxaes: the same"""
         self.assertEqual(self.decode_case(self.ROWS, linux=False), {app: {} for app in self.ROWS})
         got = self.decode_case(self.ROWS, unoodle=(None, 'no C++ compiler'))
         self.assertTrue(got['0100000000000001'].startswith('[RED] ')); self.assertIn('no C++ compiler', got['0100000000000001']); self.assertIn('Build in the Peanuts app', got['0100000000000001'])
@@ -127,6 +127,14 @@ class Build(unittest.TestCase):
         got = self.decode_case(self.ROWS, env={'DM_OODLE_HOST': 'h', 'DM_OODLE_MODULES': 'm'}, unoodle=(None, 'x'))
         self.assertEqual(got['0100000000000001'], {})
 
+    def test_pc_decode_mac(self):
+        """macOS (x86-64 or arm64): the worker as on Linux; the Unreal games without _nxaes (uepak.py has CommonCrypto there), so its build is not needed"""
+        got = self.decode_case(self.ROWS, linux=False, mac=True, nxaes=(None, 'not on macOS'))
+        self.assertEqual(got['0100000000000001'], {'DM_OODLE_OOZ': '/w/unoodle'})
+        self.assertEqual(got['0100000000000002'], {'DM_OODLE_OOZ': '/w/unoodle', 'DM_UE_DECODE': ''})
+        self.assertEqual(got['0100000000000003'], {'DM_UE_DECODE': ''})
+        self.assertEqual(got['0100000000000004'], {})
+
     def test_pc_decode_own_worker(self):
         """DM_OODLE_OOZ already set: that worker, for any game and on any system (the setting stays as it is); a path that is no file stops"""
         with tempfile.TemporaryDirectory() as d:
@@ -136,6 +144,31 @@ class Build(unittest.TestCase):
             self.assertEqual(got['0100000000000004'], {'PYTHONPATH': '/w/pymod', 'DM_UE_DECODE': ''})
             got = self.decode_case(self.ROWS, env={'DM_OODLE_OOZ': str(w) + '-none'})
             self.assertIn('is not a file', got['0100000000000004'])
+
+    def test_cluster_warning(self):
+        """A shader cache on a drive with large allocation units (exFAT's 1 MiB) is warned about, at the nearest folder that exists; a local disk's 4 KiB,
+        and a drive statvfs cannot read, are not"""
+        real = os.statvfs
+        seen = []
+        def fake(unit):
+            def f(p): seen.append(str(p)); return type('S', (), {'f_frsize': unit})()
+            return f
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                missing = Path(d, 'Game [0100000000000001]-work', 'android-shaders', 'lib')
+                os.statvfs = fake(1 << 20)
+                w = pb.cluster_warning(missing)
+                self.assertTrue(w.startswith('[RED] ')); self.assertIn('1024 KiB', w); self.assertIn('--shader-cache', w)
+                self.assertEqual(seen[-1], d)   # the folder that exists
+                os.statvfs = fake(4096)
+                self.assertIsNone(pb.cluster_warning(missing))
+                os.statvfs = fake(pb.BIG_CLUSTER)
+                self.assertIsNotNone(pb.cluster_warning(missing))
+                def broken(p): raise OSError('no drive')
+                os.statvfs = broken
+                self.assertIsNone(pb.cluster_warning(missing))
+        finally:
+            os.statvfs = real
 
     def test_real_worker_build(self):
         """build_unoodle on this machine: the worker, or a reason; never an exception. (peanuts/tests/test_unoodle.py tests the worker itself)"""

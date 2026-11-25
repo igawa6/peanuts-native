@@ -18,8 +18,6 @@ import android.view.Display;
 import android.view.View;
 
 import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Set;
 
 import dev.nxnative.android.R;
@@ -47,7 +45,9 @@ public final class BottomScreen {
         String companion;               // ready: the companion's version, null if none
         long played;                    // ready: last Play, 0 if never
         dev.peanuts.launch.PlayLedger.Entry play;   // ready: its play time (dev.peanuts.launch.PlayTime), null if never played with this app
+        String update;                  // ready: a newer update or add-ons beside its .nup (UpdateFound), null if none
         String found = "", space = "";  // to build: what the scan found
+        boolean queued;                 // to build: it waits in the build queue (its state is its place, in the cover's quiet pill)
         Runnable primary, second;       // A and Y, null if none
         String primaryLabel = "", secondLabel = "";
         int primaryIcon;
@@ -74,6 +74,7 @@ public final class BottomScreen {
         public Object key;                   // what is explained (an equal key: updated in place, no fade)
         public java.util.function.Function<android.content.Context, View> view;   // a view of its own instead (built with this display's context); the fields above unused
         public long cracked = -1;            // About: Peanuts cracked, shown big (its own page); -1: not About
+        public java.util.List<String[]> keys;   // the controller's keys for what the focus is on ({key, what it does}; the label "" for a key that shares the next one's), shown only while a controller is connected; null: none
     }
 
     /** Play pressed: the panel stays until the game says what it shows there (Companion.STATE) */
@@ -108,6 +109,11 @@ public final class BottomScreen {
 
     private BottomScreen() {}
 
+    /** A face button's glyph as the bottom screen draws it (Settings' X): the key in the page's colour on an accent disc */
+    static Drawable keyGlyph(Context c, String key, int diameterDp) {
+        return new BottomPanel.KeyGlyph(c, key, PUi.col(c, R.color.bn_accent), PUi.col(c, R.color.bn_bg), diameterDp);
+    }
+
     public static Drawable settingsGlyph(Context c, int diameterDp) {
         return new BottomPanel.KeyGlyph(c, "X", PUi.col(c, R.color.bn_accent), PUi.col(c, R.color.bn_bg), diameterDp);
     }
@@ -116,6 +122,9 @@ public final class BottomScreen {
 
     /** MainActivity.buildHome (PEANUTS hook) */
     public static void home(Activity a, Runnable settings) {
+        SettingsPage.homeBuilt();   // a tablet's Settings opens on its tiles again
+        dev.peanuts.mods.CheatsPage.left();   // Home shows: a game's Mods & Cheats is closed
+        GamePage.left();   // and a game's page opens on its tiles again
         watch(a);
         openSettings = settings;
         explain = null;
@@ -383,16 +392,12 @@ public final class BottomScreen {
         if (PeanutsPrefs.bottomScreen(owner)) show(); else dismiss();
     }
 
-    /** First valid other display. The Thor lists Screen-2 only as a presentation display, the emulator only in the plain list */
+    /** The device's own second screen (the Thor's Screen-2), never a TV, a monitor or a cast (dev.peanuts.Screens, #358: a phone mirroring to a TV showed this page there) */
     static Display secondDisplay(Activity a) {
         DisplayManager m = (DisplayManager) a.getSystemService(Context.DISPLAY_SERVICE);
         if (m == null) return null;
         int own = a.getDisplay() != null ? a.getDisplay().getDisplayId() : Display.DEFAULT_DISPLAY;
-        Map<Integer, Display> all = new LinkedHashMap<>();
-        for (Display d : m.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)) all.put(d.getDisplayId(), d);
-        for (Display d : m.getDisplays()) all.put(d.getDisplayId(), d);
-        for (Display d : all.values()) if (d.getDisplayId() != own && d.getDisplayId() != Display.DEFAULT_DISPLAY && d.isValid()) return d;
-        return null;
+        return dev.peanuts.Screens.deviceScreen(a, m, own);
     }
 
     // ---- Lifecycle ----
@@ -450,8 +455,9 @@ public final class BottomScreen {
         if (displays != null) return;
         dm = (DisplayManager) a.getSystemService(Context.DISPLAY_SERVICE);
         if (dm == null) return;
+        dev.peanuts.Screens.log(a, "the launcher starts");   // which display is which, for a report
         displays = new DisplayManager.DisplayListener() {
-            @Override public void onDisplayAdded(int id) { show(); }
+            @Override public void onDisplayAdded(int id) { if (owner != null) dev.peanuts.Screens.log(owner, "display " + id + " came"); show(); }
             @Override public void onDisplayRemoved(int id) { if (panel != null && panel.getDisplay() != null && panel.getDisplay().getDisplayId() == id) dismiss(); show(); }
             @Override public void onDisplayChanged(int id) {
                 BackgroundFlow.stale();

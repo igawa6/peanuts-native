@@ -154,7 +154,7 @@ public final class LauncherJvmTest {
                 && !Profile.parse("04007EF01F8AE000\tF\t0\tx\t\t\t\t\t\t\t\t\t\t\t\t1\t").get(0).dlss, "dlss column");
         check(Profile.versionName(0).equals("the base game") && Profile.versionName(458752).equals("update 458752"), "versionName");
         check(Profile.of("040074A01BF12000") != null && Profile.of("0100000000010000") == null, "Profile.of over BuildConfig.NX_PROFILES");
-        check(Profile.missing("0100000000010000", "Mario").startsWith("This app version does not include Mario (0100000000010000).") && Profile.missing("040074A01BF12000", null) == null, "Profile.missing");
+        check(Profile.missing("0100000000010000", "Mario").startsWith("This app version does not include Mario.") && Profile.missing("040074A01BF12000", null) == null, "Profile.missing");   // PEANUTS: build text in the player's words (0.1.8)
     }
 
     /** The app's string resources (res/values/strings.xml, the path in the system property nx.res): string name → text, string-array name → items joined by '\n' */

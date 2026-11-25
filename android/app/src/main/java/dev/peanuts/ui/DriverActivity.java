@@ -198,7 +198,7 @@ public final class DriverActivity extends Activity {
             list.addView(choice(defaultTitle, "Follow the recommendation for this game or the app default.", useDefault, null, true));
         boolean useSystem = !useDefault && pickedDriver(drivers, chosen) == null;
         list.addView(choice("System", gpu != null ? "The phone's own driver for its " + gpu + "." : "The phone's own driver.", useSystem, null, false));
-        for (DriverPort.Driver d : drivers) list.addView(choice(d.name, about(d), d.dir.getName().equals(chosen), d, false));
+        for (DriverPort.Driver d : drivers) list.addView(choice(d.name, withProblem(about(d), problem(d)), d.dir.getName().equals(chosen), d, false));
 
         PUi.add(content, PUi.section(this, "Add a driver"), PUi.SECTION_GAP);
         String family = DriverMatch.family(gpu);
@@ -252,6 +252,22 @@ public final class DriverActivity extends Activity {
         return d == null ? "System" : d.name;
     }
 
+    /** A known bad build's line for this phone (KnownDrivers through DriverPort.problem), null for none */
+    private String problem(DriverPort.Driver d) {
+        try { return DriverPort.problem(this, d); } catch (ReflectiveOperationException | RuntimeException e) { Log.w(TAG, "driver problem: " + e); return null; }
+    }
+
+    /** The line under a driver's name with a known problem after it, in the danger colour */
+    private CharSequence withProblem(String about, String problem) {
+        if (problem == null) return about;
+        android.text.SpannableStringBuilder s = new android.text.SpannableStringBuilder(about);
+        if (s.length() > 0) s.append('\n');
+        int from = s.length();
+        s.append(problem);
+        s.setSpan(new android.text.style.ForegroundColorSpan(getColor(R.color.bn_danger)), from, s.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return s;
+    }
+
     /** A driver's line under its name: version and author, and the app's recommendation */
     private static String about(DriverPort.Driver d) {
         StringBuilder s = new StringBuilder();
@@ -263,7 +279,7 @@ public final class DriverActivity extends Activity {
     }
 
     /** A driver to pick: a radio, its name over its line, Remove beside a custom one */
-    private LinearLayout choice(String title, String line, boolean on, DriverPort.Driver d, boolean useDefault) {
+    private LinearLayout choice(String title, CharSequence line, boolean on, DriverPort.Driver d, boolean useDefault) {
         LinearLayout r = row(title, line, v -> pick(d, useDefault));
         RadioButton radio = new RadioButton(this);
         radio.setChecked(on);

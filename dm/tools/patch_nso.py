@@ -658,7 +658,124 @@ starts = sorted(x for x in starts if x < TEXT_END)
 # Data blocks in the text (nso_code.py: Absolum's main starts with 1.7 MB of them) are not code: words there that read as rewrite sites are left alone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import nso_code
-DATA_BLOCKS = nso_code.data_blocks(IMG, TEXT_END, md)
+# PEANUTS(upstream-candidate): defined before the data blocks, which count in them too. The x18 scan and the spin wait search only read the original image, so they can run in worker processes.
+# PEANUTS(upstream-candidate) begin
+def in_forks(fn, jobs, phase=None):
+    """in_parallel by os.fork where multiprocessing cannot run: WORKERS children, child i computing jobs i, i + n, i + 2n, ..., its results pickled back through a
+    pipe; a progress line for phase as each child is done. A child that fails or ends without its results fails the call; any error here (a stop: the tool is
+    interrupted) kills the children first. Forked from the process's one Python thread: a child only computes, writes its pipe, flushes what it printed and
+    leaves with os._exit (no atexit; the buffers it inherited were flushed before the fork). The heap is frozen while the children run (gc.freeze): a collection
+    in a child walks every object it inherited and copies its pages, which a model of the phone's rewrite (1 GB of objects, two children) took from 1.06 to
+    2.4 GB. The children follow the worker's CPUs and nice (follow_parent_cpus: nxpack_worker's game-yield watch reaches only the worker's own threads)"""
+    import gc, pickle, warnings
+    n = min(WORKERS, len(jobs)); kids = []
+    sys.stdout.flush(); sys.stderr.flush()
+    gc.freeze()
+    try:
+        for i in range(n):
+            r, w = os.pipe()
+            try:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings('ignore', r'This process .* is multi-threaded', DeprecationWarning)   # a native helper thread (nxpack_worker's yield watch) holds no Python state
+                    pid = os.fork()
+            except BaseException:   # no fork (no memory for another process): its pipe goes with it
+                os.close(r); os.close(w)
+                raise
+            if pid == 0:
+                try:
+                    os.close(r)
+                    follow_parent_cpus()
+                    try: data = pickle.dumps((True, [(k, fn(*jobs[k])) for k in range(i, len(jobs), n)]))
+                    except BaseException as e: data = pickle.dumps((False, f'{type(e).__name__}: {e}'))
+                    with os.fdopen(w, 'wb') as f: f.write(data)
+                    sys.stdout.flush(); sys.stderr.flush()
+                finally: os._exit(0)
+            os.close(w); kids.append([pid, r])
+        out, bad = [None] * len(jobs), None
+        for done, kid in enumerate(kids, 1):
+            with os.fdopen(kid[1], 'rb') as f:
+                kid[1] = None
+                data = f.read()
+            os.waitpid(kid[0], 0); kid[0] = None
+            try: ok, res = pickle.loads(data)
+            except Exception: ok, res = False, f'a rewrite worker ended without its results ({len(data)} bytes)'
+            if not ok: bad = bad or res; continue
+            for k, v in res: out[k] = v
+            if phase: progress(phase, done, n)
+        if bad: raise RuntimeError(f'a rewrite worker failed: {bad}')
+        return out
+    finally:
+        gc.unfreeze()
+        for pid, r in kids:   # left only when something above failed
+            if r is not None:
+                try: os.close(r)
+                except OSError: pass
+            if pid is not None:
+                try: os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0)
+                except OSError: pass
+
+
+def follow_parent_cpus():
+    """In a child of in_forks: every 2 s, the CPUs and the nice value of its parent (nxpack_worker's game-yield watch, pack_worker.c yield_watch, moves the
+    worker's own threads to the slow cores and lowers their priority when a game starts; a child is a process of its own, which stayed on every core beside the
+    game: found in review). A nice value that cannot go down again stays, as pack_worker.c's own restore; the CPUs come back"""
+    if not hasattr(os, 'sched_setaffinity'): return
+    import threading, time
+
+    def watch(parent=os.getppid(), me=os.getpid()):   # (me: the child's main thread, which computes; 0 would be this thread alone on Linux)
+        while True:
+            try: os.sched_setaffinity(me, os.sched_getaffinity(parent))
+            except OSError: pass
+            try: os.setpriority(os.PRIO_PROCESS, me, os.getpriority(os.PRIO_PROCESS, parent))
+            except OSError: pass
+            time.sleep(2)
+    threading.Thread(target=watch, daemon=True).start()
+# PEANUTS end
+def in_serial(fn, jobs, phase=None):
+    out = []
+    for i, job in enumerate(jobs):
+        out.append(fn(*job))
+        if phase: progress(phase, i + 1, len(jobs))
+    return out
+
+def in_parallel(fn, jobs, phase=None):
+    """Returns [fn(*job) for job in jobs], computed in forked worker processes (in this process, with progress lines for phase, with one worker or no fork).
+    The workers are forked on each call, so they see the module's state as it is at that point."""
+    if WORKERS < 2 or len(jobs) < 2:
+        return in_serial(fn, jobs, phase)
+    if 'fork' not in multiprocessing.get_all_start_methods():   # PEANUTS(upstream-candidate): Windows, spawned workers (in_spawned)
+        return in_spawned(fn, jobs, phase)
+    # PEANUTS(upstream-candidate) begin: a Python without _multiprocessing (the phone's embedded CPython: multiprocessing's Pool cannot start there) forks its workers
+    # itself (in_forks); the same results in the same order
+    try: import _multiprocessing   # noqa: F401
+    except ImportError: return in_forks(fn, jobs, phase)
+    # PEANUTS end
+    with multiprocessing.get_context('fork').Pool(min(WORKERS, len(jobs))) as pool:
+        return pool.starmap(fn, jobs)
+
+def in_spawned(fn, jobs, phase=None):
+    """PEANUTS(upstream-candidate): in_parallel where there is no fork (Windows). A spawned worker cannot import this script, whose top level is the rewrite
+    itself, so it builds the script's namespace from its definitions and the globals fn reads, sent from here (rewrite_pool.py); the same results as forked
+    workers. Before, Windows ran these phases in one process: a large Unreal main took over 10 minutes with every other thread idle"""
+    import rewrite_pool
+    data, redo = rewrite_pool.state(fn, globals())
+    main = sys.modules['__main__']
+    had = main.__dict__.pop('__file__', None)   # spawn would run the script again in each worker (as __mp_main__); without __file__ it leaves __main__ alone
+    try:
+        pool = multiprocessing.get_context('spawn').Pool(min(WORKERS, len(jobs)), rewrite_pool.init, (os.path.abspath(__file__ if had is None else had), sys.path, data, redo))
+    finally:
+        if had is not None: main.__file__ = had
+    with pool:
+        out = []
+        for i, r in enumerate(pool.imap(rewrite_pool.call_job, [(fn.__name__, job) for job in jobs])):
+            out.append(r)
+            if phase: progress(phase, i + 1, len(jobs))
+        return out
+
+def undecodable_piece(s, e):
+    """PEANUTS(upstream-candidate): nso_code.count_undecodable on one piece of a data block search, for in_parallel"""
+    return nso_code.count_undecodable(IMG, s, e, md)
+DATA_BLOCKS = nso_code.data_blocks(IMG, TEXT_END, md, lambda pieces: in_parallel(undecodable_piece, pieces, 'load'))   # PEANUTS(upstream-candidate): in worker processes
 CODE_RANGES = list(zip([0] + [e for _, e in DATA_BLOCKS], [s for s, _ in DATA_BLOCKS] + [TEXT_END]))
 def acquire_lock_sites(img, ranges):
     """Offsets of exclusive test-and-set lock acquires without acquire ordering: ldxr rt,[rn]; cbnz rt,<the ldxr>; stxr ws,rk,[rn]; cbnz ws,<the ldxr> (w or x, rk not zero), not followed by
@@ -721,24 +838,7 @@ def x18_words(lo, hi):
             if R18.search(op): out.add(addr)
         a = last + 4 if last + 4 >= end else last + 8   # the chunk is done, or the word after the last decoded one is no instruction
     return out
-# The x18 scan and the spin wait search only read the original image, so they can run in worker processes.
-def in_serial(fn, jobs, phase=None):
-    out = []
-    for i, job in enumerate(jobs):
-        out.append(fn(*job))
-        if phase: progress(phase, i + 1, len(jobs))
-    return out
-
-def in_parallel(fn, jobs, phase=None):
-    """Returns [fn(*job) for job in jobs], computed in forked worker processes (in this process, with progress lines for phase, with one worker or no fork).
-    The workers are forked on each call, so they see the module's state as it is at that point."""
-    if WORKERS < 2 or len(jobs) < 2:
-        return in_serial(fn, jobs, phase)
-    if 'fork' not in multiprocessing.get_all_start_methods():   # Windows: a spawned worker would import this script, which is the rewrite itself, not a module
-        return in_serial(fn, jobs, phase)                          # of functions; the same results, one piece after the other
-    with multiprocessing.get_context('fork').Pool(min(WORKERS, len(jobs))) as pool:
-        return pool.starmap(fn, jobs)
-
+# PEANUTS(upstream-candidate): in_serial, in_parallel and in_spawned are defined before the data blocks now (they count in them too)
 def find_x18_words():
     """x18_words over all the code, in 1 MB pieces"""
     pieces = []
@@ -756,29 +856,36 @@ kinds = {}
 # Spin wait candidates (see "Spin waits" below): backward direct branches (b, b.cond, cbz / cbnz, tbz / tbnz) at most SPIN_WIN bytes back, by target
 SPIN_WIN, SPIN_TOPS = 512, {0x16, 0x17, 0x54, 0x34, 0x35, 0xB4, 0xB5, 0x36, 0x37, 0xB6, 0xB7}
 spin_cand = {}
+# PEANUTS(upstream-candidate): the scan in 1 MB pieces in worker processes (in_parallel), merged in address order, so kinds and spin_cand have the same
+# entries in the same order as the scan word by word in one process (before: the whole text in one Python loop, serial)
+def scan_piece(lo, hi):
+    """([(offset, kind)], [(spin target, branch offset)]) of the words in [lo, hi), in address order"""
+    kl, spin = [], []
+    for o in range(lo, hi, 4):
+        w = struct.unpack_from('<I', IMG, o)[0]
+        if w >> 24 in SPIN_TOPS:
+            t = w >> 24
+            if t in (0x16, 0x17): d = ((w & 0x3FFFFFF) - (1 << 26)) * 4
+            elif t & 0x7E == 0x36: d = (((w >> 5) & 0x3FFF) - (1 << 14)) * 4 if w & 0x40000 else 4
+            elif t == 0x54: d = (((w >> 5) & 0x7FFFF) - (1 << 19)) * 4 if w & 0x800000 and not w & 0x10 else 4
+            else: d = (((w >> 5) & 0x7FFFF) - (1 << 19)) * 4 if w & 0x800000 else 4
+            if -SPIN_WIN <= d <= 0: spin.append((o + d, o))
+        if w & 0xFFE0001F == 0xD4000001: kl.append((o, ('svc', (w >> 5) & 0xFFFF))); continue
+        if w & 0xFFFFFFE0 == 0xD53BD040: kl.append((o, ('tpidr_r', None))); continue
+        if w & 0xFFFFFFE0 == 0xD51BD040: kl.append((o, ('tpidr_w', None))); continue
+        if w & 0xFFFFFFE0 == 0xD53BD060: kl.append((o, ('tpidrro_r', None))); continue
+        if w & 0xFFFFFFE0 == 0xD53BE020: kl.append((o, ('cntpct', w & 31))); continue
+        if w & 0xFFFFFFE0 == 0xD53BE040: kl.append((o, ('cntvct', w & 31))); continue
+        # mrs xN, ctr_el0 (cache type): the Apple kernel does not expose it to user mode (SIGILL); SDK 16's nn::os::FlushDataCache reads it for the cache line size
+        if w & 0xFFFFFFE0 == 0xD53B0020: kl.append((o, ('ctr', w & 31))); continue
+        # sub sp, sp, xN (extended register, LSL #0): sp may end up misaligned, which Horizon allows and Apple's kernel does not (site_sp_align); with x18 it is an x18 site (site_sp)
+        if w & 0xFFE0FFFF == 0xCB2063FF and (w >> 16) & 31 != 18: kl.append((o, ('sp_align', (w >> 16) & 31))); continue
+        if o in x18: kl.append((o, ('x18', None)))
+    return kl, spin
 progress('scan')
-SCAN_WORDS = sum(e - s for s, e in CODE_RANGES) // 4 or 1
-for n_scan, o in enumerate(o for s, e in CODE_RANGES for o in range(s, e, 4)):
-    if not n_scan & 0xFFFFF: progress('scan', n_scan, SCAN_WORDS)
-    w = struct.unpack_from('<I', IMG, o)[0]
-    if w >> 24 in SPIN_TOPS:
-        t = w >> 24
-        if t in (0x16, 0x17): d = ((w & 0x3FFFFFF) - (1 << 26)) * 4
-        elif t & 0x7E == 0x36: d = (((w >> 5) & 0x3FFF) - (1 << 14)) * 4 if w & 0x40000 else 4
-        elif t == 0x54: d = (((w >> 5) & 0x7FFFF) - (1 << 19)) * 4 if w & 0x800000 and not w & 0x10 else 4
-        else: d = (((w >> 5) & 0x7FFFF) - (1 << 19)) * 4 if w & 0x800000 else 4
-        if -SPIN_WIN <= d <= 0: spin_cand.setdefault(o + d, []).append(o)
-    if w & 0xFFE0001F == 0xD4000001: kinds[o] = ('svc', (w >> 5) & 0xFFFF); continue
-    if w & 0xFFFFFFE0 == 0xD53BD040: kinds[o] = ('tpidr_r', None); continue
-    if w & 0xFFFFFFE0 == 0xD51BD040: kinds[o] = ('tpidr_w', None); continue
-    if w & 0xFFFFFFE0 == 0xD53BD060: kinds[o] = ('tpidrro_r', None); continue
-    if w & 0xFFFFFFE0 == 0xD53BE020: kinds[o] = ('cntpct', w & 31); continue
-    if w & 0xFFFFFFE0 == 0xD53BE040: kinds[o] = ('cntvct', w & 31); continue
-    # mrs xN, ctr_el0 (cache type): the Apple kernel does not expose it to user mode (SIGILL); SDK 16's nn::os::FlushDataCache reads it for the cache line size
-    if w & 0xFFFFFFE0 == 0xD53B0020: kinds[o] = ('ctr', w & 31); continue
-    # sub sp, sp, xN (extended register, LSL #0): sp may end up misaligned, which Horizon allows and Apple's kernel does not (site_sp_align); with x18 it is an x18 site (site_sp)
-    if w & 0xFFE0FFFF == 0xCB2063FF and (w >> 16) & 31 != 18: kinds[o] = ('sp_align', (w >> 16) & 31); continue
-    if o in x18: kinds[o] = ('x18', None)
+for kl, spin in in_parallel(scan_piece, [(lo, min(lo + 0x100000, e)) for s, e in CODE_RANGES for lo in range(s, e, 0x100000)], 'scan'):
+    for o, k in kl: kinds[o] = k
+    for t, o in spin: spin_cand.setdefault(t, []).append(o)
 
 # Take the instruction table per function, find the windows and jump tables
 import bisect
@@ -1319,13 +1426,30 @@ if any(fb - fa > BIG_FN for fa, fb in funcs):
         split += [(p, q) for p, q in ps if bisect.bisect_left(sites18, p) < bisect.bisect_left(sites18, q)]   # the pieces that hold x18 sites
         print(f'function {fa:#x}..{fb:#x} ({(fb - fa) / 2**20:.2f} MB, no unwind entries) analysed in {len(ps)} pieces')
     funcs = split
-progress('functions')
-for n_fn, (fa, fb) in enumerate(funcs):
-    progress('functions', n_fn, len(funcs))
+# PEANUTS(upstream-candidate): the functions in worker processes (in_parallel). Each is analysed on its own and returns addresses, not capstone objects; the
+# results are taken in the functions' order, and what crosses functions is done here as before: the windows and retry blocks decoded again (dis), the checks
+# against every earlier function's windows and retry blocks, the jump tables merged in order. A few jump table forms (jump_masked_pred, jump_masked_not,
+# jump_zero_extended, forward_table_base) read the tables found in earlier functions: a worker notes any read of its tables (Tracked), and such a function is
+# analysed again here with every earlier table, so the output is the same as one process's. Before: every function in one process (Minecraft Dungeons II main)
+MAIN_PID = os.getpid()
+class Tracked(dict):
+    """jumps / tabjumps in a worker: notes a read of the whole table (read), which in one process would also see the earlier functions' tables"""
+    read = False
+    def values(self): self.read = True; return super().values()
+    def items(self): self.read = True; return super().items()
+    def keys(self): self.read = True; return super().keys()
+    def __iter__(self): self.read = True; return super().__iter__()
+def analyse_fn(fa, fb):
+    """One function's windows (addresses), retry blocks ([(addresses, fall-through)] pairs), retry block interiors, tail call br, jump tables [(br, entry)] in order, and
+    whether it read the tables of other functions (a worker only)"""
+    global jumps, tabjumps
+    if os.getpid() != MAIN_PID: jumps, tabjumps = Tracked(), Tracked()   # a worker: only this function's tables, and a note of any read (Tracked)
+    own_j, own_t = len(jumps), len(tabjumps)
     insl = disasm_fn(fa, fb)
     ws = find_windows(insl)
+    done, tails, rets = set(), [], []
     for wseg in ws:
-        windows.append(wseg); done |= {x.address for x in wseg}
+        done |= {x.address for x in wseg}
     for j, ins in enumerate(insl):
         if ins.mnemonic == 'br' and ins.op_str == 'x18':
             base = width = None
@@ -1344,7 +1468,7 @@ for n_fn, (fa, fb) in enumerate(funcs):
                     break
             if not (base and width):
                 tgt = jump_offsets(insl, j) or jump_adr_offsets(insl, j)
-                if not tgt and tail_call(insl, j): tailcalls.add(ins.address); continue
+                if not tgt and tail_call(insl, j): tails.append(ins.address); continue   # PEANUTS(upstream-candidate): analyse_fn returns them
                 if not tgt and (far := jump_bytes_far(insl, j)): jumps[ins.address] = far; continue
                 if not tgt: tgt = jump_offsets(insl, j, copy_first=True, far_base=True)   # the index copied before the check (check_before_copy) or the base set far back, only where every other form failed
                 if not tgt: tgt = jump_masked_pred(insl, j)   # the check on a masked copy made in the block, the index masked in the block that branches to it
@@ -1366,11 +1490,28 @@ for n_fn, (fa, fb) in enumerate(funcs):
                 rb = retry_block(insl, k, wseg) if x.mnemonic not in ('b', 'bl') else None
                 assert rb, f'branch into window {x.address:x}'
                 assert not any(y.address in done for y in rb[0]), f'retry block overlaps a window {rb[0][0].address:x}'
-                retries.append([(rb[0], x.address + 4), (rb[1], wseg[-1].address + 4)])
+                rets.append([([y.address for y in rb[0]], x.address + 4), ([y.address for y in rb[1]], wseg[-1].address + 4)])   # PEANUTS(upstream-candidate): addresses (analyse_fn)
                 done |= {y.address for y in rb[0]}; rmid |= {y.address for y in rb[0][1:]}
     for x in insl:
         if x.mnemonic in ('b', 'bl', 'cbz', 'cbnz', 'tbz', 'tbnz') or x.mnemonic.startswith('b.'):
             assert x.operands[-1].imm not in rmid, f'branch into retry block {x.address:x}'
+    jl, tl = list(dict.items(jumps))[own_j:], list(dict.items(tabjumps))[own_t:]   # this function's tables, in the order found (dict.items: not a read Tracked notes)
+    return [[x.address for x in w] for w in ws], rets, rmid, tails, jl, tl, getattr(jumps, 'read', False) or getattr(tabjumps, 'read', False)
+progress('functions')   # PEANUTS(upstream-candidate): analyse_fn in workers, what crosses functions here (above)
+for (fa, fb), r in zip(funcs, in_parallel(analyse_fn, funcs, 'functions')):
+    if r[6]: r = analyse_fn(fa, fb)   # it read the jump tables: again with every earlier function's (jumps, tabjumps are this process's now)
+    wl, rets, rmid, tails, jl, tl, _ = r
+    ws = [[dis(struct.unpack_from('<I', IMG, a)[0], a) for a in w] for w in wl]
+    for wseg in ws:
+        windows.append(wseg); done |= {x.address for x in wseg}
+    for (rb, ft), (tail, wft) in rets:
+        assert not any(y in done for y in rb), f'retry block overlaps a window {rb[0]:x}'
+        retries.append([([dis(struct.unpack_from('<I', IMG, a)[0], a) for a in rb], ft), ([dis(struct.unpack_from('<I', IMG, a)[0], a) for a in tail], wft)])
+        done |= set(rb)
+    for k, v in jl: jumps[k] = v
+    for k, v in tl: tabjumps[k] = v
+    tailcalls.update(tails)
+    inwin = {a for w in wl for a in w}; heads = {w[0] for w in wl}
     for a_, tgt in tabjumps.items():
         if fa <= a_ < fb: assert not any(t in inwin and t not in heads for t in tgt), f'jump table target into window {a_:x}'
     rmid_all |= rmid

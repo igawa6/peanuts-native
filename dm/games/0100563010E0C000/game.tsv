@@ -1,0 +1,35 @@
+# PEANUTS: WarioWare: Get It Together! (base 1.0.0), SDK 10.4.1, NintendoWare Bezel Engine 1.50 on NVN.
+# Written by scripts/build_ipa_from_nsp.py from the survey (dm/games/profile_guess.py); shader tables by shader_split.py.
+
+# ---- Identity ----
+title_id	0100563010E0C000
+program_id	0100563010E0C000
+
+# ---- App ----
+name	WarioWare: Get It Together!
+ipa	WarioWareGetItTogether.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v0	1.0.0	main=e6784f640b1cdff90c8718a11294dbf3	subsdk0=ebedb2645cb8a961714ebc29e9eee0a9	subsdk1=84e50460493a12f26100e5150fbff271	sdk=d9add76fc264863d85fbbd1d70076c76
+package	v0
+shader_versions	v0
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 subsdk1 sdk
+romfs_marker	Archive/Sound.nx.bea
+zip_store	.bea:.mp4:.webm:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: a 3328 MB heap region
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon (Big Brain Academy: Brain vs. Brain sets a heap only then)
+sys_resource	0x0
+
+# ---- Shader split ----
+shader_groups	/stream/=stream /Archive/=archive /movie/=movie
+shader_note	WarioWare: Get It Together! shaders

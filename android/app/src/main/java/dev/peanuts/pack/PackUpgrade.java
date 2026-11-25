@@ -152,7 +152,7 @@ public final class PackUpgrade {
         String v = prefs(c).getString(KEY + titleId.toUpperCase(java.util.Locale.ROOT), null);
         int nl = v == null ? -1 : v.indexOf('\n');
         if (nl <= 0 || new File(v.substring(0, nl), "main.orig.bin").isFile()) return null;
-        String why = v.substring(nl + 1);
+        // (v's second line, why the file is missing, is in the log from when it was not made: not for the notice)
         boolean plan = false;
         File manifest = new File(packageDir, "dualscreen/manifest.json");
         try (InputStream in = new FileInputStream(manifest)) {
@@ -162,9 +162,7 @@ public final class PackUpgrade {
             plan = new String(b, 0, n, StandardCharsets.UTF_8).contains("\"load_plan\"");
         } catch (IOException e) { /* no manifest to read: the general sentence */ }
         return plan
-                ? new String[] {"Direct actions are off", "This companion calls the game directly, and this pack lacks what that needs (" + why
-                        + "). It presses buttons instead. Rebuild the game to turn direct actions on."}
-                : new String[] {"Built before companions read the game's code", "Parts of this companion that look at the game's code may stay empty (" + why
-                        + "). Rebuild the game to fix that."};
+                ? new String[] {"Direct actions are off", "This companion can act in the game directly, but the game's build is missing a file it needs for that, so it presses buttons instead. Rebuild the game to turn direct actions on."}
+                : new String[] {"Built before companions could read the game", "Parts of this companion may stay empty because the game's build is missing a file they need. Rebuild the game to fix that."};
     }
 }

@@ -44,7 +44,9 @@ public final class Companions {
             for (Object o : (List<?>) call(Class.forName(CATALOG), "fetch", new Class<?>[0])) out.add(new Item(o));
             return out;
         } catch (ReflectiveOperationException e) {
-            throw new IOException("catalog: " + e.getMessage(), e);
+            Throwable c = e.getCause();   // the catalog's own failure (no network, a bad answer): its words go after the first line, for Details
+            android.util.Log.w("peanuts", "companions: catalog: " + (e.getCause() != null ? e.getCause() : e));   // the raw words for the log; the player reads the sentence
+            throw new IOException("The list of dual-screen companions could not be loaded. Check the internet connection, then try again.\n" + (c != null ? c : e), e);
         }
     }
 
@@ -129,7 +131,8 @@ public final class Companions {
         } catch (ReflectiveOperationException e) {
             Throwable c = e.getCause();
             if (c instanceof IOException) throw (IOException) c;
-            throw new IOException("install: " + (c != null ? c : e), e);
+            android.util.Log.w("peanuts", "companions: install: " + (e.getCause() != null ? e.getCause() : e));   // the raw words for the log; the player reads the sentence
+            throw new IOException("The dual-screen companion could not be installed because of a problem in the app.\n" + (c != null ? c : e), e);
         }
     }
 
@@ -143,7 +146,8 @@ public final class Companions {
         } catch (ReflectiveOperationException e) {
             Throwable c = e.getCause();
             if (c instanceof IOException) throw (IOException) c;
-            throw new IOException("remove: " + (c != null ? c : e), e);
+            android.util.Log.w("peanuts", "companions: remove: " + (e.getCause() != null ? e.getCause() : e));   // the raw words for the log; the player reads the sentence
+            throw new IOException("The dual-screen companion could not be removed because of a problem in the app.\n" + (c != null ? c : e), e);
         }
     }
 

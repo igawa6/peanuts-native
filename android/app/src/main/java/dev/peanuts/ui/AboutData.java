@@ -19,11 +19,11 @@ final class AboutData {
     };
 
     /** The contributors of the README's list, davdxpx first, then in the README's order */
-    static final String[] CONTRIBUTED = {"davdxpx", "intermission88", "elliott-groves", "tapionallanaire", "dnyan007", "skyhong2002", "ssv0225", "999sian", "ts-miller", "ArchOwlen"};
+    static final String[] CONTRIBUTED = {"davdxpx", "intermission88", "elliott-groves", "tapionallanaire", "dnyan007", "skyhong2002", "ssv0225", "999sian", "ts-miller", "shamonj03", "fireworksordie", "nomnomab", "danielcamilo1", "g0giberry", "gerdguerrero", "ArchOwlen"};
 
     /** Built on: name, what it is, its license, its page */
     static final String[][] BUILT_ON = {
-            {"Banana Native", "moceure", "GPL-3.0", "https://git.eden-emu.dev/moceure/BananaNative"},
+            {"Banana Native", "moceure", "GPL-3.0-or-later", "https://git.eden-emu.dev/moceure/BananaNative"},
             {"nxnative", "seedds", "MIT", "https://github.com/seedds/nxnative"},
             {"Eden Duo", "The companions' runtime", "Its notice", "https://github.com/igawa6/eden-duo"},
             {"All notices", "This app's license notice", "Read", REPO + "/blob/main/android/NOTICE.md"},
@@ -31,7 +31,7 @@ final class AboutData {
 
     /** In the app: name, what it does here, its license, its notice */
     static final String[][] THIRD_PARTY = {
-            {"Frame generation", "From Eden and lsfg-vk", "GPL-3.0", REPO + "/blob/main/android/NOTICE.md"},
+            {"Frame generation", "From Eden and lsfg-vk", "GPL-3.0-or-later", REPO + "/blob/main/android/NOTICE.md"},
             {"FidelityFX FSR 1", "The FSR upscaler", "MIT", REPO + "/blob/main/dm/third_party/README.md"},
             {"libadrenotools", "Loads a custom GPU driver", "BSD-2", REPO + "/blob/main/dm/third_party/README.md"},
             {"Zstandard", "Unpacks the shader library", "BSD", REPO + "/blob/main/dm/third_party/README.md"},
@@ -40,5 +40,6 @@ final class AboutData {
             {"nx2android", "Some fixes, adapted", "MIT", "https://github.com/shirai91/nx2android"},
             {"vee", "The Miis' colours and face layout", "MIT", "https://github.com/j0lol/vee"},
             {"bcdec", "Unpacks the Mii parts' textures", "MIT", "https://github.com/iOrange/bcdec"},
+            {"ACNH 60 FPS + SpeedFix", "tmouh's 60 fps for Animal Crossing", "CC BY-NC 4.0", "https://github.com/tmouh/acnh-60fps"},
     };
 }

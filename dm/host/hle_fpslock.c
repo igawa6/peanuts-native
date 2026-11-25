@@ -39,7 +39,9 @@ static float ms_want(int fps) { return 1000.0f / (float)fps - (fps == 60 ? MS_MA
 typedef struct { const char *build, *what; uint64_t ptr_off; uint32_t field; uint8_t kind, copies; uint32_t scale; uint8_t nderef; uint16_t deref[3]; } lock_t;
 static int vsync_kind(int kind) { return kind == VSYNCS_I32 || kind == MIN_VSYNCS_I32 || kind == STEPS_I32 || kind == EXTRA_VSYNCS_U8; }   // PEANUTS: EXTRA_VSYNCS_U8 (see enum above)
 static int follows_game(int kind) { return kind == MIN_VSYNCS_I32 || kind == STEPS_I32 || kind == EXTRA_VSYNCS_U8; }   // the game still sets its present interval itself (dm_fps_lock_engine leaves these out) — PEANUTS: EXTRA_VSYNCS_U8
-static int rate_ok(int kind, int target) { return !vsync_kind(kind) || 60 % target == 0; }
+// PEANUTS: TICKS_U32 too: the frame time it writes is any rate's, but the game presents in whole vsyncs (Pokemon Sword at a 45 or 40 cap: 33.4 ms frames, the same
+// as at 30; AYN Thor, 2026-11-24), so 45 and 40 were applied and shown as caps the game did not run at
+static int rate_ok(int kind, int target) { return !(vsync_kind(kind) || kind == TICKS_U32) || 60 % target == 0; }
 static const lock_t k_locks[] = {
     // Donkey Kong Bananza v458752: sead's dynamic present interval controller (main+0x204a18, called each frame from the framework's main+0x203674). It picks the interval from
     // the last frame's start to the later of its submission and its GPU end, clamps it to [+0, +4] (its settings, 1 and 3, made in nnMain at main+0x5bf180 and copied in by
@@ -676,6 +678,16 @@ void dm_fps_step_fold(void) {
     }
 }
 int nxhost_fps_limit_get(void) { int s = dm_fps_limit_step(); return s ? s : limit_raw(); }   // the rate the limit holds (0: none; a frame-step game's whole-vsync rate); probe.c aims the dynamic resolution at it, frame generation fits its frames to it
+// PEANUTS: active effective frame cap for GPU clock floor pacing (0: uncapped / game's own); vka_dev.c vka_floor_period_ns.
+int dm_fps_cap_get(void) {
+    int lim = nxhost_fps_limit_get();
+    if (dm_fps_elapsed_step()) return lim > 0 ? lim : dm_fps_target();
+    int cap = lim > 0 ? lim : 0, tgt = dm_fps_target();
+    if (tgt > 0 && ((dm_fps_state && (tgt == 30 || tgt == 60)) || dm_fps_lock_engine() || dm_fps_lock_floor())) {
+        if (!cap || tgt < cap) cap = tgt;
+    }
+    return cap;
+}
 // Whether the game's speed follows its measured frame rate (the rewriter gated sead's controller in this main, DM_FPS_DECOUPLE not 0): frame generation's pacer then takes any base rate
 // above its floor (a slower base does not slow the game), where a game held by the limiter alone steps as it would at that rate
 int nxhost_fps_decoupled(void) {

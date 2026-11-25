@@ -75,7 +75,7 @@ public interface BuildPort {
             } catch (Throwable t) {
                 Throwable x = t.getCause() != null ? t.getCause() : t;
                 Log.w("peanuts", "build: " + x);
-                l.done(false, "Cannot start the build: " + x.getMessage());
+                l.done(false, "The build could not start. Tap Build again.");   // the reason is in the log line above
             }
         }
 
@@ -84,7 +84,8 @@ public interface BuildPort {
 
     final class Stub implements BuildPort {
         @Override public void build(Context c, GameSheet.State s, Listener l) {
-            l.done(false, "The build pipeline is not in this build yet (" + PIPELINE_CLASS + ").");
+            Log.w("peanuts", "build: no " + PIPELINE_CLASS + " in this APK");
+            l.done(false, "This app version cannot build games on the phone.");
         }
     }
 }

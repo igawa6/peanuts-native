@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.Context;
 
 import dev.peanuts.PeanutsPrefs;
-import dev.peanuts.build.BuildPipeline;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -91,7 +90,7 @@ public final class CtlPort {
         LibraryScanner.Title t = lib.title(titleId);
         if (t == null) return new String[] {"unknown_title", titleId + " is not in the library (scan first)."};
         if (t.status == LibraryScanner.Status.NO_PROFILE) return new String[] {"not_in_app", String.valueOf(Upstream.profileMissing(t.titleId, t.name))};
-        if (BuildPipeline.running() != 0 || lib.building(titleId)) return new String[] {"busy", "A build is running now. Wait for it to finish."};
+        if (lib.building(titleId)) return new String[] {"busy", t.name + " is being built now. Wait for it to finish."};   // another game that builds: this one goes into the build queue (issue #348)
         // a built game is not built again from here, except to go on with its own stopped build (the build card's Resume, Retry and Try anyway)
         Library.Build stopped = Library.buildNow();
         boolean goesOn = stopped != null && stopped.failed && stopped.titleId.equalsIgnoreCase(titleId);
@@ -124,7 +123,7 @@ public final class CtlPort {
         LibraryScanner.Title t = lib.title(titleId);
         if (t == null) return new String[] {"unknown_title", titleId + " is not in the library (scan first)."};
         if (t.status == LibraryScanner.Status.NO_PROFILE) return new String[] {"not_in_app", String.valueOf(Upstream.profileMissing(t.titleId, t.name))};
-        if (BuildPipeline.running() != 0 || lib.building(titleId)) return new String[] {"busy", "A build is running now. Wait for it to finish."};
+        if (lib.building(titleId)) return new String[] {"busy", t.name + " is being built now. Wait for it to finish."};   // another game that builds: this one goes into the build queue (issue #348)
         if (t.base == null || !t.base.isNup()) return new String[] {"not_a_nup", "Import again makes a game's .nup anew: " + t.name + " has none (" + (t.base == null ? "no base game found" : t.base.file.getName()) + ")."};
         if (!PeanutsPrefs.hasKeys(a)) return new String[] {"no_keys", "Add your keys first (Settings › Console), then import."};
         if (!PeanutsPrefs.hasFonts(a)) return new String[] {"no_firmware", "Add your firmware first (Settings › Console), then import."};
@@ -152,7 +151,8 @@ public final class CtlPort {
 
     /**
      * The sheet's Import pack… with a path instead of the picker (the control interface's import_pack): {code, sentence} when it cannot start, else null, and
-     * answer gets {null, what "Pack imported" says} or {"refused", the sentence} once the import ended (both dialogs show, as from the sheet). It never
+     * answer gets {null, what "Pack imported" says} or {"refused", the sentence} once the import ended (both dialogs show, as from the sheet; PackImportUi.start
+     * checks once more on the main thread, and a refusal there comes with its code). It never
      * replaces a pack (peanuts/docs/CONTROL.md, "Not offered"): a game whose pack folder holds one already is refused with pack_there
      */
     public static String[] importPack(Activity a, String titleId, String path, java.util.function.Consumer<String[]> answer) {

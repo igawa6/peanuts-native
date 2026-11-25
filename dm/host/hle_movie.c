@@ -126,17 +126,20 @@ static struct {
 static _Atomic uint64_t g_movie_pic_ns;   // when a video decoder last handed out a picture (0 = stopped since)
 int dm_movie_playing(void) { uint64_t t = atomic_load_explicit(&g_movie_pic_ns, memory_order_relaxed); return t && now_ns() - t < MD_PLAYING_NS; }
 static void *msym(const char *n) { void *p = guest_sym(n); if (!p) die("movie: missing SDK symbol %s", n); return p; }
+// PEANUTS: SDK 1.3.1's movie module (LEGO CITY UNDERCOVER, subsdk4 ad84f543…) declares movie::Buffer's getters without const (_ZN5movie6Buffer4DataEv, not _ZNK…): the same
+// functions and calling convention, another mangled name. The const name first, then the older one; neither stops the game as before
+static void *msym2(const char *n, const char *old) { void *p = guest_sym(n); if (!p) p = guest_sym(old); if (!p) die("movie: missing SDK symbol %s (nor %s)", n, old); return p; }
 static void md_syms(void) {
     if (G.signal) return;
     G.set_data = msym("_ZN5movie6Buffer18SetDataAndCapacityEPvm");
     G.set_range = msym("_ZN5movie6Buffer8SetRangeEii");
-    G.data = msym("_ZNK5movie6Buffer4DataEv");
-    G.cap = msym("_ZNK5movie6Buffer8CapacityEv");
+    G.data = msym2("_ZNK5movie6Buffer4DataEv", "_ZN5movie6Buffer4DataEv");   // PEANUTS: msym2
+    G.cap = msym2("_ZNK5movie6Buffer8CapacityEv", "_ZN5movie6Buffer8CapacityEv");
     G.set_i32 = msym("_ZN5movie9MediaData8SetInt32EPKci");
     G.set_rect = msym("_ZN5movie9MediaData7SetRectEPKciiii");
     G.find_i32 = msym("_ZNK5movie9MediaData9FindInt32EPKcPi");
     G.find_buf = msym("_ZNK5movie9MediaData10FindBufferEPKcPPNS_6BufferE");
-    G.size = msym("_ZNK5movie6Buffer4SizeEv");
+    G.size = msym2("_ZNK5movie6Buffer4SizeEv", "_ZN5movie6Buffer4SizeEv");   // PEANUTS: SDK 1.3.1 movie::Buffer getters (0.1.8)
     G.signal = msym("_ZN2nn2os11SignalEventEPNS0_9EventTypeE");
 }
 static mdec_t *md_of(void **self) { return self ? (mdec_t *)self[1] : NULL; }

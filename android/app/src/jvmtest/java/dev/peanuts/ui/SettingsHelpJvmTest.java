@@ -37,6 +37,7 @@ public final class SettingsHelpJvmTest {
         eq("System", SettingsHelp.of("GPU driver").deflt);
         eq("On", SettingsHelp.of("Bottom screen").deflt);
         eq("Off", SettingsHelp.of("Swap screens").deflt);
+        eq("Stats", SettingsHelp.of("Games without a companion").deflt);   // PeanutsPrefs.bottomScreenInGames: on, with the stats page, by default
         eq("null", SettingsHelp.of("Rescan").deflt);
         eq("null", SettingsHelp.of("Share log").deflt);
         eq("null", SettingsHelp.of("A row nobody wrote"));

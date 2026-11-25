@@ -19,12 +19,26 @@ def read(p):
     return p.read_text(encoding='utf-8')
 
 
+def body(text, head):
+    # a method's body in a Java file: from its first line to the closing brace at its indent
+    return text.split(head)[1].split('\n    }\n')[0]
+
+
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')
 class Words(unittest.TestCase):
     def test_jvm(self):
         with tempfile.TemporaryDirectory(prefix='logchoice_') as t:
             subprocess.run(['javac', '-encoding', 'UTF-8', '-Xlint:all', '-Werror', '-d', t] + [str(s) for s in SRC] + [str(TEST)], check=True)
             r = subprocess.run(['java', '-cp', t, 'dev.peanuts.ui.LogChoiceJvmTest'], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertRegex(r.stdout, r'^ok \d+')
+
+    def test_worker_jvm(self):
+        # OffMain: the reading on a worker, the answer on the main thread while the screen is there, one tap at a time
+        with tempfile.TemporaryDirectory(prefix='offmain_') as t:
+            subprocess.run(['javac', '-encoding', 'UTF-8', '-Xlint:all', '-Werror', '-d', t, str(UI / 'OffMain.java'),
+                            str(APP / 'jvmtest/java/dev/peanuts/ui/OffMainJvmTest.java')], check=True)
+            r = subprocess.run(['java', '-cp', t, 'dev.peanuts.ui.OffMainJvmTest'], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertRegex(r.stdout, r'^ok \d+')
 
@@ -67,16 +81,39 @@ class Wiring(unittest.TestCase):
                     self.assertIn('PEANUTS', line, f + ': an upstream line without its marker: ' + line.strip())
 
     def test_ask_only_with_both(self):
-        body = self.ui.split('public static void shareLog(Activity a, String titleId, String name, File run, Runnable shareRun) {')[1].split('\n    }\n')[0]
-        self.assertIn('LogChoice.choose(r != null, b != null)', body)
-        self.assertIn('case LogChoice.RUN: runShare.run(); return;', body)
-        self.assertIn('case LogChoice.BUILD: share(a, titleId, name); return;', body)
-        help_ = self.ui.split('public static void shareLog(Activity a, Runnable runLog) {')[1].split('\n    }\n')[0]
+        game = body(self.ui, 'private static Pick gamePick(Context c, String titleId, String name, File run) {')
+        self.assertIn('LogChoice.choose(p.runLog != null, b != null)', game)
+        tap = body(self.ui, 'public static void shareLog(Activity a, String titleId, String name, File run, Runnable shareRun) {')
+        self.assertIn('case LogChoice.RUN: runShare.run(); return;', tap)
+        self.assertIn('case LogChoice.BUILD: share(a, titleId, name, p.buildName); return;', tap)
+        help_ = body(self.ui, 'private static Pick anyPick(Context c) {')
         self.assertIn('LogChoice.choose(run != null, b != null)', help_)
         self.assertNotIn('lastModified() >=', help_, 'Help no longer asks only when the build is newer')
         # both logs of one game: its name in the title, so each line keeps room for when and how (the sheet's value has two lines)
         self.assertIn('rt.equalsIgnoreCase(b.titleId)', help_)
-        self.assertIn('"Share a log of " + BuildLogShare.gameName(a, b.titleId), runLine(a, run)', help_)
+        self.assertIn('p.title = "Share a log of " + p.buildName;', help_)
+
+    def test_read_on_a_worker(self):
+        # A tap reads nothing itself: the launcher's list, the work folders, job.json, a log's tail, last-exit.txt and the running processes are read
+        # in anyPick and gamePick, on Share log's worker (OffMain), and the sheet opens with what they found (#312's review)
+        reads = ('newestRunLog(', 'BuildLogShare.found(', 'BuildLogShare.gameName(', 'runLine(', 'buildLine(', 'digestOf(', '.isFile()',
+                 'getRunningAppProcesses', 'BuildLog.tail(')
+        taps = ('public static void shareLog(Activity a, Runnable runLog) {',
+                'public static void shareLog(Activity a, String titleId, String name, File run, Runnable shareRun) {')
+        sheets = ('private static void share(Activity a, String titleId, String name, String gameName) {',
+                  'private static void ask(Activity a, CharSequence title, CharSequence run, Runnable shareRun, CharSequence build, Runnable shareBuild) {',
+                  'static void shareRun(Activity a, File log, File digest) {')
+        for head in taps + sheets:
+            text = body(self.ui, head)
+            if head.startswith('private static void share('):
+                text = text.split('new Thread(')[0]   # the bundle is made on its own thread, as before
+            for r in reads:
+                self.assertNotIn(r, text, head + ' reads on the main thread: ' + r)
+        for head in taps:
+            self.assertIn('LOOK.run(() -> ', body(self.ui, head), head + ' hands its reading to the worker')
+        self.assertIn('new OffMain(java.util.concurrent.Executors.newSingleThreadExecutor(', self.ui)
+        self.assertIn('MAIN::post)', self.ui)
+        self.assertIn('BuildLogShare.make(app, titleId, name, BuildLogShare.outDir(app))', body(self.ui, sheets[0]).split('new Thread(')[1])
 
     def test_upstream_names_it_reads(self):
         # BuildLogUi reads upstream's run logs and exit record by their names, and shares a run through MainActivity.shareLog(File, File) (reflection)

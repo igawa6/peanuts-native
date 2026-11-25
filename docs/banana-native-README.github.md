@@ -1,3 +1,4 @@
+<!-- PEANUTS: upstream's .github/README.md, kept here; Peanuts Native's front page is ../README.md -->
 <p align="center"><img src="../android/images/logo.svg" alt="Banana Native logo" width="128"></p>
 
 # Banana Native
@@ -102,6 +103,6 @@ most help: see the issues marked
 
 ## Licence and credits
 
-The Android app is **GPL-3.0-or-later** as a whole; nxnative's own files keep their MIT licence. See [android/NOTICE.md](../android/NOTICE.md) and the [credits](../README.md#licence-and-credits).
+The Android app is **GPL-3.0-or-later** as a whole; nxnative's own files keep their MIT licence. See [android/NOTICE.md](../android/NOTICE.md) and the [credits](banana-native-README.md#licence-and-credits).
 
 Use games you own. Please don't ask for games, keys or dumps.

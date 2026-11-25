@@ -30,7 +30,11 @@ class Jvm(unittest.TestCase):
 class Counting(unittest.TestCase):
     def test_the_points_are_counted_where_they_happen(self):
         build = (PEANUTS / 'build/BuildService.java').read_text(encoding='utf-8')
-        self.assertRegex(build, r'ok = true;\n\s*cracked\(r, dump, startedAt\);', 'a build that ended well, and only that')
+        self.assertRegex(build, r'ok = true;\n(?:[^\n]*\n){2}\s*dev\.peanuts\.ui\.CrackedCount\.never\(\(\) -> cracked\(r, dump, startedAt\), ',
+                         'a build that ended well, and only that; counted after done, and never able to fail the build')
+        self.assertIn('progress("done", 100, message);\n', build)
+        self.assertLess(build.index('progress("done", 100, message);'), build.index('CrackedCount.never(() -> cracked('), 'counted after done')
+        self.assertEqual(build.count('cracked(r, '), 1, 'counted in one place only')
         self.assertIn('dev.peanuts.ui.Cracked.built(this, r.titleId, version < 0 ? null : "v" + version, shaders);', build)
         self.assertIn('if (sh != null && jf.lastModified() >= since)', build, 'shaders only when this build prepared them')
         ret = (PEANUTS / 'GameReturn.java').read_text(encoding='utf-8')
@@ -38,6 +42,33 @@ class Counting(unittest.TestCase):
         editor = (PEANUTS / 'mii/MiiEditor.java').read_text(encoding='utf-8')   # a new Mii is made in the editor, and counted once it is saved
         self.assertRegex(editor, r'MiiStore\.save\(getFilesDir\(\), all\); \}\n[^\n]*\n\s*Feel\.done\(this\);\n\s*if \(index < 0\) dev\.peanuts\.ui\.Cracked\.mii\(this\);')
         self.assertIn('Cracked.settle(x);', (UI / 'BottomScreen.java').read_text(encoding='utf-8'), 'play time is counted back in the launcher')
+
+    def test_a_play_reads_nothing_at_its_tap(self):
+        # GameReturn.remember runs at every Play on the main thread: Cracked.starting only hands the first start to its worker (#315's review)
+        cracked = (UI / 'Cracked.java').read_text(encoding='utf-8')
+        starting = cracked.split('public static void starting(Context c, String titleId) {')[1].split('\n    }\n')[0]
+        tap = starting.split('BG.execute(')[0]
+        self.assertIn('BG.execute(() -> started(app, titleId));', starting)
+        for read in ('settleNow(', 'started(', 'prefs(', 'PlayTime', 'state('):
+            self.assertNotIn(read, tap, 'read at the Play: ' + read)
+        self.assertIn('BG = java.util.concurrent.Executors.newSingleThreadExecutor(', cracked, 'one worker: the start and the settles keep their order')
+        settle = cracked.split('public static void settle(Context c) {')[1].split('\n')[0]
+        self.assertIn('BG.execute(() -> settleNow(app));', settle)
+
+    def test_play_time_from_the_ledger(self):
+        # The play time is #282's ledger's (dev.peanuts.launch.PlayTime: counted only while a game runs, not while Build prepares its shaders): what its
+        # total gained since the last look, the rule on the JVM above. Peanuts cracked no longer measures runs itself: no run record, no process list
+        cracked = (UI / 'Cracked.java').read_text(encoding='utf-8')
+        now = cracked.split('private static synchronized void settleNow(Context c) {')[1].split('\n    }\n')[0]
+        self.assertIn('dev.peanuts.launch.PlayLedger.total(dev.peanuts.launch.PlayTime.all(c))', now)
+        self.assertIn('CrackedCount.seenAtFirstLook(p.contains(OLD_RUN) || p.contains(OLD_SETTLED), total)', now, "0.1.7's own measure: no hour twice")
+        self.assertIn('long add = CrackedCount.fromLedger(seen, total);', now)
+        for gone in ('last-exit.txt', 'getHistoricalProcessExitReasons', 'getRunningAppProcesses', 'ActivityManager', 'toCount', 'putString(RUN'):
+            self.assertNotIn(gone, cracked)
+        play = (PEANUTS / 'launch/PlayTime.java').read_text(encoding='utf-8')
+        self.assertIn('public static Map<String, PlayLedger.Entry> all(Context c) { return PlayLedger.parse(read(file(c))); }', play)
+        self.assertIn('return new File(c.getFilesDir(), "peanuts-playtime.tsv");', play)
+        self.assertIn('public static long total(Map<String, Entry> m) {', (PEANUTS / 'launch/PlayLedger.java').read_text(encoding='utf-8'))
 
     def test_the_old_count_carries_over(self):
         prefs = (UP / 'Prefs.java').read_text(encoding='utf-8')
@@ -77,6 +108,21 @@ class About(unittest.TestCase):
         ours = re.findall(r'"([\w-]+)"', re.search(r'CONTRIBUTED = \{([^}]*)\}', data).group(1))
         self.assertEqual(ours[0], 'davdxpx', 'davdxpx first')
         self.assertEqual(sorted(ours), sorted(listed), 'About lists the README\'s contributors')
+
+    def test_licenses_say_what_the_notices_say(self):
+        # About › Licenses named Banana Native GPL-3.0, where the README and NOTICE say GPL-3.0-or-later (#315's review). A GPL row names its version
+        # rule as the notices do (SPDX: -only or -or-later), and the two GPL rows match the sentences they come from
+        data = (UI / 'AboutData.java').read_text(encoding='utf-8')
+        rows = {m.group(1): m.group(2) for m in re.finditer(r'\{"([^"]+)", "[^"]*", "([^"]+)", ', data)}
+        for name, lic in rows.items():
+            if 'GPL' in lic:
+                self.assertRegex(lic, r'^(?:L|A)?GPL-\d\.\d-(?:only|or-later)$', name + ': ' + lic)
+        readme = (REPO / 'README.md').read_text(encoding='utf-8')
+        self.assertIn('The project as a whole is licensed ' + rows['Banana Native'] + '.', readme)
+        notice = (REPO / 'android/NOTICE.md').read_text(encoding='utf-8')
+        self.assertIn('**The Android build that includes LSFG is ' + rows['Frame generation'] + '.**', notice)
+        lsfg = (REPO / 'dm/gfx/vk_android/lsfg/LICENSE.md').read_text(encoding='utf-8')
+        self.assertIn('# License of this folder: ' + rows['Frame generation'], lsfg)
 
     def test_the_catalog_copy(self):
         self.assertEqual((APP / 'peanuts/res/raw/peanuts_games.json').read_text(encoding='utf-8'), (REPO / 'peanuts/games.json').read_text(encoding='utf-8'))

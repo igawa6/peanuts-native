@@ -24,16 +24,23 @@ import java.util.Set;
  * the words dev.peanuts.pack.FirstImport's.
  * <p>
  * The sheet's button asks what to import (a .zip made by Export pack…, or a pack folder, as upstream's own question does), the system picker gives the path
- * (MainActivity.onActivityResult, LibrarySettings.result, {@link #result}), and the import runs on a thread of its own behind a dialog that cannot be closed.
- * Then "Pack imported" or "Pack not imported" says what happened, with the folders under Details; the library is scanned again (a game with a dump folder or
- * .nup is ready to play at once; one Build still imports from an NSP or XCI keeps its sheet open, for Build). The control interface's import_pack runs the
- * same without the picker ({@link CtlPort#importPack}).
+ * (MainActivity.onActivityResult, LibrarySettings.result, {@link #result}). The sheet's checks run again then, against the library as it is after the picker
+ * ({@link #picked}), and once more right before the import with the title taken ({@link #start}); the import runs on a thread of its own behind a dialog
+ * that cannot be closed. Then "Pack imported" or "Pack not imported" says what happened, with the folders under Details; the library is scanned again (a
+ * game with a dump folder or .nup is ready to play at once; one Build still imports from an NSP or XCI keeps its sheet open, for Build). The control
+ * interface's import_pack runs the same without the picker ({@link CtlPort#importPack}).
  */
 final class PackImportUi {
     static final int REQ_ZIP = 72, REQ_DIR = 73;   // after LibrarySettings' 60 to 70 and BuildLogUi's 71
 
-    /** The game the picker was opened for (the activity's result comes back to a static; it holds no view or activity) */
-    private static FirstImport.Game pending;
+    /** What the picker was opened for (the activity's result comes back to a static; it holds no view or activity). Its game is made again from the library
+     *  when the answer comes ({@link #picked}). Kept in PeanutsPrefs too: when Android ends the process while the picker is open, the answer comes to a new
+     *  process, where this is null */
+    private static FirstImport.Pick pending;
+    /** A picked pack whose answer came before the library's first scan of this process (Android made the process anew while the picker was open): it goes on
+     *  when that scan ends ({@link #scanned}) */
+    private static FirstImport.Pick waitingPick;
+    private static File waitingSource;
     private static final Handler UI = new Handler(Looper.getMainLooper());
 
     private PackImportUi() {}
@@ -84,15 +91,17 @@ final class PackImportUi {
             return;
         }
         FirstImport.Game g = game(a, t, chosenUpdate);
-        if (new File(g.target, "pack.tsv").isFile()) PUi.confirmDanger(a, "Replace the pack?", FirstImport.replaces(g), "Pick the new pack", () -> choose(a, g));
-        else choose(a, g);
+        if (new File(g.target, "pack.tsv").isFile()) PUi.confirmDanger(a, "Replace the pack?", FirstImport.replaces(g), "Pick the new pack", () -> choose(a, g, g.target));
+        else choose(a, g, null);
     }
 
-    /** What to import: a .zip made by Export pack…, or a pack folder (upstream's own question), then the system picker */
-    private static void choose(Activity a, FirstImport.Game g) {
+    /** What to import: a .zip made by Export pack…, or a pack folder (upstream's own question), then the system picker. replaces: the pack folder whose pack
+     *  the player agreed to replace, null when none was there */
+    private static void choose(Activity a, FirstImport.Game g, File replaces) {
         new AlertDialog.Builder(a).setTitle("Import " + g.name + "'s pack from…")
                 .setItems(new String[] {"A .zip file (made by Export pack…)", "A pack folder (with pack.tsv and shaders/)"}, (d, w) -> {
-                    pending = g;
+                    pending = new FirstImport.Pick(g.titleId, replaces);
+                    PeanutsPrefs.packImportPick(a, pending.text());
                     if (w == 1) LibrarySettings.pickFolder(a, REQ_DIR, "Pick the pack folder (the one with pack.tsv and shaders/)");
                     else LibrarySettings.pickFile(a, REQ_ZIP, "Pick the pack's .zip file", "application/zip");
                 })
@@ -102,26 +111,71 @@ final class PackImportUi {
     /** LibrarySettings.result: the picker's answer; true when the request was one of these (handled, whatever the answer) */
     static boolean result(Activity a, int request, int result, Intent data) {
         if (request != REQ_ZIP && request != REQ_DIR) return false;
-        FirstImport.Game g = pending;
+        FirstImport.Pick p = pending != null ? pending : FirstImport.Pick.of(PeanutsPrefs.packImportPick(a));   // null here: a process made anew meanwhile
         pending = null;
-        if (g == null || result != Activity.RESULT_OK || data == null || data.getData() == null) return true;
+        PeanutsPrefs.packImportPick(a, null);
+        if (p == null || result != Activity.RESULT_OK || data == null || data.getData() == null) return true;
         String path = request == REQ_ZIP ? Upstream.documentToPath(data.getData()) : Upstream.treeToPath(data.getData());
         if (path == null) {
             refused(a, "That " + (request == REQ_ZIP ? "file" : "folder") + " is not on the phone's storage by a path the app can read. Pick it from the phone's storage (the menu, then the phone's name), not from Recent, Downloads or a cloud provider.", String.valueOf(data.getData()));
             return true;
         }
-        start(a, g, new File(path), null);
+        if (!Library.scannedOnce() && PeanutsPrefs.gameDir(a) != null) {   // a process made anew: the library knows the game once its first scan ended
+            waitingPick = p;
+            waitingSource = new File(path);
+            return true;
+        }
+        picked(a, p, new File(path));
         return true;
     }
 
-    /** The end of an import for the control interface: {null, text} when the pack is in, else {"refused", sentence} */
+    /** Library: a scan ended (or failed). A pick that waited for the library's first scan of the process goes on, on the library's activity */
+    static void scanned(Activity a) {
+        FirstImport.Pick p = waitingPick;
+        File source = waitingSource;
+        waitingPick = null;
+        waitingSource = null;
+        if (p != null) picked(a, p, source);
+    }
+
+    /**
+     * The picker's answer for p: the game as the library has it now and the sheet's checks again (a build may have started while the picker was open, or the
+     * game become ready), then the import. A pack in the pack folder that the player was not asked about (none was there before the picker) is asked about now
+     */
+    private static void picked(Activity started, FirstImport.Pick p, File source) {
+        Activity a = front(started);
+        Library lib = Library.now();
+        LibraryScanner.Title t = lib == null ? null : lib.title(p.titleId);
+        String[] no = refusal(a, lib, t, p.titleId);
+        if (no != null) {
+            if (no[0].equals("no_access")) LibrarySettings.askAccess(a, "The app needs All files access to read the pack and write it where Build looks for it.");
+            else refused(a, FirstImport.refusal(no[1]), "Picked: " + source);
+            return;
+        }
+        FirstImport.Game g = game(a, t, GameSheet.storedUpdate(a, t));   // the sheet's Update row is the stored choice (GameSheet.picked keeps it there)
+        if (!p.asked(g.target) && new File(g.target, "pack.tsv").isFile())
+            PUi.confirmDanger(a, "Replace the pack?", FirstImport.replaces(g), "Replace it", () -> start(a, g, source, null));
+        else start(a, g, source, null);
+    }
+
+    /** The end of an import for the control interface: {null, text} when the pack is in, else {code, sentence} (refused, or one of {@link #refusal}'s codes) */
     interface Answer { void answer(String[] result); }
 
     /**
      * Runs the import of source for g behind a wait dialog, then says how it went; answer (may be null) gets the outcome too. The end is shown on the activity in
-     * front then (Library.now: the one a was, or the one that took its place when Android made it again meanwhile)
+     * front then (Library.now: the one a was, or the one that took its place when Android made it again meanwhile).
+     * <p>
+     * First, on the main thread, the sheet's checks once more, then the title taken (PackImport.take) with nothing in between that lets the main thread do
+     * other work: Library.startBuild runs on it too, so no Build of the title starts between this check and the import, and none while it runs (it asks
+     * PackImport.busy)
      */
     static void start(Activity a, FirstImport.Game g, File source, Answer answer) {
+        Library lib = Library.now();
+        String[] no = refusal(a, lib, lib == null ? null : lib.title(g.titleId), g.titleId);
+        if (no != null) {
+            notStarted(a, g, no, answer);
+            return;
+        }
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
         PUi.add(box, PUi.body(a, "Importing " + g.name + "'s pack…"), 0);
@@ -132,7 +186,12 @@ final class PackImportUi {
         AlertDialog wait = PUi.sheet(a, "Import pack", box).setCancelable(false).create();
         wait.show();
         PackImport.Titles titles = titles();
-        new Thread(() -> {
+        if (!PackImport.take(g.titleId)) {   // refusal asked PackImport.busy on this thread just now, and only this thread takes: kept so two imports never run
+            try { wait.dismiss(); } catch (RuntimeException e) { /* its activity is gone */ }
+            notStarted(a, g, new String[] {"busy", FirstImport.busy(g)}, answer);
+            return;
+        }
+        new Thread(() -> {   // PackImport.run gives the title back at its end
             PackImport.Done done = null;
             PackImport.Refused refused = null;
             try { done = PackImport.run(a.getApplicationContext(), g, source, titles); } catch (PackImport.Refused e) { refused = e; }
@@ -155,6 +214,12 @@ final class PackImportUi {
                 if (answer != null) answer.answer(new String[] {null, fd.text});
             });
         }, "peanuts-pack-import").start();
+    }
+
+    /** The import did not start: why, in the "Pack not imported" dialog and to answer */
+    private static void notStarted(Activity a, FirstImport.Game g, String[] no, Answer answer) {
+        refused(front(a), FirstImport.refusal(no[1]), "Pack folder: " + g.target);
+        if (answer != null) answer.answer(no);
     }
 
     /** The library's activity when it is a live one (Android may have made the activity again while the import ran), else started */

@@ -14,6 +14,7 @@
 #include "../nvn/nvn_mtl.h"
 #include "vka_present_rot.h"
 #include "vka_present_fsr.h"
+#include "vka_present_crt.h"   // PEANUTS: the CRT look
 #if __has_include("game_profile.h")
 #include "game_profile.h"
 #endif
@@ -236,7 +237,10 @@ static void rot_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im, 
 static struct { int state; VkFormat fmt; VkPipeline easu, rcas, easu_sc; VkPipelineLayout lay; VkDescriptorSetLayout dsl; VkDescriptorPool pool; VkDescriptorSet set[NFRAME][2]; VkSampler samp;
                 VkImage mid[NFRAME]; VkDeviceMemory mem[NFRAME]; VkImageView view[NFRAME]; uint32_t mw[NFRAME], mh[NFRAME]; } g_fsr;
 static int fsr_wanted(void) { return VKA_ENV("DM_VK_FSR", 0) != 0; }
-static VkPipeline fsr_pipe(const uint32_t *frag, size_t fsize, VkFormat fmt) {
+static VkPipeline fsr_pipe_lay(const uint32_t *frag, size_t fsize, VkFormat fmt, VkPipelineLayout lay, const char *what);
+#define fsr_pipe(frag, fsize, fmt) fsr_pipe_lay(frag, fsize, fmt, g_fsr.lay, "FSR")
+// A covering-triangle pipeline (fsr.vert) with one fragment shader that writes its target as it is, for the layout lay (the FSR passes, the CRT look). PEANUTS: lay and what
+static VkPipeline fsr_pipe_lay(const uint32_t *frag, size_t fsize, VkFormat fmt, VkPipelineLayout lay, const char *what) {
     VkShaderModule sm[2] = {0}; VkPipeline p = VK_NULL_HANDLE;
     VkShaderModuleCreateInfo mv = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = sizeof vka_fsr_vert, .pCode = vka_fsr_vert}, mf = mv;
     mf.codeSize = fsize; mf.pCode = frag;
@@ -255,10 +259,10 @@ static VkPipeline fsr_pipe(const uint32_t *frag, size_t fsize, VkFormat fmt) {
     VkPipelineDynamicStateCreateInfo ds = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, .dynamicStateCount = 2, .pDynamicStates = dyn};
     VkPipelineRenderingCreateInfo rci = {VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO, .colorAttachmentCount = 1, .pColorAttachmentFormats = &fmt};
     VkGraphicsPipelineCreateInfo gi = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &rci, .stageCount = 2, .pStages = st, .pVertexInputState = &vi, .pInputAssemblyState = &ia,
-        .pViewportState = &vp, .pRasterizationState = &rs, .pMultisampleState = &ms, .pColorBlendState = &cb, .pDynamicState = &ds, .layout = g_fsr.lay};
+        .pViewportState = &vp, .pRasterizationState = &rs, .pMultisampleState = &ms, .pColorBlendState = &cb, .pDynamicState = &ds, .layout = lay};   // PEANUTS: lay (fsr_pipe_lay)
     if (!r) r = rk.vkCreateGraphicsPipelines(V.dev, VK_NULL_HANDLE, 1, &gi, NULL, &p);
     for (int i = 0; i < 2; i++) if (sm[i]) rk.vkDestroyShaderModule(V.dev, sm[i], NULL);
-    if (r) VRED("FSR: pipeline for format %d: %d", fmt, r);
+    if (r) VRED("%s: pipeline for format %d: %d", what, fmt, r);   // PEANUTS: what
     return r ? VK_NULL_HANDLE : p;
 }
 // The layout, sets, sampler and the EASU pipeline once, the RCAS pipeline per swapchain format: 1 = ready. A failure is logged once and leaves the bilinear blit
@@ -392,6 +396,89 @@ static int fsr_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im, i
     rk.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.rcas);
     rk.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.lay, 0, 1, &g_fsr.set[k][1], 0, NULL);
     rk.vkCmdPushConstants(cb, g_fsr.lay, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, pc);
+    rk.vkCmdSetViewport(cb, 0, 1, &v);
+    rk.vkCmdSetScissor(cb, 0, 1, &sc);
+    rk.vkCmdDraw(cb, 3, 1, 0, 0);
+    vk.vkCmdEndRendering(cb);
+    vka_img_barrier(cb, g_simg[idx], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    return 1;
+}
+
+// ---------- The CRT look: the picture drawn into the letterbox as a CRT shows it (vka_present_crt.h, crt/crt.frag) ---------- PEANUTS
+// DM_VK_CRT (live; the launcher's Display › CRT filter): 0 off, 1 scanlines, 2 a flat CRT (scanlines, an aperture-grille mask, a light vignette), 3 a curved CRT.
+// It replaces the present's scaling step (the blit, the rotated copy or FSR), so it costs one full-screen pass with one bilinear sample per pixel. DM_VK_CRT_LINES (live,
+// 0 = the look's own) sets the number of scanlines over the picture's height; each look keeps its lines at least 3 screen pixels apart, so that they do not alias
+static struct { int state; VkFormat fmt; VkPipeline pipe; VkPipelineLayout lay; VkDescriptorSetLayout dsl; VkDescriptorPool pool; VkDescriptorSet set[NFRAME]; VkSampler samp; } g_crt;
+static int crt_mode(void) { int m = VKA_ENV("DM_VK_CRT", 0); return m >= 1 && m <= 3 ? m : 0; }
+// The layout, sets and sampler once, the pipeline per swapchain format: 1 = ready. A failure is logged once and leaves the present's own scaling
+static int crt_ready(VkFormat fmt) {
+    if (g_crt.state > 0 && g_crt.fmt == fmt) return 1;
+    if (g_crt.state < 0) return 0;
+    if (!g_crt.state) {
+        if (!rk_load()) { g_crt.state = -1; return 0; }
+        VkDescriptorSetLayoutBinding b = {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL};
+        VkDescriptorSetLayoutCreateInfo dl = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 1, .pBindings = &b};
+        VkPushConstantRange pc = {VK_SHADER_STAGE_FRAGMENT_BIT, 0, 20 * sizeof(uint32_t)};   // crt.frag's P: m, t, size, uv, k, k2
+        VkDescriptorPoolSize ps = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, NFRAME};
+        VkDescriptorPoolCreateInfo pi = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = NFRAME, .poolSizeCount = 1, .pPoolSizes = &ps};
+        VkSamplerCreateInfo si = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .magFilter = VK_FILTER_LINEAR, .minFilter = VK_FILTER_LINEAR, .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                  .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .maxLod = 0.25f};
+        VkResult r = vk.vkCreateDescriptorSetLayout(V.dev, &dl, NULL, &g_crt.dsl);
+        VkPipelineLayoutCreateInfo li = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &g_crt.dsl, .pushConstantRangeCount = 1, .pPushConstantRanges = &pc};
+        if (!r) r = rk.vkCreatePipelineLayout(V.dev, &li, NULL, &g_crt.lay);
+        if (!r) r = vk.vkCreateDescriptorPool(V.dev, &pi, NULL, &g_crt.pool);
+        VkDescriptorSetLayout dsls[NFRAME]; for (int i = 0; i < NFRAME; i++) dsls[i] = g_crt.dsl;
+        VkDescriptorSetAllocateInfo ai = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, .descriptorPool = g_crt.pool, .descriptorSetCount = NFRAME, .pSetLayouts = dsls};
+        if (!r) r = vk.vkAllocateDescriptorSets(V.dev, &ai, g_crt.set);
+        if (!r) r = vk.vkCreateSampler(V.dev, &si, NULL, &g_crt.samp);
+        if (r) { VRED("CRT: descriptor set, layout or sampler: %d; the picture is shown without it", r); g_crt.state = -1; return 0; }
+    }
+    if (g_crt.pipe) { vka_queue_idle(); rk.vkDestroyPipeline(V.dev, g_crt.pipe, NULL); g_crt.pipe = VK_NULL_HANDLE; }   // a new swapchain format: no pass in flight
+    if (!(g_crt.pipe = fsr_pipe_lay(vka_crt_frag, sizeof vka_crt_frag, fmt, g_crt.lay, "CRT"))) { g_crt.state = -1; return 0; }
+    g_crt.state = 1; g_crt.fmt = fmt;
+    VLOG("CRT look on (DM_VK_CRT=%d)", crt_mode());
+    return 1;
+}
+// The texture's crop [cx, cx + cw) x [cy, cy + ch) drawn with the CRT look into [dx, dx + dw) x [dy, dy + dh) of swapchain image idx (the display as the user sees it, turned
+// by g_pre as fsr_copy's RCAS pass turns it), the rest black. 0 = nothing recorded (the texture has no view to sample): the caller scales the picture as before
+static int crt_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im, int cx, int cy, int cw, int ch, int dx, int dy, int dw, int dh) {
+    static const VkComponentMapping swz_rb = {.r = VK_COMPONENT_SWIZZLE_B, .g = VK_COMPONENT_SWIZZLE_G, .b = VK_COMPONENT_SWIZZLE_R, .a = VK_COMPONENT_SWIZZLE_A};
+    VkImageView src = vka_view(im, g_pfmt ? g_pfmt : raw_unorm_twin(im->f.vk), VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1, vka_swap_rb() ? &swz_rb : NULL);
+    if (!src) { VRED_ONCE("CRT: window texture serial %llu (format %#x) has no view to sample: shown without it", (unsigned long long)im->serial, im->d.format); return 0; }
+    vka_barrier(cb);   // the replay's writes to the window texture (earlier submissions, in submission order)
+    VkDescriptorImageInfo ii = {g_crt.samp, src, VK_IMAGE_LAYOUT_GENERAL};
+    VkWriteDescriptorSet w = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_crt.set[k], .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii};
+    vk.vkUpdateDescriptorSets(V.dev, 1, &w, 0, NULL);
+    int W = (int)g_ext.width, H = (int)g_ext.height, m[6];   // the swapchain pixel q to the letterbox's: as fsr_copy's RCAS pass
+    VkViewport v;
+    switch (g_pre) {
+    case VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR:  v = (VkViewport){(float)(W - dy - dh), (float)dx, (float)dh, (float)dw, 0, 1}; memcpy(m, (int[6]){0, -1, 1, 0, -dx, W - 1 - dy}, sizeof m); break;
+    case VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR: v = (VkViewport){(float)dy, (float)(H - dx - dw), (float)dh, (float)dw, 0, 1}; memcpy(m, (int[6]){0, 1, -1, 0, H - 1 - dx, -dy}, sizeof m); break;
+    case VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR: v = (VkViewport){(float)(W - dx - dw), (float)(H - dy - dh), (float)dw, (float)dh, 0, 1}; memcpy(m, (int[6]){-1, 0, 0, -1, W - 1 - dx, H - 1 - dy}, sizeof m); break;
+    default:                                      v = (VkViewport){(float)dx, (float)dy, (float)dw, (float)dh, 0, 1}; memcpy(m, (int[6]){1, 0, 0, 1, -dx, -dy}, sizeof m); break;
+    }
+    // The looks: scanlines over the height, scanline strength, mask strength, curvature; vignette, brightness (to make up for the dark between the lines and stripes)
+    static const float looks[4][6] = {{0}, {360, 0.55f, 0, 0, 0, 1.20f}, {270, 0.70f, 0.30f, 0, 0.20f, 1.40f}, {270, 0.70f, 0.30f, 0.035f, 0.40f, 1.45f}};
+    const float *L = looks[crt_mode()];
+    float lines = (float)VKA_ENVF("DM_VK_CRT_LINES", 0); if (lines <= 0) lines = L[0];
+    if (lines > dh / 3.0f) lines = dh / 3.0f;
+    if (lines < 1) lines = 1;
+    float mask_pitch = dw >= 2400 || dh >= 1400 ? 4.0f : 3.0f;   // one red, green and blue stripe over 3 pixels, 4 on a dense screen
+    float tw = (float)im->w, th = (float)im->h, uv[4] = {cx / tw, cy / th, cw / tw, ch / th};
+    if (vka_origin_ll()) { uv[1] = (cy + ch) / th; uv[3] = -uv[3]; }   // lower-left origin: the window texture is stored bottom-up
+    uint32_t pc[20];
+    memcpy(&pc[0], m, sizeof m);
+    float f[14] = {(float)dw, (float)dh, uv[0], uv[1], uv[2], uv[3], lines, L[1], L[2], L[3], L[4], L[5], mask_pitch, 0};
+    memcpy(&pc[6], f, sizeof f);
+    VkRect2D sc = {{0, 0}, g_ext};
+    vka_img_barrier(cb, g_simg[idx], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    VkRenderingAttachmentInfo ca = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = g_sview[idx], .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .clearValue = {.color = {{0, 0, 0, 1}}}};   // the bars
+    VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = sc, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &ca};
+    vk.vkCmdBeginRendering(cb, &ri);
+    rk.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_crt.pipe);
+    rk.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_crt.lay, 0, 1, &g_crt.set[k], 0, NULL);
+    rk.vkCmdPushConstants(cb, g_crt.lay, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, pc);
     rk.vkCmdSetViewport(cb, 0, 1, &v);
     rk.vkCmdSetScissor(cb, 0, 1, &sc);
     rk.vkCmdDraw(cb, 3, 1, 0, 0);
@@ -807,7 +894,14 @@ static int present_one(const pq_item *it) {
         else VRED_ONCE("FSR: swapchain image %u has no attachment view: blitted", idx);
         fsr = 0;
     }
-    if (fsr && fsr_ready(g_swap_fmt) && fsr_mid(k, (uint32_t)dw, (uint32_t)dh) && fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh)) {
+    // PEANUTS: the CRT look in place of every other scaling step (crt_copy); a texture it cannot sample keeps the present's own path
+    int crt = crt_mode() && im && im->inited && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT && im->f.kind == 0 && im->samples == 1 && (im->usage & VK_IMAGE_USAGE_SAMPLED_BIT)
+              && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) && g_sview[idx];
+    if (crt_mode() && im && !crt) { static int told; if (!told++) VLOG("CRT wanted but not used: usage %#x, linear filter %d, attachment view %d", (unsigned)im->usage,
+                                                                        (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0, g_sview[idx] != VK_NULL_HANDLE); }
+    if (crt && crt_ready(g_swap_fmt) && crt_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh)) {
+        blit = -1;
+    } else if (fsr && fsr_ready(g_swap_fmt) && fsr_mid(k, (uint32_t)dw, (uint32_t)dh) && fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh)) {
         blit = -1;
     } else if (rot_rotates(g_pre) || vka_swap_rb() || (ownfmt && g_sview[idx])) {
         int ok = im && im->inited && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT && im->f.kind == 0 && im->samples == 1 && (im->usage & VK_IMAGE_USAGE_SAMPLED_BIT) && g_sview[idx];

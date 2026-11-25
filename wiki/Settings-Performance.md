@@ -31,6 +31,17 @@ Not every game shows every row. A row appears only when the game's profile has t
 - **FSR sharpness** (shown only with FSR 1): Off, Softer, Soft, Default, Max. Default: Default.
 - **A game on the DLSS stand-in** (Fire Emblem: Fortune's Weave, Star Fox) has its own Upscaler list instead: **GSR 2 (smooth images)**, **FSR 1 (sharp, fast)**, **Bilinear (fastest, softest)**, **FSR 3.1 (sharp, steady)**, with **Motion clarity** and a sharpness row where the mode has them. Fire Emblem: Fortune's Weave recommends FSR 3.1 on any phone.
 
+### CRT filter
+<!-- PEANUTS: the CRT filter (CrtFilter) -->
+- **What it does:** draws the picture as a CRT shows it. The choices:
+  - Off
+  - Scanlines
+  - CRT (scanlines, mask, vignette): scanlines, an aperture-grille mask and a light vignette
+  - Curved CRT (as CRT, with a curved screen)
+- **When to toggle:** for older games, and for newer 2D HD games drawn in a retro style, such as the Dragon Quest HD-2D remakes.
+- **What to expect:** it takes the place of the Upscaler's scaling to the screen, and costs one full-screen pass. Settings > Graphics > Picture sets it for every game, the game's page sets it for one game, and the in-game panel's Display tab changes it from the next frame and keeps it for that game.
+- **Default:** Off.
+
 ### Display
 - **What it does:** how the picture sits on the screen: **Fit (keep aspect)** or **Stretch to screen**. The in-game panel adds a size slider and a position; see [The in-game panel](Side-Panel-In-Game).
 - **When to toggle:** Stretch if you prefer to fill the screen over the right shape.

@@ -12,7 +12,7 @@ import java.util.List;
 public final class WhoPlays {
     private WhoPlays() {}
 
-    /** The setting: ask when the app opens and when a game starts without it (the default), or never */
+    /** The setting: ask when the app opens and when a game starts without it (the default), or never. "Always X" when the app opens is Don't ask */
     public static final int ASK = 0, DONT_ASK = 1;
     /** The launch intent's extra that names the picked user (32 hex digits) */
     public static final String EXTRA = "dev.peanuts.user";

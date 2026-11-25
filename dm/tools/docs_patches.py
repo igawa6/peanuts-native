@@ -191,7 +191,7 @@ SWITCH_BINDING = [
     # PEANUTS: Document the opt-in profile switch for elapsed game time.
     ('fps_step_elapsed', '', {'what': 'launch with elapsed-time frame-step hooks enabled', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'keep the game clock active while display pacing selects the frame rate'}),
     # PEANUTS: Document the Game owned default for a game whose elapsed-time plan is opt-in.
-    ('fps_owned_default', '', {'what': 'start Game owned until the player picks a frame rate (Android)', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': "the game's own pacing where its elapsed-time plan collapses on slower phones"}),
+    ('fps_owned_default', '', {'what': 'start Game owned until the player picked a frame rate (Android, before 0.1.8; since then it starts at 60 fps, Game owned a choice)', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': "the game's own pacing where its elapsed-time plan collapses on slower phones"}),
     ('fps_limit', '', {'what': "the host's frame limit by default (Android)", 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'a choice per game: steady frames and less heat where its own rate wanders below 60'}),
     ('ue_fps_cvar', '', {'what': "the game's own Unreal frame-limit variable", 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': "the game's own variable, which its settings apply to t.MaxFPS; the rewriter finds it by name (ue_cvar.py)"}),
     ('perf_mode', '', {'what': 'Boost whatever the operation mode', 'now': 'game', 'goal': 'game', 'purpose': 'runtime', 'why': 'a combination a Switch 1 never reports: a choice per game'}),

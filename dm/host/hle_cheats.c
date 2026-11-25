@@ -180,6 +180,7 @@ static void alias_setup(void) {
 
 // The cheats list, the toggles and one VM pass at a time
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
+#include "../peanuts/peanuts_cheats.h"   // PEANUTS: code cheats on Android, written with the game's threads stopped (its bodies: peanuts_cheats.inc, at the end)
 
 // ---------- the dry run (dm_cheat_preview): what a cheat would write, nothing written ----------
 
@@ -505,6 +506,7 @@ static int mem_read(uint64_t addr, uint64_t len, uint64_t *out) {
     if (w.kind == WH_HEAP) { if (dm_guest_heap_read(addr, &v, len)) return -1; }
     else if (w.kind == WH_GUEST) { if (guest_page_read(addr, &v, len)) return -1; }
     else memcpy(&v, (void *)(uintptr_t)addr, len);
+    if (PN_CODE && w.kind == WH_MAIN) pn_code_read(addr, len, &v);   // PEANUTS: the words this pass queued for main's code read as written
     *out = v;
     return 0;
 }
@@ -560,7 +562,7 @@ static int changed_hit(uint64_t off, uint64_t len) {
 //     signed code, which can never be made writable
 // Data is written through the alias too when there is one, else directly (those pages are read + write). The checks
 // run in a dry run too (main_write_check, before the description), so the preview says the write would stop the cheat
-static uint64_t main_rx_end(void) { static long pg; if (!pg) pg = getpagesize(); return (g_main_mod->text_end + pg - 1) & ~(uint64_t)(pg - 1); }
+static uint64_t main_rx_end(void) { static long pg; if (!pg) pg = getpagesize(); if (pg < 0x4000) pg = 0x4000;   /* PEANUTS(upstream-candidate): loader.c seals the text to 16 KB on every platform, a 4 KB phone too */ return (g_main_mod->text_end + pg - 1) & ~(uint64_t)(pg - 1); }
 static int main_write_check(cheat_t *c, uint64_t addr, uint64_t len) {
     module_t *m = g_main_mod; uint64_t off = addr - (uint64_t)(uintptr_t)m->base;
     if (off + len > m->key_page_off) {
@@ -568,7 +570,7 @@ static int main_write_check(cheat_t *c, uint64_t addr, uint64_t len) {
         return -1;
     }
     if (off < main_rx_end()) {   // the text, to its last page as the loader sealed it
-        if (!g_alias) {
+        if (!g_alias && !PN_CODE) {   // PEANUTS: on Android the write goes through peanuts_cheats.inc (no alias there)
             cheat_kill(c, "%s", PLAT_IOS ? "code writes are not possible on the iPhone (the app's signed code pages)" : "code write without the writable alias of main");
             return -1;
         }
@@ -656,7 +658,9 @@ static void cheat_write(cheat_t *c, uint64_t addr, uint64_t len, uint64_t val) {
                                  w.kind == WH_MAIN ? "main NSO" : w.kind == WH_HEAP ? "heap" : w.kind == WH_MODULE ? w.mod->name : "guest page");
     int bad = 0;
     switch (w.kind) {
-        case WH_MAIN: main_write_pages(addr, len, &val); break;
+        case WH_MAIN:
+            if (PN_CODE && !g_alias && addr - (uint64_t)(uintptr_t)g_main_mod->base < main_rx_end()) { pn_code_write(c, addr, len, val); break; }   // PEANUTS: main's code on Android: compared, then written in the pass's stop
+            main_write_pages(addr, len, &val); break;
         // The heap write happens under the memory lock (dm_guest_heap_write), so a concurrent SetHeapSize cannot shrink it
         // out from under the copy; it only refuses if the span shrank since the check a moment ago: a failed access as ever
         case WH_HEAP: bad = dm_guest_heap_write(addr, &val, len) != 0; break;
@@ -1013,6 +1017,7 @@ static void cheats_pass(void) {
     int fired = 0, ran = 0;
     g_held = dm_cheats_keys();
     memset(g_reg, 0, sizeof g_reg); memset(g_saved, 0, sizeof g_saved);   // the reference's once-per-pass ResetState (the loop tops: per cheat, in vm_run)
+    if (PN_CODE) pn_pass_begin();   // PEANUTS: code words of cheats that stopped running go back (peanuts_cheats.inc)
     for (int half = 0; half < 2; half++) for (int i = 0; i < g_ncheat; i++) {
         cheat_t *c = &g_cheat[i];
         if (!pass_runs(c, half)) continue;
@@ -1021,6 +1026,7 @@ static void cheats_pass(void) {
         note_settle(c);
         if ((c->once || c->restore_once) && half) { c->on = 0; c->restore_once = 0; fired = 1; }
     }
+    if (PN_CODE) pn_pass_end();   // PEANUTS: the code words this pass changed, written in one stop of the game's threads
     if (ran) g_keyold = g_held;
     if (fired) states_save();   // the file writes themselves leave on the files queue: the presenting thread never waits for the disk
     pthread_mutex_unlock(&g_lock);
@@ -1747,6 +1753,7 @@ static void sources_scan(void) {
 // (Re)load: choose the file, note the other builds, parse, read the meta file and the values, link pairs, restore the
 // states, build the report. Called at init and from "Reload cheats" (safe mode and the master switch stay as they are)
 static void load_all(void) {
+    if (PN_CODE) pn_load_before();   // PEANUTS: the code words' owners follow the cheats to the new file by key (peanuts_cheats.inc)
     g_ncheat = 0; g_ncand = 0; g_nothers = 0; g_path[0] = 0; g_nskip = 0; g_have_meta = 0;
     g_junk = g_junk_line = g_glued = 0; g_carried[0] = 0; g_version[0] = 0; g_meta_src[0] = 0;
     memset(g_static, 0, sizeof g_static);   // the reference clears its static registers when it loads cheats
@@ -1795,14 +1802,15 @@ static void load_all(void) {
     // The writable alias of main is mapped once a cheat file is actually picked, not at init merely because DM_ROOT is
     // set: a run without cheats would otherwise always map a second image of main and log a line for it. At init the
     // pick happens before the guest starts; a later "Reload cheats" retries only when no alias mapped the first time
-    if (g_main_mod && !g_alias) {
+    if (PN_CODE && g_main_mod && !g_alias) { static int said; if (!said++) LOG("cheats: main's code is written with the game's threads stopped (no alias of main on Android: dm/peanuts/peanuts_cheats.inc)"); }   // PEANUTS
+    else if (g_main_mod && !g_alias) {
         alias_setup();
         if (g_alias) LOG("cheats: writable alias of main mapped");
         else if (PLAT_IOS) LOG("cheats: the iPhone's code pages are signed: cheats write data only");
         else if (PLAT_ANDROID) LOG("cheats: no writable alias of main on Android yet (plat_mem_alias, android/PORTING.md): cheats write data only");
         else LOG("[RED] cheats: no writable alias of main (mach_vm_remap failed): cheats write data only");
     }
-    if (g_alias) changed_load();   // which text words a code write must leave alone (only where code can be written at all)
+    if (g_alias || PN_CODE) changed_load();   // which text words a code write must leave alone (only where code can be written at all)   // PEANUTS: || PN_CODE, Android writes code too
     parse_file(g_path);
     meta_load(g_path);
     pairs_link();
@@ -2121,3 +2129,5 @@ const char *dm_cheats_skipped_why(int i) { return i >= 0 && i < g_nskip ? g_skip
 int dm_cheats_nsources(void) { return g_nsrc; }
 
 const char *dm_cheats_source(int i) { return i >= 0 && i < g_nsrc ? g_src[i] : ""; }
+
+#include "../peanuts/peanuts_cheats.inc"   // PEANUTS: code cheats on Android (peanuts_cheats.h), the launcher's status and reload of the cheats

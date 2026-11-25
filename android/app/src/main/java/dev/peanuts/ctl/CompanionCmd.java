@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 import dev.peanuts.Catalog;
+import dev.peanuts.CompanionFile;
+import dev.peanuts.CompanionImport;
 import dev.peanuts.Installer;
 import dev.peanuts.settings.CompanionSection;
 import dev.peanuts.ui.CtlPort;
@@ -18,7 +20,8 @@ import dev.peanuts.ui.CtlPort;
 /**
  * companion, do=list | install | update | remove. The catalog is read from the network and a package is downloaded, checked and put in place by the
  * app's own installer (dev.peanuts.Installer: the catalog's digest, the runtime version, not while a game runs), so the command answers later: its result
- * is pending until the work has ended. remove deletes a package and asks first (Request.check).
+ * is pending until the work has ended. remove deletes a package and asks first (Request.check). install with path puts in a .dsmod.zip on the device
+ * instead of the catalog's (Install from file).
  */
 final class CompanionCmd {
     private CompanionCmd() {}
@@ -26,9 +29,12 @@ final class CompanionCmd {
     /** Works on its own thread and calls finished when res has its answer; what can be refused at once was refused by Request.check */
     static void start(Context c, Request r, Result res, Runnable finished) throws Request.Bad {
         String act = r.action();
-        String id = r.titleId(!act.equals("list"));
+        String path = r.str("path");   // install from a file on the device (Request.check: do=install only)
+        String id = r.titleId(!act.equals("list") && path == null);
+        boolean confirm = r.on("confirm");
         new Thread(() -> {
             try {
+                if (path != null) { file(c, path, id, confirm, res); finished.run(); return; }
                 List<CtlPort.Row> rows = CtlPort.rows(c);   // reads packs: off the main thread
                 if (act.equals("list")) list(rows, id, res);
                 else one(c, act, row(rows, id), res);
@@ -39,6 +45,21 @@ final class CompanionCmd {
             }
             finished.run();
         }, "peanuts-ctl-companion").start();
+    }
+
+    /** do=install with path: Settings' Install from file without the picker (dev.peanuts.CompanionImport, the same installer). id (null: any game) must be
+     *  the file's game; an older version than the installed one wants confirm. CompanionFile's refusals keep their codes; older is needs_confirm */
+    private static void file(Context c, String path, String id, boolean confirm, Result res) throws IOException, Request.Bad {
+        File f = new File(path);
+        if (!f.isFile() || !f.canRead()) throw new Request.Bad("no_file", path + " is not a file the app can read.");
+        try {
+            CompanionImport.Done d = CompanionImport.install(c, f, f.getName(), id, confirm, null);
+            res.ok(d.message()).put("title_id", d.info.titleId).put("name", d.info.name).put("package", d.result.packageName).put("version", d.result.version)
+                    .put("was", d.result.was).put("changed", d.result.changed()).put("in_library", d.target.inLibrary).put("built", d.target.built);
+        } catch (CompanionFile.Refused e) {
+            if (CompanionFile.Refused.OLDER.equals(e.code)) throw new Request.Bad("needs_confirm", e.getMessage() + " Add -e confirm true to install it anyway.");
+            throw new Request.Bad(e.code, e.getMessage());
+        }
     }
 
     private static CtlPort.Row row(List<CtlPort.Row> rows, String id) throws Request.Bad {

@@ -103,8 +103,8 @@ final class PickedNup implements Nup.Opener {
     /** The provider streams the file (a cloud folder): the app must read a .nup at any position, so it can only be copied */
     static final class Streamed extends IOException {
         Streamed(String name) {
-            super(name + " is in a place that only streams files (a cloud folder?), and the game reads a .nup at any position. Copy it into the app, or put it on the "
-                    + "phone's storage or an SD card and pick it there.");
+            super(name + " is in a place that only streams files, such as a cloud folder, and the game needs to read any part of the file at any time. Copy it into the "   // PEANUTS: build text in the player's words (0.1.8)
+                    + "app, or put it on the phone's storage or an SD card and pick it there.");
         }
     }
 

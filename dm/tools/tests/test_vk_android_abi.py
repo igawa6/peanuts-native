@@ -153,6 +153,52 @@ OpReturn
 OpFunctionEnd
 '''
 
+# PEANUTS(upstream-candidate): a dual-source pixel shader as the translator writes one: two vec4 outputs (locations 0 and 1), each written by four component access chains and stores, one return
+FS_DUAL = '''OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main" %o0 %o1
+OpExecutionMode %main OriginUpperLeft
+OpDecorate %o0 Location 0
+OpDecorate %o1 Location 1
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%v4 = OpTypeVector %f32 4
+%pv4 = OpTypePointer Output %v4
+%pf = OpTypePointer Output %f32
+%o0 = OpVariable %pv4 Output
+%o1 = OpVariable %pv4 Output
+%int = OpTypeInt 32 1
+%c0 = OpConstant %int 0
+%c1 = OpConstant %int 1
+%c2 = OpConstant %int 2
+%c3 = OpConstant %int 3
+%f0 = OpConstant %f32 0
+%f1 = OpConstant %f32 1
+%f2 = OpConstant %f32 2
+%f3 = OpConstant %f32 3
+%main = OpFunction %void None %fn
+%l = OpLabel
+%a0 = OpAccessChain %pf %o0 %c0
+%a1 = OpAccessChain %pf %o0 %c1
+%a2 = OpAccessChain %pf %o0 %c2
+%a3 = OpAccessChain %pf %o0 %c3
+OpStore %a0 %f0
+OpStore %a1 %f1
+OpStore %a2 %f2
+OpStore %a3 %f3
+%b0 = OpAccessChain %pf %o1 %c0
+%b1 = OpAccessChain %pf %o1 %c1
+%b2 = OpAccessChain %pf %o1 %c2
+%b3 = OpAccessChain %pf %o1 %c3
+OpStore %b0 %f0
+OpStore %b1 %f1
+OpStore %b2 %f2
+OpStore %b3 %f3
+OpReturn
+OpFunctionEnd
+'''
+
 # A pixel shader drawn with a mesh program: flat input 0 (written per primitive), input 1 per vertex, a storage buffer read
 MESH_FS = '''OpCapability Shader
 OpMemoryModel Logical GLSL450
@@ -238,11 +284,11 @@ OpFunctionEnd
 
 @unittest.skipUnless(shutil.which('spirv-as') and shutil.which('spirv-val'), 'SPIRV-Tools not installed')
 class Rewrites(unittest.TestCase):
-    def module(self, text):
+    def module(self, text, env='spv1.3'):   # PEANUTS(upstream-candidate): env for the SPIR-V 1.4 case
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / 'a.spvasm').write_text(text)
-            subprocess.run(['spirv-as', '--target-env', 'spv1.3', str(Path(d) / 'a.spvasm'), '-o', str(Path(d) / 'a.spv')], check=True)
-            return spv.Module((Path(d) / "a.spv").read_bytes())   # SPIR-V 1.3, as the translator writes
+            subprocess.run(['spirv-as', '--target-env', env, str(Path(d) / 'a.spvasm'), '-o', str(Path(d) / 'a.spv')], check=True)
+            return spv.Module((Path(d) / "a.spv").read_bytes())   # SPIR-V 1.3, as the translator writes; env for the others
 
     def valid(self, m):
         with tempfile.TemporaryDirectory() as d:
@@ -287,6 +333,28 @@ class Rewrites(unittest.TestCase):
         text = self.valid(d)
         if text: self.assertIn('Index 1', text)
         self.assertEqual(spv.const_written_outputs(self.module(FS.replace('OpStore %p %bits', 'OpStore %p %f1').replace('OpStore %p %back', ''))), {0, 1})
+
+    def test_dual_source_whole_store(self):   # PEANUTS(upstream-candidate)
+        # Qualcomm's driver 512.676 refuses a pipeline whose Index 1 output is written per component (measured on FINAL FANTASY XII THE ZODIAC AGE's target-ring
+        # pipelines): the rewrite keeps the per-component stores on a Private copy and writes the output variable whole before every return
+        m = self.module(FS_DUAL)
+        self.assertTrue(spv.dual_source(m))
+        text = self.valid(m)
+        if text:
+            self.assertIn('Private', text)
+            self.assertEqual(text.count('Index 1'), 1)
+            ids = re.findall(r'OpDecorate %(\S+) Index 1', text)
+            self.assertEqual(len(ids), 1)
+            lines = text.splitlines()
+            self.assertEqual(len([l for l in lines if 'OpStore %' + ids[0] + ' ' in l]), 1)   # written whole, once
+            self.assertFalse([l for l in lines if 'OpAccessChain' in l and re.search('%' + ids[0] + r'(?=\s)', l)])   # no per-component access to it
+        m2 = self.module(FS_DUAL.replace('OpDecorate %o1 Location 1', 'OpDecorate %o1 Location 2'))   # not a dual-source pair: untouched
+        before = m2.data()
+        self.assertFalse(spv.dual_source(m2))
+        self.assertEqual(m2.data(), before)
+        m3 = self.module(FS_DUAL, 'spv1.4')   # from SPIR-V 1.4 the interface lists every global: the Private copy stays in it, the new output joins
+        self.assertTrue(spv.dual_source(m3))
+        self.valid(m3)
 
     def test_per_primitive_inputs(self):
         # a pixel shader of a mesh program: input 0 per primitive; its storage buffer (Uniform + BufferBlock in SPIR-V 1.3) becomes StorageBuffer + Block in 1.4

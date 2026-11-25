@@ -1,5 +1,6 @@
 """The Mii parts from the player's own firmware (dev.peanuts.mii.MiiParts, Tegra, MiiLook) on the JVM: the texture and shape files' layout, the Switch GPU's
-block-linear order undone, halves and packed normals, the colour tables and where the face parts sit. The test makes its own files in the firmware's layout;
+block-linear order undone, halves and packed normals, the colour tables, the parts' colouring and where the face parts sit (MiiLookJvmTest). The test makes
+its own files in the firmware's layout;
 no firmware file is part of the repository. Skipped without a JDK."""
 import shutil
 import subprocess
@@ -22,6 +23,28 @@ class MiiPartsJvm(unittest.TestCase):
             r = subprocess.run(['java', '-cp', d, 'dev.peanuts.mii.MiiPartsJvmTest'], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn('PASS', r.stdout)
+
+
+LOOK_TEST = REPO / 'android/app/src/jvmtest/java/dev/peanuts/mii/MiiLookJvmTest.java'
+
+
+@unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')
+class MiiLookJvm(unittest.TestCase):
+    """The colour tables, how each part is coloured and where the face parts sit (MiiLook, the numbers from vee)"""
+
+    def test_jvm(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', d, str(MII / 'MiiStore.java'), str(MII / 'MiiLook.java'), str(LOOK_TEST)],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            r = subprocess.run(['java', '-cp', d, 'dev.peanuts.mii.MiiLookJvmTest'], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn('PASS', r.stdout)
+
+    def test_named_where_it_is_checked(self):
+        """MiiLook's comment names the test that checks it, and that test is there"""
+        self.assertIn('MiiLookJvmTest checks them', (MII / 'MiiLook.java').read_text(encoding='utf-8'))
+        self.assertTrue(LOOK_TEST.is_file())
 
 
 class Sources(unittest.TestCase):

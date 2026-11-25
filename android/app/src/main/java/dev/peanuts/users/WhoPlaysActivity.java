@@ -29,8 +29,9 @@ import dev.peanuts.ui.PUi;
  * "Who's playing?" (Settings › Users), with two or more users: big profile cards over the app's drifting peanuts on the top screen, under its peanut badge.
  * <ul>
  * <li>When the app opens (its icon, a cold start: {@link #appOpened}): the user playing now picked already; the bottom screen shows them, Continue as X and
- * "Always X", which stops the question. The pick is the user games start with (UsersPort.setDefault), so every game started in the app plays as them; the
- * picture at Home's top right (ProfileButton) switches later. Back keeps the user playing now.</li>
+ * "Always X", which stops this question and the one before a game from a shortcut or a frontend (the setting's Don't ask). The pick is the user games start
+ * with (UsersPort.setDefault), so every game started in the app plays as them; the picture at Home's top right (ProfileButton) switches later. Back keeps the
+ * user playing now.</li>
  * <li>Before a game that starts without the app, from a home screen shortcut or a frontend ({@link #ask}): the user who played this game last picked
  * already; the bottom screen shows the game, Play as X and "Always X for this game". The pick goes to that game only (WhoPlays.EXTRA, GameActivity: DM_USER).
  * Back starts nothing. It runs in a task of its own (the manifest's empty taskAffinity), so Home never shows in between.</li>
@@ -208,13 +209,8 @@ public final class WhoPlaysActivity extends Activity {
     private UsersPort.User find(String uid) { for (UsersPort.User u : users) if (u.uid.equals(uid)) return u; return null; }
     private UsersPort.User user(String uid) { UsersPort.User u = find(uid); return u != null ? u : users.get(0); }
 
-    private boolean hasSave(String uid) {
-        if (tid == null) return false;
-        File base = new File(new File(getExternalFilesDir(null), "saves"), tid);
-        File dir = UsersPort.FIRST.equals(uid) ? base : new File(base.getParentFile(), base.getName() + "_user_" + uid);
-        String[] in = dir.list();
-        return in != null && in.length > 0;
-    }
+    /** Whether this user has a save of the game: a file in their folder of its save (UserSaves.has: the game's save folder, a picked one as well) */
+    private boolean hasSave(String uid) { return tid != null && dev.nxnative.android.UserSaves.has(this, tid, uid); }
 
     // ---- The bottom screen: the game, Play as, Always ----
 
@@ -256,7 +252,7 @@ public final class WhoPlaysActivity extends Activity {
         return col;
     }
 
-    /** When the app opens: the picked user, Continue as X, and "Always X" (no question when the app opens from then on) */
+    /** When the app opens: the picked user, Continue as X, and "Always X" (from then on no question when the app opens, nor before a game from a shortcut or a frontend) */
     private View appPanel(Context c) {
         LinearLayout col = new LinearLayout(c);
         col.setOrientation(LinearLayout.VERTICAL);
@@ -283,7 +279,7 @@ public final class WhoPlaysActivity extends Activity {
         col.addView(card, PUi.fill());
         PUi.add(col, PUi.button(c, "Continue as " + u.name, PUi.Kind.PRIMARY, Feel.launch(v -> play())), 12);
         LinearLayout box = PUi.add(col, PUi.listCard(c), 12);
-        PUi.Setting s = new PUi.Setting(c, "", "Always " + u.name, null).value("Skips this question when the app opens")
+        PUi.Setting s = new PUi.Setting(c, "", "Always " + u.name, null).value("Skips this question and the one before games from shortcuts or frontends")
                 .toggle(c, always, (b, on) -> { Feel.toggled(b, on); always = on; });
         s.view.setOnClickListener(v -> s.toggle.toggle());
         box.addView(s.view);
@@ -292,7 +288,7 @@ public final class WhoPlaysActivity extends Activity {
     }
 
     private void play() {
-        if (game == null) {   // the app opens: the pick is the user games start with; "Always" stops the question
+        if (game == null) {   // the app opens: the pick is the user games start with; "Always" is the setting's Don't ask, both questions stop
             UsersPort.setDefault(this, picked);
             if (always) UsersPrefs.whoMode(this, WhoPlays.DONT_ASK);
             finish();

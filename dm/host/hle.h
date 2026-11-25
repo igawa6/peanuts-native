@@ -85,4 +85,25 @@ void dm_audio_reset(void);   // iOS media services reset: recreate the AudioUnit
 // An nn::gs::NativeSyncHandle (16 bytes, magic first) the host made that never signals: GameChat's camera pictures, which never come (no camera; hle_misc.c). nn::gs::TryWaitNativeSync (hle_codec_video.c) reads it as not reached
 #define DM_SYNC_NEVER 0x4e436d44u   // 'DmCN'
 uint32_t dm_sf_host_session(const char *name);   // hle_sf.c: a session the host answers (success, zeroed output) for a service the game reaches without sm
+// PEANUTS begin: a host service that reads its request and writes data back (hle_sf.c sf_serve; first the audio renderer service of SDKs with no renderer of their own, hle_audren_svc.c).
+// One request: the session's name and object (obj 0 for a plain session, the object ID in a domain), the command, the raw arguments after the CMIF header, the buffers of each
+// descriptor kind (A in, B out, X in pointer, C out receive list) as guest addresses (the guest's memory is the host's), and the copied handles. The service writes its raw output
+// (at most 0x100 bytes), a copied handle (copy), and a new object: in a domain session the object ID it chose (child, from sf_new_object), else a session of the host's (move).
+// cmd SF_CLOSE: the object or session ended (a domain object closed, CloseClientSessionHandle), nothing to answer
+#define SF_CLOSE 0xffffffffu
+typedef struct { uint64_t addr, size; } sf_buf;
+typedef struct sf_req {
+    const char *name; int slot, domain; unsigned obj, cmd;
+    const uint8_t *in; size_t nin;
+    sf_buf a[4], b[4], x[4], c[4]; int na, nb, nx, nc;
+    uint32_t copy_in[8]; int ncopy_in;
+    uint8_t out[0x100]; size_t nout;
+    uint32_t copy, move; unsigned child;
+} sf_req;
+typedef Result (*sf_serve)(sf_req *r);
+unsigned sf_new_object(int slot);                                      // hle_sf.c: the next object ID of a domain session (2, 3, ...; 1 is the session's own)
+uint32_t sf_new_session(const char *name, sf_serve serve);             // hle_sf.c: a host session answered by serve (a moved interface of a plain session)
+int sf_session_slot(uint32_t h);                                        // hle_sf.c: the slot (sf_req.slot) of a host session handle, -1 for none
+int hle_signal_event_handle(uint32_t write_end);                        // hle_thread.c: signal a kernel event by its write end (any thread); 0 when the handle is gone
+// PEANUTS end
 uint32_t hle_new_event(uint32_t *write_end);   // hle_thread.c: a new kernel event's read end (a service's handle copied to its client); its write end in *write_end, none when NULL (never signaled)

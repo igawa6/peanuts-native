@@ -51,10 +51,13 @@ public final class BuildLogUi {
 
     private BuildLogUi() {}
 
-    /** The game's bundle, made now, in a sheet: what is in it, then Share or Save to a folder. name: the game's name, or null */
-    public static void share(Activity a, String titleId, String name) {
+    /**
+     * The game's bundle, made now, in a sheet: what is in it, then Share or Save to a folder. name: the game's name as the caller knows it, or null (the
+     * bundle then finds it); gameName: the name for the sheet's title, looked up on Share log's worker (BuildLogShare.gameName reads the launcher's list)
+     */
+    private static void share(Activity a, String titleId, String name, String gameName) {
         Context app = a.getApplicationContext();
-        String shown = name != null && !name.isEmpty() ? name : BuildLogShare.gameName(app, titleId);
+        String shown = gameName != null && !gameName.isEmpty() ? gameName : String.valueOf(titleId);
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
         ProgressBar bar = Strip.card(a);
@@ -96,8 +99,8 @@ public final class BuildLogUi {
 
     /** What the sheet says the bundle holds */
     static String contents(BuildLogShare.Made m) {
-        return m.files + " files, " + BuildLogBundle.size(m.bytes) + ". Holds the build's step logs, its job file, the app's own messages and a summary of this phone "
-                + "(model, Android, memory, free space). No keys, game files or saves." + (m.cut ? " Long logs are cut to their first and last part." : "");
+        return m.files + " files, " + BuildLogBundle.size(m.bytes) + ". Holds the build's step logs, its progress file, the app's own messages and a summary of this phone: "
+                + "its model, Android version, memory and free space. No keys, game files or saves." + (m.cut ? " Long logs are cut to their first and last part." : "");
     }
 
     private static String sentence(String s) {
@@ -146,7 +149,7 @@ public final class BuildLogUi {
         Context app = a.getApplicationContext();
         new Thread(() -> {
             String msg;
-            if (!zip.isFile()) msg = "The build log is no longer there (it is kept for a day). Open Share log again.";
+            if (!zip.isFile()) msg = "The build log is no longer there. A build log is kept for a day. Open Share log again.";
             else try (InputStream in = new FileInputStream(zip); OutputStream out = app.getContentResolver().openOutputStream(to, "w")) {
                 if (out == null) throw new IOException("the folder took no file");
                 byte[] b = new byte[64 << 10];
@@ -165,22 +168,55 @@ public final class BuildLogUi {
     // ---- Share log: a game run or a build ----
 
     /**
+     * What Share log needs to know before it can ask: the newest run log, the build's log and jobs, the game's name in the launcher's list, the exit record
+     * and the running processes. All of it is read on a worker ({@link #anyPick}, {@link #gamePick}): on an SD card or a USB drive that can take seconds, and
+     * the tap's screen would stall that long. A second tap meanwhile starts nothing (OffMain)
+     */
+    private static final OffMain LOOK = new OffMain(java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "peanuts-share-log")), MAIN::post);
+
+    /** What a Share log tap found: what to share, and the words of the choice */
+    private static final class Pick {
+        int what = LogChoice.NONE;
+        CharSequence title, run, build;   // the choice's title and its two lines (ASK only)
+        File runLog, digest;              // the run to share, and the digest the "Game stopped" notice wrote beside it (or null)
+        String buildTitle, buildName;     // the build's game: its title ID, and its name for the sheet
+    }
+
+    /**
      * Settings › Share log: the newest run of any game and the newest build of any game. With both, the player picks one (each says when it happened and how it
      * ended, LogChoice); with one, it is shared at once. runLog: MainActivity's own Share log of the newest run (also its "No log yet." when there is none)
      */
     public static void shareLog(Activity a, Runnable runLog) {
-        File run = newestRunLog(a, null);
-        BuildLogShare.Found b = BuildLogShare.found(a, null);
-        int what = LogChoice.choose(run != null, b != null);
-        if (what == LogChoice.BUILD) { share(a, b.titleId, null); return; }
-        if (what != LogChoice.ASK) { runLog.run(); return; }
+        Context app = a.getApplicationContext();
+        LOOK.run(() -> anyPick(app), () -> alive(a), p -> {
+            if (p.what == LogChoice.BUILD) { share(a, p.buildTitle, null, p.buildName); return; }
+            if (p.what != LogChoice.ASK) { runLog.run(); return; }
+            ask(a, p.title, p.run, runLog, p.build, () -> share(a, p.buildTitle, null, p.buildName));
+        }, e -> notRead(a, e));
+    }
+
+    /** Settings' choice, read on the worker */
+    private static Pick anyPick(Context c) {
+        Pick p = new Pick();
+        File run = newestRunLog(c, null);
+        BuildLogShare.Found b = BuildLogShare.found(c, null);
+        p.what = LogChoice.choose(run != null, b != null);
+        if (b == null) return p;
+        p.buildTitle = b.titleId;
+        p.buildName = BuildLogShare.gameName(c, b.titleId);
+        if (p.what != LogChoice.ASK) return p;
         String rt = run.getName().length() > 16 ? run.getName().substring(0, 16) : "";
         if (rt.equalsIgnoreCase(b.titleId)) {   // both of one game: its name in the title, so each line has room for when and how
-            ask(a, "Share a log of " + BuildLogShare.gameName(a, b.titleId), runLine(a, run), runLog, buildLine(b), () -> share(a, b.titleId, null));
-            return;
+            p.title = "Share a log of " + p.buildName;
+            p.run = runLine(c, run);
+            p.build = buildLine(b);
+            return p;
         }
-        String rn = run.getName().startsWith("selftest") ? "Graphics self-test" : BuildLogShare.gameName(a, rt);
-        ask(a, "Share log", PUi.joined(rn, runLine(a, run)), runLog, PUi.joined(BuildLogShare.gameName(a, b.titleId), buildLine(b)), () -> share(a, b.titleId, null));
+        String rn = run.getName().startsWith("selftest") ? "Graphics self-test" : BuildLogShare.gameName(c, rt);
+        p.title = "Share log";
+        p.run = PUi.joined(rn, runLine(c, run));
+        p.build = PUi.joined(p.buildName, buildLine(b));
+        return p;
     }
 
     /**
@@ -189,20 +225,44 @@ public final class BuildLogUi {
      * shares that run (upstream's own Share log, with its "No log of this game yet." when there is none), null for MainActivity's shareLog(log, digest)
      */
     public static void shareLog(Activity a, String titleId, String name, File run, Runnable shareRun) {
-        File r = run != null && run.isFile() ? run : newestRunLog(a, titleId);
-        BuildLogShare.Found b = titleId == null ? null : BuildLogShare.found(a, titleId);
-        Runnable runShare = shareRun != null ? shareRun : () -> shareRun(a, r);
-        switch (LogChoice.choose(r != null, b != null)) {
-            case LogChoice.ASK:
-                String shown = name != null && !name.isEmpty() ? name : BuildLogShare.gameName(a, titleId);
-                ask(a, "Share a log of " + shown, runLine(a, r), runShare, buildLine(b), () -> share(a, titleId, name));
-                return;
-            case LogChoice.RUN: runShare.run(); return;
-            case LogChoice.BUILD: share(a, titleId, name); return;
-            default:
-                if (shareRun != null) shareRun.run();   // the caller's own sentence for no log
-                else share(a, titleId, name);   // the sheet's "No build log of ... yet"
+        Context app = a.getApplicationContext();
+        LOOK.run(() -> gamePick(app, titleId, name, run), () -> alive(a), p -> {
+            Runnable runShare = shareRun != null ? shareRun : () -> shareRun(a, p.runLog, p.digest);
+            switch (p.what) {
+                case LogChoice.ASK: ask(a, p.title, p.run, runShare, p.build, () -> share(a, titleId, name, p.buildName)); return;
+                case LogChoice.RUN: runShare.run(); return;
+                case LogChoice.BUILD: share(a, titleId, name, p.buildName); return;
+                default:
+                    if (shareRun != null) shareRun.run();   // the caller's own sentence for no log
+                    else share(a, titleId, name, p.buildName);   // the sheet's "No build log of ... yet"
+            }
+        }, e -> notRead(a, e));
+    }
+
+    /** A game's choice, read on the worker */
+    private static Pick gamePick(Context c, String titleId, String name, File run) {
+        Pick p = new Pick();
+        p.runLog = run != null && run.isFile() ? run : newestRunLog(c, titleId);
+        p.digest = p.runLog == null ? null : digestOf(p.runLog);
+        BuildLogShare.Found b = titleId == null ? null : BuildLogShare.found(c, titleId);
+        p.what = LogChoice.choose(p.runLog != null, b != null);
+        p.buildTitle = titleId;
+        p.buildName = name != null && !name.isEmpty() ? name : BuildLogShare.gameName(c, titleId);
+        if (p.what == LogChoice.ASK) {
+            p.title = "Share a log of " + p.buildName;
+            p.run = runLine(c, p.runLog);
+            p.build = buildLine(b);
         }
+        return p;
+    }
+
+    /** The tap's screen is still there for the answer */
+    private static boolean alive(Activity a) { return !a.isFinishing() && !a.isDestroyed(); }
+
+    /** The worker could not read what Share log needs (no access to a folder, an unreadable file): said, nothing shared */
+    private static void notRead(Activity a, Exception e) {
+        Log.w(TAG, "share log: " + e);
+        Toast.makeText(a, "The logs could not be read: " + sentence(e.getMessage()), Toast.LENGTH_LONG).show();
     }
 
     /** The choice: two rows, the game run and the build, each with its line */
@@ -256,13 +316,18 @@ public final class BuildLogUi {
         return s != null && Boolean.TRUE.equals(s.get("running")) && titleId.equalsIgnoreCase(String.valueOf(s.get("title_id")));
     }
 
-    /** A run's log through MainActivity's own Share log, with the digest the "Game stopped" notice wrote beside it (ExitWatch.digestOf), when there is one */
-    static void shareRun(Activity a, File log) {
+    /** The digest the "Game stopped" notice wrote beside a run's log (ExitWatch.digestOf), or null when there is none. Reads the folder: on the worker */
+    private static File digestOf(File log) {
         File digest = new File(log.getParentFile(), log.getName().replaceFirst("\\.log$", "") + ".digest.txt");
+        return digest.isFile() ? digest : null;
+    }
+
+    /** A run's log through MainActivity's own Share log, with its digest (digestOf) when there is one */
+    static void shareRun(Activity a, File log, File digest) {
         try {
             Method m = a.getClass().getDeclaredMethod("shareLog", File.class, File.class);
             m.setAccessible(true);
-            m.invoke(a, log, digest.isFile() ? digest : null);
+            m.invoke(a, log, digest);
         } catch (ReflectiveOperationException | RuntimeException e) {
             Log.w(TAG, "share log: " + e);
             Toast.makeText(a, "The log could not be shared from here. Settings › Share log sends it.", Toast.LENGTH_LONG).show();

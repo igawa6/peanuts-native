@@ -60,12 +60,12 @@ public final class SpaceEstimate {
         StringBuilder s = new StringBuilder();
         if (needsImport) {
             long free = freeBytes(gameDir);
-            if (free < importBytes) s.append("Needs about ").append(words(importBytes)).append(" free in the game folder (").append(words(free)).append(" there now).");
+            if (free < importBytes) s.append("Needs about ").append(words(importBytes)).append(" free in the game folder, and ").append(words(free)).append(" is free there now.");
         }
         long packNeed = packBytes(packBasisBytes), appFree = freeBytes(appExternal);
         if (appFree < packNeed) {
             if (s.length() > 0) s.append(' ');
-            s.append("Needs about ").append(words(packNeed)).append(" free on this device for the pack (").append(words(appFree)).append(" free now).");
+            s.append("Needs about ").append(words(packNeed)).append(" free on this device for the build, and ").append(words(appFree)).append(" is free now.");
         }
         return s.length() == 0 ? null : s.toString();
     }

@@ -123,15 +123,15 @@ class DumpMetaJvm(unittest.TestCase):
         d = self.tmp / 'w-edition'; program(d / 'base/program/0', 0x010015100B514000); program(d / 'updates/327680/program/0', 0x010015100B514000)
         program(d / 'updates/327680/program/1', 0x040015100B514001)
         self.assertEqual(self.java('playable', d), '040015100B514001')
-        self.assertEqual(self.java('find', d), 'This app version does not include this game (010015100B514000). Install a build that includes it.')
+        self.assertEqual(self.java('find', d), 'This app version does not include this game, 010015100B514000. Install an app version that includes it.')  # PEANUTS: build text in the player's words (0.1.8)
 
     def test_switch1_only_dump(self):
         """A dump of the Switch game alone: its card stays the game's, and the sentence says the dump lacks the Edition this app runs"""
         d = self.tmp / 'w-switch1'; program(d / 'base/program/0', 0x010015100B514000); program(d / 'updates/327680/program/0', 0x010015100B514000)
         self.assertEqual(self.java('playable', d), '010015100B514000')
         why = self.java('missing', '010015100B514000')
-        self.assertTrue(why.startswith('This dump has only the Switch game (010015100B514000).'), why)
-        self.assertIn('Super Mario Bros. Wonder - Nintendo Switch 2 Edition (040015100B514001), program 1', why)
+        self.assertTrue(why.startswith('These game files hold only the Switch game.'), why)  # PEANUTS: build text in the player's words (0.1.8)
+        self.assertIn('This app version runs Super Mario Bros. Wonder - Nintendo Switch 2 Edition, which they do not hold.', why)
         self.assertEqual(self.java('find', d), why)   # Prepare says the same
         self.assertTrue(self.java('missing', '0100000000010000').startswith('This app version does not include this game'))   # another game: as before
         self.assertEqual(self.java('missing', '040015100B514001'), 'null')

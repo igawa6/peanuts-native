@@ -319,22 +319,42 @@ final class DumpLayout {
     private static String find(Found f, File dump, boolean anyBuild) {
         String fn = dump.getName();
         boolean nup = Nup.isNup(dump);
-        if (Nup.wrongCase(dump)) return fn + ": rename it so that its name ends in \".nup\" or \".nsp\" (lower case); the tools and the game read only that name.";
+        if (Nup.wrongCase(dump)) {   // PEANUTS: build text in the player's words (0.1.8)
+            f.detail = dump.getPath();
+            return "Rename " + fn + " so that its name ends in .nup or .nsp in lower case. The app and the game read only those names.";
+        }
         if (nup) {
-            if (!Nup.picked(dump) && (!dump.isFile() || !dump.canRead())) return dump + " is not a file this app can read. Check that All files access is on.";
-            try { Nup.open(dump); } catch (IOException e) { return fn + " cannot be used: " + e.getMessage(); }
-        } else if (!dump.isDirectory()) return dump + " is not a folder this app can read. Check that All files access is on.";
+            if (!Nup.picked(dump) && (!dump.isFile() || !dump.canRead())) {
+                f.detail = dump + " is not a readable file.";
+                return "The app cannot read " + fn + ". Check that All files access is on for the app.";
+            }
+            try { Nup.open(dump); } catch (IOException e) {
+                f.detail = fn + ": " + e.getMessage();
+                if (e instanceof Nsp.Refused) return ((Nsp.Refused) e).plain;   // already in the player's words
+                return "The app cannot open " + fn + ". Pick it again, or copy it to the phone's storage and pick it there.";
+            }
+        } else if (!dump.isDirectory()) {
+            f.detail = dump + " is not a readable folder.";
+            return "The app cannot read the folder " + fn + ". Check that All files access is on for the app.";
+        }
         List<Long> have = versions(dump);
         if (have.isEmpty()) {
-            if (!nup && new File(dump, "exefs/main.npdm").isFile())
-                return fn + " is one version's folder. Pick the dump folder above it, the one with base/ (and updates/).";
-            return nup ? fn + " holds no game code: no exefs/main in its base or an update package."
-                    : dump + " is not a dump folder: it has no base/exefs/main and no updates/<version>/exefs/main. Pick the folder with base/ or updates/ (and dlc/).";
+            if (!nup && new File(dump, "exefs/main.npdm").isFile()) {
+                f.detail = dump + " has exefs/ at its top, and no base/ or updates/.";
+                return "This folder holds one version's files. Pick the folder above it, the one that holds a folder named base.";
+            }
+            if (nup) {
+                f.detail = fn + ": no exefs/main in its base or an update package.";
+                return "There is no game code in " + fn + ". Make it again from the game and its update.";
+            }
+            f.detail = dump + ": no base/exefs/main and no updates/<version>/exefs/main.";
+            return "The app cannot find a game in " + fn + ". Pick the folder that holds a folder named base or updates.";
         }
         try {
             f.titleId = Pack.titleIdOf(dump);
         } catch (IOException e) {
-            return e.getMessage();
+            f.detail = e.getMessage();   // PEANUTS: build text in the player's words (0.1.8)
+            return "The app cannot tell which game these game files hold. Dump the game again.";
         }
         Profile prof = Profile.of(f.titleId);
         if (prof == null) {
@@ -373,20 +393,32 @@ final class DumpLayout {
         }
         if (f.version < 0) {
             f.otherBuild = true;
-            f.detail = "The dump holds " + describe(dump) + ".\n" + prof.supported();
-            return "This dump holds " + prof.name + " (" + Profile.versionName(have.get(have.size() - 1)) + "), not a build this app supports (it supports " + prof.supportedShort()
-                    + "). Dump that version, or Try anyway: it may not start or may crash.";
+            long newest = have.get(have.size() - 1);   // PEANUTS: build text in the player's words (0.1.8)
+            String shown = shownVersion(dump, newest);
+            f.detail = "The game files hold " + describe(dump) + ".\n" + prof.supported();
+            return "These game files hold " + (shown != null ? prof.name + " " + shown + ", a version" : "a version of " + prof.name) + " this app has not been tested with. It is tested with "
+                    + prof.supportedShort() + ". Dump that version, or use Try anyway, but the game may not start or may crash.";
         }
         long v = f.version;
         String where = nup ? fn + ":" + selector(dump, v, false) : name(v);
-        if (!exists(dump, v, "exefs/main.npdm")) return where + " has no exefs/main.npdm: the dump is incomplete.";
-        if (!hasRomfs(dump, v)) return name(v) + " of " + fn + " has no RomFS with files (neither its own nor the base's): the dump is incomplete.";
+        if (!exists(dump, v, "exefs/main.npdm")) {   // PEANUTS: build text in the player's words (0.1.8)
+            f.detail = where + " has no exefs/main.npdm.";
+            return "Part of the game's code is missing from these game files. Dump the game again.";
+        }
+        if (!hasRomfs(dump, v)) {
+            f.detail = name(v) + " of " + fn + " has no RomFS with files, neither its own nor the base's.";
+            return "The game data is missing from these game files. Dump the game again.";
+        }
         try {
             String id = npdmTitle(dump, v);
-            if (!id.equals(f.titleId)) return where + " is of " + id + ", the game is " + f.titleId + ".";
+            if (!id.equals(f.titleId)) {
+                f.detail = where + " is of " + id + ", the game is " + f.titleId + ".";
+                return "These game files mix parts of two different games. Keep only one game's files together, then try again.";
+            }
             if (nup) f.dlc = Nup.open(dump).of(Nup.ADDON).size();
         } catch (IOException e) {
-            return where + ": " + e.getMessage();
+            f.detail = where + ": " + e.getMessage();
+            return "The app cannot read part of these game files. Dump the game again.";
         }
         if (!nup) {
             File[] dlc = new File(dump, "dlc").listFiles(File::isDirectory);
@@ -394,7 +426,46 @@ final class DumpLayout {
         }
         // the RomFS is this version's data (game.tsv romfs_check: a file line that differs between versions, where romfs_marker cannot tell)
         // (Try anyway: not checked, the rows are of the builds the profile lists)
-        return f.untested ? null : RomfsCheck.check(prof, path(dump, v, "romfs"), f.buildIds.get("main"), v);
+        if (f.untested) return null;   // PEANUTS: build text in the player's words (0.1.8)
+        RomfsCheck.Bad bad = RomfsCheck.check(prof, path(dump, v, "romfs"), f.buildIds.get("main"), v);
+        if (bad == null) return null;
+        f.detail = bad.detail;
+        return bad.text;
+    }
+
+    /**
+     * A version's display version, as the player knows it ("1.9.0"): its own control data's (a folder's control.nacp, a .nup package's meta block), null when it
+     * has none or it cannot be read
+     */
+    static String shownVersion(File dump, long v) {
+        String s = null;
+        try {
+            if (Nup.isNup(dump)) {
+                String sel = Nup.versionSelector(v);
+                Nup n = Nup.open(Nup.holder(dump, sel));
+                Nup.Pkg p = n.find(sel);
+                byte[] m = p == null ? null : n.metaBlock(p);
+                if (m != null) s = Nup.Meta.parse(m).version;
+            } else {
+                File ver = v == 0 ? new File(dump, "base") : new File(dump, "updates/" + v);
+                for (File d : new File[] {new File(root(ver), "control"), new File(ver, "program/0/control"), new File(ver, "control")}) {
+                    File nacp = new File(d, "control.nacp");   // the display version: 16 bytes at 0x3060 (Nacp.read; read here so that the JVM tests need no Nacp)
+                    if (!nacp.isFile() || nacp.length() < 0x3070) continue;
+                    try (java.io.RandomAccessFile r = new java.io.RandomAccessFile(nacp, "r")) {
+                        byte[] b = new byte[0x10];
+                        r.seek(0x3060);
+                        r.readFully(b);
+                        int n = 0;
+                        while (n < b.length && b[n] != 0) n++;
+                        s = new String(b, 0, n, java.nio.charset.StandardCharsets.UTF_8);
+                    }
+                    break;
+                }
+            }
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     /**

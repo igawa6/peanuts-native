@@ -42,6 +42,24 @@ public final class HudSettings {
     static final String[] MINIMAL = {"fps", "graph"};
     static final String[] NORMAL = {"fps", "graph", "throttle", "soc", "battery", "driver", "tag"};
 
+    /**
+     * The pill's items for each preset: one line, so GPU, CPU, the driver and the game's memory stay in the table (Hud.pill). Normal is what players ask about
+     * (the frame rate and the temperature, with the graph); the throttle dot and "low" (1%L, no switch of its own) are Full's, words and marks few players read
+     */
+    static final String[] PILL_MINIMAL = {"fps"};
+    static final String[] PILL_NORMAL = {"fps", "graph", "soc"};
+    static final String[] PILL_FULL = {"fps", "throttle", "graph", "low", "soc", "battery", "memory"};
+
+    /** The pill's items for a preset (null: "custom", the item switches) */
+    static Set<String> pillItems(String preset) {
+        switch (preset) {
+            case "minimal": return new HashSet<>(Arrays.asList(PILL_MINIMAL));
+            case "normal": return new HashSet<>(Arrays.asList(PILL_NORMAL));
+            case "full": return new HashSet<>(Arrays.asList(PILL_FULL));
+            default: return null;
+        }
+    }
+
     /** The items a preset turns on (null: "custom", change nothing; every item for "full") */
     static Set<String> items(String preset) {
         switch (preset) {
@@ -58,23 +76,43 @@ public final class HudSettings {
     public static void rows(Context c, LinearLayout box) {
         SharedPreferences p = prefs(c);
         final Runnable[] sync = new Runnable[1];
-        choice(c, box, "Preset", new String[] {"Minimal", "Normal", "Full", "Custom"}, new String[] {"minimal", "normal", "full", "custom"}, () -> p.getString(Hud.PRESET, DEFAULT_PRESET),
-                v -> { p.edit().putString(Hud.PRESET, v).apply(); apply(box, v); sync[0].run(); });
-        choice(c, box, "Style", new String[] {"Table", "Classic"}, new String[] {"table", "classic"}, () -> p.getString(Hud.STYLE, "table"),
-                v -> p.edit().putString(Hud.STYLE, v).apply());
-        choice(c, box, "Position", new String[] {"Top right", "Top left", "Bottom right", "Bottom left"}, new String[] {"tr", "tl", "br", "bl"}, () -> p.getString(Hud.CORNER, "tr"),
+        choice(c, box, "Preset", new String[] {"Minimal", "Normal", "Full", "Custom"}, new String[] {"minimal", "normal", "full", "custom"}, () -> Hud.preset(p),
+                v -> { p.edit().putString(Hud.PRESET, v).apply(); apply(p, box, v, "pill".equals(Hud.style(p))); sync[0].run(); });
+        choice(c, box, "Style", new String[] {"Pill", "Table", "Classic"}, new String[] {"pill", "table", "classic"}, () -> Hud.style(p),
+                v -> { p.edit().putString(Hud.STYLE, v).apply(); syncTag(c, p, box); });
+        choice(c, box, "Position", new String[] {"Top center", "Top right", "Top left", "Bottom center", "Bottom right", "Bottom left"},
+                new String[] {"tc", "tr", "tl", "bc", "br", "bl"}, () -> Hud.corner(p),
                 v -> p.edit().putString(Hud.CORNER, v).apply());
         choice(c, box, "Size", new String[] {"75%", "100%", "125%", "150%", "200%"}, new String[] {"75", "100", "125", "150", "200"}, () -> String.valueOf(p.getInt(Hud.SCALE, 100)),
                 v -> p.edit().putInt(Hud.SCALE, Integer.parseInt(v)).apply());
+        choice(c, box, "With bottom stats", new String[] {"Hide", "Show"}, new String[] {"hide", "show"}, () -> p.getBoolean(Hud.HIDE_FOR_STATS, true) ? "hide" : "show",
+                v -> p.edit().putBoolean(Hud.HIDE_FOR_STATS, v.equals("hide")).apply());
         // the item switches stay in the box (their listeners write the preferences) but are shown only for Custom
         sync[0] = () -> {
-            boolean custom = "custom".equals(p.getString(Hud.PRESET, DEFAULT_PRESET));
+            boolean custom = "custom".equals(Hud.preset(p));
             for (int i = 0; i < box.getChildCount(); i++) {
                 View v = box.getChildAt(i);
                 if (v instanceof CheckBox && !String.valueOf(((CheckBox) v).getText()).startsWith(MASTER)) v.setVisibility(custom ? View.VISIBLE : View.GONE);
             }
         };
         sync[0].run();
+        syncTag(c, p, box);
+    }
+
+    /** The Build tag box shows what the game does (Hud.tagOn): unset, it is off under the pill though Overlay.rows ticked it from Prefs.overlayItem's default */
+    private static void syncTag(Context c, SharedPreferences p, LinearLayout box) {
+        for (int i = 0; i < box.getChildCount(); i++) {
+            View v = box.getChildAt(i);
+            if (v instanceof CheckBox && "Build tag".equals(String.valueOf(((CheckBox) v).getText()))) tagBox(p, (CheckBox) v, Hud.tagOn(c), "pill".equals(Hud.style(p)));
+        }
+    }
+
+    /** PEANUTS (#538 landing): sets the Build tag box without making the pill's hidden tag the table's too. The box's listener writes overlay_tag; a false written
+     *  only because the pill hides the tag is taken back (unset reads off under the pill and on under the table and classic), so a player who tries the pill and
+     *  goes back keeps the tag. A player's own tap still writes what they chose. */
+    private static void tagBox(SharedPreferences p, CheckBox b, boolean on, boolean pill) {
+        if (b.isChecked() != on) b.setChecked(on);
+        if (pill && !on) p.edit().remove("overlay_tag").commit();
     }
 
     private interface Pick { void on(String value); }
@@ -132,7 +170,7 @@ public final class HudSettings {
     }
 
     /** Sets the master switch on and each item's switch in the box to the preset (the boxes' own listeners write the preferences) */
-    private static void apply(LinearLayout box, String preset) {
+    private static void apply(SharedPreferences p, LinearLayout box, String preset, boolean pill) {
         Set<String> on = items(preset);
         if (on == null) return;
         for (int i = 0; i < box.getChildCount(); i++) {
@@ -141,7 +179,11 @@ public final class HudSettings {
             CheckBox b = (CheckBox) v;
             String text = String.valueOf(b.getText());
             if (text.startsWith(MASTER)) { b.setChecked(true); continue; }
-            for (String[] l : LABELS) if (l[1].equals(text)) b.setChecked(on.contains(l[0]));
+            // under the pill, only Full turns the build tag on (Hud.tagOn: off by default there)
+            for (String[] l : LABELS) if (l[1].equals(text)) {
+                boolean want = on.contains(l[0]) && !(pill && "tag".equals(l[0]) && !"full".equals(preset));
+                if ("tag".equals(l[0])) tagBox(p, b, want, pill); else b.setChecked(want);
+            }
         }
     }
 }

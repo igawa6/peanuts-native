@@ -83,12 +83,19 @@ final class DumpCheck {
         try {
             r.free = new StatFs(probe.getPath()).getAvailableBytes();
         } catch (IllegalArgumentException e) {
-            return "Cannot read the free space of " + probe + ".";
+            r.detail = "Cannot read the free space of " + probe + ".";   // PEANUTS: build text in the player's words (0.1.8)
+            return "The app cannot check the free space next to the game files. Check that All files access is on for the app.";
         }
-        if (needFree && r.free < NEED_BYTES)
-            return String.format(Locale.ROOT, "Preparing needs %.1f GB free beside the dump; %s has %.2f GB free.", NEED_BYTES / 1073741824.0, probe, r.free / 1073741824.0);
+        if (needFree && r.free < NEED_BYTES) {
+            r.detail = String.format(Locale.ROOT, "%s has %.2f GB free; a build needs %.1f GB.", probe, r.free / 1073741824.0, NEED_BYTES / 1073741824.0);
+            return String.format(Locale.ROOT, "Building needs %.1f GB free next to the game files, and there is %.2f GB. Free some space, then try again.",
+                    NEED_BYTES / 1073741824.0, r.free / 1073741824.0);
+        }
         File od = new File(r.work, "ondevice");
-        if (!od.isDirectory() && !od.mkdirs()) return "Cannot make " + od + ": the folder beside the dump is not writable.";
+        if (!od.isDirectory() && !od.mkdirs()) {
+            r.detail = "Cannot make " + od + ".";
+            return "The app cannot write to the folder next to the game files. Check that All files access is on for the app, or move the game files to a folder the app can write to.";
+        }
         return null;
     }
 

@@ -182,8 +182,8 @@ class Logic(unittest.TestCase):
         self.assertEqual(p['update'], 'up4.nsp 262144', 'the newest update found')
         self.assertEqual(p['dlc'], 'dlc1.nsp,dlc2.nsp', 'the DLC found now, though the old .nup had none')
         self.assertEqual(p['old'], f'{40 * MB} need={53 * MB} low=false fits_without_old=true')
-        self.assertEqual(p['confirm'], 'This makes the .nup of Kart Game again from your dumps, with the DLC found now, then builds the game again (about 25 minutes, in '
-                         f'the background).||Deleted: the .nup that is there now (40 MB, {f["game_nup"]}). It is replaced only when the new one is complete: if the import '
+        self.assertEqual(p['confirm'], 'This makes the .nup of Kart Game again from your game files, with the DLC found now, then builds the game again. It takes about 25 minutes, in '
+                         f'the background.||Deleted: the .nup that is there now (40 MB, {f["game_nup"]}). It is replaced only when the new one is complete: if the import '
                          'fails or is stopped, the game stays as it is.||Kept: your saves, mods and settings, and the built game until the new build replaces it.||'
                          'Found: the base game (base.nsp), update v4 (up4.nsp), 2 DLC. These files must stay in their folders until the import is done.')
 
@@ -204,7 +204,7 @@ class Logic(unittest.TestCase):
         other = self.root / 'gone-dlc'
         p = self.plan(f['game_nup'], 500 * MB, None, [d, other], 'u,0100152000022800,262144,-', 'd,0100152000023001,0,-',
                       'b,0100152000022000,0,' + str(d / 'deleted.nsp'), 'u,0100152000022800,196608,' + str(f['up3_nsp']))
-        self.assertEqual(p['missing'], 'Import again makes the .nup from your dumps, and not all of them were found. Missing: the base game\'s dump (an .nsp, .nsz, .xci or .xcz '
+        self.assertEqual(p['missing'], 'Import again makes the .nup from your game files, and not all of them were found. Missing: the base game\'s file (an .nsp, .nsz, .xci or .xcz '
                          'file); an update as new as the one the .nup has (v4; up3.nsp is v3); 1 of the DLC the .nup has (0100152000023001). Looked in '
                          f'{d}, {other}, two folders deep, and at the files added in the game\'s sheet. Put the files back, or set their folders in Settings › Library, '
                          'then tap Import again. Nothing was changed.')
@@ -268,12 +268,12 @@ class Wiring(unittest.TestCase):
     def test_a_reimported_pack_is_not_already_prepared(self):
         src = (BUILD / 'Prepare.java').read_text(encoding='utf-8')
         run = src[src.index('private File run0('):src.index('File runModded(')]
-        read, drop, already = run.index('reimported = PackNote.stale(Upstream.jobPack(existing));'), run.index('if (reimported) existing = null;'), run.index('p.on(100, "Already prepared");')
+        read, drop, already = run.index('reimported = PackNote.stale(Upstream.jobPack(existing));'), run.index('if (reimported) existing = null;'), run.index('p.on(100, "Already built");')
         self.assertLess(read, drop)
         self.assertLess(drop, already, 'the old job is left before it can answer Already prepared')
         self.assertIn('boolean stale = reimported || PackNote.stale(packDir);', run)
         self.assertIn('sh = shaders != null || stale', run, 'the shaders are made again, so the pack is never taken as it is')
-        self.assertLess(run.index('sh = shaders != null || stale'), run.index('p.on(100, "The pack beside the game fits: nothing to prepare");'))
+        self.assertLess(run.index('sh = shaders != null || stale'), run.index('p.on(100, "The game\'s build is up to date, nothing to do");'))
         self.assertIn('if (reimported) { anyBuild = false;', run, 'the old job\'s Try anyway is not carried to the new file')
         self.assertIn('if (!consent && !had) {', run, 'a version the player already agreed to build is not asked about again')
         self.assertIn('note(Upstream.jobPack(j), o);', run, 'a finished build clears the mark and records what it lacks')
@@ -303,7 +303,7 @@ class Wiring(unittest.TestCase):
         ask = sheet[sheet.index('static void importAgain('):sheet.index('static String reimport(')]
         self.assertLess(ask.index('if (p.missing != null)'), ask.index('if (p.lowSpace())'))
         self.assertLess(ask.index('if (p.lowSpace())'), ask.index('"Import again?"'))
-        self.assertIn('if (p.fitsWithoutOld()) b.setNeutralButton("Delete the old file first…", (d, w) -> PUi.confirmDanger(a, "Delete the old .nup first?", Reimport.deleteFirst(p, t.name),', ask,
+        self.assertIn('if (p.fitsWithoutOld()) b.setNeutralButton("Delete the old file first…", (d, w) -> PUi.confirmDanger(a, "Delete the old game file first?", Reimport.deleteFirst(p, t.name),', ask,
                       'deleting first is offered only when it makes room, and asks again with its risk')
         self.assertIn('PackNote.without(title.packDir)', sheet)
         lib = (JAVA / 'main/java/dev/peanuts/ui/Library.java').read_text(encoding='utf-8')

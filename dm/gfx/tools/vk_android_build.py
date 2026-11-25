@@ -411,8 +411,22 @@ SLOT_KINDS = {abi.KIND_CBUF, abi.KIND_SAMP, abi.KIND_SAMP_TEX, abi.KIND_TEX, abi
 POOL_SUFFIX = '_cb0_40000000'   # a handle traced to no slot indexes the pools by its IDs (Program.cs QueryTextureArrayLengthFromPool; dmsh_build.py pool_arrays)
 
 
+# PEANUTS(upstream-candidate) begin: handle type 2 (Ryujinx's SeparateSamplerId), as nxnative ca26ef65 decodes it for Metal (dmsh_reflect.py decode_ubo_samp_id): the texture word in the
+# driver table c2, the sampler ID itself in a word of the game's own uniform buffer, bank (high 16 bits of slots) - 1, at word ((handle >> 14) & 0x3fff). The Witcher 3: fp_t_cb720898_2000005A
+# (texture c2 word 0x5A, sampler ID at c[10] word 0); 20,212 bindings in 6,323 of its shaders were left with an undecoded sampler slot and sampled with no sampler of the game's
+def type2_sampler(name):
+    """→ (uniform slot, byte offset) of a type-2 handle's sampler ID word, or None"""
+    m = re.fullmatch(r'[a-z]+_t\w*?_cb(\d+)_([0-9A-F]+)', name)
+    if not m: return None
+    slots, h = int(m.group(1)), int(m.group(2), 16); sb = (slots >> 16) - 1
+    return (sb - 3, ((h >> 14) & 0x3fff) * 4) if h >> 28 == 2 and slots & 0xffff == 2 and 3 <= sb <= 16 else None
+# PEANUTS(upstream-candidate) end
+
+
 def sampler_half(name):
     """The sampler of a texture name, as dmsh_build.py reflect gives the MSL <name>Smplr member: (kind, reg, off)"""
+    t2 = type2_sampler(name)   # PEANUTS(upstream-candidate): the sampler ID in a uniform word (flag BF_SAMP_RAW, set by the caller)
+    if t2: return abi.KIND_SAMP_UBO, t2[0], t2[1]
     ut = NS['decode_ubo_tex'](name)
     if ut: return (abi.KIND_SAMP_ID, ut[1][1], 0) if ut[1][0] == 'id' else (abi.KIND_SAMP_UBO, ut[1][0], ut[1][1])
     d = NS['decode_tex'](name)
@@ -491,6 +505,7 @@ def classify(stage, r, res, m):
     else: e['kind'] = abi.KIND_UNKNOWN
     if desc == spv.VK_COMBINED and e['kind'] in (abi.KIND_TEX, abi.KIND_TEX_UBO):
         e['skind'], e['sreg'], e['soff'] = sampler_half(nm)
+        if type2_sampler(nm): e['flags'] |= VK['BF_SAMP_RAW']   # PEANUTS(upstream-candidate)
     return e
 
 
@@ -611,10 +626,40 @@ def translate(jobs_list, w, tag):
 PS_INPUTS = {}   # pixel shader key → the input locations it reads (for its vertex shaders' padding)
 
 
+# PEANUTS(upstream-candidate) begin: a domain shader's tessellation mode. The translator answers its tessellation queries with a fixed default (triangles, equal spacing,
+# clockwise), but the mode is the domain shader's own control section: +0x738 primitive mode, +0x73c spacing, +0x744 vertex order, as OpenGL enums (nxnative 48dca7a4,
+# dmsh_tess.py). The Witcher 3's terrain domains are quads with fractional_even spacing: built as triangles, every patch was laid out wrong (fans of wedges).
+# finish rewrites the module's execution modes to the section's (an unknown value keeps the translator's)
+TESS_MODES = {}
+GL_TESS_PRIM = {0x0004: 22, 0x0007: 24, 0x8E7A: 25}            # Triangles, Quads, Isolines
+GL_TESS_SPACING = {0x0202: 1, 0x8E7C: 2, 0x8E7B: 3}            # SpacingEqual, SpacingFractionalEven, SpacingFractionalOdd
+GL_TESS_ORDER = {0x0900: 4, 0x0901: 5}                         # VertexOrderCw, VertexOrderCcw
+
+
+def tess_mode_read(key, rec):
+    ci = rec.find(bytes.fromhex('34127698'))
+    if ci < 0 or ci + 0x748 > len(rec): return
+    prim, spacing = struct.unpack_from('<2I', rec, ci + 0x738); order = struct.unpack_from('<I', rec, ci + 0x744)[0]
+    TESS_MODES[key] = (GL_TESS_PRIM.get(prim), GL_TESS_SPACING.get(spacing), GL_TESS_ORDER.get(order))
+
+
+def tess_modes_set(m, modes):
+    """→ how many execution modes of the domain module were changed to the control section's (Triangles/Quads/Isolines, the spacing, the vertex order)"""
+    groups = ({22, 24, 25}, {1, 2, 3}, {4, 5}); n = 0
+    for x in m.ins:
+        if x[0] & 0xffff == 16 and m.entry and x[1] == m.entry[2] and len(x) == 3:   # OpExecutionMode <entry> <mode> (no literals)
+            for g, want in zip(groups, modes):
+                if x[2] in g and want is not None and x[2] != want: x[2] = want; n += 1
+    if n: m.index()
+    return n
+# PEANUTS(upstream-candidate) end
+
+
 def finish(key, w, job, c1):
     stage = job['stage']; sp = os.path.join(w, key + '.spv')
     res = json.load(open(os.path.join(w, key + '.res.json')))
     m = spv.Module(open(sp, 'rb').read())
+    if stage == 'ds' and key in TESS_MODES: tess_modes_set(m, TESS_MODES[key])   # PEANUTS(upstream-candidate): the domain's own mode (above)
     if stage == 'vs':   # inputs used only as integer bits: translated again with uint inputs (dmsh_build.py int_inputs), as the vertex input format's class must match
         extra = {l: t for l, t in spv.integer_only_inputs(m).items() if l not in job['attr']}
         if extra:
@@ -786,12 +831,12 @@ def write_library(results):
     path = os.path.join(out, VK['LIB_FILE']); tmp = path + '.tmp'
     with open(tmp, 'wb') as f:
         f.write(data); pos = 0
-        stage(f'writing the shader library: 0 of {blen >> 20:,} MB')
+        stage(f'saving the shaders: 0 of {blen >> 20:,} MB')
         for off, b in pieces:
             b = stored_bytes(b)
             f.write(b'\0' * (off - pos)); f.write(b); pos = off + len(b)
-            stage(f'writing the shader library: {pos >> 20:,} of {blen >> 20:,} MB', 0.5)
-        stage('saving the shader library to storage')
+            stage(f'saving the shaders: {pos >> 20:,} of {blen >> 20:,} MB', 0.5)
+        stage('writing the shaders to the phone\'s storage')
         assert pos == blen and f.tell() == blob_off + blen
         f.flush(); os.fsync(f.fileno())   # whole on storage before it takes the library's name (write_result)
     os.replace(tmp, path)
@@ -988,6 +1033,7 @@ def batch_results(batch):
     for key in batch:
         name, k = loc[key]
         jobs[key], c1s[key] = NS['job_for'](key, name, _rec(name, k), bd)
+        if STAGE_OF[key] == 'ds': tess_mode_read(key, _rec(name, k))   # PEANUTS(upstream-candidate): the domain's mode from its control section (finish sets it in the module)
         jobs[key].update(ANSWERS)
         if STAGE_OF[key] == 'ms': jobs[key]['gl_depth_spec'] = VK['SPEC_GL_DEPTH']
     r = translate([jobs[k] for k in batch], bd, batch[0])
@@ -1185,7 +1231,7 @@ if MANIFEST and want and len(_in_m) < len(MANIFEST['hashes']):
     print(f'delta: the manifest has {len(MANIFEST["hashes"]) - len(_in_m)} shaders this key list does not build', flush=True)
 if MANIFEST:
     _cand = delta.reuse_candidates(MANIFEST, keys, heads)
-    if _cand: stage('looking for shaders the older library already has')
+    if _cand: stage('looking for shaders kept from before')
     _libs = older_libraries() if _cand else []
     def _reuse(k):
         L, ent, errs = delta.find_entry(MANIFEST, k, _libs, zstd)
@@ -1206,7 +1252,7 @@ if MANIFEST:
                 if v:
                     _from[v] += 1; REUSED.add(k); _tmps.append((tmp, k))
                     heads[k] = {'reused': v, 'ps_inputs': None}
-        if _tmps: stage(f'saving the {len(_tmps):,} kept shaders to storage')
+        if _tmps: stage(f'saving the {len(_tmps):,} shaders kept from before')
         sync_results(_tmps)
     finally:
         for L in _libs: L.close()
@@ -1365,7 +1411,7 @@ def translate_keys(ks, count=True):
     """Translate the shaders ks (pixel shaders first, then the vertex shaders their inputs pad) and write their result files"""
     for _phase in ([k for k in ks if STAGE_OF[k] != 'vs'], [k for k in ks if STAGE_OF[k] == 'vs']):
         if _phase and STAGE_OF[_phase[0]] == 'vs':   # the pixel shaders' inputs, from their results (this run's and earlier runs')
-            stage('reading what the pixel shaders take from the vertex shaders')
+            stage('checking which shaders work together')
             _need = set().union(*[PAIRS.get(k, ()) for k in _phase])
             for k in keys:
                 if STAGE_OF[k] != 'vs' and k not in PS_INPUTS:
@@ -1397,11 +1443,11 @@ def read_all():
     _missing = [k for k in ORDER if not os.path.exists(result_path(k))]
     if _missing: sys.exit(f'[RED] {len(_missing)} shaders have no result (the translator wrote neither a module nor a reason for them, from {_missing[0]}): run again')
     rs, cut = [], []
-    stage(f'reading the translated shaders: 0 of {len(ORDER):,}')
+    stage(f'gathering the shaders: 0 of {len(ORDER):,}')
     for n, k in enumerate(ORDER, 1):
         try: rs.append(read_result(k))
         except ResultCut: cut.append(k)
-        stage(f'reading the translated shaders: {n:,} of {len(ORDER):,}', 0.5)
+        stage(f'gathering the shaders: {n:,} of {len(ORDER):,}', 0.5)
     return rs, cut
 
 
@@ -1439,7 +1485,7 @@ if os.environ.get('DMSH_VK_LOOSE') == '1':
     for key, st, _, r in results:
         if st == 'ok':
             for variant, _, _, _, data in r[1]: open(os.path.join(out, 'spv', key + (f'_{variant}' if variant else '') + '.spv'), 'wb').write(data)
-stage('writing the shader library\'s index')
+stage('finishing the saved shaders')
 index = {k: r[0] for k, st, _, r in results if st == 'ok'}   # a shader kept from an older library has its stage and that library's version here, not its whole reflection
 for v in index.values():
     for b in v.get('bindings', ()): b['kind_num'] = KIND_NUM[b['kind']]
@@ -1449,7 +1495,7 @@ json.dump([{'key': k, 'st': st, 'err': e} for k, st, e, _ in results], open(os.p
 # version, each entry checked against it: a mismatch or a shader the manifest has and the library lacks is a [RED] line naming the key (the library is kept: it is what this
 # machine's tools made). A full build with a manifest checks the same, so a phone's full build is compared with the Mac's too
 progress('check')
-stage(f'checking the shader library ({len(results):,} shaders)')
+stage(f'checking the {len(results):,} saved shaders')
 _lib, _hashes = delta.library_hashes(lib, zstd, NJ); _lib.close()
 _status = {k: st for k, st, _, _ in results}
 open(os.path.join(out, delta.MANIFEST + '.tmp'), 'w').write(delta.format_manifest(VKV, GAME.id, INPUTS, {k: _hashes.get(k, '-') for k in keys}))

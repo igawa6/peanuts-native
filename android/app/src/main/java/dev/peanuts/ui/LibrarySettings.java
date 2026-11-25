@@ -36,7 +36,7 @@ public final class LibrarySettings {
     public static final int REQ_MOD_FOLDER = 69, REQ_MOD_ZIP = 70;
     private static final Handler UI = new Handler(Looper.getMainLooper());
     private static String fontsState;   // "Reading the firmware…" and what came of it, while the rows show
-    private static PUi.Setting gameRow, updateRow, dlcRow, keysRow, fontsRow, buildRow, companionsRow, hapticsRow, motionRow, swapRow, bottomRow, gamesRow;
+    private static PUi.Setting gameRow, updateRow, dlcRow, keysRow, fontsRow, buildRow, companionsRow, hapticsRow, motionRow, swapRow, tvRow, bottomRow, gamesRow;
     private static Activity rowsOf;
 
     private LibrarySettings() {}
@@ -95,6 +95,13 @@ public final class LibrarySettings {
             });
             card.addView(swapRow.view);
         }
+        // TV and monitors: the system decides what a TV shows (the default), or a game plays on it (dev.peanuts.Screens, #358)
+        tvRow = new PUi.Setting(a, "", "TV and monitors", v -> {   // no emoji: its tile is Peanuts' "tv" icon (SettingsSections, SettingsPage.rowIcon)
+            PeanutsPrefs.tvPlay(a, !PeanutsPrefs.tvPlay(a));
+            Haptics.play(v, Haptics.Word.CLICK);
+            refreshRows();
+        });
+        card.addView(tvRow.view);
         // Bottom screen (BottomScreen)
         bottomRow = new PUi.Setting(a, "📱", "Bottom screen", v -> {
             PeanutsPrefs.bottomScreen(a, !PeanutsPrefs.bottomScreen(a));
@@ -115,7 +122,7 @@ public final class LibrarySettings {
             refreshRows();
         });
         card.addView(gamesRow.view);
-        companionsRow = new PUi.Setting(a, "🖥️", "Companions", Haptics.on(Haptics.Word.TICK, v -> a.startActivity(new Intent().setClassName(a.getPackageName(), "dev.peanuts.CatalogActivity"))))
+        companionsRow = new PUi.Setting(a, "🖥️", "Dual-screen companions", Haptics.on(Haptics.Word.TICK, v -> a.startActivity(new Intent().setClassName(a.getPackageName(), "dev.peanuts.CatalogActivity"))))
                 .chevron(a);
         card.addView(companionsRow.view);
         // Your own Miis, which games list as the console's (dev.peanuts.mii.MiiActivity, DM_MII_DB)
@@ -131,11 +138,16 @@ public final class LibrarySettings {
             refreshRows();
             return true;
         });
+        // The in-game panel's Mods tab for every game (dev.peanuts.mods.ModsTab; SettingsSections puts the row under Controls › Controller)
+        PUi.Setting modsTab = new PUi.Setting(a, "", "Mods tab", null).value("Cheats and mods in the in-game panel")
+                .toggle(a, PeanutsPrefs.modsTabAll(a), (b, on) -> { Feel.toggled(b, on); PeanutsPrefs.modsTabAll(a, on); });
+        modsTab.view.setOnClickListener(v -> modsTab.toggle.toggle());
+        card.addView(modsTab.view);
         refreshRows();
     }
 
     private static CharSequence companionsValue(Activity a) {
-        String base = "The catalog: install, update or remove a game's companion";
+        String base = "Pages made for one game that show on the second screen while you play, like its map or items. Install, update or remove them.";
         return PeanutsPrefs.developerReadout(a) ? PUi.joined(base, "developer readout on (long press to turn off)") : base;
     }
 
@@ -159,6 +171,9 @@ public final class LibrarySettings {
         if (swapRow != null) swapRow.value(PeanutsPrefs.swapScreens(a)
                 ? "On: games start on the other screen, the companion is on this one. Tap to swap back. Takes effect at the next game start."
                 : "Off: games start on this screen, the companion is on the other one. Tap to swap, for a clip-on top screen. Takes effect at the next game start.");
+        if (tvRow != null) tvRow.value(PeanutsPrefs.tvPlay(a)
+                ? "Play on the TV: a game starts full screen on a TV or monitor. Tap to follow the system."
+                : "System: a TV or monitor shows what Android sends it. Tap to start games on the TV instead.");
         if (bottomRow != null) bottomRow.value(PeanutsPrefs.bottomScreen(a) ? "On: a second screen shows the game you are on, with Play and its page. Tap to leave that screen to Android."
                 : "Off: a second screen shows Android's own launcher while you are here. Tap to turn it on.");
         if (gamesRow != null) {
@@ -167,8 +182,8 @@ public final class LibrarySettings {
             gamesRow.value(!on ? "Needs Bottom screen on."
                     : !PeanutsPrefs.bottomScreenInGames(a) ? "Android's own screen while you play. Tap for the game's live stats there."
                     : PeanutsPrefs.bottomScreenGamesPage(a).equals(PeanutsPrefs.GAMES_STATS)
-                    ? "Stats: frame rate, frame times, GPU, CPU, temperature, battery and the game's RAM while you play. Tap for the game's cover instead."
-                    : "The game's cover stays on the second screen while you play. Tap to leave it to Android.");
+                    ? "Stats: frame rate, frame times, GPU, CPU, temperature, battery and the game's RAM while you play. A four-finger tap on the game hides or shows it. Tap for the game's cover instead."
+                    : "The game's cover stays on the second screen while you play. A four-finger tap on the game hides or shows it. Tap to leave it to Android.");
         }
     }
 
@@ -297,6 +312,8 @@ public final class LibrarySettings {
     public static boolean result(Activity a, int request, int result, Intent data) {
         if (BuildLogUi.result(a, request, result, data)) return true;   // Share build log's Save to a folder (REQ_SAVE 71)
         if (PackImportUi.result(a, request, result, data)) return true;   // the game sheet's Import pack… (72, 73)
+        if (dev.peanuts.mods.CheatImportUi.result(a, request, result, data)) return true;   // Mods & Cheats' Add (83, 84 when it started the pick)
+        if (dev.nxnative.android.CheatsBridge.result(a, request, result, data)) return true;   // Game settings › Cheat files: a cheat file, a folder, an export (83 to 86)
         if (request < REQ_KEYS || request > REQ_MOD_ZIP) return false;
         if (result != Activity.RESULT_OK || data == null || data.getData() == null) return true;
         Uri u = data.getData();
@@ -415,6 +432,7 @@ public final class LibrarySettings {
             }
             int r = imp.firmwareFonts(source, out.getPath());
             String err = imp.lastError();
+            if (r == 0) PeanutsPrefs.firmwareRead(a, FIRMWARE_READ);   // read whole: what this firmware lacks is not looked for again (addMissingFonts)
             if (deleteAfter != null) deleteAfter.delete();
             UI.post(() -> { fontsState = r == 0 ? null : "Firmware not added: " + err
                     + "\n" + KEYS_FIRMWARE_GUIDANCE; fontsLanded(a); });
@@ -424,13 +442,21 @@ public final class LibrarySettings {
     private static boolean triedMoreFonts;
 
     /**
-     * A firmware added before the app read its Chinese and Korean fonts too (cjk_sc.ttf and the others beside standard.ttf: a game in those languages drew "?"
-     * without them): read once more from the folder or zip it came from, when that is still there. Once per app process; nothing is asked, and a firmware that
-     * is gone leaves the two fonts as they are (choosing the firmware again adds the rest)
+     * What the importer takes from a firmware, counted up when it learns to take more: 1 the two fonts the games need, 2 the Chinese and Korean fonts and MiiModel
+     * too, 3 AvatarImage too (the console's profile pictures). Kept after each read that worked (PeanutsPrefs.firmwareRead)
+     */
+    static final int FIRMWARE_READ = 3;
+
+    /**
+     * A firmware added before the app read its Chinese and Korean fonts, MiiModel and AvatarImage too (cjk_sc.ttf and the others beside standard.ttf: a game in
+     * those languages drew "?" without them): read once more from the folder or zip it came from, when that is still there. Once per app process; nothing is
+     * asked, and a firmware that is gone leaves the two fonts as they are (choosing the firmware again adds the rest). A firmware this importer has read already
+     * is not read again, even when it lacks one of them (a firmware without AvatarImage was read at every cold start)
      */
     public static void addMissingFonts(Activity a) {
         if (triedMoreFonts) return;
         triedMoreFonts = true;
+        if (PeanutsPrefs.firmwareRead(a) >= FIRMWARE_READ) return;
         File d = PeanutsPrefs.fontsDir(a);
         String src = PeanutsPrefs.firmwareDir(a);
         boolean haveAll = new File(d, "cjk_sc.ttf").isFile() && new File(PeanutsPrefs.miiModelDir(a), "ShapeHigh.dat").isFile()   // PEANUTS: MiiModel too (the importer writes it beside the fonts)

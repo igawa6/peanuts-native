@@ -22,7 +22,10 @@ public class Activity extends android.content.Context {
     public android.view.Display display;
     public android.view.Window getWindow(){return window;}
     public android.view.Display getDisplay(){return display;}
+    public boolean isFinishing(){return false;}
 }''',
+            'dev/peanuts/Screens.java': '''package dev.peanuts;
+public class Screens {public static boolean tv; public static boolean onTv(android.app.Activity a){return tv;}}''',
             'android/view/WindowManager.java': '''package android.view;
 public class WindowManager {public static class LayoutParams {public int preferredDisplayModeId;}}''',
             'android/view/Window.java': '''package android.view;
@@ -101,6 +104,25 @@ public class DisplayTest {
         Lsfg.push(activity); expect(activity.window.updates,updates+1); // no redundant layout
         Native.activity=null; Context context=new Context(); context.enabled=true; Lsfg.push(context);
         expect(Native.calls,4);
+        // Play on the TV (#358): 60 Hz when the TV runs 30 or 50 Hz, at its own resolution when it has it, else the largest below; kept while paused
+        Mode[] tvModes={new Mode(1,3840,2160,30),new Mode(2,1920,1080,60),new Mode(3,3840,2160,60),new Mode(4,1920,1080,50),new Mode(5,1280,720,60)};
+        expect(RunningDisplayPolicy.tvMode(3840,2160,30,tvModes),3);
+        expect(RunningDisplayPolicy.tvMode(3840,2160,30,new Mode[]{tvModes[0],tvModes[1],tvModes[4]}),2);
+        expect(RunningDisplayPolicy.tvMode(1920,1080,50,tvModes),2);
+        for(float hz:new float[]{60,59.94f,120,119.88f,240})expect(RunningDisplayPolicy.tvMode(1920,1080,hz,tvModes),0);
+        expect(RunningDisplayPolicy.tvMode(1920,1080,144,new Mode[]{new Mode(6,1920,1080,144),tvModes[1]}),2);
+        expect(RunningDisplayPolicy.tvMode(3840,2160,30,new Mode[]{tvModes[0]}),0);
+        dev.peanuts.Screens.tv=true;
+        Activity tv=new Activity();
+        android.view.Display.Mode k30=new android.view.Display.Mode(1,3840,2160,30), p60=new android.view.Display.Mode(2,1920,1080,60);
+        tv.display=new android.view.Display(k30,new android.view.Display.Mode[]{k30,p60});
+        window.update(tv,"60 0 60 60",0); expect(tv.window.attrs.preferredDisplayModeId,2);
+        tv.display=new android.view.Display(p60,new android.view.Display.Mode[]{k30,p60});   // the TV switched: the request stays, no back and forth
+        window.update(tv,"60 0 60 60",0); expect(tv.window.attrs.preferredDisplayModeId,2);
+        window.clear(tv); expect(tv.window.attrs.preferredDisplayModeId,2);
+        window.update(tv,"60 0 60 60",1); expect(tv.window.attrs.preferredDisplayModeId,0);   // frame generation decides its own rate
+        dev.peanuts.Screens.tv=false;
+        window.update(tv,"60 0 60 60",0); expect(tv.window.attrs.preferredDisplayModeId,0);
     }
 }
 ''',

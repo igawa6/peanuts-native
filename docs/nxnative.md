@@ -1,7 +1,7 @@
 # nxnative
 
 > [!NOTE]
-> This is the README of upstream [nxnative](https://github.com/seedds/nxnative) by seedds (Mac, iPhone, iPad, with Metal), kept in this repository with its tools, credits and licence. Banana Native, the Android port, has its own page: [.github/README.md](../.github/README.md).
+> This is the README of upstream [nxnative](https://github.com/seedds/nxnative) by seedds (Mac, iPhone, iPad, with Metal), kept in this repository with its tools, credits and licence. Banana Native, the Android port, has its own page: [.github/README.md](banana-native-README.github.md). <!-- PEANUTS: upstream's .github/README.md and README.md are kept in docs/ (banana-native-README*.md) -->
 
 Play your own Nintendo Switch games natively on iPhone and iPad. Bring a dump folder of your game, made from your own console; one script turns it into an IPA that you sideload.
 

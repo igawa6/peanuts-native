@@ -1,6 +1,6 @@
 # Guides
 
-Step-by-step guides for players. Back to the [main page](../../.github/README.md).
+Step-by-step guides for players. Back to the [main page](../banana-native-README.github.md). <!-- PEANUTS: upstream's .github/README.md and README.md are kept in docs/ (banana-native-README*.md) -->
 
 1. [Getting started on the phone](getting-started.md): install, file access, Add game, Prepare, Play.
 2. [Preparing a game on a PC or a Mac](pc-mac-packing.md): the packer on Windows and macOS, and getting the pack onto

@@ -5,7 +5,7 @@ import java.io.IOException;
 /**
  * Nintendo's Yaz0 compression, undone: "Yaz0", the u32 big-endian size, 8 reserved bytes, then groups of a flag byte and eight items, each a literal byte (flag 1)
  * or a back reference (flag 0: two bytes, distance minus one in the low 12 bits; a length of 2 to 17 in the high 4 bits, or 18 to 273 from a third byte when they
- * are 0). No Android classes: UserPicturesJvmTest checks it.
+ * are 0). No Android classes: Yaz0JvmTest checks it.
  */
 final class Yaz0 {
     private Yaz0() {}

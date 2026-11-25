@@ -102,9 +102,9 @@ final class RuntimeShaders {
     boolean capture(String titleId, File work, File game, File pack, int need, Prepare.Progress p, java.util.function.BooleanSupplier cancelled) throws IOException {
         File dir = captureDir(work);
         if (captured(dir) >= need) return true;
-        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot make " + dir);
+        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Finishing graphics setup could not make its folder. " + Prepare.RETRY_SHARE + "\n" + dir);
         // A game already running (the player's, perhaps another title) would count as this capture's start, and endGame() would then end it, unsaved
-        if (gameAlive()) throw new IOException("A game is running. Close it, then tap Build again to finish graphics setup.");
+        if (gameAlive()) throw new IOException("Finishing graphics setup needs the game to start, and a game is running. Close it, then tap Retry.");
         File save = new File(work, "shader-capture-save");
         Files.deleteIfExists(ShaderCapture.error(dir).toPath());
         try {
@@ -113,7 +113,7 @@ final class RuntimeShaders {
             try {
                 c.startActivity(i);
             } catch (RuntimeException e) {
-                throw new IOException("Android did not let graphics setup start. Open the app and tap Build again.", e);
+                throw new IOException("Android did not let graphics setup start. Open the app and tap Retry.", e);
             }
             long t0 = SystemClock.elapsedRealtime();
             boolean seen = false;
@@ -125,15 +125,15 @@ final class RuntimeShaders {
                 if (have >= need) { p.on(100, "Finishing graphics setup"); break; }
                 long t = SystemClock.elapsedRealtime() - t0;
                 if (seen && !alive) { Log.w(TAG, "capture: the game ended with " + have + " of " + need); break; }
-                if (!seen && t > START_MS) throw new IOException("Graphics setup could not start. Tap Build again to retry.");
+                if (!seen && t > START_MS) throw new IOException("Finishing graphics setup could not start the game. " + Prepare.RETRY_SHARE);
                 if (t > CAPTURE_MS) { Log.w(TAG, "capture: " + have + " of " + need + " after " + t / 1000 + " s"); break; }
-                p.on((int) Math.min(95, 5 + have * 90L / Math.max(1, need)), "Finishing graphics setup: " + have + " of " + need);
+                p.on((int) Math.min(95, 5 + have * 90L / Math.max(1, need)), String.format(java.util.Locale.ROOT, "Finishing graphics setup: %,d of %,d", have, need));
             }
         } finally {
             endGame();   // also on cancellation, a start failure or timeout
         }
         File error = ShaderCapture.error(dir);
-        if (error.isFile()) throw new IOException("Graphics setup failed: " + new String(Files.readAllBytes(error.toPath()), StandardCharsets.UTF_8));
+        if (error.isFile()) throw new IOException("Finishing graphics setup stopped. " + Prepare.RETRY_SHARE + "\n" + new String(Files.readAllBytes(error.toPath()), StandardCharsets.UTF_8));
         return captured(dir) >= need;
     }
 
@@ -146,7 +146,7 @@ final class RuntimeShaders {
         try {
             JSONObject o = new JSONObject(new String(Files.readAllBytes(jobFile.toPath()), StandardCharsets.UTF_8));
             JSONObject steps = o.optJSONObject("steps");
-            if (steps == null) throw new IOException("The job file has no steps: " + jobFile);
+            if (steps == null) throw new IOException("Finishing graphics setup could not go on with the build. " + Prepare.RETRY_SHARE + "\njob.json has no steps: " + jobFile);
             for (String s : new String[] {"split", "shaders", "pack"}) {
                 JSONObject st = steps.optJSONObject(s);
                 if (st == null) { st = new JSONObject(); steps.put(s, st); }
@@ -158,7 +158,7 @@ final class RuntimeShaders {
             o.remove("shader_cache");
             Files.write(jobFile.toPath(), o.toString(1).getBytes(StandardCharsets.UTF_8));
         } catch (JSONException e) {
-            throw new IOException("The job file cannot be reset: " + e.getMessage());
+            throw new IOException("Finishing graphics setup could not go on with the build. " + Prepare.RETRY_SHARE + "\njob.json cannot be reset: " + e.getMessage());
         }
     }
 

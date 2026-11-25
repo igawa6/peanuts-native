@@ -11,9 +11,11 @@ import android.widget.Toast;
 
 import dev.nxnative.android.R;
 import dev.peanuts.PeanutsPrefs;
+import dev.peanuts.build.BuiltWith;
 import dev.peanuts.build.PackNote;
 import dev.peanuts.build.Reimport;
 import dev.peanuts.build.SpaceEstimate;
+import dev.peanuts.build.UpdateFound;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -108,10 +110,11 @@ public final class GameSheet {
     /** The Companion row's line, as the sheet's choice and the disk are now */
     private CharSequence companionLine() {
         String installed = companion == null ? null : CompanionPort.installedVersion(title.companionRoot(), companion.packageName);
-        return companion == null ? "No companion in the catalog for this game"
-                : installed == null ? PUi.joined(companion.packageName + " " + companion.version, size(companion.size), installCompanion ? "Install after the build" : "Not installed after the build")
-                : installed.equals(companion.version) ? PUi.joined("installed " + installed, "up to date")
-                : PUi.joined("installed " + installed, companion.version + " " + (installCompanion ? "after the build" : "available"));
+        // a page made for this game on the second screen while it plays (map, stats, items); its package name stays out of the line
+        return companion == null ? "No dual-screen companion is available for this game"
+                : installed == null ? PUi.joined("Version " + companion.version, size(companion.size), installCompanion ? "Installs after the build" : "Not installed after the build")
+                : installed.equals(companion.version) ? PUi.joined("Version " + installed + " installed", "up to date")
+                : PUi.joined("Version " + installed + " installed", "version " + companion.version + " " + (installCompanion ? "after the build" : "available"));
     }
 
     private void render() {
@@ -126,19 +129,20 @@ public final class GameSheet {
         boolean building = lib.building(title.titleId);
         boolean nupBase = title.base != null && title.base.isNup();
         PUi.add(box, PUi.body(a, ready
-                ? "Rebuild makes again the parts of the built game that no longer fit this app version, and updates the companion. It is quick when little changed."
-                + (nupBase ? " It keeps the .nup: Import again makes that anew from your dumps, with the update and DLC found now." : "")
-                : "Build makes one .nup from the files below, prepares it, and installs the companion. About 25 minutes, in the background."), 0);
+                ? "Rebuild makes again the parts of the game's build that no longer fit this app version, and updates the dual-screen companion. It is quick when little changed."
+                + (nupBase ? " It keeps the game's .nup file. Import again makes that file again from your game files, with the update and DLC found now." : "")
+                : "Build makes one .nup file from the files below, builds the game from it and installs the dual-screen companion. It takes about 25 minutes, in the background."), 0);
         // A pack that Try anyway built without the shaders of add-on content that was not imported (PackNote, written when that build finished)
         long[] without = nupBase ? PackNote.without(title.packDir) : null;
         if (without != null) PUi.add(box, PUi.warnChip(a, "Built without DLC shaders", "Built without DLC shaders", String.format(Locale.getDefault(),
-                "Built without %,d of its %,d shaders: they come with add-on content (DLC) that was not in the import. The base game runs; what the add-on adds is "
-                + "drawn without those materials. Import again takes the DLC found now.", without[0], without[1])), 12);
+                "Built without %,d of its %,d shaders. They come with DLC that was not imported. The base game runs, and what the DLC adds is "
+                + "drawn without them. Import again takes the DLC found now.", without[0], without[1])), 12);
+        if (ready) renderBuiltWith();
         // Base
         LibraryScanner.Source b = title.base;
         boolean baseGone = b != null && !b.file.exists();
         CharSequence baseLine = b == null ? "None found"
-                : baseGone ? b.file.getName() + " — this file is no longer where the app found it. Rescan, or pick the game folder again (Settings › Library)."
+                : baseGone ? b.file.getName() + ": this file is no longer where the app found it. Rescan, or pick the game folder again in Settings › Library."
                 : PUi.joined(b.file.getName(), b.version > 0 || !b.isDump() && !b.isNup() ? versionText(b.version) : null,
                         b.isDump() ? "dump folder" : b.isNup() ? ".nup" : dev.peanuts.build.Compressed.kind(b.file).isEmpty() ? "import needed" : dev.peanuts.build.Compressed.kind(b.file) + ", import needed",
                         !b.publisher.isEmpty() ? b.publisher : null);
@@ -146,7 +150,7 @@ public final class GameSheet {
         // Update
         LibraryScanner.Source newest = title.updates.isEmpty() ? null : title.updates.get(0);
         boolean updateGone = chosenUpdate != null && !chosenUpdate.file.exists();
-        CharSequence up = updateGone ? chosenUpdate.file.getName() + " — this file is no longer where the app found it. Pick it again."
+        CharSequence up = updateGone ? chosenUpdate.file.getName() + ": this file is no longer where the app found it. Pick it again."
                 : chosenUpdate == null ? PUi.joined(title.updates.isEmpty() ? "None found" : "None", "Choose…")
                 : PUi.joined(chosenUpdate.file.getName(), versionText(chosenUpdate.version) + (chosenUpdate == newest ? ", the newest found" : ""), "Choose another…");
         PUi.add(box, new PUi.Setting(a, "⬆️", "Update", v -> { if (!building) { Haptics.play(v, Haptics.Word.TICK); LibrarySettings.pickFile(a, REQ_UPDATE, "Pick the update (.nsp, .nsz, .xci or .xcz)"); } }).value(up).chevron(a).view, 0);
@@ -164,7 +168,7 @@ public final class GameSheet {
         File root = title.companionRoot();
         String installed = companion == null ? null : CompanionPort.installedVersion(root, companion.packageName);
         boolean canInstall = companion != null && !companion.version.equals(installed);
-        PUi.Setting comp = new PUi.Setting(a, "🖥️", "Companion", null).value(companionLine());
+        PUi.Setting comp = new PUi.Setting(a, "🖥️", "Dual-screen companion", null).value(companionLine());
         companionRow = comp;
         // the switch: only the row's line depends on it (the build reads the choice when it starts), so the line is written in place and the rows stay
         if (canInstall) comp.toggle(a, installCompanion, (v, on) -> {
@@ -205,6 +209,18 @@ public final class GameSheet {
         if (title.base == null) PUi.add(box, PUi.body(a, "No base game found. Only an update or DLC is in the folder."), 14);
         if (fileGone) PUi.add(box, PUi.body(a, "Pick the file again above before building."), 14);
         if (building) PUi.add(box, PUi.small(a, "Building now: the progress is on the game's card."), 14);
+        // the build queue (issue #348): a game that waits says its place; Build here gives it this sheet's choices, Remove from queue takes it out
+        dev.peanuts.build.BuildQueue.Item queued = building ? null : Library.queued(title.titleId);
+        if (queued != null) {
+            dev.peanuts.build.BuildQueue q = dev.peanuts.build.BuildPipeline.queueNow();
+            String p = q == null ? "" : q.placeText(queued);
+            PUi.add(box, PUi.small(a, (p.isEmpty() ? "In the build queue" : "In the build queue, " + p) + ": it builds when the games before it are done. "
+                    + "Add to queue keeps its place with the choices made here."), 14);
+            PUi.add(box, PUi.button(a, "Remove from queue", PUi.Kind.QUIET, Haptics.on(Haptics.Word.TICK, v -> {
+                if (dev.peanuts.build.BuildPipeline.remove(a, queued.id)) dialog.dismiss();
+                else { Haptics.play(v, Haptics.Word.REJECT); rows(); }
+            })), 4, PUi.wrap());
+        }
         String chosenFolder = PeanutsPrefs.chosenBuildDir(a, title.titleId);
         String defaultFolder = PeanutsPrefs.buildDir(a);
         PUi.Setting destination = new PUi.Setting(a, "🗂️", "Build destination",
@@ -216,7 +232,9 @@ public final class GameSheet {
         renderSpaceLine();
         boolean unsupported = chosenVersionState() == LibraryScanner.VersionState.UNSUPPORTED;
         LinearLayout actions = PUi.row(a);
-        PUi.Action build = PUi.action(a, R.drawable.ic_build, ready ? "Rebuild" : unsupported ? "Build anyway" : "Build", PUi.Kind.PRIMARY, v -> startBuild());
+        // while another game builds or waits, Build puts this one into the build queue (issue #348), and says so
+        boolean toQueue = !building && dev.peanuts.build.BuildPipeline.queueing();
+        PUi.Action build = PUi.action(a, R.drawable.ic_build, toQueue ? "Add to queue" : ready ? "Rebuild" : unsupported ? "Build anyway" : "Build", PUi.Kind.PRIMARY, v -> startBuild());
         build.setEnabled(!building && title.base != null && !missingSetup && title.home != null && !fileGone);
         actions.addView(build, PUi.weight());
         if (needKeys) {
@@ -278,7 +296,12 @@ public final class GameSheet {
      * found), or, when the new file does not fit beside the old one, says how much is needed and offers deleting the old one first as a second question with
      * its risk. started runs when the build was accepted
      */
-    static void importAgain(Activity a, Library lib, LibraryScanner.Title t, CompanionPort.Item companion, Runnable started) {
+    static void importAgain(Activity a, Library lib, LibraryScanner.Title t, CompanionPort.Item companion, Runnable started) { importAgain(a, lib, t, companion, started, null); }
+
+    /** named: what the cover's "update found" question named, when the player said Build there (Library.askFound). The checks stay; the confirmation does not
+     *  come twice when the plan takes just that (UpdateFound.takesWhatItNamed), and comes when it takes another update (the newest file beside the .nup, one the
+     *  profile does not know, or the one picked on the game's page: found in review) */
+    static void importAgain(Activity a, Library lib, LibraryScanner.Title t, CompanionPort.Item companion, Runnable started, UpdateFound.Found named) {
         View anchor = a.getWindow().getDecorView();
         if (t == null || t.base == null || !t.base.isNup()) return;
         if (lib.building(t.titleId)) { Haptics.play(anchor, Haptics.Word.REJECT); Toast.makeText(a, "Building now: the progress is on the game's card.", Toast.LENGTH_LONG).show(); return; }
@@ -287,11 +310,14 @@ public final class GameSheet {
         if (p.lowSpace()) {
             Haptics.play(anchor, Haptics.Word.REJECT);
             AlertDialog.Builder b = new AlertDialog.Builder(a).setTitle("Not enough free space").setMessage(Reimport.lowSpace(p)).setNegativeButton("Close", null);
-            if (p.fitsWithoutOld()) b.setNeutralButton("Delete the old file first…", (d, w) -> PUi.confirmDanger(a, "Delete the old .nup first?", Reimport.deleteFirst(p, t.name),
+            if (p.fitsWithoutOld()) b.setNeutralButton("Delete the old file first…", (d, w) -> PUi.confirmDanger(a, "Delete the old game file first?", Reimport.deleteFirst(p, t.name),
                     "Delete and import", () -> startImport(a, lib, t, companion, p, true, started)));
             b.show();
             return;
         }
+        long had = -1;   // the update the .nup holds (as Reimport.plan takes it)
+        for (LibraryScanner.Source s : t.updates) if (!s.needsImport()) had = Math.max(had, s.version);
+        if (UpdateFound.takesWhatItNamed(named, had, p.update != null ? p.updateVersion : -1)) { startImport(a, lib, t, companion, p, false, started); return; }
         PUi.confirmDanger(a, "Import again?", Reimport.confirm(p, t.name), "Import again", () -> startImport(a, lib, t, companion, p, false, started));
     }
 
@@ -342,13 +368,13 @@ public final class GameSheet {
         LinearLayout col = new LinearLayout(a);
         col.setOrientation(LinearLayout.VERTICAL);
         col.addView(PUi.small(a, "You have: " + haveText));
-        col.addView(PUi.small(a, "This build supports: " + supports));
+        col.addView(PUi.small(a, "This app version supports: " + supports));
         int tint;
         String note;
         switch (vs) {
-            case RECOMMENDED: tint = R.color.bn_leaf; note = "Matches this build's shader tables."; break;
-            case SUPPORTED_OTHER: tint = R.color.bn_banana; note = "Supported, but builds slower the first time (a full shader scan): the shader tables are for " + recommendedText() + "."; break;
-            default: tint = R.color.bn_danger; note = "Not one of this build's versions. Build anyway may not work, or Choose another… picks the recommended update."; break;   // UNSUPPORTED
+            case RECOMMENDED: tint = R.color.bn_leaf; note = "Matches the app's list for this game."; break;
+            case SUPPORTED_OTHER: tint = R.color.bn_banana; note = "Supported, but its first build is slower because it looks at every shader. The app's list for this game is for " + recommendedText() + "."; break;
+            default: tint = R.color.bn_danger; note = "Untested game version. Build anyway may make a game that does not work. Choose another… picks the recommended update."; break;   // UNSUPPORTED
         }
         TextView n = PUi.text(a, note, 13, tint, 600);
         n.setPadding(0, PUi.dp(a, 2), 0, 0);
@@ -434,11 +460,39 @@ public final class GameSheet {
         File importDest = buildGameDir != null ? buildGameDir : (gameDir == null ? null : new File(gameDir));
         File packVolume = buildGameDir != null ? new File(buildGameDir, "pack") : a.getExternalFilesDir(null);
         String warn = SpaceEstimate.warning(importBytes + unpackBytes, packBasis, needsImport, importDest, packVolume);
-        if (warn != null) PUi.add(box, PUi.warnChip(a, "Low disk space", "Low disk space", warn + SpaceEstimate.unpackSentence(unpackBytes) + " Build still works; it may just run out partway through."), 14);
+        if (warn != null) PUi.add(box, PUi.warnChip(a, "Low disk space", "Low disk space", warn + SpaceEstimate.unpackSentence(unpackBytes) + " Build still works, but it may run out of space part way."), 14);
         else {
             long need = SpaceEstimate.totalNeeded(importBytes + unpackBytes, packBasis, needsImport);
-            PUi.add(box, PUi.small(a, "Needs about " + SpaceEstimate.words(need) + " free (a rough estimate)." + SpaceEstimate.unpackSentence(unpackBytes)), 14);
+            PUi.add(box, PUi.small(a, "Needs about " + SpaceEstimate.words(need) + " free, a rough estimate." + SpaceEstimate.unpackSentence(unpackBytes)), 14);
         }
+    }
+
+    private BuiltWith.Result builtWith;   // the release that made this game's shaders, once read for this sheet
+    private boolean readingBuiltWith;
+
+    /**
+     * "Built with 0.1.7" (BuiltWith): a quiet line for this app version's shaders or ones the upgrade takes at the next start, a warning chip that points to
+     * Rebuild for older ones, nothing when the version is not known. The library headers are read once per sheet on a thread (a slow SD card must not hold the
+     * sheet, as the space line's walk); the sheet renders again when they say something
+     */
+    private void renderBuiltWith() {
+        if (builtWith == null) {
+            if (readingBuiltWith || title.packDir == null) return;
+            readingBuiltWith = true;
+            File pack = title.packDir;
+            String titleId = title.titleId;
+            new Thread(() -> {
+                BuiltWith.Result r = BuiltWith.of(pack, titleId, dev.nxnative.android.BuildConfig.NX_DMSH_VK_CHAIN);
+                a.runOnUiThread(() -> {
+                    builtWith = r;
+                    if (r.kind != BuiltWith.Kind.UNKNOWN && current == this && dialog != null && dialog.isShowing()) render();
+                });
+            }, "peanuts-built-with").start();
+            return;
+        }
+        String label = BuiltWith.label(builtWith), warning = BuiltWith.warning(builtWith);
+        if (warning != null) PUi.add(box, PUi.warnChip(a, label, label, warning), 12);
+        else if (label != null) PUi.add(box, PUi.small(a, label), 12);
     }
 
     /** The state the pipeline gets, from the sheet as it is now */
@@ -507,8 +561,8 @@ public final class GameSheet {
     private void startBuild() {
         if (chosenVersionState() == LibraryScanner.VersionState.UNSUPPORTED) {
             PUi.confirmDanger(a, "Build anyway?", "Version " + versionText(chosenUpdate != null ? chosenUpdate.version : title.base != null ? title.base.version : 0)
-                            + " is not one of this build's versions (it supports " + supportedShortText() + "). It goes on without that check: the game may not start, "
-                            + "may crash, or may draw parts wrongly, and the first build scans every shader (slower). Your dump and saves are not changed.",
+                            + " is untested. This app version supports " + supportedShortText() + ". The build goes on without that check, so the game may not start, "
+                            + "may crash or may draw parts wrongly, and its first build is slower because it looks at every shader. Your game files and saves do not change.",
                     "Build anyway", () -> doStartBuild(true));
         } else doStartBuild(false);
     }
@@ -517,10 +571,10 @@ public final class GameSheet {
         State s = state();
         s.buildAnyway = anyway;
         if (s.base == null) { Haptics.play(box, Haptics.Word.REJECT); Toast.makeText(a, "No base game found", Toast.LENGTH_SHORT).show(); return; }
-        if (s.home == null) { Haptics.play(box, Haptics.Word.REJECT); Toast.makeText(a, "Set the game folder first (Settings › Library)", Toast.LENGTH_LONG).show(); return; }
+        if (s.home == null) { Haptics.play(box, Haptics.Word.REJECT); Toast.makeText(a, "Set the game folder first in Settings › Library", Toast.LENGTH_LONG).show(); return; }
         String why = lib.startBuild(s);
         if (why != null) { Haptics.play(box, Haptics.Word.REJECT); new AlertDialog.Builder(a).setTitle("Build").setMessage(why).setPositiveButton("OK", null).show(); return; }
-        if (lib.building(title.titleId)) Haptics.play(box, Haptics.Word.HEAVY);   // the build was accepted (a refusal by the pipeline says so in its own dialog)
+        if (lib.building(title.titleId) || Library.queued(title.titleId) != null) Haptics.play(box, Haptics.Word.HEAVY);   // the build was accepted or queued (a refusal by the pipeline says so in its own dialog)
         dialog.dismiss();
     }
 

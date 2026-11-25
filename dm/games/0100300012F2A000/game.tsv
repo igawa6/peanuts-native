@@ -36,13 +36,29 @@ zip_store	.assets:.bank:.bk2:.bundle:.dat:.ress:.metallib
 mem_reserve	0x140000000
 mem_alias	0x118000000
 mem_stack	0x10000000
-# PEANUTS: the opening movie exhausts a 2 GiB guest pool on Android. Keep the alias reservation; use the retail application pool.
-app_pool	0xCD500000
+# PEANUTS: a 2.5 GB pool, as Engage's. The 2 GB above was set before the host refused maps past the pool (docs/reference/memory.md, Maps past the application pool fail as on
+# Horizon), and the Mac's 15 minutes had mapped 2.26 GB. With the limit, a 2 GB pool ran out 17 s into a boot on Android (1.94 GB mapped, MapPhysicalMemory refused), and Unity's
+# block allocator (main+0x861f40) wrote its header into the block it never got (SIGSEGV at main+0x861fd8). The Switch's 3285 MB ran into a battle with 2.26 GB mapped, but
+# StandardAllocator's reservation of almost all of it took the alias region's high-water mark to +4.26 of its 4.38 GB in 100 s: 2.5 GB keeps the maps and the address space
+# PEANUTS: #231 found the opening movie exhausts a 2 GiB pool and set the retail pool (0xCD500000); #382 then measured that the retail pool took the alias
+# region to 4.26 of its 4.38 GB in battle, so the pool is 2.5 GB, above the 2 GiB the movie ran out in. (The movie at 2.5 GB is not yet checked on Android.)
+app_pool	0xA0000000
 sys_resource	0x1000000
 
 # ---- Input ----
 # The map cursor moves with the D-pad (the tutorial battle was played with it on the Mac); the 3D layout has one
 pad_layout	full
+
+# PEANUTS begin: Android frame rate
+# ---- Frame rate ----
+# The game sets Unity's OnDemandRendering.renderFrameInterval to 1 in the menus and 2 in battle: Update still runs every frame, Unity renders every second one (30 fps,
+# the frame's work 33 ms with the CPU and GPU idle). The row writes 60 / the cap there (1 at 60), so battles render every frame without changing the game's speed.
+# The field is an IL2CPP static int: main + 0x481b2f8 holds the class (Il2CppClass), whose +0xb8 points to its static fields, the interval first. From masagrator's
+# FPSLocker Warehouse config for this build (patches/0100300012F2A000/320A17744AEFD67F.yaml, which writes -1); as Fire Emblem Engage's rows
+present_interval	display
+fps_limit	60
+fpslocker	320a17744aefd67fec5738ca0c629795	vsync_u32	0x481b2f8/0xb8/0x0	1	0
+# PEANUTS end
 
 # ---- Shader split ----
 shader_groups	/Data/=data

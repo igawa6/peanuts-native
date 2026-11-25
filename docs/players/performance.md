@@ -1,6 +1,6 @@
 # Performance
 
-Back to the [main page](../../.github/README.md).
+Back to the [main page](../banana-native-README.github.md). <!-- PEANUTS: upstream's .github/README.md and README.md are kept in docs/ (banana-native-README*.md) -->
 
 Donkey Kong Bananza (`040074A01BF12000`) on the tested phone (Snapdragon 8 Elite Gen 5, 16 GB), first level, frame
 generation off:

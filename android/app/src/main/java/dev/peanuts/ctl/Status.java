@@ -61,6 +61,7 @@ final class Status {
         m.put("library_read", libraryAt);
         m.put("job", job);
         m.put("build", build);
+        m.put("queue", BuildPipeline.queueSnapshot());   // the build queue (issue #348): each game with its state and place, and what it waits for
         m.put("game", game);
         m.put("last_result", results.isEmpty() ? null : results.get(0));
         m.put("results", results);
@@ -171,11 +172,12 @@ final class Status {
         Object s = job == null ? null : job.get("state");
         String a = job != null && ("running".equals(s) || "paused".equals(s) || "pending".equals(s)) ? String.valueOf(job.get("title_id")) : null;
         String b = build != null && Boolean.TRUE.equals(build.get("running")) ? String.valueOf(build.get("title_id")) : null;
-        if (a == null && b == null) return rows;
+        if (a == null && b == null && BuildPipeline.queueNow() == null) return rows;
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map<String, Object> r : rows) {
             String id = String.valueOf(r.get("title_id"));
             if (id.equalsIgnoreCase(a) || id.equalsIgnoreCase(b)) { r = new LinkedHashMap<>(r); r.put("state", "building"); }
+            else if (BuildPipeline.queued(id) != null) { r = new LinkedHashMap<>(r); r.put("state", "queued"); }   // waits in the build queue (issue #348)
             out.add(r);
         }
         return out;

@@ -53,7 +53,8 @@ import dev.peanuts.overlay.SocTemp;
  * <ul>
  * <li>a header with the cover, the name, a gear (the settings sheet) and three pills: the console mode the game sees (DOCKED or HANDHELD, Bridge.opMode; its
  *     blinking dot says the page is live), the GPU driver (Hud.driverName) and the state (GameStats.cause): COOL or WARM from Android's thermal status and
- *     headroom, THROTTLING when the system cuts the clocks, GPU-BOUND when the game is behind with a full GPU;</li>
+ *     headroom, THROTTLING when the system cuts the clocks, GPU-BOUND when the game is behind with a full GPU; a tap on the console mode pill or on the frame
+ *     rate opens a centred pop-up to set the console mode or the frame rate cap (GameControls), as the in-game panel does;</li>
  * <li>the frame rate against the game's target, and ON PACE: the share of the newest frames within 15 % of the target (GameStats.onPace);</li>
  * <li>a frame-time graph that scrolls once a display frame (Graph), with its scale, the target and the 1% low; a tap shows the last 30 s instead (the worst
  *     frame of each half second), another tap the last 2 s;</li>
@@ -61,7 +62,7 @@ import dev.peanuts.overlay.SocTemp;
  *     clock and its cap (DeviceStats, sysfs; a tile hides where its files do not read), the SoC's temperature, the power in watts with the battery's level and
  *     time left (its current, voltage and charge counter; the level's fall an hour where the current does not read), the game's RAM (its CPU side and its GPU
  *     memory; the label the phone's RAM in use over its whole RAM, the meter the game's share, the rest in use faint behind it, the free part empty) and the
- *     run's clock. The meters mark the run's peak, and SOC names it when it is above now.</li>
+ *     run's clock. The meters mark the run's peak, and TEMP names it when it is above now.</li>
  * </ul>
  * What shows is the player's (StatsConfig: the presets Simple, Normal and Full, or items picked by hand), from the gear's sheet, kept for every game
  * (PeanutsPrefs.statsShown). Frame times come from the host (Bridge.frameTimes, on whether or not the overlay is); the numbers update 4 times a second and roll to
@@ -70,7 +71,7 @@ import dev.peanuts.overlay.SocTemp;
  * Burn-in guard (the AYN Thor's bottom screen is AMOLED, and this page stays still for hours), each switchable in the sheet (PeanutsPrefs.statsGuard), all on by
  * default: a black page (its pixels are off; the page takes the dark theme's colours then), the pixel shifter (the page goes round a circle of 8 pixels, a pixel
  * every 30 s: GameStats.orbit), dimmer fixed labels, a dim after 10 minutes without a touch and black after 30 but for a small moving dot. A touch brings it back
- * (and does nothing else).
+ * (and does nothing else). The build tag always shows small at the bottom right (GameScreen.buildTag), whatever the overlay over the game shows.
  */
 public final class StatsView extends FrameLayout {
     private static final long TICK_MS = 250;
@@ -93,11 +94,20 @@ public final class StatsView extends FrameLayout {
     private FrameLayout content;   // the card, centred; the pixel shifter moves it
     private LinearLayout card;
     private View sheet, dim, ember, live, thrDot;
-    private TextView tile, name, driver, thrText, modeText, target, graphNote;
+    private TextView tile, name, driver, thrText, modeText, target, capUnit, capCaret, graphNote;   // target, capUnit, capCaret: the frame rate cap pill
     private TextView vLow, vCpu, vRam, vRun, vBat;
     private Num fps, pace, frame, gpu, soc, watts;
     private Meter mGpu, mCpu, mSoc, mBat, mRam;
     private Graph graph;
+    private TextView buildTag;   // the build tag, always (buildTag(CharSequence))
+    private CharSequence buildTagText;
+    private FrameLayout popup;
+    private boolean bento;            // Simple's cards (build): its tiles name their reading in their own header, so the labels under the numbers change
+    private ImageView paceIcon;
+    // the tiles' icons by item (tileView, bentoTile): the battery's and the SoC's take their meter's state colour (iconTint); green, orange and red are states only,
+    // so the GPU is teal, not the overlay's green
+    private final Map<String, ImageView> tileIcons = new HashMap<>();       // the bento's ON PACE gauge, in the pace's colour
+    private TextView infoLine;        // the bento's driver and state line, under the console mode   // the console mode or frame rate cap pop-up (openControl), null when closed
     private final Map<String, View> tiles = new HashMap<>();
     private boolean bigTiles;   // Simple's larger tiles (tileView)
 
@@ -145,6 +155,10 @@ public final class StatsView extends FrameLayout {
         if (graph != null) graph.live(false);
         nums.clear();
         removeAllViews();
+        tileIcons.clear();
+        paceIcon = null;
+        infoLine = null;
+        popup = null;
         tiles.clear();
         causeSeen = -2;
         cause = -1;
@@ -162,15 +176,16 @@ public final class StatsView extends FrameLayout {
         labelCol = dimLabels ? blend(text2, cardBg, 0.35f) : text2;   // the words that never change, a step quieter than the numbers
         // the overlay's group colours where they do not clash here: the CPU's blue was the frame times' too (indigo now); the SoC and the battery shared one orange,
         // the warning's (pink and teal now), so a hot SoC's meter did not change colour
-        cFps = tone(FrameStats.LABEL_FPS); cGpu = tone(FrameStats.LABEL_GPU); cCpu = tone(0xFF8C9EFF); cSoc = tone(0xFFFF8FB1); cBat = tone(0xFF4DD0C4); cMem = tone(FrameStats.LABEL_MEM);
+        cFps = tone(FrameStats.LABEL_FPS); cGpu = tone(0xFF4DD0C4); cCpu = tone(0xFF8C9EFF); cSoc = tone(0xFFFF8FB1); cBat = tone(0xFF4DD0C4); cMem = tone(FrameStats.LABEL_MEM);
         setBackgroundColor(black ? Color.BLACK : Color.TRANSPARENT);   // black: over GameScreen's banana pattern too
 
         Configuration cf = c.getResources().getConfiguration();
         boolean wide = cf.screenWidthDp >= 600 && cf.screenWidthDp >= cf.screenHeightDp * 1.25f;
         boolean simple = StatsConfig.match(shown).equals(StatsConfig.SIMPLE);
-        // Simple: the cover large beside the frame rate and a 2 x 2 of large tiles ("now playing"), the page filled; on a narrow screen (a phone held upright) the
-        // same stacked, the cover above
+        // Simple on a wide screen (the Thor's bottom one): cards side by side ("bento"), the frame rate's beside the game's (a medium cover, its name, the console
+        // mode), the four large tiles a row of cards under them, the page filled; on a narrow screen (a phone held upright) one card, stacked, the cover above
         boolean side = simple && cf.screenWidthDp >= 480, stacked = simple && !side;
+        bento = side;
         bigTiles = simple;
         int pad = PUi.dp(c, wide ? 24 : 16);
         content = new FrameLayout(c);
@@ -185,15 +200,17 @@ public final class StatsView extends FrameLayout {
         // the side cover: as large as the card leaves it, at most 192 dp: under the card's height (with its name and pill below) and beside the right column's
         // 260 dp (the frame rate and the 2 x 2 tiles); the Thor's bottom screen (538 x 468 dp) gives the 192
         int innerW = Math.min(wide ? 640 : 560, cf.screenWidthDp - 2 * (wide ? 24 : 16)) - 36;
-        int coverDp = side ? Math.max(96, Math.min(192, Math.min(cf.screenHeightDp - 2 * (wide ? 24 : 16) - 36 - 90, innerW - 18 - 260))) : stacked ? 96 : 52;
+        // the bento's game card is about 62 % of the width, its cover about 42 % of that card, at most 140 dp (the Thor: about 128)
+        int coverDp = side ? Math.max(72, Math.min(140, Math.round(innerW * 0.62f * 0.42f))) : stacked ? 96 : 52;
         tile = PUi.tile(c, "?", coverDp);
         name = PUi.text(c, "", stacked ? 20 : 17, R.color.bn_text, 800);
-        if (simple) name.setMaxLines(2); else name.setSingleLine(true);
+        if (simple) name.setMaxLines(side ? 3 : 2); else name.setSingleLine(true);   // the bento's game card has room for a long name in full
         name.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout pills = PUi.row(c);
         live = dot(c, good);
         LinearLayout livePill = pill(c, live, "LIVE");
         modeText = (TextView) livePill.getChildAt(1);
+        livePill.setOnClickListener(v -> openControl(v, true));
         pills.addView(livePill);
         driver = pillText(c, "");
         LinearLayout drvPill = pill(c, null, null);
@@ -211,27 +228,70 @@ public final class StatsView extends FrameLayout {
         // the frame rate and its target; ON PACE beside it (on the right, or next to it in Simple)
         LinearLayout big = PUi.row(c);
         big.setGravity(simple ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL : Gravity.BOTTOM);
-        TextView fpsView = PUi.text(c, "--", side ? 116 : stacked ? 100 : 52, R.color.bn_accent, 700);
+        TextView fpsView = PUi.text(c, "--", side ? 64 : stacked ? 100 : 52, R.color.bn_accent, 700);
         fpsView.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
         fpsView.setIncludeFontPadding(false);
         fps = new Num(fpsView, v -> String.format(Locale.ROOT, "%.0f", v), "--", 2f);
         big.addView(fpsView);
-        target = PUi.text(c, "", simple ? 22 : 15, R.color.bn_text_2, 600);
+        fpsView.setOnClickListener(v -> openControl(v, false));
+        // the cap in effect (or the target and "FPS") in a pill, as the header's: it reads as a button (the frame rate cap's pop-up), with a caret while a game runs
+        LinearLayout capPill = pill(c, null, null);
+        capPill.setGravity(Gravity.CENTER_VERTICAL);
+        capPill.setPadding(PUi.dp(c, 10), PUi.dp(c, 4), PUi.dp(c, 10), PUi.dp(c, 4));
+        target = PUi.text(c, "", 15, R.color.bn_text_2, 600);
         target.setTypeface(Typeface.MONOSPACE);
         target.setTextColor(labelCol);
-        LinearLayout.LayoutParams tl = gapLeft(c, 6);
-        tl.bottomMargin = PUi.dp(c, simple ? 10 : 4);
-        big.addView(target, tl);
-        LinearLayout.LayoutParams fl = gapLeft(c, 6);
-        fl.bottomMargin = PUi.dp(c, simple ? 12 : 6);
-        TextView fpsLabel = label(c, "FPS");
-        if (simple) fpsLabel.setTextSize(12);
-        big.addView(fpsLabel, fl);
-        if (!simple) big.addView(PUi.spacer(c));
+        target.setIncludeFontPadding(false);
+        capPill.addView(target);
+        capUnit = label(c, "FPS");
+        if (simple) capUnit.setTextSize(12);
+        capPill.addView(capUnit, gapLeft(c, 6));
+        capCaret = pillText(c, "\u25BE");
+        capCaret.setVisibility(GameControls.host() != null ? View.VISIBLE : View.GONE);
+        capPill.addView(capCaret, gapLeft(c, 6));
+        capPill.setOnClickListener(v -> openControl(v, false));
+        // Simple: the pill on a line of its own under the frame rate, centred (beside a 100 sp number it was squeezed to a letter a line)
         TextView paceView = PUi.text(c, "", 20, R.color.bn_text, 700);
         paceView.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
         paceView.setIncludeFontPadding(false);
         pace = new Num(paceView, v -> Math.round(v) + "%", "\u2014", 3f);
+        View fpsBlock = big;
+        if (side) {   // the bento's frame rate card: the cap pill on top, the number with a small "FPS" beside it, ON PACE under it with its gauge
+            LinearLayout col = column(c);
+            col.setGravity(Gravity.CENTER_HORIZONTAL);
+            col.addView(capPill, PUi.wrap());
+            col.addView(new View(c), new LinearLayout.LayoutParams(1, 0, 1f));
+            TextView unit = label(c, "FPS");
+            unit.setTextSize(12);
+            LinearLayout.LayoutParams ul = gapLeft(c, 6);
+            ul.bottomMargin = PUi.dp(c, 8);
+            big.addView(unit, ul);
+            col.addView(big, PUi.wrap());
+            col.addView(new View(c), new LinearLayout.LayoutParams(1, 0, 1f));
+            LinearLayout paceRow = PUi.row(c);
+            android.graphics.drawable.Drawable g = Icons.get(c, "gauge", Icons.Ink.NORMAL);
+            if (g != null) {
+                paceIcon = new ImageView(c);
+                paceIcon.setImageDrawable(g.mutate());
+                paceRow.addView(paceIcon, new LinearLayout.LayoutParams(PUi.dp(c, 18), PUi.dp(c, 18)));
+            }
+            paceView.setTextSize(18);
+            paceRow.addView(paceView, paceRow.getChildCount() > 0 ? gapLeft(c, 6) : PUi.wrap());
+            paceRow.addView(label(c, "ON PACE"), gapLeft(c, 6));
+            col.addView(paceRow, PUi.wrap());
+            fpsBlock = col;
+        } else if (simple) {
+            LinearLayout col = column(c);
+            col.setGravity(Gravity.CENTER_HORIZONTAL);
+            col.addView(big);
+            PUi.add(col, capPill, 8, PUi.wrap());
+            fpsBlock = col;
+        } else {
+            LinearLayout.LayoutParams tl = gapLeft(c, 8);
+            tl.bottomMargin = PUi.dp(c, 4);
+            big.addView(capPill, tl);
+        }
+        if (!simple) big.addView(PUi.spacer(c));
         if (shown.contains(StatsConfig.PACE)) {
             LinearLayout pc = column(c);
             pc.setGravity(Gravity.END);
@@ -275,7 +335,7 @@ public final class StatsView extends FrameLayout {
             return unit(Math.round(v) + "%", mhz > 0 ? " " + mhz + "MHz" : "");
         }, "\u2014", 5f);
         vCpu = tileView(c, StatsConfig.CPU, "CPU", cCpu, mCpu);
-        soc = new Num(tileView(c, StatsConfig.SOC, "SOC", cSoc, mSoc), v -> Math.round(v) + "\u00B0", "\u2014", 2f);
+        soc = new Num(tileView(c, StatsConfig.SOC, "TEMP", cSoc, mSoc), v -> Math.round(v) + "\u00B0", "\u2014", 2f);
         vBat = tileView(c, StatsConfig.BAT, "BATTERY", cBat, mBat);
         watts = new Num(vBat, v -> unit((wasCharging ? "+" : "") + String.format(Locale.ROOT, "%.1f", v), "W"), "\u2014", 0.5f);
         vRam = tileView(c, StatsConfig.RAM, "GAME RAM", cMem, mRam);
@@ -301,29 +361,59 @@ public final class StatsView extends FrameLayout {
 
         // put together
         View box = card;
-        if (side) {
-            int coverPx = PUi.dp(c, coverDp);
-            LinearLayout row = PUi.row(c);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            LinearLayout left = column(c);
-            left.addView(tile);
-            PUi.add(left, name, 12, new LinearLayout.LayoutParams(coverPx, ViewGroup.LayoutParams.WRAP_CONTENT));
-            PUi.add(left, pills, 8, PUi.wrap());
-            row.addView(left, new LinearLayout.LayoutParams(coverPx, ViewGroup.LayoutParams.WRAP_CONTENT));
-            LinearLayout right = column(c);
-            right.addView(big);
-            if (gbox != null) PUi.add(right, gbox, 12);
-            if (grid.getChildCount() > 0) PUi.add(right, grid, 18);
-            LinearLayout.LayoutParams rp = PUi.weight();
-            rp.leftMargin = PUi.dp(c, 18);
-            row.addView(right, rp);
-            card.addView(row);
-            FrameLayout withGear = new FrameLayout(c);   // the gear in the card's corner, over it
-            withGear.addView(card, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        if (side) {   // the bento: no outer card, cards of their own
+            int gapB = PUi.dp(c, 10);
+            LinearLayout bento = column(c);
+            LinearLayout top = PUi.row(c);
+            LinearLayout fpsCard = bentoCard(c, black, cardBg);
+            fpsCard.addView(fpsBlock, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            top.addView(fpsCard, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 38));
+            LinearLayout gameCard = bentoCard(c, black, cardBg);
+            gameCard.setOrientation(LinearLayout.HORIZONTAL);
+            gameCard.setGravity(Gravity.CENTER_VERTICAL);
+            gameCard.addView(tile);
+            LinearLayout info = column(c);
+            info.addView(name);
+            // the console mode pill larger here: the bento's one button for it, beside a 128 dp cover
+            modeText.setTextSize(14);
+            livePill.setPadding(PUi.dp(c, 12), PUi.dp(c, 7), PUi.dp(c, 14), PUi.dp(c, 7));
+            live.setLayoutParams(new LinearLayout.LayoutParams(PUi.dp(c, 8), PUi.dp(c, 8)));
+            live.setBackground(PUi.round(good, PUi.dp(c, 4), 0, 0));
+            ((LinearLayout.LayoutParams) modeText.getLayoutParams()).leftMargin = PUi.dp(c, 7);
+            PUi.add(info, pills, 10, PUi.wrap());
+            infoLine = label(c, "");   // the driver and the state (chips), as the pills Simple leaves out
+            infoLine.setSingleLine(true);
+            infoLine.setEllipsize(TextUtils.TruncateAt.END);
+            PUi.add(info, infoLine, 8);
+            LinearLayout.LayoutParams il = PUi.weight();
+            il.leftMargin = PUi.dp(c, 14);
+            gameCard.addView(info, il);
+            FrameLayout withGear = new FrameLayout(c);   // the gear in the game card's corner, over it
+            withGear.addView(gameCard, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             FrameLayout.LayoutParams gp = new FrameLayout.LayoutParams(PUi.dp(c, 36), PUi.dp(c, 36), Gravity.TOP | Gravity.END);
-            gp.topMargin = gp.rightMargin = PUi.dp(c, 8);
+            gp.topMargin = gp.rightMargin = PUi.dp(c, 4);
             withGear.addView(gear, gp);
-            box = withGear;
+            LinearLayout.LayoutParams gl = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 62);
+            gl.leftMargin = gapB;
+            top.addView(withGear, gl);
+            bento.addView(top, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.8f));   // the tiles' row as tall as they need, the cards the rest
+            // the tiles: one row of cards (each tile's own background made a card's)
+            LinearLayout row = PUi.row(c);
+            for (int i = 0; i < shownTiles.size(); i++) {
+                View t = tiles.get(shownTiles.get(i));
+                if (t.getParent() != null) ((ViewGroup) t.getParent()).removeView(t);   // the grid above took them first
+                t.setBackground(bentoBack(c, black, cardBg));
+                bentoTile(c, shownTiles.get(i), (LinearLayout) t);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
+                if (i > 0) lp.leftMargin = gapB;
+                row.addView(t, lp);
+            }
+            if (row.getChildCount() > 0) {
+                LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+                rl.topMargin = gapB;
+                bento.addView(row, rl);
+            }
+            box = bento;
         } else {
             LinearLayout top = PUi.row(c);
             top.addView(tile);
@@ -336,15 +426,29 @@ public final class StatsView extends FrameLayout {
             gl.gravity = Gravity.TOP;
             top.addView(gear, gl);
             card.addView(top);
-            PUi.add(card, big, stacked ? 18 : 14);
+            PUi.add(card, fpsBlock, stacked ? 18 : 14);
             if (gbox != null) PUi.add(card, gbox, 10);
             if (grid.getChildCount() > 0) PUi.add(card, grid, stacked ? 18 : 9);
         }
 
         // Simple fills the screen's height, its parts centred in the card; the others are as tall as their parts, centred on the screen
-        if (simple) card.setGravity(Gravity.CENTER_VERTICAL);
+        if (simple && !side) card.setGravity(Gravity.CENTER_VERTICAL);
         content.addView(new Capped(c, PUi.dp(c, wide ? 640 : 560), box, simple),
                 new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, simple ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+        // the build tag: small, bottom right, in content's bottom padding (below the card, never over it; content draws outside its padding), a child of content so
+        // the pixel shifter moves it with the page
+        buildTag = new TextView(c);
+        buildTag.setTextSize(10);
+        buildTag.setTextColor(labelCol);
+        buildTag.setTypeface(Typeface.MONOSPACE);
+        buildTag.setSingleLine(true);
+        buildTag.setIncludeFontPadding(false);
+        buildTag.setPadding(PUi.dp(c, 4), 0, PUi.dp(c, 4), 0);
+        buildTag.setText(buildTagText);
+        buildTag.setVisibility(buildTagText == null ? View.GONE : View.VISIBLE);
+        FrameLayout.LayoutParams tagLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.END);
+        tagLp.bottomMargin = -pad + PUi.dp(c, 2);   // the tag (about 12 dp) fits in the padding (16 or 24 dp) under the card
+        content.addView(buildTag, tagLp);
         addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         sheet = sheet(c);
         sheet.setVisibility(sheetOpen ? View.VISIBLE : View.GONE);
@@ -362,6 +466,13 @@ public final class StatsView extends FrameLayout {
         bindHeader();
         lastTail = Float.NaN;
         if (was) { graph.live(graphRuns()); ui.removeCallbacks(tick); ticks = 0; ui.post(tick); }
+    }
+
+    /** The build tag, moved here from over the game while the overlay hides for this page (GameScreen.buildTag); null hides it */
+    public void buildTag(CharSequence t) {
+        if (t == null ? buildTagText == null : buildTagText != null && t.toString().contentEquals(buildTagText)) return;
+        buildTagText = t;
+        if (buildTag != null) { buildTag.setText(t); buildTag.setVisibility(t == null ? GONE : VISIBLE); }
     }
 
     /** The game's name and cover; the run's clock starts at {@code since} (SystemClock.elapsedRealtime) */
@@ -495,15 +606,23 @@ public final class StatsView extends FrameLayout {
         boolean fresh = n > 0 && stale < 4;
         float rate = fresh ? GameStats.fps(frames, n) : Float.NaN;
         float med = n >= 10 ? FrameStats.median(frames, n) : Float.NaN;
-        int aim = GameStats.target(med);
+        // the cap in effect (GameControls) is the target when the game runs near it: 120 or 90 are no common rate GameStats.target knows
+        GameControls.Host h = GameControls.host();
+        int cap = h != null ? h.capRunning() : -1;   // the one the game runs at, not one waiting for a restart
+        int aim = GameStats.aim(h != null && cap != -1 ? h.capRate(cap) : 0, med);
         // the target frames are measured against: the game's own rate when the median is near one (a game held at 25 fps by a slow phone would otherwise read
         // as on pace against its own median), else the median
         float tgt = aim > 0 ? 1000f / aim : med;
         fps.set(rate);
-        target.setText(aim > 0 ? "/" + aim : "");
+        // the pill names the cap in effect while a game runs ("120 FPS", "GAME OWNED": what its pop-up changes), else the target the frames are measured against
+        boolean named = h != null && cap != -1;
+        target.setText(named ? capText(h) : aim > 0 ? "/" + aim : "");
+        capUnit.setVisibility(named ? View.GONE : View.VISIBLE);
+        capCaret.setVisibility(h != null ? View.VISIBLE : View.GONE);
         paceNow = fresh ? GameStats.onPace(frames, n, PACE_FRAMES, tgt) : Float.NaN;
         pace.set(paceNow * 100f);
         pace.view.setTextColor(Float.isNaN(paceNow) ? text2 : paceNow >= 0.9f ? good : paceNow >= 0.75f ? warnYellow : warnRed);
+        if (paceIcon != null) paceIcon.setColorFilter(pace.view.getCurrentTextColor());   // the bento's gauge in the pace's colour
         float ft = Float.isNaN(rate) ? Float.NaN : 1000f / rate;
         frame.set(ft);
         frame.view.setTextColor(Float.isNaN(ft) || Float.isNaN(tgt) ? text : warn(FrameStats.level(ft, tgt)));
@@ -538,8 +657,9 @@ public final class StatsView extends FrameLayout {
         ((TextView) vCpu.getTag()).setText(!Float.isNaN(cap) && cap < 0.99f ? "CPU CAP " + Math.round(cap * 100) + "%" : "CPU");
         mCpu.set(cur > 0 && max > 0 ? (float) cur / max : 0f, cCpu);
         int mode = Bridge.opModeSafe();   // the in-game panel can change it while the game runs
-        modeText.setText(mode == 1 ? "DOCKED" : mode == 0 ? "HANDHELD" : "LIVE");
+        modeText.setText((mode == 1 ? "DOCKED" : mode == 0 ? "HANDHELD" : "LIVE") + (GameControls.host() != null && GameControls.host().consoleMode() >= 0 ? " \u25BE" : ""));
         state();
+        if (infoLine != null) infoLine.setText(cause >= 0 ? PUi.joined(driver.getText(), thrText.getText()) : driver.getText());   // PEANUTS: PUi.joined, not a middle dot (test_separators)
     }
 
     /** The state pill (GameStats.cause). A new cause shows once it has held two readings in a row, so a single slow second does not flash it */
@@ -576,9 +696,11 @@ public final class StatsView extends FrameLayout {
         int socLv = t == SocTemp.NONE ? 0 : t >= 80 ? 2 : t >= 70 ? 1 : 0;
         soc.view.setTextColor(warn(socLv));
         mSoc.set(t == SocTemp.NONE ? 0f : t / 100f, socLv > 0 ? warn(socLv) : cSoc);
+        iconTint(StatsConfig.SOC, socLv > 0 ? warn(socLv) : cSoc);
         mSoc.peak(socPeak == SocTemp.NONE ? -1f : socPeak / 100f);
         // the peak named when it is 3 degrees above now: a run that warmed and cooled again
-        ((TextView) soc.view.getTag()).setText(t != SocTemp.NONE && socPeak >= t + 3 ? "SOC ▲" + socPeak + "°" : "SOC");
+        boolean peaked = t != SocTemp.NONE && socPeak >= t + 3;
+        ((TextView) soc.view.getTag()).setText(bento ? (peaked ? "\u25B2" + socPeak + "\u00B0 PEAK" : "NOW") : peaked ? "TEMP \u25B2" + socPeak + "\u00B0" : "TEMP");
 
         battery(c);
         memory(c);
@@ -605,7 +727,7 @@ public final class StatsView extends FrameLayout {
             mv = b.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
             charging = st == BatteryManager.BATTERY_STATUS_CHARGING || st == BatteryManager.BATTERY_STATUS_FULL || b.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0;
         }
-        if (level < 0) { watts.set(Float.NaN); lab.setText("BATTERY"); mBat.set(0f, good); return; }
+        if (level < 0) { watts.set(Float.NaN); lab.setText("BATTERY"); mBat.set(0f, good); iconTint(StatsConfig.BAT, good); return; }
         BatteryManager bm = (BatteryManager) c.getSystemService(Context.BATTERY_SERVICE);
         float amps = bm == null ? Float.NaN : GameStats.amps(bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW));
         long charge = bm == null ? -1 : bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER);
@@ -616,6 +738,7 @@ public final class StatsView extends FrameLayout {
         if (!Float.isNaN(amps)) ampsAvg = Float.isNaN(ampsAvg) ? amps : ampsAvg + (amps - ampsAvg) * 0.3f;   // about 6 s to settle
         float w = GameStats.watts(ampsAvg, mv);
         mBat.set(level / 100f, level <= 15 ? warnRed : level <= 30 ? warnYellow : good);
+        iconTint(StatsConfig.BAT, level <= 15 ? warnRed : level <= 30 ? warnYellow : good);
         int left = charging ? -1 : GameStats.minutesLeftAt(charge, ampsAvg);
         if (!charging && left < 0) left = GameStats.minutesLeft(level, GameStats.drainPerHour(batFrom, batFromAt, level, now));
         String until = charging || left < 0 ? "" : GameStats.shortDuration(left);
@@ -662,7 +785,7 @@ public final class StatsView extends FrameLayout {
         long now = SystemClock.elapsedRealtime();
         int[] at = shift ? GameStats.orbit(now - startedAt) : new int[] {0, 0};
         if (content.getTranslationX() != at[0] || content.getTranslationY() != at[1]) { content.setTranslationX(at[0]); content.setTranslationY(at[1]); }
-        if (sheetOpen) return;   // the sheet is being read
+        if (sheetOpen || popup != null) return;   // the sheet or a pop-up is being read
         long idle = now - touchedAt;
         if (stage < 2 && autoOff && idle >= GameStats.OFF_MS) {
             stage = 2;
@@ -682,6 +805,101 @@ public final class StatsView extends FrameLayout {
                 ember.setTranslationY(h * 0.2f + r.nextFloat() * (h * 0.6f - s));
             }
         }
+    }
+
+    // ---- the console mode and frame rate cap pop-ups ----
+
+    /** A centred pop-up over the page: Docked / Handheld ({@code mode}) or the frame rate caps (GameControls); a pick applies at once and closes it, a tap outside closes it */
+    private void openControl(View from, boolean mode) {
+        GameControls.Host h = GameControls.host();
+        if (h == null || popup != null) return;
+        Haptics.play(from, Haptics.Word.TICK);
+        touchedAt = SystemClock.elapsedRealtime();
+        Context c = getContext();
+        FrameLayout scrim = new FrameLayout(c);
+        scrim.setBackgroundColor(0x99000000);
+        scrim.setClickable(true);
+        scrim.setOnClickListener(v -> closeControl());
+        LinearLayout box = column(c);
+        int p = PUi.dp(c, 16);
+        box.setPadding(p, p, p, p);
+        box.setBackground(PUi.round(black ? 0xFF1A140E : PUi.col(c, R.color.bn_card), PUi.dp(c, 16), track, PUi.dp(c, 1)));   // a hairline in the tiles' colour sets it off the page
+        box.setClickable(true);   // a tap on the box is not a tap outside
+        box.addView(section(c, mode ? "CONSOLE MODE" : "FRAME RATE CAP"));
+        if (mode) {
+            int cur = h.consoleMode();
+            LinearLayout row = PUi.row(c);
+            String[] names = {"Docked", "Handheld"};
+            for (int i = 0; i < 2; i++) {
+                int m = i;
+                row.addView(choice(c, names[i], m == cur, cur >= 0, v -> { h.consoleMode(m); modeText.setText((m == 0 ? "DOCKED" : "HANDHELD") + " \u25BE"); closeControl(); }), weighted(c, i));
+            }
+            PUi.add(box, row, 8);
+            if (cur < 0) { TextView n = PUi.small(c, "This game's Resolution sets the mode (Game settings)."); n.setTextColor(labelCol); PUi.add(box, n, 8); }
+        } else {
+            int[] caps = h.caps();
+            int cur = h.cap();
+            LinearLayout row = null;
+            for (int i = 0; i < caps.length; i++) {
+                if (i % 3 == 0) { row = PUi.row(c); PUi.add(box, row, i == 0 ? 8 : 6); }
+                int v0 = caps[i];
+                row.addView(choice(c, h.capLabel(v0), v0 == cur, h.capOffered(v0), v -> {
+                    h.cap(v0);
+                    target.setText(capText(h));
+                    closeControl();
+                    // a pick the game takes only at its next start (to or from Game owned, a limited game's 120): the pop-up opens again with its note,
+                    // "Restart the game to apply 60 fps.", so the game running on at its old rate does not read as the pick not taken
+                    if (h.capRunning() != h.cap()) openControl(from, false);
+                }), weighted(c, i % 3));
+            }
+            for (int i = caps.length % 3; i != 0 && i < 3; i++) {   // the last row's empty places keep the widths; 1 px high: a bare View takes all the height it is offered
+                LinearLayout.LayoutParams lp = weighted(c, i);
+                lp.height = 1;
+                row.addView(new View(c), lp);
+            }
+            String note = h.capNote();
+            if (note != null) { TextView n = PUi.small(c, note); n.setTextColor(labelCol); PUi.add(box, n, 8); }
+        }
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(Math.min(PUi.dp(c, 360), getWidth() - 2 * PUi.dp(c, 24)), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+        scrim.addView(box, lp);
+        popup = scrim;
+        addView(scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    /** The cap pill's text: the cap the game runs at ("120 FPS", "GAME OWNED"), and the picked one while it waits for a restart ("120 \u2192 90 FPS", "60 FPS \u2192 GAME") */
+    private static String capText(GameControls.Host h) {
+        int run = h.capRunning(), picked = h.cap();
+        String a = h.capLabel(run).toUpperCase(Locale.ROOT);
+        if (picked == run || picked == -1) return a;
+        String b = h.capLabel(picked).toUpperCase(Locale.ROOT).replace("GAME OWNED", "GAME");
+        a = a.replace("GAME OWNED", "GAME");
+        if (a.endsWith(" FPS") && b.endsWith(" FPS")) a = a.substring(0, a.length() - 4);   // one unit for both: "120 \u2192 90 FPS"
+        return a + " \u2192 " + b;
+    }
+
+    private void closeControl() {
+        if (popup == null) return;
+        removeView(popup);
+        popup = null;
+        touchedAt = SystemClock.elapsedRealtime();
+    }
+
+    /** One option of a pop-up, in the sheet's PRESET style; {@code enabled} false: greyed out, no tap */
+    private TextView choice(Context c, String label, boolean on, boolean enabled, View.OnClickListener l) {
+        TextView b = PUi.text(c, label, 13, on ? R.color.bn_on_banana : R.color.bn_text, 700);
+        b.setGravity(Gravity.CENTER);
+        b.setSingleLine(true);
+        b.setPadding(PUi.dp(c, 6), PUi.dp(c, 10), PUi.dp(c, 6), PUi.dp(c, 10));
+        b.setBackground(PUi.round(on ? PUi.col(c, R.color.bn_banana) : track, PUi.dp(c, 10), 0, 0));
+        if (!enabled) b.setAlpha(0.35f);
+        else b.setOnClickListener(v -> { Haptics.play(v, Haptics.Word.CLICK); l.onClick(v); });
+        return b;
+    }
+
+    private static LinearLayout.LayoutParams weighted(Context c, int i) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        if (i > 0) lp.leftMargin = PUi.dp(c, 6);
+        return lp;
     }
 
     // ---- the settings sheet ----
@@ -868,8 +1086,23 @@ public final class StatsView extends FrameLayout {
         v.setSingleLine(true);
         t.addView(v);
         LinearLayout l = PUi.row(c);
-        View d = dot(c, dotColor);
-        if (bigTiles) { d.setLayoutParams(new LinearLayout.LayoutParams(PUi.dp(c, 8), PUi.dp(c, 8))); d.setBackground(PUi.round(dotColor, PUi.dp(c, 4), 0, 0)); }
+        l.setGravity(Gravity.CENTER_VERTICAL);
+        // the reading's icon in its group's colour (tileIcon), else the dot of that colour (a build without the Peanuts icons)
+        android.graphics.drawable.Drawable ic = Icons.get(c, tileIcon(key), Icons.Ink.NORMAL);
+        View d;
+        if (ic != null) {
+            ic = ic.mutate();
+            ic.setTint(dotColor);
+            ImageView iv = new ImageView(c);
+            iv.setImageDrawable(ic);
+            int s = PUi.dp(c, bigTiles ? 16 : 14);
+            iv.setLayoutParams(new LinearLayout.LayoutParams(s, s));
+            tileIcons.put(key, iv);
+            d = iv;
+        } else {
+            d = dot(c, dotColor);
+            if (bigTiles) { d.setLayoutParams(new LinearLayout.LayoutParams(PUi.dp(c, 8), PUi.dp(c, 8))); d.setBackground(PUi.round(dotColor, PUi.dp(c, 4), 0, 0)); }
+        }
         l.addView(d);
         TextView lab = label(c, labelText);
         if (bigTiles) lab.setTextSize(12);
@@ -879,6 +1112,76 @@ public final class StatsView extends FrameLayout {
         if (meter != null) PUi.add(t, meter, bigTiles ? 8 : 6, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PUi.dp(c, bigTiles ? 5 : 3)));
         tiles.put(key, t);
         return v;
+    }
+
+    /** A tile's icon (Icons, pi_<name>): the frame times a stopwatch, the GPU a graphics card, the CPU a chip, the SoC a thermometer, the battery, the game's
+     *  memory, the run's clock */
+    private static String tileIcon(String key) {
+        switch (key) {
+            case StatsConfig.FRAME: case StatsConfig.LOW: return "frame";
+            case StatsConfig.GPU: return "gpu";
+            case StatsConfig.CPU: return "cpu";
+            case StatsConfig.SOC: return "temp";
+            case StatsConfig.BAT: return "battery";
+            case StatsConfig.RAM: return "storage";
+            case StatsConfig.RUN: return "clock";
+            default: return null;
+        }
+    }
+
+    /** A bento tile: a header (its icon, 26 dp in the tile's colour, and its name) over the number, the line under it and the meter, the header at the top and the
+     *  rest at the bottom so the tall tile is filled; the dot before the line goes (the icon has its colour) */
+    private void bentoTile(Context c, String key, LinearLayout t) {
+        String icon, title;
+        int col;
+        switch (key) {
+            case StatsConfig.SOC: icon = "temp"; title = "TEMP"; col = cSoc; break;
+            case StatsConfig.BAT: icon = "battery"; title = "POWER"; col = cBat; break;
+            case StatsConfig.RAM: icon = "storage"; title = "RAM"; col = cMem; break;
+            case StatsConfig.RUN: icon = "clock"; title = "TIME"; col = PUi.col(c, R.color.bn_banana); break;
+            default: return;   // not one of Simple's: as it is
+        }
+        View value = t.getChildAt(0), line = t.getChildAt(1), meter = t.getChildCount() > 2 ? t.getChildAt(2) : null;
+        ((LinearLayout) line).getChildAt(0).setVisibility(View.GONE);
+        t.removeAllViews();
+        LinearLayout head = PUi.row(c);
+        android.graphics.drawable.Drawable d = Icons.get(c, icon, Icons.Ink.NORMAL);
+        if (d != null) {
+            ImageView iv = new ImageView(c);
+            d = d.mutate();
+            d.setTint(col);
+            iv.setImageDrawable(d);
+            head.addView(iv, new LinearLayout.LayoutParams(PUi.dp(c, 26), PUi.dp(c, 26)));
+            tileIcons.put(key, iv);
+        }
+        head.addView(PUi.spacer(c));
+        TextView h = label(c, title);
+        h.setTextSize(11);
+        head.addView(h, PUi.wrap());
+        t.addView(head, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        t.addView(new View(c), new LinearLayout.LayoutParams(1, 0, 1f));
+        t.addView(value);
+        t.addView(line);
+        if (meter != null) t.addView(meter);
+    }
+
+    /** A card of the Simple bento (build), as the page's card: rounded 20 dp, the card's colour, its hairline (darker on a black page) */
+    private static LinearLayout bentoCard(Context c, boolean black, int cardBg) {
+        LinearLayout k = column(c);
+        k.setBackground(bentoBack(c, black, cardBg));
+        int p = PUi.dp(c, 14);
+        k.setPadding(p, p, p, p);
+        return k;
+    }
+
+    private static android.graphics.drawable.Drawable bentoBack(Context c, boolean black, int cardBg) {
+        return PUi.round(cardBg, PUi.dp(c, 20), black ? 0xFF221A12 : PUi.col(c, R.color.bn_card_stroke), PUi.dp(c, 1));
+    }
+
+    /** A tile's icon in a state's colour (the battery's level, the SoC's heat), as its meter */
+    private void iconTint(String key, int color) {
+        ImageView iv = tileIcons.get(key);
+        if (iv != null) iv.setColorFilter(color);
     }
 
     private static View dot(Context c, int color) {

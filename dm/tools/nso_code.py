@@ -85,8 +85,9 @@ def fde_ranges(img):
     return sorted(out)
 
 
-def data_blocks(img, text_end, md):
-    """Sorted [(start, end)] of the data blocks in text [0, text_end) (see the module docstring). md: a capstone AArch64 disassembler"""
+def data_blocks(img, text_end, md, map_pieces=None):   # PEANUTS(upstream-candidate): map_pieces
+    """Sorted [(start, end)] of the data blocks in text [0, text_end) (see the module docstring). md: a capstone AArch64 disassembler.
+    map_pieces([(s, e)]) → [count_undecodable(img, s, e, md)], optional: counts the pieces elsewhere (patch_nso.py: in worker processes)"""
     # An NRO's text includes its header: the build ID at +0x40 is arbitrary bytes, not instructions. FFX/X-2's magic_0898_2015.nro has a literal ldr x18 there.
     # Keep the entry branch and MOD0 pointer (+0..+8), but never scan the reserved word or NRO0 header (+8..+0x80), even when this gap is shorter than DATA_MIN.
     nro = img[0x10:0x14] == b'NRO0'
@@ -97,12 +98,30 @@ def data_blocks(img, text_end, md):
         last = max(last, e)
     if last < text_end: gaps.append((last, text_end))
     out = [(8, 0x80)] if nro else []
+    gaps = [(s, e) for s, e in (((s + 3) & ~3, e & ~3) for s, e in gaps) if e - s >= DATA_MIN]
+    # PEANUTS(upstream-candidate): the gaps in pieces of at most 4 MB, whose counts add up; map_pieces (patch_nso.py in_parallel) counts them in worker processes
+    pieces = [(p, min(p + 0x400000, e)) for s, e in gaps for p in range(s, e, 0x400000)]
+    counts = map_pieces(pieces) if map_pieces else [count_undecodable(img, p, q, md) for p, q in pieces]
+    per = dict.fromkeys(gaps, 0); k = 0
     for s, e in gaps:
-        s, e = (s + 3) & ~3, e & ~3
-        if e - s < DATA_MIN: continue
-        undecodable = sum(1 for a in range(s, e, 4) if next(md.disasm_lite(bytes(img[a:a + 4]), a), None) is None)
-        if undecodable * 4 > (e - s) // 4: out.append((s, e))
+        for p in range(s, e, 0x400000): per[(s, e)] += counts[k]; k += 1
+    for s, e in gaps:
+        if per[(s, e)] * 4 > (e - s) // 4: out.append((s, e))
     return out
+
+
+# PEANUTS(upstream-candidate): the words capstone cannot decode in [s, e), counted in runs. An AArch64 word decodes on its own, so a run of disasm_lite over the
+# range stops exactly at the next undecodable word: the same count as asking word by word, with one call per undecodable word instead of one per word. Before,
+# the per-word calls were 83 % of the rewriter's load phase on Minecraft Dungeons II's main (115 MB of text, 51.7 million calls: 388 of 469 s under cProfile)
+def count_undecodable(img, s, e, md):
+    n, a = 0, s
+    while a < e:
+        end = min(e, a + 0x10000)   # 64 KB at a time: a run's copy of the bytes stays small where data words are dense
+        last = a - 4
+        for last, _, _, _ in md.disasm_lite(bytes(img[a:end]), a): pass
+        a = last + 4
+        if a < end: n += 1; a += 4
+    return n
 
 
 if __name__ == '__main__':

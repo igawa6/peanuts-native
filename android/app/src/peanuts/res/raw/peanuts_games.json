@@ -1,6 +1,6 @@
 {
   "about": "Written by peanuts/scripts/games_catalog.py from peanuts/release-titles.txt, dm/games/<title ID>/game.tsv and peanuts/games.tsv. Do not edit by hand.",
-  "app_version": "0.1.7",
+  "app_version": "0.1.8",
   "readme_order": [
     "01006BB00C6F0000",
     "01008CF01BAAC000",
@@ -60,9 +60,68 @@
     "0100F4300BF2C000",
     "010062E01FE0C000",
     "0100F7E00C70E000",
-    "010065301A2E0000"
+    "010065301A2E0000",
+    "010075101EF84000",
+    "01003FC01670C000",
+    "01009BF0072D4000",
+    "0100300012F2A000",
+    "0100755017EE0000",
+    "010003F003A34000",
+    "0100187003A36000",
+    "0100F9D023176000",
+    "010089B01AB44000",
+    "0100BC0018138000",
+    "0100563010E0C000",
+    "0100739018020000",
+    "010085500130A000",
+    "01006F600FFC8000",
+    "0100A7C01B792000",
+    "01003D100E9C6000",
+    "01003D200BAA2000"
   ],
   "games": [
+    {
+      "title_id": "01003FC01670C000",
+      "name": "13 Sentinels: Aegis Rim",
+      "profile_name": "13 Sentinels: Aegis Rim",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.10"
+        }
+      ],
+      "readme_update": "1.10",
+      "package": "v65536",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/01003FC01670C000/game.tsv",
+      "note": "dm/games/01003FC01670C000/README.md"
+    },
+    {
+      "title_id": "0100300012F2A000",
+      "name": "Advance Wars 1+2: Re-Boot Camp",
+      "profile_name": "Advance Wars 1+2: Re-Boot Camp",
+      "builds": [
+        {
+          "version": "v0",
+          "number": 0,
+          "display": "1.0.0"
+        }
+      ],
+      "readme_update": "1.0.0",
+      "package": "v0",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/0100300012F2A000/game.tsv",
+      "note": "dm/games/0100300012F2A000/README.md"
+    },
     {
       "title_id": "01006F8002326000",
       "name": "Animal Crossing: New Horizons",
@@ -100,6 +159,27 @@
       "contributors": [],
       "profile": "dm/games/01007300020FA000/game.tsv",
       "note": "dm/games/01007300020FA000/README.md"
+    },
+    {
+      "title_id": "01009BF0072D4000",
+      "name": "Captain Toad: Treasure Tracker",
+      "profile_name": "Captain Toad: Treasure Tracker",
+      "builds": [
+        {
+          "version": "v393216",
+          "number": 393216,
+          "display": "1.4.2"
+        }
+      ],
+      "readme_update": "1.4.2",
+      "package": "v393216",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/01009BF0072D4000/game.tsv",
+      "note": "dm/games/01009BF0072D4000/README.md"
     },
     {
       "title_id": "01009720213B0000",
@@ -367,6 +447,27 @@
       "note": "dm/games/0100C49025D3E000/README.md"
     },
     {
+      "title_id": "0100755017EE0000",
+      "name": "FANTASY LIFE i: The Girl Who Steals Time",
+      "profile_name": "FANTASY LIFE i: The Girl Who Steals Time",
+      "builds": [
+        {
+          "version": "v524288",
+          "number": 524288,
+          "display": "1.5.0"
+        }
+      ],
+      "readme_update": "1.5.0",
+      "package": "v524288",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "tapionallanaire"
+      ],
+      "profile": "dm/games/0100755017EE0000/game.tsv",
+      "note": "dm/games/0100755017EE0000/README.md"
+    },
+    {
       "title_id": "0100606026F12000",
       "name": "FINAL FANTASY RESONANCE",
       "profile_name": "FINAL FANTASY RESONANCE",
@@ -506,6 +607,69 @@
       "note": "dm/games/01006B601380E000/README.md"
     },
     {
+      "title_id": "0100739018020000",
+      "name": "LEGO 2K Drive",
+      "profile_name": "LEGO 2K Drive",
+      "builds": [
+        {
+          "version": "v1114112",
+          "number": 1114112,
+          "display": "1.17"
+        }
+      ],
+      "readme_update": "1.17",
+      "package": "v1114112",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/0100739018020000/game.tsv",
+      "note": "dm/games/0100739018020000/README.md"
+    },
+    {
+      "title_id": "010085500130A000",
+      "name": "LEGO CITY UNDERCOVER",
+      "profile_name": "LEGO CITY UNDERCOVER",
+      "builds": [
+        {
+          "version": "v196608",
+          "number": 196608,
+          "display": "1.0.3"
+        }
+      ],
+      "readme_update": "1.0.3",
+      "package": "v196608",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/010085500130A000/game.tsv",
+      "note": "dm/games/010085500130A000/README.md"
+    },
+    {
+      "title_id": "01006F600FFC8000",
+      "name": "LEGO MARVEL Super Heroes",
+      "profile_name": "LEGO MARVEL Super Heroes",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.0.1"
+        }
+      ],
+      "readme_update": "1.0.1",
+      "package": "v65536",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/01006F600FFC8000/game.tsv",
+      "note": "dm/games/01006F600FFC8000/README.md"
+    },
+    {
       "title_id": "0100DCA0064A6000",
       "name": "Luigi's Mansion 3",
       "profile_name": "Luigi's Mansion 3",
@@ -568,6 +732,27 @@
       "contributors": [],
       "profile": "dm/games/010093801237C000/game.tsv",
       "note": "dm/games/010093801237C000/README.md"
+    },
+    {
+      "title_id": "0100A7C01B792000",
+      "name": "Minecraft Dungeons II",
+      "profile_name": "Minecraft Dungeons II",
+      "builds": [
+        {
+          "version": "v131072",
+          "number": 131072,
+          "display": "1.1.3.0"
+        }
+      ],
+      "readme_update": "1.1.3.0",
+      "package": "v131072",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/0100A7C01B792000/game.tsv",
+      "note": "dm/games/0100A7C01B792000/README.md"
     },
     {
       "title_id": "0100A0F00DA68000",
@@ -743,6 +928,27 @@
       "note": "dm/games/0100F43008C44000/README.md"
     },
     {
+      "title_id": "01003D200BAA2000",
+      "name": "Pokémon Mystery Dungeon: Rescue Team DX",
+      "profile_name": "Pokémon Mystery Dungeon: Rescue Team DX",
+      "builds": [
+        {
+          "version": "v0",
+          "number": 0,
+          "display": "1.0.0"
+        }
+      ],
+      "readme_update": "1.0.0",
+      "package": "v0",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "shamonj03"
+      ],
+      "profile": "dm/games/01003D200BAA2000/game.tsv",
+      "note": "dm/games/01003D200BAA2000/README.md"
+    },
+    {
       "title_id": "0100A3D008C5C000",
       "name": "Pokémon Scarlet",
       "profile_name": "Pokémon Scarlet",
@@ -838,6 +1044,48 @@
       "note": "dm/games/01008F6008C5E000/README.md"
     },
     {
+      "title_id": "0100187003A36000",
+      "name": "Pokémon: Let's Go, Eevee!",
+      "profile_name": "Pokémon: Let's Go, Eevee!",
+      "builds": [
+        {
+          "version": "v131072",
+          "number": 131072,
+          "display": "1.0.2"
+        }
+      ],
+      "readme_update": "1.0.2",
+      "package": "v131072",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "fireworksordie"
+      ],
+      "profile": "dm/games/0100187003A36000/game.tsv",
+      "note": "dm/games/0100187003A36000/README.md"
+    },
+    {
+      "title_id": "010003F003A34000",
+      "name": "Pokémon: Let's Go, Pikachu!",
+      "profile_name": "Pokémon: Let's Go, Pikachu!",
+      "builds": [
+        {
+          "version": "v131072",
+          "number": 131072,
+          "display": "1.0.2"
+        }
+      ],
+      "readme_update": "1.0.2",
+      "package": "v131072",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "fireworksordie"
+      ],
+      "profile": "dm/games/010003F003A34000/game.tsv",
+      "note": "dm/games/010003F003A34000/README.md"
+    },
+    {
       "title_id": "010099A00BC1E000",
       "name": "Resident Evil 4",
       "profile_name": "Resident Evil 4",
@@ -855,6 +1103,27 @@
       "contributors": [],
       "profile": "dm/games/010099A00BC1E000/game.tsv",
       "note": "dm/games/010099A00BC1E000/README.md"
+    },
+    {
+      "title_id": "010089B01AB44000",
+      "name": "SPY×ANYA: Operation Memories",
+      "profile_name": "SPY×ANYA Operation Memories",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.0.1"
+        }
+      ],
+      "readme_update": "1.0.1",
+      "package": "v65536",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "nomnomab"
+      ],
+      "profile": "dm/games/010089B01AB44000/game.tsv",
+      "note": "dm/games/010089B01AB44000/README.md"
     },
     {
       "title_id": "010065301A2E0000",
@@ -923,6 +1192,27 @@
       "note": "dm/games/0100DAE01E4C8000/README.md"
     },
     {
+      "title_id": "010075101EF84000",
+      "name": "Stray",
+      "profile_name": "Stray",
+      "builds": [
+        {
+          "version": "v0",
+          "number": 0,
+          "display": "1.0.0"
+        }
+      ],
+      "readme_update": "1.0.0",
+      "package": "v0",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "dnyan007"
+      ],
+      "profile": "dm/games/010075101EF84000/game.tsv",
+      "note": "dm/games/010075101EF84000/README.md"
+    },
+    {
       "title_id": "010028600EBDA000",
       "name": "Super Mario 3D World + Bowser's Fury",
       "profile_name": "Super Mario 3D World + Bowser's Fury",
@@ -980,6 +1270,27 @@
       "contributors": [],
       "profile": "dm/games/0100000000010000/game.tsv",
       "note": "dm/games/0100000000010000/README.md"
+    },
+    {
+      "title_id": "0100BC0018138000",
+      "name": "Super Mario RPG",
+      "profile_name": "Super Mario RPG",
+      "builds": [
+        {
+          "version": "v65536",
+          "number": 65536,
+          "display": "1.0.1"
+        }
+      ],
+      "readme_update": "1.0.1",
+      "package": "v65536",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/0100BC0018138000/game.tsv",
+      "note": "dm/games/0100BC0018138000/README.md"
     },
     {
       "title_id": "0100DE501433A000",
@@ -1103,6 +1414,25 @@
       "note": "dm/games/0100F2C0115B6000/README.md"
     },
     {
+      "title_id": "01003D100E9C6000",
+      "name": "The Witcher 3: Wild Hunt — Complete Edition",
+      "profile_name": "The Witcher 3: Wild Hunt — Complete Edition",
+      "builds": [
+        {
+          "version": "v458752",
+          "number": 458752,
+          "display": "4.04b"
+        }
+      ],
+      "readme_update": "4.04b",
+      "package": "v458752",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [],
+      "profile": "dm/games/01003D100E9C6000/game.tsv",
+      "note": "dm/games/01003D100E9C6000/README.md"
+    },
+    {
       "title_id": "010051F0207B2000",
       "name": "Tomodachi Life: Living the Dream",
       "profile_name": "Tomodachi Life: Living the Dream",
@@ -1184,6 +1514,48 @@
       "contributors": [],
       "profile": "dm/games/010069401ADB8000/game.tsv",
       "note": "dm/games/010069401ADB8000/README.md"
+    },
+    {
+      "title_id": "0100F9D023176000",
+      "name": "Viewfinder",
+      "profile_name": "Viewfinder",
+      "builds": [
+        {
+          "version": "v0",
+          "number": 0,
+          "display": "1.0.0"
+        }
+      ],
+      "readme_update": "1.0.0",
+      "package": "v0",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "dnyan007"
+      ],
+      "profile": "dm/games/0100F9D023176000/game.tsv",
+      "note": "dm/games/0100F9D023176000/README.md"
+    },
+    {
+      "title_id": "0100563010E0C000",
+      "name": "WarioWare: Get It Together!",
+      "profile_name": "WarioWare: Get It Together!",
+      "builds": [
+        {
+          "version": "v0",
+          "number": 0,
+          "display": "1.0.0"
+        }
+      ],
+      "readme_update": "1.0.0",
+      "package": "v0",
+      "companion": false,
+      "since": "0.1.8",
+      "contributors": [
+        "intermission88"
+      ],
+      "profile": "dm/games/0100563010E0C000/game.tsv",
+      "note": "dm/games/0100563010E0C000/README.md"
     },
     {
       "title_id": "0100453019AA8000",

@@ -50,9 +50,7 @@ final class CheatsUi {
         Ui.Setting sw = new Ui.Setting(a, "🧪", a.getString(R.string.cheats_title), null).toggle(a, Prefs.cheats(a, id), (b, on) -> Prefs.cheats(a, id, on));
         sw.badge("Experimental").says(a.getString(R.string.cheats_on), a.getString(R.string.cheats_off));
         add.accept(sw);
-        int n = Cheats.importedFiles(folder(a, id)).size();
-        add.accept(new Ui.Setting(a, "📄", a.getString(R.string.cheats_files_title), v -> sheet(a, g, again))
-                .value(n == 0 ? "The game's own" : "The game's own and " + n + " imported").note(a.getString(R.string.cheats_files_note)).chevron(a).sub());
+        add.accept(CheatsBridge.filesRow(a, g, again));   // PEANUTS: the game's cheat sources (.txt, .zip, a folder) in place of imported/: was the row with sheet(a, g, again), "The game's own and N imported" and R.string.cheats_files_note
     }
 
     /** The Cheat files sheet: one line per file, a tap on an imported one offers Remove; then the three actions */

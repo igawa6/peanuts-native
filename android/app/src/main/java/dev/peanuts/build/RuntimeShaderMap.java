@@ -32,13 +32,13 @@ public final class RuntimeShaderMap {
                     String[] cols = line.split("\t");
                     if (cols.length >= 5 && cols[4].startsWith("/glslc_capture/")) {
                         try { keys.add(Long.parseUnsignedLong(cols[3], 16)); }
-                        catch (NumberFormatException ex) { throw new IOException("Invalid run-time shader key in " + name, ex); }
+                        catch (NumberFormatException ex) { throw new IOException("The app's list for this game is damaged. Install the app again, then tap Retry.\nInvalid run-time shader key in " + name, ex); }
                     }
                 }
                 return keys;
             }
         }
-        throw new IOException("The app's shader profile is missing: " + titleId + ". Reinstall the app and tap Build again.");
+        throw new IOException("The app's list for this game is missing. Install the app again, then tap Retry.\n" + titleId);
     }
 
     /**
@@ -57,7 +57,7 @@ public final class RuntimeShaderMap {
                     if (cols.length < 2 || !cols[0].equals("capture_keys")) continue;
                     String keys = cols[1].trim();
                     // one environment line of button steps only: no touch of the env file's own syntax
-                    if (!keys.matches("[A-Za-z0-9:+~*/.,-]{1,256}")) throw new IOException("Invalid capture_keys in " + name);
+                    if (!keys.matches("[A-Za-z0-9:+~*/.,-]{1,256}")) throw new IOException("The app's list for this game is damaged. Install the app again, then tap Retry.\nInvalid capture_keys in " + name);
                     return keys;
                 }
                 return "";

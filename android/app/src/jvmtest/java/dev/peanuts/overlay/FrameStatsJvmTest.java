@@ -1,4 +1,4 @@
-package dev.peanuts.overlay;
+package dev.peanuts.overlay;   // PEANUTS: the stats temperature labelled TEMP (0.1.8)
 
 public final class FrameStatsJvmTest {
     private static void check(boolean ok, String what) { if (!ok) throw new AssertionError(what); }
@@ -52,7 +52,7 @@ public final class FrameStatsJvmTest {
                 && FrameStats.labelColor("1%L") == 0xFF7FD4FF, "label colour: FPS group");
         check(FrameStats.labelColor("GPU") == 0xFFA5E37A, "label colour: GPU");
         check(FrameStats.labelColor("CPU") == 0xFF5FA8FF, "label colour: CPU");
-        check(FrameStats.labelColor("SOC") == 0xFFFF9E5E && FrameStats.labelColor("BAT") == 0xFFFF9E5E, "label colour: SOC and BAT");
+        check(FrameStats.labelColor("TEMP") == 0xFFFF9E5E && FrameStats.labelColor("BAT") == 0xFFFF9E5E, "label colour: TEMP and BAT");
         check(FrameStats.labelColor("GAME") == 0xFFE58CFF && FrameStats.labelColor("RAM") == 0xFFE58CFF, "label colour: GAME and RAM");
         check(FrameStats.labelColor("DRV") == 0xFFB0B0B0 && FrameStats.labelColor("X") == 0xFFB0B0B0, "label colour: DRV and unknown grey");
         check(FrameStats.batteryLevel(30f) == 0 && FrameStats.batteryLevel(42f) == 0 && FrameStats.batteryLevel(Float.NaN) == 0, "bat: normal up to 42");

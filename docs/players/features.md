@@ -1,6 +1,6 @@
 # Features
 
-Back to the [main page](../../.github/README.md).
+Back to the [main page](../banana-native-README.github.md). <!-- PEANUTS: upstream's .github/README.md and README.md are kept in docs/ (banana-native-README*.md) -->
 
 - **Frame generation (LSFG):** Lossless Scaling's frame generation is built in: 2x, 3x or 4x, or a target of 60 / 90 /
   120 fps, with some added latency. It needs your own `Lossless.dll` (put it in `Download/` or pick it in Settings ›

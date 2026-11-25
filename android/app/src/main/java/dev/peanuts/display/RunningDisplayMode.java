@@ -20,11 +20,30 @@ public final class RunningDisplayMode {
             }
             selected = RunningDisplayPolicy.mode(RunningDisplayPolicy.effectiveCap(status), frameGenerationEnabled,
                     current.getPhysicalWidth(), current.getPhysicalHeight(), modes);
+            if (selected == 0 && frameGenerationEnabled == 0) selected = tv(activity, display, modes);
         }
         apply(activity, selected);
     }
 
-    public void clear(Activity activity) { apply(activity, 0); }
+    /** Released while the game is paused or in the background; on a TV the 60 Hz request stays, so the TV does not switch its mode back and forth (each switch is a moment of black) */
+    public void clear(Activity activity) {
+        Display display = activity.getDisplay();
+        apply(activity, display == null || activity.isFinishing() ? 0 : tv(activity, display, null));
+    }
+
+    /** Play on the TV (#358): 60 Hz on a TV or monitor that runs 30 or 50 Hz (RunningDisplayPolicy.tvMode); 0 elsewhere */
+    private static int tv(Activity activity, Display display, RunningDisplayPolicy.Mode[] modes) {
+        if (!dev.peanuts.Screens.onTv(activity)) return 0;
+        Display.Mode current = display.getMode();
+        if (modes == null) {
+            Display.Mode[] supported = display.getSupportedModes();
+            modes = new RunningDisplayPolicy.Mode[supported.length];
+            for (int i = 0; i < supported.length; i++) modes[i] = new RunningDisplayPolicy.Mode(supported[i].getModeId(), supported[i].getPhysicalWidth(), supported[i].getPhysicalHeight(), supported[i].getRefreshRate());
+        }
+        int requested = activity.getWindow().getAttributes().preferredDisplayModeId;
+        if (requested != 0) for (RunningDisplayPolicy.Mode m : modes) if (m.id == requested && RunningDisplayPolicy.evenFor60(m.hz)) return requested;   // the display already runs what was asked
+        return RunningDisplayPolicy.tvMode(current.getPhysicalWidth(), current.getPhysicalHeight(), current.getRefreshRate(), modes);
+    }
 
     /** Release the window request before an in-app FG enable; the display switch itself is asynchronous. */
     public static void beforeFrameGeneration(Context context, boolean enabled) {

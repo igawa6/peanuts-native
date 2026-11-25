@@ -63,8 +63,9 @@ class Logic(unittest.TestCase):
     def test_steps_in_words(self):
         self.assertEqual(self.java('step', 'unpack/Game [0100].nsz', 37, 100), 'Unpacking Game [0100].nsz: 37 %')
         self.assertEqual(self.java('step', 'check/Game.xcz', 1, 8), 'Checking Game.xcz: 12 %')
-        self.assertEqual(self.java('step', 'base/romfs', 50, 200), 'base/romfs: 25 %')   # the writer's steps as they were
-        self.assertEqual(self.java('step', 'probe', 0, 0), 'probe')
+        self.assertEqual(self.java('step', 'base/romfs', 50, 200), 'Importing the game files: 25 %')   # the writer's steps take turns: one sentence for all
+        self.assertEqual(self.java('step', 'update/65536/exefs', 1, 2), 'Importing the game files: 50 %')
+        self.assertEqual(self.java('step', 'probe', 0, 0), 'Reading the game files')
 
     def test_the_bar(self):
         # 6 GB unpacked before a 12 GB .nup: a third of the import's share (44 of 45) for unpacking, the rest for the writer; it never goes back

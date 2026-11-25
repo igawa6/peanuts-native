@@ -32,6 +32,10 @@ public final class Bridge {
     public static native int frameTimes(float[] out);
     /** Where the frame-time bars sit in the overlay's top-right bitmap, in its pixels: the host paints a new bar there on every game frame (dm/peanuts/peanuts_graph.c); 0 size = none */
     public static native void graphRect(int x, int y, int w, int h);
+    /** The columns the host splits that box into, 1..48 (dm/peanuts/peanuts_graph.c pn_graph_bars): the table's 48, the pill's fewer */
+    public static native void graphBars(int n);
+    /** On-pace bars light grey (the pill) or green (the table): peanuts_graph.c pn_graph_plain */
+    public static native void graphPlain(boolean on);
     /** The corner of the screen for the overlay's stats block (slot 1), as dm/gfx/vk_android/vka_ovl.h: 0 top left, 1 top right, 2 bottom left, 3 bottom right (dm/peanuts/peanuts_graph.c) */
     public static native void overlayCorner(int corner);
 

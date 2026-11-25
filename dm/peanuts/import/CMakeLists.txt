@@ -80,6 +80,12 @@ else()
     target_link_libraries(ncz_test PRIVATE Threads::Threads ZLIB::ZLIB ${CMAKE_DL_LIBS})
     target_compile_options(ncz_test PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation)
     add_test(NAME ncz_test COMMAND ncz_test)
+    # A game card's XCI with update, normal, secure and logo partitions (GitHub issue #280): the game is taken from secure only; no game data
+    add_executable(xci_test ${CMAKE_CURRENT_SOURCE_DIR}/tests/xci_test.c ${NXIMPORT_SOURCES})
+    target_include_directories(xci_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(xci_test PRIVATE Threads::Threads ZLIB::ZLIB ${CMAKE_DL_LIBS})
+    target_compile_options(xci_test PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation)
+    add_test(NAME xci_test COMMAND xci_test)
   endif()
   # The RomFS read straight from dumps at run time (dm/peanuts/peanuts_nsp.c; peanuts/docs/NSP-DIRECT.md), on x86-64 Linux:
   #   nsp_test     no game data: dumps written by the test with made-up keys (tests/nsp_fixture.h), read through the importer, through the host's file system

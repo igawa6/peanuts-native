@@ -128,6 +128,7 @@ public final class MiiEditor extends Activity {
         m = index >= 0 ? all.get(index).copy(all.get(index).name) : MiiStore.fromDefault(0, "Mii " + (all.size() + 1));
         if (index >= 0) keepId(m, all.get(index));
         original = MiiStore.charInfo(m);
+        restore(saved);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         root.setBackgroundColor(PUi.col(this, R.color.bn_bg));
@@ -142,6 +143,32 @@ public final class MiiEditor extends Activity {
 
     /** A copy keeps its create ID: the edited Mii stays the same Mii for games and pictures */
     private static void keepId(MiiStore.Mii copy, MiiStore.Mii from) { System.arraycopy(from.createId, 0, copy.createId, 0, 16); }
+
+    // ---- Built again by Android ----
+    // The device turned, dark mode switched or the app's process ended in the background: the edits, Undo and the tab come back as they were (MiiEditState)
+
+    @Override protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putByteArray("mii", MiiEditState.mii(m));
+        out.putByteArray("original", original);
+        out.putByteArray("undo", MiiEditState.undo(undo));
+        out.putInt("tab", tab);
+        out.putString("group", group);
+        out.putBoolean("more", more);
+    }
+
+    private void restore(Bundle saved) {
+        MiiStore.Mii kept = saved != null ? MiiEditState.mii(saved.getByteArray("mii")) : null;
+        if (kept == null) return;
+        m = kept;
+        byte[] o = saved.getByteArray("original");
+        if (o != null && o.length == MiiStore.CHARINFO) original = o;
+        undo.clear();
+        undo.addAll(MiiEditState.undo(saved.getByteArray("undo")));   // newest first, as push keeps them
+        tab = Math.max(0, Math.min(TABS.length - 1, saved.getInt("tab")));
+        group = saved.getString("group");
+        more = saved.getBoolean("more");
+    }
 
     @Override protected void onStart() { super.onStart(); bottom.start(); }
     @Override protected void onStop() { bottom.stop(); super.onStop(); }

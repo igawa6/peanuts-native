@@ -15,12 +15,10 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 import dev.nxnative.android.R;
 import dev.peanuts.mii.MiiStore;
@@ -203,22 +201,11 @@ public final class UsersPage {
 
     static String savesText(int n) { return n == 0 ? "No saves yet" : n == 1 ? "1 save" : n + " saves"; }
 
-    private static final Pattern GAME = Pattern.compile("[0-9A-Fa-f]{16}");
-
-    /** How many games keep a save for this user: the first user's are the games' own save folders, another's those ending in _user_ and its ID */
-    static int saves(Context c, String uid) {
-        File base = new File(c.getExternalFilesDir(null), "saves");
-        String[] all = base.list();
-        if (all == null) return 0;
-        int n = 0;
-        for (String d : all) {
-            boolean mine = UsersPort.FIRST.equals(uid) ? GAME.matcher(d).matches() : d.length() == 16 + 6 + 32 && GAME.matcher(d.substring(0, 16)).matches() && d.endsWith("_user_" + uid);
-            if (!mine) continue;
-            String[] in = new File(base, d).list();
-            if (in != null && in.length > 0) n++;
-        }
-        return n;
-    }
+    /**
+     * How many games of the library keep a save for this user: their folder of each game's save (UserSaves.of: the game's own save folder for the first user, the
+     * folder beside it for another; a save folder picked in a game's Folders as well), a file in it
+     */
+    static int saves(Context c, String uid) { return dev.nxnative.android.UserSaves.of(c, uid).size(); }
 
     // ---- The bottom screen: the focused user ----
 
@@ -247,7 +234,8 @@ public final class UsersPage {
         chips.setPadding(0, PUi.dp(c, 8), 0, 0);
         boolean starts = u.uid.equals(UsersPort.defaultUid(a));
         if (starts && users.size() > 1) chips.addView(PUi.chip(c, "Playing now"), chipLp(c));
-        chips.addView(PUi.chip(c, savesText(saves(a, u.uid))), chipLp(c));
+        List<dev.nxnative.android.UserSaves.Saved> mine = dev.nxnative.android.UserSaves.of(a, u.uid);
+        chips.addView(PUi.chip(c, savesText(mine.size())), chipLp(c));
         text.addView(chips);
         card.addView(text, PUi.weight());
         box.addView(card, PUi.fill());
@@ -258,7 +246,28 @@ public final class UsersPage {
         else PUi.add(box, PUi.pair(c, rename, PUi.button(c, "Remove user", PUi.Kind.DANGER, Feel.button(v -> remove(u)))), 8);
         if (!starts && users.size() > 1)
             PUi.add(box, PUi.button(c, "Switch to " + u.name, PUi.Kind.SOFT, Feel.button(v -> { UsersPort.setDefault(a, u.uid); refresh(); })), 8);   // the user playing now: games start as them
+        if (!mine.isEmpty()) PUi.add(box, PUi.button(c, "Show saves", PUi.Kind.TONAL, Feel.button(v -> showSaves(u, mine))), 8);   // each game's Saves tab, this user picked
         return box;
+    }
+
+    /** The games this user has a save of, with its size (read off the main thread first); one opens that game's page on its Saves tab with this user picked */
+    private void showSaves(UsersPort.User u, List<dev.nxnative.android.UserSaves.Saved> mine) {
+        new Thread(() -> {
+            String[] items = new String[mine.size()];
+            for (int i = 0; i < items.length; i++) items[i] = mine.get(i).name + "\n" + dev.nxnative.android.UserSaves.size(dev.nxnative.android.UserSaves.bytes(mine.get(i).dir));
+            a.runOnUiThread(() -> {
+                if (a.isFinishing() || a.isDestroyed()) return;
+                AlertDialog d = new AlertDialog.Builder(a).setTitle(u.name + "'s saves")
+                        .setItems(items, (x, w) -> {
+                            Feel.picked(x);
+                            if (!dev.nxnative.android.UserSaves.open(a, mine.get(w).titleId, u.uid))
+                                Toast.makeText(a, mine.get(w).name + " is not in the library", Toast.LENGTH_SHORT).show();
+                        })
+                        .setNegativeButton("Cancel", null).create();
+                Feel.dialog(d);
+                d.show();
+            });
+        }, "pn-user-saves").start();
     }
 
     private static LinearLayout.LayoutParams chipLp(Context c) {
@@ -268,8 +277,8 @@ public final class UsersPage {
     }
 
     private void remove(UsersPort.User u) {
-        PUi.confirmDanger(a, "Remove " + u.name + "?", "Games no longer offer this user. Their saves stay on the phone and come back if the user is added again with the same ID, "
-                + "which a new user never has.", "Remove", () -> {
+        PUi.confirmDanger(a, "Remove " + u.name + "?", "Games no longer offer this user. Their saves stay on the phone: each game's Saves tab shows them as a removed "
+                + "user's, to back up, copy to another user or delete.", "Remove", () -> {
             UsersPort.remove(a, u.uid);
             try { UserPictures.remove(a.getFilesDir(), u.uid); } catch (IOException ignored) { }
             UserImages.removed(a, u.uid);
@@ -298,13 +307,13 @@ public final class UsersPage {
 
     private String whoLabel() {
         if (users.size() < 2) return "Asks when there are two or more users";
-        if (UsersPrefs.whoMode(a) == WhoPlays.ASK) return "Asks when the app opens";
+        if (UsersPrefs.whoMode(a) == WhoPlays.ASK) return "Asks when the app opens and before games from shortcuts";
         UsersPort.User d = find(UsersPort.defaultUid(a));
         return "Don't ask, " + (d != null ? d.name : users.get(0).name) + " plays";
     }
 
     private void whoPlays() {
-        String[] items = {"Ask when the app opens", "Don't ask"};
+        String[] items = {"Ask when the app opens and before games from shortcuts or frontends", "Don't ask"};   // one setting for both questions (WhoPlays)
         AlertDialog d = new AlertDialog.Builder(a).setTitle("Who's playing?")
                 .setSingleChoiceItems(items, UsersPrefs.whoMode(a), (x, w) -> { UsersPrefs.whoMode(a, w); Feel.picked(x); x.dismiss(); refresh(); })
                 .setNegativeButton("Cancel", null).create();

@@ -256,7 +256,7 @@ final class Updater {
     /** Settings › Updates › Check for updates: the release page when a newer release exists, else "You're up to date" */
     static void checkNow(Activity a) {
         if (!available(a)) {
-            msg(a, "Updates", "Only the release app (dev.bananative.android) checks for updates. A test app checks when update.txt in its files folder names repo= or url=.");
+            msg(a, "Updates", "Only the release app checks for updates. A test app checks when update.txt in its files folder names repo= or url=.");   // PEANUTS: Peanuts' own words on its screens (0.1.8)
             return;
         }
         int[] cur = UpdateCheck.appVersion(version(a));

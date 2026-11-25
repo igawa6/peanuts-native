@@ -133,9 +133,9 @@ public final class ModdedBuild {
     public static String variantProblem(File variantPack) {
         if (!new File(variantPack, "pack.tsv").isFile()) return NOT_BUILT;
         List<String> modules = normalModules(variantPack);
-        if (modules == null || modules.isEmpty()) return "its pack has no module list";
+        if (modules == null || modules.isEmpty()) return "its build is not complete";
         for (String m : modules)
-            if (!new File(variantPack, m + ".patched.bin").isFile() || !new File(variantPack, m + ".android.key").isFile()) return "its build did not finish (" + m + ")";
+            if (!new File(variantPack, m + ".patched.bin").isFile() || !new File(variantPack, m + ".android.key").isFile()) return "its build did not finish: " + m;
         return null;
     }
 
@@ -214,9 +214,9 @@ public final class ModdedBuild {
             if (name.equals("main") || mod == null) continue;
             boolean added = name.equals("subsdk9") && (profileModules == null || !profileModules.contains(name));
             if (!added && !containsExlaunchMarker(new File(mod.exefs(), name))) continue;
-            out.add(name + " (from " + mod.name + ") looks like an exlaunch-style hook module. Its runtime hooks will not take effect on this host: "
-                    + "the main module is read-only once rewritten, and svcSetProcessMemoryPermission (the SVC exlaunch's hooking depends on) is not "
-                    + "implemented. The module will load and run on its own, but whatever it meant to patch into main at run time will not happen.");
+            out.add(name + " (from " + mod.name + ") looks like an exlaunch-style hook module. Its hooks do not work in this app: it loads and runs, "
+                    + "but what it means to change in the game's code while the game runs does not happen.\n"
+                    + "Technical: main is read-only once converted, and svcSetProcessMemoryPermission, which exlaunch's hooking needs, is not implemented.");
         }
         return out.isEmpty() ? null : String.join("\n\n", out);
     }

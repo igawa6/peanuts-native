@@ -1,6 +1,6 @@
 # Peanuts Native FAQ
 
-For version 0.1.7. Labels in **bold** are the words the app shows. "Settings" is the gear button on the home screen. "Hold the cover" means a long press on a game's cover (or Y on a controller).
+For version 0.1.8. Labels in **bold** are the words the app shows. "Settings" is the gear button on the home screen. "Hold the cover" means a long press on a game's cover (or Y on a controller).
 
 ## Quick answers
 
@@ -23,7 +23,7 @@ You need three things from your own console first: your game dumps, your `prod.k
 5. Tap **Firmware**, then **Folder** or **Zip file**, and pick your firmware dump. The row reads **Reading the firmware…** and then **Firmware added from …**. Do this after the keys: the fonts cannot be read without them.
 6. Tap **Show my games**. You should see a grid of covers. A game that can be built has a **Build** label on its cover.
 7. Optional: install a GPU driver in Settings › Graphics › **GPU driver**. See [Which driver is recommended?](#which-driver-is-recommended)
-8. Tap a cover. Its sheet opens with the rows **Base**, **Update**, **DLC** and **Companion**. Check them and tap **Build**. Android asks to allow notifications: allow it, so you can see the progress outside the app.
+8. Tap a cover. Its sheet opens with the rows **Base**, **Update**, **DLC** and **Dual-screen companion**. Check them and tap **Build**. Android asks to allow notifications: allow it, so you can see the progress outside the app.
 9. Wait. The cover shows **Building · N %**. You can leave the app.
 10. When the build ends you see **… is ready to play.** and the cover gets a green check. Tap the cover to play.
 
@@ -54,6 +54,8 @@ The documented requirement is 12 GB or more. On 8 GB devices, building large gam
 Plan for the size of the game plus a few GB. Before a build, the game's sheet shows **Needs about … free (a rough estimate)**, or a **Low disk space** warning. The estimate is rough, and a low-space warning does not block the build.
 
 A game compressed as a solid `.nsz` needs about its size once more while it is imported, for the temporary copy (see [Can I build from NSZ or XCZ files?](#can-i-build-from-nsz-or-xcz-files)). The sheet says how much of the estimate that is.
+
+The app also keeps what a build made in its own storage, so that the next build of the game keeps what did not change: at most 4 GB for every game together, the games built longest ago going first, and none that would leave less than 2 GB free. Settings › **Storage** lists it under **Build caches**, one row a game.
 
 ### What do I need from my own console?
 
@@ -148,13 +150,13 @@ Some games also need the fonts to start at all, for example Echoes of Wisdom. If
 2. Add **Keys**, pick the **Game folder**, set **Updates & DLC** if those files are in other folders, and add **Firmware**.
 3. Tap **Show my games**.
 
-Then tap a game's cover to open its sheet. Check the **Base**, **Update**, **DLC** and **Companion** rows and tap **Build**. The build imports the game, prepares it and installs the companion. Only one build runs at a time.
+Then tap a game's cover to open its sheet. Check the **Base**, **Update**, **DLC** and **Dual-screen companion** rows and tap **Build**. The build imports the game, prepares it and installs the companion. Only one build runs at a time.
 
 Later, change the folders in Settings › Library. **Rescan** reads them again.
 
 ### Where does the app look for my games?
 
-In the **Game folder**, the **Update folder**, the **DLC folder** and the **Build folder**, each up to two folders deep. It finds `.nsp`, `.xci`, `.nsz`, `.xcz` and `.nup` files and dump folders. Updates and DLC are matched to their game by title ID, wherever they are in those folders. A file deeper than two folders is not found: move it up, or point the folder setting at it. Mods for other emulators are skipped: folders named `mods`, `load` or `atmosphere`, and folders whose `exefs` has no `main`. To use a mod here, add it on the game's page, see [Mods](#mods).
+In the **Game folder**, the **Update folder**, the **DLC folder** and the **Build folder**, each up to two folders deep. It finds `.nsp`, `.xci`, `.nsz`, `.xcz` and `.nup` files and dump folders: in the dump tools' layout (`base/`, `updates/<version>/`), in the console's layout as OunceCake serves it (`base/program/0/`), and one version's folder (`exefs` and `romfs` at its top). A dump folder's version is its `updates/<version>/`, else the version its `main` was built for, so a game updated on a PC shows as that update. Build prepares a dump from `base/` or `updates/<version>/`: for one version's folder, make a folder named `base` in it and move `exefs` and `romfs` there. Updates and DLC are matched to their game by title ID, wherever they are in those folders. A file deeper than two folders is not found: move it up, or point the folder setting at it. Mods for other emulators are skipped: folders named `mods`, `load` or `atmosphere`, and one version's folder whose `exefs` lacks the game's `main`, `main.npdm` or `sdk` (a mod may bring its own `main`, never `sdk`). To use a mod here, add it on the game's page, see [Mods](#mods).
 
 If the home screen says **No games found in …**, put your files in that folder and tap Settings › Library › **Rescan**.
 
@@ -248,7 +250,7 @@ For a game that is already built, tapping the cover shows the dialog **Game file
 
 ### Which games are supported?
 
-The project's README lists all 59 games included in 0.1.7, the updates each supports and which have an Eden Duo catalog entry.
+The project's README lists all 76 games included in 0.1.8, the updates each supports and which have an Eden Duo catalog entry.
 
 The games tested for 0.1.1 were Link's Awakening, Echoes of Wisdom, Fire Emblem: Three Houses, Fire Emblem Engage, Metroid Dread, Super Mario Odyssey, Mario Kart 8 Deluxe, Animal Crossing: New Horizons, Persona 5 Royal, Castlevania: Belmont's Curse, Octopath Traveler 0, Pokémon Brilliant Diamond, Pokémon Sword and Breath of the Wild (new, little tested). Super Mario Bros. Wonder and Dragon Quest III HD-2D Remake are in the app too, but were not tested on a device yet. 0.1.2 adds Pokémon Shining Pearl, Pokémon Shield, Final Fantasy Resonance, Skyward Sword HD, Pokémon Legends: Arceus and Resident Evil 4, all new and little tested, and Kirby's Return to Dream Land Deluxe, which was run by its contributor on their own AYN Thor only. 0.1.4 adds Crash Team Racing Nitro-Fueled, Kirby and the Forgotten Land, Super Mario 3D World + Bowser's Fury, Chained Echoes, My Time at Sandrock, Monster Sanctuary and Yoru, Tomosu, all new and little tested, and Xenoblade Chronicles X: Definitive Edition as an experiment. Super Mario Bros. Wonder was checked on a device for 0.1.4, on its 1.2.1 update, the only one the app builds now.
 
@@ -257,6 +259,8 @@ The games tested for 0.1.1 were Link's Awakening, Echoes of Wisdom, Fire Emblem:
 0.1.6 adds Unicorn Overlord, Luigi's Mansion 3, Pokémon Legends: Z-A, STORY OF SEASONS: Grand Bazaar, Double Dragon Revive, Trails in the Sky 2nd Chapter, DRAGON BALL: Sparking! ZERO, Pokémon Scarlet, Pokémon Violet, DRAGON BALL Z: KAKAROT + A NEW POWER AWAKENS SET, STEINS;GATE RE:BOOT, NieR:Automata The End of YoRHa Edition and Hyrule Warriors: Age of Calamity. EA Sports FC 27 also supports update 1.8d.f570, Double Dragon Revive supports 1.0.0 and N1.10, and STEINS;GATE RE:BOOT supports 1.0.3 and 1.0.4.
 
 0.1.7 adds Trails in the Sky 1st Chapter, Yoshi's Crafted World, Tetris Effect: Connected, New Pokémon Snap, Digimon Story Time Stranger, Hogwarts Legacy and Star Ocean The Second Story R. Build New Pokémon Snap on the phone: the PC builder cannot build it yet.
+
+0.1.8 adds Stray, 13 Sentinels: Aegis Rim, Captain Toad: Treasure Tracker, Advance Wars 1+2: Re-Boot Camp, FANTASY LIFE i: The Girl Who Steals Time, Pokémon: Let's Go, Pikachu!, Pokémon: Let's Go, Eevee!, Viewfinder, SPY×ANYA: Operation Memories, Super Mario RPG, WarioWare: Get It Together!, LEGO 2K Drive, LEGO CITY UNDERCOVER, LEGO MARVEL Super Heroes, Minecraft Dungeons II, The Witcher 3: Wild Hunt Complete Edition and Pokémon Mystery Dungeon: Rescue Team DX. Play the two Pokémon: Let's Go games with a Turnip driver: Qualcomm's own driver draws the 3D scene of Let's Go, Pikachu! black, and Let's Go, Eevee! was not tried on it. Build Pokémon Mystery Dungeon: Rescue Team DX from its base game 1.0.0.
 
 The 0.1.5 verification build was checked on an AYN Thor with Turnip v26.2.0 R5. Demon Slayer 2 reached the playable rooftop fight against Daki at about 30 fps. Tears of the Kingdom reached the opening cave and responded to movement. Kirby and the Forgotten Land prepared all 418 pipeline keys on its first launch, then reused the cache on relaunch. The other six additions have earlier, game-specific device checks.
 
@@ -268,14 +272,26 @@ The app rewrites all of the game's code and translates every shader on the devic
 
 ### Can I use the device while it builds?
 
-Yes. The build goes on if you leave the app. You cannot build a second game at the same time. Some builds start the game once to capture shaders, so close any running game first.
+Yes. The build goes on if you leave the app. A second game you build waits in the build queue until the first one is done (see the next question). Some builds start the game once to capture shaders, so close any running game first.
 
 While a build runs or waits, the home screen has a **Screens off** button left of the Settings gear. It makes every screen black at the lowest brightness and keeps the device awake, so a long build does not wear an OLED panel. A tap on a screen brings the app back, and the cover goes away by itself when the build ends. It is new in 0.1.2 and little tested.
 
+### Can I build several games one after the other?
+
+Yes. While a game builds, the sheet's button says **Add to queue**: the game waits in the build queue and starts when the games before it are done, one at a time. You can queue your games, put the device on its charger and go to sleep. **Build all…** on the home screen (beside Find) asks first, then queues every game that needs a build: those that say **Build needed**, those whose build stopped, and built games whose build is of an earlier version of the app. Games whose file is gone or whose version this app does not list are left out: their sheet asks first.
+
+- A waiting game's cover says **Queued** and its place, such as **Queued, 3 of 5**. The **Building** filter lists them under **Up next**, each with **Remove**; the game's sheet (hold the cover, or Y) has **Remove from queue** too. Removing changes none of its files.
+- Before each game the queue waits while the device is hot, while the battery is below 20 % and not charging, while you play a game, while a build with mods runs, and while a pack of the next game is being imported (Import pack…). It goes on by itself. The notification says what it waits for.
+- A game whose build fails or that you stop is marked **Build stopped**, and the next game starts. Its card says why and offers **Resume** or **Retry**, and **Dismiss** removes the card.
+- Before a game starts, the app checks that its `.nup` fits the free space, and that the pack has at least 0.5 GB to be made in. If not, it stops that game before writing anything and goes on with the next.
+- **Stop** on the card, or **Cancel** in the notification, stops the game that builds; the queue goes on. **Cancel all** in the notification, or **Stop all** on the Up next card, stops everything. **Pause** on the Prepare card pauses the whole queue; **Resume** on the Up next card goes on where it stopped.
+- If Android ends the app, or you restart the device, the queue goes on when Android starts the app's build service again or when you next open the app. The game that was building starts again where it stopped.
+
 ### What notifications does a build show?
 
-- While it builds: **Building** and the game's name, with the current step, a progress bar and a **Cancel** action. It is silent.
-- When it ends while the app is not in front: **… is ready to play**, or **Building … stopped** with the reason. This one vibrates.
+- While it builds: **Building** and the game's name, with the current step, a progress bar and a **Cancel** action. With more games in the build queue it says the game's place (**2 of 5**) and has **Cancel all**. It is silent.
+- While the queue waits between two games: **Waiting to build** and the next game's name, with the reason. A wait for heat has **Go on anyway**.
+- When it ends while the app is not in front: **… is ready to play**, or **Building … stopped** with the reason. A queue of several games sends one notification at its end instead, saying which games are ready and which stopped. This one vibrates.
 
 The app asks for the notification permission at your first build. Without it the build still runs, but you see no progress outside the app. Android lists the two kinds as **Building games** and **Build finished**, so you can silence either one.
 
@@ -313,7 +329,7 @@ Do not remove the card during a build or while a game from it runs.
 | **Build with mods** | Hold the cover › **Game** tab › **Mods** | Makes a separate build that carries code mods. See [Mods](#mods). |
 | **Import pack…** | The sheet of a game that is not built, under Build; for a built game, hold the cover › **Storage** tab | Puts in a pack made on a computer or exported from another phone. See [below](#can-i-use-a-pack-made-on-a-computer-or-on-another-phone). |
 
-A tap on a ready cover plays the game, so the way to its sheet is hold the cover › **Storage** › **Build again**.
+A tap on a ready cover plays the game (or asks first, when a newer update or DLC was found beside it: see [How do updates and DLC work?](#how-do-updates-and-dlc-work)), so the way to its sheet is hold the cover › **Storage** › **Build again**.
 
 ### What is Build again, and when do I need it?
 
@@ -332,7 +348,7 @@ It makes the game's `.nup` again from your dumps (the base, the update, the DLC)
 - after you add a newer game update;
 - when a build says its shaders "come from files your import does not have".
 
-Open the game's sheet (for a built game: hold the cover › **Storage** › **Build again**) and tap **Import again…**. It asks first, and says:
+Open the game's sheet (for a built game: hold the cover › **Storage** › **Build again**) and tap **Import again…**, or tap **Build** in the question a built game's cover asks when it found a newer update or DLC. It asks first, and says (from the cover's question only when it would take another update than the one the question named):
 
 - what is deleted: the old `.nup`, with its size and where it is. It is replaced only when the new one is complete. If the import fails or you stop it, the game stays as it was;
 - what is kept: your saves, mods and settings, and the built game until the new build replaces it;
@@ -370,6 +386,8 @@ Yes. A game's pack is what Build makes: its code for this app and its shaders. *
 ### How do updates and DLC work?
 
 Put them in the game folder, or set Settings › Library › **Update folder** and **DLC folder**. They are matched to their games by title ID. The sheet shows the update it will use, the newest one found unless you chose another (**Choose another…** picks a different file), and the DLC it found (**Add…** picks more).
+
+For a game that is built already, the cover says when it found a newer update the app knows for the game, or DLC its `.nup` does not hold yet: an **Update** mark, and "Update 3.0.4 found" or "An add-on found" in its state. A tap asks first: **Build** takes them in with Import again, **Play** plays the game as it is, **Not now** asks no more for these (the mark then reads **Update later**). Nothing is built without the tap. Such a build keeps what did not change since the last build of the game (its shaders, its code, the game files the shader search read) and makes only the rest, so it takes a fraction of a first build; its ready message says what came from earlier builds. Later, while the device is plugged in and no game runs, the app checks every shader it kept against a translation made from the start.
 
 ### A build says shaders "come from files your import does not have". What now?
 
@@ -410,11 +428,17 @@ Games take the handheld's own buttons and sticks, external controllers and on-sc
 
 ### What frame rate do games run at?
 
-Most supported games run at 60 fps on the Thor. Animal Crossing: New Horizons runs at 30, as on the Switch. A few games that are 30 on the Switch run at 60 here because the app changes the game's frame step, for example Octopath Traveler 0 and Pokémon Sword. Some games lower their own rate in heavy scenes. The speed settings are **Frame rate cap**, **Hold 60 fps** and **Full game speed**.
+Most supported games run at 60 fps on the Thor. A few games that are 30 on the Switch run at 60 here because the app changes the game's frame step, for example Octopath Traveler 0 and Pokémon Sword. Some games lower their own rate in heavy scenes. The speed settings are **Frame rate cap**, **Hold 60 fps** and **Full game speed**.
+
+**Frame rate cap** lists only the caps the game can hold. A cap above the highest refresh rate of your screen shows greyed out and says why; a cap you saved before stays saved and runs at the screen's rate. Some picks apply at the game's next start, and the row says so.
+
+Games that used to start at their own rate (**Game owned**) until you picked a cap now start at **60 fps**, or 30 where the game has no 60. This covers, among others, Star Ocean The Second Story R, Hogwarts Legacy, Kirby and the Forgotten Land, Diablo III and Yoshi's Crafted World. **Game owned** is still in the list, and a cap you picked before stays.
+
+Animal Crossing: New Horizons runs at 30 on the Switch. For update 3.0.3 it starts at **60 fps**: the game then runs with tmouh's ACNH 60 FPS + SpeedFix built in, which keeps the game at its normal speed at 60 fps. Nothing to install. Pick **Game owned** for the game's own 30. A build made before 0.1.8 does not have it yet: the game starts at 30 and the in-game panel says to build it again.
 
 ### What is Peanuts cracked?
 
-The count on Settings › **About**. A peanut cracks open each time you tap one on the drifting background, and the count also grows as you use the app: 25 for building a game version you had not built before, 1 for every 1,000 shaders that build prepared, 5 for every hour you play, 10 for a game's first start and 5 for your first own Mii. Building the same version again (**Import again**, **Rebuild**) adds nothing. The bananas you popped before are part of it. On a dual-screen device the second screen shows the count and the next milestone while About is open.
+The count on Settings › **About**. A peanut cracks open each time you tap one on the drifting background, and the count also grows as you use the app: 25 for building a game version you had not built before, 1 for every 1,000 shaders that build prepared, 5 for every hour you play (the time a game's **Played** row shows, which counts only while the game runs), 10 for a game's first start and 5 for your first own Mii. Building the same version again (**Import again**, **Rebuild**) adds nothing. The bananas you popped before are part of it. On a dual-screen device the second screen shows the count and the next milestone while About is open.
 
 ### How do I find a setting?
 
@@ -442,13 +466,33 @@ Yes. **Resolution scale** is in Settings › Graphics and in each game's setting
 
 It works on the app's side, so it is there for every game, but not every part of a picture follows it. Some effects (a blur, an outline, anti-aliasing) are made for the game's own size and can look a little different, and a game that reads its picture back, or passes it through its own upscaler, keeps that part at 1x. If a game looks wrong with it, set it back to 1x for that game and tell us which game and which scale. Games that have their own **Resolution** and **Upscaling quality** rows do not show this one.
 
+### Can I change how the overlay looks?
+
+Yes. Settings › Graphics › **Overlay**, then tap the row. **Style** is **Table** (the default), **Pill** or **Classic**. The pill is one line that floats at the top centre: the frame rate, a short graph of the newest frames and the temperature, and more with the **Full** preset. **Preset** is **Minimal**, **Normal**, **Full** or **Custom** (each item by hand). **Position** has six places, **Size** goes from 75% to 200%, and **With bottom stats** hides the overlay while the second screen shows the game's stats.
+
+### What do Fit, Stretch and Fill the screen do?
+
+The game's page › **Graphics** › **Display** (the **Performance** tab on a narrow screen). **Fit (keep aspect)**, the default, keeps the game's 16:9 picture with bars on a screen of another shape. **Stretch to screen** fills the screen by stretching the picture. Some games also offer **Fill the screen**: the game draws for your screen's shape, with nothing stretched and no bars, from its next start. Most games that offer it have not been tried that way on a device yet, and the choice then says so: if the game looks wrong or does not start, pick **Fit** to go back.
+
+### Is there a CRT look?
+
+Yes. Settings › Graphics › **CRT filter** is **Off**, **Scanlines**, **CRT** (scanlines, a mask and a vignette) or **Curved CRT** for every game; each game can have its own in its page's **Graphics** area. The in-game panel's **Display** tab changes it while you play.
+
+### Can I play on a TV or monitor?
+
+By default the device decides what a connected TV or monitor shows, as for any other app, and Peanuts Native keeps its own pages off it: a TV is never taken for the second screen. Settings › Screens › **TV and monitors** › **Play on the TV** starts a game full screen on the TV or monitor instead. The screen the game left goes black while it plays there, and a companion stays on the second screen.
+
 ### What is Tester settings?
 
 A switch in Settings › Developer. Off, a game that has **Resolution** choices shows just those. On, it also shows the rows made for testing: advanced resolution, **Upscaler** and **Dynamic resolution**. Leave it off unless you are trying things out or were asked to change one of those rows.
 
 ### Where are a game's own settings, such as its language?
 
-Hold its cover. The page has four tabs: **Performance**, **Game**, **Saves** and **Storage**. A game's settings override the defaults in Settings. **Reset to defaults** puts them back. The game's language is **Game** tab › **Game language**.
+Hold its cover. A game's settings override the defaults in Settings. **Reset to defaults** puts them back.
+
+On a wide screen, such as the AYN Thor's top screen, a tablet or a phone on its side, the page shows the game at the left (its cover, version, play time and **Play**) and its settings as areas at the right: **Graphics**, **Mods & Cheats**, **Saves**, **Game options**, **Controls**, **Companion**, **Files**, **Help** and **Advanced**. A opens an area, L1 and R1 step through them, B goes back. On a narrow screen the page has four tabs instead: **Performance**, **Game**, **Saves** and **Storage**.
+
+This FAQ names the tabs. On a wide screen: **Performance** is **Graphics**, the **Game** tab's rows are in **Game options**, **Mods & Cheats** and **Companion**, and **Storage** is **Files**. The game's language is **Game options** › **Game language** (**Game** tab › **Game language** on a narrow screen).
 
 ### Can I turn off the vibration and the animations in the app?
 
@@ -457,6 +501,8 @@ Yes. **Settings › App** has two rows. **Haptics** is **System** or **Off**. **
 ### Where are my saves, and can I import one?
 
 Saves are in the app's own storage, under `saves/<title ID>`. The **Saves** tab shows the path and has **Back up saves**, **Restore saves**, **Import save** (a `.zip` or a save folder) and **Delete save data**, which starts the game from the beginning. Stop the game first. Before a restore, an import or a delete, the app backs up the current save, so **Restore saves** can bring it back.
+
+Each user in **Settings › Users** has a save of their own: the first user's is `saves/<title ID>`, another user's is `saves/<title ID>_user_<their ID>` beside it. With two or more users the **Saves** tab shows a card for each user at its top, starting at the user playing now; tap one, and the rows work on that user's save: a backup, a restore or an import goes to them only, and every question names them. **Copy to another user** gives the picked user's save to another user (theirs is backed up first). A game's device save, which some games keep apart (Mario Kart 8 Deluxe), is every user's and stays as it is. A removed user's saves stay on the phone and show as **Removed user**: back them up, copy them to a user or delete them. In **Settings › Users**, a user's card has **Show saves**: the games they have a save of; tap one to open its **Saves** tab with that user picked.
 
 ### Where is the game log?
 
@@ -507,6 +553,14 @@ A Turnip driver. Honest details:
 - Other chips are untested. If the system driver passes the Readiness check and your games look right, you can stay on it.
 
 The app does not mark any driver as recommended in its list. Whichever you use, name it when you report a bug.
+
+### Why does the app say a driver draws broken on this phone?
+
+Some driver builds are known to draw wrongly on some GPUs. The app marks such a driver in its GPU driver lists, and when a game starts with it you can tap **Play anyway** or **Change driver**. Nothing is blocked.
+
+- **Turnip v27.0.0-R3** (StevenMXZ) on Adreno 7xx, such as the AYN Thor's Adreno 740: the game's picture is striped and the app's own screens (the stats page, the in-game panel) blink or break. Turnip 27.0.0-R2 or another driver works.
+
+The app knows the build from what the driver reports about itself, not from the name of its folder.
 
 ### How do I install a driver from the app's Download list?
 
@@ -648,25 +702,29 @@ With a controller connected, each button shows the controller button that does t
 
 In Settings, the second screen explains what the D-pad is on: a section with its rows and their values, or a row with what it does, its value now and the app default. A switch can be flipped there too.
 
-During a game without a companion the second screen is Android's, as before. Settings › Screens › **Games without a companion** puts the game's live stats there instead: the frame rate against the game's target and how many frames are on pace, a frame-time graph, the 1% low, the GPU's load and clock, the CPU's clock, the SoC's temperature, the battery's power in watts and the time left, the RAM, and whether the phone is throttling; tap it again for the game's cover. The gear in the stats card's corner picks what it shows (**Simple**, **Normal**, **Full**, or each item by hand) and the screen guards for an OLED panel: a black background, a pixel shifter that moves the page a pixel every 30 seconds, dimmer fixed labels, a dim after 10 minutes without a touch and a black screen after 30. A touch brings it back. The choices are kept for every game.
+During a game without a companion the second screen shows the game's live stats by default (Settings › Screens › **Games without a companion**, which can also show the game's cover or leave the screen to Android): the frame rate against the game's target and how many frames are on pace, a frame-time graph, the 1% low, the GPU's load and clock, the CPU's clock, the SoC's temperature, the battery's power in watts and the time left, the RAM, and whether the phone is throttling; tap it again for the game's cover. The gear in the stats card's corner picks what it shows (**Simple**, **Normal**, **Full**, or each item by hand) and the screen guards for an OLED panel: a black background, a pixel shifter that moves the page a pixel every 30 seconds, dimmer fixed labels, a dim after 10 minutes without a touch and a black screen after 30. A touch brings it back. The choices are kept for every game.
+
+Tap the console mode (**DOCKED** or **HANDHELD**) or the frame rate on the stats page to change it for the running game, as the in-game panel does. While the stats page shows, the overlay over the game hides, since the same values are below; Settings › Graphics › **Overlay** › **With bottom stats** brings it back.
+
+A four-finger tap on the game hides the companion or the stats page and gives the second screen to Android until the next four-finger tap, which shows it again.
 
 On Home, open Settings with the top-screen gear or press **X**, as shown under the gear. The second screen also has a Settings button. To give the second screen back to Android while you are in the launcher, turn off Settings › Screens › **Bottom screen**. This setting controls the launcher and the optional cover shown while playing without a companion.
 
 ### Which games have a companion?
 
-Settings › Screens › **Companions** shows the catalog: **Your games** first, then **Other companions · add the game first**. Most games on the tested list have a companion: the README's table says which. The catalog is read online, so the list can change without an app update.
+Settings › Screens › **Dual-screen companions** shows the catalog: **Your games** first, then **For games you have not added yet**. Most games on the tested list have a companion: the README's table says which. The catalog is read online, so the list can change without an app update.
 
 ### How do I install a companion for the first time?
 
 With the build (the usual way):
 
 1. Tap the game's cover to open its sheet.
-2. Look at the **Companion** row. It shows the companion's name, version and size, and its switch is on: **Install after the build**.
+2. Look at the **Dual-screen companion** row. It shows the companion's version and size, and **Installs after the build** while its switch is on.
 3. Tap **Build**. The companion is downloaded and installed as the last step.
 
 Later, for a game that is already built:
 
-1. Open Settings › Screens › **Companions**.
+1. Open Settings › Screens › **Dual-screen companions**.
 2. Find the game under **Your games** and tap **Install**.
 3. Wait for the line at the top to read **Installed …**.
 
@@ -676,8 +734,8 @@ What you should see: the row reads **installed** with the version and **up to da
 
 ### How do I see which version is installed, update it, or go back to an earlier one?
 
-- **See the version:** the **Companion** row in the game's sheet, in Settings › Screens › **Companions**, or in the game's **Game** tab. It reads **installed** and the version, then **up to date** or the newer version that is available.
-- **Update:** tap **Update** in Settings › Screens › **Companions** or in the game's **Game** tab. **Rebuild** also updates it.
+- **See the version:** the **Dual-screen companion** row in the game's sheet, in Settings › Screens › **Dual-screen companions**, or in the game's **Game** tab. It reads **installed** and the version, then **up to date** or the newer version that is available.
+- **Update:** tap **Update** in Settings › Screens › **Dual-screen companions** or in the game's **Game** tab. **Rebuild** also updates it.
 - **Go back to an earlier version:**
   1. Open the game's sheet and tap **Versions…** (in the game's **Game** tab the button is **Versions**).
   2. The sheet lists every release, newest first, with its date and size. The installed one is marked **installed**. Tap a row to read its release notes.
@@ -687,9 +745,26 @@ What you should see: **… is active. It loads at the game's next start.** A ver
 
 Each download is checked against its published checksum. A release without a checksum cannot be installed.
 
+### How do I install a companion without the internet?
+
+Install it from its `.dsmod.zip` file, the same file the catalog downloads (for example `010015100B514000-SuperMarioWonderDS-1.0.1.dsmod.zip` from the [eden-duo-companions](https://github.com/igawa6/eden-duo-companions) releases, copied to the device).
+
+1. Open Settings › Screens › **Dual-screen companions** and tap **Install from file**. In a game's own page it is the **Companion** section › **Install from file**: that one takes only that game's companion.
+2. Pick the `.dsmod.zip` file.
+3. The app says what happened: **Installed** with the companion's name, version and game, **Updated … from version …**, or why it was not installed.
+
+The file goes through the same installer as a catalog download: it must be a companion for one game, its zip must be whole and its module must match the checksum in its manifest, and it must not need a newer app. A file has no published checksum, so the companion shows as **unverified**. A file for a game that is not in your library yet is installed too: the app says so, and the companion is used once you add and build the game. A file older than the installed version asks first; the installed version stays on the device under **Versions**. Close the game before you install. **Update** and **Rebuild** later install the catalog's version when it is newer.
+
+What the refusals mean:
+
+- **This file is not a dual-screen companion:** it is not a `.dsmod.zip`, or not a whole one. Pick the companion's file.
+- **This companion file is damaged:** download it again.
+- **This companion is for another game:** you picked it from another game's page. Use that game's page, or Settings.
+- **This companion needs a newer version of the app:** update the app first.
+
 ### How do I remove a companion, or turn the second screen off for one game?
 
-Remove: tap **Remove** in Settings › Screens › **Companions** or in the game's **Game** tab, or **Remove companion** in the Versions sheet. Close the game first. The game and its saves stay, and the catalog can install the companion again.
+Remove: tap **Remove** in Settings › Screens › **Dual-screen companions** or in the game's **Game** tab, or **Remove companion** in the Versions sheet. Close the game first. The game and its saves stay, and the catalog can install the companion again.
 
 Turn it off without removing it:
 
@@ -724,8 +799,8 @@ The companions are published with screenshots and a description of each at https
 
 The catalog is read from the internet each time. Offline:
 
-- Settings › Screens › **Companions** shows **Catalog unavailable:** and you cannot install or update.
-- A game's sheet may read **No companion in the catalog for this game** even though one exists. Go online and tap Settings › Library › **Rescan**.
+- Settings › Screens › **Dual-screen companions** says **The catalog could not be loaded** and you cannot install or update.
+- A game's sheet may read **No dual-screen companion is available for this game** even though one exists. Go online and tap Settings › Library › **Rescan**.
 - A build still finishes. The game is ready to play without the companion, and you can install it later.
 - A companion that is already installed keeps working. It is on the device.
 - The Versions sheet needs the catalog too, so you cannot switch versions offline.
@@ -748,8 +823,8 @@ Local mods only: `romfs` file replacements, cheats, `exefs` code and IPS patches
 Mods are in the game's page, not in the build sheet. The game must be built first: for a game that is not built the section reads **Build the game first**.
 
 1. Hold the game's cover. Its page opens.
-2. Open the **Game** tab and find the **Mods** section, above **Companion**.
-3. Tap **Install mod…** and pick the mod's **Folder** or **Zip file**. Atmosphère-layout folders and plain `romfs`/`exefs` folders are recognized.
+2. Open **Mods & Cheats** (on a narrow screen: the **Game** tab › **Mods & Cheats**), and pick **Mods** at its top.
+3. Tap **Add** and pick the mod's folder or zip file. Atmosphère-layout folders and plain `romfs`/`exefs` folders are recognized.
 4. The mod appears in the list, turned on. The line under its name says what it carries: **Files**, **Cheats** or **Code**. Files and cheats apply at the game's next start. A mod with code is built by itself, see [What is a build with mods?](#what-is-a-build-with-mods)
 
 A mod made for another game, or for another version of the game, is refused with a message that names the build or title ID it is for. Nothing is installed then.
@@ -771,6 +846,12 @@ A build that failed or was cancelled does not start again by itself. Tap **Build
 A mod that hooks the game through an `.ips` patch and a module of its own can work this way: Luminescent Platinum on Pokémon Brilliant Diamond builds and runs. A mod that patches the game's code while the game runs (exlaunch-style hooks) does not work yet. The section then shows **A module's hooks will not run** before you build. If a set of mods cannot be built at all, it shows **Cannot build with these mods** and the reason.
 
 Once it reads **Ready**, every start of the game uses the mods that are on: the page's **Play**, a tap on the cover, a home screen shortcut. Turn a mod off or delete it and the game starts without it. While code mods are on but their build is not ready yet (it is running, waiting or failed), the game starts without them and says so. Nothing of a code mod is used then, not its files or cheats either: they belong to its code. Mods that are only files or cheats apply either way. If you change which code mods are on, the new set is built by itself, and a set that was built before is used again as it is. After you rebuild the game itself, replace a mod's files or update the app, tap **Rebuild with mods**: it redoes the parts that changed and keeps the rest.
+
+### How do I use cheats?
+
+Open the game's page › **Mods & Cheats**. Cheats that come with the app are listed there. **Add** takes a cheat file (`.txt`), a `.zip` or a folder, in the Atmosphère, Eden, Yuzu or Ryujinx layout. Each cheat has a switch; a switch works at once while the game runs and is kept for its next start. A file made for another game is refused, and one for another version of the game asks first.
+
+While you play, the in-game panel has a **Mods** tab with the same switches, each with its state (**Running**, the buttons it waits for, **Not possible here** or **Next start**). A cheat that sets a number has a field to change it; the cheat file itself is never changed. Settings › Controls › **Mods tab** turns the tab off.
 
 ## Troubleshooting
 
@@ -811,7 +892,11 @@ A screenshot or a short video helps for a wrong picture. Never attach or link ga
 
 ### Do I need to rebuild my games after an update?
 
-Rebuilding every game after an app update is strongly recommended. An update can change how a game's code and shaders are prepared, and a game built by an older version keeps the old result until it is built again. Hold the game's cover, open **Storage**, tap **Build again**, then **Rebuild**. Your saves are not touched. It is quick when the game's code is otherwise current, and takes as long as a first build when it is not.
+A game built with 0.1.7 does not need a new build for its shaders: the first time you play it on 0.1.8 they are updated in a few seconds (**Updating shaders**), instead of being made again. If that cannot be done for a game, it plays with its old shaders and offers the shader update as before. Animal Crossing: New Horizons needs **Build again** for its new 60 fps choice.
+
+In general, rebuilding every game after an app update is recommended. An update can change how a game's code and shaders are prepared, and a game built by an older version keeps the old result until it is built again. Hold the game's cover, open **Storage**, tap **Build again**, then **Rebuild**. Your saves are not touched. It is quick when the game's code is otherwise current. What the update changed is made again, which can take as long as a first build (all the shaders, when the update changed how they are translated); what it did not change is kept from the last build.
+
+The game's sheet, opened with **Build again**, says which app version made its graphics. "Built with 0.1.7" or "Built with this app version" is fine: shaders from 0.1.7 update themselves in a few seconds the next time the game starts. A warning **Built with 0.1.3**, or any version before 0.1.7, means the game still plays but misses the graphics fixes since then, and only **Rebuild** brings them.
 
 ### Will I lose my saves?
 
@@ -819,7 +904,7 @@ No. An update keeps the app's storage, and saves are in it. Uninstalling can del
 
 ### How do I tell which version I have?
 
-The build name is under the app's title on the home screen and in Settings › **About**. A release build reads `peanuts-native-0.1.7`. Every log starts with it too.
+The build name is under the app's title on the home screen and in Settings › **About**. A release build reads `peanuts-native-0.1.8`. Every log starts with it too.
 
 ## Credits
 

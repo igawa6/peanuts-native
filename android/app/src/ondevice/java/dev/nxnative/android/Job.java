@@ -30,7 +30,7 @@ import java.util.Locale;
 final class Job {
     static final int FORMAT = 2;   // 2: the shaders step writes the library too (vk_android_build.py's result cache); 1 had a library step of its own
     static final String[] STEPS = {"identify", "rewrite", "split", "shaders", "pack"};
-    static final String[] STEP_TEXT = {"Checking the dump", "Rewriting the game's code", "Finding the shaders", "Translating shaders", "Finishing the pack"};
+    static final String[] STEP_TEXT = {"Checking the game files", "Converting the game's code", "Finding the shaders", "Making shaders for this phone", "Finishing up"};   // PEANUTS: build text in the player's words (0.1.8)
     /** Each step's share of the progress bar, roughly its time on the phone (ONDEVICE.md "Time and power"); the shaders' share is counted by shader */
     private static final int[] WEIGHT = {1, 5, 12, 78, 4};
     static final int REWRITE = 1, SHADERS = 3, PACK = 4;
@@ -145,6 +145,36 @@ final class Job {
         for (String k : new String[] {"engine", "dmsh_chain", "dmsh_vk_chain", "xlate_source"}) if (!b.optString(k).equals(a.optString(k))) return true;
         return false;
     }
+
+    // PEANUTS begin: the in-place shader upgrade (dev.peanuts.build.ShaderUpgrade, PackService.upgrade)
+    /**
+     * A done job whose pack's library was just upgraded in place to this APK's version: when its apk record differs from this APK's in the shader version alone
+     * (ShaderUpgrade.onlyVkChainDiffers), it takes this APK's, so apkChanged() is false and the panel says Ready, not Resume (review M1). → whether it changed
+     */
+    synchronized boolean takeUpgrade() {
+        JSONObject a = o.optJSONObject("apk"), b = apk();
+        if (!"done".equals(state()) || a == null || !dev.peanuts.build.ShaderUpgrade.onlyVkChainDiffers(a::optString, b::optString)) return false;
+        try { o.put("apk", b); } catch (JSONException e) { throw new IllegalStateException(e); }
+        return true;
+    }
+
+    /**
+     * A job that only had the shaders left to make (adopted with its code current: identify and rewrite done, no mods) and waited for an upgrade that made them
+     * (the caller saw the pack current, Pack.libraryProblem): its shader steps and the pack step are done, and so is it, with this APK's record (review m9: a
+     * background update held during the upgrade no longer translates what the upgrade wrote). → whether it changed
+     */
+    synchronized boolean doneByUpgrade() {
+        if ("done".equals(state()) || adopted().isEmpty() || !modArgs().isEmpty() || !"done".equals(stepState("identify")) || !"done".equals(stepState("rewrite"))) return false;
+        try {
+            for (String s : new String[] {"split", "shaders", "pack"}) stepState(s, "done");
+            o.put("apk", apk());
+        } catch (JSONException e) {
+            throw new IllegalStateException(e);
+        }
+        state("done", null, null);
+        return true;
+    }
+    // PEANUTS end
 
     /** Starts the chain's steps over with this APK's versions; the caller deletes their outputs */
     synchronized void resetChainSteps() throws JSONException {
@@ -280,8 +310,8 @@ final class Job {
     /** Details of a failed job: the technical part of why (an older job's whole message), and the game, version and folders */
     synchronized String errorDetail() {
         String d = "failed".equals(state()) ? PrepareText.failedDetail(error(), o.optString("error_detail"), o.has("fix")) : "";
-        return (d.isEmpty() ? "" : d + "\n\n") + "Game: " + name() + " (" + titleId() + "), " + Profile.versionName(version()) + (tryAnyway() ? ", Try anyway" : "")
-                + "\nDump: " + dump() + "\nPack: " + pack() + "\nWorking files: " + dir() + "\nLogs: " + new File(dir(), "logs");
+        return (d.isEmpty() ? "" : d + "\n\n") + "Game: " + name() + " (" + titleId() + "), " + Profile.versionName(version()) + (tryAnyway() ? ", built with Try anyway" : "")   // PEANUTS: build text in the player's words (0.1.8)
+                + "\nGame files: " + dump() + "\nBuild: " + pack() + "\nWorking files: " + dir() + "\nLogs: " + new File(dir(), "logs");
     }
 
     /**
@@ -554,7 +584,7 @@ final class Job {
     /** "1,234 of 22,782 · 21,548 left · about 35 min left": the status line and the notification */
     synchronized String shadersCountText() {
         String eta = etaText(shadersEta());
-        return String.format(Locale.getDefault(), "%,d of %,d · %,d left", shadersDone(), shadersTotal(), shadersLeft()) + (eta.isEmpty() ? "" : " · " + eta);
+        return String.format(Locale.getDefault(), "%,d of %,d, %,d left", shadersDone(), shadersTotal(), shadersLeft()) + (eta.isEmpty() ? "" : ", " + eta);   // PEANUTS: build text in the player's words (0.1.8)
     }
 
     /** The shaders step's main text: delta update reuse, up-to-date state, or count during translation */
@@ -562,14 +592,14 @@ final class Job {
         long done = shadersDone(), total = shadersTotal(), kept = shadersKept(), left = shadersLeft();
         String eta = etaText(shadersEta());
         if (total == 0 && (kept > 0 || "done".equals(stepState(STEPS[SHADERS])))) {
-            return "Shaders up to date: nothing to translate";
+            return "Shaders are up to date: nothing to make";   // PEANUTS: build text in the player's words (0.1.8)
         }
         if (kept > 0) {
-            String base = String.format(Locale.getDefault(), "Translating %,d new shaders (the other %,d are reused)", total, kept);
+            String base = String.format(Locale.getDefault(), "Making %,d new shaders (%,d kept from before)", total, kept);
             if (done > 0) {
-                base += String.format(Locale.getDefault(), ": %,d of %,d · %,d left", done, total, left);
+                base += String.format(Locale.getDefault(), ": %,d of %,d, %,d left", done, total, left);
             }
-            if (!eta.isEmpty()) base += " · " + eta;
+            if (!eta.isEmpty()) base += ", " + eta;
             return base;
         }
         return STEP_TEXT[SHADERS] + ": " + shadersCountText();
@@ -590,8 +620,8 @@ final class Job {
             String stage = step(STEPS[i]).optString("stage");
             if (!note.isEmpty())   // after the translation the step's own name would mislead: "Writing the shader library: 120 of 720 MB"
                 return stage.equals("library") || stage.equals("check") || stage.equals("done") ? PrepareText.capital(note) : PrepareText.withNote(STEP_TEXT[i], note, "");
-            if (stage.equals("library") || stage.equals("done")) return "Writing the shader library";
-            if (stage.equals("check")) return "Checking the shader library";
+            if (stage.equals("library") || stage.equals("done")) return "Saving the shaders";   // PEANUTS: build text in the player's words (0.1.8)
+            if (stage.equals("check")) return "Checking the saved shaders";
             if (keeping()) return PrepareText.keepText(stepDone(i), stepTotal(i));
             return shadersStepText();
         }
@@ -600,8 +630,8 @@ final class Job {
             String part = step(STEPS[i]).optString("stage");
             // the module being rewritten stays on the card while the rewriter's progress lines give its share (pack_android.py's "stage: rewriting main (1 of 3)")
             String what = step(STEPS[i]).optString("note");
-            String base = what.isEmpty() ? STEP_TEXT[i] + " (a few minutes)" : PrepareText.withNote(STEP_TEXT[i], what, "");
-            return part.equals("code") && t > 0 ? base + " (" + Math.min(100, d * 100 / t) + " %)" : base;
+            String base = what.isEmpty() ? STEP_TEXT[i] + ", which takes a few minutes" : PrepareText.withNote(STEP_TEXT[i], what, "");   // PEANUTS: build text in the player's words (0.1.8)
+            return part.equals("code") && t > 0 ? (what.isEmpty() ? STEP_TEXT[i] : base) + ", " + Math.min(100, d * 100 / t) + " %" : base;
         }
         if (!note.isEmpty()) return PrepareText.withNote(STEP_TEXT[i], note, "");
         long d = stepDone(i), t = stepTotal(i);
@@ -614,15 +644,15 @@ final class Job {
     /** One line for the screen and the notification: what the job is doing or why it stopped */
     synchronized String statusText(boolean serviceAlive) {
         String s = state();
-        String step = "step " + (current() + 1) + " of " + STEPS.length;
+        String step = ", step " + (current() + 1) + " of " + STEPS.length;   // PEANUTS: build text in the player's words (0.1.8)
         switch (s) {
             case "done": return "Ready to play.";
             case "failed": return PrepareText.failedText(STEP_TEXT[current()], error(), o.has("fix"));
             case "pending": return "Not started yet.";
             case "paused": return "Paused: " + reasonText(reason()) + ". " + stepText() + "." + (reasonDetail().isEmpty() ? "" : "\n" + capital(reasonDetail()) + ".")
-                    + (canGoOn() && serviceAlive ? "\nIf the phone is not hot, tap Go on anyway." : "");
-            case "running": return serviceAlive ? stepText() + " (" + step + ")" + quietText() + "."
-                    : "Interrupted at " + stepText() + ". Tap Resume to go on.";
+                    + (canGoOn() && serviceAlive ? "\nIf the phone does not feel hot, tap Go on anyway." : "");   // PEANUTS: build text in the player's words (0.1.8)
+            case "running": return serviceAlive ? stepText() + step + quietText() + "."
+                    : "Stopped at " + PrepareText.lower(stepText()) + ". Tap Resume to go on from there.";
             default: return s;
         }
     }
@@ -632,11 +662,11 @@ final class Job {
     static String reasonText(String r) {
         switch (r) {
             case "user": return "by you";
-            case "battery": return "battery below 20 %: plug in the charger to go on";
-            case "thermal": return "the phone reports it is too hot: it goes on when it has cooled";
-            case "timeout": return "Android's daily limit for background work: open the app and tap Resume";
-            case "refused": return "Android did not let it start in the background: open the app and tap Resume";
-            case "apk": return "the app was updated with other shader tools: the shaders are translated again";
+            case "battery": return "the battery is below 20 %. Plug in the charger to go on";   // PEANUTS: build text in the player's words (0.1.8)
+            case "thermal": return "the phone is too hot. It goes on when it has cooled down";
+            case "timeout": return "Android allows only so much background work a day. Open the app and tap Resume";
+            case "refused": return "Android did not let it start in the background. Open the app and tap Resume";
+            case "apk": return "the app was updated, so the shaders are made again";
             default: return r.isEmpty() ? "stopped" : r;
         }
     }

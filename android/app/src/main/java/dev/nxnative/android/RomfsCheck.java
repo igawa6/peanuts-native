@@ -15,12 +15,21 @@ import java.util.Locale;
 final class RomfsCheck {
     private RomfsCheck() {}
 
+    /** A refusal: text for the player (no file names, build IDs or RomFS words), detail for Details (what the file says and what was expected) */   // PEANUTS: build text in the player's words (0.1.8)
+    static final class Bad {
+        final String text, detail;
+
+        Bad(String text, String detail) { this.text = text; this.detail = detail; }
+
+        @Override public String toString() { return text + " | " + detail; }
+    }
+
     /**
-     * null when every check of the profile holds for this RomFS, else a sentence the user can act on.
+     * null when every check of the profile holds for this RomFS, else a sentence the user can act on and the technical facts for Details.
      * romfs: a RomFS folder, or a .nup's &lt;file&gt;.nup:&lt;selector&gt;/romfs (NUP.md naming); mainId: the build ID of the version's main (hex, 32 or 64 digits;
      * null: "main" checks are skipped); version: the version the code is (0: the base game)
      */
-    static String check(Profile prof, String romfs, String mainId, long version) {
+    static Bad check(Profile prof, String romfs, String mainId, long version) {   // PEANUTS: build text in the player's words (0.1.8)
         if (prof == null || prof.romfsChecks.isEmpty() || romfs == null) return null;
         for (String row : prof.romfsChecks.split(";")) {
             String[] c = row.split("\\|", -1);
@@ -41,8 +50,11 @@ final class RomfsCheck {
             String what = version == 0 ? "the base game's RomFS" : "version " + version + "'s full update RomFS";
             String found = text == null ? "missing" : "line " + line + " is \"" + (text.length() > 48 ? text.substring(0, 48) + "…" : text) + "\"";
             String want = main ? "main's build ID " + mainId.substring(0, Math.min(16, mainId.length())) + "…" : "\"" + c[2] + "\"";
-            return "This game " + (nup ? ".nup" : "folder") + "'s " + (version == 0 ? "" : "update ") + "data is not " + what + " (" + c[0] + ": " + found + ", expected " + want + (text == null ? " on line " + line : "")
-                    + "). Dump or extract the " + (version == 0 ? "game" : "update") + " again as the patched RomFS" + (nup ? "." : ", or use the .nup.");
+            String shown = prof.display(version);   // PEANUTS: build text in the player's words (0.1.8)
+            String whose = version == 0 ? "the base game's" : shown != null ? "version " + shown + "'s" : "this update's";
+            String say = "The game data in these game files is not " + whose + ". "
+                    + (version == 0 ? "Dump the game again" : "Dump the update again with its game data patched in") + (nup ? "." : ", or use a .nup file.");
+            return new Bad(say, c[0] + ": " + found + ", expected " + want + (text == null ? " on line " + line : "") + ". Checked as " + what + ": " + romfs);
         }
         return null;
     }

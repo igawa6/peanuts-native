@@ -26,12 +26,16 @@ public final class Compressed {
 
     static boolean prep(String step) { return step != null && (step.startsWith("unpack/") || step.startsWith("check/")); }
 
-    /** The card's detail for an importer step: "Unpacking Game.nsz: 37 %", "Checking Game.xcz: 12 %", else the step as the importer names it */
+    /**
+     * The card's detail for an importer step: "Unpacking Game.nsz: 37 %", "Checking Game.xcz: 12 %", "Reading the game files" (probe), else "Importing the game
+     * files: 25 %". The writer's own steps (base/romfs, update/&lt;v&gt;/exefs, addon/&lt;id&gt;/romfs, toc) take turns as it writes, so they share one sentence
+     */
     public static String stepText(String step, long done, long total) {
         String pct = total > 0 ? String.format(Locale.ROOT, ": %d %%", Math.min(100, done * 100 / total)) : "";
         if (step != null && step.startsWith("unpack/")) return "Unpacking " + step.substring(7) + pct;
         if (step != null && step.startsWith("check/")) return "Checking " + step.substring(6) + pct;
-        return step + pct;
+        if ("probe".equals(step)) return "Reading the game files" + pct;
+        return "Importing the game files" + pct;
     }
 
     /**

@@ -259,7 +259,11 @@ public final class Ctl {
             case "set": set(r, res); break;
             case "screens_off": ScreensOff.hide(); res.ok("The screens are back."); break;
             case "job": pause(r, res); break;
-            case "game": if (r.action().equals("stop")) stopGame(res); else gameCtl(r, res); break;
+            case "game": {
+                String a = r.action();
+                if (a.equals("stop")) stopGame(res); else if (a.equals("ctl")) gameCtl(r, res); else gameLive(r, res);   // gameLive: pending until the game answers
+                break;
+            }
             case "companion": {   // pending until its thread has the answer; a change is in the library rows of the write that follows
                 boolean changes = !r.action().equals("list");
                 CompanionCmd.start(app, r, res, () -> UI.post(() -> { done(res); if (changes) libraryChanged(); }));
@@ -289,12 +293,31 @@ public final class Ctl {
         boolean own = id != null;
         if (own && !Up.hasProfile(id)) throw new Request.Bad("unknown_title", "This app has no game " + id + ".");
         boolean paced = own && Up.prefsBool("limited", id);
-        Settings.Change ch = Settings.parse(r.need("key"), r.need("value"), own, own ? (!paced && Up.prefsBool(app, "ownRate", id) ? new int[] {0} : Up.caps(paced, id)) : null, paced);
+        boolean drivers = "gpu_driver".equalsIgnoreCase(r.need("key"));   // the installed drivers are read only for the key that names one
+        // PEANUTS: the caps the game's Frame rate cap row enables (Prefs.offeredCaps: the frame limits this display shows, else the rates the host held last run)
+        int[] caps = own ? Up.offeredCaps(app, id) : null;
+        Settings.Change ch;
+        try {
+            ch = Settings.parse(r.need("key"), r.need("value"), own, caps, paced, drivers ? Up.drivers(app) : null);
+        } catch (Request.Bad e) {
+            String why = own && paced && "fps_cap".equalsIgnoreCase(r.need("key")) ? Up.screenWhy(app, id, r.need("value"), caps) : null;
+            if (why != null) throw new Request.Bad(e.code, e.getMessage() + ". " + why);   // the game has the cap, this screen cannot show it
+            throw e;
+        }
         String missing = own ? Up.rowMissing(app, ch.key, id) : null;
         if (missing != null) throw new Request.Bad("not_for_this_game", "The game's settings have no such row: " + missing + ".");
+        boolean fill = ch.key.equals("display") && Integer.valueOf(2).equals(ch.value);
+        if (fill && !Up.fillable(id)) throw new Request.Bad("not_for_this_game", "This game has no Fill. Display offers Fit and Stretch.");
         Up.apply(app, ch, id);
-        res.ok(null).put("key", ch.key).put("stored", ch.value == null ? "default" : ch.value).put("effective", ch.effective);
+        res.ok(null).put("key", ch.key).put("stored", ch.value == null ? "default" : ch.key.equals("display") ? Settings.DISPLAYS.get((Integer) ch.value) : ch.value).put("effective", ch.effective);
         if (own) res.put("title_id", id);
+        Object now = Up.resolved(app, ch.key, id);
+        if (now != null) res.put("resolved", now);   // what the game (every game, without title_id) starts with, the default worked out
+        if (ch.key.equals("display")) {
+            res.put("label", Up.displayLabel(app, id));
+            if (fill && Up.fillUntested(id)) res.ok("Fill is untested on this game. It may look wrong or not start. Set display to fit to go back.").put("untested", true);
+        }
+        if (ch.key.equals("bottom_screen_games") && !PeanutsPrefs.bottomScreen(app)) res.ok("Stored, but the bottom screen is off in Settings › Library, so games do not use it until it is on.");
     }
 
     /**
@@ -308,12 +331,15 @@ public final class Ctl {
         if (builds && id != null && !id.equalsIgnoreCase(String.valueOf(b.get("title_id")))) throw new Request.Bad("no_job", "The build that runs is " + b.get("title_id") + "'s.");
         Object job = Up.job(app);
         boolean prepares = job != null && "running".equals(Up.jobText(job, "state")) && (id == null || id.equalsIgnoreCase(Up.jobText(job, "titleId")));
-        if (builds && !(prepares && "prepare".equals(b.get("step")))) {
-            BuildPipeline.cancel(app);
-            res.ok("The build was asked to stop (the build card's Stop): what is written so far stays, and job with do=resume builds on.").put("what", "build");
+        // the build queue (issue #348): stop stops this game and the queue goes on with the next; pause pauses the queue, and do=resume goes on with this game
+        boolean stop = r.stopAsked();
+        if (builds && (stop || !(prepares && "prepare".equals(b.get("step"))))) {
+            if (stop) BuildPipeline.cancel(app); else BuildPipeline.pause(app);
+            res.ok(stop ? "The build was asked to stop (the build card's Stop): what is written so far stays; the build queue goes on with its next game."
+                    : "The build was asked to pause: the build queue keeps its games, and job with do=resume goes on with this one.").put("what", "build");
         } else if (prepares) {
             Up.pausePack(app);
-            res.ok("The Prepare job was asked to pause (its card's Pause)." + (builds ? " The build it belongs to stops with it; job with do=resume builds on." : "")).put("what", "prepare");
+            res.ok("The Prepare job was asked to pause (its card's Pause)." + (builds ? " The build queue pauses with it; job with do=resume goes on with this game." : "")).put("what", "prepare");
         } else throw new Request.Bad("no_job", "No build or Prepare job runs" + (id == null ? "." : " for " + id + "."));
     }
 
@@ -341,6 +367,37 @@ public final class Ctl {
         }
         android.os.Process.killProcess(pid);
         res.ok("The game was stopped as its panel's Stop does: marked as stopped by the player, then its process ended. Unsaved progress is lost.").put("pid", pid);
+    }
+
+    /**
+     * game, do=fps_cap | console_mode | second_screen | controls (GameLive): the game runs in its own process, so the request goes there as an ordered broadcast
+     * for this package only. GameLink's receiver in the game (registered by GameActivity, not exported: only this app reaches it) does the work on the game's
+     * main thread and sets the broadcast's result; the final receiver here takes it. The result stays pending until then, and fails with no_answer when nothing
+     * came within GameLive.ANSWER_MS (or the game's screen has no receiver: the broadcast then ends with its first result code).
+     */
+    private static void gameLive(Request r, Result res) throws Request.Bad {
+        if (gamePid() < 0) throw new Request.Bad("not_running", "No game runs.");
+        String want = r.titleId(false), have = Status.record(app).get("title");
+        if (want != null && have != null && !want.equalsIgnoreCase(have)) throw new Request.Bad("other_game", "The game that runs is " + have + ", not " + want + ".");
+        Intent i = new Intent(GameLive.ACTION).setPackage(app.getPackageName()).addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
+        for (Map.Entry<String, String> e : GameLive.args(r).entrySet()) i.putExtra(e.getKey(), e.getValue());
+        boolean[] over = {false};
+        Runnable late = () -> {
+            if (over[0]) return;
+            over[0] = true;
+            done(res.fail("no_answer", "The game did not answer in " + GameLive.ANSWER_MS / 1000 + " s."));
+        };
+        app.sendOrderedBroadcast(i, null, new android.content.BroadcastReceiver() {
+            @Override public void onReceive(Context c, Intent x) {
+                if (over[0]) return;   // answered after the wait ended: the result says no_answer already
+                over[0] = true;
+                UI.removeCallbacks(late);
+                Bundle b = getResultExtras(false);
+                GameLive.take(getResultCode() == Activity.RESULT_OK && b != null ? b.getString(GameLive.EXTRA_ANSWER) : null, res);
+                done(res);
+            }
+        }, UI, Activity.RESULT_CANCELED, null, null);
+        UI.postDelayed(late, GameLive.ANSWER_MS);
     }
 
     /** game, do=ctl: one line into the file the running game reads its live control lines from (DM_CTL: the launcher sets it to ctl.txt at every start) */
@@ -437,10 +494,12 @@ public final class Ctl {
     private static void build(Activity a, Result res, String id, boolean anyway) throws Request.Bad, ReflectiveOperationException {
         home(a);
         Object job = Up.job(app);
-        if (job != null && "running".equals(Up.jobText(job, "state")) && GameReturn.processAlive(app, ":pack", -1)) throw new Request.Bad("busy", Up.jobText(job, "name") + " is being prepared now.");
+        // upstream's own Prepare: the library's builds go into the build queue (issue #348), whose Prepare waits for the packer
+        if (!BuildPipeline.busy() && job != null && "running".equals(Up.jobText(job, "state")) && GameReturn.processAlive(app, ":pack", -1)) throw new Request.Bad("busy", Up.jobText(job, "name") + " is being prepared now.");
         String[] no = CtlPort.build(a, id, anyway);
         if (no != null) throw new Request.Bad(no[0], no[1]);
         if (CtlPort.building(a, id)) { res.ok("The build started. Its progress is under \"build\" and, while it prepares, under \"job\"."); return; }
+        if (queuedAnswer(res, id)) return;
         // the pipeline refused: its sentence comes through buildRefused in a moment
         buildWait = res;
         UI.postDelayed(() -> { if (buildWait == res) { buildWait = null; done(res.fail("refused", "The build did not start.")); } }, 1000);
@@ -454,12 +513,13 @@ public final class Ctl {
         String id = r.titleId(true);
         home(a);
         Object job = Up.job(app);
-        if (job != null && "running".equals(Up.jobText(job, "state")) && GameReturn.processAlive(app, ":pack", -1)) throw new Request.Bad("busy", Up.jobText(job, "name") + " is being prepared now.");
+        if (!BuildPipeline.busy() && job != null && "running".equals(Up.jobText(job, "state")) && GameReturn.processAlive(app, ":pack", -1)) throw new Request.Bad("busy", Up.jobText(job, "name") + " is being prepared now.");
         Map<String, Object> data = new LinkedHashMap<>();
         String[] no = CtlPort.reimport(a, id, r.on("confirm"), r.on("delete_first"), data);
         for (Map.Entry<String, Object> e : data.entrySet()) res.put(e.getKey(), e.getValue());
         if (no != null) throw new Request.Bad(no[0], no[1]);
         if (CtlPort.building(a, id)) { res.ok("The import started: the old .nup is replaced when the new one is complete, then the game is built. Its progress is under \"build\"."); return; }
+        if (queuedAnswer(res, id)) return;
         buildWait = res;
         UI.postDelayed(() -> { if (buildWait == res) { buildWait = null; done(res.fail("refused", "The import did not start.")); } }, 1000);
     }
@@ -477,6 +537,17 @@ public final class Ctl {
             done(res);
         });
         if (no != null) throw new Request.Bad(no[0], no[1]);
+    }
+
+    /** A build that went into the build queue (issue #348): ok, with its place ("queue": the place and the batch's total); false when it did not */
+    private static boolean queuedAnswer(Result res, String id) {
+        dev.peanuts.build.BuildQueue.Item qi = BuildPipeline.queued(id);
+        dev.peanuts.build.BuildQueue q = BuildPipeline.queueNow();
+        if (qi == null || q == null) return false;
+        String p = q.placeText(qi);
+        res.ok("Another game builds now: this one is in the build queue" + (p.isEmpty() ? "" : ", " + p) + ". Its state is under \"queue\", and under \"build\" once it starts.")
+                .put("queue_place", q.place(qi)).put("queue_total", q.total());
+        return true;
     }
 
     private static void watch() { dialog = null; watching = true; }
@@ -539,8 +610,14 @@ public final class Ctl {
         if (!Up.hasProfile(id)) throw new Request.Bad("not_in_app", "This app version does not include " + g.name + ".");
         File dump = new File(g.gameDir);
         if (!Up.isDump(dump)) throw new Request.Bad("not_a_dump", "Prepare again works from a dump or a .nup; " + dump.getName() + " is neither.");
-        if (BuildPipeline.running() != 0) throw new Request.Bad("busy", "A build is running now. Wait for it to finish.");
         home(a);
+        // while the library builds or its queue waits, Prepare again goes into the build queue (issue #348), as Storage › Prepare again does (Ondevice.prepare)
+        if (BuildPipeline.busy()) {
+            if (CtlPort.building(a, id)) throw new Request.Bad("busy", g.name + " is being built now.");
+            if (!dev.peanuts.ui.Library.queuePrepare(a, dump)) throw new Request.Bad("refused", "Prepare again could not be added to the build queue.");
+            if (!queuedAnswer(res, id)) throw new Request.Bad("refused", "Prepare again could not be added to the build queue.");
+            return;
+        }
         Object panel = Up.panel(a);
         if (panel == null) throw new Request.Bad("no_home", "Home's Prepare card is not there.");
         watch();
@@ -571,6 +648,14 @@ public final class Ctl {
     private static void job(Activity a, Request r, Result res) throws Request.Bad, ReflectiveOperationException {
         String id = r.titleId(false), act = r.action();
         home(a);
+        // a paused build queue (issue #348): resume goes on with its first game, where it stopped (the Up next card's Resume)
+        dev.peanuts.build.BuildQueue q = BuildPipeline.queueNow();
+        dev.peanuts.build.BuildQueue.Item first = q == null ? null : q.next();
+        if (act.equals("resume") && BuildPipeline.held() && first != null && (id == null || id.equalsIgnoreCase(first.titleId()))) {
+            BuildPipeline.release(app);
+            res.ok("The build queue goes on with " + first.name() + " (the Up next card's Resume).").put("what", "queue");
+            return;
+        }
         Map<String, Object> card = CtlPort.buildCard();
         String failed = card != null && Boolean.TRUE.equals(card.get("failed")) ? String.valueOf(card.get("title_id")) : null;
         if (failed != null && id != null && !id.equalsIgnoreCase(failed)) failed = null;
@@ -604,7 +689,7 @@ public final class Ctl {
 
     private static void screensOff(Activity a, Result res) throws Request.Bad, ReflectiveOperationException {
         Object job = Up.job(app);
-        boolean builds = BuildPipeline.running() != 0 || job != null && "running".equals(Up.jobText(job, "state"));
+        boolean builds = BuildPipeline.busy() || job != null && "running".equals(Up.jobText(job, "state"));   // busy: a game builds, or the build queue waits to build the next (issue #348), as Home shows the button
         if (!builds) throw new Request.Bad("nothing_builds", "Screens off is for a running build: nothing builds now.");
         ScreensOff.show(a);
         if (!ScreensOff.on()) throw new Request.Bad("refused", "The screens could not be covered.");

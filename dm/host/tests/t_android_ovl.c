@@ -45,6 +45,28 @@ int main(void) {
     CHECK(o.x == ew - bw && o.y == 0, "top right: %d,%d", o.x, o.y);
     vko_place(1, ew, eh, ew, eh, VKO_BOTTOM_LEFT, bw, bh, tw, th, 0, &o);
     CHECK(o.x == 0 && o.y == eh - bh, "bottom left: %d,%d", o.x, o.y);
+    // PEANUTS begin: the centred blocks (VKO_TOP_CENTER, VKO_BOTTOM_CENTER) map through every turn as the corners do, and sit in the middle of their edge
+    for (int pi = 0; pi < 4; pi++) for (int ci = 0; ci < 2; ci++) {
+        int pre = pres[pi], corner = ci ? VKO_BOTTOM_CENTER : VKO_TOP_CENTER, quarter = pre == VKO_ROT90 || pre == VKO_ROT270, W = quarter ? eh : ew, H = quarter ? ew : eh;
+        vko_draw c;
+        CHECK(vko_place(pre, W, H, ew, eh, corner, bw, bh, tw, th, ty, &c), "pre %d centre %d: a block", pre, corner);
+        CHECK(c.x >= 0 && c.y >= 0 && c.x + c.w <= W && c.y + c.h <= H && c.w * c.h == bw * bh, "pre %d centre %d: viewport %d,%d %dx%d", pre, corner, c.x, c.y, c.w, c.h);
+        int dx = (ew - bw) / 2, dy = corner & 2 ? eh - bh : 0;
+        const int pts[3][2] = {{0, 0}, {bw - 1, bh - 1}, {bw / 3, bh / 2}};
+        for (int q = 0; q < 3; q++) {
+            double ix, iy;
+            to_image(pre, ew, eh, dx + pts[q][0] + 0.5, dy + pts[q][1] + 0.5, &ix, &iy);
+            double px = (ix - c.x) / c.w, py = (iy - c.y) / c.h;
+            double u = c.pc[0] * px + c.pc[1] * py + c.pc[4], v = c.pc[2] * px + c.pc[3] * py + c.pc[5];
+            CHECK(px > 0 && px < 1 && py > 0 && py < 1 && fabs(u - (pts[q][0] + 0.5) / tw) < 1e-5 && fabs(v - (ty + pts[q][1] + 0.5) / th) < 1e-5,
+                  "pre %d centre %d point %d: texture (%.5f, %.5f)", pre, corner, q, u, v);
+        }
+    }
+    vko_place(1, ew, eh, ew, eh, VKO_TOP_CENTER, bw, bh, tw, th, 0, &o);
+    CHECK(o.x == (ew - bw) / 2 && o.y == 0, "top centre: %d,%d", o.x, o.y);
+    vko_place(1, ew, eh, ew, eh, VKO_BOTTOM_CENTER, bw, bh, tw, th, 0, &o);
+    CHECK(o.x == (ew - bw) / 2 && o.y == eh - bh, "bottom centre: %d,%d", o.x, o.y);
+    // PEANUTS end
     // a block wider or taller than the display is cut to it; empty blocks draw nothing
     CHECK(vko_place(1, 100, 50, 100, 50, VKO_TOP_RIGHT, 300, 80, 320, 96, 0, &o) && o.x == 0 && o.w == 100 && o.h == 50, "cut to the display: %d %dx%d", o.x, o.w, o.h);
     CHECK(fabs(o.pc[0] - 100.0 / 320) < 1e-6 && fabs(o.pc[3] - 50.0 / 96) < 1e-6, "cut: the texture's part");

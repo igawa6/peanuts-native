@@ -1,23 +1,28 @@
 package dev.peanuts.build;
 
+import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
+import android.os.BatteryManager;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.Log;
 
 import dev.peanuts.PeanutsPrefs;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 
@@ -33,111 +38,372 @@ import java.util.Locale;
  *     watched until the pack is done, then the game into the launcher's list.</li>
  * <li><b>companion</b> — the chosen catalog package into &lt;title ID&gt;-work/peanuts/&lt;Name&gt;/ ({@link Companions}); skipped when that version is installed.</li>
  * </ol>
- * One build at a time; a second request while one runs is refused with a message. ACTION_CANCEL stops the running build between steps (the packer's job stays
- * saved; the Home card resumes it). Needs the manifest entry (dev/peanuts/settings/HOOKS.md) and, for Android 13+, the notification permission for the bar to show.
+ * The queue (issue #348, {@link BuildQueue}): a build asked while another runs waits its turn instead of being refused, and the queue is kept in the app's own
+ * storage, so a killed app or process goes on with it (a sticky restart, or the next start of the app: {@link BuildPipeline#resume}). One game at a time, in order:
+ * <ul>
+ * <li>a game whose build fails or is stopped is marked (its build card says why), and the next one starts;</li>
+ * <li>before each game the queue waits while the phone is hot or the battery is low and not charging (upstream's PackPolicy, the packer's own rule, with the
+ *     Go on anyway remembered for the device, #93), while a game of this app runs (an import and a Prepare beside it take its memory: 8 GB phones, #124), and
+ *     while a build with mods runs (it shares the packer); it goes on by itself;</li>
+ * <li>a game whose .nup does not fit the free space of its folder, or whose pack would have less than {@link #MIN_PACK_FREE} to be made in, stops before anything
+ *     is written;</li>
+ * <li>the notification names the game and its place ("2 of 5"); Cancel stops this game, Cancel all the queue. Only the queue's end alerts, once, with what is
+ *     ready and what stopped.</li>
+ * </ul>
+ * ACTION_CANCEL stops the running build between steps (the packer's job stays saved; the build card resumes it). Needs the manifest entry
+ * (dev/peanuts/settings/HOOKS.md) and, for Android 13+, the notification permission for the bar to show.
  */
 public final class BuildService extends Service {
-    public static final String ACTION_BUILD = "dev.peanuts.build.BUILD", ACTION_CANCEL = "dev.peanuts.build.CANCEL";
-    static final String EXTRA_ID = "id", EXTRA_TITLE = "title_id", EXTRA_NAME = "name", EXTRA_BASE = "base", EXTRA_UPDATE = "update", EXTRA_DLCS = "dlcs", EXTRA_GAME_DIR = "game_dir",
-            EXTRA_COMPANION = "companion", EXTRA_BUILD_ANYWAY = "build_anyway", EXTRA_REPLACE_NUP = "replace_nup", EXTRA_DELETE_FIRST = "delete_old_first",
-            EXTRA_BUILD_DESTINATION = "build_destination";
+    public static final String ACTION_BUILD = "dev.peanuts.build.BUILD", ACTION_CANCEL = "dev.peanuts.build.CANCEL", ACTION_CANCEL_ALL = "dev.peanuts.build.CANCEL_ALL",
+            ACTION_GO_ON = "dev.peanuts.build.GO_ON", ACTION_PAUSE = "dev.peanuts.build.PAUSE";
     private static final String TAG = Prepare.TAG, CHANNEL = "peanuts_build";
     private static final int NOTE = 7001;
     /** Each step's share of the bar: import 0-45, prepare 45-90, companion 90-100 */
     private static final int IMPORT_END = 45, PREPARE_END = 90;
+    /** Below this much free space where the pack is made, Prepare is not started: no game's pack and its working files fit in less */
+    static final long MIN_PACK_FREE = 512L * 1024 * 1024;
+    /** How often a wait between two games looks again (the battery and thermal broadcasts wake it sooner) */
+    private static final long WAIT_MS = 30_000;
+
+    /** Whether this process has the service now (BuildPipeline.resume starts it when the queue has a game waiting and it does not) */
+    static volatile boolean alive;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private NotificationManager nm;
-    private Thread worker;
+    private Thread worker;   // the queue's worker; set and cleared on the main thread only (onStartCommand, the worker's end)
     private volatile Prepare prepare;
-    private volatile boolean cancelled;
-    private int id;
-    private String name = "";
-    private boolean buildAnyway;   // this run's explicit consent (EXTRA_BUILD_ANYWAY), never inferred
+    private volatile boolean cancelled, cancelAll, timedOut, heatGoOn, pausing;
+    private volatile int id;
+    private volatile String name = "";
+    private boolean buildAnyway;   // this run's explicit consent (the item's Build anyway), never inferred
+    private volatile boolean lastOk;
+    private volatile String lastMessage = "";
     // The game's build log (BuildLog, Share build log): what this run did, in <app files>/build-logs/<title ID>.log beside logcat
     private volatile String logId;
     private long runStart;
     private String logKey = "";
     private int logBucket = -1;
+    // The wait between two games: the readings PackPolicy decides on, what the queue waits for now
+    private final Object waitLock = new Object();
+    private volatile int batteryPct = 100, thermal;
+    private volatile boolean charging = true;
+    private volatile String waitReason;
+    private boolean policyBroken;
+    private PowerManager pm;
+    private PowerManager.WakeLock wake;
+    private final PowerManager.OnThermalStatusChangedListener thermalListener = s -> { thermal = s; wakeWait(); };
+    private final BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) { battery(i); wakeWait(); }
+    };
 
-    static Intent intent(Context c, int id, BuildRequest r) { return intent(c, id, r, false); }
-
-    /** buildAnyway: the sheet's explicit "Build anyway" consent for a dump version the profile does not list (P1; Prepare.run never applies this on its own) */
-    static Intent intent(Context c, int id, BuildRequest r, boolean buildAnyway) {
-        Intent i = new Intent(c, BuildService.class).setAction(ACTION_BUILD).putExtra(EXTRA_ID, id).putExtra(EXTRA_TITLE, r.titleId).putExtra(EXTRA_NAME, r.name)
-                .putExtra(EXTRA_GAME_DIR, r.gameDir == null ? null : r.gameDir.getPath()).putExtra(EXTRA_COMPANION, r.companionPackage).putExtra(EXTRA_BUILD_ANYWAY, buildAnyway);
-        i.putExtra(EXTRA_BUILD_DESTINATION, r.buildDestination);
-        if (r.base != null) i.putExtra(EXTRA_BASE, r.base.getPath());
-        if (r.update != null) i.putExtra(EXTRA_UPDATE, r.update.getPath());
-        List<String> d = new ArrayList<>();
-        for (File f : r.dlcs) if (f != null) d.add(f.getPath());
-        i.putStringArrayListExtra(EXTRA_DLCS, new ArrayList<>(d));
-        if (r.replaceNup != null) i.putExtra(EXTRA_REPLACE_NUP, r.replaceNup.getPath()).putExtra(EXTRA_DELETE_FIRST, r.deleteOldFirst);
-        return i;
-    }
-
-    static BuildRequest request(Intent i) {
-        BuildRequest r = new BuildRequest();
-        r.titleId = i.getStringExtra(EXTRA_TITLE);
-        r.name = i.getStringExtra(EXTRA_NAME);
-        String s = i.getStringExtra(EXTRA_BASE);
-        r.base = s == null ? null : new File(s);
-        s = i.getStringExtra(EXTRA_UPDATE);
-        r.update = s == null ? null : new File(s);
-        List<String> d = i.getStringArrayListExtra(EXTRA_DLCS);
-        if (d != null) for (String p : d) r.dlcs.add(new File(p));
-        s = i.getStringExtra(EXTRA_GAME_DIR);
-        r.gameDir = s == null ? null : new File(s);
-        r.buildDestination = i.getStringExtra(EXTRA_BUILD_DESTINATION);
-        r.companionPackage = i.getStringExtra(EXTRA_COMPANION);
-        s = i.getStringExtra(EXTRA_REPLACE_NUP);
-        r.replaceNup = s == null ? null : new File(s);
-        r.deleteOldFirst = i.getBooleanExtra(EXTRA_DELETE_FIRST, false);
-        return r;
-    }
+    /** Runs the queue: the game just added, or the ones a killed process left */
+    static Intent run(Context c) { return new Intent(c, BuildService.class).setAction(ACTION_BUILD); }
 
     @Override public void onCreate() {
         super.onCreate();
+        alive = true;
         nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Building games", NotificationManager.IMPORTANCE_LOW));
+        pm = getSystemService(PowerManager.class);
+        wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "peanuts:build");
+        wake.setReferenceCounted(false);
+        battery(registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED), Context.RECEIVER_NOT_EXPORTED));
+        thermal = pm.getCurrentThermalStatus();
+        pm.addThermalStatusListener(getMainExecutor(), thermalListener);
+    }
+
+    @Override public void onDestroy() {
+        alive = false;
+        try { unregisterReceiver(batteryReceiver); } catch (RuntimeException e) { /* not registered */ }
+        pm.removeThermalStatusListener(thermalListener);
+        if (wake.isHeld()) wake.release();
+        super.onDestroy();
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null) { stopSelf(startId); return START_NOT_STICKY; }
-        if (ACTION_CANCEL.equals(intent.getAction())) {
-            cancelled = true;
-            Importer.cancel(true);   // an import stops within a second (issue #149; it used to run to its end first)
-            Prepare p = prepare;
-            if (p != null) p.cancel();
+        String action = intent == null ? ACTION_BUILD : intent.getAction();   // no intent: Android started the service again after its process ended (sticky)
+        if (ACTION_CANCEL.equals(action) || ACTION_CANCEL_ALL.equals(action) || ACTION_PAUSE.equals(action)) {
+            if (ACTION_CANCEL_ALL.equals(action)) {
+                cancelAll = true;
+                int n = BuildPipeline.queue(this).removeWaiting();
+                if (n > 0) Log.i(TAG, "queue: Cancel all: " + n + " waiting game" + (n == 1 ? "" : "s") + " removed");
+                BuildPipeline.changed();
+                wakeWait();
+            }
+            if (ACTION_PAUSE.equals(action)) {   // the control interface's job pause: the whole queue pauses, the game in hand goes on first at Resume
+                pausing = true;
+                BuildPipeline.queue(this).hold();
+                BuildPipeline.changed();
+                wakeWait();
+            }
+            if (id != 0) {   // a game runs: it stops between steps
+                cancelled = true;
+                Importer.cancel(true);   // an import stops within a second (issue #149; it used to run to its end first)
+                Prepare p = prepare;
+                if (p != null) {
+                    boolean own = p.jobStarted();   // before its start the packer runs another game's job, which is not this Stop's
+                    p.cancel();
+                    if (own) pausePacker();   // the packer's job pauses too: it went on in the background, and the next game's Prepare would wait for it
+                }
+            }
             Thread w = worker;
             if (w != null) w.interrupt();
             else stopSelf(startId);
-            return START_NOT_STICKY;
+            return w != null ? START_STICKY : START_NOT_STICKY;
         }
-        BuildRequest r = request(intent);
-        int reqId = intent.getIntExtra(EXTRA_ID, 0);
-        if (worker != null && worker.isAlive()) {
-            BuildPipeline.finish(reqId, false, name + " is being built now. Wait for it to finish.", BuildListener.OTHER);
-            return START_NOT_STICKY;
+        if (ACTION_GO_ON.equals(action)) {   // the wait's Go on anyway: the heat wait is lifted for this run of the queue (CRITICAL or worse still waits)
+            heatGoOn = true;
+            Log.i(TAG, "queue: Go on anyway (from the notification): the heat wait is lifted until the queue ends");
+            wakeWait();
+            if (worker == null) { stopSelf(startId); return START_NOT_STICKY; }   // a stale notification: nothing waits here
+            return START_STICKY;
         }
-        id = reqId;
-        name = r.name == null || r.name.isEmpty() ? r.titleId : r.name;
-        buildAnyway = intent.getBooleanExtra(EXTRA_BUILD_ANYWAY, false);
-        cancelled = false;
+        BuildQueue q = BuildPipeline.queue(this);
         try {
-            startForeground(NOTE, note(0, "Starting"), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            BuildQueue.Item next = q.running() != null ? q.running() : q.next();
+            startForeground(NOTE, next == null ? note(0, "Starting") : worker == null ? note(next, 0, "Starting") : current(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         } catch (RuntimeException e) {   // ForegroundServiceStartNotAllowedException, or the manifest lacks the service type
             Log.w(TAG, "startForeground refused: " + e);
-            BuildLogShare.line(this, r.titleId, BuildLog.START + "build of " + name + " (" + r.titleId + ")\n" + BuildLog.END + "failed (" + BuildListener.OTHER + "): Android refused the build's foreground service: " + e);
-            BuildPipeline.finish(id, false, "Android did not let the build start in the background: open the app and tap Build again.", BuildListener.OTHER);
+            BuildQueue.Item next = q.next();
+            if (next != null) BuildLogShare.line(this, next.titleId(), "queue: Android refused the build's foreground service (" + e + "): the game waits in the queue until the app is opened");
+            BuildPipeline.notStarted();
+            if (worker == null) stopSelf(startId);
+            return worker == null ? START_NOT_STICKY : START_STICKY;
+        }
+        if (worker != null) return START_STICKY;   // the worker takes the new game when its turn comes
+        if (q.next() == null || q.held()) {   // nothing to do (a start from a stale queue, Cancel all came first, the queue is paused)
+            stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf(startId);
             return START_NOT_STICKY;
         }
-        worker = new Thread(() -> run(r), "peanuts-build");
+        cancelAll = false;
+        timedOut = false;
+        heatGoOn = false;
+        pausing = false;
+        worker = new Thread(this::loop, "peanuts-build");
         worker.start();
-        return START_NOT_STICKY;
+        return START_STICKY;
+    }
+
+    /** Android 15+'s daily limit for dataSync services: the game that runs goes back to the front of the queue, and the service ends within the seconds Android gives */
+    @Override public void onTimeout(int startId, int fgsType) {
+        Log.w(TAG, "queue: Android's daily limit for builds was reached: the queue stops and goes on when the app is opened");
+        timedOut = true;
+        cancelAll = true;
+        if (id != 0) {
+            cancelled = true;
+            Importer.cancel(true);
+            Prepare p = prepare;
+            if (p != null) p.cancel();
+        }
+        Thread w = worker;
+        if (w != null) w.interrupt();
+        wakeWait();
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        if (w == null) stopSelf();
+    }
+
+    // ---- The queue ----
+
+    /** The worker: one game after the other, each after its wait, until none waits or Cancel all */
+    private void loop() {
+        BuildQueue q = BuildPipeline.queue(this);
+        if (q.saveFailed != null) Log.w(TAG, "queue: its file could not be written (" + q.saveFailed + ")");
+        BuildQueue.Item last = null;
+        try {
+            while (!cancelAll && !q.held()) {
+                BuildQueue.Item next = q.next();
+                if (next == null) break;
+                if (!waitTurn(q, next) || q.held()) break;
+                next = q.next();   // the one that waited may have been removed meanwhile
+                if (next == null) break;
+                runItem(q, next);
+                last = next;
+                Thread.interrupted();   // a Cancel meant for that game does not reach the next
+            }
+        } finally {
+            wakeHeld(false);
+            final BuildQueue.Item fl = last;
+            main.post(() -> ended(q, fl));
+        }
+    }
+
+    /** The worker's end, on the main thread: a game added after the worker looked runs on; else the end's notification, and the service stops */
+    private void ended(BuildQueue q, BuildQueue.Item last) {
+        worker = null;
+        waitReason = null;
+        BuildPipeline.waiting(null, 0);
+        // a game added while the worker ended (Cancel all emptied the queue: one that waits now was added after it) runs on
+        if (!timedOut && !q.held() && q.next() != null) {
+            cancelAll = false;
+            pausing = false;
+            worker = new Thread(this::loop, "peanuts-build");
+            worker.start();
+            return;
+        }
+        if (q.held() && q.next() != null) nm.notify(NOTE + 1, pausedNote(q));
+        else if (last != null && !timedOut) {
+            int total = q.total();
+            if (total <= 1) nm.notify(NOTE + 1, done(lastOk, lastMessage, !lastOk && cancelled));   // one game: its own end, as before the queue
+            else nm.notify(NOTE + 1, queueDone(q.readyCount() == total, q.summary(), cancelAll));
+        }
+        BuildPipeline.changed();
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        nm.cancel(NOTE);   // a progress line posted after the daily limit took the service out of the foreground is not removed with it
+        stopSelf();
+    }
+
+    /**
+     * Waits before a game while the phone is hot or the battery low (PackPolicy), a game of this app runs, a build with mods runs, or a pack of this game is
+     * being imported (Import pack, GitHub issue #44); true when the game may start, false when the queue is to stop (Cancel all, Android's daily limit)
+     */
+    private boolean waitTurn(BuildQueue q, BuildQueue.Item next) {
+        String was = null;
+        while (!cancelAll && !q.held()) {
+            String r = waitFor(was, next);
+            if (r == null) {
+                if (was != null) {
+                    BuildLogShare.line(this, next.titleId(), "queue: going on after the wait (" + was + "; " + readings() + ")");
+                    Log.i(TAG, "queue: going on after the " + was + " wait: " + readings());
+                }
+                waitReason = null;
+                BuildPipeline.waiting(null, 0);
+                return true;
+            }
+            if (!r.equals(was)) {
+                Log.i(TAG, "queue: waiting before " + next.name() + ": " + r + " (" + readings() + ")");
+                BuildLogShare.line(this, next.titleId(), "queue: waiting before the build: " + BuildQueue.waitText(r) + " (" + readings() + ")");
+                waitReason = r;
+                BuildPipeline.waiting(r, next.id);
+                main.post(() -> { if (worker != null) nm.notify(NOTE, waitNote(next, r)); });
+            }
+            was = r;
+            wakeHeld(!r.equals(BuildQueue.WAIT_BATTERY));   // a wait for the charger lets the phone sleep: plugging it in wakes the wait
+            synchronized (waitLock) {
+                try { waitLock.wait(WAIT_MS); } catch (InterruptedException e) { /* Cancel all, or the daily limit: the loop looks */ }
+            }
+        }
+        return false;
+    }
+
+    /** What the queue waits for before next now, null when nothing: was is what it waited for at the last look (the heat wait lasts until MODERATE, PackPolicy) */
+    private String waitFor(String was, BuildQueue.Item next) {
+        String r = policy(BuildQueue.WAIT_HEAT.equals(was) ? "thermal" : BuildQueue.WAIT_BATTERY.equals(was) ? "battery" : null);
+        if ("battery".equals(r)) return BuildQueue.WAIT_BATTERY;
+        if ("thermal".equals(r)) return BuildQueue.WAIT_HEAT;
+        if (ModBuildPipeline.running() != 0) return BuildQueue.WAIT_MODS;
+        if (gameRunning()) return BuildQueue.WAIT_GAME;
+        if (dev.peanuts.pack.PackImport.busy(next.titleId())) return BuildQueue.WAIT_PACK;   // the import writes the pack folder this build would use (the sheet's Build waits the same way)
+        return null;
+    }
+
+    /** Upstream's PackPolicy.reason (the packer's pause rule) on this service's readings: "battery", "thermal" or null */
+    private String policy(String was) {
+        boolean override = heatGoOn || heatGoOnRemembered();
+        try {
+            return (String) Upstream.call(Upstream.k("PackPolicy"), null, "reason", new Class<?>[] {int.class, boolean.class, int.class, String.class, boolean.class},
+                    batteryPct, charging, thermal, was, override);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            if (!policyBroken) { policyBroken = true; Log.w(TAG, "queue: the packer's pause rule cannot be read (" + e + "): the queue does not wait for heat or the battery"); }
+            return null;
+        }
+    }
+
+    /** Whether Go on anyway lifts this heat wait (PackPolicy.canOverride: not at CRITICAL or worse) */
+    private boolean canGoOn() {
+        try {
+            return Boolean.TRUE.equals(Upstream.call(Upstream.k("PackPolicy"), null, "canOverride", new Class<?>[] {String.class, int.class}, "thermal", thermal));
+        } catch (ReflectiveOperationException | RuntimeException e) { return false; }
+    }
+
+    /**
+     * The packer's remembered Go on anyway (PackService's PEANUTS prefs peanuts_heat / go_on_anyway, #93), read from its file: the ":pack" process writes it,
+     * and this process's own SharedPreferences would keep what it read first
+     */
+    private boolean heatGoOnRemembered() {
+        File f = new File(getDataDir(), "shared_prefs/peanuts_heat.xml");
+        try { return f.isFile() && new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8).matches("(?s).*name=\"go_on_anyway\"\\s+value=\"true\".*"); }
+        catch (IOException | RuntimeException e) { return false; }
+    }
+
+    /** Whether a game of this app runs (its ":game" process alive and not cached: GameActivity ends the process when the game closes) */
+    private boolean gameRunning() {
+        try {
+            ActivityManager am = getSystemService(ActivityManager.class);
+            List<ActivityManager.RunningAppProcessInfo> procs = am == null ? null : am.getRunningAppProcesses();
+            if (procs == null) return false;
+            String want = getPackageName() + ":game";
+            for (ActivityManager.RunningAppProcessInfo p : procs) if (want.equals(p.processName) && p.importance < ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED) return true;
+        } catch (RuntimeException e) { /* no answer: no wait */ }
+        return false;
+    }
+
+    private void battery(Intent i) {
+        if (i == null) return;
+        int level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1), scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+        if (level >= 0 && scale > 0) batteryPct = level * 100 / scale;
+        charging = i.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0;
+    }
+
+    private String readings() {
+        return "thermal status " + thermal + ", battery " + batteryPct + " %" + (charging ? ", charging" : "") + (heatGoOn ? ", Go on anyway" : "");
+    }
+
+    private void wakeWait() { synchronized (waitLock) { waitLock.notifyAll(); } }
+
+    /** The packer's Pause for the job this game prepares (as its notification's Pause): its job is kept, the game's Resume goes on with it */
+    private void pausePacker() {
+        try {
+            Class<?> s = Upstream.k("PackService");
+            startService(new Intent(this, s).setAction(Upstream.str(Upstream.getStatic(s, "ACTION_PAUSE"))).putExtra(Upstream.str(Upstream.getStatic(s, "EXTRA_FROM")), "launcher"));
+        } catch (ReflectiveOperationException | RuntimeException e) { Log.w(TAG, "the packer's pause: " + e); }
+    }
+
+    /** The partial wake lock: held while a game builds and while the queue waits for heat or a game, so the screen can be off all night; not while it waits for a charger */
+    private void wakeHeld(boolean on) {
+        try {
+            if (on && !wake.isHeld()) wake.acquire(6 * 60 * 60 * 1000L);   // a long build is far shorter; a lock that outlives a stuck worker ends by itself
+            else if (!on && wake.isHeld()) wake.release();
+        } catch (RuntimeException e) { Log.w(TAG, "wake lock: " + e); }
+    }
+
+    /** One game of the queue: its build, then how it ended into the queue and to the screens that follow it */
+    private void runItem(BuildQueue q, BuildQueue.Item next) {
+        cancelled = false;   // before the id: a Cancel from here on is this game's
+        q.start(next.id, System.currentTimeMillis());
+        BuildQueue.Item got = q.get(next.id);   // the game asked again meanwhile keeps its place with the newer request
+        final BuildQueue.Item it = got != null ? got : next;
+        id = it.id;
+        name = it.name();
+        buildAnyway = it.buildAnyway;
+        BuildPipeline.started(it.id, it.titleId(), name);
+        wakeHeld(true);
+        String place = q.placeText(it);
+        main.post(() -> { if (worker != null) nm.notify(NOTE, note(it, 0, "Starting")); });
+        String[] end = run(it.request, place);
+        boolean ok = "".equals(end[1]);
+        String code = ok ? "" : end[1], message = end[0];
+        // A pause is not this game's end: the packer's own Pause (its notification, Home's Prepare card), the control interface's job pause, or a pause
+        // Android made (the daily limit, a start it refused). The game goes back to the front and the queue keeps it; Stop and Cancel stop this game only
+        boolean packerPaused = !ok && BuildListener.CANCELLED.equals(code) && !cancelled;
+        if (timedOut && !ok) {
+            q.requeue(it.id);
+            message = "Paused: Android allows only so much background work a day. The build of " + name + " goes on when you open the app.";
+            code = BuildListener.CANCELLED;
+            ok = false;
+        } else if (!ok && (pausing || packerPaused)) {
+            q.requeue(it.id);
+            q.hold();
+            log("queue: paused" + (packerPaused ? " (the packer's job paused)" : "") + "; " + name + " goes on first when the queue is resumed");
+        } else q.finish(it.id, ok, code, message, System.currentTimeMillis());
+        if (q.saveFailed != null) log("queue: its file could not be written (" + q.saveFailed + ")");
+        lastOk = ok;
+        lastMessage = message;
+        int fid = it.id;
+        id = 0;
+        BuildPipeline.finish(fid, ok, message, code);
     }
 
     /** One line in logcat and in the game's build log */
@@ -194,8 +460,7 @@ public final class BuildService extends Service {
             long[] f = RuntimeShaders.failed(Upstream.jobFileOf(work));
             if (f[0] <= 0) return "";
             Log.w(TAG, "shaders: " + f[0] + " of " + f[1] + " of " + name + "'s shaders are not in its library");
-            return String.format(java.util.Locale.ROOT, " %,d of its %,d shaders could not be built, so some effects may not show. The log that says which is %s.", f[0], f[1],
-                    new File(work, "ondevice/logs/shaders.log"));
+            return String.format(java.util.Locale.ROOT, " %,d of its %,d shaders could not be made, so some effects may not show. Its build log lists them.", f[0], f[1]);
         } catch (ReflectiveOperationException e) {
             return "";
         }
@@ -222,16 +487,46 @@ public final class BuildService extends Service {
         dev.peanuts.ui.Cracked.built(this, r.titleId, version < 0 ? null : "v" + version, shaders);
     }
 
-    private void run(BuildRequest r) {
+    /**
+     * What the ready message adds when the build took part of its work from earlier builds (issue #120, peanuts/docs/INCREMENTAL-BUILD.md): how long it took and what
+     * came from them, read from this build's step logs (BuildReuse). Empty for a build that kept nothing, or when the logs cannot be found
+     */
+    private String reused(BuildRequest r, File dump) {
+        try {
+            File logs = new File(Upstream.workOf(dump, r.titleId), "ondevice/logs");
+            String t = BuildReuse.text(BuildReuse.read(logs, runStart), (System.currentTimeMillis() - runStart) / 1000);
+            if (!t.isEmpty()) log("reused:" + t);
+            return t;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return "";
+        }
+    }
+
+    /** The full check of the shaders this build kept, when it is due, the phone charges and no game runs (ReuseCheck): in the packer, after the build; else later */
+    private void startCheck(BuildRequest r, File dump) {
+        try {
+            File jobFile = Upstream.jobFileOf(Upstream.workOf(dump, r.titleId));
+            ReuseCheck.remember(getNoBackupFilesDir(), r.titleId, jobFile);   // for a start later, from the launcher (ReuseCheck.startAny)
+            String why = ReuseCheck.start(this, jobFile, r.titleId);
+            if (why == null) log("reuse check: the full check of the kept shaders starts in the background (a game that starts stops it)");
+            else if (!why.equals("nothing due")) log("reuse check: later (" + why + ")");
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            log("reuse check: " + e);
+        }
+    }
+
+    /** One game's build, its steps in order; returns {the card's message, the failure code ("" when it is ready)} */
+    private String[] run(BuildRequest r, String place) {
         final long startedAt = System.currentTimeMillis();
         boolean ok = false;
         String message;
         String code = BuildListener.OTHER;
         logId = r.titleId;
         logStart(r);
+        if (!place.isEmpty()) log("queue: " + place);
         try {
             if (r.buildDestination != null && !new File(r.buildDestination).isDirectory())
-                throw new IOException("The selected build folder is unavailable. Reconnect its storage or pick another Build destination.");
+                throw new IOException("The game's build folder cannot be reached. Connect its storage again, or pick another Build destination, then tap Retry.\n" + r.buildDestination);
             File dump = stepImport(r);
             log("game file: " + fileLine(dump));
             try {
@@ -240,6 +535,15 @@ public final class BuildService extends Service {
                 log("work folder: " + work);
             } catch (ReflectiveOperationException | RuntimeException e) { log("work folder: unknown (" + e + ")"); }
             if (cancelled) throw new BuildListener.Failure("Build cancelled.", BuildListener.CANCELLED);
+            // The storage check before Prepare: no pack is made in less than MIN_PACK_FREE, and a build that ran out of space part way would leave its files
+            // for the next game of the queue to run out on as well
+            File packHome = destination(r) != null ? destination(r) : getExternalFilesDir(null);   // a build folder's <title ID>/, else the app's own storage (AppStorage)
+            long packFree = SpaceEstimate.freeBytes(packHome);
+            if (packFree < MIN_PACK_FREE) {
+                log("space: " + BuildLogBundle.size(packFree) + " free for the pack in " + packHome + ", below " + BuildLogBundle.size(MIN_PACK_FREE) + ": Prepare not started");
+                throw new BuildListener.Failure("Not enough free space to build " + name + ": it needs more than " + SpaceEstimate.words(MIN_PACK_FREE) + ", and "
+                        + SpaceEstimate.words(packFree) + " is free. Nothing was written. Free up some space, then tap Retry.\n" + packHome, BuildListener.OUT_OF_SPACE);
+            }
             File pack = null;
             IOException prepareFailed = null;
             try {
@@ -255,33 +559,27 @@ public final class BuildService extends Service {
                 stepCompanion(r, pack);
             } catch (IOException e) {
                 if (prepareFailed != null) throw new BuildListener.Failure(prepareFailed.getMessage() + "\n\nCompanion: " + e.getMessage(), category(prepareFailed));
-                throw e;
+                if (e instanceof BuildListener.Failure || cancelled) throw e;
+                // the game is built: only its companion is not there. The installer's own words (a URL, a file, an exception) go to Details
+                throw new IOException("Installing the dual-screen companion stopped. " + name + " is ready to play without it. Tap Retry to try the companion again.\n" + e.getMessage(), e);
             }
             if (prepareFailed != null) throw prepareFailed;
             ok = true;
-            cracked(r, dump, startedAt);
-            message = name + " is ready to play." + shadersLeftOut(r, dump);
+            message = name + " is ready to play." + reused(r, dump) + shadersLeftOut(r, dump);
             progress("done", 100, message);
+            dev.peanuts.ui.CrackedCount.never(() -> cracked(r, dump, startedAt), e -> Log.w(TAG, "peanuts cracked: the build is not counted: " + e));   // after done; a failure in it is logged, never the build's
+            startCheck(r, dump);
         } catch (IOException e) {
             message = e.getMessage() == null ? e.toString() : e.getMessage();
             code = category(e);
             Log.w(TAG, "build " + name + ": " + message);
         } catch (RuntimeException e) {
-            message = "Build failed: " + e;
+            message = "The build stopped because of a problem in the app. " + Prepare.RETRY_SHARE;
             Log.e(TAG, "build " + name, e);
             BuildLogShare.line(this, logId, "crash in the build service:\n" + Log.getStackTraceString(e).trim());
         }
         logEnd(ok, code, message);
-        final boolean fok = ok;
-        final String fmsg = message;
-        final String fcode = code;
-        main.post(() -> {
-            nm.notify(NOTE + 1, done(fok, fmsg));
-            BuildPipeline.finish(id, fok, fmsg, fcode);
-            worker = null;
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf();
-        });
+        return new String[] {message, ok ? "" : code};
     }
 
     /** The failure category for the build card's one recovery action (P4): a {@link BuildListener.Failure}'s own code, else a plain-message guess at the ones
@@ -300,37 +598,37 @@ public final class BuildService extends Service {
 
     /** (a) the .nup from an NSP/XCI, or the base as it is */
     private File stepImport(BuildRequest r) throws IOException {
-        if (r.base == null || !r.base.exists()) throw new BuildListener.Failure("The game's base file is missing" + (r.base == null ? "." : ": " + r.base), BuildListener.FILE_MISSING);
-        if (r.update != null && !r.update.exists()) throw new BuildListener.Failure("The update file is missing: " + r.update, BuildListener.FILE_MISSING);
-        if (!r.needsImport()) { log("import: not needed, the base is a .nup or a dump"); progress("import", IMPORT_END, "Game file: " + r.base.getName()); return r.base; }
+        if (r.base == null || !r.base.exists()) throw new BuildListener.Failure("The game's base file is missing." + (r.base == null ? "" : "\n" + r.base), BuildListener.FILE_MISSING);
+        if (r.update != null && !r.update.exists()) throw new BuildListener.Failure("The game's update file is missing.\n" + r.update, BuildListener.FILE_MISSING);
+        if (!r.needsImport()) { log("import: not needed, the base is a .nup or a dump"); progress("import", IMPORT_END, "Game files ready"); return r.base; }
         // PEANUTS: a build folder (Settings - Library - Build folder), when set, is where this title's .nup and pack both go (<build folder>/<title ID>/),
         // instead of beside the game and in the app's own storage; PeanutsPrefs.buildGameDir validates the title ID and returns null without one set
         File buildGameDir = destination(r);
         File replace = r.replaceNup;   // Import again: the .nup to make anew, where it is
         boolean again = replace != null;
-        if (!again && buildGameDir == null && r.gameDir == null) throw new IOException("No game folder to write the .nup into (Setup).");
+        if (!again && buildGameDir == null && r.gameDir == null) throw new IOException("The app has no game folder to save the imported game in. Set the Game folder in Settings › Library, then tap Retry.");
         List<File> inputs = r.inputs();
         // PEANUTS: both volumes move to the build folder when it is set (the .nup and the pack land under the same <title ID> folder there)
         File importDest = again ? replace.getAbsoluteFile().getParentFile() : buildGameDir != null ? buildGameDir : r.gameDir;
         File packVolume = buildGameDir != null ? new File(buildGameDir, "pack") : getExternalFilesDir(null);
         File dir = again ? importDest : buildGameDir != null ? buildGameDir : new File(r.gameDir, r.fileName()), out = again ? replace : new File(dir, r.fileName() + ".nup");
-        if (dir == null) throw new IOException("The .nup has no folder: " + out);
+        if (dir == null) throw new IOException("The app cannot tell where to save the imported game. " + Prepare.RETRY_SHARE + "\n" + out);
         long newest = 0;
         for (File f : inputs) newest = Math.max(newest, f.lastModified());
-        if (!again && out.isFile() && out.length() > 0 && out.lastModified() >= newest) { log("import: imported already, the .nup is newer than every input: " + out); progress("import", IMPORT_END, "Imported already: " + out.getName()); return out; }
-        if (!Importer.available()) throw new IOException("This build of the app cannot import NSP, NSZ, XCI or XCZ files yet (no importer). Use a .nup or a dump folder.");
+        if (!again && out.isFile() && out.length() > 0 && out.lastModified() >= newest) { log("import: imported already, the .nup is newer than every input: " + out); progress("import", IMPORT_END, "Game files imported earlier"); return out; }
+        if (!Importer.available()) throw new IOException("This app version cannot import NSP, NSZ, XCI or XCZ files. Build from a .nup or a dump folder instead.");
         File keys = new File(new File(getFilesDir(), "keys"), "prod.keys");
-        if (!keys.isFile()) throw new IOException("No prod.keys: add your keys in Setup first.");
+        if (!keys.isFile()) throw new IOException("Add your keys first in Settings › Console, then build.");
         // The sizes come from the probe (the keys first): the .nup's from the titles' own records, which a compressed file's length is not, and what
         // unpacking a solid .nsz needs beside it while it imports (issue #149); a file the probe cannot size counts with its length, as before
         progress("import", 0, "Loading keys");
         long[] sized;
         try {
-            if (Importer.keys(keys) != 0) throw new IOException("Keys: " + Importer.lastError());
+            if (Importer.keys(keys) != 0) throw new IOException("The app could not read your keys. Add them again in Settings › Console, then tap Retry.\n" + Importer.lastError());
             log("import: keys loaded");
             sized = Importer.sizes(inputs, r.titleId);
         } catch (ReflectiveOperationException e) {
-            throw new IOException("The importer does not match this build of the app (" + e.getMessage() + ").");
+            throw new IOException("The import could not start because of a problem in the app. " + Prepare.RETRY_SHARE + "\n" + e.getMessage());
         }
         final long nupBytes = sized[0], unpackBytes = sized[1], checkBytes = sized[2];
         long importNeed = nupBytes + unpackBytes;   // on the .nup's volume while it imports
@@ -345,12 +643,25 @@ public final class BuildService extends Service {
         // work). Unlike the first import's estimate above this one stops the build: the player chose between freeing space and deleting the old file first
         boolean oldThere = again && out.isFile();
         if (oldThere && !r.deleteOldFirst && SpaceEstimate.freeBytes(dir) < importNeed)
-            throw new BuildListener.Failure("Not enough free space to import " + name + " again: the new .nup needs about " + Reimport.size(importNeed) + " beside the old "
-                    + "one" + (unpackBytes > 0 ? " while its compressed files are unpacked" : "") + ", and " + Reimport.size(SpaceEstimate.freeBytes(dir)) + " is free in " + dir + ". Nothing was changed.", BuildListener.OUT_OF_SPACE);
+            throw new BuildListener.Failure("Not enough free space to import " + name + " again: the new game file needs about " + Reimport.size(importNeed) + " beside the old "
+                    + "one" + (unpackBytes > 0 ? " while the compressed files are unpacked" : "") + ", and " + Reimport.size(SpaceEstimate.freeBytes(dir)) + " is free. Nothing was changed.\n" + dir, BuildListener.OUT_OF_SPACE);
+        // The first import (the queue's storage check, issue #348): the .nup's size is the probe's, from the titles' own records, not the uncalibrated pack
+        // estimate above, so a .nup that cannot fit stops here, before anything is written, and the queue goes on with the next game instead of filling the
+        // folder. What a killed import left (the .part, deleted below) counts as free
+        if (!again) {
+            File part = new File(dir, out.getName() + ".part");
+            long free = SpaceEstimate.freeBytes(dir), left = part.isFile() ? part.length() : 0;
+            if (free != Long.MAX_VALUE && free + left < importNeed) {
+                log("space: " + BuildLogBundle.size(free + left) + " free in " + dir + ", the import needs " + BuildLogBundle.size(importNeed) + ": not started");
+                throw new BuildListener.Failure("Not enough free space to import " + name + ": its game file needs about " + Reimport.size(importNeed)
+                        + (unpackBytes > 0 ? " while the compressed files are unpacked" : "") + ", and " + Reimport.size(free + left) + " is free"
+                        + ". Nothing was written. Free up some space, then tap Retry.\n" + dir, BuildListener.OUT_OF_SPACE);
+            }
+        }
         long importStart = System.currentTimeMillis();
         log("import: " + inputs.size() + " input" + (inputs.size() == 1 ? "" : "s") + ", " + BuildLogBundle.size(nupBytes) + ", into " + out + " (" + freeLine(dir) + ")");
         try {
-            if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Cannot create " + dir);
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("The app cannot make a folder for the imported game. Check that the game folder can be written to, then tap Retry.\n" + dir);
             File tmp = new File(dir, out.getName() + ".part");
             tmp.delete();
             deleteUnpacked(tmp);   // what an import the app did not live to finish left (the importer's own folder for the temporary files)
@@ -359,12 +670,12 @@ public final class BuildService extends Service {
             boolean deleted = false;
             if (oldThere && r.deleteOldFirst) {
                 markPacksStale(r, out);
-                if (!out.delete()) throw new IOException("Cannot delete the old " + out.getName() + ". Nothing was changed.");
+                if (!out.delete()) throw new IOException("The app cannot delete the old game file. Nothing was changed.\n" + out);
                 deleted = true;
                 log("import again: " + out + " deleted first (the player's choice)");
             }
-            String kept = !again ? "" : deleted ? " The old .nup was deleted first, as you chose: open the game's sheet and tap Build to make it again."
-                    : " Nothing was replaced: the game is as it was.";
+            String kept = !again ? "" : deleted ? " The old game file was deleted first, as you chose. Open the game's sheet and tap Build to make it again."
+                    : " Nothing was replaced, the game is as it was.";
             final long[] last = {0};
             final String[] lastStep = {""};
             Importer.cancel(false);   // a Stop meant for an earlier import does not stop this one; a Stop for this one from here on does (then cancelled is true)
@@ -384,18 +695,18 @@ public final class BuildService extends Service {
                 String why = Importer.lastError(), damaged = Compressed.failure(why, name, !deleted);
                 log("import: the importer returned " + rc + ": " + why + " (after " + (System.currentTimeMillis() - importStart) / 1000 + " s)");
                 if (damaged != null) throw new BuildListener.Failure(damaged + (deleted ? kept : ""), BuildListener.FILE_DAMAGED);
-                throw new IOException("Import failed: " + why + (again ? "." + kept : ""));
+                throw new IOException("The import stopped." + (again ? kept : "") + " " + Prepare.RETRY_SHARE);
             }
             // A pack made from the file this import replaces (Import again, or inputs newer than the .nup) was made from other game files: marked before the
             // new file takes the old one's place, so no moment has the new file with a pack that counts as up to date (PackNote, Prepare.run0)
             if (out.isFile()) markPacksStale(r, out);
-            if (!place(tmp, out)) { tmp.delete(); throw new IOException("Cannot place " + out + (again ? "." + kept : "")); }
+            if (!place(tmp, out)) { tmp.delete(); throw new IOException("The app could not save the imported game." + (again ? kept : "") + " " + Prepare.RETRY_SHARE + "\n" + out); }
         } catch (ReflectiveOperationException e) {
-            throw new IOException("The importer does not match this build of the app (" + e.getMessage() + ").");
+            throw new IOException("The import could not start because of a problem in the app. " + Prepare.RETRY_SHARE + "\n" + e.getMessage());
         }
         long took = Math.max(1, System.currentTimeMillis() - importStart);
         log("import: done in " + took / 1000 + " s, " + BuildLogBundle.size(out.length()) + " (" + BuildLogBundle.size(out.length() * 1000 / took) + "/s)");
-        progress("import", IMPORT_END, "Imported " + out.getName());
+        progress("import", IMPORT_END, "Game files imported");
         return out;
     }
 
@@ -474,35 +785,45 @@ public final class BuildService extends Service {
         if (cancelled) throw new IOException("Build cancelled.");
         if (!enough) {
             int have = RuntimeShaders.captured(RuntimeShaders.captureDir(work));
-            if (have == 0) throw new IOException(name + " could not finish graphics setup (" + need + " shaders unavailable). Tap Build again to retry.");
+            if (have == 0) throw new IOException(String.format(Locale.ROOT, "Finishing graphics setup stopped before it got any of the %,d shaders it needs. ", need) + Prepare.RETRY_SHARE);
             log("runtime shaders: only " + have + " of " + need + " captured; re-running the job with those");
         }
         RuntimeShaders.rerun(work, jobFile);
-        progress("prepare", IMPORT_END, "Completing graphics setup");
+        progress("prepare", IMPORT_END, "Finishing graphics setup");
         File rebuilt = stepPrepare(r, dump);
         int left = RuntimeShaders.missing(jobFile);
         int runtimeLeft = RuntimeShaders.missingInPack(this, r.titleId, rebuilt);
-        if (runtimeLeft > 0) throw new IOException(name + " still lacks " + runtimeLeft + " run-time shaders after capture. Some text or graphics may be missing. Tap Build again.");
+        if (runtimeLeft > 0) throw new IOException(String.format(Locale.ROOT, "Finishing graphics setup stopped with %,d shaders still missing, so some text or graphics may not show. ", runtimeLeft) + Prepare.RETRY_SHARE);
         // Shaders still missing after the capture: when the capture made a difference (fewer missing), or its captures were already there from an earlier
         // build, the rest are not run-time shaders (no game run makes them, as Mario Kart 8 Deluxe's 135 of another version): the pack is kept, with a log
         // line, instead of asking for a Build again that could never get further. Only a capture that changed nothing on its first try is an error.
         if (left > 0 && (left < need || before >= need)) { log("runtime shaders: " + left + " of " + name + "'s shaders are still missing after the capture; they are not made at run time, the pack is kept"); return rebuilt; }
-        if (left > 0) throw new IOException(name + " still lacks " + left + " shaders after the run-time capture. Some text or graphics may be missing. Tap Build again.");
+        if (left > 0) throw new IOException(String.format(Locale.ROOT, "Finishing graphics setup stopped with %,d shaders still missing, so some text or graphics may not show. ", left) + Prepare.RETRY_SHARE);
         return rebuilt;
     }
 
     /** (c) the companion beside the pack: <title ID>-work/peanuts/<Name>/ */
     private void stepCompanion(BuildRequest r, File pack) throws IOException {
-        if (r.companionPackage == null || r.companionPackage.isEmpty()) { progress("companion", 100, "No companion chosen"); return; }
+        if (r.companionPackage == null || r.companionPackage.isEmpty()) { progress("companion", 100, "No dual-screen companion chosen"); return; }
         File root = companionRoot(pack, dumpWork(r, pack));
         log("companion " + r.companionPackage + " for " + r.titleId + " into " + root);
-        progress("companion", PREPARE_END, "Looking up the companion");
+        progress("companion", PREPARE_END, "Looking up the dual-screen companion");
         Companions.Item item = Companions.find(Companions.fetch(), r.titleId);
-        if (item == null) throw new IOException("The catalog has no companion for " + name + " now; the game is ready to play without one.");
+        if (item == null) throw new BuildListener.Failure("No dual-screen companion is available for " + name + " now. The game is ready to play without one.", BuildListener.OTHER);
         String have = Companions.installedVersion(root, item.packageName);
-        if (have != null && Companions.compareVersions(have, item.version) >= 0) { progress("companion", 100, "Companion " + Companions.label(item.packageName, have) + " installed already"); return; }
-        Companions.install(item, root, getCacheDir(), (what, done, total) -> progress("companion", PREPARE_END + (total > 0 ? (int) Math.min(9, done * 9 / total) : 0), what));
-        progress("companion", 100, "Companion " + Companions.label(item.packageName, item.version) + " installed");
+        if (have != null && Companions.compareVersions(have, item.version) >= 0) { log("companion: " + Companions.label(item.packageName, have) + " installed already"); progress("companion", 100, name + "'s dual-screen companion is installed already, version " + have); return; }
+        Companions.install(item, root, getCacheDir(), (what, done, total) -> progress("companion", PREPARE_END + (total > 0 ? (int) Math.min(9, done * 9 / total) : 0), companionStep(what)));
+        log("companion: " + Companions.label(item.packageName, item.version) + " installed");
+        progress("companion", 100, name + "'s dual-screen companion is installed, version " + item.version);
+    }
+
+    /** The installer's step (Installer.Progress: download, verify, extract) in the card's words */
+    private static String companionStep(String what) {
+        switch (String.valueOf(what)) {
+            case "download": return "Downloading the dual-screen companion";
+            case "verify": return "Checking the dual-screen companion";
+            default: return "Installing the dual-screen companion";
+        }
     }
 
     /** The work folder from the pack when the pack is in it (dump's ../<title ID>-work/android-pack), else beside the dump (DumpCheck.workOf) */
@@ -530,23 +851,95 @@ public final class BuildService extends Service {
             logBucket = percent / 5;
             BuildLogShare.line(this, logId, "progress " + step + " " + percent + " %: " + detail + " (" + (System.currentTimeMillis() - runStart) / 1000 + " s)");
         }
-        if (worker != null) nm.notify(NOTE, note(percent, detail));
+        BuildPipeline.queue(this).step(id, step);   // kept for the build card of a game that stops in it
+        lastPercent = percent;
+        lastDetail = detail;
+        if (worker != null && !timedOut) {
+            BuildQueue.Item it = BuildPipeline.queue(this).get(id);
+            nm.notify(NOTE, it == null ? note(percent, detail) : note(it, percent, detail));
+        }
         BuildPipeline.progress(id, step, percent, detail);
     }
 
+    private volatile int lastPercent;
+    private volatile String lastDetail = "Starting";
+
+    /** The notification the service shows now: the wait, or the game that builds */
+    private Notification current() {
+        BuildQueue q = BuildPipeline.queue(this);
+        BuildQueue.Item it = q.get(id);
+        String w = waitReason;
+        BuildQueue.Item next = q.next();
+        if (it == null && w != null && next != null) return waitNote(next, w);
+        return it == null ? note(lastPercent, lastDetail) : note(it, lastPercent, lastDetail);
+    }
+
     private Notification note(int percent, String detail) {
-        Intent cancel = new Intent(this, BuildService.class).setAction(ACTION_CANCEL);
-        Notification.Builder b = new Notification.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle("Building " + name)
-                .setContentText(detail).setOnlyAlertOnce(true).setOngoing(true).setProgress(100, Math.max(0, Math.min(100, percent)), false)
-                .addAction(new Notification.Action.Builder(null, "Cancel", PendingIntent.getService(this, 1, cancel, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
+        return builder("Building " + name, detail, "").setProgress(100, Math.max(0, Math.min(100, percent)), false).addAction(action("Cancel", ACTION_CANCEL, 1)).build();
+    }
+
+    /** The game that builds: its name, the step, its place in the queue ("2 of 5"); Cancel stops it, Cancel all the queue (while others wait) */
+    private Notification note(BuildQueue.Item it, int percent, String detail) {
+        BuildQueue q = BuildPipeline.queue(this);
+        Notification.Builder b = builder("Building " + it.name(), detail, q.placeText(it)).setProgress(100, Math.max(0, Math.min(100, percent)), false)
+                .addAction(action("Cancel", ACTION_CANCEL, 1));
+        if (!q.waiting().isEmpty()) b.addAction(action("Cancel all", ACTION_CANCEL_ALL, 2));
+        return b.build();
+    }
+
+    /** The wait before a game: why, and that it goes on by itself; Go on anyway for a heat wait it can lift */
+    private Notification waitNote(BuildQueue.Item next, String reason) {
+        BuildQueue q = BuildPipeline.queue(this);
+        Notification.Builder b = builder("Waiting to build " + next.name(), BuildQueue.waitText(reason), q.placeText(next));
+        if (BuildQueue.WAIT_HEAT.equals(reason) && canGoOn()) b.addAction(action("Go on anyway", ACTION_GO_ON, 3));
+        b.addAction(action("Cancel all", ACTION_CANCEL_ALL, 2));
+        return b.build();
+    }
+
+    private Notification.Builder builder(String title, String text, String sub) {
+        Notification.Builder b = new Notification.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(title)
+                .setContentText(text).setOnlyAlertOnce(true).setOngoing(true);
+        if (!sub.isEmpty()) b.setSubText(sub);
+        Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (open != null) b.setContentIntent(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+        return b;
+    }
+
+    private Notification.Action action(String label, String what, int request) {
+        Intent i = new Intent(this, BuildService.class).setAction(what);
+        return new Notification.Action.Builder(null, label, PendingIntent.getService(this, request, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build();
+    }
+
+    /** The queue paused (silent): which game goes on first, and where Resume is */
+    private Notification pausedNote(BuildQueue q) {
+        BuildQueue.Item next = q.next();
+        int n = q.waiting().size();
+        String text = (next == null ? "" : next.name() + (n > 1 ? " and " + (n - 1) + " more " + (n == 2 ? "game wait." : "games wait.") : " waits.")) + " Open the app and tap Resume to go on.";
+        Notification.Builder b = new Notification.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle("The build queue is paused")
+                .setContentText(text).setStyle(new Notification.BigTextStyle().bigText(text)).setAutoCancel(true);
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
         if (open != null) b.setContentIntent(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         return b.build();
     }
 
-    private Notification done(boolean ok, String message) {
-        Notification.Builder b = new Notification.Builder(this, BuildPipeline.endChannel(nm, CHANNEL, !ok && cancelled)).setSmallIcon(ok ? android.R.drawable.stat_sys_download_done : android.R.drawable.stat_notify_error)
-                .setContentTitle(ok ? name + " is ready to play" : "Building " + name + " stopped").setContentText(message).setStyle(new Notification.BigTextStyle().bigText(message)).setAutoCancel(true);
+    /** One game's end (a queue of one, as before the queue) */
+    private Notification done(boolean ok, String message, boolean stoppedByUser) {
+        Notification.Builder b = new Notification.Builder(this, BuildPipeline.endChannel(nm, CHANNEL, stoppedByUser)).setSmallIcon(ok ? android.R.drawable.stat_sys_download_done : android.R.drawable.stat_notify_error)
+                .setContentTitle(ok ? name + " is ready to play" : "Building " + name + " stopped").setContentText(firstLine(message)).setStyle(new Notification.BigTextStyle().bigText(firstLine(message))).setAutoCancel(true);
+        Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (open != null) b.setContentIntent(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+        return b.build();
+    }
+
+    /** A message's main text: its first line (the lines after it are the card's Details: paths, the tools' own words) */
+    private static String firstLine(String m) { return m == null ? "" : m.split("\n")[0].trim(); }
+
+    /** The queue's end, once for all its games: what is ready, which stopped and why. Silent after Cancel all (the player asked for it) */
+    private Notification queueDone(boolean allReady, String summary, boolean stoppedByUser) {
+        Notification.Builder b = new Notification.Builder(this, BuildPipeline.endChannel(nm, CHANNEL, stoppedByUser))
+                .setSmallIcon(allReady ? android.R.drawable.stat_sys_download_done : android.R.drawable.stat_notify_error)
+                .setContentTitle(allReady ? "Your games are ready to play" : stoppedByUser ? "The build queue was stopped" : "The build queue has finished")
+                .setContentText(summary).setStyle(new Notification.BigTextStyle().bigText(summary)).setAutoCancel(true);
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
         if (open != null) b.setContentIntent(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         return b.build();

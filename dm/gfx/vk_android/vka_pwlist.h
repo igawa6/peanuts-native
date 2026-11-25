@@ -50,6 +50,7 @@ static inline int vka_pw_rec_ok(const pwrec *r, const uint8_t *kb) {
     if (k.ncolor > 8 || k.fs_variant > VKA_PW_FS_VARIANT_MAX || (k.samples != 1 && k.samples != 2 && k.samples != 4 && k.samples != 8)) return 0;
     if (k.topo > VKA_PW_TOPO_MAX || k.poly_mode > VKA_PW_POLY_MAX || k.alpha_func > 8 || k.logic_op > VKA_PW_LOGIC_MAX) return 0;
     if (k.depth_clamp > 1 || k.a2c > 1 || k.logic_en > 1 || k.gl_depth > 1 || k.gs_fx > 1 || k.vin_static > 1) return 0;
+    if (k.patch_cp > 32 || (k.patch_cp != 0) != (k.topo == VKA_PW_TOPO_MAX) || k.pad_tess[0] | k.pad_tess[1] | k.pad_tess[2]) return 0;   // PEANUTS(upstream-candidate): a patch list's control points (1-32), none otherwise
     for (int i = 0; i < 8; i++) if (k.att[i].en > 1 || k.att[i].src > VKA_PW_BLENDF_MAX || k.att[i].dst > VKA_PW_BLENDF_MAX || k.att[i].srca > VKA_PW_BLENDF_MAX
                                     || k.att[i].dsta > VKA_PW_BLENDF_MAX || k.att[i].op > VKA_PW_BLENDOP_MAX || k.att[i].opa > VKA_PW_BLENDOP_MAX) return 0;
     if (k.vin_static) { for (int i = 0; i < 32; i++) if (k.va[i].used > 1 || (k.va[i].used && k.va[i].binding > 32)) return 0;

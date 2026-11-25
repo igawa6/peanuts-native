@@ -23,7 +23,7 @@ No `patches.py`, no `pad_layout` (the iPhone pad starts in the 2D layout).
 
 - 60 fps. The game sets present interval 1; on the iPhone the frame time is 16.7 ms at the median.
 <!-- PEANUTS: Android preparation -->
-- Peanuts Dev defaults to Game owned. It offers experimental display pacing at 20, 30, 40, 45, 60, 90 and 120 FPS. The Turnip check must cover game speed and animation in exploration and a battle before these rates can be treated as gameplay caps. nx2android reports a 60 FPS boot on the Legion Y700 and leaves saving and a full battle open. [nx2android release notes](https://github.com/shirai91/nx2android/releases)
+- Peanuts defaults to 60 FPS since 0.1.8 (Game owned before, still a choice). It offers experimental display pacing at 20, 30, 40, 45, 60, 90 and 120 FPS. The Turnip check must cover game speed and animation in exploration and a battle before these rates can be treated as gameplay caps. nx2android reports a 60 FPS boot on the Legion Y700 and leaves saving and a full battle open. [nx2android release notes](https://github.com/shirai91/nx2android/releases)
 
 ## Audio and services
 

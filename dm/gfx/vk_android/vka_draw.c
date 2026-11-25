@@ -64,6 +64,7 @@ static int draws_on(void) {
 // ---------- State ----------
 void vka_dstate_reset(vka_dstate *d) {   // NVN's defaults (nvn_mtl.m state_reset)
     memset(d, 0, sizeof *d); d->inited = 1;
+    d->patch = 3;   // PEANUTS(upstream-candidate): NVN's default patch size
     for (int i = 0; i < 8; i++) d->blend[i] = (blend_st){i, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ZERO, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ZERO, NVN_BLEND_EQUATION_ADD, NVN_BLEND_EQUATION_ADD};
     d->color = (color_st){0, NVN_LOGIC_OP_COPY, NVN_ALPHA_FUNC_ALWAYS}; d->chmask.mask = 0xffffffffu;
     d->poly = (poly_st){NVN_FACE_NONE, NVN_FRONT_FACE_CCW, NVN_POLYGON_MODE_FILL, 0};
@@ -136,6 +137,7 @@ int vka_state_op(vka_dstate *d, uint32_t op, const void *a) {
     case OP_TF_BIND: { const p_tf_bind *b = a; if (b->index >= 0 && b->index < 4) d->tf[b->index] = *b; break; }   // PEANUTS: kept for the captures (vka_tf.c)
     case OP_TF_STATE: { const p_tf_state *b = a; d->tf_on = b->what == 0 || b->what == 3; break; }
     case OP_PRIM_RESTART: d->restart = *(const p_prim_restart *)a; break;
+    case OP_PATCH_SIZE: d->patch = ((const p_patch_size *)a)->size; break;   // PEANUTS(upstream-candidate)
     case OP_RAST_DISCARD: d->rast_discard = ((const p_rast_discard *)a)->on; break;
     default: return 0;
     }
@@ -2717,7 +2719,15 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     else if (!mesh) {
         topo = topology(prim, &expand);
         if (expand < 0) SKIP("primitive type %d not on Vulkan: the draw is skipped", prim);
-        if (topo == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) SKIP("tessellation patches are not on Vulkan yet (no patch size is recorded): the draw is skipped");
+        // PEANUTS(upstream-candidate) begin: tessellated draws (NVN primitive type 14) in a pipeline with the bound tess control and evaluation shaders and the patch size the
+        // game set (OP_PATCH_SIZE, NVN's default 3). Vulkan needs both stages; NVN's evaluation-only programs (fixed levels from SetInner/OuterTessellationLevels) are not made
+        if (topo == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) {
+            if (!V.tess) SKIP("tessellation patches on a device without tessellationShader: the draw is skipped");
+            if (!sh[3] || !sh[4]) SKIP("tessellation patches with %s bound: the draw is skipped (Vulkan needs both stages)", sh[3] ? "no tess evaluation shader" : sh[4] ? "a tess evaluation shader and no tess control shader" : "no tessellation shaders");
+            if (d->patch < 1 || d->patch > 32) SKIP("tessellation patches of %d control points: the draw is skipped", d->patch);
+            { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VLOG("tessellated draw: tess control %016llx, tess evaluation %016llx, pixel %016llx, %d control points", (unsigned long long)sh[3]->key, (unsigned long long)sh[4]->key, sh[1] ? (unsigned long long)sh[1]->key : 0ull, d->patch); }
+        }
+        // PEANUTS(upstream-candidate) end
     }
     uint64_t ind = memu_e ? 0 : dw ? dw->ind : di->ind;
     uint32_t inst = (dw ? dw->instances : di->instances) > 0 ? (uint32_t)(dw ? dw->instances : di->instances) : 1;   // direct record convention   // PEANUTS: bounded draw ranges
@@ -2817,6 +2827,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     if (g_fs_sub) { int rg = vka_shader_tex_range(g_fs_sub);   // a texture retype starts from the library's module, not the moved inputs: not drawn (the colour draw then tests LEQUAL)
                     if (rg >= 0 && rg < 5 && (k.tex_u[rg] | k.tex_s[rg])) { VRED_ONCE("mesh_prepass_cut: the prepass's pixel shader %016llx reads integer textures: its depth not drawn", (unsigned long long)g_fs_sub->key); return; } }
     k.topo = mesh ? 0 : (uint8_t)topo_class(topo);
+    k.patch_cp = topo == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST ? (uint8_t)d->patch : 0;   // PEANUTS(upstream-candidate): the pipeline's patchControlPoints
     k.poly_mode = (uint8_t)(d->poly.mode == NVN_POLYGON_MODE_LINE && V.fill_lines ? VK_POLYGON_MODE_LINE : d->poly.mode == NVN_POLYGON_MODE_POINT && V.fill_lines ? VK_POLYGON_MODE_POINT : VK_POLYGON_MODE_FILL);
     k.depth_clamp = d->depth_clamp && V.depth_clamp; k.a2c = d->ms.a2c != 0;
     if (d->color.logic_op != NVN_LOGIC_OP_COPY && V.logic_op) { k.logic_en = 1; k.logic_op = (uint8_t)d->color.logic_op; }

@@ -3,7 +3,7 @@
 <!-- PEANUTS: this folder is Peanuts Native's; upstream Banana Native has none of it. -->
 
 Some games keep their shaders in Oodle-compressed files (Pokémon Legends: Arceus's GFPAK archives, the shader libraries of some Unreal games). The phone and the
-Mac decode them with the game's own decoder. A Linux PC has neither, so the PC builder (`peanuts/scripts/peanuts_build.py`,
+Mac's NSP script decode them with the game's own decoder. The PC builder has neither, so it (`peanuts/scripts/peanuts_build.py`,
 [BUILDER.md](../../../peanuts/docs/BUILDER.md)) builds `unoodle` from this folder and gives it to the shader split as `DM_OODLE_OOZ`.
 
 `unoodle` is not in the Android app, not in the on-device packer and not in any release file. It is built on the user's PC, from source, when a game needs it.
@@ -61,24 +61,26 @@ The upstream README describes the project as "Open source Kraken / Mermaid / Sel
 
 ## What was added and changed
 
-Nothing in `kraken.cpp` or `stdafx.h` is edited in place. `build.sh` copies them, applies the two patches to the copy and compiles it.
+Nothing in `kraken.cpp` or `stdafx.h` is edited in place. `build.sh` copies them, applies the two patches to the copy (on arm64 a third, with `ooz_neon.h`) and compiles it.
 
 | File | What it is |
 |---|---|
 | `ooz-port.patch` | The port to gcc and clang on x86-64, 25 changed lines. `stdafx.h`: the Windows headers go behind `_MSC_VER`; elsewhere `<x86intrin.h>` and the MSVC names `kraken.cpp` uses (`__int64`, `__forceinline`, `_BitScanReverse`, `_BitScanForward`, `_byteswap_ushort` / `ulong` / `uint64`, `_rotl`). `kraken.cpp`: two lines that put the command line tool at its end (`main`, `LoadLibrary`, `QueryPerformanceCounter`) behind `_MSC_VER`. No decoder code changes |
 | `ooz-guards.patch` | One added check, 5 lines: at the end of a Mermaid chunk the literals and the 16-bit offsets must be used up exactly. Without it a Mermaid stream asked for one byte more or less than its true size still "decoded" in 254 of 303 tries, because the final literals are copied without a count; with it all 303 are refused. Kraken has this check already |
+| `ooz-arm64.patch` | arm64 only, 4 added lines: `stdafx.h` includes `ooz_neon.h` in place of `<x86intrin.h>` on `__aarch64__`. No decoder code changes |
+| `ooz_neon.h` | arm64 only, the 21 SSE2 intrinsics `kraken.cpp` calls (`_mm_loadu_si128`, `_mm_unpacklo_epi8`, `_mm_movemask_epi8`, ...) and MSVC's `_rotl`, written with AArch64 NEON or plain C, each with SSE2's exact result. GPL-3.0-or-later, as the program it is compiled into |
 | `unoodle.cpp` | The worker, 108 lines: the pipe protocol, the stubs for the two decoders left out, and the fail-closed checks under [Safety](#safety) |
-| `build.sh` | `build.sh <output program> [compiler]`: checks the hashes, copies, patches, compiles with `-O2 -fno-strict-aliasing -fwrapv -msse4.1`. The decoder reads and writes through casted pointers throughout and was written for MSVC; those two flags give gcc and clang MSVC's reading of that code. The program holds no path of the build machine: built twice in different folders with the same compiler it is the same file |
+| `build.sh` | `build.sh <output program> [compiler]`: checks the hashes, copies, patches, compiles with `-O2 -fno-strict-aliasing -fwrapv` and, on x86-64, `-msse4.1`. The decoder reads and writes through casted pointers throughout and was written for MSVC; those two flags give gcc and clang MSVC's reading of that code. The program holds no path of the build machine: built twice in different folders with the same compiler it is the same file |
 | `COPYING` | The GNU General Public License, version 3 |
 
-The compiler flags and both patches are the ones of the validated build below; change none of them without running the checks again.
+The compiler flags and the patches are the ones of the validated builds below; change none of them without running the checks again.
 
 ## Where it builds
 
-x86-64 Linux with g++ or clang++, and the `patch` program. The decoder uses x86 SSE2 intrinsics (58 calls, 21 distinct), so on arm64 `build.sh` stops with
-exit code 3 and a message; a port would need a translation header such as sse2neon. An Intel Mac should build it as Linux does (not tried). Windows is not
-supported: the worker's guard pages use `mmap` and its pipes would need binary mode. The builder uses the worker on x86-64 Linux only and keeps its refusal
-everywhere else.
+Linux and macOS, x86-64 or arm64, with g++ or clang++, and the `patch` program. The decoder uses x86 SSE2 intrinsics (58 calls, 21 distinct): on x86-64
+they come from `<x86intrin.h>`, on arm64 from `ooz_neon.h` (AArch64 NEON). Any other processor makes `build.sh` stop with exit code 3 and a message. An Intel
+Mac should build it as Linux does (not tried). Windows is not supported: the worker's guard pages use `mmap` and its pipes would need binary mode. The builder
+uses the worker on Linux and macOS and keeps its refusal on Windows.
 
 ## Safety
 
@@ -105,9 +107,14 @@ map and every record of the package hashed again.
 | FINAL FANTASY RESONANCE 1.0.1 | 5,919, all decoder type 10 (Mermaid or Selkie) | 0 | 73,496 / 0 / 0 | the split package (8 files, 678 MB) is byte for byte the one a phone made with the game's own decoder |
 | Octopath Traveler 0 1.0.5 | 10,596, all type 10 | 0 | 10,324 / 0 / 0 | every stream identical to an earlier job's output; not yet split from its game files on a PC |
 
-Not checked: Leviathan and Selkie streams as such; any other game (the builder gives the worker only to the games in this table); clang beyond one job; any
-system other than x86-64 Linux. ooz issue #6 (a tANS-coded Mermaid chunk whose lookup table does not fit the scratch space) did not occur in these 16,515 type 10
+2026-11-17, arm64 macOS (Apple Silicon, Apple clang), the worker built with the three patches and `ooz_neon.h`, through the PC builder from FINAL FANTASY
+RESONANCE 1.0.1's `.nsp` files: the split's keys were all 73,496 of the profile's and no other (`ooz_split_checked`), and the pack played on an AYN Thor from
+a save in Chapter 1. Before that, `peanuts/tests/test_unoodle.py` compared every intrinsic of `ooz_neon.h` with SSE2's definition on 20,000 random registers.
+
+Not checked: Leviathan and Selkie streams as such; any other game on arm64 (Arceus and Octopath Traveler 0 were checked on x86-64 only); clang beyond one job
+on x86-64; any other system. ooz issue #6 (a tANS-coded Mermaid chunk whose lookup table does not fit the scratch space) did not occur in these 16,515 type 10
 streams; it is a clean refusal when it does, and no fix for it is included.
 
-`peanuts/tests/test_unoodle.py` builds the worker and checks the protocol, three hand-written stream forms (ooz has no compressor) and the fail-closed paths,
+`peanuts/tests/test_unoodle.py` builds the worker and checks the protocol, three hand-written stream forms (ooz has no compressor) and the fail-closed paths
+(on arm64 also each intrinsic of `ooz_neon.h` against SSE2's definition, as those streams reach none of them),
 with no game data.

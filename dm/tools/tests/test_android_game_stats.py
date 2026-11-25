@@ -32,10 +32,27 @@ class Wiring(unittest.TestCase):
         for k in ('GameStats.orbit(', 'GameStats.DIM_MS', 'GameStats.OFF_MS', 'onInterceptTouchEvent', 'PeanutsPrefs.statsGuard(', 'PeanutsPrefs.statsShown('):
             self.assertIn(k, s)
 
+    def test_top_overlay_hides(self):
+        a = (REPO / 'android/app/src/main/java/dev/nxnative/android/GameActivity.java').read_text()
+        for k in ('GameScreen.hidesOverlay(this)', 'GameScreen.buildTag('):
+            self.assertIn(k, a)
+        self.assertIn('Hud.hideForStats(c) && statsShowing()', (UI / 'GameScreen.java').read_text())
+        self.assertIn('GameStats.hidesTop(', (UI / 'GameScreen.java').read_text())
+        self.assertIn('Hud.HIDE_FOR_STATS', (REPO / 'android/app/src/main/java/dev/peanuts/overlay/HudSettings.java').read_text())
+        self.assertIn('public void buildTag(', (UI / 'StatsView.java').read_text())
+
     def test_readings(self):
         s = (UI / 'StatsView.java').read_text()
         for k in ('BATTERY_PROPERTY_CURRENT_NOW', 'BATTERY_PROPERTY_CHARGE_COUNTER', 'GameStats.drainPerHour(', 'device.hasGpu()', 'GameStats.throttle(',
                   'Choreographer.getInstance().postFrameCallback', 'GameStats.newFrames('):
+            self.assertIn(k, s)
+
+    def test_controls(self):
+        a = (REPO / 'android/app/src/main/java/dev/nxnative/android/GameActivity.java').read_text()
+        for k in ('dev.peanuts.ui.GameControls.host(controlsHost = peanutsControls())', 'dev.peanuts.ui.GameControls.clear(controlsHost)', 'Native.graphicsModeSet(-1, 1 - m)', 'Native.fpsCapSet(v)'):
+            self.assertIn(k, a)
+        s = (UI / 'StatsView.java').read_text()
+        for k in ('openControl(v, true)', 'openControl(v, false)', 'GameControls.host()', 'popup != null', 'h.capRunning()', 'fpsBlock'):
             self.assertIn(k, s)
 
 

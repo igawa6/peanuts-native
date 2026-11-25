@@ -86,17 +86,18 @@ public final class ModBuild {
                 if (source.containsKey(name)) continue;   // an earlier (higher-priority) mod already claimed this module
                 boolean adds = !modules.contains(name);
                 if (adds) {
-                    if (!genericHost) return refuse(mod.name + " adds " + name + ", which this title's build has no module slot for (not built with "
-                            + "the generic host): a self-service mod build needs the generic host; ask a developer to rebuild the app with it, or drop "
-                            + name + " from " + mod.name + "'s exefs/.");
+                    if (!genericHost) return refuse(mod.name + " adds a part of the game's code that this app version cannot load for this game, so it cannot "
+                            + "be built with that mod. Turn " + mod.name + " off, or remove " + name + " from its exefs folder.\n"
+                            + "Technical: " + name + " has no module slot in this game's build, which was not made with the generic host.");
                     insertInConsoleOrder(modules, name);
                 }
                 source.put(name, mod);
             }
         }
         if (modules.size() > MODULES_CAP)
-            return refuse("the modded build would load " + modules.size() + " modules (" + String.join(" ", modules) + "), more than the generic host's "
-                    + MODULES_CAP + "-slot limit (dm/peanuts/profile/profile_rt.h DM_PROFILE_MODULES_CAP): drop a mod, or ask a developer to raise the cap.");
+            return refuse("The mods that are on add too many parts of the game's code: " + modules.size() + ", and the app can load " + MODULES_CAP
+                    + ". Turn a mod off, then build again.\nTechnical: modules " + String.join(" ", modules) + ", the generic host's limit is DM_PROFILE_MODULES_CAP "
+                    + "in dm/peanuts/profile/profile_rt.h.");
         return new Plan(modules, source, patchSets, null);
     }
 
@@ -135,7 +136,7 @@ public final class ModBuild {
      */
     public static String checkMainBuildId(String moddedMainBuildId16, List<String> registeredBuildIds16) {
         for (String id : registeredBuildIds16) if (id.equalsIgnoreCase(moddedMainBuildId16)) return null;
-        return "the mod's main is build " + moddedMainBuildId16 + ", which this title's profile does not list as a registered build ("
-                + String.join(", ", registeredBuildIds16) + "): it may not run correctly against this host's rewriter cuts and gates. Not built.";
+        return "The mod replaces the game's code with a version the app has not tested, so the game may not run correctly with it. It was not built.\n"
+                + "Technical: the mod's main is build " + moddedMainBuildId16 + ", the app's list for this game has " + String.join(", ", registeredBuildIds16) + ".";
     }
 }

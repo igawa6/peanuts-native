@@ -80,7 +80,7 @@ public final class LogChoiceJvmTest {
                 + line("2026-11-21 14:20:00", "progress prepare 70 %: Translating shaders: 1,234 of 22,852 (600 s)")
                 + line("2026-11-21 14:31:00", "prepare: the job failed at shaders: shaders.py exited with 1")
                 + line("2026-11-21 14:32:00", "[end] failed (tool_stopped): Translating shaders stopped. (after 22 min 0 s)");
-        eq("Failed while translating shaders today at 14:32 after 22 min", LogChoice.buildLine(failed, false, now, Z), "the job's failed step");
+        eq("Failed while making shaders for this phone today at 14:32 after 22 min", LogChoice.buildLine(failed, false, now, Z), "the job's failed step");
         eq("Finished yesterday at 10:20 after 20 min", LogChoice.buildLine(earlier, false, now, Z), "a finished build");
         String stoppedBuild = line("2026-11-21 14:00:00", "[start] build of Game (0100000000010000)") + line("2026-11-21 14:05:00", "progress import 20 %: Reading base (300 s)")
                 + line("2026-11-21 14:06:00", "[end] stopped (cancelled): Build cancelled. (after 6 min 0 s)");
@@ -88,12 +88,16 @@ public final class LogChoiceJvmTest {
         String noEnd = line("2026-11-21 14:00:00", "[start] build of Game (0100000000010000)") + line("2026-11-21 14:18:00", "progress prepare 60 %: Rewriting the game's code (50 %) (1080 s)");
         eq("Stopped when the app closed today at 14:18 after 18 min", LogChoice.buildLine(noEnd, false, now, Z), "the app's process ended during it");
         eq("Building now, started today at 14:00", LogChoice.buildLine(noEnd, true, now, Z), "it runs now");
+        // the same with the step words of 0.1.8 on (the line above has the older ones)
+        String paused18 = line("2026-11-21 14:00:00", "[start] build of Game (0100000000010000)") + line("2026-11-21 14:30:00", "progress prepare 80 %: Paused: the phone is too hot. Making shaders for this phone: 1,234 of 22,852 (1800 s)")
+                + line("2026-11-21 14:40:00", "[end] failed (stalled): The build stopped. (after 40 min 0 s)");
+        eq("Stopped responding while making shaders for this phone today at 14:40 after 40 min", LogChoice.buildLine(paused18, false, now, Z), "the step read from 0.1.8's words");
         String space = line("2026-11-21 14:00:00", "[start] build of Game (0100000000010000)") + line("2026-11-21 14:01:00", "progress import 10 %: Reading base (60 s)")
                 + line("2026-11-21 14:02:00", "[end] failed (out_of_space): No space left on the device. (after 2 min 0 s)");
-        eq("Ran out of space while importing the game today at 14:02 after 2 min", LogChoice.buildLine(space, false, now, Z), "out of space at the import");
+        eq("Ran out of space while importing the game files today at 14:02 after 2 min", LogChoice.buildLine(space, false, now, Z), "out of space at the import");
         String paused = line("2026-11-21 14:00:00", "[start] build of Game (0100000000010000)") + line("2026-11-21 14:30:00", "progress prepare 80 %: Paused: too warm. Translating shaders: 5 of 9 (1800 s)")
                 + line("2026-11-21 14:40:00", "[end] failed (stalled): The build stopped. (after 40 min 0 s)");
-        eq("Stopped responding while translating shaders today at 14:40 after 40 min", LogChoice.buildLine(paused, false, now, Z), "stalled, from a paused progress line");
+        eq("Stopped responding while making shaders for this phone today at 14:40 after 40 min", LogChoice.buildLine(paused, false, now, Z), "stalled, from a paused progress line");
         String version = line("2026-11-21 14:00:00", "[start] build of Game (0100000000010000)") + line("2026-11-21 14:00:05", "[end] failed (wrong_version): Untested game version. (after 0 min 5 s)");
         eq("Stopped at an untested game version today at 14:00 after 5 s", LogChoice.buildLine(version, false, now, Z), "a wrong version");
         String other = line("2026-11-21 14:00:00", "[start] build of Game (0100000000010000)")
@@ -101,14 +105,20 @@ public final class LogChoiceJvmTest {
         eq("Failed today at 14:00 after 30 s", LogChoice.buildLine(other, false, now, Z), "failed before any step");
         String companion = line("2026-11-21 14:00:00", "[start] build of Game (0100000000010000)") + line("2026-11-21 14:20:00", "progress companion 92 %: Downloading (1200 s)")
                 + line("2026-11-21 14:21:00", "[end] failed (other): The companion could not be downloaded. (after 21 min 0 s)");
-        eq("Failed while installing the companion today at 14:21 after 21 min", LogChoice.buildLine(companion, false, now, Z), "the companion step");
+        eq("Failed while installing the dual-screen companion today at 14:21 after 21 min", LogChoice.buildLine(companion, false, now, Z), "the companion step");
+        // graphics setup, in the words of 0.1.8 on and in the older ones
+        for (String g : new String[] {"Finishing graphics setup: 3 of 9", "Completing graphics setup"}) {
+            String setup = line("2026-11-21 14:00:00", "[start] build of Game (0100000000010000)") + line("2026-11-21 14:20:00", "progress prepare 90 %: " + g + " (1200 s)")
+                    + line("2026-11-21 14:21:00", "[end] failed (other): Finishing graphics setup stopped. (after 21 min 0 s)");
+            eq("Failed while finishing graphics setup today at 14:21 after 21 min", LogChoice.buildLine(setup, false, now, Z), "graphics setup: " + g);
+        }
         eq("Ended today at 13:00", LogChoice.buildLine(line("2026-11-21 13:00:00", "crash in the build service:"), false, now, Z), "lines without a start line");
         eq("null", String.valueOf(LogChoice.buildLine("", false, now, Z)), "no timed line");
 
         // a job.json (the Prepare card's job)
         long created = at("2026-11-21 13:00:00"), updated = at("2026-11-21 14:25:00");
-        eq("Failed while rewriting the game's code today at 14:25", LogChoice.jobLine("failed", "rewrite", created, updated, now, Z), "a failed job");
-        eq("Paused while translating shaders today at 14:25", LogChoice.jobLine("paused", "shaders", created, updated, now, Z), "a paused job");
+        eq("Failed while converting the game's code today at 14:25", LogChoice.jobLine("failed", "rewrite", created, updated, now, Z), "a failed job");
+        eq("Paused while making shaders for this phone today at 14:25", LogChoice.jobLine("paused", "shaders", created, updated, now, Z), "a paused job");
         eq("Finished today at 14:25", LogChoice.jobLine("done", "pack", created, updated, now, Z), "a finished job");
         eq("Building now, started today at 13:00", LogChoice.jobLine("running", "split", created, updated, now, Z), "a running job");
         eq("Not started yet", LogChoice.jobLine("pending", "identify", created, 0, now, Z), "a pending job");

@@ -400,6 +400,8 @@ void vka_tex_big_stats(char *b, size_t n);           // the largest images the G
 void vka_tex_kind_log(void);                          // log lines: the live images by content and by why the cache keeps them, and the largest (the ctl stats)
 int vka_rp_is_open(void);                            // a render pass is open in the replay's command buffer (vka_draw.c)
 void vka_tex_writeback(VkCommandBuffer cb);   // mtl_sub_commit, after the last pass
+// PEANUTS(upstream-candidate): a buffer -> texture copy's bytes into the texture's block-linear storage, in queue order (vka_tex.c; LEGO CITY UNDERCOVER's GPU defragmenter copies that storage); DM_VK_B2T_MIRROR
+int vka_tex_b2t_mirror(VkCommandBuffer cb, const vka_img *im, const tex_t *t, unsigned level, unsigned layer, const NVNcopyRegion *r, VkBuffer sbuf, VkDeviceSize soff, size_t row, size_t span);
 // Texture pool reads (vka_tex.c, DM_VK_POOL_FB): the texture IDs shaders read through the pool, reported by the GPU, so their images are made and kept while read
 // The bitmap, a storage buffer of 2^20 bits, in a set of its own after the pool's: on Qualcomm's driver a storage buffer in the pool's set, after its 2^20 sampled images,
 // is never written (docs/reference/rendering.md "Texture pool reads report nothing on Qualcomm's driver")
@@ -593,6 +595,7 @@ typedef struct {
     p_poly_offset po; float vp[16][4]; float dr[2]; int has_vp, depth_clamp; uint8_t vp_sw[16][4];
     float blend_color[4], alpha_ref;
     p_prim_restart restart; int rast_discard, tf_on;
+    int patch;                         // PEANUTS(upstream-candidate): nvnCommandBufferSetPatchSize (OP_PATCH_SIZE); NVN's default 3
     p_tf_bind tf[4];                   // PEANUTS: the transform feedback buffers bound (OP_TF_BIND), for vka_tf.c's captures
     int inited;
     uint32_t bind_gen;                 // raised by every state record but a uniform buffer bind (vka_draw.c's instanced runs: a draw that joins without its walk)
@@ -680,6 +683,7 @@ int vka_tex_gw_tbuf_pending(uint64_t addr, uint64_t n);   // PEANUTS: 1 = such a
 int vka_tex_gw_read(uint64_t addr, uint64_t n, void *out);   // [addr, addr + n) as the GPU sees it now (guest RAM + pending gw_t writes); out NULL = only whether known (no opaque write)
 int vka_tex_gml_take(VkDescriptorBufferInfo *bi);  // a raw global memory write log for one draw or dispatch, read when its submission is done (0 = none free)
 void vka_tex_gw_commit(uint64_t fence);
+void vka_tex_gw_part(void);   // PEANUTS(upstream-candidate): a part of the submission goes to the queue: the GPU writes recorded so far are on it (vka_tex.c gw_src_overwritten)
 void vka_tex_watch_dispatch(uint64_t key);         // DM_VK_NANSCAN: compute shaders by submission, for the storage watch             // the writes recorded since the last commit belong to this submission
 void vka_nan_draw(uint64_t vs, uint64_t fs);
 void vka_nan_pass(VkCommandBuffer cb, vka_img *const *ims, const uint32_t *lvs, const uint32_t *l0s, int n);

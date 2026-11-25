@@ -8,6 +8,7 @@ typedef struct {   // what a graphics pipeline is made from beyond its shaders a
     uint32_t cfmt[8], dfmt, sfmt;     // attachment formats (VK_FORMAT_UNDEFINED = none)
     uint8_t ncolor, samples, topo, poly_mode, depth_clamp, a2c, logic_en, logic_op, gl_depth, fs_variant, alpha_func, gs_fx;   // fs_variant: DMSH_VK_MOD_*; alpha_func: NVN_ALPHA_FUNC_* or 0; gs_fx: 1 = the geometry module with the claim (vka_shader_gs_module)
     uint32_t vin_u, vin_s;            // float vertex inputs fed UINT / SINT formats: retyped in the vertex module (vka_spvpatch.c), by location
+    uint8_t patch_cp, pad_tess[3];    // PEANUTS(upstream-candidate): a patch-list pipeline's control points (0 otherwise), in what was padding before tex_u: no offset moves
     uint64_t tex_u[5], tex_s[5];      // float textures and images bound to UINT / SINT texture views: retyped in their stage's module (vka_shader_tex_module), by binding range
                                       // (DMSH_VK_STAGE_BINDINGS each: vertex or mesh, tess control or task, tess evaluation, geometry, fragment) and binding in it
     struct { uint8_t en, src, dst, op, srca, dsta, opa, mask; } att[8];
@@ -15,4 +16,5 @@ typedef struct {   // what a graphics pipeline is made from beyond its shaders a
     struct { uint32_t fmt, offset; uint8_t binding, used, pad[2]; } va[32];   // by location
     struct { uint32_t stride, divisor; uint8_t used, pad[3]; } vb[33];         // by binding (stream; 32 = the zero buffer of inputs no attribute feeds)
 } vka_gkey;
+_Static_assert(__builtin_offsetof(vka_gkey, patch_cp) == 60 && __builtin_offsetof(vka_gkey, tex_u) == 64, "patch_cp sits in the padding before tex_u");   // PEANUTS(upstream-candidate)
 #endif

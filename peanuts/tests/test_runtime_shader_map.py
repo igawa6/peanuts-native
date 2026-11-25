@@ -76,7 +76,7 @@ public final class RuntimeShaderMapTest {
         self.assertEqual(self.capture_keys({f'dm/games/{t}/game.tsv': 'capture_keys\t8:A\nDM_AUDIO=1\n'}, t), '[8:A]')
         self.assertEqual(self.capture_keys({f'dm/games/{t}/game.tsv': 'capture_keys\t\n'}, t), '[]')   # an empty row: none
         for bad in ('8:A B', '8:A=1', '8:A;rm'):
-            self.assertEqual(self.capture_keys({f'dm/games/{t}/game.tsv': f'capture_keys\t{bad}\n'}, t), 'error: Invalid capture_keys in dm/games/' + t + '/game.tsv', bad)
+            self.assertEqual(self.capture_keys({f'dm/games/{t}/game.tsv': f'capture_keys\t{bad}\n'}, t), 'error: The app\'s list for this game is damaged. Install the app again, then tap Retry.\nInvalid capture_keys in dm/games/' + t + '/game.tsv', bad)
 
     def test_shipped_profiles(self):
         titles = {'010055D009F78000': 'true', '01008CF01BAAC000': 'false', '0100152000022000': 'false'}

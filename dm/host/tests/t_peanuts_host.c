@@ -16,6 +16,7 @@
 // the overlay graph (peanuts_frametime.c, peanuts_graph.c) has tests of its own (t_peanuts_frametime, t_peanuts_graph); built as if for Android those files want jni.h
 void pn_ft_note(void) {}
 void pn_graph_frame(void) {}
+void pn_as_frame(uint64_t now_ns, int fps) { (void)now_ns; (void)fps; }   // PEANUTS: the audio follower (peanuts_audiosync.c) has its own test, t_peanuts_audiosync
 
 // ---- the runtime (rt/peanuts_rt.h): what was asked of it ----
 struct PnRt { int unused; };

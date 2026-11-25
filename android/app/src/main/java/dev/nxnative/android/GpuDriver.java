@@ -40,9 +40,11 @@ final class GpuDriver {
 
     static final class Info {
         final File dir; final String name, version, vendor, library;
+        final String description;   // PEANUTS: meta.json's description, where some builds name their Mesa commit (KnownDrivers)
         Info(File dir, JSONObject m) {
             this.dir = dir;
             name = m.optString("name", dir.getName()); version = m.optString("driverVersion", ""); vendor = m.optString("vendor", ""); library = m.optString("libraryName", "");
+            description = m.optString("description", "");   // PEANUTS
         }
         String label() { return name + (version.isEmpty() ? "" : " (" + version + ")"); }
     }
@@ -118,6 +120,20 @@ final class GpuDriver {
         try {
             return file.isFile() ? GameActivity.envLines(new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8)) : new ArrayList<>();
         } catch (IOException | SecurityException e) { return new ArrayList<>(); }
+    }
+    // PEANUTS end
+
+    // PEANUTS begin: known bad driver builds (KnownDrivers), marked in the pickers and asked about at a start
+    /** A known bad build on this phone's GPU, null for none: the driver's own driverInfo from a readiness check on it, else its meta.json */
+    static KnownDrivers.Bad problem(Context c, Info i) {
+        if (i == null) return null;
+        return KnownDrivers.find(Prefs.driverFacts(c, i.dir.getName()), Prefs.facts(c, SYSTEM), i.name, i.description, i.version);
+    }
+
+    /** The driver pickers' line for a known bad build, null for none (DriverPort reads it for Settings › GPU driver and a game's GPU driver page) */
+    static String problemText(Context c, Info i) {
+        KnownDrivers.Bad b = problem(c, i);
+        return b == null ? null : KnownDrivers.pickerText(b);
     }
     // PEANUTS end
 
@@ -222,7 +238,11 @@ final class GpuDriver {
         List<String> labels = new ArrayList<>();
         labels.add("System (the phone's own driver)");
         int checked = 0;
-        for (int k = 0; k < inst.size(); k++) { labels.add(inst.get(k).label() + (recommended(inst.get(k)) ? " (recommended)" : "")); if (sel != null && inst.get(k).dir.equals(sel.dir)) checked = k + 1; }
+        for (int k = 0; k < inst.size(); k++) {
+            String bad = problemText(a, inst.get(k));   // PEANUTS: a known bad build says so (KnownDrivers)
+            labels.add(inst.get(k).label() + (recommended(inst.get(k)) ? " (recommended)" : "") + (bad != null ? "\n" + bad : ""));   // PEANUTS: bad
+            if (sel != null && inst.get(k).dir.equals(sel.dir)) checked = k + 1;
+        }
         new PadFocus.Builder(a).setTitle("GPU driver (takes effect at the next game start)")
                 .setSingleChoiceItems(labels.toArray(new String[0]), checked, (d, w) -> { select(a, w == 0 ? null : inst.get(w - 1)); d.dismiss(); })
                 .setPositiveButton("Install…", (d, w) -> installDialog(a, request))

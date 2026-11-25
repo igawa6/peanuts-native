@@ -17,6 +17,7 @@ UNDOCUMENTED = {
     # PEANUTS begin: this fork's own rows. The wiki is Banana Native's (published to its Forgejo wiki); Peanuts Native describes them in peanuts/docs
     'Build again': 'Peanuts Native: the game sheet\'s build (peanuts/docs/FAQ.md)',
     'Delete save data': 'Peanuts Native: a row of its Saves tab',
+    'Copy to another user': 'Peanuts Native: a row of its Saves tab with two or more users (UserSaves; peanuts/docs/FAQ.md)',
     'Resolution scale': 'Peanuts Native: DM_RES_SCALE (ResScale.java, PEANUTS.md)',
     'Questions and answers': 'Peanuts Native: the row that opens its own FAQ (peanuts/docs/FAQ.md) where upstream\'s opens this wiki',
     # PEANUTS end

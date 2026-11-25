@@ -1,6 +1,6 @@
 # History
 
-Back to the [main page](../../.github/README.md).
+Back to the [main page](../banana-native-README.github.md). <!-- PEANUTS: upstream's .github/README.md and README.md are kept in docs/ (banana-native-README*.md) -->
 
 - **v0.1.0, 4 November 2026**: first public release, with Donkey Kong Bananza (`040074A01BF12000`) playable and Mario
   Kart World (`0400C3F00006E000`) in progress.

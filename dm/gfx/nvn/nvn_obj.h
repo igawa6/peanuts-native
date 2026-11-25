@@ -47,10 +47,12 @@ typedef struct { uint8_t set_levels : 1, set_layers : 1, set_format : 1, set_tar
 FITS(view_t, NVNtextureView);
 _Static_assert(sizeof(view_t) <= 16, "view_t exceeds the newer SDKs' NVNtextureView (16 bytes)");
 
-// Sampler parameters (one copy shared by builder and object)
+// Sampler parameters (one copy shared by builder and object).
+// Real NVN puts an 8-byte header at offset 0 of NVNsampler and agl hashes bytes [0x08..0x60) to deduplicate pool slots;
+// keeping samp_par at +8 ensures minf/magf/ws/wt are included in the hash while still fitting in NVNsampler's 0x30 bytes on newer SDKs.
 typedef struct { uint8_t minf, magf, ws, wt, wr, cmp_mode, cmp_func, reduction; float lod_min, lod_max, lod_bias, aniso, border[4]; } samp_par;   // Enum values are all < 256; reduction takes the padding byte
 typedef struct { NVNdevice *dev; samp_par p; } samp_builder_t;                                FITS(samp_builder_t, NVNsamplerBuilder);
-typedef struct { uint32_t magic; samp_par p; } samp_t;                                        FITS(samp_t, NVNsampler);
+typedef struct { uint32_t magic, pad; samp_par p; } samp_t;                                   FITS(samp_t, NVNsampler);   // PEANUTS: NVNsampler layout for agl, #521 (0.1.8)
 
 // The per-stage shader keys are not kept in prog_t: the game's real NVNprogram may be smaller than the header's 0xC0 (growing prog_t corrupted the adjacent object in Mario); see prog_keys in hle_nvn.c
 typedef struct { uint32_t magic, nstage; NVNshaderData sd[6]; uint64_t serial; } prog_t;     FITS(prog_t, NVNprogram);   // serial: table key for the replay layer's resolved result
@@ -79,6 +81,7 @@ typedef struct {
     uint64_t used;                       // Bytes written since the game last added command memory, across recordings and host segments, including segment-switch JUMPs (returned by GetCommandMemoryUsed)
     int32_t tex_base, samp_base;         // Host-table bases of the texture / sampler pool this command buffer last bound (hle_nvn.c dpool_add; 0 = the first pool of its kind)
     size_t ctl_size;                     // Bytes in the last control memory block supplied by the game (the host records no control commands)
+    int64_t copy_row, copy_img;          // PEANUTS: the last SetCopyRowStride / SetCopyImageStride recorded (0: none, tightly packed), for the bytes a buffer ↔ texture copy names (hle_nvn.c copy_span)
 } cmd_t;                                                                                   FITS(cmd_t, NVNcommandBuffer);
 
 // ---------- State objects (defaults follow the NVN / GL defaults) ----------
@@ -109,6 +112,7 @@ enum {
     OP_SET_TEX_POOL, OP_SET_SAMP_POOL, OP_COPY_B2T, OP_COPY_STRIDE, OP_BLEND_COLOR, OP_COPY_T2B, OP_BIND_IMG, OP_COPY_T2T, OP_RESET_COUNTER, OP_CLEAR_TEX, OP_CLEAR_BUF, OP_DEPTH_CLAMP, OP_RENDER_COND, OP_FENCE_SYNC, OP_TF_BIND, OP_TF_STATE, OP_RAST_DISCARD, OP_VP_SWIZZLE, OP_BIND_TEX1, OP_PRIM_RESTART, OP_BIND_UBO_SMALL, OP_BIND_VBUF1, OP_DRAW_TEX, OP_ALPHA_REF, OP_PUSH_CONST,
     OP_WAIT_EVENT, OP_WAIT_SYNC,   // GPU waits: the queue goes on past them once the event or sync is reached (vk_android/vka_qsched.h; the Metal replay passes them at once)
     OP_DLSS,   // NVN2's DLSS evaluation (p_dlss; hle_nvn.c "NVN2's DLSS")
+    OP_PATCH_SIZE,   // PEANUTS(upstream-candidate): nvnCommandBufferSetPatchSize (p_patch_size), the control points of a tessellated draw's patches
     OP_COUNT_
 };
 // Payload (immediately follows op_hdr)
@@ -123,6 +127,7 @@ typedef struct { int32_t first, n; float v[16][6]; } p_viewports;          // x,
 typedef struct { int32_t x, y, w, h; } p_scissor;
 typedef struct { float n, f; } p_depth_range;
 typedef struct { uint32_t on, index; } p_prim_restart;
+typedef struct { int32_t size; } p_patch_size;   // PEANUTS(upstream-candidate): OP_PATCH_SIZE
 typedef struct { int32_t on; } p_depth_clamp;   // SetDepthClamp: depth outside [near, far] is clamped instead of clipped (Metal's depth clip mode)
 typedef struct { int32_t first, n; uint8_t sw[16][4]; } p_vp_swizzle;   // SetViewportSwizzles: per viewport the source of clip x, y, z, w (NVNviewportSwizzle) XOR the identity (0, 2, 4, 6), so 0 = unchanged
 typedef struct { const prog_t *prog; int32_t stages; } p_bind_program;

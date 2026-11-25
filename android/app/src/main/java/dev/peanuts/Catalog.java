@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 public final class Catalog {
     public static final String RELEASES = "https://api.github.com/repos/igawa6/eden-duo-companions/releases?per_page=100";
     public static final String NAMES = "https://raw.githubusercontent.com/igawa6/eden-duo-companions/main/catalog.json";
-    private static final Pattern ASSET = Pattern.compile("^([0-9A-Fa-f]{16})(?:-([A-Za-z0-9]+)-([0-9][0-9A-Za-z.\\-]*))?\\.dsmod\\.zip$");
+    private static final Pattern ASSET = CompanionFile.ASSET;   // one rule for the catalog's asset names and a picked file's name
     private static final Pattern SHA256_DIGEST = Pattern.compile("sha256:([0-9A-Fa-f]{64})");
 
     /** One release of one title's companion. sha256/sha256Url: see Installer.verify - at most one of them is set, both null means no digest was published anywhere */
@@ -143,15 +143,8 @@ public final class Catalog {
         return m.find() ? m.group(1).toLowerCase(Locale.ROOT) : null;
     }
 
-    public static int compareVersions(String a, String b) {
-        String[] x = a.split("[.\\-]"), y = b.split("[.\\-]");
-        for (int i = 0; i < Math.max(x.length, y.length); i++) {
-            int p = i < x.length ? num(x[i]) : 0, q = i < y.length ? num(y[i]) : 0;
-            if (p != q) return Integer.compare(p, q);
-        }
-        return 0;
-    }
-    private static int num(String s) { try { return Integer.parseInt(s.replaceAll("[^0-9].*", "")); } catch (NumberFormatException e) { return 0; } }
+    /** CompanionFile.compareVersions: one rule for the catalog and a companion file */
+    public static int compareVersions(String a, String b) { return CompanionFile.compareVersions(a, b); }
 
     public static String get(String url) throws IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();

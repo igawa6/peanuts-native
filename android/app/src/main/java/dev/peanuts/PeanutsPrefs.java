@@ -36,6 +36,9 @@ public final class PeanutsPrefs {
 
     public static String firmwareDir(Context c) { return of(c).getString("firmware_dir", null); }
     public static void firmwareDir(Context c, String p) { put(c, "firmware_dir", p); }
+    /** What the importer that last read the firmware takes from one (LibrarySettings.FIRMWARE_READ); 0 when it was read before the app kept this */
+    public static int firmwareRead(Context c) { return of(c).getInt("firmware_read", 0); }
+    public static void firmwareRead(Context c, int what) { of(c).edit().putInt("firmware_read", what).apply(); }
     public static String gameDir(Context c) { return of(c).getString("game_dir", null); }
     public static void gameDir(Context c, String p) { put(c, "game_dir", p); }
     public static String updateDir(Context c) { return of(c).getString("update_dir", null); }
@@ -125,8 +128,11 @@ public final class PeanutsPrefs {
     /** Settings > Library > Bottom screen, on by default */
     public static boolean bottomScreen(Context c) { return of(c).getBoolean("bottom_screen", true); }
     public static void bottomScreen(Context c, boolean on) { of(c).edit().putBoolean("bottom_screen", on).apply(); }
-    /** Settings > Library > Games without a companion: their cover stays on the second display, off by default */
-    public static boolean bottomScreenInGames(Context c) { return of(c).getBoolean("bottom_screen_games", false); }
+    /** Settings > Library > Games without a companion: Peanuts' page (live stats or the cover) stays on the second display, on by default. A tap on another
+     *  app's screen there (the AYN Thor's launcher) made that app the top one and moved the game's process from Android's top-app group to foreground, where the
+     *  Thor's scheduler kept its threads on the small cores (94-97 % of their running time, measured 2026-11-24); a tap on Peanuts' page keeps the game the top
+     *  app (the page is a window of the game's process). Off before: a player's own choice stays */
+    public static boolean bottomScreenInGames(Context c) { return of(c).getBoolean("bottom_screen_games", true); }
     public static void bottomScreenInGames(Context c, boolean on) {
         SharedPreferences.Editor e = of(c).edit().putBoolean("bottom_screen_games", on);
         if (on && !of(c).contains("bottom_screen_games_page")) e.putString("bottom_screen_games_page", GAMES_STATS);   // turned on now: the stats page, not the upgrade's cover
@@ -158,6 +164,11 @@ public final class PeanutsPrefs {
     public static boolean swapScreens(Context c) { return of(c).getBoolean("swap_screens", false); }
     public static void swapScreens(Context c, boolean on) { of(c).edit().putBoolean("swap_screens", on).apply(); }
 
+    /** Settings › TV and monitors (dev.peanuts.Screens, #358): true a game plays on a connected TV or monitor; false (the default) the system decides what the TV
+     *  shows (Android mirrors the screen, a handheld's firmware may turn its own screens off), and Peanuts only keeps its pages off the TV */
+    public static boolean tvPlay(Context c) { return of(c).getBoolean("tv_play", false); }
+    public static void tvPlay(Context c, boolean on) { of(c).edit().putBoolean("tv_play", on).apply(); }
+
     /** The roots the library scans: the game folder first, then the update and DLC folders when set and different, then the build folder (walked the same
      *  two levels deep, so its {@code <title ID>/<name>.nup} entries are found) */
     public static List<File> roots(Context c) {
@@ -181,6 +192,10 @@ public final class PeanutsPrefs {
     /** The update file the user chose for a title (null: the newest found) */
     public static String chosenUpdate(Context c, String titleId) { return of(c).getString(key(titleId, "update"), null); }
     public static void chosenUpdate(Context c, String titleId, String path) { put(c, key(titleId, "update"), path); }
+
+    /** The newer update and add-ons found beside a built game that the player answered "Not now" for (dev.peanuts.build.UpdateFound.Found.key): those ask no more */
+    public static String foundSeen(Context c, String titleId) { return of(c).getString(key(titleId, "found_seen"), ""); }
+    public static void foundSeen(Context c, String titleId, String found) { put(c, key(titleId, "found_seen"), found); }
 
     /** The DLC files the user added by hand for a title (beside the ones the scan matched) */
     public static List<String> chosenDlc(Context c, String titleId) {
@@ -207,6 +222,28 @@ public final class PeanutsPrefs {
         return of(c).contains(k) ? of(c).getBoolean(k, true) : Companion.hasSecondDisplay(c);
     }
     public static void installCompanion(Context c, String titleId, boolean on) { of(c).edit().putBoolean(key(titleId, "install_companion"), on).apply(); }
+
+    /**
+     * The game sheet's Import pack… while the system picker is open (dev.peanuts.pack.FirstImport.Pick's text; dev.peanuts.ui.PackImportUi): Android may end the
+     * process meanwhile, and the picker's answer then comes to a new one. null when no picker of it is open
+     */
+    public static String packImportPick(Context c) { return of(c).getString("pack_import_pick", null); }
+    public static void packImportPick(Context c, String pick) { put(c, "pack_import_pick", pick); }
+    /** A game's Mods &amp; Cheats › Show in the game: its Mods tab in the in-game panel (SPEC-mod-menu.md, Package C); on by default */
+    public static boolean modsTab(Context c, String titleId) { return of(c).getBoolean(key(titleId, "mods_tab"), true); }
+    public static void modsTab(Context c, String titleId, boolean on) { of(c).edit().putBoolean(key(titleId, "mods_tab"), on).apply(); }
+
+    /** Settings › Controls › Mods tab: the in-game panel's Mods tab for every game; on by default */
+    public static boolean modsTabAll(Context c) { return of(c).getBoolean("mods_tab", true); }
+    public static void modsTabAll(Context c, boolean on) { of(c).edit().putBoolean("mods_tab", on).apply(); }
+
+    /** The in-game panel's tab shown last (its name), so it opens there again; "" none yet. In a file of its own: the game's process writes it, and the launcher's
+     *  process, which keeps "peanuts" in memory, would write its older copy back over it */
+    public static String panelTab(Context c) { return c.getSharedPreferences("peanuts_panel", Context.MODE_PRIVATE).getString("tab", ""); }
+    public static void panelTab(Context c, String name) {
+        SharedPreferences p = c.getSharedPreferences("peanuts_panel", Context.MODE_PRIVATE);
+        if (!name.equals(p.getString("tab", ""))) p.edit().putString("tab", name).apply();
+    }
 
     // (Removed: a dead, unread duplicate of the "second screen physical/off" pref - dev.peanuts.settings.CompanionSection.secondScreen() is the one
     // Companion.java actually reads, in its own SharedPreferences file ("peanuts", MODE_MULTI_PROCESS).)

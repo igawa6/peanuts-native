@@ -197,6 +197,20 @@ final class Up {
     static int[] caps(boolean paced, String titleId) throws ReflectiveOperationException {
         return paced ? (int[]) call(k("Prefs"), null, "paceCaps", new Class<?>[] {String.class}, titleId) : caps(false);
     }
+    /** PEANUTS: the caps the game's Frame rate cap row enables (Prefs.offeredCaps), as stored values: what Game settings, the in-game panel and the stats page enable */
+    static int[] offeredCaps(Context c, String titleId) throws ReflectiveOperationException {
+        return ((int[]) call(k("Prefs"), null, "offeredCaps", new Class<?>[] {Context.class, String.class}, c, titleId)).clone();
+    }
+    /** PEANUTS: why a frame limit the game has is not offered (the display's limit, Prefs.screenNote), null when that is not the reason */
+    static String screenWhy(Context c, String titleId, String value, int[] offered) throws ReflectiveOperationException {
+        int v;
+        try { v = Integer.parseInt(value.trim()); } catch (NumberFormatException e) { return null; }
+        if (v <= 60) return null;
+        boolean has = false, on = false;
+        for (int x : caps(true, titleId)) has |= x == v;
+        for (int x : offered) on |= x == v;
+        return has && !on ? (String) call(k("Prefs"), null, "screenNote", new Class<?>[] {Context.class, String.class}, c, titleId) : null;
+    }
 
     /** The game's own environment lines (its Game settings) */
     static String gameEnv(Context c, String titleId) throws ReflectiveOperationException {
@@ -217,6 +231,8 @@ final class Up {
                 return prefsBool(c, "simpleRes", titleId) ? "this game's Resolution presets set the upscaler (Tester settings shows the row)" : null;
             case "fps_cap":
                 return null;   // Game owned remains selectable; the allowed-cap list rejects unavailable rates
+            case "hold60":   // GameSettings shows Hold 60 fps only for a game that runs whole steps a frame (Prefs.steps)
+                return prefsBool("steps", titleId) ? null : "only games that run whole steps a frame have Hold 60 fps";
             default: return null;
         }
     }
@@ -239,8 +255,90 @@ final class Up {
                 break;
             case "overlay": call(k("Prefs"), null, "overlay", new Class<?>[] {Context.class, boolean.class}, c, ch.value); break;
             case "keep_screen_on": call(k("Prefs"), null, "keepScreenPreparing", new Class<?>[] {Context.class, boolean.class}, c, ch.value); break;
+            case "gpu_driver": {
+                if (ch.perGame) {
+                    Object v = "system".equals(ch.value) ? get(k("GpuDriver"), null, "SYSTEM") : ch.value;   // the stored word for the phone's own driver (Recommend.SYSTEM)
+                    call(k("GpuDriver"), null, "choice", new Class<?>[] {Context.class, String.class, String.class}, c, titleId, v);
+                } else {
+                    Object pick = null;
+                    for (Object i : (List<?>) call(k("GpuDriver"), null, "installed", new Class<?>[] {Context.class}, c))
+                        if (((File) get(i, "dir")).getName().equals(ch.value)) pick = i;
+                    call(k("GpuDriver"), null, "select", new Class<?>[] {Context.class, k("GpuDriver$Info")}, c, pick);   // null: the phone's own
+                }
+                break;
+            }
+            case "fast_cores":
+                if (!ch.perGame) call(k("Prefs"), null, "pinThreadsDefault", new Class<?>[] {Context.class, boolean.class}, c, ch.value);
+                else if (ch.value == null) forget(c, "pin_threads", titleId);
+                else call(k("Prefs"), null, "pinThreads", new Class<?>[] {Context.class, String.class, boolean.class}, c, titleId, ch.value);
+                break;
+            case "hold60":
+                if (ch.value == null) forget(c, "hold60", titleId);
+                else call(k("Prefs"), null, "hold60", new Class<?>[] {Context.class, String.class, boolean.class}, c, titleId, ch.value);
+                break;
+            case "bottom_screen_games":   // Settings > Library > Games without a companion (LibrarySettings): Android, Stats or Cover
+                if ("android".equals(ch.value)) dev.peanuts.PeanutsPrefs.bottomScreenInGames(c, false);
+                else {
+                    dev.peanuts.PeanutsPrefs.bottomScreenInGames(c, true);
+                    dev.peanuts.PeanutsPrefs.bottomScreenGamesPage(c, "cover".equals(ch.value) ? dev.peanuts.PeanutsPrefs.GAMES_COVER : dev.peanuts.PeanutsPrefs.GAMES_STATS);
+                }
+                break;
+            case "display": call(k("GameSettings"), null, "setDisplay", new Class<?>[] {Context.class, String.class, int.class}, c, titleId, ch.value); break;
             default: throw new NoSuchMethodException(ch.key);
         }
+    }
+
+    /** One game's own choice of a launcher setting removed (Prefs.gameKey): the game follows the default again */
+    private static void forget(Context c, String key, String titleId) throws ReflectiveOperationException {
+        String k = str(call(k("Prefs"), null, "gameKey", new Class<?>[] {String.class, String.class}, key, titleId));
+        prefs(c, "launcher").edit().remove(k).commit();
+    }
+
+    /** The installed GPU drivers' folder names (GpuDriver.installed), the names set gpu_driver takes */
+    static List<String> drivers(Context c) throws ReflectiveOperationException {
+        List<String> out = new ArrayList<>();
+        for (Object i : (List<?>) call(k("GpuDriver"), null, "installed", new Class<?>[] {Context.class}, c)) out.add(((File) get(i, "dir")).getName());
+        return out;
+    }
+
+    /** Whether Display offers Fill for the game (GameSettings.fillable), and whether its Fill rows are untested on a device (Profile.aspectUntested) */
+    static boolean fillable(String titleId) throws ReflectiveOperationException {
+        Object p = call(k("Profile"), null, "of", new Class<?>[] {String.class}, titleId);
+        return Boolean.TRUE.equals(call(k("GameSettings"), null, "fillable", new Class<?>[] {k("Profile")}, p));
+    }
+
+    static boolean fillUntested(String titleId) throws ReflectiveOperationException {
+        Object p = call(k("Profile"), null, "of", new Class<?>[] {String.class}, titleId);
+        return p != null && Boolean.TRUE.equals(get(p, "aspectUntested"));
+    }
+
+    /**
+     * What the game (or, without a title ID, every game) starts with after a change of a new set key, the default worked out as the launcher does: the GPU
+     * driver a game starts with is its own pick, else this phone's recommended one, else the main screen's (GpuDriver.selected); Display is
+     * GameSettings.displayLabel's. null for the other keys.
+     */
+    static Object resolved(Context c, String key, String titleId) throws ReflectiveOperationException {
+        switch (key) {
+            case "gpu_driver": {
+                Object i = titleId == null ? call(k("GpuDriver"), null, "selected", new Class<?>[] {Context.class}, c)
+                        : call(k("GpuDriver"), null, "selected", new Class<?>[] {Context.class, String.class}, c, titleId);
+                return i == null ? "system" : ((File) get(i, "dir")).getName();
+            }
+            case "fast_cores":
+                return (titleId == null ? Boolean.TRUE.equals(call(k("Prefs"), null, "pinThreads", new Class<?>[] {Context.class}, c)) : prefsBool(c, "pinThreads", titleId)) ? "on" : "off";
+            case "hold60": return prefsBool(c, "hold60", titleId) ? "on" : "off";
+            case "bottom_screen_games":
+                return !dev.peanuts.PeanutsPrefs.bottomScreenInGames(c) ? "android" : dev.peanuts.PeanutsPrefs.bottomScreenGamesPage(c);
+            case "display": {
+                String l = str(call(k("GameSettings"), null, "displayLabel", new Class<?>[] {Context.class, String.class}, c, titleId));
+                return l.startsWith("Fill") ? "fill" : l.startsWith("Stretch") ? "stretch" : "fit";
+            }
+            default: return null;
+        }
+    }
+
+    static String displayLabel(Context c, String titleId) throws ReflectiveOperationException {
+        return str(call(k("GameSettings"), null, "displayLabel", new Class<?>[] {Context.class, String.class}, c, titleId));
     }
 
     /** The GPU driver every game starts with unless it has its own: the picked driver's label, "system" for the phone's own */

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="status" src="https://img.shields.io/badge/release-0.1.7-brightgreen">
+  <img alt="status" src="https://img.shields.io/badge/release-0.1.8-brightgreen">
   <img alt="license" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue">
   <img alt="platform" src="https://img.shields.io/badge/platform-Android%2013%2B-green">
 </p>
@@ -28,7 +28,7 @@ too.
 
 <!-- PEANUTS begin: the Supported games table, written by peanuts/scripts/games_catalog.py from peanuts/games.tsv, peanuts/release-titles.txt and the profiles. Edit peanuts/games.tsv, not this table -->
 
-Peanuts Native 0.1.7 includes 59 games. The Companion column shows whether a game appears in the Eden Duo Companions catalog, and the Contributor column the community members who brought a game to Peanuts Native. Updates are shown as version numbers or numeric update IDs.
+Peanuts Native 0.1.8 includes 76 games. The Companion column shows whether a game appears in the Eden Duo Companions catalog, and the Contributor column the community members who brought a game to Peanuts Native. Updates are shown as version numbers or numeric update IDs.
 
 | Game | Title ID | Game update | Companion | Contributor |
 |---|---|---|---|---|
@@ -91,10 +91,27 @@ Peanuts Native 0.1.7 includes 59 games. The Companion column shows whether a gam
 | Digimon Story Time Stranger | `010062E01FE0C000` | 1.2.2 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
 | Hogwarts Legacy | `0100F7E00C70E000` | 1.0.5 | No | ⭐<br><a href="https://github.com/tapionallanaire"><img src="https://img.shields.io/badge/tapionallanaire-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="tapionallanaire"></a> |
 | Star Ocean The Second Story R | `010065301A2E0000` | 1.1.0 | No |  |
+| Stray | `010075101EF84000` | 1.0.0 | No | ⭐<br><a href="https://github.com/dnyan007"><img src="https://img.shields.io/badge/dnyan007-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="dnyan007"></a> |
+| 13 Sentinels: Aegis Rim | `01003FC01670C000` | 1.10 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| Captain Toad: Treasure Tracker | `01009BF0072D4000` | 1.4.2 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| Advance Wars 1+2: Re-Boot Camp | `0100300012F2A000` | 1.0.0 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| FANTASY LIFE i: The Girl Who Steals Time | `0100755017EE0000` | 1.5.0 | No | ⭐<br><a href="https://github.com/tapionallanaire"><img src="https://img.shields.io/badge/tapionallanaire-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="tapionallanaire"></a> |
+| Pokémon: Let's Go, Pikachu! | `010003F003A34000` | 1.0.2 | No | ⭐<br><a href="https://github.com/fireworksordie"><img src="https://img.shields.io/badge/fireworksordie-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="fireworksordie"></a> |
+| Pokémon: Let's Go, Eevee! | `0100187003A36000` | 1.0.2 | No | ⭐<br><a href="https://github.com/fireworksordie"><img src="https://img.shields.io/badge/fireworksordie-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="fireworksordie"></a> |
+| Viewfinder | `0100F9D023176000` | 1.0.0 | No | ⭐<br><a href="https://github.com/dnyan007"><img src="https://img.shields.io/badge/dnyan007-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="dnyan007"></a> |
+| SPY×ANYA: Operation Memories | `010089B01AB44000` | 1.0.1 | No | ⭐<br><a href="https://github.com/nomnomab"><img src="https://img.shields.io/badge/nomnomab-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="nomnomab"></a> |
+| Super Mario RPG | `0100BC0018138000` | 1.0.1 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| WarioWare: Get It Together! | `0100563010E0C000` | 1.0.0 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| LEGO 2K Drive | `0100739018020000` | 1.17 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| LEGO CITY UNDERCOVER | `010085500130A000` | 1.0.3 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| LEGO MARVEL Super Heroes | `01006F600FFC8000` | 1.0.1 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| Minecraft Dungeons II | `0100A7C01B792000` | 1.1.3.0 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
+| The Witcher 3: Wild Hunt — Complete Edition | `01003D100E9C6000` | 4.04b | No |  |
+| Pokémon Mystery Dungeon: Rescue Team DX | `01003D200BAA2000` | 1.0.0 | No | ⭐<br><a href="https://github.com/shamonj03"><img src="https://img.shields.io/badge/shamonj03-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="shamonj03"></a> |
 
 <!-- PEANUTS end: the Supported games table -->
 
-Every game new in 0.1.7 reached gameplay on an AYN Thor with Turnip. Trails in the Sky 1st Chapter, Yoshi's Crafted World, Star Ocean The Second Story R and Hogwarts Legacy were checked for this release, among them Rail-Yard Run in Yoshi's Crafted World at 60 fps and the London intro in Hogwarts Legacy. Tetris Effect: Connected, Digimon Story Time Stranger and New Pokémon Snap were checked by their contributors on their own AYN Thor.
+The 0.1.8 release build installed over 0.1.7 on an AYN Thor (Adreno 740, Turnip 27.0.0-R2) with its data kept. The shaders of games built with 0.1.7 were upgraded in place in seconds; games with tessellation, such as Tears of the Kingdom, prepare their shaders again. The Witcher 3, Breath of the Wild, Animal Crossing: New Horizons at 60 fps with the built-in speed fix, Fire Emblem Engage, Star Ocean The Second Story R and Hogwarts Legacy were played for this release, and the companion and the stats page drew cleanly on Turnip 27.0.0-R2. Turnip v27.0.0-R3 draws broken images, and the app now warns about it.
 
 ## What you need
 
@@ -131,7 +148,9 @@ After an app update, rebuilding every game is strongly recommended: hold the cov
 - **Console mode**: Docked or Handheld, for all games in Settings and per game on its page. It can also be changed
   while the game runs, from the in-game panel.
 - **Resolution scale** (first version): 0.5x to 2x of the size the game draws at. Not every effect follows it.
-- **Mods** (first version): hold the cover, **Game** tab, **Mods**. Install a mod from a folder or a zip. It is on
+- **Mods & Cheats**: hold the cover, then **Mods & Cheats**. Cheats work for every game: add a cheat file, a zip or a
+  folder, and each cheat has a switch that works at once, also from the in-game panel's **Mods** tab. Install a mod
+  from a folder or a zip. It is on
   from the game's next start, and each mod has a switch and a delete button. A mod that changes the game's code gets
   a build with mods, which starts by itself (it waits while another build runs). Until that build is ready, the game
   starts without that mod. After a failed build, tap **Build with mods** to try again.
@@ -144,9 +163,10 @@ GPL-3.0-or-later), which is used on the computer only and is not part of the app
 
 ## Companions
 
-Open Settings, then Companions, to see every companion and every release of it. You can install, update, remove or
+Open Settings, then Screens, then Dual-screen companions, to see every companion and every release of it. You can install, update, remove or
 roll back to an earlier release, and each download is checked against its published checksum before it is used. A
-game without a companion leaves the bottom screen free for Android. Companion screens give haptic feedback when you
+game without a companion shows its live stats on the bottom screen, or its cover, or leaves the screen to Android
+(Settings, Screens, **Games without a companion**). Companion screens give haptic feedback when you
 tap them.
 
 The companions themselves are published in
@@ -179,20 +199,31 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for adding a game, fixing a bug and testi
 Peanuts Native is a fork of [Banana Native](https://git.eden-emu.dev/moceure/BananaNative) by moceure, which does the
 real work of running Switch games natively on Android and is built on [nxnative](https://github.com/seedds/nxnative)
 by seedds (MIT). Some fixes are adapted from [nx2android](https://github.com/shirai91/nx2android) (MIT).
+The Miis are drawn with the colour tables and face layout of [vee](https://github.com/j0lol/vee) (MIT) and their textures decoded with
+[bcdec](https://github.com/iOrange/bcdec) (MIT).
+Animal Crossing: New Horizons' 60 fps choice uses [ACNH 60 FPS + SpeedFix](https://github.com/tmouh/acnh-60fps) v1.4.5 by tmouh
+(CC BY-NC 4.0), converted to rows of changed bytes (`dm/games/01006F8002326000/speedfix60/NOTICE.md`).
 
 The companion runtime and package format come from [Eden Duo](https://github.com/igawa6/eden-duo).
 
 Contributors:
 
-- [intermission88](https://github.com/intermission88): the builder for PC, Mac and Linux (`peanuts/docs/BUILDER.md`, pull request #13), the profiles of Kirby's Return to Dream Land Deluxe, Kirby and the Forgotten Land, Super Mario 3D World + Bowser's Fury, Tetris Effect: Connected and Digimon Story Time Stranger (pull requests #34, #84, #83, #330 and #269), the guide for adding a game (`peanuts/docs/NEW-GAME.md`, pull request #34), total play time and the stats page on the bottom screen (pull requests #282 and #289), names in STORY OF SEASONS: Grand Bazaar, EA SPORTS FC 27's second controller and the NVN sampler builder's getters (pull requests #354, #284 and #268), the PC tools on Windows (pull request #328), and fixes to the on-device packer, the release notes popup and the Unreal shader step (pull requests #37, #35 and #71).
-- [davdxpx](https://github.com/davdxpx): the issue and discussion forms rebuilt from the ground up, with a game catalog that also keeps the Supported games table up to date (pull request #175), building from .nsz and .xcz files, the launcher and companion on the second screen, Swap screens, the GPU driver page, Share build log, game icons that outlive their NSP, companion release notes, mod folders left out of the library and Import pack (pull requests #249 and #260), Settings in ten sections with one search (pull requests #315 and #312), users with pictures, Miis and Who's playing? (pull request #321), the Mali PanVK pointer (pull request #296), Tomodachi Life's clock and boot crash fixes (pull requests #336 and #345), and many smaller fixes across the app.
+- [intermission88](https://github.com/intermission88): the builder for PC, Mac and Linux (`peanuts/docs/BUILDER.md`, pull request #13), the profiles of Kirby's Return to Dream Land Deluxe, Kirby and the Forgotten Land, Super Mario 3D World + Bowser's Fury, Tetris Effect: Connected and Digimon Story Time Stranger (pull requests #34, #84, #83, #330 and #269), the guide for adding a game (`peanuts/docs/NEW-GAME.md`, pull request #34), total play time and the stats page on the bottom screen (pull requests #282 and #289), names in STORY OF SEASONS: Grand Bazaar, EA SPORTS FC 27's second controller and the NVN sampler builder's getters (pull requests #354, #284 and #268), the PC tools on Windows (pull request #328), fixes to the on-device packer, the release notes popup and the Unreal shader step (pull requests #37, #35 and #71), the profiles of 13 Sentinels: Aegis Rim, Captain Toad: Treasure Tracker, Advance Wars 1+2: Re-Boot Camp, Super Mario RPG, WarioWare: Get It Together!, LEGO 2K Drive, LEGO CITY UNDERCOVER, LEGO MARVEL Super Heroes and Minecraft Dungeons II (pull requests #384, #380, #382, #443, #430, #460, #368, #469 and #479), the overlay's pill and the stats page's console mode and frame rate cap (pull requests #538, #516 and #523), packs built on Windows on every thread (pull request #481), and Oodle and Unreal shaders in the builder on macOS (pull requests #70 and #72).
+- [davdxpx](https://github.com/davdxpx): the issue and discussion forms rebuilt from the ground up, with a game catalog that also keeps the Supported games table up to date (pull request #175), building from .nsz and .xcz files, the launcher and companion on the second screen, Swap screens, the GPU driver page, Share build log, game icons that outlive their NSP, companion release notes, mod folders left out of the library and Import pack (pull requests #249 and #260), Settings in ten sections with one search (pull requests #315 and #312), users with pictures, Miis and Who's playing? (pull request #321), the Mali PanVK pointer (pull request #296), Tomodachi Life's clock and boot crash fixes (pull requests #336 and #345), the build queue (pull request #448), cheats for every game and the in-game Mods tab (pull requests #436 to #441), the game page's areas (pull requests #445 to #447), saves for each user (pull requests #432 and #442), TV and monitors (pull request #407), sound that follows the game's pace (pull request #399), the GPU clock floor on Snapdragon 8 Gen 2 and 8 Gen 3 (pull request #457), and many smaller fixes across the app.
+  The largest of it is incremental builds (`peanuts/docs/INCREMENTAL-BUILD.md`): each stage of the phone's build keeps what an earlier build made, addressed by the exact inputs it came from (a shader by its part of the profile, a code module by the patches its build ID takes, a game file by its SHA-256), checks a sample of it against a fresh translation byte for byte, and makes again only what changed. An Import again of Animal Crossing: New Horizons on an AYN Thor went from 7 min 31 s to 1 min 2 s, with the same pack to the byte.
 - [elliott-groves](https://github.com/elliott-groves): development builds that install beside the Peanuts Native app (pull request #60).
-- [tapionallanaire](https://github.com/tapionallanaire): building the APK on Windows (pull request #54), the Hogwarts Legacy, Trails in the Sky 1st Chapter, Trails in the Sky 2nd Chapter and Double Dragon Revive profiles (pull requests #95, #221, #164 and #197), the shader readers for Level-5 archives (pull requests #230 and #243), the Unreal 4.27 allocator's page alignment (pull request #236), and the Advance Wars 1+2: Re-Boot Camp memory pool and FINAL FANTASY TACTICS update 1.2.0 (pull requests #231 and #228).
-- [dnyan007](https://github.com/dnyan007): the DRAGON BALL: Sparking! ZERO profile, its allocator start-up fix and 60 fps, and the sync of GPU-written terrain into block-compressed textures (pull requests #168, #167, #290 and #302).
+- [tapionallanaire](https://github.com/tapionallanaire): building the APK on Windows (pull request #54), the Hogwarts Legacy, Trails in the Sky 1st Chapter, Trails in the Sky 2nd Chapter and Double Dragon Revive profiles (pull requests #95, #221, #164 and #197), the shader readers for Level-5 archives (pull requests #230 and #243), the Unreal 4.27 allocator's page alignment (pull request #236), the Advance Wars 1+2: Re-Boot Camp memory pool and FINAL FANTASY TACTICS update 1.2.0 (pull requests #231 and #228), and the FANTASY LIFE i: The Girl Who Steals Time profile (pull request #224).
+- [dnyan007](https://github.com/dnyan007): the DRAGON BALL: Sparking! ZERO profile, its allocator start-up fix and 60 fps, the sync of GPU-written terrain into block-compressed textures (pull requests #168, #167, #290 and #302), and the Stray and Viewfinder profiles at 60 fps (pull requests #379 and #426).
 - [skyhong2002](https://github.com/skyhong2002): STEINS;GATE RE:BOOT 1.0.4, standalone NUP updates in the library, and Prepare surviving a missed job status read (pull requests #192, #185 and #181).
 - [ssv0225](https://github.com/ssv0225): the New Pokémon Snap profile with its DRPF archive reader for the shader split and the NVN memory pool builder's getters, and the shader tools running on Linux (pull requests #307, #308, #309 and #310).
 - [999sian](https://github.com/999sian): Yoshi's Crafted World on Android, with samplers chosen by the view's format, streamed mip levels, bounded draw ranges and buffer-texture classes (pull request #140).
-- [ts-miller](https://github.com/ts-miller): the encoder opcodes for occlusion queries (pull request #263).
+- [ts-miller](https://github.com/ts-miller): the encoder opcodes for occlusion queries (pull request #263), the frame rate cap in the GPU clock floor (pull request #220), and textures written one texel at a time without long stalls (pull request #403).
+- [shamonj03](https://github.com/shamonj03): the Pokémon Mystery Dungeon: Rescue Team DX profile with its start hang fix (pull request #502), textures the game filled before their first use (pull request #419), dual-source shader outputs (pull request #420), and two fixes to the shader split (pull requests #417 and #418).
+- [fireworksordie](https://github.com/fireworksordie): the Pokémon: Let's Go, Pikachu! and Let's Go, Eevee! profiles (pull request #245).
+- [nomnomab](https://github.com/nomnomab): the SPY×ANYA: Operation Memories profile (pull request #332).
+- [danielcamilo1](https://github.com/danielcamilo1): the CRT filter (pull request #397).
+- [g0giberry](https://github.com/g0giberry): NVN samplers that no longer flash the picture in Super Mario Odyssey (pull request #521).
+- [gerdguerrero](https://github.com/gerdguerrero): Fire Emblem Engage 2.0.0's memory alignment (pull request #540).
 - [ArchOwlen](https://github.com/ArchOwlen): the first issue and discussion forms (pull request #5).
 
 The project as a whole is licensed GPL-3.0-or-later. Frame generation (ported from Eden and lsfg-vk) and other

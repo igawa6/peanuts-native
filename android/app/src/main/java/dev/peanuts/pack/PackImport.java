@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -20,8 +21,8 @@ import java.util.Set;
  * imported yet). Once it is in, a pack folder picked for the title in Folders is let go (it would win at the next Build: Folders.packFor), and a game with
  * a dump folder or .nup gets its list entry (Game.put), so it is ready to play.
  * <p>
- * {@link #run} works on the caller's thread (never the main thread: it copies the whole pack); dev.peanuts.ui.PackImportUi runs it, and dev.peanuts.ui.Library
- * starts no build of the title while it does ({@link #busy}).
+ * {@link #run} works on the caller's thread (never the main thread: it copies the whole pack); dev.peanuts.ui.PackImportUi takes the title ({@link #take}) on
+ * the main thread with its last check and then runs it, and dev.peanuts.ui.Library starts no build of the title from then until the end ({@link #busy}).
  */
 public final class PackImport {
     private static final String TAG = "peanuts";
@@ -64,15 +65,23 @@ public final class PackImport {
     }
 
     /** Whether an import of this title's pack is working (the sheet's Build and the control interface's build wait for it) */
-    public static synchronized boolean busy(String titleId) { return BUSY.contains(titleId.toUpperCase(java.util.Locale.ROOT)); }
+    public static synchronized boolean busy(String titleId) { return BUSY.contains(key(titleId)); }
 
-    private static synchronized boolean take(String titleId) { return BUSY.add(titleId); }
+    /**
+     * Marks an import of the title as working; false when one is. dev.peanuts.ui.PackImportUi takes it on the main thread right after its last check, so no
+     * Build of the title starts between that check and the import (Library.startBuild asks {@link #busy} on the main thread too). {@link #run} gives it back
+     */
+    public static synchronized boolean take(String titleId) { return BUSY.add(key(titleId)); }
 
-    private static synchronized void give(String titleId) { BUSY.remove(titleId); }
+    private static synchronized void give(String titleId) { BUSY.remove(key(titleId)); }
 
-    /** Imports source (a .zip or a pack folder) for g; see the class comment. Off the main thread */
+    /** The one spelling of a title ID in {@link #BUSY}, whoever asks: upper case, as the library and FirstImport.Game have it */
+    private static String key(String titleId) { return titleId.toUpperCase(Locale.ROOT); }
+
+    /** Imports source (a .zip or a pack folder) for g, whose import the caller took ({@link #take}); see the class comment. Gives it back at its end, whatever
+     *  happened. Off the main thread */
     public static Done run(Context c, FirstImport.Game g, File source, Titles titles) throws Refused {
-        if (!take(g.titleId)) throw new Refused(FirstImport.busy(g), null);
+        if (!busy(g.titleId)) throw new IllegalStateException("import pack: " + g.titleId + " was not taken");
         try {
             return run0(c, g, source, titles);
         } catch (ReflectiveOperationException | RuntimeException e) {

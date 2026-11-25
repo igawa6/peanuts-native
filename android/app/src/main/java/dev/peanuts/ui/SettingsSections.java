@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * The ten sections of Settings (design: the canvas "Peanuts Settings Redesign", page Konzept, board "Aufteilung"), as data: each section's label, icon,
+ * The ten sections of Settings (in place of one long page), as data: each section's label, icon,
  * line under its title and groups, and in each group the rows by their title as Settings builds them (upstream's MainActivity.buildSettings and
  * LibrarySettings.add), each with the Peanuts icon of its tile. SettingsPage puts the rows Settings built into these places. A row this table does not
  * know (upstream added one) goes to the section of the heading it was built under, in a group "More", so nothing is lost after an update.
@@ -63,15 +63,16 @@ public final class SettingsSections {
             new Section("graphics", "Graphics", "driver", DEFAULTS,
                     new Group("Driver", r("GPU driver", "driver")),
                     new Group("Picture", r("Console mode", "game"), r("Resolution", "search"), r("Resolution scale", "search"), r("Upscaler", "search"),
-                            r("FSR sharpness", "search"), r("Dynamic resolution", "gauge")),
+                            r("FSR sharpness", "search"), r("CRT filter", "screen-landscape"), r("Dynamic resolution", "gauge")),
                     new Group("Speed", r("Frame rate cap", "gauge"), r("Frame generation", "gauge"), r("Use fast cores", "gauge"), r("Overlay", "list"))),
             new Section("controls", "Controls", "controller", DEFAULTS,
                     new Group("Buttons", r("Button mapping", "controller"), r("Xbox button label swap", "controller")),
                     new Group("Touch", r("On-screen controls", "game"), r("Show / hide button", "game")),
-                    new Group("Controller", r("Controller: in-game panel", "controller"), r("Rumble", "controller"))),
+                    new Group("Controller", r("Controller: in-game panel", "controller"), r("Mods tab", "mods"), r("Rumble", "controller"))),
             new Section("screens", "Screens", "companion", "What each screen shows, and when the screen stays on.",
                     new Group("Second screen", r("Bottom screen", "companion"), r("Games without a companion", "screens-cover"), r("Swap screens", "swap-off"),
-                            r("Companions", "companion")),
+                            r("Dual-screen companions", "companion")),
+                    new Group("TV", r("TV and monitors", "tv")),
                     new Group("Display", r("Screen rotation", "screen-landscape"), r("Keep the screen on while preparing", "awake"))),
             new Section("users", "Users", "user", "Who plays, and the Miis games can use.",
                     new Group("Users", r("Users", "user")),
@@ -90,13 +91,13 @@ public final class SettingsSections {
     private static final String[][] SUMMARY = {
             {"library", "Game, update and DLC folders, builds, space and play time"}, {"console", "Keys, firmware and the clock"},
             {"graphics", "GPU driver, picture and speed"}, {"controls", "Buttons, touch controls and the controller"},
-            {"screens", "Both screens, rotation, keeping the screen on"}, {"users", "Users and Miis"}, {"app", "Haptics, motion and updates"},
+            {"screens", "Both screens, a TV, rotation, keeping the screen on"}, {"users", "Users and Miis"}, {"app", "Haptics, motion and updates"},
             {"help", "Readiness check, self-test, log and answers"}, {"developer", "Advanced, tester settings and adb"},
             {"about", "The app, its games, credits, licenses and Peanuts cracked"}};
 
     /** A section's few words of what it holds; its line when there are none. twoScreens: the device has a second screen (Screens says so) */
     public static String summary(Section s, boolean twoScreens) {
-        if (s.key.equals("screens") && !twoScreens) return "Rotation, keeping the screen on, and a second screen";
+        if (s.key.equals("screens") && !twoScreens) return "Rotation, a TV, keeping the screen on, and a second screen";
         for (String[] x : SUMMARY) if (x[0].equals(s.key)) return x[1];
         return s.line;
     }

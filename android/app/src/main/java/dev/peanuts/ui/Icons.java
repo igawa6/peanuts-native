@@ -10,7 +10,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * The Peanuts icons (a shell with one kernel; drawn in design/peanuts-native/icons, made into VectorDrawables there as res drawable/pi_*.xml). Their two
+ * The Peanuts icons (a shell with one kernel; res drawable/pi_*.xml, written by peanuts/scripts/icons.py, where a new one is drawn). Their two
  * colours are theme attributes, ?attr/pnIconInk for the shell and ?attr/pnIconKernel for the kernel, set by a style per use (res values/peanuts_icons.xml):
  * the text colour with the kernel in the accent, the quieter text colour for a sidebar entry, and the dark brown of text on banana yellow for a selected one.
  * The drawables and styles are in the Peanuts resource folder only, so they are found by name; a build without them gets null and keeps its emoji.

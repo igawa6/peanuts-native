@@ -65,6 +65,11 @@ final class DriverPort {
         method("GpuDriver", "choice", Context.class, String.class, String.class).invoke(null, c, titleId, choice);
     }
 
+    /** A known bad build's line (GpuDriver.problemText, KnownDrivers), null for none */
+    static String problem(Context c, Driver d) throws ReflectiveOperationException {
+        return (String) method("GpuDriver", "problemText", Context.class, Class.forName(P + "GpuDriver$Info")).invoke(null, c, d.info);
+    }
+
     static String gameRecommendation(Context c, String titleId) throws ReflectiveOperationException {
         return (String) method("Prefs", "recommendedDriver", Context.class, String.class).invoke(null, c, titleId);
     }

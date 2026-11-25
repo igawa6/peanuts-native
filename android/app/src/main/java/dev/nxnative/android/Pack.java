@@ -26,6 +26,19 @@ final class Pack {
     final String packer;   // the commit of the tools that made it ("" when not recorded)
     final String madeBy;   // its made_by row: "app <version>" when this app's pack step made it, "" for a pack from other tools (or from before the row)
     final Map<String, String> scenes = new LinkedHashMap<>();   // its scene_res rows: Scene resolution preset → its RomFS overlay folder in the pack (SceneRes; none from older packs)
+    // PEANUTS begin: its variant rows (pack_android.py variant_overlays): a variant whose code had its cuts for this main build and whose RomFS rows, if any, applied to the
+    // player's own files → its RomFS overlay folder in the pack ("-" for none). A variant without a row (another game version, an older pack) is not started (GameActivity)
+    final Map<String, String> variants = new LinkedHashMap<>();
+    /** Whether the pack holds a complete variant of that name: its row and its main */
+    boolean variantReady(String name) { return name != null && variants.containsKey(name) && new File(new File(dir, name), "main.patched.bin").isFile(); }
+    /** The variant's RomFS overlay folder, null for none (or a row naming a folder that is not there) */
+    File variantRomfs(String name) {
+        String rel = variants.get(name);
+        if (rel == null || rel.isEmpty() || rel.equals("-") || rel.startsWith("/") || java.util.Arrays.asList(rel.split("/")).contains("..")) return null;   // never outside the pack
+        File f = new File(dir, rel);
+        return f.isDirectory() ? f : null;
+    }
+    // PEANUTS end
     // A pack of program n > 0 of a dump folder (pack_android.py --program; a Switch 2 Edition's program 1, updates/<v>/program/1/): which program, its application (the save and the add-ons
     // are the application's) and each program index's RomFS (the host's DM_ROMFS_PROGRAM_<i>: 0 is the game's, the edition mounts it as "conorig"). 0 / "" / empty otherwise
     final int program;
@@ -59,6 +72,10 @@ final class Pack {
         for (String v : rows.getOrDefault("scene_res", List.of())) {
             String[] c = v.split("\t", 2);
             if (c.length == 2) scenes.put(c[0], c[1]);
+        }
+        for (String v : rows.getOrDefault("variant", List.of())) {   // PEANUTS: variants the pack step found complete (pack_android.py variant_overlays)
+            String[] c = v.split("\t", 2);
+            if (c.length == 2) variants.put(c[0], c[1]);
         }
         List<String> pg = rows.get("program"), ap = rows.get("application");
         program = pg == null || pg.isEmpty() ? 0 : Integer.parseInt(pg.get(0).trim());
@@ -124,6 +141,17 @@ final class Pack {
     static boolean shaderUpdateAvailable(File dir, String titleId) {
         return libraryProblem(dir, titleId) != null && playableLibrary(dir, titleId) != null && deltaShaders(dir, titleId) < 0;
     }
+
+    // PEANUTS begin: what a player reads about a build's shaders (the project's build text style notes: no path, no "library" or "pack" on the main line);
+    // libraryProblem's sentence, with its folders, is for Details and the log
+    /** The build's shaders in plain words, null when they are this app version's; libraryProblem says the same with the folders, for Details */
+    static String libraryText(File dir, String titleId) {
+        if (libraryProblem(dir, titleId) == null) return null;
+        if (playableLibrary(dir, titleId) != null || legacyLibrary(dir, titleId) != null) return "Its shaders are from an earlier app version. The game plays with them until they are updated.";
+        if (libraryOf(dir) != null) return "Its shaders were made from another version of the app's list for this game. Build makes them again.";
+        return "It has no shaders for this app version yet. Build makes them.";
+    }
+    // PEANUTS end
 
     /** A library of another version made before versioned shader updates (no ABI): played with a warning when no playable one is there (ShaderLibs.legacy), null when none */
     static File legacyLibrary(File dir, String titleId) { return ShaderLibs.legacy(dir, titleId, BuildConfig.NX_DMSH_VK_CHAIN); }

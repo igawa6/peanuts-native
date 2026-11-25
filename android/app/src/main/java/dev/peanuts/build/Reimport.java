@@ -63,7 +63,7 @@ public final class Reimport {
         p.freeBytes = freeBytes;
         List<String> gone = new ArrayList<>();
         for (Part f : found) if (f.kind == BASE && f.file != null && f.file.isFile() && p.base == null) p.base = f.file;
-        if (p.base == null) gone.add("the base game's dump (an .nsp, .nsz, .xci or .xcz file)");
+        if (p.base == null) gone.add("the base game's file (an .nsp, .nsz, .xci or .xcz file)");
         // the update: the one picked in the sheet, else the newest found; never older than the one the .nup has
         long had = -1;
         for (Part i : inside) if (i.kind == UPDATE) had = Math.max(had, i.version);
@@ -91,7 +91,7 @@ public final class Reimport {
         if (!gone.isEmpty()) {
             List<String> where = new ArrayList<>();
             if (roots != null) for (File r : roots) where.add(r.getPath());
-            p.missing = "Import again makes the .nup from your dumps, and not all of them were found. Missing: " + String.join("; ", gone) + ". Looked in "
+            p.missing = "Import again makes the .nup from your game files, and not all of them were found. Missing: " + String.join("; ", gone) + ". Looked in "
                     + (where.isEmpty() ? "no folder (none is set in Settings › Library)" : String.join(", ", where))
                     + ", two folders deep, and at the files added in the game's sheet. Put the files back, or set their folders in Settings › Library, then tap "
                     + "Import again. Nothing was changed.";
@@ -101,7 +101,7 @@ public final class Reimport {
 
     /** The question before anything is done: what is deleted, what is kept, what was found */
     public static String confirm(Plan p, String name) {
-        return "This makes the .nup of " + name + " again from your dumps, with the DLC found now, then builds the game again (about 25 minutes, in the background).\n\n"
+        return "This makes the .nup of " + name + " again from your game files, with the DLC found now, then builds the game again. It takes about 25 minutes, in the background.\n\n"
                 + "Deleted: the .nup that is there now (" + size(p.oldBytes) + ", " + p.nup.getPath() + "). It is replaced only when the new one is complete: if the "
                 + "import fails or is stopped, the game stays as it is.\n\n"
                 + "Kept: your saves, mods and settings, and the built game until the new build replaces it.\n\n"

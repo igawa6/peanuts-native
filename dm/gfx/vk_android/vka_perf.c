@@ -110,6 +110,7 @@ void vka_perf_thread(int nice) {
 // sets the CPU clocks and cores of the replay's threads, and the old reports read a frame recorded in 30 ms at 20 fps as on target against the 50 ms period; whether that
 // holds the frame rate low after the phone cools is open (docs/reference/frame-rate.md "A dynamic interval that does not step back up after the phone cools on the Vulkan
 // replay"): DM_VK_ADPF_SPAN=100 is that A/B arm, the default stays until a phone run shows it helps
+int64_t vka_cap_period_clamp(int64_t ns);   // PEANUTS: the active frame cap's period as the shortest (vka_dev.c, the GPU floor's rule too)
 static int span_pct(void) { int vka_floor_adpf(void); int p = VKA_ENV("DM_VK_ADPF_SPAN", -1); if (p < 0) p = vka_floor_adpf() ? 100 : 0; return p <= 0 ? 0 : p > 100 ? 100 : p; }
 static int64_t span_target(double period_s, int pct) { (void)period_s; int64_t vka_floor_period_ns(void); return vka_floor_period_ns() * pct / 100; }
 uint64_t vka_floor_span_of(uint64_t f); uint64_t vka_frame_start_ns(uint64_t f); uint64_t now_ns(void);
@@ -140,7 +141,7 @@ void vka_perf_frame(double period_s) {
             break;
         }
     }
-    int64_t tgt = pct ? span_target(period_s, pct) : period_s > 0.004 && period_s < 0.2 ? (int64_t)(period_s * 1e9) : 16666667;
+    int64_t tgt = pct ? span_target(period_s, pct) : vka_cap_period_clamp(period_s > 0.004 && period_s < 0.2 ? (int64_t)(period_s * 1e9) : 16666667);   // PEANUTS: the frame cap's period for the GPU floor and ADPF (0.1.8)
     pthread_mutex_lock(&g_mu);
     session_update();
     if (g_s && tgt != g_target) { g_target = tgt; H.target(g_s, tgt); VLOG("ADPF target %.2f ms", tgt / 1e6); }
@@ -270,7 +271,8 @@ void dm_perf_time_constraint(uint64_t period_ns, uint64_t comp_ns) {
     vka_perf_thread(-8);
     if (!avail()) return;
     pthread_mutex_lock(&g_mu);
-    if (!(H.report2 && span_pct()) && period_ns >= 4000000 && period_ns <= 200000000 && (int64_t)period_ns != g_target) { g_target = (int64_t)period_ns; if (g_s) H.target(g_s, g_target); }   // (with DM_VK_ADPF_SPAN vka_perf_frame sets it)
+    int64_t c_ns = vka_cap_period_clamp((int64_t)period_ns);   // PEANUTS: the frame cap's period for the GPU floor and ADPF (0.1.8)
+    if (!(H.report2 && span_pct()) && period_ns >= 4000000 && period_ns <= 200000000 && c_ns != g_target) { g_target = c_ns; if (g_s) H.target(g_s, g_target); }   // (with DM_VK_ADPF_SPAN vka_perf_frame sets it)
     pthread_mutex_unlock(&g_mu);
 }
 // ---------- The [longframe] line's attribution on the Vulkan replay (hle_nvn.c lf_attr's hooks) ----------

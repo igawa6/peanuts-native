@@ -23,7 +23,7 @@ import java.util.Map;
 
 /**
  * Peanuts Native: the screens black while a build runs. A build takes from minutes to over an hour and its card hardly changes, which marks an OLED panel:
- * "Screens off" in Home's header covers every display (the AYN Thor's two) with a black window at the lowest brightness, which an OLED panel shows with
+ * "Screens off" in Home's header covers the device's own screens (the AYN Thor's two; not a TV, dev.peanuts.Screens) with a black window at the lowest brightness, which an OLED panel shows with
  * its pixels off. The device stays awake (an app cannot turn a screen off itself, and a sleeping device slows the build), a tap on either screen brings the
  * app back, and the cover goes by itself when no build is left ({@link Library}'s render).
  */
@@ -46,7 +46,7 @@ public final class ScreensOff {
         for (Display d : dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)) all.put(d.getDisplayId(), d);
         for (Display d : dm.getDisplays()) all.put(d.getDisplayId(), d);
         for (Display d : all.values()) {
-            if (d.getDisplayId() == ownId || !d.isValid()) continue;
+            if (d.getDisplayId() == ownId || !d.isValid() || !dev.peanuts.Screens.ownScreen(a, d)) continue;   // a TV or a cast is not ours to cover (#358)
             try {
                 Presentation p = new Presentation(a, d, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
                 cover(p, a, false);

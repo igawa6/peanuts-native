@@ -31,6 +31,7 @@ void dm_pcmout_start(void *k);
 int dm_pcmout_append(void *k, void *b);
 void *dm_pcmout_released(void *k);
 void dm_pcmout_wait(void *k, int ms);
+__attribute__((weak)) int pn_audio_follow(int index, int16_t *buf, int n, int cap);   // PEANUTS: absent in a build without dm/peanuts
 
 // P_SIZE: bytes of the game's AudioRendererParameter copied before the two fields are changed. SDK 16's struct is 0x38 bytes; SDK 8's (Link's Awakening) has one more word,
 // its revision at +0x38: copying only 0x38 left the revision uninitialized and the SDK rejected it (CheckValidRevision, Result 0x499). The SDK reads only its own size of the copy
@@ -82,9 +83,14 @@ static size_t ar_service_work_size(const uint8_t *p) {
     return ar_align(size + commands + 0x7e, WORK_PAGE);
 }
 
+// PEANUTS: an SDK with no renderer of its own (SDK 1.3.1: no ExecuteAudioRendererRendering, only the IPC client) keeps its own client: its calls go to the SDK, whose requests
+// reach the audio renderer service the host answers (hle_audren_svc.c), not the CPU renderer below
+int dm_audren_served(void);
+
 HLE_FORCE("_ZN2nn5audio30GetAudioRendererWorkBufferSizeERKNS0_22AudioRendererParameterE", "renderer work buffer: DSP service budget, with extra local CPU backend storage supplied by the host",
           size_t, h_ar_WorkSize, const uint8_t *param) {
     static size_t (*orig)(const uint8_t *); if (!orig) orig = gsym("_ZN2nn5audio30GetAudioRendererWorkBufferSizeERKNS0_22AudioRendererParameterE");
+    if (dm_audren_served()) return orig(param);   // PEANUTS: the SDK asks the host's service (hle_audren_svc.c)
     uint8_t p[P_SIZE]; cpu_manual(p, param); size_t n = orig(p);
     size_t service = *(int32_t *)(param + P_DEVICE) == 0 ? ar_service_work_size(p) : 0;
     size_t guest_n = service ? service : n;
@@ -196,8 +202,10 @@ static void render_main(void *arg) {
         int n = got ? got : 240;
         gbuf *b = free_list[--nfree];
         if (got) memcpy(b->ptr, src, (size_t)n * 4); else memset(b->ptr, 0, (size_t)n * 4);
+        if (pn_audio_follow) { int f = pn_audio_follow(ar_index(a), b->ptr, n, FRAME_MAX); next += (int64_t)(f - n) * (FRAME_NS - FRAME_NS / 200) / 240; n = f; }   // PEANUTS: stretched to the game's pace (dm/peanuts/peanuts_audiosync.h); the clock paces the frames played
         b->size = (uint64_t)n * 4;
         render_unlock();   // PEANUTS: render lock (see above)
+        if (!n) { free_list[nfree++] = b; continue; }   // PEANUTS: nothing to play yet (the stretch fills its look-ahead, peanuts_audiosync.c)
         if (!dm_pcmout_append(out, b)) free_list[nfree++] = b;
     }
     dm_pcmout_close(out);   // the output would otherwise keep its sound card callback or silent sink running and hold one of the AudioOut slots after the renderer closes
@@ -238,6 +246,7 @@ static Result ar_open(void **handle, void *ev, const uint8_t *param, void *work,
     if (!orig_ev) orig_ev = gsym("_ZN2nn5audio17OpenAudioRendererEPNS0_19AudioRendererHandleEPNS_2os11SystemEventERKNS0_22AudioRendererParameterEPvm");
     if (!orig) orig = gsym("_ZN2nn5audio17OpenAudioRendererEPNS0_19AudioRendererHandleERKNS0_22AudioRendererParameterEPvm");
     if (t_in_open) return orig(handle, param, work, sz);
+    if (dm_audren_served()) return ev ? orig_ev(handle, ev, param, work, sz) : orig(handle, param, work, sz);   // PEANUTS: the SDK's own open, through the host's service (hle_audren_svc.c)
     uint8_t p[P_SIZE]; cpu_manual(p, param);
     LOG("audren: OpenAudioRenderer%s rate %d samples per frame %d mix buffers %d submixes %d voices %d sinks %d effects %d splitters %d (original device %d mode %d → CPU / manual) work buffer %p+%#zx",
         ev ? "" : " (no event)", *(int32_t *)param, *(int32_t *)(param + 4), *(int32_t *)(param + 8), *(int32_t *)(param + 0xc), *(int32_t *)(param + 0x10), *(int32_t *)(param + 0x14),

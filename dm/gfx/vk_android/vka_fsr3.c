@@ -241,6 +241,7 @@ static void pass(VkCommandBuffer cb, int p, const VkImageView *views, uint32_t g
     vk.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, F.pipe[p]);
     vk.vkCmdPushDescriptorSetKHR(cb, VK_PIPELINE_BIND_POINT_COMPUTE, F.lay[p], 0, n, w);
     vk.vkCmdDispatch(cb, gx, gy, 1);
+    vka_dyn_invalidate();   // PEANUTS(upstream-candidate): recorded between the game's dispatches (vka_exec.c dlss_eval): the next dispatch pushes again (vka_draw.c push_same), as after nf_pass
     VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT};
     vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     if (vka_gp_active) vka_gp_mark(cb, "fsr3-pass", 1000 + p);   // DM_VK_GPUPROF: each pass a step (site fsr3-pass:1000 + pass)

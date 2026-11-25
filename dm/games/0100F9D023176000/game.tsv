@@ -1,0 +1,40 @@
+# PEANUTS: Game profile of Viewfinder (Switch, base 1.0.0 = v0).
+# Format: see dm/games/README.md
+# Sad Owl Studios Unity 2022.3.61f1 IL2CPP on NVN (SDK 19.3.9).
+
+# ---- Identity ----
+title_id	0100F9D023176000
+program_id	0100F9D023176000
+
+# ---- App ----
+name	Viewfinder
+ipa	Viewfinder.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v0	1.0.0	main=facf8642b57cf2d0620ad75b933d57dc	subsdk0=e2970aa61f198ea32fbb247932d90406	sdk=d83a56a5558798414c78ec722867a7da
+package	v0
+shader_versions	v0
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Data/StreamingAssets/aa/Switch/level_real_world_scenes_all.bundle
+zip_store	.assets:.bank:.bundle:.dat:.png:.ress:.wav:.metallib
+
+# ---- Memory ----
+# the NPDM declares 16 MB of system resource (virtual address memory) and main sets a heap: a 5 GB block with a large alias region; the heap check sizes the heap region from the heap the game asks for
+mem_reserve	0x4b0000000
+mem_alias	0x400000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+
+# ---- Shader split ----
+shader_groups	/Data/=data
+shader_note	Viewfinder shaders
+
+# ---- Frame rate ----
+# Viewfinder asks for present interval 2 (30 fps) and steps by Unity's frame time; display presents every vsync (60 fps).
+present_interval	display

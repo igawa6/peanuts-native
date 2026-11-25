@@ -25,7 +25,7 @@ sys_resource	0x1000000
 shader_groups	/asset/=asset /scene/=scene /system_nx/=systemnx
 shader_note	Trails in the Sky 2nd Chapter shaders
 
-# PEANUTS: frame rate choices from 20 to 120 fps, offered as an opt-in. The game starts Game owned (its own pacing); a cap paces the display and is
+# PEANUTS: frame rate choices from 20 to 120 fps, with Game owned (its own pacing). The game starts at 60 fps (0.1.8; Game owned before); a cap paces the display and is
 # marked experimental (fps_limit_present), since no run has yet checked that the game's speed follows elapsed time above its own rate
 fps_limit_max	120
 fps_limit_present	1

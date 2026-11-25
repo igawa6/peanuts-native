@@ -158,6 +158,8 @@ final class Native {
 
     /** Places the replay thread on the phone's fastest cores and the encoder and the game's threads off the small ones (nxlaunch.c); the number placed by this call, -1 when the phone reports no clocks */
     static native int pinThreads();
+    /** The placement of pinThreads undone: those threads get every core again (nxlaunch.c) */   // PEANUTS: thread placement undone in top-app (0.1.8)
+    static native int unpinThreads();
     /** The frame limit while the game runs (games whose speed follows the measured rate: Prefs.paced); 0 = none */
     static native void fpsLimitSet(int fps);
     /** Full game speed at low frame rates while the game runs (games whose profile has fps_decouple sead: Prefs.paced; hle_fpslock.c nxhost_fps_decouple_set) */
@@ -167,6 +169,16 @@ final class Native {
     /** A cheat on or off while the game runs, by its key (Cheats.Entry.key: the name, "Name #2" for a duplicate's second entry), for a game started with its Cheats switch on
      *  (hle_cheats.c nxhost_cheat_set, which also rewrites the folder's &lt;build&gt;.enabled): 1 now in that state, 0 no plain cheat, -1 no such key, -2 not in this host */
     static native int cheatSet(String key, boolean on);
+    // PEANUTS begin: every cheat's state and a reload of the cheat file while the game runs (dm/peanuts/peanuts_cheats.inc nxhost_cheat_status / nxhost_cheats_reload)
+    /** Every entry of the loaded cheat file, for a panel to poll: a line each, file order, "key\tstate\tflags\treason". key: as cheatSet takes it. state: on, off,
+     *  refused, unsupported, master, label. flags, a comma list (unknown ones ignored): code (wrote main's code this run), hold (waits on a button), wait (a code write
+     *  waits for the game's threads). reason: "" or "token:detail", tokens rewritten, nolist, region, unsupported, other, access, wait. null: no cheats loaded, or not in this host */
+    static String cheatStatus() { byte[] b = cheatStatusUtf8(); return b == null || b.length == 0 ? null : new String(b, java.nio.charset.StandardCharsets.UTF_8); }
+    private static native byte[] cheatStatusUtf8();
+    /** Reads &lt;build&gt;.txt and &lt;build&gt;.enabled again: a cheat already loaded keeps its on / off by key, a new key takes &lt;build&gt;.enabled's, one that is gone puts its code
+     *  back. The entries now loaded, -1 the file could not be read (the old list stays), -2 not in this host */
+    static native int cheatsReload();
+    // PEANUTS end
     /** Game resolution while the game runs, for a game with graphics_scale rows (Profile.resolutionLive): the graphics scale (0-2, -1 following the operation mode) and the operation mode
      *  (0 handheld, 1 console, -1 the profile's own); the host posts the console's change notifications and the game queries them again (hle_oe.c nxhost_graphics_mode_set). False when this host has no such call */
     static native boolean graphicsModeSet(int scale, int opmode);

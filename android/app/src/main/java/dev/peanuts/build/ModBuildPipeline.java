@@ -39,7 +39,7 @@ public final class ModBuildPipeline {
             Log.w(TAG, "ModBuildService start: " + e);
             LISTENERS.remove(id);
             running = 0;
-            if (l != null) MAIN.post(() -> l.done(false, "Cannot start the modded build: " + e.getMessage(), BuildListener.OTHER));
+            if (l != null) MAIN.post(() -> l.done(false, "Android did not let the build with mods start. Try again.", BuildListener.OTHER));
             return 0;
         }
         return id;
@@ -54,13 +54,13 @@ public final class ModBuildPipeline {
 
     private static String check(ModBuildRequest r) {
         if (r == null) return "Nothing to build.";
-        if (r.titleId == null || !r.titleId.matches("[0-9A-Fa-f]{16}")) return "The game has no title ID.";
-        if (r.dump == null || !r.dump.exists()) return "The game's own build is missing. Build it normally first.";
-        if (r.normalPack == null || !new File(r.normalPack, "pack.tsv").isFile()) return "The game is not built yet. Build it normally first, then Build with mods.";
+        if (r.titleId == null || !r.titleId.matches("[0-9A-Fa-f]{16}")) return "The app cannot tell which game this is. Rescan your games, then try again.";
+        if (r.dump == null || !r.dump.exists()) return "The game files are missing. Build the game without mods first.";
+        if (r.normalPack == null || !new File(r.normalPack, "pack.tsv").isFile()) return "The game is not built yet. Build it without mods first, then Build with mods.";
         if (r.variantId == null || r.variantId.isEmpty()) return "No mods are enabled that need a build.";
         // without them the job is a build of the game itself: into the variant's folder, and remembered as the game's own job (PackService keeps a job with
         // mod arguments out of Job.remember, and only such a job)
-        if (r.modArgs == null || r.modArgs.isEmpty()) return "The mods that are on have no module and no IPS patch a build can use.";
+        if (r.modArgs == null || r.modArgs.isEmpty()) return "The mods that are on change nothing a build can use.";
         return null;
     }
 

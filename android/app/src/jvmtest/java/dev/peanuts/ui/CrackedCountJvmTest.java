@@ -45,6 +45,19 @@ public final class CrackedCountJvmTest {
         eq(0, CrackedCount.played(s, -5));
         eq(points + 15, s.points);
 
+        // PEANUTS: play time from the play-time ledger: what its total gained since the last look
+        eq(0, CrackedCount.fromLedger(0, 0));
+        eq(18 * 60_000L, CrackedCount.fromLedger(3_600_000L, 3_600_000L + 18 * 60_000L));
+        eq(0, CrackedCount.fromLedger(5_000_000L, 4_000_000L));   // a smaller ledger (a game's line gone): nothing, and the new start
+        // the first look: a fresh install counts the whole ledger; after 0.1.7's own measure, the ledger so far was counted already
+        eq(0, CrackedCount.seenAtFirstLook(false, 7_200_000L));
+        eq(7_200_000L, CrackedCount.seenAtFirstLook(true, 7_200_000L));
+        eq(0, CrackedCount.fromLedger(CrackedCount.seenAtFirstLook(true, 7_200_000L), 7_200_000L));
+        eq(2 * 3_600_000L, CrackedCount.fromLedger(CrackedCount.seenAtFirstLook(false, 7_200_000L), 7_200_000L));
+        CrackedCount.State ledger = new CrackedCount.State();
+        eq(10, CrackedCount.played(ledger, CrackedCount.fromLedger(0, 2 * 3_600_000L + 59 * 60_000L)));   // two whole hours, 59 minutes carried
+        eq(5, CrackedCount.played(ledger, CrackedCount.fromLedger(2 * 3_600_000L + 59 * 60_000L, 3 * 3_600_000L)));
+
         // firsts: a game's first start, the first own Mii, once each
         eq(10, CrackedCount.started(s, "0100F2C0115B6000"));
         eq(0, CrackedCount.started(s, "0100f2c0115b6000"));
@@ -79,6 +92,17 @@ public final class CrackedCountJvmTest {
         eq(100_000, CrackedCount.previous(150_000));
         eq("[50000, 100000, 200000, 300000]", Arrays.toString(CrackedCount.around(150_000)));
         eq("[100000, 200000, 300000, 400000]", Arrays.toString(CrackedCount.around(250_000)));
+
+        // PEANUTS: counting never fails its caller (BuildService: a finished build stays finished)
+        java.util.List<RuntimeException> seen = new java.util.ArrayList<>();
+        CrackedCount.never(() -> { throw new IllegalStateException("job.json is not a job"); }, seen::add);
+        eq(1, seen.size());
+        eq("job.json is not a job", seen.get(0).getMessage());
+        CrackedCount.never(() -> { throw new NullPointerException(); }, null);   // nothing to tell: still no throw
+        int[] ran = {0};
+        CrackedCount.never(() -> ran[0]++, seen::add);
+        eq(1, ran[0]);
+        eq(1, seen.size());
 
         System.out.println("ok " + n);
     }

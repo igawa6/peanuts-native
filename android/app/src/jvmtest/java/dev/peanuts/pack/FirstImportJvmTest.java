@@ -1,4 +1,4 @@
-// PEANUTS: Import pack… before the first build (#44) on the JVM with upstream's own PackZip, Pack, BuildCheck and SaveStore (peanuts/tests/test_first_import.py compiles and runs it)
+// PEANUTS begin: Peanuts' own file, down to the marker on its last line. Import pack… before the first build (#44) on the JVM with upstream's own PackZip, Pack, BuildCheck and SaveStore (peanuts/tests/test_first_import.py compiles and runs it)
 package dev.peanuts.pack;
 
 import android.content.Context;
@@ -129,6 +129,12 @@ public final class FirstImportJvmTest {
         return String.valueOf(x.get(o));
     }
 
+    /** An import as PackImportUi.start makes it: the title taken (on its main thread, with its last check), then PackImport.run, which gives it back */
+    static PackImport.Done imp(FirstImport.Game g, File source, PackImport.Titles titles) throws PackImport.Refused {
+        if (!PackImport.take(g.titleId)) throw new AssertionError("taken already: " + g.titleId);
+        return PackImport.run(C, g, source, titles);
+    }
+
     interface Run { PackImport.Done run() throws PackImport.Refused; }
 
     static PackImport.Refused refused(Run r) {
@@ -153,6 +159,7 @@ public final class FirstImportJvmTest {
         nspZipIntoBuildFolder(new File(t, "nsp-zip"));
         nspVersion(new File(t, "nsp-version"));
         otherTitle(new File(t, "title"));
+        busyKey(new File(t, "busy"));
         whoElse(new File(t, "who"));
         stoppedJob(new File(t, "job"));
         pickedPack(new File(t, "picked"));
@@ -207,6 +214,14 @@ public final class FirstImportJvmTest {
         check(FirstImport.buildFile(null, null, home, ID).equals(new File(home, "DK.nup")), "an NSP without one: beside the game (GameSheet.state)");
         check(FirstImport.buildFile(null, null, null, ID) == null, "no folder for it at all");
         check(FirstImport.replaces(nsp).endsWith("if it is refused, the one there stays."), "the replace question");
+        FirstImport.Pick asked = new FirstImport.Pick(ID.toLowerCase(), target), none = new FirstImport.Pick(ID, null);
+        check(asked.titleId.equals(ID) && asked.asked(target) && !asked.asked(new File("/x/builds/" + ID + "/pack")) && !none.asked(target),
+                "the pick: asked about this pack folder only, none when no pack was there");
+        FirstImport.Pick kept = FirstImport.Pick.of(asked.text()), keptNone = FirstImport.Pick.of(none.text());
+        check(kept != null && kept.titleId.equals(ID) && kept.asked(target) && keptNone != null && keptNone.titleId.equals(ID) && keptNone.replaces == null,
+                "the pick as kept while the picker is open, and read back by a new process: " + asked.text());
+        check(FirstImport.Pick.of(null) == null && FirstImport.Pick.of("") == null && FirstImport.Pick.of("0100\t/x") == null && FirstImport.Pick.of(ID) == null
+                && FirstImport.Pick.of("040074A01BF1200G\t") == null, "no pick from none or from a text that is not one");
         check(FirstImport.swapFailed(nsp).contains("could not be put back") && !FirstImport.swapFailed(nsp).contains("Nothing was changed"), "a failed swap never says nothing changed");
         for (String s : new String[] {other, unknown, base, FirstImport.stoppedBuild(nsp, false), FirstImport.inUse(nsp), FirstImport.imported(withFile, true, "x", true), FirstImport.running(nsp),
                 FirstImport.replaces(nsp), FirstImport.swapFailed(nsp)})
@@ -219,7 +234,7 @@ public final class FirstImportJvmTest {
         reset();
         File src = pack(new File(t, "pc/" + ID + "-work/android-pack"), ID, V, "new"), target = new File(t, "app/packs/" + ID);
         pack(target, ID, V, "old");
-        PackImport.Done d = PackImport.run(C, game(null, V, target, new File(t, "games/DK/DK.nup")), src, TITLES);
+        PackImport.Done d = imp(game(null, V, target, new File(t, "games/DK/DK.nup")), src, TITLES);
         check(!d.listed && d.text.startsWith("Build makes the game's .nup"), "an NSP game: in, not listed: " + d.text);
         check(read(new File(target, "main.patched.bin")).equals("code new") && read(new File(target, "shaders/v-c0ffee/dmsh_vk.lib")).equals("library new"), "the new pack replaced the old");
         check(!leftovers(target.getParentFile()), "no .partial or .replaced left");
@@ -236,7 +251,7 @@ public final class FirstImportJvmTest {
         export.setAccessible(true);
         File zip = (File) export.invoke(null, src, new File(t, "out"));
         File target = new File(t, "build/" + ID + "/pack");   // a build folder's <title ID>/pack: not there yet
-        PackImport.Done d = PackImport.run(C, game(null, V, target, null), zip, TITLES);
+        PackImport.Done d = imp(game(null, V, target, null), zip, TITLES);
         check(!d.listed && read(new File(target, "main.patched.bin")).equals("code zip"), "a zip into a build folder's pack folder");
         check(!leftovers(target.getParentFile()) && !new File(t, "build/" + ID + "/" + ID + ".partial").exists(), "staged beside the pack folder, nothing left");
     }
@@ -245,7 +260,7 @@ public final class FirstImportJvmTest {
         reset();
         File src = pack(new File(t, "src"), ID, V, "new"), target = new File(t, "app/packs/" + ID);
         pack(target, ID, V, "old");
-        PackImport.Refused r = refused(() -> PackImport.run(C, game(null, 0, target, null), src, TITLES));
+        PackImport.Refused r = refused(() -> imp(game(null, 0, target, null), src, TITLES));
         check(r != null && r.getMessage().startsWith("That pack was made from update 1.0.1 of Donkey Kong Bananza, and Build uses the base game here.")
                 && r.getMessage().endsWith("Nothing was changed."), "a pack of another version than Build uses: " + (r == null ? null : r.getMessage()));
         check(read(new File(target, "main.patched.bin")).equals("code old") && !leftovers(target.getParentFile()), "the old pack as it was, nothing left");
@@ -288,7 +303,7 @@ public final class FirstImportJvmTest {
         File app = new File(t, "app/packs/" + ID), builds = new File(t, "builds/" + ID), home = new File(t, "games/DK");
         // the app's packs/<id>, no build folder: the .nup goes beside the game
         File nup = FirstImport.buildFile(null, null, home, ID);
-        PackImport.Done d = PackImport.run(C, game(null, V, app, nup), pack(new File(t, "src"), ID, V, "pc"), TITLES);
+        PackImport.Done d = imp(game(null, V, app, nup), pack(new File(t, "src"), ID, V, "pc"), TITLES);
         check(!d.listed, "an NSP game: imported, not listed");
         Files.copy(fits.toPath(), mkdirs(nup).toPath());
         check(app.equals(chosen(app, new File(builds, "pack"), nup)), "Build takes the imported pack in the app's storage for the .nup it made: " + chosen(app, new File(builds, "pack"), nup));
@@ -297,7 +312,7 @@ public final class FirstImportJvmTest {
         // a build folder: the pack in <build folder>/<id>/pack, the .nup and its job beside it
         reset();
         File target = new File(builds, "pack"), inBuild = FirstImport.buildFile(null, builds, home, ID);
-        PackImport.run(C, game(null, V, target, inBuild), pack(new File(t, "src2"), ID, V, "pc"), TITLES);
+        imp(game(null, V, target, inBuild), pack(new File(t, "src2"), ID, V, "pc"), TITLES);
         Files.copy(fits.toPath(), mkdirs(inBuild).toPath());
         check(target.equals(chosen(new File(t, "app2/packs/" + ID), target, inBuild)), "Build takes the imported pack in the build folder: " + chosen(new File(t, "app2/packs/" + ID), target, inBuild));
         check(read(new File(target, "shaders/v-c0ffee/dmsh_vk.lib")).equals("library pc"), "its library is the imported one");
@@ -311,10 +326,40 @@ public final class FirstImportJvmTest {
     static void otherTitle(File t) throws Exception {
         reset();
         File src = pack(new File(t, "src"), MKW, 0, "mkw"), target = new File(t, "app/packs/" + ID);
-        PackImport.Refused r = refused(() -> PackImport.run(C, game(null, V, target, null), src, TITLES));
+        PackImport.Refused r = refused(() -> imp(game(null, V, target, null), src, TITLES));
         check(r != null && r.getMessage().equals("That pack is for Mario Kart World, not Donkey Kong Bananza. Import it from Mario Kart World's sheet. Nothing was changed."), "another game: " + (r == null ? null : r.getMessage()));
         check(!target.exists() && !target.getParentFile().exists(), "nothing written for another game's pack");
         check(r.detail.contains(MKW) && r.detail.contains(ID), "the details: both title IDs");
+    }
+
+    /**
+     * The busy mark has one spelling (PackImport.key): while an import runs (Titles is asked in the middle of it, for a pack of another game), the title is
+     * busy in upper and in lower case, a second import of it cannot be taken in either case, and both are free again after it. An import nobody took does
+     * not run (PackImportUi.start takes it on the main thread with its last check, so no Build starts in between)
+     */
+    static void busyKey(File t) throws Exception {
+        reset();
+        File src = pack(new File(t, "src"), MKW, 0, "mkw"), target = new File(t, "app/packs/" + ID);
+        String lower = ID.toLowerCase(java.util.Locale.ROOT);
+        Map<String, Boolean> seen = new HashMap<>();
+        PackImport.Titles asks = new PackImport.Titles() {
+            @Override public String name(String id) {
+                seen.put("upper", PackImport.busy(ID));
+                seen.put("lower", PackImport.busy(lower));
+                seen.put("second", PackImport.take(lower));
+                return TITLES.name(id);
+            }
+            @Override public FirstImport.Other where(String id) { return TITLES.where(id); }
+        };
+        check(refused(() -> imp(game(null, V, target, null), src, asks)) != null, "a pack of another game: refused");
+        check(seen.get("upper") && seen.get("lower"), "busy while it runs, asked in either case: " + seen);
+        check(!seen.get("second"), "a second import of the title, in lower case, is not taken");
+        check(!PackImport.busy(ID) && !PackImport.busy(lower), "free again after it, in either case");
+        IllegalStateException notTaken = null;
+        try { PackImport.run(C, game(null, V, target, null), src, TITLES); } catch (IllegalStateException e) { notTaken = e; } catch (PackImport.Refused e) { /* it ran */ }
+        check(notTaken != null && !target.exists(), "an import nobody took does not run");
+        check(PackImport.take(lower) && PackImport.busy(ID) && !PackImport.take(ID), "taken in lower case, busy and not taken again in upper case");
+        check(refused(() -> PackImport.run(C, game(null, V, target, null), src, TITLES)) != null && !PackImport.busy(ID), "run gives it back, refused or not");
     }
 
     static void whoElse(File t) throws Exception {
@@ -323,21 +368,21 @@ public final class FirstImportJvmTest {
         FirstImport.Game g = game(null, V, target, null);
         reset();
         set("PackUi", "BUSY", true);
-        PackImport.Refused r = refused(() -> PackImport.run(C, g, src, TITLES));
+        PackImport.Refused r = refused(() -> imp(g, src, TITLES));
         check(r != null && r.getMessage().startsWith("An export or import of Donkey Kong Bananza's pack is still working."), "the Storage tab's import or export works");
         reset();
         set("SaveUi", "RUNNING", true);
-        r = refused(() -> PackImport.run(C, g, src, TITLES));
+        r = refused(() -> imp(g, src, TITLES));
         check(r != null && r.getMessage().startsWith("Donkey Kong Bananza is running: stop it first"), "a game of the title runs");
         reset();
         listGame(new File(t, "elsewhere/DK.nup").getPath(), target.getPath());
-        r = refused(() -> PackImport.run(C, g, src, TITLES));
+        r = refused(() -> imp(g, src, TITLES));
         check(r != null && r.getMessage().startsWith("Another copy of Donkey Kong Bananza in your list plays from this pack folder."), "another list entry plays from the pack folder");
         check(r.detail.contains("The other copy: " + new File(t, "elsewhere/DK.nup")), "the details: the other copy");
         check(read(new File(target, "main.patched.bin")).equals("code old"), "its pack as it was");
         reset();
         listGame(new File(t, "elsewhere/DK.nup").getPath(), new File(t, "elsewhere/" + ID + "-work/android-pack").getPath());
-        check(refused(() -> PackImport.run(C, g, src, TITLES)) == null, "an entry with a pack folder of its own is no matter");
+        check(refused(() -> imp(g, src, TITLES)) == null, "an entry with a pack folder of its own is no matter");
     }
 
     static void stoppedJob(File t) throws Exception {
@@ -345,24 +390,24 @@ public final class FirstImportJvmTest {
         File src = pack(new File(t, "src"), ID, V, "new"), target = new File(t, "app/packs/" + ID), nup = new File(t, "games/DK/DK.nup");
         File job = new File(t, "games/DK/" + ID + "-work/ondevice/job.json");
         write(job, "failed\t" + new File(t, "elsewhere/pack"));
-        PackImport.Refused r = refused(() -> PackImport.run(C, game(null, V, target, nup), src, TITLES));
+        PackImport.Refused r = refused(() -> imp(game(null, V, target, nup), src, TITLES));
         check(r != null && r.getMessage().startsWith("A build of Donkey Kong Bananza stopped part way, and the next Build would go on with it"), "the game's own unfinished job: " + (r == null ? null : r.getMessage()));
         check(r.detail.contains("Working files: " + new File(t, "games/DK/" + ID + "-work")) && !target.exists(), "the details: the working files; nothing written");
         write(job, "running\t" + target);
-        r = refused(() -> PackImport.run(C, game(null, V, target, nup), src, TITLES));
-        check(r != null && r.getMessage().startsWith("Donkey Kong Bananza is being prepared now."), "a running job");
+        r = refused(() -> imp(game(null, V, target, nup), src, TITLES));
+        check(r != null && r.getMessage().startsWith("Donkey Kong Bananza is being built now."), "a running job");
         write(job, "done\t" + target);
-        check(refused(() -> PackImport.run(C, game(null, V, target, nup), src, TITLES)) == null, "a done job: in");
+        check(refused(() -> imp(game(null, V, target, nup), src, TITLES)) == null, "a done job: in");
         reset();
         File other = new File(t, "other-work/ondevice/job.json");
         write(other, "paused\t" + target);
         set("Job", "REMEMBERED", other);
-        r = refused(() -> PackImport.run(C, game(null, V, target, null), src, TITLES));
+        r = refused(() -> imp(game(null, V, target, null), src, TITLES));
         check(r != null && r.getMessage().startsWith("A build of Donkey Kong Bananza stopped part way"), "Home's Prepare job writes to the pack folder");
         write(other, "paused\t" + new File(t, "another/pack"));
-        check(refused(() -> PackImport.run(C, game(null, V, target, null), src, TITLES)) == null, "Home's Prepare job of another pack folder is no matter");
+        check(refused(() -> imp(game(null, V, target, null), src, TITLES)) == null, "Home's Prepare job of another pack folder is no matter");
         write(other, "not a job");
-        check(refused(() -> PackImport.run(C, game(null, V, target, null), src, TITLES)) == null, "a job file of another format writes nothing");
+        check(refused(() -> imp(game(null, V, target, null), src, TITLES)) == null, "a job file of another format writes nothing");
     }
 
     static void pickedPack(File t) throws Exception {
@@ -371,7 +416,7 @@ public final class FirstImportJvmTest {
         Map<String, String> p = get("Folders", "PICKED"), f = get("Prefs", "FOLDERS");
         p.put(ID, picked.getPath());
         f.put("pack", picked.getPath());
-        PackImport.Done d = PackImport.run(C, game(null, V, target, null), src, TITLES);
+        PackImport.Done d = imp(game(null, V, target, null), src, TITLES);
         check(!p.containsKey(ID) && !f.containsKey("pack"), "the picked pack folder let go (it would win at the next Build)");
         check(d.detail.contains("The pack folder picked before (" + picked + ") is kept as it was") && read(new File(picked, "main.patched.bin")).equals("code picked"), "it is kept as it was");
     }
@@ -381,7 +426,7 @@ public final class FirstImportJvmTest {
         File game = dump(new File(t, "games/DK"), 22), src = pack(new File(t, "src"), ID, V, "new"), target = new File(t, "app/packs/" + ID);
         listGame(game.getPath(), target.getPath());   // its own entry from before (not ready): replaced, never "another copy"
         pack(target, ID, V, "old");
-        PackImport.Done d = PackImport.run(C, game(game, 0, target, game), src, TITLES);
+        PackImport.Done d = imp(game(game, 0, target, game), src, TITLES);
         check(d.listed && d.text.equals("It fits Donkey Kong Bananza's game file and has this app's shaders: ready to play."), "a dump folder the pack fits: listed, ready: " + d.text);
         List<?> l = listed();
         check(l.size() == 1 && field(l.get(0), "gameDir").equals(game.getPath()) && field(l.get(0), "packDir").equals(target.getPath()) && field(l.get(0), "titleId").equals(ID), "its list entry");
@@ -391,7 +436,7 @@ public final class FirstImportJvmTest {
     static void dumpOtherBuild(File t) throws Exception {
         reset();
         File game = dump(new File(t, "games/DK"), 23), src = pack(new File(t, "src"), ID, V, "new"), target = new File(t, "app/packs/" + ID);
-        PackImport.Refused r = refused(() -> PackImport.run(C, game(game, V, target, game), src, TITLES));
+        PackImport.Refused r = refused(() -> imp(game(game, V, target, game), src, TITLES));
         check(r != null && r.getMessage().equals("That pack was made from update 1.0.1 of Donkey Kong Bananza, another build than the game file here. Import a pack made from this game file, "
                 + "or use Build. Nothing was changed."), "a dump of another build: " + (r == null ? null : r.getMessage()));
         check(r.detail.contains("Game file: " + game) && r.detail.contains("main: pack"), "the details: the build IDs and the game file: " + r.detail);
@@ -416,17 +461,18 @@ public final class FirstImportJvmTest {
         File target = new File(t, "app/packs/" + ID);
         File notZip = new File(t, "pack.zip");
         write(notZip, "not a zip");
-        PackImport.Refused r = refused(() -> PackImport.run(C, game(null, V, target, null), notZip, TITLES));
+        PackImport.Refused r = refused(() -> imp(game(null, V, target, null), notZip, TITLES));
         check(r != null && r.getMessage().startsWith("Pack.zip is not a zip file") && r.getMessage().endsWith("Nothing was changed."), "not a zip: " + (r == null ? null : r.getMessage()));
         File unfinished = pack(new File(t, "unfinished"), ID, V, "u");
         new File(unfinished, "main.android.key").delete();
-        r = refused(() -> PackImport.run(C, game(null, V, target, null), unfinished, TITLES));
+        r = refused(() -> imp(game(null, V, target, null), unfinished, TITLES));
         check(r != null && r.getMessage().startsWith("The pack's code is unfinished"), "unfinished code: upstream's own check");
         File noDir = new File(t, "nothing-here");
-        r = refused(() -> PackImport.run(C, game(null, V, target, null), noDir, TITLES));
+        r = refused(() -> imp(game(null, V, target, null), noDir, TITLES));
         check(r != null && r.getMessage().endsWith("Nothing was changed."), "a source that is not there");
         check(!target.exists() && !leftovers(target.getParentFile()), "nothing written by a damaged source");
         Set<String> none = new HashSet<>();
         check(none.isEmpty() && !PackImport.busy(ID), "busy again after refusals");
     }
 }
+// PEANUTS end

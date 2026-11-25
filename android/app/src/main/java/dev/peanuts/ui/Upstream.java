@@ -42,7 +42,7 @@ final class Upstream {
             Object o = m.invoke(null, titleId, name);
             return o == null ? null : o.toString();
         } catch (Throwable t) {
-            return hasProfile(titleId) ? null : "This app version does not include " + name + " (" + titleId + "). Install a build that includes it.";
+            return hasProfile(titleId) ? null : "This app version does not include " + name + ". Install an app version that includes it.";
         }
     }
 

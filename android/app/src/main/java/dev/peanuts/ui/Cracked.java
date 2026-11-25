@@ -66,76 +66,38 @@ public final class Cracked {
 
     // ---- Play time ----
 
-    private static final String RUN = "cracked_run", SETTLED = "cracked_settled";
-    private static final long RUN_MATCH_MS = 120_000, SESSION_MAX_MS = 6 * 3_600_000L;
-    private static final java.util.concurrent.Executor BG = java.util.concurrent.Executors.newSingleThreadExecutor();
+    /** The ledger's total already counted (ms); and the keys of 0.1.7's own measure of each run, read once to tell an update from a fresh install */
+    private static final String SEEN = "cracked_play_seen", OLD_RUN = "cracked_run", OLD_SETTLED = "cracked_settled";
+    /** One worker, in order: a Play's first start, then every settle after it (back in the launcher, About) */
+    private static final java.util.concurrent.Executor BG = java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "peanuts-cracked"));
 
     /**
-     * The launcher starts a game (GameReturn.remember: Home's Play, a shortcut, a frontend): the run before it is settled (its play time counted) before the
-     * game's screen writes its own record over it, the title's first start counts, and this start is noted, so the record its screen writes is known as a
-     * player's run (a build's shader capture writes one too, and is not)
+     * The launcher starts a game (GameReturn.remember: Home's Play, a shortcut, a frontend): the title's first start counts. On the worker, not at the
+     * Play's tap (igawa6's note on #315: the preferences, and before the play-time ledger a file and Android's process lists, were read there)
      */
     public static void starting(Context c, String titleId) {
         Context app = c.getApplicationContext();
-        settleNow(app);
-        started(app, titleId);
-        prefs(app).edit().putString(RUN, titleId.toUpperCase(java.util.Locale.ROOT) + "@" + System.currentTimeMillis()).apply();
+        BG.execute(() -> started(app, titleId));
     }
 
-    /** Back in the launcher (or About shows): a run that has ended is counted, off the main thread */
+    /** Back in the launcher (or About shows): the play time the ledger gained since the last look is counted, off the main thread */
     public static void settle(Context c) { Context app = c.getApplicationContext(); BG.execute(() -> settleNow(app)); }
 
     /**
-     * The game's run record (files/last-exit.txt: title, pid, start, written by its screen) against the start noted above: once its process has ended, the
-     * time from its start to the process's end (Android's exit record of that pid) is played time, at most six hours a run (a game left in the background
-     * keeps its process). Counted once per run
+     * The play time is the play-time ledger's (dev.peanuts.launch.PlayTime, files/peanuts-playtime.tsv: each game's time, counted only while it runs, not
+     * while Build prepares its shaders, written by the game's process every 15 s and when it stops): what its total gained since the last look counts
+     * (CrackedCount.fromLedger). 0.1.7's Peanuts cracked measured each run itself; on the first look after that, the ledger counts as counted so far
+     * (CrackedCount.seenAtFirstLook), so no hour counts twice. On the worker only: it reads the ledger's file
      */
     private static synchronized void settleNow(Context c) {
-        java.util.Map<String, String> rec = record(new java.io.File(c.getFilesDir(), "last-exit.txt"));
-        String title = rec.get("title"), start = rec.get("start"), pid = rec.get("pid");
-        if (title == null || start == null || pid == null) return;
-        String key = title.toUpperCase(java.util.Locale.ROOT) + "@" + start;
         SharedPreferences p = prefs(c);
-        if (key.equals(p.getString(SETTLED, null))) return;
-        long startMs, noted;
-        int id;
-        try {
-            startMs = Long.parseLong(start);
-            id = Integer.parseInt(pid);
-            String run = p.getString(RUN, "");
-            int at = run.lastIndexOf('@');
-            if (at < 0 || !run.substring(0, at).equalsIgnoreCase(title)) return;   // not a run the launcher started (a build's shader capture)
-            noted = Long.parseLong(run.substring(at + 1));
-        } catch (NumberFormatException e) { return; }
-        if (Math.abs(startMs - noted) > RUN_MATCH_MS) return;
-        long end = ended(c, id);
-        if (end <= 0) return;   // still running, or not known yet
-        p.edit().putString(SETTLED, key).apply();
-        played(c, Math.min(SESSION_MAX_MS, Math.max(0, end - startMs)));
-    }
-
-    /** When the process of that pid ended (Android's exit record), 0 when it runs or Android has no record of it */
-    private static long ended(Context c, int pid) {
-        android.app.ActivityManager am = c.getSystemService(android.app.ActivityManager.class);
-        if (am == null) return 0;
-        java.util.List<android.app.ActivityManager.RunningAppProcessInfo> running = am.getRunningAppProcesses();
-        if (running != null) for (android.app.ActivityManager.RunningAppProcessInfo r : running) if (r.pid == pid) return 0;
-        try {
-            for (android.app.ApplicationExitInfo e : am.getHistoricalProcessExitReasons(c.getPackageName(), pid, 1)) if (e.getPid() == pid) return e.getTimestamp();
-        } catch (RuntimeException ignored) { /* no record */ }
-        return 0;
-    }
-
-    private static java.util.Map<String, String> record(java.io.File f) {
-        java.util.Map<String, String> out = new java.util.HashMap<>();
-        if (!f.isFile()) return out;
-        try {
-            for (String line : new String(java.nio.file.Files.readAllBytes(f.toPath()), java.nio.charset.StandardCharsets.UTF_8).split("\n")) {
-                int eq = line.indexOf('=');
-                if (eq > 0) out.put(line.substring(0, eq).trim(), line.substring(eq + 1).trim());   // a later line wins (state=..., log=...)
-            }
-        } catch (java.io.IOException ignored) { /* no record */ }
-        return out;
+        long total = dev.peanuts.launch.PlayLedger.total(dev.peanuts.launch.PlayTime.all(c));
+        boolean first = !p.contains(SEEN);
+        long seen = first ? CrackedCount.seenAtFirstLook(p.contains(OLD_RUN) || p.contains(OLD_SETTLED), total) : p.getLong(SEEN, 0);
+        if (!first && seen == total) return;
+        p.edit().putLong(SEEN, total).remove(OLD_RUN).remove(OLD_SETTLED).apply();
+        long add = CrackedCount.fromLedger(seen, total);
+        if (add > 0) played(c, add);
     }
 
     /** The player saved a Mii of their own */

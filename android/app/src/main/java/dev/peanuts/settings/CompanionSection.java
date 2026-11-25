@@ -162,15 +162,15 @@ public final class CompanionSection {
             boolean update = item != null && have != null && Companions.compareVersions(item.version, have) > 0;
             CharSequence value;
             if (busy) value = busyText;
-            else if (have != null) value = dev.peanuts.ui.PUi.joined("Installed: " + Companions.label(pkg, have), !installedVerified ? "unverified" : null,
+            else if (have != null) value = dev.peanuts.ui.PUi.joined("Installed: version " + have, !installedVerified ? "unverified" : null,
                     item == null ? (catalog == null && catalogError == null ? "checking the catalog…" : null) : update ? "update " + item.version + " available" : "up to date");
-            else if (item != null) value = dev.peanuts.ui.PUi.joined("Available: " + Companions.label(item.packageName, item.version), root == null ? "build the game first" : null);
+            else if (item != null) value = dev.peanuts.ui.PUi.joined("Available: version " + item.version, root == null ? "build the game first" : null);
             else if (catalog == null && catalogError == null) value = "Checking the catalog…";
-            else if (catalogError != null) value = "Catalog unavailable: " + catalogError;
-            else value = "No companion in the catalog for this game";
+            else if (catalogError != null) value = "Catalog not loaded. Check the connection.";
+            else value = "No dual-screen companion for this game yet";
             boolean hasVersions = root != null && (item != null || have != null) && c instanceof Activity;
             View.OnClickListener openVersions = !hasVersions ? null : v -> dev.peanuts.ui.CompanionVersions.open((Activity) c, titleId, () -> { installedKnown = false; render(); });
-            body.addView(ui.setting("🖥️", "Companion", value, openVersions), SectionUi.lp(0, 0));
+            body.addView(ui.setting("🖥️", "Dual-screen companion", value, openVersions), SectionUi.lp(0, 0));
             LinearLayout buttons = SectionUi.buttons(c);
             if (have == null && item != null) SectionUi.add(buttons, ui.button("Install", SectionUi.PRIMARY, v -> install(item)), !busy && root != null);
             if (update) SectionUi.add(buttons, ui.button("Update", SectionUi.PRIMARY, v -> install(item)), !busy);
@@ -178,11 +178,12 @@ public final class CompanionSection {
             if (hasVersions) SectionUi.add(buttons, ui.button("Versions", SectionUi.QUIET, v -> dev.peanuts.ui.CompanionVersions.open((Activity) c, titleId, () -> { installedKnown = false; render(); })), !busy);
             buttonsRow = buttons.getChildCount() > 0 ? buttons : null;
             if (buttonsRow != null) body.addView(buttons, SectionUi.lp(0, 0));
+            if (root != null && c instanceof Activity) body.addView(ui.setting("📦", "Install from file", "A .dsmod.zip on this device. No internet needed.", busy ? null : v -> installFromFile()), SectionUi.lp(0, 0));
             // A pack built before the app kept the game's original code, which the last start could not add: the companion works with less, and only this row says so
             if (have != null && packNotice != null) body.addView(ui.setting("⚠️", packNotice[0], packNotice[1], null), SectionUi.lp(0, 0));
             String ss = secondScreen(c, titleId);
-            body.addView(ui.setting("📱", "Second screen", ss.equals(OFF) ? (secondScreenChosen(c, titleId) ? "Off: the companion does not load" : "Off: no second display found, the companion does not load") : "Physical: the companion shows on the second display",
-                    v -> new AlertDialog.Builder(c).setTitle("Second screen").setSingleChoiceItems(new String[] {"Physical display", "Off"}, ss.equals(OFF) ? 1 : 0, (d, w) -> {
+            body.addView(ui.setting("📱", "Second screen", ss.equals(OFF) ? (secondScreenChosen(c, titleId) ? "Off: the companion does not load" : "Off: no second screen found, so the companion does not load") : "On: the companion shows on the second scrplay",
+                    v -> new AlertDialog.Builder(c).setTitle("Second screen").setSingleChoiceItems(new String[] {"On", "Off"}, ss.equals(OFF) ? 1 : 0, (d, w) -> {
                         dev.peanuts.ui.Feel.picked(d);
                         secondScreen(c, titleId, w == 1 ? OFF : PHYSICAL);
                         d.dismiss();
@@ -191,8 +192,8 @@ public final class CompanionSection {
         }
 
         void install(Companions.Item item) {
-            if (root == null) { dev.peanuts.ui.Feel.refused(c); Toast.makeText(c, "Build the game first: the companion goes beside its pack.", Toast.LENGTH_LONG).show(); return; }
-            busy = true; busyText = "Downloading " + Companions.label(item.packageName, item.version) + "…";
+            if (root == null) { dev.peanuts.ui.Feel.refused(c); Toast.makeText(c, "Build the game first. Its companion is installed next to the build.", Toast.LENGTH_LONG).show(); return; }
+            busy = true; busyText = "Downloading version " + item.version + "…";
             render();
             new Thread(() -> {
                 String err = null;
@@ -204,14 +205,28 @@ public final class CompanionSection {
                     busy = false;
                     installedKnown = false;   // Found in review: the one point this cache is invalidated - an install actually finished, not merely ticked
                     if (ferr == null) dev.peanuts.ui.Feel.accepted(c); else dev.peanuts.ui.Feel.refused(c);   // the install ended: done, or refused
-                    Toast.makeText(c, ferr == null ? "Installed " + Companions.label(item.packageName, item.version) + ". It loads at the game's next start." : "Install failed: " + ferr, Toast.LENGTH_LONG).show();
+                    Toast.makeText(c, ferr == null ? "Installed version " + item.version + ". It shows on the second screen the next time the game starts." : "Not installed: " + ferr, Toast.LENGTH_LONG).show();
                     render();
                 });
             }, "peanuts-install").start();
         }
 
+        /** Install from file: the companions page picks the file and installs it with the catalog's installer (dev.peanuts.CompanionImport), for this game
+         *  only; the rows read the installed version again when this page has the focus back */
+        void installFromFile() {
+            c.startActivity(new android.content.Intent().setClassName(c.getPackageName(), "dev.peanuts.CatalogActivity").putExtra(dev.peanuts.CatalogActivity.EXTRA_TITLE, titleId));
+            android.view.ViewTreeObserver.OnWindowFocusChangeListener[] back = new android.view.ViewTreeObserver.OnWindowFocusChangeListener[1];
+            back[0] = has -> {
+                if (!has) return;
+                box.getViewTreeObserver().removeOnWindowFocusChangeListener(back[0]);
+                installedKnown = false;
+                render();
+            };
+            box.getViewTreeObserver().addOnWindowFocusChangeListener(back[0]);
+        }
+
         void remove(String pkg) {
-            new AlertDialog.Builder(c).setTitle("Remove the companion?").setMessage(pkg + " is deleted from the game's folder. The catalog can install it again.")
+            new AlertDialog.Builder(c).setTitle("Remove the companion?").setMessage("The dual-screen companion is deleted from this device. The catalog can install it again.")
                     .setPositiveButton("Remove", dev.peanuts.ui.Feel.confirm((d, w) -> {
                         // off the UI thread: the delete walks shared storage and waits for the package's lock (an install of it may be downloading)
                         Handler mainUi = new Handler(Looper.getMainLooper());

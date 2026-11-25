@@ -15,9 +15,10 @@
 #   peanuts_build.py "Dump folder" --dry-run --push                                                                    print the commands, write nothing
 # Keys: --keys, else NX_KEYS, else ~/.switch/prod.keys: the importer needs your own prod.keys (the import only; packs need none).
 # Importer: --importer, else NX_IMPORTER, else built into peanuts/.build/nximport (needs cmake and a C compiler).
-# Oodle and Unreal games (PC_DECODE below), on Linux: the Oodle decoding worker unoodle (dm/third_party/ooz, a GPL-3.0-or-later program of its own, built into
-# peanuts/.build/ooz with a C++ compiler and patch) and, for the Unreal ones, the _nxaes module (peanuts/.build/pymod, a C compiler and Python's headers); the pack
-# step then gets DM_OODLE_OOZ and DM_UE_DECODE. Every other game with such a step, and every other system, is refused as before (peanuts/docs/BUILDER.md).
+# Oodle and Unreal games (PC_DECODE below), on Linux and macOS (x86-64 or arm64): the Oodle decoding worker unoodle (dm/third_party/ooz, a GPL-3.0-or-later program
+# of its own, built into peanuts/.build/ooz with a C++ compiler and patch) and, for the Unreal ones on Linux, the _nxaes module (peanuts/.build/pymod, a C compiler
+# and Python's headers; macOS has CommonCrypto); the pack step then gets DM_OODLE_OOZ and DM_UE_DECODE. Every other game with such a step, and Windows, is refused
+# as before (peanuts/docs/BUILDER.md).
 # --any-version packs an update the game's profile (dm/games/<titleID>/game.tsv) has no build row for. --force-nup rebuilds a .nup that is already there.
 # The icon: for .nsp/.xci/.nsz/.xcz inputs the title's icon is written beside the .nup as "<the .nup's name without .nup>.png" (the app and push-pack.py use it; a failure only warns).
 # Output: the .nup (beside the first input unless --nup) and the pack (<titleID>-work/android-pack beside the .nup, as pack_android.py writes it).
@@ -34,9 +35,11 @@ PUSH_SCRIPT = REPO / 'peanuts' / 'scripts' / 'push-pack.py'
 OOZ_SRC = REPO / 'dm' / 'third_party' / 'ooz'
 OOZ_BUILD = REPO / 'peanuts' / '.build' / 'ooz'
 NXAES_SRC = REPO / 'dm' / 'peanuts' / 'pack_worker' / 'nxaes.c'
+NXYAZ0_SRC = REPO / 'dm' / 'peanuts' / 'pack_worker' / 'nxyaz0.c'
 PYMOD_BUILD = REPO / 'peanuts' / '.build' / 'pymod'
 WINDOWS = sys.platform == 'win32'
 LINUX = sys.platform.startswith('linux')
+MAC = sys.platform == 'darwin'
 GAME_EXTS = ('.nsp', '.xci', '.nsz', '.xcz')
 DEVICE_ROOT = '/sdcard/Peanut Roms'   # the default folder on the phone; push-pack.py's --dest default is the same one (the test compares them)
 ENV = dict(os.environ, PYTHONUTF8='1', PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1')   # the children print UTF-8, unbuffered, on every OS
@@ -246,7 +249,7 @@ STEP_MARKERS = (
 )
 
 
-# The games whose Oodle or Unreal shader step this computer does itself (Linux only), each one checked on a PC against its profile's shader keys
+# The games whose Oodle or Unreal shader step this computer does itself (Linux and macOS, x86-64 and arm64), each one checked on a PC against its profile's shader keys
 # (dm/third_party/ooz/README.md "Checked"). True: it has Oodle streams, which the unoodle worker decodes; False: an Unreal game whose archives need no Oodle decoder.
 PC_DECODE = {
     '010051C0134F8000': True,    # PEANUTS: Kakarot (inline Unreal cooked packages, Oodle)
@@ -286,11 +289,11 @@ def stale(out, srcs):
 
 def build_unoodle():
     """-> (peanuts/.build/ooz/unoodle, '') built by dm/third_party/ooz/build.sh when it is missing or older than its sources, or (None, why this computer has none)"""
-    if not LINUX or platform.machine().lower() not in ('x86_64', 'amd64'):
-        return None, ('the Oodle worker (dm/third_party/ooz) is built on x86-64 Linux only: its decoder uses x86 SSE2 intrinsics, '
-                      f'and this is {platform.machine() or "an unknown processor"} on {sys.platform}')
+    if not (LINUX or MAC) or platform.machine().lower() not in ('x86_64', 'amd64', 'arm64', 'aarch64'):
+        return None, ('the Oodle worker (dm/third_party/ooz) is built on Linux and macOS, x86-64 and arm64 (its decoder uses x86 SSE2 intrinsics; ooz_neon.h has them '
+                      f'for arm64), and this is {platform.machine() or "an unknown processor"} on {sys.platform}')
     exe = OOZ_BUILD / 'unoodle'
-    if not stale(exe, [OOZ_SRC / f for f in ('kraken.cpp', 'stdafx.h', 'unoodle.cpp', 'ooz-port.patch', 'ooz-guards.patch', 'build.sh')]): return exe, ''
+    if not stale(exe, [OOZ_SRC / f for f in ('kraken.cpp', 'stdafx.h', 'unoodle.cpp', 'ooz-port.patch', 'ooz-guards.patch', 'ooz-arm64.patch', 'ooz_neon.h', 'build.sh')]): return exe, ''
     cxx = os.environ.get('CXX') or next((c for c in ('g++', 'clang++', 'c++') if shutil.which(c)), None)
     if not cxx: return None, 'the Oodle worker (dm/third_party/ooz) needs a C++ compiler (g++ or clang++) on PATH'
     if not shutil.which('patch'): return None, 'the Oodle worker (dm/third_party/ooz) needs the patch program on PATH'
@@ -303,21 +306,32 @@ def build_unoodle():
 def build_nxaes():
     """-> (peanuts/.build/pymod, '') holding _nxaes for this Python (uepak.py reads an Unreal pak's encrypted index with it off the Mac), built from
     dm/peanuts/pack_worker/nxaes.c when it is missing or older than its source, or (None, why this computer has none)"""
-    if not LINUX: return None, 'the _nxaes module (dm/peanuts/pack_worker/nxaes.c) is built on Linux only'
+    return build_pymod('_nxaes', NXAES_SRC)
+
+
+def build_nxyaz0():
+    """-> (peanuts/.build/pymod, '') holding _nxyaz0 for this Python (shader_split.py's Yaz0 in C, many times faster than its Python loop, which it falls back to
+    without the module), built from dm/peanuts/pack_worker/nxyaz0.c when it is missing or older than its source, or (None, why this computer has none)"""
+    return build_pymod('_nxyaz0', NXYAZ0_SRC)
+
+
+def build_pymod(name, src):
+    """A module of dm/peanuts/pack_worker for this Python, in peanuts/.build/pymod: (that folder, '') or (None, why this computer has none)"""
+    if not LINUX: return None, f'the {name} module ({src.relative_to(REPO).as_posix()}) is built on Linux only'
     inc, suffix = sysconfig.get_paths().get('include') or '', sysconfig.get_config_var('EXT_SUFFIX') or '.so'
-    out = PYMOD_BUILD / ('_nxaes' + suffix)
-    if not stale(out, [NXAES_SRC]): return PYMOD_BUILD, ''
+    out = PYMOD_BUILD / (name + suffix)
+    if not stale(out, [src]): return PYMOD_BUILD, ''
     cc = os.environ.get('CC') or next((c for c in ('gcc', 'clang', 'cc') if shutil.which(c)), None)
-    if not cc: return None, 'the _nxaes module needs a C compiler (gcc or clang) on PATH'
+    if not cc: return None, f'the {name} module needs a C compiler (gcc or clang) on PATH'
     if not os.path.isfile(os.path.join(inc, 'Python.h')):
-        return None, f'the _nxaes module needs the headers of {sys.executable} (no Python.h in {inc or "its include folder"}: python3-dev or python3-devel)'
+        return None, f'the {name} module needs the headers of {sys.executable} (no Python.h in {inc or "its include folder"}: python3-dev or python3-devel)'
     PYMOD_BUILD.mkdir(parents=True, exist_ok=True)
-    say(f'building _nxaes into {PYMOD_BUILD}')
-    tmp = PYMOD_BUILD / ('_nxaes.tmp' + suffix)
-    rc, _ = run([cc, '-O2', '-Wall', '-fPIC', '-shared', f'-ffile-prefix-map={NXAES_SRC.parent}=dm/peanuts/pack_worker', '-I', inc, '-o', str(tmp), str(NXAES_SRC)], False, 'the _nxaes build')
+    say(f'building {name} into {PYMOD_BUILD}')
+    tmp = PYMOD_BUILD / (name + '.tmp' + suffix)
+    rc, _ = run([cc, '-O2', '-Wall', '-fPIC', '-shared', f'-ffile-prefix-map={src.parent}=dm/peanuts/pack_worker', '-I', inc, '-o', str(tmp), str(src)], False, f'the {name} build')
     if rc or not tmp.is_file():
         tmp.unlink(missing_ok=True)
-        return None, f'the _nxaes build failed (exit code {rc}; its messages are above)'
+        return None, f'the {name} build failed (exit code {rc}; its messages are above)'
     os.replace(tmp, out)
     return PYMOD_BUILD, ''
 
@@ -325,7 +339,7 @@ def build_nxaes():
 def pc_decode(app, name=None):
     """What this computer does itself for a game whose shaders are Oodle-compressed or in Unreal archives -> the settings its pack step gets ({} = nothing: every
     other game, and whatever check_device_steps then refuses).
-      DM_OODLE_OOZ   the unoodle worker, for a PC_DECODE game with Oodle streams on Linux when the worker builds; one already set (your own worker) is used
+      DM_OODLE_OOZ   the unoodle worker, for a PC_DECODE game with Oodle streams on Linux or macOS when the worker builds; one already set (your own worker) is used
                      for any game. pack_android.py takes that decoder's output only when the split's shader keys are exactly the profile's.
       DM_UE_DECODE   for a game with /ue_shaders/ rows: the split decodes the Unreal archives itself, as the phone's does ('' here; main() names the folder);
                      with PYTHONPATH naming the folder of _nxaes.
@@ -333,7 +347,7 @@ def pc_decode(app, name=None):
     label = f'{name or app} ({app})'
     given = os.environ.get('DM_OODLE_OOZ')
     if given and not Path(given).expanduser().is_file(): die(f'DM_OODLE_OOZ names {given}, which is not a file')
-    if not given and not (LINUX and app in PC_DECODE): return {}
+    if not given and not ((LINUX or MAC) and app in PC_DECODE): return {}
     ue = profile_has(app, '/ue_shaders/')
     env = {}
     if given:
@@ -351,7 +365,9 @@ def pc_decode(app, name=None):
         env['DM_OODLE_OOZ'] = str(exe)
         say(f'{label}: its Oodle streams are decoded here by {exe} (the open-source ooz decoder, not the game\'s own; dm/third_party/ooz); '
             'the pack is made only if every shader key is the profile\'s')
-    if ue and not folder_given('DM_UE_SHADERS', '*.ushaderbytecode'):
+    if ue and not folder_given('DM_UE_SHADERS', '*.ushaderbytecode') and MAC:
+        env['DM_UE_DECODE'] = ''   # uepak.py reads the pak index's AES through macOS's own CommonCrypto: no _nxaes
+    elif ue and not folder_given('DM_UE_SHADERS', '*.ushaderbytecode'):
         pymod, why = build_nxaes()
         if not pymod:
             say(f'[RED] {why}')
@@ -510,6 +526,24 @@ def pack(target, extra, dry):
     return done
 
 
+BIG_CLUSTER = 256 * 1024   # an allocation unit at least this large makes the shader cache's one file per shader cost far more than its bytes
+
+
+def cluster_warning(folder):
+    """The warning for a shader library cache in <folder> on a drive with large allocation units, else None. The cache keeps one result file per shader
+    (vk_android_build.py results/, a few KB each, kept for the next build), and each file takes at least one unit: on an exFAT drive with 1 MiB clusters,
+    Mario Kart 8 Deluxe's 59,302 files took 58 GB for under 1 GB of data. Read with statvfs at the nearest folder that exists; None where it cannot be read
+    (Windows, a missing drive)"""
+    p = Path(folder)
+    while not p.exists() and p != p.parent: p = p.parent
+    try: unit = os.statvfs(p).f_frsize
+    except (AttributeError, OSError): return None
+    if unit < BIG_CLUSTER: return None
+    return (f'[RED] the shader library cache {folder} is on a drive whose allocation unit is {unit // 1024} KiB (exFAT and FAT drives often have 1 MiB): '
+            f'the cache keeps one small file per shader, so it can take tens of GB there for under 1 GB of data (each file takes {unit // 1024} KiB). '
+            'Put the .nup on a local disk (--nup), or the cache (-- --shader-cache DIR); the game files themselves can stay where they are')
+
+
 def main():
     argv = sys.argv[1:]
     extra = []
@@ -577,9 +611,15 @@ def main():
         ue = target.resolve().parent / f'{app}-work' / 'android-shaders' / 'ue_shaders'
         pc['DM_UE_DECODE'] = str(ue)
         if not args.dry_run: ue.parent.mkdir(parents=True, exist_ok=True)
+    pymod, why = build_nxyaz0()   # shader_split.py's Yaz0 in C, in the folder an Unreal game's _nxaes is in too
+    if pymod and 'PYTHONPATH' not in pc: pc['PYTHONPATH'] = str(pymod) + (os.pathsep + os.environ['PYTHONPATH'] if os.environ.get('PYTHONPATH') else '')
+    elif not pymod and LINUX: say(f'note: {why}; the split decodes Yaz0 in Python, which is many times slower')
     for k, v in pc.items():
         ENV[k] = v
         say(f'  {k}={v}')
+    cache = Path(pack_extra[pack_extra.index('--shader-cache') + 1]) if '--shader-cache' in pack_extra[:-1] else \
+        target.resolve().parent / f'{app or target.stem}-work' / 'android-shaders' / 'lib'
+    if warn := cluster_warning(cache): say(warn)
     t = time.monotonic()
     done = pack(target, pack_extra, args.dry_run)
     timings['pack'] = time.monotonic() - t

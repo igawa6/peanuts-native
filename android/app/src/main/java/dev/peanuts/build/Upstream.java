@@ -36,6 +36,13 @@ final class Upstream {
         }
     }
 
+    /** A static field of one of upstream's classes (PackService.ACTION_PAUSE) */
+    static Object getStatic(Class<?> k, String field) throws ReflectiveOperationException {
+        Field f = k.getDeclaredField(field);
+        f.setAccessible(true);
+        return f.get(null);
+    }
+
     static Object get(Object self, String field) throws ReflectiveOperationException {
         Field f = self.getClass().getDeclaredField(field);
         f.setAccessible(true);
@@ -150,6 +157,14 @@ final class Upstream {
 
     /** Job.fix(): what a failed job's card offers (PrepareText.FIX_*: "retry", "anyway", "none", "update") */
     static String jobFix(Object job) throws ReflectiveOperationException { return str(call(job.getClass(), job, "fix", new Class<?>[0])); }
+
+    /** Job.remembered: the job file Home's Prepare card follows, null when none */
+    static File jobRemembered(Context c) throws ReflectiveOperationException {
+        return (File) call(k("Job"), null, "remembered", new Class<?>[] {Context.class}, c);
+    }
+
+    static String jobTitle(Object job) throws ReflectiveOperationException { return str(call(job.getClass(), job, "titleId", new Class<?>[0])); }
+    static long jobUpdated(Object job) throws ReflectiveOperationException { return ((Number) call(job.getClass(), job, "updated", new Class<?>[0])).longValue(); }
 
     static void jobRemember(Context c, File jobFile) throws ReflectiveOperationException {
         call(k("Job"), null, "remember", new Class<?>[] {Context.class, File.class}, c, jobFile);

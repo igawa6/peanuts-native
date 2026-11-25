@@ -1,0 +1,47 @@
+# Game profile of Pokémon: Let's Go, Pikachu! (Switch, base game v0 + update 1.0.2 = v131072)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Game Freak's engine (the one before Sword's) on SDK 5.4.151, NVN, Wwise; subsdk0 is GLSLC (main does not import glslcCompile), subsdk1 the movie module.
+# The shaders are BNSH files under bin/ (loose, in .arc archives and in GFPAK archives under bin/archive), in system_resource/shader and in main (shader_split.py).
+# Status: provisional profile (dm/games/profile_guess.py from the survey); memory values not measured yet. README.md beside this file.
+
+# ---- Identity ----
+title_id	010003F003A34000
+program_id	010003F003A34000
+
+# ---- App ----
+name	Pokémon: Let's Go, Pikachu!
+ipa	PokemonLetsGoPikachu.ipa
+app_category	public.app-category.games
+# handheld: past its first setup (main+0x38cdc, Pro Controller | Handheld | dual Joy-Cons) the game supports Handheld, the single Joy-Cons held upright and the Poké Ball Plus
+# (SetSupportedNpadStyleSet 0x5a at main+0x14008c, then SetNpadJoyHoldType vertical and single assignment for No1 and No2), not the Pro Controller the host reports docked
+op_mode	handheld
+
+# ---- Versions ----
+build	v131072	1.0.2	main=c208db6a4ef4361f28b8402be0f7cd9a	subsdk0=7440b3aa6a8857b516f254b19b9ff184	subsdk1=89d8d937ddece47a93cccf87525a059c	sdk=1101700d4118f1fd1458391c671f81d5
+package	v131072
+shader_versions	v131072
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 subsdk1 sdk
+romfs_marker	bin/app/staff_roll/bin/staff_roll_00.arc
+zip_store	.arc:.bfotf:.gfpak:.ptcl:.webm:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: a 3328 MB heap region (the survey's guess; Pokémon Sword's measured layout is the same)
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon
+sys_resource	0x0
+
+# ---- Shader split ----
+# 11,160 shaders of base game and 1.0.2: the BNSH of bin/ (8,357; GFPAK archives under bin/archive, .arc archives, loose files), system_resource/shader (33) and main (2,770)
+shader_groups	/bin/=bin /system_resource/=systemresource
+shader_note	Pokémon: Let's Go, Pikachu! shaders
+
+# ---- After the rewrite ----
+# used memory for the current rewritten modules, at least the default 64 MB (the Android rewrite: main 32.6 MB, subsdk0 15.1 MB, sdk 13.3 MB, subsdk1 7.7 MB)
+mem_used	0x4600000

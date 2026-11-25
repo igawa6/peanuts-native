@@ -1,6 +1,6 @@
 # About the project
 
-Back to the [main page](../../.github/README.md).
+Back to the [main page](../banana-native-README.github.md). <!-- PEANUTS: upstream's .github/README.md and README.md are kept in docs/ (banana-native-README*.md) -->
 
 Unofficial and experimental, tested on one phone. Not affiliated with Nintendo, nxnative, Eden or
 [nx2android](https://github.com/shirai91/nx2android): please don't send them bug reports about this. Banana Native is
@@ -31,4 +31,4 @@ anywhere else. Download the APK only from [Releases](https://git.eden-emu.dev/mo
 anywhere else may be modified or malicious. Nobody connected to the project will ask you for money, keys, game files or
 account details. To reach the developer, use [issues](https://git.eden-emu.dev/moceure/BananaNative/issues).
 
-Licence and credits: [README](../../README.md#licence-and-credits).
+Licence and credits: [README](../banana-native-README.md#licence-and-credits). <!-- PEANUTS: upstream's .github/README.md and README.md are kept in docs/ (banana-native-README*.md) -->

@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
 
 /**
  * The library: every game in the roots (the game folder, then the update and DLC folders; each walked two levels deep) as *.nsp, *.xci, *.nsz, *.xcz, *.nup or a dump folder
- * (base/exefs/main or exefs/main present; mods left out, LibraryWalk), grouped by the base game's title ID, with a status per title.
+ * (a version with exefs/main in a layout upstream's DumpLayout reads; mods left out: LibraryWalk), grouped by the base game's title ID, with a status per title.
  * <p>
  * An NSP/XCI's titles come from the importer's probe (ImporterPort.probe: title id, application id, kind, version, name), kept in files/library-cache.json by
  * path+size+mtime so a scan reads each file once; without the importer the title ID is taken from a [16 hex digits] in the file name (common dump naming) and the kind
@@ -95,6 +95,9 @@ final class LibraryScanner {
         /** The profile's builds (game.tsv build rows, via Profile.buildMap/display): version → display ("1.0.1"), null when game.tsv names none. Empty: no
          *  profile, or the reflective read failed */
         Map<Long, String> supportedBuilds = Collections.emptyMap();
+        /** The profile's builds as supportedBuilds has them, for every title with a profile, a READY one too (supportedBuilds is a BUILD title's only: its
+         *  version state and its sheet read it). What the cover's "update found" question counts (Library.found, UpdateFound): an update the profile knows */
+        Map<Long, String> profileBuilds = Collections.emptyMap();
         /** The highest version in supportedBuilds (see the class doc's gap note); -1 without supportedBuilds */
         long recommendedVersion = -1;
         /** The folder that holds (or will hold) the game and its <title ID>-work: the dump folder, the .nup's folder, or <game folder>/<name> for an NSP/XCI */
@@ -161,7 +164,11 @@ final class LibraryScanner {
             Collections.sort(t.updates, (a, b) -> Long.compare(b.version, a.version));
             // P1: the version state (not computed for READY: the pack already fits, and for NO_PROFILE the sheet's Profile.missing sentence is the whole story)
             if (t.status == Status.NO_PROFILE) t.versionState = VersionState.NOT_IN_APP;
-            else if (t.status == Status.BUILD) t.versionState = versionState(t);
+            else {
+                VersionInfo vi = versionInfo(t.titleId);
+                t.profileBuilds = vi.builds;   // a READY title's too: the cover asks about an update the profile knows (issue #120; found in review: it never did)
+                if (t.status == Status.BUILD) t.versionState = versionState(t, vi);
+            }
         }
         List<Title> out = new ArrayList<>(titles.values());
         Collections.sort(out, (a, b) -> a.name.compareToIgnoreCase(b.name));
@@ -248,9 +255,8 @@ final class LibraryScanner {
      *  library-grid pill's state only — it is about the newest version this title has anywhere, not about any one file a sheet's "Choose another…" picked
      *  (found in review: the sheet computes its own, from {@code chosenUpdate}, in {@code GameSheet.chosenVersionState}; this one must not be
      *  read as "the version Build will actually use") */
-    private static VersionState versionState(Title t) {
+    private static VersionState versionState(Title t, VersionInfo vi) {
         if (fileGone(t.base) || fileGone(t.updates.isEmpty() ? null : t.updates.get(0))) return VersionState.FILE_GONE;
-        VersionInfo vi = versionInfo(t.titleId);
         t.supportedBuilds = vi.builds;
         t.recommendedVersion = vi.recommended;
         if (vi.builds.isEmpty()) return VersionState.UNKNOWN;   // no profile builds data (the reflective read failed, or game.tsv names none): never blocks Build
@@ -305,14 +311,32 @@ final class LibraryScanner {
         });
     }
 
-    /** A dump folder: one base source (its updates are inside it, updates/<version>), version = the newest update's */
+    /** A dump folder: one base source (its updates are inside it, updates/<version>), version = the newest update's; with no update folder, the version its
+     *  main's build is (LibraryWalk.versionOf: a base or one version's folder that holds an update's whole code, GitHub issue #370), else the base's */
     private List<Source> dump(File d) {
         String id = Upstream.titleIdOf(d);
         if (id == null) return Collections.emptyList();
         long v = 0;
         File[] ups = new File(d, "updates").listFiles(File::isDirectory);
         if (ups != null) for (File u : ups) try { v = Math.max(v, Long.parseLong(u.getName())); } catch (NumberFormatException e) { /* not a version */ }
+        if (v == 0) v = Math.max(0, LibraryWalk.versionOf(LibraryWalk.mainBuildId(d), profileBuilds(id)));
         return Collections.singletonList(new Source(d, BASE, id, id, v, "", ""));
+    }
+
+    /** The profile's builds (game.tsv build rows: version to module to build ID) through upstream's Profile (reflection, as versionInfo); null when it has none */
+    private static Map<Long, Map<String, String>> profileBuilds(String titleId) {
+        try {
+            Class<?> profileClass = Class.forName(NXP + "Profile");
+            Method of = profileClass.getDeclaredMethod("of", String.class); of.setAccessible(true);
+            Object p = of.invoke(null, titleId);
+            if (p == null) return null;
+            Method buildMap = profileClass.getDeclaredMethod("buildMap"); buildMap.setAccessible(true);
+            @SuppressWarnings("unchecked") Map<Long, Map<String, String>> bm = (Map<Long, Map<String, String>>) buildMap.invoke(p);
+            return bm;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            Log.w("peanuts", "profile builds " + titleId + ": " + e);
+            return null;
+        }
     }
 
     /** The titles in a file: a .nup's packages, or an NSP/XCI's probe (cached), or its name's title ID */

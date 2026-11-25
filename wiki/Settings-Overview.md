@@ -47,7 +47,7 @@ Which games recommend what is on each game's page in [Games](Games).
 | Display | **Overlay** | the text over the game: [Settings: Performance](Settings-Performance#overlay) |
 | Display | **Screen rotation** | [Settings: Controls](Settings-Controls) |
 | Controls | **On-screen controls**, **Show / hide button**, **Controller: in-game panel**, **Rumble**, **Xbox button label swap**, **Button mapping** | [Settings: Controls](Settings-Controls) |
-| Performance and picture | **Resolution**, **Frame rate cap**, **Upscaler**, **FSR sharpness**, **Dynamic resolution**, **Frame generation**, **Use fast cores** | [Settings: Performance](Settings-Performance) |
+| Performance and picture | **Resolution**, **Frame rate cap**, **Upscaler**, **FSR sharpness**, **CRT filter** <!-- PEANUTS: CRT filter -->, **Dynamic resolution**, **Frame generation**, **Use fast cores** | [Settings: Performance](Settings-Performance) |
 | System | **GPU driver** | [GPU drivers](GPU-Drivers) |
 | | **Time of day** | [Settings: Game](Settings-Game#time-of-day) |
 | | **Advanced** | every switch with a search box: [Settings: Advanced](Settings-Advanced) |

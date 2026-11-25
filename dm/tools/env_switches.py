@@ -88,7 +88,7 @@ def fork_rows():
     if not have: return []
     read = set()
     for p in tracked():
-        if p.endswith(CODE) and (REPO / p).is_file(): read |= set(re.findall(r'getenv\(\s*"([A-Z][A-Z0-9_]*)"', (REPO / p).read_text(errors='replace')))
+        if p.endswith(CODE) and (REPO / p).is_file(): read |= set(re.findall(r'(?:getenv|env_int)\(\s*"([A-Z][A-Z0-9_]*)"', (REPO / p).read_text(errors='replace')))   # env_int: peanuts_gpufloor.c's getenv wrapper (#457)
     return [l + '\n' for l in have if l.split('\t')[0] in read]
 # PEANUTS end
 

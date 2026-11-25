@@ -30,18 +30,26 @@ int main(void) {
     ms[10] = 22.0f;   // yellow (1.32x)
     ms[47] = 40.0f;   // red (2.4x)
     fill_bg();
-    memset(at(6, 12), 99, 4);   // the sample pixel (x - 2, y + h / 2) is another colour
+    memset(at(6, 4), 99, 4);    // the sample pixels (x - 2, each row) are other colours: a background that changes from row to row
+    memset(at(6, 5), 55, 4);
+    pn_graph_plain(1);   // the pill's light grey; the table's green is checked below
     pn_graph_draw(px, W * 4, 8, 4, 48, 16, ms, 48);
     check(is(at(10, 0), 10, 20, 30, 200) == 1, "outside the box stays");
     uint8_t s[4] = {99, 99, 99, 99};
     check(memcmp(at(9, 4), s, 4) == 0 || is(at(9, 4), 99, 99, 99, 99), "box filled from the sampled pixel (top of an empty column)");
-    // column 0: a frame at the target = bucket 4 -> h * 5 / 8 = 10 rows, bottom aligned, green premultiplied
-    check(is(at(8, 19), 65, 119, 56, 217) || (at(8, 19)[3] == 217 && at(8, 19)[1] == (uint8_t)((0xAF * 217 + 127) / 255)), "green bar, premultiplied, alpha 217");
-    check(at(8, 10)[3] == 217 && at(8, 9)[3] == 99, "a green bar at the target: bucket 4, 5/8 of h = 10 rows");
+    check(is(at(9, 5), 55, 55, 55, 55), "each row from its own sample: row 5 is 55, not row 4's 99");
+    // column 0: a frame at the target = bucket 4 -> h * 5 / 8 = 10 rows, bottom aligned, light grey premultiplied
+    check(at(8, 19)[3] == 217 && at(8, 19)[0] == (uint8_t)((0xBD * 217 + 127) / 255) && at(8, 19)[1] == at(8, 19)[0] && at(8, 19)[2] == at(8, 19)[0], "light grey bar on pace, premultiplied, alpha 217");
+    check(at(8, 10)[3] == 217 && at(8, 9)[3] == 200, "a grey bar at the target: bucket 4, 5/8 of h = 10 rows (row 9 above it: its own background)");
     check(at(8 + 10, 19)[0] == (uint8_t)((0xFF * 217 + 127) / 255) && at(8 + 10, 19)[1] == (uint8_t)((0xC1 * 217 + 127) / 255), "yellow bar in column 10");
     check(at(8 + 47, 19)[0] == (uint8_t)((0xF4 * 217 + 127) / 255) && at(8 + 47, 19)[1] == (uint8_t)((0x43 * 217 + 127) / 255), "red newest bar on the right");
     check(at(8 + 47, 4)[3] == 217, "red bar 40 / (2 * 16.7) -> bucket 7: full height");
     check(at(8 + 47 + 1, 19)[3] == 200, "nothing right of the box");
+    pn_graph_plain(0);   // the table (the default): on-pace bars green
+    fill_bg();
+    pn_graph_draw(px, W * 4, 8, 4, 48, 16, ms, 48);
+    check(at(8, 19)[0] == (uint8_t)((0x4C * 217 + 127) / 255) && at(8, 19)[1] == (uint8_t)((0xAF * 217 + 127) / 255) && at(8, 19)[2] == (uint8_t)((0x50 * 217 + 127) / 255), "the table's on-pace bar is green");
+    pn_graph_plain(1);
 
     // a wide box: 96 px would not fit the 64 wide block; use 4 px a column in a 192 px buffer instead
     static uint8_t big[192 * 8 * 4];
@@ -54,6 +62,16 @@ int main(void) {
     fill_bg();
     pn_graph_draw(px, W * 4, 8, 4, 48, 16, ms, 12);
     check(at(8 + 35, 19)[3] == 200 && at(8 + 36, 19)[3] == 217, "n = 12: the last 12 columns only");
+
+    // fewer columns (the pill): 20 frames in the 48 px box, 2.4 px a column; the newest red bar ends at the right edge, the oldest of the 20 starts at the left
+    pn_graph_bars(20);
+    fill_bg();
+    pn_graph_draw(px, W * 4, 8, 4, 48, 16, ms, 48);
+    check(at(8, 19)[3] == 217 && at(8 + 47, 4)[3] == 217 && at(8 + 47, 19)[0] == (uint8_t)((0xF4 * 217 + 127) / 255), "20 bars: the whole box, the newest red on the right");
+    pn_graph_bars(0);
+    fill_bg();
+    pn_graph_draw(px, W * 4, 8, 4, 48, 16, ms, 12);
+    check(at(8 + 35, 19)[3] == 200 && at(8 + 36, 19)[3] == 217, "0 is no count: back to 48 columns");
 
     // rects that do not fit are not drawn, through the block path
     pn_ft_reset();
@@ -84,6 +102,12 @@ int main(void) {
     check(peanuts_ovl_corner(1, 1) == 0 && peanuts_ovl_corner(0, 0) == 1, "top left: the tag goes to the top right");
     pn_graph_corner(3);
     check(peanuts_ovl_corner(1, 1) == 3 && peanuts_ovl_corner(0, 0) == 0, "bottom right: the tag stays top left");
+    pn_graph_corner(4);
+    check(peanuts_ovl_corner(1, 1) == 4 && peanuts_ovl_corner(0, 0) == 0, "top centre: the stats block in the middle, the tag stays top left");
+    pn_graph_corner(6);
+    check(peanuts_ovl_corner(1, 1) == 6, "bottom centre");
+    pn_graph_corner(5);
+    check(peanuts_ovl_corner(1, 1) == 1, "5 is no place: top right");
     pn_graph_corner(9);
     check(peanuts_ovl_corner(1, 1) == 1, "an unknown corner is top right");
 

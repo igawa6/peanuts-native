@@ -181,8 +181,15 @@ static int container_open(NxContainer *c, const char *path, int fd, int stream) 
         NxContainer r; memset(&r, 0, sizeof r); r.fd = c->fd; snprintf(r.path, sizeof r.path, "%s", path);
         uint64_t data; if (read_fs0(&r, root, 1, &data)) { free(r.e); goto fail; }
         (void)rsize;
-        for (int i = 0; i < r.n; i++) {   // update, normal, secure, logo: the secure partition holds the game; take every partition (an NSP-like whole)
-            if (!strcmp(r.e[i].name, "update")) continue;   // the system update partition is not a title of the game
+        // update, normal, secure, logo: the game is in the secure partition, on every card and in an XCI made from an NSP. The others hold the system update
+        // and, on older cards in normal and on cards for firmware 4.0.0 and later in logo, a second meta NCA and the icon NCA under the secure partition's
+        // names. Every partition but update was read before, so the meta NCA outside secure was opened too, and one that did not read as an NCA failed the
+        // whole XCI, in the library's scan and in Build (GitHub issue #280: "not an NCA" for a card's XCI whose keys read other games). Without a secure
+        // partition every partition but update is read, as before
+        int secure = -1;
+        for (int i = 0; i < r.n; i++) if (!strcmp(r.e[i].name, "secure")) secure = i;
+        for (int i = 0; i < r.n; i++) {
+            if (secure >= 0 ? i != secure : !strcmp(r.e[i].name, "update")) continue;   // the system update partition is not a title of the game
             if (read_fs0(c, r.e[i].off, 1, NULL)) { free(r.e); goto fail; }
         }
         free(r.e);

@@ -27,15 +27,15 @@ public final class SocTemp {
     private static volatile long askedAt;
     private static volatile boolean busy;
 
-    /** Adds the line to the overlay's text ("SoC 52°C", red from HOT; "SoC ?" when no zone reads; nothing before the first reading) and asks for the next one */
+    /** Adds the line to the overlay's text ("TEMP 52°C", red from HOT; "TEMP ?" when no zone reads; nothing before the first reading) and asks for the next one */
     public static void append(SpannableStringBuilder s) {
         ask();
         if (zones == null) return;
         int c = last;
         if (s.length() > 0) s.append('\n');
-        if (c == SocZones.NONE) { s.append("SoC ?"); return; }
+        if (c == SocZones.NONE) { s.append("TEMP ?"); return; }
         int start = s.length();
-        s.append("SoC ").append(String.valueOf(c)).append("°C");
+        s.append("TEMP ").append(String.valueOf(c)).append("°C");
         if (c >= HOT) s.setSpan(new ForegroundColorSpan(RED), start, s.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 

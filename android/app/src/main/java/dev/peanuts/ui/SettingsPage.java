@@ -51,7 +51,7 @@ public final class SettingsPage {
     private static boolean twoScreens;           // the device has a second screen: Screens' icon and tile say so (SettingsSections.icon, summary)
     private static final Map<View, String> rowIcons = new HashMap<>();   // the icon a row's tile shows now, for the rows whose icon follows their value
     private static boolean tablet;               // a tablet (its smaller side 600 dp or more): the sections as tiles (the hub), a section's page with Back
-    private static boolean atHub = true;         // a tablet's Settings shows its tiles (again whenever Settings is opened anew)
+    private static boolean atHub = true;         // a tablet's Settings shows its tiles (again when Settings is opened from Home: homeBuilt)
     private static LinearLayout hubPage;
     private static final Map<String, LinearLayout> pages = new HashMap<>();   // each section's column, built once per lay()
     private static final List<View> entries = new ArrayList<>();              // the sidebar's entries (wide)
@@ -67,6 +67,9 @@ public final class SettingsPage {
 
     /** MainActivity.buildSettings' last line (PEANUTS hook): its rows into the sections, and the section that was showing */
     public static void lay(Activity a, LinearLayout content) {
+        if (owner != a) a.registerActivityLifecycleCallbacks(new Gone());   // the activity's own callbacks: they go with it
+        dev.peanuts.mods.CheatsPage.left();   // Settings shows: a game's Mods & Cheats is closed
+        GamePage.left();   // and a game's page opens on its tiles again
         owner = a;
         pane = content;
         tablet = a.getResources().getConfiguration().smallestScreenWidthDp >= WIDE_DP;
@@ -110,11 +113,52 @@ public final class SettingsPage {
         bottom(a, content);
     }
 
+    /**
+     * The activity went (Back out of the app, a change outside its configChanges, Android ended it): nothing of its window stays in the fields above,
+     * which until the next lay() held the activity and every row of Settings. What shows (current, atHub) is kept for the activity made again
+     */
+    private static final class Gone implements android.app.Application.ActivityLifecycleCallbacks {
+        @Override public void onActivityDestroyed(Activity x) { forget(x); }
+        @Override public void onActivityCreated(Activity x, android.os.Bundle b) {}
+        @Override public void onActivityStarted(Activity x) {}
+        @Override public void onActivityResumed(Activity x) {}
+        @Override public void onActivityPaused(Activity x) {}
+        @Override public void onActivityStopped(Activity x) {}
+        @Override public void onActivitySaveInstanceState(Activity x, android.os.Bundle b) {}
+    }
+
+    /** Every view and window of a's Settings let go (Gone); nothing when a newer activity laid Settings out since */
+    static void forget(Activity a) {
+        if (a != owner) return;
+        if (drawer != null) { try { drawer.dismiss(); } catch (RuntimeException ignored) { /* its window went with the activity */ } }
+        if (search != null) { try { search.dismiss(); } catch (RuntimeException ignored) { /* the same */ } }
+        drawer = null;
+        search = null;
+        owner = null;
+        focusWatched = null;
+        pane = null;
+        hubPage = null;
+        explained = null;
+        buildTag = null;
+        pages.clear();
+        entries.clear();
+        rowIcons.clear();
+        places.clear();
+        lastFocus.clear();
+    }
+
     /** About how wide a section's page is, in dp: the page's width (Ui.page's, at most PAGE_DP) less its gutters, less the sidebar where there is one */
     static int paneDp(android.content.Context c) {
         int w = Math.min(c.getResources().getConfiguration().screenWidthDp, PAGE_DP) - 40;
         return wide ? w - SIDEBAR_DP - 18 : w;
     }
+
+    /**
+     * Home was built (BottomScreen.home, from MainActivity.buildHome): a tablet's Settings opens on the tiles of its sections next time. Nothing else
+     * puts it back on them but Back from a section's page: Advanced, the GPU driver page or another screen over Settings, and Settings built again (a
+     * value, a rotation, Back from Advanced), come back to the section they left
+     */
+    static void homeBuilt() { atHub = true; }
 
     /** The section that shows (its key: library, console, …), or "hub" while a tablet shows the tiles of the sections */
     public static String current() { return tablet && atHub ? "hub" : current; }
@@ -124,6 +168,8 @@ public final class SettingsPage {
      * and from the tiles, false: Back goes on as it did (Advanced closes, Settings goes back to Home)
      */
     public static boolean onBack(Activity a) {
+        if (dev.peanuts.mods.CheatsPage.onBack(a)) return true;   // a game's Mods & Cheats: back to the game's page
+        if (GamePage.onBack(a)) return true;   // a game's page in areas: an area back to its tiles
         if (!tablet || atHub || a != owner || pane == null || !pane.isAttachedToWindow()) return false;
         toHub();
         return true;
@@ -165,8 +211,8 @@ public final class SettingsPage {
     }
 
     /**
-     * A tablet's Settings (the canvas's Konzept board "Variante B: Kategorien-Übersicht (wie Eden)"): Back to Home, "Settings" and the search, then the ten
-     * sections as tiles across the screen, each its icon, its name and what it holds; a tile opens the section's page
+     * A tablet's Settings opens on an overview of its sections, as a page of its own: Back to Home, "Settings" and the search, then the ten sections as
+     * tiles across the screen, each its icon, its name and what it holds; a tile opens the section's page, and Back from there comes back to the tiles
      */
     private static LinearLayout hub(Activity a) {
         LinearLayout col = new LinearLayout(a);
@@ -688,7 +734,9 @@ public final class SettingsPage {
             @Override public void onViewAttachedToWindow(View v) {}
             @Override public void onViewDetachedFromWindow(View v) {
                 content.removeOnAttachStateChangeListener(this);
-                UI.post(() -> { if (pane == content && !content.isAttachedToWindow()) { explained = null; atHub = true; BottomScreen.explain(a, null); } });   // Settings left (no new lay): a tablet opens on its tiles again
+                // Settings left (no new lay): Home, or Advanced over it. The section stays: Back from Advanced builds Settings again on it, and only Home's
+                // build (homeBuilt) puts a tablet's Settings on its tiles again
+                UI.post(() -> { if (pane == content && !content.isAttachedToWindow()) { explained = null; BottomScreen.explain(a, null); } });
             }
         });
         content.post(() -> { if (pane == content && !focusedRow(a.getCurrentFocus())) explainSection(current); });

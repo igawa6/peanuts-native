@@ -466,6 +466,7 @@ DM_VK_ADPF_PIPELINE	developer	Graphics			text			both
 DM_VK_ADPF_SPAN	developer	Diagnostics			text			both						
 DM_VK_AFF_ALL	developer	Diagnostics			text			both						
 DM_VK_AFF_REPLAY	developer	Diagnostics			text			both						
+DM_VK_B2T_MIRROR	developer	Graphics			text			both						
 DM_VK_BANDS	developer	Graphics			text			both						
 DM_VK_BAR_KEEP	developer	Diagnostics			text			both						
 DM_VK_BAR_NARROW	developer	Graphics			text			both						
@@ -479,6 +480,8 @@ DM_VK_CHUNK_PASS	developer	Graphics			text			both
 DM_VK_CLASSIC_RP	advanced	Performance	Classic render passes		toggle			game		Game settings > Classic render passes				
 DM_VK_COALESCE_PCT	developer	Graphics			text			both						
 DM_VK_COMPILE_TRACE	developer	Diagnostics			text			both						
+DM_VK_CRT	developer	Graphics			text			both						
+DM_VK_CRT_LINES	developer	Graphics			text			both						
 DM_VK_CS_ASYNC	developer	Graphics			text			both						
 DM_VK_CS_ASYNC_RETYPE	developer	Graphics			text			both						
 DM_VK_CS_LANE	developer	Performance			text			both						
@@ -777,6 +780,8 @@ DM_VK_UB_PEEK	developer	Diagnostics			text			both
 DM_VK_UB_PEEK_AT	developer	Diagnostics			text			both						
 DM_VK_UB_PEEK_DONE	developer	Diagnostics			text			both						
 DM_VK_UNPLACE_REMAP	developer	Diagnostics			text			both						
+DM_VK_UPGRADE_INPUTS	developer	Diagnostics			text			both						
+DM_VK_UPGRADE_VALIDATE	developer	Graphics			text			both						
 DM_VK_UPLOAD_BATCH	developer	Graphics			text			both						
 DM_VK_UPLOAD_BATCH_MB	developer	Graphics			text			both						
 DM_VK_UPLOAD_INFLIGHT_MB	developer	Graphics			text			both						
@@ -819,3 +824,5 @@ DM_ZBIC_LIB	developer	Diagnostics			text			both
 NXIMPORT_THREADS	developer	Performance			text			both						
 NX_DEBUG	developer	Diagnostics			text			both						
 PN_BUILD_ID	developer	Diagnostics			text			both						
+PN_GPU_FLOOR_BEAT	developer	Graphics			text			both						
+PN_GPU_FLOOR_BEAT_MS	developer	Graphics			text			both						

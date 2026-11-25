@@ -19,6 +19,18 @@ public final class CrackedCount {
     private CrackedCount() {}
 
     public static final int BUILD = 25, PER_THOUSAND_SHADERS = 1, PER_HOUR = 5, FIRST_START = 10, FIRST_MII = 5;
+
+    /**
+     * Counts with no risk to the caller: a RuntimeException in count (a job file that is not what it should be, the preferences, reflection into upstream)
+     * goes to failed and no further. BuildService counts a finished build this way, so the count can never turn it into "Build failed"
+     */
+    public static void never(Runnable count, java.util.function.Consumer<RuntimeException> failed) {
+        try {
+            count.run();
+        } catch (RuntimeException e) {
+            if (failed != null) failed.accept(e);
+        }
+    }
     static final long HOUR_MS = 3_600_000L;
     /** The milestones the second display shows; after the last, every further 100,000 */
     static final long[] MILESTONES = {100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000};
@@ -44,6 +56,20 @@ public final class CrackedCount {
         s.points += add;
         return add;
     }
+
+    // ---- Play time: from the play-time ledger ----
+
+    /**
+     * The play time the ledger's total gained since the last look (seen): the ledger (dev.peanuts.launch.PlayLedger) only adds, so this is the time played
+     * meanwhile; never below 0 (a ledger made smaller, a game's line gone, counts nothing and is the new start)
+     */
+    public static long fromLedger(long seen, long total) { return Math.max(0, total - seen); }
+
+    /**
+     * What the first look at the ledger takes as counted already: nothing on an install that never measured play time, so all the ledger holds counts;
+     * the whole ledger after 0.1.7, whose Peanuts cracked measured each run itself (measuredBefore), so those hours do not count twice
+     */
+    public static long seenAtFirstLook(boolean measuredBefore, long total) { return measuredBefore ? Math.max(0, total) : 0; }
 
     /** A game was played for ms: 5 points for every whole hour, the rest carried */
     public static long played(State s, long ms) {

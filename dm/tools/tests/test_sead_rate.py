@@ -99,7 +99,7 @@ class OptIn(unittest.TestCase):
         games = Path(__file__).resolve().parents[2] / 'games'
         for p in sorted(games.glob('*/patches.py')):
             src = p.read_text(encoding='utf-8')
-            ns = {}; exec(compile(src, str(p), 'exec'), ns)
+            ns = {'__file__': str(p)}; exec(compile(src, str(p), 'exec'), ns)   # (a profile's patches.py may read its own files: Animal Crossing's speedfix60/; PEANUTS, 0.1.8)
             rows = [oid for gates in ns.get('OBS', {}).values() for _, oid, _, _ in gates if oid & 0xff == nso_code.OBS_SEAD_RATE]
             tsv = (p.parent / 'game.tsv').read_text(encoding='utf-8').splitlines()
             if rows: self.assertIn('fps_decouple\tsead', [l.strip() for l in tsv], p)

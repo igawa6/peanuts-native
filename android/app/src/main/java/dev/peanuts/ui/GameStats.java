@@ -23,6 +23,12 @@ public final class GameStats {
         return k == 0 || !(sum > 0f) ? Float.NaN : k * 1000f / sum;
     }
 
+    /** The target frames are measured against: the cap's rate ({@code capRate}, 0: none) when the median is within 15 % of it, else target(medianMs) */
+    public static int aim(int capRate, float medianMs) {
+        if (capRate > 0 && medianMs > 0f && Math.abs(1000f / medianMs - capRate) / capRate <= 0.15f) return capRate;
+        return target(medianMs);
+    }
+
     /** The game's own target: the common rate (15, 20, 30, 60) nearest a frame time's median, 0 when none is within 15 % */
     public static int target(float medianMs) {
         if (!(medianMs > 0f)) return 0;
@@ -118,6 +124,11 @@ public final class GameStats {
         if (thermal >= 2) return THROTTLING;
         if (gpuBusy >= 95 && pace < 0.9f) return GPU_BOUND;
         return thermal;
+    }
+
+    /** Whether the overlay over the game hides because the second screen shows the stats page (GameScreen, Hud.hideForStats): only while that page is really up */
+    public static boolean hidesTop(boolean setting, boolean playing, boolean statsPage, boolean windowShown, boolean displayOn) {
+        return setting && playing && statsPage && windowShown && displayOn;
     }
 
     /**

@@ -52,6 +52,104 @@ public final class Json {
         else string(b, o.toString());
     }
 
+    /**
+     * JSON text back into maps (in their order), lists, strings, numbers (an Integer when it fits, else a Long, a Double with a fraction or an exponent),
+     * booleans and null: what {@link #write} makes. The running game's answer to a live control comes across as this text (GameLive). Throws
+     * IllegalArgumentException for text that is not JSON.
+     */
+    public static Object read(String text) {
+        int[] at = {0};
+        Object v = parse(text, at);
+        skip(text, at);
+        if (at[0] != text.length()) throw new IllegalArgumentException("JSON: text after the value at " + at[0]);
+        return v;
+    }
+
+    private static void skip(String s, int[] at) { while (at[0] < s.length() && Character.isWhitespace(s.charAt(at[0]))) at[0]++; }
+
+    private static Object parse(String s, int[] at) {
+        skip(s, at);
+        if (at[0] >= s.length()) throw new IllegalArgumentException("JSON: no value at " + at[0]);
+        char c = s.charAt(at[0]);
+        if (c == '{') {
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            at[0]++;
+            skip(s, at);
+            if (at[0] < s.length() && s.charAt(at[0]) == '}') { at[0]++; return m; }
+            while (true) {
+                skip(s, at);
+                if (at[0] >= s.length() || s.charAt(at[0]) != '"') throw new IllegalArgumentException("JSON: no key at " + at[0]);
+                String k = text(s, at);
+                skip(s, at);
+                expect(s, at, ':');
+                m.put(k, parse(s, at));
+                skip(s, at);
+                if (at[0] < s.length() && s.charAt(at[0]) == ',') { at[0]++; continue; }
+                expect(s, at, '}');
+                return m;
+            }
+        }
+        if (c == '[') {
+            java.util.List<Object> l = new java.util.ArrayList<>();
+            at[0]++;
+            skip(s, at);
+            if (at[0] < s.length() && s.charAt(at[0]) == ']') { at[0]++; return l; }
+            while (true) {
+                l.add(parse(s, at));
+                skip(s, at);
+                if (at[0] < s.length() && s.charAt(at[0]) == ',') { at[0]++; continue; }
+                expect(s, at, ']');
+                return l;
+            }
+        }
+        if (c == '"') return text(s, at);
+        if (s.startsWith("true", at[0])) { at[0] += 4; return Boolean.TRUE; }
+        if (s.startsWith("false", at[0])) { at[0] += 5; return Boolean.FALSE; }
+        if (s.startsWith("null", at[0])) { at[0] += 4; return null; }
+        int from = at[0];
+        while (at[0] < s.length() && "+-0123456789.eE".indexOf(s.charAt(at[0])) >= 0) at[0]++;
+        String n = s.substring(from, at[0]);
+        try {
+            if (n.indexOf('.') >= 0 || n.indexOf('e') >= 0 || n.indexOf('E') >= 0) return Double.parseDouble(n);
+            long x = Long.parseLong(n);
+            return x == (int) x ? (Object) (int) x : (Object) x;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("JSON: no value at " + from);
+        }
+    }
+
+    private static void expect(String s, int[] at, char c) {
+        if (at[0] >= s.length() || s.charAt(at[0]) != c) throw new IllegalArgumentException("JSON: '" + c + "' expected at " + at[0]);
+        at[0]++;
+    }
+
+    private static String text(String s, int[] at) {
+        StringBuilder b = new StringBuilder();
+        at[0]++;   // the opening quote
+        while (true) {
+            if (at[0] >= s.length()) throw new IllegalArgumentException("JSON: a string without its end");
+            char c = s.charAt(at[0]++);
+            if (c == '"') return b.toString();
+            if (c != '\\') { b.append(c); continue; }
+            if (at[0] >= s.length()) throw new IllegalArgumentException("JSON: a string without its end");
+            char e = s.charAt(at[0]++);
+            switch (e) {
+                case 'n': b.append('\n'); break;
+                case 'r': b.append('\r'); break;
+                case 't': b.append('\t'); break;
+                case 'b': b.append('\b'); break;
+                case 'f': b.append('\f'); break;
+                case 'u':
+                    if (at[0] + 4 > s.length()) throw new IllegalArgumentException("JSON: a short \\u escape");
+                    try { b.append((char) Integer.parseInt(s.substring(at[0], at[0] + 4), 16)); }
+                    catch (NumberFormatException x) { throw new IllegalArgumentException("JSON: a bad \\u escape"); }
+                    at[0] += 4;
+                    break;
+                default: b.append(e);   // \" \\ \/
+            }
+        }
+    }
+
     private static void line(StringBuilder b, int depth) {
         b.append('\n');
         for (int i = 0; i < depth; i++) b.append("  ");

@@ -15,6 +15,23 @@ On the Mac: a new game through Tom Nook's counter (name entry on the game's own 
 | `pad_layout full` | `game.tsv` | the 3D layout: the D-pad holds the tool ring and the right stick turns the camera |
 | `shader_groups` `/Shader/` `/System/` `/Effect/` `/Model/` `/Layout/` `/Swkbd/` | `game.tsv` | see [Files and shaders](#files-and-shaders) |
 
+## 60 fps <!-- PEANUTS: the 60 fps choice, with tmouh's speed fix -->
+
+Android's Frame rate cap offers **Game owned** (the game's own 30 fps, the game as it is, the default) and **60 fps**, which starts the game with
+["ACNH 60 FPS + SpeedFix"](https://github.com/tmouh/acnh-60fps) v1.4.5 by **tmouh** (CC BY-NC 4.0, [speedfix60/NOTICE.md](speedfix60/NOTICE.md)): the game's
+per-frame speeds halved and its frame counts doubled, so it plays at normal speed at 60 fps. Thanks to tmouh. Nothing to install: a pick applies at the next start.
+
+- **Code**: `patches.py` `VARIANT_CUTS['60']` for main build `ff1d1c05…` (3.0.3) reads [speedfix60/main.tsv](speedfix60/main.tsv), the mod's 6,810-record IPS
+  converted to cut rows with the game's original bytes (`dm/tools/ips_rows.py`); the pack's `60/main.*` is main rewritten a second time with them
+  (`variant 60 main 60fps`). Another main build gets no variant.
+- **Game data**: the mod changes four files (`Bcsv/ItemNpcFtrActionParam.bcsv`, `Bcsv/ItemNpcWherearenFtrActionParam.bcsv`, `Bcsv/NpcInterest.bcsv`,
+  `Pack/StaticParam.pack`). [speedfix60/romfs.tsv](speedfix60/romfs.tsv) holds only the changed bytes, with each original file's size and SHA-256
+  (`dm/tools/romfs_rows.py`); the pack step applies them to the player's own 3.0.3 files into `<pack>/60/romfs/` and lists the variant in `pack.tsv` only when
+  every file matched. The start passes that folder first in `DM_ROMFS_OVERLAY`.
+- **Pacing**: one frame a display tick (`DM_PRESENT_INTERVAL=display`), which does what the mod's `sdk` patch does on the console (swap interval 2 to 1 inside NVN
+  code the host replaces); that patch is not used.
+- Measured on an AYN Thor with the mod imported (before the built-in choice): 60 fps, 16.7 ms frames.
+
 ## Rewriter
 
 - **Resolved: a `B()` assertion at a spin wait, a branch into the patch area beyond the ±128 MB a `b` reaches.** Its `main` was the first module to put branches out of range of the patch area: 63 MB of text and 51 halfword jump tables (`ldrh wE, [xT, xI, lsl #1]; …; adr x18, #L; add x18, x18, xE, lsl #2; br x18`). Each got a landing pad for every one of the 65,536 values an entry can hold (768 KB a table), whatever the switch's size: 40 MB, and the spin-wait stubs placed after them were out of reach. `half_count` now pads only up to a table's largest entry; 7 of the 51 cannot be read and keep all 65,536. The patch area went from 42 MB to 7.9 MB.

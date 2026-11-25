@@ -46,6 +46,7 @@ public final class SettingsHelp {
         put(m, "Resolution scale", "Draws the game's picture at a multiple of the size the game asks for. Above 1x is sharper and needs more of the GPU, below 1x is lighter. From the next start.", "1x");
         put(m, "Upscaler", "How the game's picture is scaled up to the screen. FSR and SGSR also sharpen it, the plain filters only scale.", "SGSR 1");
         put(m, "FSR sharpness", "How strongly FSR sharpens the picture. Higher is crisper and can show hard edges.", "Default");
+        put(m, "CRT filter", "Draws the picture as a CRT shows it: scanlines, and for the CRT looks an aperture-grille mask and a vignette, curved as well. A game can have its own, and the in-game panel changes it live.", "Off");
         put(m, "Dynamic resolution", "Lets a game draw smaller while a scene is heavy, so its frame rate holds.", "40%");
         put(m, "Frame rate cap", "The highest frame rate games run at. A lower cap saves battery and keeps the device cooler.", "60 fps");
         put(m, "Frame generation", "Draws frames between the game's own, for smoother motion with a little more input delay. Needs Lossless.dll.", "Off");
@@ -57,12 +58,14 @@ public final class SettingsHelp {
         put(m, "On-screen controls", "When the touch controls show over the game.", "Auto");
         put(m, "Show / hide button", "The small button at the top centre of the game that hides the on-screen controls.", "On");
         put(m, "Controller: in-game panel", "How a controller opens the in-game panel. By touch it opens with a swipe in from the right edge, or Back.", "Home, or hold − and +");
+        put(m, "Mods tab", "The in-game panel's Mods tab: the game's cheats and mods while it runs. A game's own Mods & Cheats page can hide it for that game.", "On");
         put(m, "Rumble", "Lets games rumble the controller, or the phone when no controller is connected.", "On");
         // Screens
         put(m, "Bottom screen", "On a device with a second screen: the game you are on, with Play and its page, while you are in the app. Off leaves that screen to Android.", "On");
-        put(m, "Games without a companion", "What the second screen shows while you play a game that has no companion: Android's own screen, the game's live stats, or its cover. The stats page's gear picks what it shows and its OLED guards.", "Android");
+        put(m, "Games without a companion", "What the second screen shows while you play a game that has no companion: Android's own screen, the game's live stats, or its cover. The stats page's gear picks what it shows and its OLED guards.", "Stats");
         put(m, "Swap screens", "Starts games on the other screen and the companion on this one, for a clip-on top screen. From the next game start.", "Off");
-        put(m, "Companions", "The catalog of companions, the second-screen pages made for games. Install, update or remove one.", null);
+        put(m, "Dual-screen companions", "Dual-screen companions are pages made for one game that show on the second screen while you play, like its map, items or stats. Install, update or remove them here, also from a .dsmod.zip file without the internet.", null);
+        put(m, "TV and monitors", "What a connected TV or monitor shows. System leaves it to Android and the device, as for any app. Play on the TV starts a game full screen there, and the screen it left goes black.", "System");
         put(m, "Screen rotation", "Whether a game keeps the screen in landscape, or turns with the phone.", "Landscape");
         put(m, "Keep the screen on while preparing", "Keeps the screen on while Home shows a game being prepared. Some phones stop a job once the screen goes off.", "On");
         // Users

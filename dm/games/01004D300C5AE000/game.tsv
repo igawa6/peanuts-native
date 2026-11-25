@@ -39,7 +39,7 @@ sys_resource	0x0
 # Reviewed FPSLocker Warehouse v4 memory writes for this exact main (01004D300C5AE000/A6CE40DC3AEDB1BE.yaml, interval offsets found by Hazerou); no executable patch or
 # arbitrary YAML evaluation. The frame interval set to 0 unlocks the game's own 30 fps pacing and makes it step by the time that passed; the dynamic resolution's GPU
 # frame-time budget (max 1.95, min 1.7 at 30 fps) follows the limit. The host's frame limit picks the rate: the launcher's choices from 20 to 120, 60 when chosen
-# without a value. Game owned by default (fps_owned_default, GitHub issue #153): with the interval at 0 an 8+ Gen 1 collapsed to 4 fps in the overworld at the 30
+# without a value. Game owned by default before 0.1.8 (fps_owned_default, GitHub issue #153; 60 fps by default since, the owner's call): with the interval at 0 an 8+ Gen 1 collapsed to 4 fps in the overworld at the 30
 # and 60 limits alike, every game thread waiting on the others while the GPU idled, and the frames slowed step by step (24, 16, 11, 6, 4 fps); the game's own 30
 # fps pacing held 30 there
 fps_limit	60

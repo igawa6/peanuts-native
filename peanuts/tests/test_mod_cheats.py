@@ -8,6 +8,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 PKG = REPO / 'android/app/src/main/java/dev/nxnative/android'
+MODS = REPO / 'android/app/src/main/java/dev/peanuts/mods'
 BUILD = '0123456789ABCDEF'
 
 RUNNER = r'''package dev.nxnative.android;
@@ -42,7 +43,7 @@ class ModCheats(unittest.TestCase):
         src = cls.tmp / 'src/dev/nxnative/android'; src.mkdir(parents=True)
         (src / 'ModCheatsTest.java').write_text(RUNNER, encoding='utf-8')
         cls.out = cls.tmp / 'out'
-        subprocess.run(['javac', '-nowarn', '-d', str(cls.out), str(PKG / 'Cheats.java'), str(PKG / 'Json.java'), str(PKG / 'ModCheats.java'), str(src / 'ModCheatsTest.java')], check=True)
+        subprocess.run(["javac", "-nowarn", "-encoding", "UTF-8", "-d", str(cls.out), str(PKG / "Cheats.java"), str(PKG / "Json.java"), str(PKG / "ModCheats.java"), *[str(MODS / f) for f in ("CheatFile.java", "CheatImport.java", "CheatSources.java", "CheatValues.java")], str(src / "ModCheatsTest.java")], check=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -76,11 +77,12 @@ class ModCheats(unittest.TestCase):
         self.assertEqual(keys, ['Moon Jump', 'Coins', 'Moon Jump (First Mod)', 'Speed (First Mod)', 'Speed (second)'], 'the profile\'s, the imported, then each mod\'s under the mod\'s name')
         self.assertEqual(notes, [])
         merged = (folder / f'{BUILD}.txt').read_text(encoding='utf-8')
-        self.assertIn('[--SectionStart:Imported: mod First Mod: ' + BUILD + '--]', merged)
-        self.assertIn('[--SectionStart:Imported: mod second: ' + BUILD.lower() + '--]', merged)
+        self.assertIn('[--SectionStart:First Mod--]', merged, "each mod's cheats under the mod's name (dev.peanuts.mods.CheatSources.merge)")
+        self.assertIn('[--SectionStart:second--]', merged)
+        self.assertIn('[--SectionStart:mine--]', merged, 'the earlier import is a source now')
         self.assertNotIn('Other Build', merged, 'a mod\'s file of another build is left out')
         self.assertEqual((folder / f'{BUILD}.enabled').read_text(encoding='utf-8').split('\n')[:-1], ['Moon Jump', 'Speed (second)'], 'the toggles the player set, by key')
-        self.assertEqual(sorted(p.name for p in folder.iterdir()), [f'{BUILD}.enabled', f'{BUILD}.txt', 'imported'], 'one merged file and its toggles')
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), [f'{BUILD}.enabled', f'{BUILD}.txt', 'sources'], 'one merged file and its toggles; imported/ moved into sources/')
         # the first mod turned off: the second mod's cheat keeps its key, and with it its toggle (the key was "Speed (imported)" while the first mod was on, "Speed" without it)
         keys, on, _ = self.run_install(shipped, folder, ['Moon Jump', 'Speed (second)'], [m2], full=True)
         self.assertEqual(keys, ['Moon Jump', 'Coins', 'Speed (second)'])
@@ -92,7 +94,7 @@ class ModCheats(unittest.TestCase):
         (m / f'{BUILD}.enabled').write_text('B\r\nNo Such Cheat\n', encoding='utf-8')
         folder = d / 'cheats'
         keys, on, _ = self.run_install(None, folder, [], [m], full=True)
-        self.assertEqual(keys, ['A (m)', 'B (m)', 'A (m) (imported)'])
+        self.assertEqual(keys, ['A (m)', 'B (m)', 'A (m) #2'], "a name twice in one file: the host's own #2 key")
         self.assertEqual(on, ['B (m)'], 'what the mod turns on is on the first time its cheats are listed')
         self.assertEqual((folder / f'{BUILD}.enabled').read_text(encoding='utf-8'), 'B (m)\n')
         self.assertEqual((folder / 'mods.seen').read_text(encoding='utf-8'), 'B (m)\n')

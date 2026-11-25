@@ -67,7 +67,7 @@ public final class FrameStats {
         return 1;
     }
 
-    /** The label colours by group: FPS (and THR, FT, 1%L), GPU, CPU, SOC and BAT, GAME and RAM, DRV; any other label is grey */
+    /** The label colours by group: FPS (and THR, FT, 1%L), GPU, CPU, TEMP (the SoC) and BAT, GAME and RAM, DRV; any other label is grey */
     public static final int LABEL_FPS = 0xFF7FD4FF, LABEL_GPU = 0xFFA5E37A, LABEL_CPU = 0xFF5FA8FF, LABEL_SOC = 0xFFFF9E5E, LABEL_MEM = 0xFFE58CFF,
             LABEL_DEFAULT = 0xFFB0B0B0;
 
@@ -77,7 +77,7 @@ public final class FrameStats {
             case "FPS": case "THR": case "FT": case "1%L": return LABEL_FPS;
             case "GPU": return LABEL_GPU;
             case "CPU": return LABEL_CPU;
-            case "SOC": case "BAT": return LABEL_SOC;
+            case "TEMP": case "BAT": return LABEL_SOC;
             case "GAME": case "RAM": return LABEL_MEM;
             default: return LABEL_DEFAULT;
         }

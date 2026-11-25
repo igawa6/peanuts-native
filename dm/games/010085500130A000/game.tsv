@@ -1,0 +1,45 @@
+# Game profile of LEGO CITY UNDERCOVER (Switch, update 1.0.3 = v196608 over base 1.0.0)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# TT Games' engine (Nu2, "NuUbershader"), SDK 1.3.1, NVN; subsdk0 is NVN, subsdk1 GLSLC (the game compiles shaders its caches lack at run time), subsdk4 the movie module.
+# The shaders are BNSH files in the .nnx_shaders resources of the TT Games DAT archives (GAME*.DAT, the update's PATCH.DAT; RFPK chunks, ttdat.py) and GLSLC outputs in main (shader_split.py).
+# Status: provisional profile (dm/games/profile_guess.py from the survey); memory values not measured yet
+
+# ---- Identity ----
+title_id	010085500130A000
+program_id	010085500130A000
+
+# ---- App ----
+name	LEGO CITY UNDERCOVER
+ipa	LegoCityUndercover.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v196608	1.0.3	main=32c590b06495654696eb5f2bdfadddd0	subsdk0=3612d66d30dbd18d6cce211138c88eec	subsdk1=45e9265eeb138d2b4428df0c5f8ff88d	subsdk2=8a052b6dfd9b1515a85882ad8699869d	subsdk4=ad84f543dad22836a94c58daae35ea3a	sdk=9f841a6521ca02a184ce694c3e242519
+package	v196608
+shader_versions	v196608
+
+# ---- Files ----
+# not loaded, main takes nothing from them the host does not supply: subsdk3 (NintendoSDK_libcurl)
+modules	main subsdk0 subsdk1 subsdk2 subsdk4 sdk
+romfs_marker	GAME.DAT
+zip_store	.dat:.mp4:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: a 3328 MB heap region
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon (Big Brain Academy: Brain vs. Brain sets a heap only then)
+sys_resource	0x0
+
+# ---- Shader split ----
+shader_groups	/MOVIES/=movies
+shader_note	LEGO CITY UNDERCOVER shaders
+
+# ---- Frame rate ----
+# PEANUTS: the engine steps by the measured frame time (GameFramework::Process → FrameworkEnvironment::SetFrameTime, main+0x6d1288; NuTimeLockFrameTime has no caller), so display
+# pacing at a frame limit keeps the game's speed. Offered as experimental (fps_limit_present), Game owned (the game's own 30 fps) by default, up to 120 on a high-refresh display
+fps_limit_max	120
+fps_limit_present	1

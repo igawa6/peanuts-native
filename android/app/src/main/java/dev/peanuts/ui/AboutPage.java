@@ -27,7 +27,7 @@ import java.util.List;
 import dev.nxnative.android.R;
 
 /**
- * Settings › About (the canvas's board "About"): a Segmented at its top right, Overview, Games, Credits and Licenses.
+ * Settings › About: a Segmented at its top right, Overview, Games, Credits and Licenses.
  * <ul>
  * <li>Overview: the app's badge, its name and version (the build tag below, to copy), what it is, Check for updates and two links; beside it Peanuts
  * cracked, the app's own peanut cracked open (CrackedPeanut) over the count.</li>
@@ -102,7 +102,7 @@ final class AboutPage {
             tag.setTextIsSelectable(true);
             PUi.add(info, tag, 10, PUi.wrap());
         }
-        TextView what = PUi.body(a, "Builds your own Switch games into apps that run natively on this device. Built on Banana Native and nxnative.");
+        TextView what = PUi.body(a, "Plays your own Switch games natively on this device.");
         what.setLineSpacing(0, 1.3f);
         PUi.add(info, what, 12);
         Flow buttons = new Flow(a, PUi.dp(a, 8));
@@ -195,7 +195,7 @@ final class AboutPage {
         if (all.isEmpty()) { body.addView(PUi.small(a, "The list of games is not in this build.")); return; }
         List<Game> fresh = new ArrayList<>(), comp = new ArrayList<>();
         for (Game g : all) { if (g.isNew) fresh.add(g); if (g.companion) comp.add(g); }
-        String[] labels = {"All", "New in " + appVersion, "With a companion"};
+        String[] labels = {"All", "New in " + appVersion, "With a dual-screen companion"};
         int[] counts = {all.size(), fresh.size(), comp.size()};
         LinearLayout grid = new LinearLayout(a);
         grid.setOrientation(LinearLayout.VERTICAL);
@@ -359,7 +359,7 @@ final class AboutPage {
 
     // ---- Pieces ----
 
-    /** A card with its label inside at the top (the board's Made by, Contributors, Built on) */
+    /** A card with its label inside at the top (Made by, Contributors, Built on, In this app) */
     private static LinearLayout section(Activity a, String label) {
         LinearLayout card = PUi.listCard(a);
         TextView l = PUi.section(a, label);

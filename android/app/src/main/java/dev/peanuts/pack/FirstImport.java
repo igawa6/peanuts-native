@@ -60,6 +60,38 @@ public final class FirstImport {
         }
     }
 
+    /**
+     * What the sheet asked before it opened the system picker: the title, and the pack folder whose pack the player agreed to replace (null when none was
+     * there). The picker's answer is checked again against the library as it is then (dev.peanuts.ui.PackImportUi.picked): a build may have started while the
+     * picker was open, and a pack in the pack folder then that the player was not asked about is asked about before it is replaced ({@link #asked})
+     */
+    public static final class Pick {
+        public final String titleId;
+        public final File replaces;
+
+        public Pick(String titleId, File replaces) {
+            this.titleId = titleId.toUpperCase(Locale.ROOT);
+            this.replaces = replaces;
+        }
+
+        /** Whether the player agreed to replace the pack in this pack folder (when one is there now, the import may replace it without asking again) */
+        public boolean asked(File target) { return replaces != null && replaces.equals(target); }
+
+        /**
+         * As it is kept while the picker is open (dev.peanuts.PeanutsPrefs.packImportPick: Android may end the process meanwhile, and the picker's answer then
+         * comes to a new one): "&lt;title ID&gt;\t&lt;pack folder&gt;", the folder empty when none
+         */
+        public String text() { return titleId + "\t" + (replaces == null ? "" : replaces.getPath()); }
+
+        /** The pick of a {@link #text}, null for none or for a text that is not one */
+        public static Pick of(String text) {
+            int tab = text == null ? -1 : text.indexOf('\t');
+            if (tab != 16 || !text.substring(0, 16).matches("[0-9A-Fa-f]{16}")) return null;
+            String dir = text.substring(17);
+            return new Pick(text.substring(0, 16), dir.isEmpty() ? null : new File(dir));
+        }
+    }
+
     // ---- Versions ----
 
     /** A pack.tsv version (the Switch version number), -1 when it is none */
@@ -122,8 +154,8 @@ public final class FirstImport {
 
     /** A Prepare job of the game that did not finish: the next Build would go on with it and not use the pack */
     public static String stoppedBuild(Game g, boolean running) {
-        if (running) return g.name + " is being prepared now. Wait for it to finish.";
-        return "A build of " + g.name + " stopped part way, and the next Build would go on with it instead of using a pack. "
+        if (running) return g.name + " is being built now. Wait for it to finish.";
+        return "A build of " + g.name + " stopped part way, and the next Build would go on with it instead of using the build you picked. "
                 + "Delete its working files first (the folder is under Details), then import the pack.";
     }
 
@@ -153,9 +185,12 @@ public final class FirstImport {
         return home == null ? null : new File(home, home.getName() + ".nup");
     }
 
-    /** Asked before the picker when the pack folder holds a pack already (from an earlier build or import that no list entry plays from) */
+    /**
+     * Asked before the picker when the pack folder holds a pack already (from an earlier build or import that no list entry plays from), and after it when one
+     * came into the folder while the picker was open
+     */
     public static String replaces(Game g) {
-        return g.name + " has a pack already, from an earlier build or import. The pack you pick replaces it once it has been checked; if it is refused, the one there stays.";
+        return g.name + " has a pack already, from an earlier build or import. The new pack replaces it once it has been checked; if it is refused, the one there stays.";
     }
 
     /** The new pack could not be renamed in, and the pack that was there could not be renamed back (PackZip.swapIn): it is kept beside its folder */

@@ -2,7 +2,8 @@ package dev.peanuts;
 
 /**
  * What a key that reaches CompanionScreen's window does (GitHub issue #183). That window holds the built-in display's focus, so Android hands it Back from that
- * display's navigation bar and, for a moment after its start (before Companion.refocusGame), the controller's keys. Back does what it does in the game (the in-game
+ * display's navigation bar and, while this display is the top one (for a moment after its start; always on a phone without per-display focus), the
+ * controller's keys and sticks. Back does what it does in the game (the in-game
  * panel); a controller's key goes to the game; anything else is the activity's own. Plain Java, so the rule is tested on the JVM (ScreenKeysJvmTest); the
  * Android constants below are copied, and peanuts/tests/test_companion_screen.py checks them.
  */
@@ -27,6 +28,9 @@ final class ScreenKeys {
         if (keyCode != KEYCODE_BACK) return OWN;
         return action == ACTION_UP && (flags & FLAG_CANCELED) == 0 ? BACK : EAT;
     }
+
+    /** A stick or trigger's motion event, as GameActivity.onGenericMotionEvent reads it: the game's */
+    static boolean joystick(int source) { return (source & SOURCE_JOYSTICK) == SOURCE_JOYSTICK; }
 
     /** As GameActivity reads a source: a gamepad, a joystick or a d-pad */
     static boolean gamepad(int source) {
