@@ -854,6 +854,38 @@ def library_current(lib_dir, g):
     return (lib_dir / VK_LIB).is_file() and st.get('game') == g.id and st.get('inputs') == dmsh_chain.inputs(g)
 
 
+# PEANUTS: the split package a library was built from (#670). The library's own stamp (inputs.tsv) names the profile's inputs only, so a package that changed
+# under the same profile (shaders captured from a run added to it, a split of another dump) left a library that was called current and packed without them.
+# The package's digest goes in a file beside the library in the cache (not in the library, whose files are the chain's), and a library is taken only with it.
+PKG_STAMP = '.package'   # <cache>/<library name>.package
+
+
+def package_digest(pkg):
+    """Digest of a split package folder: every file under it, by its path in the folder and its bytes"""
+    h = hashlib.sha256()
+    for f in sorted(p for p in pkg.rglob('*') if p.is_file()):
+        h.update(f.relative_to(pkg).as_posix().encode() + b'\0' + str(f.stat().st_size).encode() + b'\0')
+        with f.open('rb') as fh:
+            for b in iter(lambda: fh.read(1 << 20), b''): h.update(b)
+    return h.hexdigest()[:16]
+
+
+def package_stamp(lib_dir):
+    return lib_dir.with_name(lib_dir.name + PKG_STAMP)
+
+
+def package_current(lib_dir, pkg):
+    """True when the library in lib_dir was built from the package in pkg, as far as can be told. No package folder: there is nothing to compare, the library is
+    what there is. A library from before its package was stamped: current when no file of the package is newer than the library (then stamped with the package)"""
+    if not pkg.is_dir(): return True
+    st, digest = package_stamp(lib_dir), package_digest(pkg)
+    if st.is_file(): return st.read_text(encoding='utf-8').strip() == digest
+    try: built = (lib_dir / VK_LIB).stat().st_mtime_ns
+    except OSError: return False
+    if any(p.is_file() and p.stat().st_mtime_ns > built for p in pkg.rglob('*')): return False
+    write_lf(st, digest + '\n'); return True
+
+
 def map_keys(path):
     """The keys of a shader_map.tsv (column 4 of its package rows)"""
     with open(path) as f: return {c[3] for c in (l.rstrip('\n').split('\t') for l in f) if len(c) > 4 and c[0].endswith('.bin')}
@@ -1027,9 +1059,12 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
     cache = (a.shader_cache or work / 'android-shaders' / 'lib').resolve(); lib = cache / name
     dst = out / 'shaders' / name
     stage('checking the saved shaders')  # PEANUTS: build text in the player's words (0.1.8)
-    if not library_current(lib, g):
+    pkg = (a.shader_pkg or work / 'android-shaders' / 'pkg').resolve()
+    current = library_current(lib, g)
+    if current and not package_current(lib, pkg):   # PEANUTS: the profile's inputs are the same, the package is not (#670)
+        print(f'shaders: {lib} was built from another shader package than {pkg}: building it again', flush=True); current = False
+    if not current:
         if a.in_process: raise Error(f'no current shader library {lib}: --in-process does not build one yet (vk_android_build.py starts the translator and spirv-val as programs); --no-shaders packs without')
-        pkg = (a.shader_pkg or work / 'android-shaders' / 'pkg').resolve()
         if not pkg.is_dir(): split_shaders(a, g, vdir, pkg, parts, aoc, collected_nros(work))   # also into a --shader-pkg folder that is not there yet
         py = shader_python(a.shader_python)
         print(f'shaders: building the Vulkan library {lib} from {pkg} with {py} (J={a.J}; about 10 minutes on DKB)', flush=True)
@@ -1058,6 +1093,7 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
             r = subprocess.run([py, str(VK_BUILD_WIN if WINDOWS or sys.platform.startswith('linux') else VK_BUILD), '--target', 'vulkan', str(pkg), str(cache), *args], env=env)   # PEANUTS: on Linux too, for the translator's start (the repository's apphost is the Mac's; vk_android_win.py starts the dlls with dotnet)
         if r.returncode: raise Error(f'vk_android_build.py exit code {r.returncode} (a package that lacks the profile\'s shaders stops it: delete {pkg} and the split runs again)')
         if not library_current(lib, g): raise Error(f'vk_android_build.py finished but {lib} is not a full library of {g.id} with the current inputs')
+        if pkg.is_dir(): write_lf(package_stamp(lib), package_digest(pkg) + '\n')   # PEANUTS: the package it was built from (#670)
     else: print(f'shaders: {lib} is current (game {g.id}, inputs {dmsh_chain.inputs(g)})')
     dst.mkdir(parents=True, exist_ok=True)
     if not (lib / dmsh_chain.STAMP).is_file():   # a library copied without its stamp: written from its header (library_current took it from there)
