@@ -579,6 +579,7 @@ final class Nup {
     static final class Meta {
         byte[] icon;
         String version, title, publisher;
+        int languages;   // the control.nacp record's (type 2) SupportedLanguageFlag, 0 without one
 
         /**
          * Reads a meta block: a list of records, each a type, a size and the data. In the spec the icon is type 3, the version 4, the title 5 and the publisher 6.
@@ -607,6 +608,7 @@ final class Nup {
                 if (n > b.length - o - 8) break;
                 int at = o + 8, len = (int) n;
                 switch (t) {
+                    case 2: m.languages = Nacp.languages(Arrays.copyOfRange(b, at, at + len)); break;
                     case 3: if (len > 4 && (b[at] & 0xff) == 0xFF && (b[at + 1] & 0xff) == 0xD8 || len > 8 && (b[at] & 0xff) == 0x89 && b[at + 1] == 'P') m.icon = Arrays.copyOfRange(b, at, at + len); break;   // the spec asks to check the image's first bytes rather than trust the type
                     case 4: m.version = text(b, at, len); break;
                     case 5: m.title = text(b, at, len); break;
@@ -653,6 +655,7 @@ final class Nup {
             if (out.publisher == null) out.publisher = m.publisher;
         }
         out.version = u != null && u.version != null ? u.version : a != null ? a.version : null;
+        out.languages = u != null && u.languages != 0 ? u.languages : a != null ? a.languages : 0;
         return out;
     }
 
