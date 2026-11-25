@@ -229,6 +229,7 @@ EXPECTED = {
     '0100BA4026E94000': ("Castlevania: Belmont's Curse", 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '0100C2901153C000': ('Yoru, Tomosu', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '0100C49025D3E000': ('EA Sports FC 27', 'target', '-', 'own,60,45,40,30,20,15', 'own,60,45,40,30,20,15', 'own,60,45,40,30,20,15', 'profile 30', '-'),
+    '0100C5000F294000': ('Battle Brothers', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),   # PEANUTS: a Peanuts-only profile
     '0100C510166F0000': ('Chained Echoes', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '0100DCA0064A6000': ("Luigi's Mansion 3", 'limit', '-', 'own,60,45,40,30,20', 'own,90,60,45,40,30,20', 'own,120,90,60,45,40,30,20', '-', 'high'),
     '0100F2C0115B6000': ('The Legend of Zelda: Tears of the Kingdom', 'limit', '-', 'own,60,45,40,30,20', 'own,90,60,45,40,30,20', 'own,120,90,60,45,40,30,20', '-', 'high'),
