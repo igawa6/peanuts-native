@@ -62,10 +62,12 @@ fi
 # `git log --diff-filter=A` + `git cat-file -e upstream/android:<path>` when they were added), so
 # a whole-file diff against upstream is meaningless for them and they are exempt from the
 # hook-marker check below. android/app/src/peanuts/ is the flavor source set (PNG/XML assets) --
-# it does not exist upstream at all.
+# it does not exist upstream at all. android/app/src/main/java/io/github/davdxpx/mistel/ is Mistel's MIT library for .mncf
+# cheat files, copied unchanged by peanuts/scripts/mncf-vendor.sh (upstream has no io/ package at all).
+# android/app/src/jvmtest/java/dev/peanuts/ holds the JVM tests of Peanuts' own classes (upstream's are under dev/nxnative).
 is_peanuts_owned() {
     case "$1" in
-        peanuts/*|dm/peanuts/*|android/app/src/main/java/dev/peanuts/*|android/app/src/peanuts/*|PEANUTS.md|\
+        peanuts/*|dm/peanuts/*|android/app/src/main/java/dev/peanuts/*|android/app/src/jvmtest/java/dev/peanuts/*|android/app/src/peanuts/*|android/app/src/main/java/io/github/davdxpx/mistel/*|PEANUTS.md|\
 dm/gfx/tools/split_pool.py|dm/gfx/tools/ue_ondevice.py)
             return 0 ;;
         *)

@@ -99,6 +99,7 @@ public final class ModsTab {
         File folder;                                   // the game's cheats folder (the merged file, values.tsv)
         String build;                                  // the merged file's build: <folder>/<build>.txt
         Map<String, CheatValues.Kept> kept = new java.util.HashMap<>();
+        CheatSources.Merged merged;                    // the merge the tab lists (an .mncf cheat's relations)
         long lastStep;                                 // a held left / right: the steps grow (1, 10, 100, ...)
         int run;
     }
@@ -136,12 +137,16 @@ public final class ModsTab {
         Group(String heading) { this.heading = heading; }
     }
 
-    static List<Group> model(Context c, String titleId, String gameDir, String packDir) {
+    static List<Group> model(Context c, String titleId, String gameDir, String packDir) { return model(c, titleId, gameDir, packDir, null); }
+
+    /** The same; merged[0] gets the merge (null: not wanted) */
+    static List<Group> model(Context c, String titleId, String gameDir, String packDir, CheatSources.Merged[] merged) {
         List<Group> out = new ArrayList<>();
         Set<String> builds = CheatsBridge.builds(titleId, packDir);
         if (builds.isEmpty()) return out;
         String build = builds.iterator().next();
         CheatSources.Merged m = CheatsBridge.merged(c, titleId, gameDir, packDir, build, CheatsBridge.textEnd(packDir));
+        if (merged != null) merged[0] = m;
         List<CheatSources.Block> blocks = new ArrayList<>();
         for (CheatSources.Row r : m.rows) if (r.block.enabled && !blocks.contains(r.block)) blocks.add(r.block);
         Map<String, Group> byHeading = new LinkedHashMap<>();
@@ -182,7 +187,9 @@ public final class ModsTab {
         List<Group> groups;
         List<ModStore.Mod> mods;
         try {
-            groups = model(a, s.titleId, gameDir, packDir);
+            CheatSources.Merged[] m = new CheatSources.Merged[1];
+            groups = model(a, s.titleId, gameDir, packDir, m);
+            s.merged = m[0];
             mods = mods(a, s.titleId, gameDir, packDir);
         } catch (RuntimeException e) {
             android.util.Log.w("peanuts", "mods tab: " + e);
@@ -349,6 +356,7 @@ public final class ModsTab {
             CheatsBridge.on(s.a, s.titleId, b.key, on);
             b.state = on ? "on" : "off";
             b.reason = "";
+            related(s, b, on);
         } else {
             s.updating = true;
             b.sw.setChecked(!on);
@@ -440,7 +448,7 @@ public final class ModsTab {
         if (b.field == null) return CheatStatus.line(b.cheat, bad(b), b.inHost, b.reason);
         String l = CheatStatus.line(b.cheat, bad(b), b.inHost, b.reason, b.number);
         if (bad(b)) return l;
-        if (changed(b)) l += " The file's own number is " + b.cheat.value() + ".";
+        if (changed(b)) l += " The file's own number is " + b.cheat.number.own() + ".";
         return b.later ? l + " The new number is in the game from the next start." : l;
     }
 
@@ -530,7 +538,7 @@ public final class ModsTab {
     }
 
     /** Whether the number differs from the file's own (the player set it in the tab) */
-    private static boolean changed(Bind b) { return b.field != null && b.number != b.cheat.value(); }
+    private static boolean changed(Bind b) { return b.field != null && b.number != b.cheat.number.own(); }
 
     /** A round − or + for touch (not focusable: the controller's left and right step the field) */
     private static TextView stepper(Context c, String sign, View.OnClickListener click) {
@@ -556,11 +564,12 @@ public final class ModsTab {
     /** The number, in yellow with the file's own beside it when it was set in the tab */
     private static void shownNumber(Bind b) {
         boolean set = changed(b);
-        b.field.setText(Long.toString(b.number));
+        String unit = b.cheat.number.unit();
+        b.field.setText(unit == null || unit.isEmpty() ? Long.toString(b.number) : b.number + " " + unit);
         b.field.setTextColor(set ? YELLOW : TEXT);
-        b.field.setContentDescription(b.cheat.name + ", number " + b.number + (set ? ", the file has " + b.cheat.value() : ""));
+        b.field.setContentDescription(b.cheat.name + ", number " + b.number + (set ? ", the file has " + b.cheat.number.own() : ""));
         if (b.mark == null) return;
-        b.mark.setText("File: " + b.cheat.value());
+        b.mark.setText("File: " + b.cheat.number.own());
         b.mark.setVisibility(set ? View.VISIBLE : View.GONE);
     }
 
@@ -571,14 +580,14 @@ public final class ModsTab {
         s.lastStep = now;
         long size = 1;
         for (int i = 0; i < Math.min(s.run / 10, 9); i++) size *= 10;
-        long max = CheatValues.max(b.cheat.valueWidth);
-        long v = dir > 0 ? (b.number > max - size ? max : b.number + size) : Math.max(0, b.number - size);
+        long max = b.cheat.number.max(), min = b.cheat.number.min();
+        long v = dir > 0 ? (b.number > max - size ? max : b.number + size) : (b.number < min + size ? min : b.number - size);
         setNumber(s, b, v, false);
     }
 
     /** The number shown at once; to the files and the host a moment after the last change (now: at once) */
     private static void setNumber(Shown s, Bind b, long v, boolean now) {
-        b.number = Math.max(0, Math.min(v, CheatValues.max(b.cheat.valueWidth)));
+        b.number = Math.max(b.cheat.number.min(), Math.min(v, b.cheat.number.max()));
         shownNumber(b);
         s.box.removeCallbacks(b.apply);
         s.box.postDelayed(b.apply, now ? 0 : 500);
@@ -617,20 +626,41 @@ public final class ModsTab {
         });
     }
 
+    /**
+     * An .mncf cheat switched on: what it needs on, what it cannot be on with off (CheatSources.Merged.related), in the host at once and kept for the next
+     * start, and their rows' switches with them
+     */
+    private static void related(Shown s, Bind b, boolean on) {
+        if (s.merged == null || b.cheat.mncf == null) return;
+        Set<String> all = CheatsBridge.on(s.a, s.titleId);
+        Set<String> changed = s.merged.related(all, b.key, on);
+        if (changed.isEmpty()) return;
+        CheatsBridge.on(s.a, s.titleId, all);
+        for (Bind o : s.binds) {
+            if (o.key == null || !changed.contains(o.key)) continue;
+            boolean x = all.contains(o.key);
+            if (o.inHost) CheatsBridge.set(o.key, x);
+            s.updating = true;
+            o.sw.setChecked(x);
+            s.updating = false;
+            show(o);
+        }
+    }
+
     /** A or a tap on the number: type one, in the app's dialog sheet */
     private static void type(Shown s, Bind b) {
         AlertDialog.Builder db = dialog(s.a);
         Context c = db.getContext();
         float dp = c.getResources().getDisplayMetrics().density;
-        long max = CheatValues.max(b.cheat.valueWidth);
+        long max = b.cheat.number.max(), min = b.cheat.number.min();
         android.widget.FrameLayout box = new android.widget.FrameLayout(c);   // as upstream's text dialog (TextInput): the field in the sheet's margins
         box.setPadding(Math.round(20 * dp), 0, Math.round(20 * dp), 0);
         EditText e = new EditText(c);
-        e.setHint("0 to " + max);   // no message line: in landscape the keyboard leaves room for the title, the field and the buttons only
-        e.setInputType(InputType.TYPE_CLASS_NUMBER);
+        e.setHint(min + " to " + max);   // no message line: in landscape the keyboard leaves room for the title, the field and the buttons only
+        e.setInputType(InputType.TYPE_CLASS_NUMBER | (min < 0 ? InputType.TYPE_NUMBER_FLAG_SIGNED : 0));
         e.setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_FLAG_NO_FULLSCREEN);
         e.setSingleLine(true);
-        e.setFilters(new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(Long.toString(max).length())});
+        e.setFilters(new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(Math.max(Long.toString(max).length(), Long.toString(min).length()))});
         e.setText(Long.toString(b.number));
         e.setSelection(0, e.getText().length());   // typing replaces it
         box.addView(e);
@@ -656,12 +686,14 @@ public final class ModsTab {
         e.requestFocus();
     }
 
-    /** The typed number, kept inside the cheat's width (a number too long for it is its largest) */
+    /** The typed number, kept inside the cheat's range (a number too long for it is its largest, or its smallest) */
     private static void typed(Shown s, Bind b, String text) {
         String t = text.trim();
-        if (t.isEmpty() || !t.chars().allMatch(Character::isDigit)) return;
+        boolean neg = t.startsWith("-");
+        String digits = neg ? t.substring(1) : t;
+        if (digits.isEmpty() || !digits.chars().allMatch(Character::isDigit)) return;
         long v;
-        try { v = Long.parseLong(t); } catch (NumberFormatException e) { v = Long.MAX_VALUE; }
+        try { v = Long.parseLong(t); } catch (NumberFormatException e) { v = neg ? Long.MIN_VALUE : Long.MAX_VALUE; }
         setNumber(s, b, v, true);
     }
 
@@ -700,7 +732,7 @@ public final class ModsTab {
         sv.setFocusable(false);   // as AlertDialog's own message: the controller's focus goes to the buttons
         sv.addView(box);
         db.setTitle(b.cheat.name).setView(sv).setNegativeButton("Close", null);
-        if (changed(b)) db.setNeutralButton("Reset", (x, w) -> setNumber(s, b, b.cheat.value(), true));   // the file's own number again (its kept one is forgotten)
+        if (changed(b)) db.setNeutralButton("Reset", (x, w) -> setNumber(s, b, b.cheat.number.own(), true));   // the file's own number again (its kept one is forgotten)
         AlertDialog d = db.create();
         d.setOnKeyListener((di, k, e) -> {   // B closes; A presses the focused button (Close first), or closes when none has the focus
             if (k != confirmKey && k != backKey) return false;

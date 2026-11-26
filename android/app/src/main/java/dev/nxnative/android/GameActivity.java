@@ -912,10 +912,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         File folder = CheatsUi.folder(this, id), shipped = Cheats.packFile(packDir, build);
         try {
             // PEANUTS begin: was Cheats.install(shipped, folder, build, Prefs.cheatsOn(this, id)): the enabled mods' cheat files are in the one list too (ModCheats),
-            // the cheats a mod's own .enabled turns on are on the first time they are listed, and a mod's file that cannot be read is a note, not a start without cheats
-            java.util.Set<String> con = Prefs.cheatsOn(this, id); int con0 = con.size(); List<String> cnotes = new ArrayList<>();
-            List<Cheats.Entry> l = ModCheats.install(shipped, folder, build, con, cheatMods, cnotes);
-            if (con.size() != con0) Prefs.cheatsOn(this, id, con);
+            // the cheats a mod's own .enabled turns on are on the first time they are listed, and a mod's file that cannot be read is a note, not a start without cheats;
+            // the player's sources are .mncf files, made ready for this build with the game's own main from the pack (dev.peanuts.mods.MncfBuild)
+            java.util.Set<String> con = Prefs.cheatsOn(this, id), con0 = new java.util.HashSet<>(con); List<String> cnotes = new ArrayList<>();
+            List<Cheats.Entry> l = ModCheats.install(shipped, folder, build, con, cheatMods, cnotes, CheatsBridge.known(this, id, getIntent().getStringExtra("name"), packDir.getPath()), CheatsBridge.game(id, build, packDir.getPath()));
+            if (!con.equals(con0)) Prefs.cheatsOn(this, id, con);   // a toggle a new cheat file version moved (CheatUpdates) changes no count
             for (String n : cnotes) unknownNotes.add("[nxlaunch] Cheats: " + n);
             // PEANUTS end
             if (l == null) { unknownNotes.add("[nxlaunch] Cheats: no cheat file for build " + build + (shipped == null ? " in the pack (Prepare again brings the game's own) and none imported" : "")); return; }

@@ -53,6 +53,7 @@ public final class CheatPick {
             try {
                 List<String> paths = new ArrayList<>();
                 List<CheatImport.In> in;
+                byte[] pack = null;   // an .mncp's bytes: kept with its files for its new versions
                 if (folder) {
                     String path = path("treeToPath", u);
                     if (path == null || !new File(path).isDirectory()) throw new IOException("That folder is not on the phone's storage (a cloud provider, say). Pick one on the phone or its SD card.");
@@ -63,16 +64,29 @@ public final class CheatPick {
                 } else if (zip(a, u, display)) {
                     r.from = CheatSources.FROM_ZIP;
                     try (InputStream s = new BufferedInputStream(open(a, u))) { in = CheatImport.fromZip(s, paths); }
+                    if (paths.contains("pack.toml")) {   // an .mncp (a zip with pack.toml at its root): read again whole, its manifest and hashes checked
+                        byte[] b;
+                        try (InputStream s = open(a, u)) { b = readMax(s, CheatImport.MAX_PACK + 1); }
+                        if (b.length > CheatImport.MAX_PACK) throw new IOException("It is larger than " + CheatImport.MAX_PACK / (1024 * 1024) + " MB: not a cheat pack.");
+                        List<String> broken = new ArrayList<>();
+                        paths = new ArrayList<>();
+                        in = CheatImport.fromPack(b, paths, broken);
+                        pack = b;
+                        if (!broken.isEmpty()) android.util.Log.w("peanuts", "cheats: the pack's files left out: " + broken);
+                    }
                 } else {
+                    boolean mncf = display != null && display.toLowerCase(java.util.Locale.ROOT).endsWith(".mncf");
+                    int max = mncf ? CheatImport.MAX_MNCF : CheatImport.MAX_FILE;
                     byte[] b;
-                    try (InputStream s = open(a, u)) { b = readMax(s, CheatImport.MAX_FILE + 1); }
-                    if (b.length > CheatImport.MAX_FILE) throw new IOException("It is larger than " + CheatImport.MAX_FILE / 1024 + " KB: not a cheat file.");
+                    try (InputStream s = open(a, u)) { b = readMax(s, max + 1); }
+                    if (b.length > max) throw new IOException("It is larger than " + max / 1024 + " KB: not a cheat file.");
                     String n = display != null ? display : "cheats.txt";
                     in = new ArrayList<>();
                     in.add(new CheatImport.In(n, b));
                     paths.add(n);
                 }
                 r.found = CheatImport.read(in, paths, titleId, builds, r.name);
+                r.found.packData = pack;
             } catch (IOException | RuntimeException e) {
                 r.error = e instanceof IOException && e.getMessage() != null && e.getMessage().endsWith(".") ? e.getMessage() : "It could not be read. Nothing was added.";
                 android.util.Log.w("peanuts", "cheats: reading a pick: " + e);
@@ -84,6 +98,42 @@ public final class CheatPick {
         }, "peanuts-cheat-pick").start();
     }
 
+    /**
+     * A job off the UI thread with a spinner in a dialog meanwhile, as a pick is read (converting cheats reads the game's own main: seconds for a large game);
+     * done or failed then runs on the main thread, unless the activity is gone by then
+     */
+    public static <T> void work(Activity a, String title, java.util.concurrent.Callable<T> job, Consumer<T> done, Consumer<Exception> failed) { work(a, title, null, job, done, failed); }
+
+    /** The same with a line under the spinner that says what is being done (not "Loading": the spinner shows that), null for none */
+    public static <T> void work(Activity a, String title, String doing, java.util.concurrent.Callable<T> job, Consumer<T> done, Consumer<Exception> failed) {
+        LinearLayout box = new LinearLayout(a);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        int p = Math.round(18 * a.getResources().getDisplayMetrics().density);
+        box.setPadding(p, p, p, p);
+        box.addView(new ProgressBar(a));
+        if (doing != null) {
+            android.widget.TextView t = dev.peanuts.ui.PUi.small(a, doing);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(0, p / 2, 0, 0);
+            box.addView(t);
+        }
+        AlertDialog wait = new AlertDialog.Builder(a).setTitle(title).setView(box).setCancelable(false).create();
+        wait.show();
+        new Thread(() -> {
+            T out = null;
+            Exception err = null;
+            try { out = job.call(); } catch (Exception e) { err = e; }
+            T o = out;
+            Exception x = err;
+            UI.post(() -> {
+                wait.dismiss();
+                if (a.isFinishing() || a.isDestroyed()) return;
+                if (x != null) failed.accept(x); else done.accept(o);
+            });
+        }, "peanuts-cheat-work").start();
+    }
+
     private static InputStream open(Context c, Uri u) throws IOException {
         InputStream in = c.getContentResolver().openInputStream(u);
         if (in == null) throw new IOException("the pick cannot be opened");
@@ -93,8 +143,8 @@ public final class CheatPick {
     /** Whether the picked file is a zip: its name, else its first bytes ("PK") */
     private static boolean zip(Context c, Uri u, String display) throws IOException {
         String n = display == null ? "" : display.toLowerCase(java.util.Locale.ROOT);
-        if (n.endsWith(".zip")) return true;
-        if (n.endsWith(".txt")) return false;
+        if (n.endsWith(".zip") || n.endsWith(".mncp")) return true;
+        if (n.endsWith(".txt") || n.endsWith(".mncf")) return false;
         try (InputStream in = open(c, u)) { return in.read() == 'P' && in.read() == 'K'; }
     }
 

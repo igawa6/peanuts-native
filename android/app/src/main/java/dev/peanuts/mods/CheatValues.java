@@ -37,11 +37,14 @@ public final class CheatValues {
         }
     }
 
+    /** Whether the cheat has a number the player can set: an Atmosphère Value cheat (plainValue) or an .mncf cheat with one whole-number value */
+    public static boolean plain(CheatFile.Cheat c) { return c.number != null; }
+
     /**
-     * Whether the cheat writes a plain number the player can set: a Value cheat whose number is not a float. A 4-byte number with its low 12 bits clear and an
-     * exponent between 2^-8 and 2^31 reads as a float (1.5 is 0x3FC00000) and keeps its words; a count rarely looks like that
+     * Whether an Atmosphère cheat writes a plain number the player can set: a Value cheat whose number is not a float. A 4-byte number with its low 12 bits
+     * clear and an exponent between 2^-8 and 2^31 reads as a float (1.5 is 0x3FC00000) and keeps its words; a count rarely looks like that
      */
-    public static boolean plain(CheatFile.Cheat c) {
+    static boolean plainValue(CheatFile.Cheat c) {
         if (c.kind != CheatFile.Kind.VALUE || c.valueWord < 0) return false;
         int w = c.valueWidth;
         if (w != 1 && w != 2 && w != 4 && w != 8) return false;
@@ -51,6 +54,40 @@ public final class CheatValues {
             if (v != 0 && (v & 0xFFF) == 0 && exp >= 119 && exp <= 158) return false;
         }
         return true;
+    }
+
+    /** An Atmosphère Value cheat's number: its words at its place */
+    static CheatFile.Number atmosphere(CheatFile.Cheat c) {
+        return new CheatFile.Number() {
+            @Override public long own() { return c.value(); }
+            @Override public long min() { return 0; }
+            @Override public long max() { return CheatValues.max(c.valueWidth); }
+            @Override public String unit() { return null; }
+            @Override public List<String> lines(long v) { return CheatValues.lines(c.lines, c.valueWord, c.valueWidth, v); }
+        };
+    }
+
+    /** An .mncf cheat's one whole-number value (MncfBuild.number): its range and unit from the file, its code made again for a number (MncfBuild.Ready.lines) */
+    static CheatFile.Number mncf(MncfBuild.Ready r, MncfBuild.Cheat m, List<String> ownLines) {
+        io.github.davdxpx.mistel.mncf.ValueSpec v = m.value;
+        long own = ((java.lang.Number) v.defaultValue()).longValue();
+        long[] range = range(v.type());
+        long lo = v.min() == null ? range[0] : Math.max(range[0], v.min().longValue()), hi = v.max() == null ? range[1] : Math.min(range[1], v.max().longValue());
+        return new CheatFile.Number() {
+            @Override public long own() { return own; }
+            @Override public long min() { return lo; }
+            @Override public long max() { return hi; }
+            @Override public String unit() { return v.unit(); }
+            @Override public List<String> lines(long x) { return x == own ? ownLines : r.lines(m, Math.max(lo, Math.min(hi, x))); }
+        };
+    }
+
+    /** The numbers a whole-number type of the format holds (u64: up to a long's largest, the field's limit) */
+    static long[] range(String type) {
+        boolean signed = type.startsWith("s");
+        int bits = Integer.parseInt(type.substring(1));
+        if (bits >= 64) return signed ? new long[] {Long.MIN_VALUE, Long.MAX_VALUE} : new long[] {0, Long.MAX_VALUE};
+        return signed ? new long[] {-(1L << (bits - 1)), (1L << (bits - 1)) - 1} : new long[] {0, (1L << bits) - 1};
     }
 
     /** The largest number a width holds (8 bytes: a long's largest, the field's limit) */
@@ -63,8 +100,11 @@ public final class CheatValues {
         return width == 4 ? words[word] : words[word] & max(width);
     }
 
-    /** The cheat's lines with v as its number (c a Value cheat: its own place) */
-    public static List<String> lines(CheatFile.Cheat c, long v) { return lines(c.lines, c.valueWord, c.valueWidth, v); }
+    /** The cheat's lines with v as its number (c with a number: plain), its own lines when that number cannot be written */
+    public static List<String> lines(CheatFile.Cheat c, long v) {
+        List<String> l = c.number == null ? null : c.number.lines(Math.max(c.number.min(), Math.min(v, c.number.max())));
+        return l != null ? l : c.lines;
+    }
 
     /** lines with v at word (width bytes); the other words as written, the number's in eight upper-case hex digits */
     static List<String> lines(List<String> lines, int word0, int width, long v) {
@@ -90,28 +130,43 @@ public final class CheatValues {
 
     private static String hex(long w) { return String.format(Locale.ROOT, "%08X", w & 0xFFFFFFFFL); }
 
-    /** The cheat's lines with the kept number, when the cheat still has the original number at its place; else null (the file's own lines stay) */
+    /**
+     * The cheat's lines with the kept number, when the cheat still has the original number (an Atmosphère cheat: at its place; an .mncf one: as its value's
+     * default); else null (the file's own lines stay)
+     */
     public static List<String> apply(CheatFile.Cheat c, Kept k) {
-        if (k == null || at(c.words, k.word, k.width) != k.original) return null;
-        return lines(c.lines, k.word, k.width, k.number);
+        if (k == null) return null;
+        if (k.width != 0) {   // by its words alone: a start reads the files without main's code size, so a Value cheat in main's data is not one by itself there
+            if (at(c.words, k.word, k.width) != k.original) return null;
+            return lines(c.lines, k.word, k.width, k.number);
+        }
+        if (!mncfValue(c) || k.original != c.number.own()) return null;
+        return c.number.lines(Math.max(c.number.min(), Math.min(k.number, c.number.max())));
     }
+
+    /** Whether the cheat's number is an .mncf value (kept without a place in the words), not an Atmosphère Value's words */
+    static boolean mncfValue(CheatFile.Cheat c) { return c.number != null && c.mncf != null && c.mncf.value != null; }
 
     /** The number the cheat writes now: the kept one when it applies, else the file's */
     public static long of(Map<String, Kept> kept, String key, CheatFile.Cheat c) {
         Kept k = key == null ? null : kept.get(key.toLowerCase(Locale.ROOT));
-        return k != null && apply(c, k) != null ? Math.min(k.number, max(k.width)) : c.value();
+        if (c.number == null) return c.value();
+        return k != null && apply(c, k) != null ? Math.max(c.number.min(), Math.min(k.number, c.number.max())) : c.number.own();
     }
 
-    /** The merged file's text with the block of [key] holding c's lines for v; null when the file has no such block of c's length */
+    /** The merged file's text with the block of [key] holding c's lines for v (every code line up to the next entry); null when the file has no such block */
     public static String patch(String merged, String key, CheatFile.Cheat c, long v) {
         String[] l = merged.split("\n", -1);
         String head = "[" + key + "]";
         for (int i = 0; i < l.length; i++) {
             if (!l[i].trim().equals(head)) continue;
-            if (i + c.lines.size() >= l.length) return null;
-            List<String> put = lines(c, v);
-            for (int j = 0; j < put.size(); j++) l[i + 1 + j] = put.get(j);
-            return String.join("\n", l);
+            int end = i + 1;
+            while (end < l.length && CheatFile.codeLine(l[end])) end++;
+            StringBuilder sb = new StringBuilder();
+            for (int j = 0; j <= i; j++) sb.append(l[j]).append('\n');
+            for (String x : lines(c, v)) sb.append(x).append('\n');
+            for (int j = end; j < l.length; j++) sb.append(l[j]).append(j + 1 < l.length ? "\n" : "");
+            return sb.toString();
         }
         return null;
     }
@@ -131,8 +186,8 @@ public final class CheatValues {
             String[] t = line.split("\t");
             if (t.length < 5 || t[0].isEmpty()) continue;
             try {
-                int width = Integer.parseInt(t[3].trim());
-                if (width != 1 && width != 2 && width != 4 && width != 8) continue;
+                int width = Integer.parseInt(t[3].trim());   // 0: an .mncf cheat's value (no place in the words; original: the value's default)
+                if (width != 0 && width != 1 && width != 2 && width != 4 && width != 8) continue;
                 out.put(t[0].toLowerCase(Locale.ROOT), new Kept(Long.parseLong(t[1].trim()), Integer.parseInt(t[2].trim()), width, Long.parseLong(t[4].trim())));
             } catch (NumberFormatException ignored) {
                 // a line this reader cannot read is left out
@@ -141,12 +196,14 @@ public final class CheatValues {
         return out;
     }
 
-    /** Keeps v as the number of c (a Value cheat) under key; v equal to the file's own number forgets it */
+    /** Keeps v as the number of c (a cheat with a number) under key; v equal to the file's own number forgets it */
     public static void keep(File folder, String key, CheatFile.Cheat c, long v) throws IOException {
         Map<String, Kept> all = read(folder);
         String k = key.toLowerCase(Locale.ROOT);
-        if (v == c.value()) all.remove(k);
-        else all.put(k, new Kept(Math.max(0, Math.min(v, max(c.valueWidth))), c.valueWord, c.valueWidth, c.value()));
+        long own = c.number != null ? c.number.own() : c.value();
+        if (v == own) all.remove(k);
+        else if (mncfValue(c)) all.put(k, new Kept(Math.max(c.number.min(), Math.min(v, c.number.max())), -1, 0, own));
+        else all.put(k, new Kept(Math.max(0, Math.min(v, max(c.valueWidth))), c.valueWord, c.valueWidth, own));
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<String, Kept> e : all.entrySet()) {
             Kept x = e.getValue();

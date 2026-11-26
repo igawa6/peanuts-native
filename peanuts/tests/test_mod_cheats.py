@@ -9,6 +9,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 PKG = REPO / 'android/app/src/main/java/dev/nxnative/android'
 MODS = REPO / 'android/app/src/main/java/dev/peanuts/mods'
+GAME = '0100AAAA0BBB0000'   # the folder is the game's: <files>/cheats/<title ID> (an .mncf names its game by it)
 BUILD = '0123456789ABCDEF'
 
 RUNNER = r'''package dev.nxnative.android;
@@ -43,7 +44,10 @@ class ModCheats(unittest.TestCase):
         src = cls.tmp / 'src/dev/nxnative/android'; src.mkdir(parents=True)
         (src / 'ModCheatsTest.java').write_text(RUNNER, encoding='utf-8')
         cls.out = cls.tmp / 'out'
-        subprocess.run(["javac", "-nowarn", "-encoding", "UTF-8", "-d", str(cls.out), str(PKG / "Cheats.java"), str(PKG / "Json.java"), str(PKG / "ModCheats.java"), *[str(MODS / f) for f in ("CheatFile.java", "CheatImport.java", "CheatSources.java", "CheatValues.java")], str(src / "ModCheatsTest.java")], check=True)
+        mistel = sorted((MODS.parents[2] / 'io/github/davdxpx/mistel').rglob('*.java'))   # Mistel's .mncf library: the sources are .mncf files
+        subprocess.run(["javac", "-nowarn", "-encoding", "UTF-8", "-d", str(cls.out), *map(str, mistel), str(PKG / "Cheats.java"), str(PKG / "Json.java"), str(PKG / "ModCheats.java"),
+                        *[str(MODS / f) for f in ("CheatFile.java", "CheatImport.java", "CheatSources.java", "CheatValues.java", "CheatStatus.java", "MncfBuild.java", "MncfConvert.java", "MncfExport.java", "MncfFacts.java", "MncfMain.java", "MncfWords.java", "CheatUpdates.java")],
+                        str(src / "ModCheatsTest.java")], check=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -68,7 +72,7 @@ class ModCheats(unittest.TestCase):
     def test_mods_join_the_profile_and_the_imported_cheats(self):
         d = self.case('all')
         shipped = d / f'{BUILD}.txt'; shipped.write_text('[Moon Jump]\n04000000 00000010 00000001\n', encoding='utf-8')
-        folder = d / 'cheats'; (folder / 'imported').mkdir(parents=True)
+        folder = d / 'cheats' / GAME; (folder / 'imported').mkdir(parents=True)
         (folder / 'imported' / 'mine.txt').write_text(f'build {BUILD}\n[Coins]\n04000000 00000020 00000063\n', encoding='utf-8')
         m1 = self.mod(d, 'First Mod', f'{BUILD}.txt', '[Moon Jump]\n04000000 00000010 00000002\n[Speed]\n04000000 00000030 00000002\n')
         self.mod(d, 'First Mod', 'FEDCBA9876543210.txt', '[Other Build]\n04000000 00000040 00000001\n')
@@ -92,7 +96,7 @@ class ModCheats(unittest.TestCase):
         d = self.case('own')
         m = self.mod(d, 'm', f'{BUILD}.txt', '{Master}\n04000000 00000000 00000001\n[A]\n04000000 00000010 00000001\n[B]\n04000000 00000020 00000001\n[A]\n04000000 00000030 00000001\n')
         (m / f'{BUILD}.enabled').write_text('B\r\nNo Such Cheat\n', encoding='utf-8')
-        folder = d / 'cheats'
+        folder = d / 'cheats' / GAME
         keys, on, _ = self.run_install(None, folder, [], [m], full=True)
         self.assertEqual(keys, ['A (m)', 'B (m)', 'A (m) #2'], "a name twice in one file: the host's own #2 key")
         self.assertEqual(on, ['B (m)'], 'what the mod turns on is on the first time its cheats are listed')
@@ -109,7 +113,7 @@ class ModCheats(unittest.TestCase):
         m = self.mod(d, 'big', f'{BUILD}.txt', '[Huge]\n' + '04000000 00000010 00000001\n' * 12000)   # over Cheats.MAX_FILE
         g = self.mod(d, 'good', f'{BUILD}.txt', '[G]\n04000000 00000010 00000001\n')
         (m / 'unreadable.txt').mkdir()   # a folder named as a cheat file: reading it fails
-        keys, on, notes = self.run_install(shipped, d / 'cheats', [], [m, g], full=True)
+        keys, on, notes = self.run_install(shipped, d / 'cheats' / GAME, [], [m, g], full=True)
         self.assertEqual(keys, ['A', 'G (good)'], 'the profile\'s cheats and the other mod\'s are installed')
         self.assertEqual(len(notes), 2, notes)
         self.assertTrue(all('is left out' in n and 'big' in n for n in notes), notes)
@@ -117,19 +121,19 @@ class ModCheats(unittest.TestCase):
     def test_a_long_name_keeps_the_mods_name(self):
         d = self.case('long')
         m = self.mod(d, 'm', f'{BUILD}.txt', '[' + 'x' * 127 + ']\n04000000 00000010 00000001\n')
-        keys, _, _ = self.run_install(None, d / 'cheats', [], [m], full=True)
+        keys, _, _ = self.run_install(None, d / 'cheats' / GAME, [], [m], full=True)
         self.assertEqual(keys, ['x' * 123 + ' (m)'])
 
     def test_a_game_with_only_a_mods_cheats(self):
         d = self.case('modonly')
         m = self.mod(d, 'm', f'{BUILD}.txt', '[Only]\n04000000 00000010 00000001\n')
-        self.assertEqual(self.run_install(None, d / 'cheats', ['Only (m)'], [m]), 'Only (m)|')
-        self.assertEqual((d / 'cheats' / f'{BUILD}.enabled').read_text(encoding='utf-8'), 'Only (m)\n')
+        self.assertEqual(self.run_install(None, d / 'cheats' / GAME, ['Only (m)'], [m]), 'Only (m)|')
+        self.assertEqual((d / 'cheats' / GAME / f'{BUILD}.enabled').read_text(encoding='utf-8'), 'Only (m)\n')
 
     def test_without_mods_it_is_upstreams_install(self):
         d = self.case('plain')
         shipped = d / f'{BUILD}.txt'; shipped.write_text('[A]\n04000000 00000010 00000001\n', encoding='utf-8')
-        self.assertEqual(self.run_install(shipped, d / 'cheats', [], []), 'A|')
+        self.assertEqual(self.run_install(shipped, d / 'cheats' / GAME, [], []), 'A|')
         self.assertEqual(self.run_install(None, d / 'none', [], [d / 'no such folder']), 'none')
 
 if __name__ == '__main__':
