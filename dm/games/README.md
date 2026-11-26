@@ -148,7 +148,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Monster Sanctuary](0100A0F00DA68000/README.md) | `0100A0F00DA68000` | 2.1.0 (provisional, packed on a PC, not run on a device) | 9.4.1 | Unity 2018.4.23f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile, provisional --> |
 | [Monster Train 2](010051701FB46000/README.md) | `010051701FB46000` | 1.1.1 | 18.3.5 | Unity 2022.3.54f1 IL2CPP | NVN |
 | [My Time at Sandrock](0100B63016916000/README.md) | `0100B63016916000` | 1.4.2.0 (provisional, packed on a PC, not run on a device) | 16.2.0 | Unity 2021.3.26f1 IL2CPP, Wwise | NVN <!-- PEANUTS: Peanuts-only profile, provisional --> |
-| [NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS](01005A20190A6000/README.md) | `01005A20190A6000` | 1.70 (bring-up, not playable) | 14.3.0 | CyberConnect2 NUCC, Scaleform GFx on OpenGL | NVN, OpenGL UI | <!-- PEANUTS -->
+| [NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS](01005A20190A6000/README.md) | `01005A20190A6000` | 1.70 (Android bring-up) | 14.3.0 | CyberConnect2 NUCC, Scaleform GFx on OpenGL | NVN, OpenGL UI | <!-- PEANUTS -->
 | [Need for Speed: Hot Pursuit Remastered](010029B0118E8000/README.md) | `010029B0118E8000` | 1.0.3 | 10.4.1 | Criterion's engine (Stellar Entertainment port) | NVN |
 | [New Pokemon Snap](0100F4300BF2C000/README.md) | `0100F4300BF2C000` | v0 | 10 | Bandai Namco nu/nv, Wwise | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [NieR:Automata The End of YoRHa Edition](010056B015FE8000/README.md) | `010056B015FE8000` | 1.0.3 | 12.3.9 | PlatinumGames' engine | NVN |

@@ -1,7 +1,7 @@
 # NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS (`01005A20190A6000`)
 
 <!-- PEANUTS -->
-The profile targets update **1.70 (`v655360`)**, SDK 14.3.0, with the three build IDs in [game.tsv](game.tsv): CyberConnect2's NUCC engine on NVN, Scaleform GFx for every screen of UI, CRI ADX2 sound, CRI Sofdec movies through the SDK's `nn::movie` VP9 decoder. Status: **bring-up**. A new save reaches player control in Training (Free Battle's practice menu) on an AYN Odin 2 with Turnip 27.0.0-R2 and with the system driver; on the system driver the characters draw black (below). The readiness check has no status row yet, so release builds leave the game out.
+The profile targets update **1.70 (`v655360`)**, SDK 14.3.0, with the three build IDs in [game.tsv](game.tsv): CyberConnect2's NUCC engine on NVN, Scaleform GFx for every screen of UI, CRI ADX2 sound, CRI Sofdec movies through the SDK's `nn::movie` VP9 decoder. Status: **bring-up**. On an AYN Odin 2 the app's own Prepare builds the game from the dump on the phone, and a Free Battle fight reaches player control with Turnip 27.0.0-R2 and with the system driver, characters and effects whole on both (below). The readiness check has no status row yet, so release builds leave the game out.
 
 ## What it needs
 
@@ -20,13 +20,14 @@ The profile targets update **1.70 (`v655360`)**, SDK 14.3.0, with the three buil
 
 ## Android on the AYN Odin 2
 
-Odin 2 (Snapdragon 8 Gen 2, Adreno 740, 16 GB, Android 13), update 1.70 from a dump folder on the SD card, the pack made on a PC (`scripts/pack_android.py`). Evidence is screenshots of the same scenes before and after the GL layer, scored over several frames each.
+Odin 2 (Snapdragon 8 Gen 2, Adreno 740, 16 GB, Android 13), update 1.70 from a dump folder on the SD card. The fixes were found with a pack made on a PC (`scripts/pack_android.py`); evidence is screenshots of the same scenes before and after each fix, scored over several frames each. The last run used the pack the app's Prepare made on the phone.
 
 | | Turnip 27.0.0-R2 | System driver (Adreno V@0676.32) |
 |---|---|---|
 | Opening movie, title, menus, Training's arena | right | right (characters black before `DM_VK_DYN_PASS`) |
 | A training fight, player-controlled | 30 fps (SurfaceFlinger, frame interval p95 33.3 ms), PSS 4.3 GB | 30 fps (p95 33.3 ms) |
-| Free Battle (VS Battle, Sage of the Six Paths Naruto, Sasuke, Sakura), player-controlled | right, 30 fps | right, 30 fps; jutsu and chakra effects break into square blocks (open) |
+| Free Battle (VS Battle, Sage of the Six Paths Naruto, Sasuke, Sakura), player-controlled | right, 30 fps | right, 30 fps |
+| Prepare on the phone (the app's own, from the dump), then Free Battle's practice with a Tailed Beast Bomb Rasen Shuriken | 30 fps (frame interval p50 and p95 33.3 ms), PSS 4.21 GiB (GL 623 MiB); effects whole | 30 fps (p50 and p95 33.3 ms), PSS 3.83 GiB (EGL 953 MiB); effects whole |
 | Docked → handheld → docked mid-fight | the UI texture is made again at 1120x630 and 1600x900 and shared each time | not switched |
 | `DM_NVN_SHDUMP` | no program missing | no program missing |
 
@@ -34,8 +35,9 @@ Odin 2 (Snapdragon 8 Gen 2, Adreno 740, 16 GB, Android 13), update 1.70 from a d
 - **Resolved:** the reported missing terrain and sky: with the UI image shared the arena's ground, sky and water show on both drivers, and no shader is missing from the map. They were under the UI's black, not missing.
 - **Resolved (system driver):** the characters' bodies drew black. Qualcomm's driver lost the depth write enable at a pass begin and the cull mode at a pipeline bind; `DM_VK_DYN_PASS` sets the dynamic state again there ([rendering.md](../../../docs/reference/rendering.md#characters-black-on-qualcomms-driver-dynamic-state-lost-at-a-pass-begin-or-a-pipeline-bind)). Checked toggled live over 8-16 frames a scene: title, Training's arena, a training fight.
 - **Resolved (both drivers):** Sage of the Six Paths Naruto's costume was flat black at the character select and invisible in fights: its diffuse is the game's one BGR5A1 (0x97) texture, which had no Vulkan format ([rendering.md](../../../docs/reference/rendering.md#a-materials-body-invisible-or-black-nvn_format_bgr5a1-had-no-vulkan-format)). Checked at the character select on both drivers (6 frames each, before and after) and in a Free Battle on both.
-- **Open (system driver only):** jutsu and chakra effects (bursts, the Truth-Seeking Orb sphere, Susanoo) break into square blocks; Turnip draws them whole in the same fights. Not traced yet.
-- **Seen once:** a crash in Android's own UI rendering (`libhwui.so` `ClipStack`, the game process's RenderThread) at the character select on the system driver; not seen again in three runs.
+- **Resolved (system driver):** jutsu and chakra effects (bursts, the Truth-Seeking Orb sphere, Susanoo) broke into square blocks. The effects pass's first draw writes a depth and no colour, and Qualcomm's driver gives such a draw wrong pixel shader inputs; `DM_VK_DEPTH_ONLY_BLEND` writes its colour targets unchanged through a blend ([rendering.md](../../../docs/reference/rendering.md#effects-in-32x32-cells-on-qualcomms-driver-a-draw-that-writes-no-colour-gets-wrong-pixel-shader-inputs)). Checked on a dump of the half-size depth the effects test against: 0 one-value 16x16 blocks of 1,400 with it, 743 without.
+- **Prepare on the phone:** 56 s from the dump on the SD card (the code 42 s, the shader split 3 s, 570 shaders 3 s, the pack 4 s); 570 of 570 shaders made, every one of the 585 modules valid for `spirv-val`, a 93 MiB pack, the same Vulkan chain and inputs as the PC pack.
+- **Seen once:** a crash in Android's own UI rendering (`libhwui.so` `ClipStack`, the game process's RenderThread) at the character select on the system driver; not seen again in the later runs (no new entry in the phone's crash log).
 
 ## Shaders
 
@@ -45,14 +47,17 @@ Odin 2 (Snapdragon 8 Gen 2, Adreno 740, 16 GB, Android 13), update 1.70 from a d
 
 ## Versions and regions
 
-- The US release is `0100FA10190A0000`. Whether its 1.70 `main` is this build (then it needs a launcher mapping by build ID) or another (then a profile of its own) is not known yet.
+- The US release is `0100FA10190A0000`. Its 1.70 has the same three build IDs as this profile (`main` 48ece454b61412b9fb46fab2be3f5ef7, reported in #637), so it needs a launcher mapping by build ID, not a profile of its own. Not done or run yet.
 
 ## Found on this game
 
 - [An NVN game whose UI draws with OpenGL through EGL (Android)](../../../docs/reference/rendering.md#an-nvn-game-whose-ui-draws-with-opengl-through-egl-android)
+- [Characters black on Qualcomm's driver: dynamic state lost at a pass begin or a pipeline bind](../../../docs/reference/rendering.md#characters-black-on-qualcomms-driver-dynamic-state-lost-at-a-pass-begin-or-a-pipeline-bind)
+- [A material's body invisible or black: NVN_FORMAT_BGR5A1 had no Vulkan format](../../../docs/reference/rendering.md#a-materials-body-invisible-or-black-nvn_format_bgr5a1-had-no-vulkan-format)
+- [Effects in 32x32 cells on Qualcomm's driver: a draw that writes no colour gets wrong pixel shader inputs](../../../docs/reference/rendering.md#effects-in-32x32-cells-on-qualcomms-driver-a-draw-that-writes-no-colour-gets-wrong-pixel-shader-inputs)
 - [Big-stack wrappers of functions with stack-passed arguments](../../../dm/host/hle_bigstack.c): `glTexImage2D` and `glTexSubImage2D` have nine arguments (`t_bigstack`).
 
 ## Open
 
-- The black characters on the system driver (above).
-- A Free Battle and Story mode fight, a pack made by Prepare on the phone, the alias region.
+- Story mode, the US release (above), the alias region.
+- The `libhwui.so` crash seen once (above).
