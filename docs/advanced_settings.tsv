@@ -490,6 +490,7 @@ DM_VK_CS_SHARED_OVER	developer	Diagnostics			text			both
 DM_VK_CS_WARM	developer	Performance			text		1 on Turnip, 0 elsewhere; DM_VK_CS_WARM=1 forces it on	both						
 DM_VK_CS_WARM_MAX	developer	Performance			text			both						
 DM_VK_CS_WARM_STOP_MS	developer	Performance			text			both						
+DM_VK_DEPTH_ONLY_BLEND	developer	Graphics			text		On with Qualcomm's driver, off elsewhere	both						
 DM_VK_DEVICE_FAULT	developer	Graphics			text			both						
 DM_VK_DISPATCH_LOG	developer	Diagnostics			text			both						
 DM_VK_DISPATCH_ORDER	developer	Graphics			text			both						
