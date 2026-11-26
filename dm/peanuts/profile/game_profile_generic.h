@@ -84,6 +84,7 @@
 #define DM_GAME_RENDER_DEFAULT_OUT (g_profile.render_default_out)
 #define DM_GAME_NRENDER_CFG (g_profile.nrender_cfg)
 #define DM_GAME_NRT_POOL (g_profile.nrt_pool)
+#define DM_GAME_IMAGE_RAW32 (g_profile.image_raw32)   // PEANUTS: profile image_raw32 (vka_tex.c id_view)
 
 // Presence macros: upstream's #ifdef/#if-defined call sites are themselves converted (hle_sdk16.c, hle_nvn.c) to read g_profile.has_x at run time under
 // #ifdef DM_RUNTIME_PROFILE; nothing here needs to fake "definedness". Kept as plain reads for anywhere else that just wants the value when present.

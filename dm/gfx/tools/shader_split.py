@@ -506,6 +506,9 @@ def nvn_dumps(d, label='/nvn_shdump'):
     if names: print(f'{label}: {len(out)} of {len(names)} saved shaders taken' + ''.join(f'\n[RED] {label}: {n} with {w}, left out' for w, n in bad.items()), flush=True)
     return out
 
+def sched_word(code):   # PEANUTS: headerless Maxwell code starts with a scheduling word: three 21-bit control fields, so bit 63 is clear, and not all zero (glslc_shaders)
+    return len(code) >= 8 and (w := struct.unpack_from('<Q', code)[0]) != 0 and not w >> 63
+
 def glslc_stage(ctl, code):
     """A GLSLC output's stage, from its code area's header (graphics: the SPH's stage bits), or compute when the code has no header and the control's thread group (+0x748) is filled"""
     if nvn2_ctl(ctl): return nvn2_stage(ctl, code)
@@ -580,10 +583,15 @@ def glslc_shaders(d, label, need=True, skip=(), sink=None):
             if not st or check(label, st, ctl, code): continue
         elif st == 'cs' and not code.startswith(CS_MAGIC):
             # PEANUTS(upstream-candidate): Trails has a longer control section in the header; the shorter offset lands in constant data.
+            # FIFA 18 (SDK 3.4's GLSLC, sh_irradiance_prefilter.cs, the compute shader that bakes the spherical-harmonic lighting) too: 0x2408 by the section header, 0x2288 at
+            # +0x20, and the bytes after +0x20's length are float constants (±1.0) that pass as headerless compute code. Its real code is headerless as well (it starts with a
+            # scheduling word, not CS_MAGIC), so a header control section that is longer than the rule's and starts with it also wins when the header's code starts with a
+            # scheduling word (sched_word): the rule's code area then begins inside the control section. The game binds the header's code (key ad6448a83337e2ef; missing from
+            # the map, every player and the crowd drew black). FIFA 18: 1 of 189 outputs
             sec = glslc_section(d, h, size)
             if sec and len(sec) == 1:
                 sc, sk = sec[0]
-                if sk.startswith(CS_MAGIC) and sc.startswith(ctl) and not check(label, st, sc, sk): ctl, code = sc, sk
+                if (sk.startswith(CS_MAGIC) or len(sc) > len(ctl) and sched_word(sk)) and sc.startswith(ctl) and not check(label, st, sc, sk): ctl, code = sc, sk
         out.append((f'{label}#GLSLC@{h:#x}', st, ctl, code))
     if not out and need: red(f'{label}: no GLSLC output')
     return out
@@ -3557,6 +3565,45 @@ def iga_shaders(path, rel, found):
             d = iga_member(f, sector, off, length, blocks)
             if b'\x91\x68\x86\x19' in d: found += glslc_shaders(d, f'/{rel}/{name}', need=False)
 
+# PEANUTS begin: EA BIG4 archives (eabig.py): FIFA 18's shaders are NXSHADER effects (.fxo, an 'NXSHADER' header and a whole GLSLC output) in a BIG4 archive that is
+# chunk-compressed and EASF-encrypted inside datax.big. Only members named .big or .fxo are read: the other 99% of the 13 GB (models, textures, sound) hold no shaders, and the
+# archive's table names them, so the scan reads the table and those members only. An EASF member's key comes from main's code (eabig.key_for); main's paths reach the pool's
+# workers through DM_SPLIT_MAINS, which main() sets. An EASF member with a key name main has no key for is left out without a red line: the game keys those from its database
+EA_MEMBERS = ('.big', '.fxo')
+_EA_IMG = []
+
+def ea_main_image():
+    if not _EA_IMG:
+        for p in filter(None, os.environ.get('DM_SPLIT_MAINS', '').split('\n')):
+            _EA_IMG.append(nso_image(p)); break
+        if not _EA_IMG: red('an EASF file needs main for its key, and DM_SPLIT_MAINS names none')
+    return _EA_IMG[0]
+
+def ea_blob(d, label, found, depth=0):
+    import eabig
+    if depth > NEST: red(f'{label}: archives nested more than {NEST} deep')
+    if d[:4] == eabig.EASF:
+        if (k := eabig.key_for(ea_main_image, d)) is None: return
+        d = eabig.easf_decrypt(k, d)
+    if d[:8] in eabig.CHUNK:
+        if d[:8] not in (b'chunkzip', b'chunzstd'): return   # EA's other codecs: no shader container has been seen in one
+        d = eabig.unchunk(d, label)
+    if d[:4] == eabig.BIG4:
+        for nm, off, n in eabig.big4_entries(d[:eabig.big4_header_len(d[:16])], len(d)):
+            if nm.lower().endswith(EA_MEMBERS): ea_blob(d[off:off + n], f'{label}/{nm}', found, depth + 1)
+        return
+    if d[:8] == b'NXSHADER': found += glslc_shaders(d, label, need=False)
+
+def ea_big_shaders(path, rel, found):
+    """The shaders of a BIG4 archive in the RomFS: its table, then each member named .big or .fxo (ea_blob)"""
+    import eabig
+    with open(path, 'rb') as f:
+        hl = eabig.big4_header_len(f.read(16)); f.seek(0)
+        for nm, off, n in eabig.big4_entries(f.read(hl), os.path.getsize(path)):
+            if nm.lower().endswith(EA_MEMBERS):
+                f.seek(off); ea_blob(f.read(n), f'/{rel}/{nm}', found, 1)
+# PEANUTS end
+
 UE_TAG ={'SV': 'vs', 'SH': 'hs', 'SD': 'ds', 'SG': 'gs', 'SP': 'ps', 'SC': 'cs'}
 def main_imports(img):   # the names main imports (its dynamic symbols)
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../tools')); import nso_syms
@@ -3852,6 +3899,9 @@ def scan_file_in(args):
                 # Compiled effects and loose GPU programs; texture and sound members carry no shader programs.
                 if '.fx' in entry[0] or '/shaders/' in entry[0] or entry[0].endswith(('.vs.bin', '.ps.bin', '.fs.bin')):
                     found += phyre_shaders(vbf.read(f, entry), f'/{rel}/{entry[0]}')
+        return rel, uniq_keys(found), var_pairs(found), trees
+    if head[:4] == b'BIG4':   # PEANUTS: an EA BIG4 archive (ea_big_shaders): its table and the members that can hold shaders, not the whole file
+        ea_big_shaders(path, rel, found)
         return rel, uniq_keys(found), var_pairs(found), trees
     # PEANUTS(upstream-candidate) begin: REDengine 3 caches (nxnative a4c82979)
     if head[:4] == FZLC:   # REDengine 3's static shader cache (fzlc_shaders)
@@ -4290,6 +4340,7 @@ def main():
     romfs_v, main_v = [nup.default_romfs(r) for r in path_list(romfs_l)], path_list(main_l)   # PEANUTS: path_list (was split(',')): a path may hold a comma
     dlc_v = [nup.default_romfs(r) for r in dlc_v]
     if len(romfs_v) != len(main_v): red(f'{len(romfs_v)} RomFS and {len(main_v)} main: they must pair one to one')
+    os.environ['DM_SPLIT_MAINS'] = '\n'.join(main_v[::-1])   # PEANUTS: the newest main first, for the readers that need main in the pool's workers (ea_main_image)
     files, results, common, dumps, nros = [], [], None, [], []
     for i, (romfs, mainnso) in enumerate(zip(romfs_v, main_v)):
         tag = os.path.basename(os.path.dirname(os.path.abspath(romfs))) if i else ''

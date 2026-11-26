@@ -1,0 +1,50 @@
+# Game profile of FIFA 18 (Switch, base game v0)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# EA's FIFA engine for the Switch (EA basekit: AssetStream, RNA renderer "fifarna", Apt UI, EAThread), SDK 3.4.0, NVN. Modules main + subsdk0 (NVN's GLSLC, which main imports
+# but never calls: nn::gfx::detail::GlslcDll is linked and unused) + sdk. The RomFS ships fifazf.nss, main's unstripped ELF (symbols and DWARF), useful for every crash report.
+# RomFS: EA BIG4 archives (data0..7, datax, per-language .big, with .bh hash tables beside them); members chunk-compressed (chunkzip / chunzstd), datax.big's also EASF-encrypted.
+# The shaders are 189 NXSHADER effects (.fxo: one whole GLSLC output each, a vertex + pixel program or a compute one) in data/fifarna/shader.big and shaderboot.big inside
+# datax.big (shader_split.py ea_big_shaders, eabig.py: the EASF key comes from main's code).
+# Status: profile from the survey (dm/games/profile_guess.py) with mem_used from the Android rewrite (a guess, see Memory); the run-time keys are not measured yet
+# ---- Identity ----
+title_id	0100F7B002340000
+program_id	0100F7B002340000
+
+# ---- App ----
+name	FIFA 18
+ipa	FIFA18.ipa
+app_category	public.app-category.sports-games
+# full: the right stick does skill moves
+pad_layout	full
+
+# ---- Versions ----
+build	v0	1.0.0	main=36cffaaac1363c53a9aafb9488b502cd	subsdk0=83af90f1f9f3551423636eff2f123f00	sdk=a26029f675095f3910c45a9fef585bbc
+package	v0
+shader_versions	v0
+
+# ---- Files ----
+# load order as on Horizon: main, subsdk*, sdk (subsdk0 = GLSLC)
+modules	main subsdk0 sdk
+romfs_marker	datax.big
+zip_store	.big:.cbac:.nso:.nss:.vp6:.metallib
+
+# ---- Memory ----
+# The NPDM declares no system resource (META +0x14 = 0): the 4 GB block of the other games without virtual address memory
+# (256 MB in front + 256 MB alias region + 256 MB stack region + 3.25 GB heap region)
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x0
+# the rewritten modules (111.5 MB on Android: main 86.2, subsdk0 14.4, sdk 10.9) are larger than the default 64 MB of used memory (profile_guess.py mem_used).
+# Not measured: the survey's guess from the rewrite's size, not the game's peak (open in the note)
+mem_used	0x7000000
+
+# ---- Shader split (shader_split.py; the NXSHADER effects in datax.big) ----
+shader_groups	/datax.big/=fifarna
+shader_note	FIFA 18 shaders
+
+# ---- Vulkan replay (Android) ----
+# integer-class shader images over RGBA8 read as raw R32 (vka_raw32.h): the GPU texture compressors load kits and faces with SULD.D .B32 (red kits and faces without it)
+image_raw32	on

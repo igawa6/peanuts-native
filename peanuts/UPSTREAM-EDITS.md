@@ -177,7 +177,7 @@ next sync (found in review: upstream added 6 macros in the 73 commits since the 
 | `dm/host/loader.c` `dm_pf_rcfg_rows()` (new) | `RENDER_CFG` | builds `rcfg_row_t` rows (pointers into `g_profile.render_cfg[].build`) once, `pthread_once`; used by `render_cfg_row()`, `rt_pool_apply()` and hle_render.c |
 | `dm/host/loader.c` `render_cfg_row()`, `rt_pool_apply()` | `RENDER_CFG`/`NRENDER_CFG` | read `dm_pf_rcfg_rows()` instead of a `static const` array |
 | `dm/host/loader.c` `dm_pf_rtpool_rows()` (new), `rt_pool_apply()` | `RT_POOL`/`NRT_POOL` | builds `rtpool_row_t` rows over `g_profile.rt_pool[]` once, `pthread_once` |
-| (no site edit) | `EVENT_WAIT`, `OCCLUSION_SPLIT_PASS`, `LOW_RAM_PLACE_PART_MB`, `LOW_RAM_IMG_CACHE_MAX_MB`, `LOW_RAM_APP_POOL_MB` | scalars read at run time (vka_worker.c, vka_exec.c, vka_tex.c, hle_svc.c); `game_profile_generic.h` maps each to its `g_profile` field |
+| (no site edit) | `EVENT_WAIT`, `OCCLUSION_SPLIT_PASS`, `LOW_RAM_PLACE_PART_MB`, `LOW_RAM_IMG_CACHE_MAX_MB`, `LOW_RAM_APP_POOL_MB`, `IMAGE_RAW32` (Peanuts' own key) | scalars read at run time (vka_worker.c, vka_exec.c, vka_tex.c, hle_svc.c); `game_profile_generic.h` maps each to its `g_profile` field |
 | `dm/gfx/vk_android/vka_pso.c` | seed (`vk_prewarm_seed.h`) | not edited: `dm/peanuts/profile/vk_prewarm_seed_generic.h` defines the same `dm_vk_prewarm_seed`/`_len` symbols, set by `profile_rt_load_seed()` |
 | `dm/gfx/vk_android/vka_replay.c` `nxhost_replay()` top | - | calls `profile_rt_load()`/`profile_rt_load_seed()` too (nxreplay needs a profile for its `DM_GAME_ID` capture check) |
 

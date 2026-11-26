@@ -410,6 +410,7 @@ DM_SPLIT_DIFF_DIR	developer	Diagnostics			text			both
 DM_SPLIT_DIRECT	developer	Packing			text			both						
 DM_SPLIT_FILES	developer	Diagnostics			text			both						
 DM_SPLIT_LARGE	developer	Diagnostics			text			both						
+DM_SPLIT_MAINS	internal	Packing			text			both						set by shader_split.py itself, not a setting [PEANUTS]
 DM_SPLIT_RESUME	internal	Diagnostics			text			both						Mac or iOS only
 DM_SPLIT_SELECTED	developer	Packing			text			both						
 DM_SPLIT_SPILL	developer	Diagnostics			text			both						
@@ -698,6 +699,7 @@ DM_VK_RANGE_WATCH	developer	Diagnostics			text			both
 DM_VK_RANGE_WATCH_FRAMES	developer	Diagnostics			text			both						
 DM_VK_RANGE_WATCH_FROM	developer	Diagnostics			text			both						
 DM_VK_RANGE_WATCH_LINES	developer	Diagnostics			text			both						
+DM_VK_RAW32	developer	Graphics			text			both			image_raw32			
 DM_VK_RC_LOG	developer	Diagnostics			text			both						
 DM_VK_RC_LOG_FROM	developer	Diagnostics			text			both						
 DM_VK_RC_QUERY_MEM	developer	Diagnostics			text			both						
