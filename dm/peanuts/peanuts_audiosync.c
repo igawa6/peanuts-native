@@ -63,6 +63,7 @@ typedef struct {
 } as_t;
 static as_t *g_st[AS_R];
 
+__attribute__((weak)) int pn_as_profile_follow(void);   // peanuts.c: the profile's audio_follow (absent in the unit test: 1)
 static uint64_t mono_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (uint64_t)t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec; }
 
 void pn_as_frame(uint64_t now_ns, int fps) {
@@ -91,12 +92,12 @@ static void cfg(void) {
     pthread_mutex_lock(&g_cfg_mu);   // a second first caller waits here, not reading the taps while the first one writes them
     if (atomic_load_explicit(&g_on, memory_order_relaxed) >= 0) { pthread_mutex_unlock(&g_cfg_mu); return; }
     const char *e = getenv("PN_AUDIO_FOLLOW");
-    int on = e ? atoi(e) : 1;
+    int on = e ? atoi(e) : pn_as_profile_follow ? pn_as_profile_follow() : 1;   // the switch, else the profile's audio_follow (a game whose clock runs on elapsed time: 0)
     if (on < 0 || on > 2) on = 1;
     if (on) taps_init();
     const char *t = getenv("DM_TEMP");
     if (t && *t) { snprintf(g_mark, sizeof g_mark, "%s/audio_follow", t); FILE *f = on == 1 ? fopen(g_mark, "r") : NULL; if (f) { fclose(f); atomic_store(&g_coupled, 1); } }
-    AS_LOG("peanuts: the sound follows the game's pace: %s", on == 0 ? "off (PN_AUDIO_FOLLOW=0)" : on == 2 ? "always (PN_AUDIO_FOLLOW=2)"
+    AS_LOG("peanuts: the sound follows the game's pace: %s", on == 0 ? (e ? "off (PN_AUDIO_FOLLOW=0)" : "off (game profile audio_follow 0)") : on == 2 ? (e ? "always (PN_AUDIO_FOLLOW=2)" : "always (game profile audio_follow 2)")
            : atomic_load(&g_coupled) ? "yes, this game keeps its sound in step with its frames (found on an earlier start: <DM_TEMP>/audio_follow)"
            : "within 1 % until the game shows that it keeps its sound in step with its frames (PN_AUDIO_FOLLOW=1; 0 off, 2 always)");
     atomic_store_explicit(&g_on, on, memory_order_release);

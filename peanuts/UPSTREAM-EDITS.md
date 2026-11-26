@@ -2796,3 +2796,16 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### The sound's pace under the host's frame limit, and the profile key `audio_follow` (2026-11-27)
+
+The audio follow (`peanuts_audiosync.c`) counts each presented frame as 1 / `nvn_game_fps()` of game time. A game on present interval 1 that the host's frame limiter holds below 60 (`fps_limit` or the launcher's cap, with an `fpslocker` row that tells the game the rate) still reports 60. At a 30 fps cap the measured pace was then 0.500 of real time, and at 40 it was 0.667. The automatic mode took Ys X: Nordics for a game that keeps its sound in step with its frames, and played its sound at half speed at 30 fps. `peanuts.c` now counts a frame at the frame limit when the limit is below the game's rate (`as_game_fps`). A new profile key `audio_follow` (`0` off, `1` automatic, the default, `2` always) gives the default of `PN_AUDIO_FOLLOW`, for a game whose clock runs on elapsed time; the switch still wins.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/peanuts/peanuts.c`, `peanuts_audiosync.c`, `peanuts_audiosync.h` | 2, 3, 1 | the frame's rate at the frame limit; `pn_as_profile_follow` and its use as the default of `PN_AUDIO_FOLLOW` | fork files |
+| `dm/games/game.py` | 2 | the key `audio_follow`, checked (`0`, `1` or `2`), and its `DM_GAME_AUDIO_FOLLOW` line | `PEANUTS` |
+| `dm/peanuts/profile/gen_runtime_profile.py`, `profile_rt.h`, `game_profile_generic.h`, `test/dump_const.c`, `test/dump_runtime.c` | 3, 1, 1, 1, 1 | the key in the runtime profile (a `u64` after `tex_pool_range`) | `PEANUTS` |
+| `dm/games/README.md` | 1 | the key's row | `PEANUTS` in the row |
+| `dm/tools/docs_patches.py` | 1 | the key's binding | `PEANUTS` |
+| `dm/tools/tests/test_game_profile.py` | 1 | `AudioFollow`: the default, the values taken and the values refused | `PEANUTS` |

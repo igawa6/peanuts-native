@@ -748,6 +748,68 @@ static uint64_t g_pq_in, g_pq_read, g_pq_done, g_pq_fill;   // tickets: reserved
 static vkpanel g_panel; static vkgrid g_grid;
 static _Atomic uint64_t g_panel_ns, g_panel_seed;
 static _Atomic uint32_t g_grid_timed, g_grid_late, g_grid_presents;
+// PEANUTS begin: even frame pacing (found on Ys X: Nordics, 60 fps on a 120 Hz panel; dm/games/0100BAC01E57E000/README.md). The copy into the swapchain image runs on the one queue behind the work the replay queued meanwhile,
+// so on a heavy GPU frame it can end after the compositor's latch for its grid point: that frame is shown a refresh late while the next keeps its own grid point
+// and is shown for a single refresh (8.3 ms), a jump of the picture.
+//  - copy watcher (DM_VK_PRESENT_TRACE=2, diagnostics): a thread polls each present's copy fence and logs when it signalled ("present trace copy")
+//  - DM_VK_PRESENT_NOCATCHUP=1 (live, default 0): before the next frame's target is chosen, the previous timed frame's copy fence is waited for; a copy done
+//    later than its grid point minus DM_VK_PRESENT_LATCH_US (live, default 1000; the latch was measured at the grid point itself, +-1 ms, on a Retroid Pocket Nova) is predicted to be
+//    shown at the first later grid point it made, and the chain of targets goes on from there (vka_panel.h): the late frame is held a refresh longer, the next
+//    frame keeps its full hold instead of a single refresh
+static pthread_mutex_t g_cw_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_cw_cv = PTHREAD_COND_INITIALIZER;
+static struct { uint32_t id; unsigned k; } g_cw[16]; static unsigned g_cw_in, g_cw_out; static int g_cw_up;
+static struct { uint64_t grid; unsigned k; uint32_t id; int valid; } g_nc;   // the last timed game frame (present thread)
+static _Atomic uint32_t g_nc_rechained; static int g_nc_on, g_nc_even;
+static _Atomic uint64_t g_cw_done[64]; static _Atomic uint32_t g_cw_done_id[64];   // the watcher's copy done times by present id (ring)
+static void *cw_main(void *arg) {
+    (void)arg; pthread_setname_np(pthread_self(), "vk-copywatch");
+    pthread_mutex_lock(&g_cw_mu);
+    for (;;) {
+        while (g_cw_out == g_cw_in) pthread_cond_wait(&g_cw_cv, &g_cw_mu);
+        uint32_t id = g_cw[g_cw_out % 16].id; unsigned k = g_cw[g_cw_out % 16].k;
+        VkResult s = vk.vkGetFenceStatus(V.dev, g_fr[k].fence);   // under g_cw_mu: the present thread resets a fence only under it
+        if (s == VK_NOT_READY) { pthread_mutex_unlock(&g_cw_mu); struct timespec ts = {0, 200000}; nanosleep(&ts, NULL); pthread_mutex_lock(&g_cw_mu); continue; }
+        uint64_t t = now_ns(); g_cw_out++;
+        pthread_mutex_unlock(&g_cw_mu);
+        atomic_store_explicit(&g_cw_done[id & 63], t, memory_order_relaxed); atomic_store_explicit(&g_cw_done_id[id & 63], id, memory_order_release);
+        if (VKA_ENV("DM_VK_PRESENT_TRACE", 0) >= 2) VLOG("present trace copy id=%u done=%llu status=%d", id, (unsigned long long)t, s);
+        pthread_mutex_lock(&g_cw_mu);
+    }
+    return NULL;
+}
+static void cw_push(uint32_t id, unsigned k) {
+    pthread_mutex_lock(&g_cw_mu);
+    if (!g_cw_up) { pthread_t th; g_cw_up = pthread_create(&th, NULL, cw_main, NULL) ? -1 : 1; if (g_cw_up > 0) pthread_detach(th); }
+    if (g_cw_up > 0 && g_cw_in - g_cw_out < 16) { g_cw[g_cw_in % 16].id = id; g_cw[g_cw_in % 16].k = k; g_cw_in++; pthread_cond_signal(&g_cw_cv); }
+    pthread_mutex_unlock(&g_cw_mu);
+}
+// The grid point the previous timed frame is predicted to be shown at (present thread, without the queue lock): its own when its copy was done by that point minus
+// the latch margin, else the first later one it made. A fence found signalled only after that time may have signalled before it: the watcher's time (it polls
+// every 0.2 ms) tells; without it the frame counts as late (a 25 ms frame costs less than an 8.3 ms one). At most three refreshes are waited for
+static uint64_t cw_done(uint32_t id) {
+    for (int i = 0; i < 20; i++) {
+        if (atomic_load_explicit(&g_cw_done_id[id & 63], memory_order_acquire) == id) return atomic_load_explicit(&g_cw_done[id & 63], memory_order_relaxed);
+        struct timespec ts = {0, 50000}; nanosleep(&ts, NULL);
+    }
+    return 0;
+}
+static uint64_t nc_predict(uint64_t r) {
+    uint64_t x = (uint64_t)(VKA_ENVF("DM_VK_PRESENT_LATCH_US", 1000.0) * 1000.0), g = g_nc.grid, t, now = now_ns();
+    VkFence f = g_fr[g_nc.k].fence;
+    VkResult s = vk.vkGetFenceStatus(V.dev, f);
+    if (s == VK_SUCCESS) {
+        if (now + x <= g) return g;
+        t = cw_done(g_nc.id); if (!t) t = now;
+    } else if (s == VK_NOT_READY) {
+        uint64_t lim = g + 3 * r > x ? g + 3 * r - x : 0;
+        s = vk.vkWaitForFences(V.dev, 1, &f, VK_TRUE, lim > now ? lim - now : 0);
+        if (s == VK_TIMEOUT) return g + 3 * r;
+        if (s != VK_SUCCESS) return g;
+        t = now_ns();
+    } else return g;
+    return t + x <= g ? g : g + (t + x - g + r - 1) / r * r;
+}
+// PEANUTS end
 static void pres_note(uint64_t n, double t) { if (!n) return; g_pres[n % PRING].n = n; g_pres[n % PRING].t = t; }
 static void timing_poll(void) {
     if (!V.display_timing || !g_swap || !vk.vkGetPastPresentationTimingGOOGLE) return;
@@ -858,6 +920,9 @@ static int present_one(const pq_item *it) {
     if (r == VK_ERROR_OUT_OF_DATE_KHR) { g_recreate = 1; vka_tex_drop(im); return 0; }
     if (r == VK_SUBOPTIMAL_KHR) suboptimal();   // presented this once; the next present recreates when the size or the rotation changed
     if (r && r != VK_SUBOPTIMAL_KHR) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("vkAcquireNextImageKHR %d", r); vka_tex_drop(im); return 0; }
+    // PEANUTS: copy watcher: entries still pending for this fence are done (just waited for above) and dropped; the reset is under the watcher's lock
+    if (g_cw_up > 0) { pthread_mutex_lock(&g_cw_mu); while (g_cw_out != g_cw_in && g_cw[g_cw_out % 16].k == k) g_cw_out++; vk.vkResetFences(V.dev, 1, &g_fr[k].fence); pthread_mutex_unlock(&g_cw_mu); }
+    else
     vk.vkResetFences(V.dev, 1, &g_fr[k].fence);
     VkCommandBuffer cb = g_fr[k].cb; vk.vkResetCommandBuffer(cb, 0);
     VkCommandBufferBeginInfo bi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
@@ -961,6 +1026,7 @@ static int present_one(const pq_item *it) {
     if (it->fence && !vka_hung() && pw && it->fence <= __atomic_load_n(&V.tl_queued, __ATOMIC_ACQUIRE)) {
         VkResult vka_tl_wait(VkSemaphore s, uint64_t v, uint64_t timeout_ns); vka_tl_wait(V.tl, it->fence, vka_hang_ns());   // a timeout: the submission below waits as before, and the hang handling sees it
     }
+    uint64_t pw_done = now_ns();   // PEANUTS: trace (the frame's GPU work is done here when the prewait ran)
     // No gate pending when the copy goes to the queue (vka_dev.c vka_gate_drain): on Turnip the driver would hold the copy back behind the gated work while Android
     // already shows the image. DM_VK_PRESENT_GATE_WAIT=<ms> (live; 30 on Turnip, 0 = off elsewhere): the longest wait, after which the present goes on as before
     uint64_t gw_ns = (uint64_t)(VKA_ENVF("DM_VK_PRESENT_GATE_WAIT", V.driver_id == VK_DRIVER_ID_MESA_TURNIP ? 30.0 : 0.0) * 1e6), gw_t0 = now_ns(); int gw_had = 0, gw_left = 0;
@@ -1008,9 +1074,26 @@ static int present_one(const pq_item *it) {
             if (lim > 0 && per < 1000000000ull / (uint64_t)lim) per = 1000000000ull / (uint64_t)lim;
             // PEANUTS(upstream-candidate): honor the compositor queue deadline, not merely a future desired-present timestamp.
             uint64_t lead = VKA_ENV("DM_VK_PRESENT_DEADLINE", 1) ? atomic_load_explicit(&g_presentation_deadline, memory_order_relaxed) : 0;
+            // PEANUTS: DM_VK_PRESENT_NOCATCHUP (above nc_predict): the chain goes on from where the previous frame is predicted to be shown. The wait runs without
+            // the queue lock (this frame's copy is already queued), so the replay's submissions go on meanwhile
+            // PEANUTS: DM_VK_PACE_EVEN=1 (a profile option) turns it on while the frame limit is 40 fps or more (at 30 it only added latency: 75 -> 87 ms on Ys X: Nordics)
+            g_nc_even = VKA_ENV("DM_VK_PACE_EVEN", 0) && lim >= 40;
+            int nocatch = VKA_ENV("DM_VK_PRESENT_NOCATCHUP", -1); if (nocatch < 0) nocatch = g_nc_even; g_nc_on = nocatch;
+            if (nocatch) { static int told; if (!told++) VLOG("present: DM_VK_PRESENT_NOCATCHUP=1: a frame whose copy misses its grid point's latch (DM_VK_PRESENT_LATCH_US=%.0f) moves the chain of present times a refresh on", VKA_ENVF("DM_VK_PRESENT_LATCH_US", 1000.0)); }
+            if (nocatch && g_nc.valid && g_grid.last == g_nc.grid) {
+                pthread_mutex_unlock(&V.qmu);
+                uint64_t pred = nc_predict(g_panel.period);
+                pthread_mutex_lock(&V.qmu);
+                if (pred > g_grid.last) {
+                    atomic_fetch_add_explicit(&g_nc_rechained, 1, memory_order_relaxed);
+                    if (VKA_ENV("DM_VK_PRESENT_TRACE", 0)) VLOG("present trace rechain id=%u grid=%llu predicted=%llu", g_nc.id, (unsigned long long)g_grid.last, (unsigned long long)pred);
+                    g_grid.last = pred;
+                }
+            }
             grid = vkgrid_next_deadline(&g_grid, g_panel.last, g_panel.period, per, now_ns(), lead, &late);
+            g_nc.valid = nocatch && grid; g_nc.grid = grid; g_nc.k = k; g_nc.id = (uint32_t)it->ticket;   // PEANUTS: DM_VK_PRESENT_NOCATCHUP
             if (grid) { want = grid - g_panel.period / 2; g_last_desired = 0; atomic_fetch_add_explicit(&g_grid_timed, 1, memory_order_relaxed); if (late) atomic_fetch_add_explicit(&g_grid_late, 1, memory_order_relaxed); }
-        } else g_grid.last = 0;
+        } else { g_grid.last = 0; g_nc.valid = 0; }
         if (it->ticket) atomic_fetch_add_explicit(&g_grid_presents, 1, memory_order_relaxed);
         if (grid) { }   // PEANUTS: timed above
         else
@@ -1019,15 +1102,26 @@ static int present_one(const pq_item *it) {
             if (want < now) want = now;
             g_last_desired = want; want -= g_refresh_ns / 2;
         } else g_last_desired = 0;
+        // PEANUTS: DM_VK_PRESENT_AHEAD_MS=<ms> (live, default 0 = off): a timed frame is handed to the compositor no sooner than that long before its grid point
+        // (never less than the compositor's lead + 2 ms), so the compositor's queue stays shallow and the wait moves back to the game (latency with DM_VK_PRESENT_NOCATCHUP,
+        // which never catches up and so would sit at the deepest queue the swapchain allows). The wait runs without the queue lock
+        if (grid) { double ah = VKA_ENVF("DM_VK_PRESENT_AHEAD_MS", -1.0); if (ah < 0) ah = g_nc_even ? 33.0 : 0.0;   // (DM_VK_PACE_EVEN: 33 ms)
+            if (ah > 0) { static int told; uint64_t lead = atomic_load_explicit(&g_presentation_deadline, memory_order_relaxed), a = (uint64_t)(ah * 1e6);
+                if (a < lead + 2000000ull) a = lead + 2000000ull;
+                if (!told++) VLOG("present: DM_VK_PRESENT_AHEAD_MS=%.1f: timed frames are handed over at most %.1f ms before their grid point", ah, a / 1e6);
+                if (grid > a && grid - a > now_ns() + 200000ull) { pthread_mutex_unlock(&V.qmu);
+                    for (uint64_t n2; (n2 = now_ns()) + 50000ull < grid - a;) { uint64_t w = grid - a - n2; struct timespec ts = {(time_t)(w / 1000000000ull), (long)(w % 1000000000ull)}; nanosleep(&ts, NULL); }
+                    pthread_mutex_lock(&V.qmu); } } }
         VkPresentTimeGOOGLE pt = {(uint32_t)it->ticket, want};
         VkPresentTimesInfoGOOGLE ptv = {VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE, .swapchainCount = 1, .pTimes = &pt};
         VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, .pNext = V.display_timing ? &ptv : NULL, .waitSemaphoreCount = 1, .pWaitSemaphores = &g_sdone[idx], .swapchainCount = 1, .pSwapchains = &g_swap, .pImageIndices = &idx};
         // PEANUTS: trace the original target as well as the API timestamp; a midpoint request and a missed GPU deadline are different failures.
         int trace = VKA_ENV("DM_VK_PRESENT_TRACE", 0);
-        if (trace) VLOG("present trace queue id=%u at=%llu want=%llu grid=%llu panel=%llu period=%llu submit=%llu lead=%llu",
+        if (trace) VLOG("present trace queue id=%u at=%llu want=%llu grid=%llu panel=%llu period=%llu submit=%llu lead=%llu pwdone=%llu subat=%llu",
                         pt.presentID, (unsigned long long)now_ns(), (unsigned long long)want, (unsigned long long)grid,
                         (unsigned long long)g_panel.period, (unsigned long long)period, (unsigned long long)(th1 - th0),
-                        (unsigned long long)atomic_load_explicit(&g_presentation_deadline, memory_order_relaxed));
+                        (unsigned long long)atomic_load_explicit(&g_presentation_deadline, memory_order_relaxed), (unsigned long long)pw_done, (unsigned long long)th1);
+        if ((trace >= 2 || (grid && g_nc_on)) && pt.presentID) cw_push(pt.presentID, k);   // PEANUTS: copy watcher (trace; the no-catch-up prediction)
         pr = vk.vkQueuePresentKHR(V.q, &pi);
         if (trace) VLOG("present trace return id=%u at=%llu result=%d", pt.presentID, (unsigned long long)now_ns(), pr);
     }
@@ -1159,10 +1253,10 @@ void vka_panel_line(unsigned long long frame, const double *iv_ms, unsigned n, u
     if (rs == 1) snprintf(comp, sizeof comp, "loaded, its page asked for %u times", &peanuts_frame_polls ? peanuts_frame_polls() : 0);
     else snprintf(comp, sizeof comp, "%s", rs < 0 ? "not in this build" : rs == 0 ? "pending" : rs == 2 ? "none" : "refused");
     VLOG("panel up to frame %llu: refresh %.3f ms (%.2f Hz, %s); acquire pacer %.3f ms a frame (%s); on-screen for 1 / 2 / 3 / 4+ refreshes: %u / %u / %u / %u frames, no timing %u, discarded %u; "
-         "desired present times on the grid: %u of %u presents, %u started over late%s; companion %s",
+         "desired present times on the grid: %u of %u presents, %u started over late, %u re-chained%s; companion %s",
          frame, ref, 1000.0 / ref, p ? "measured" : seed ? "the driver's figure, not measured yet" : "not known, 60 Hz assumed", tick_ns / 1e6, src, h[1], h[2], h[3], h[4], none, gone,
          atomic_exchange_explicit(&g_grid_timed, 0, memory_order_relaxed), atomic_exchange_explicit(&g_grid_presents, 0, memory_order_relaxed), atomic_exchange_explicit(&g_grid_late, 0, memory_order_relaxed),
-         VKA_ENV("DM_VK_PRESENT_GRID", 1) ? "" : " (DM_VK_PRESENT_GRID=0)", comp);
+         atomic_exchange_explicit(&g_nc_rechained, 0, memory_order_relaxed), VKA_ENV("DM_VK_PRESENT_GRID", 1) ? "" : " (DM_VK_PRESENT_GRID=0)", comp);
 }
 // PEANUTS end
 int mtl_snap_on(void) { return 0; }

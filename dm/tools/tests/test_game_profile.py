@@ -270,5 +270,66 @@ class FpsModes(unittest.TestCase):
         self.assertIn('requires fps_modes including 120', out)
 
 
+class OptionGroups(unittest.TestCase):   # PEANUTS: option_group rows and group=<name> (one radio choice); a shared code word only inside one group
+    B = 'c55f6b8aefa54324c8e3debe0912c57c'
+    BASE = 'build\tv1\t1.0\tmain=' + B + '\n' + 'option_group\tdraw\tDraw distance\tHow far detail reaches.\n'
+
+    def rows(self, a='restart group=draw', b='restart group=draw', words=('0x100\t11111111\t22222222', '0x100\t11111111\t33333333')):
+        return (self.BASE + f'option\tDM_A\tHigh\tFar.\t{a}\n' + f'option\tDM_B\tUltra\tFarther.\t{b}\n'
+                + f'option_patch\tDM_A\t{self.B}\t{words[0]}\n' + f'option_patch\tDM_B\t{self.B}\t{words[1]}\n')
+
+    def test_group_shares_word(self):
+        self.assertEqual(header(self.rows()), (0, ''))
+
+    def test_shared_word_outside_group(self):
+        rc, out = header(self.rows(b='restart') + 'option\tDM_C\tX\tY.\trestart group=draw\n')
+        self.assertNotEqual(rc, 0)
+        self.assertIn('repeats a main code word', out)
+
+    def test_shared_word_other_expected(self):
+        rc, out = header(self.rows(words=('0x100\t11111111\t22222222', '0x100\t44444444\t33333333')))
+        self.assertNotEqual(rc, 0)
+        self.assertIn('repeats a main code word', out)
+
+    def test_same_option_twice(self):
+        rc, out = header(self.rows() + f'option_patch\tDM_A\t{self.B}\t0x100\t11111111\t55555555\n')
+        self.assertNotEqual(rc, 0)
+        self.assertIn('repeats a main code word', out)
+
+    def test_group_rules(self):
+        for rows, msg in ((self.rows(a='restart group=other'), 'without an option_group row'),
+                          (self.rows(a='live group=draw'), 'must be a restart option'),
+                          (self.rows(a='restart group=draw implies=DM_X'), 'must be a restart option'),
+                          (self.rows(b='restart'), 'needs at least two options'),
+                          (self.rows() + 'option_group\tdraw\tAgain\tAgain.\n', 'option_group takes'),
+                          (self.rows() + 'option\tDM_C\tC\tC.\trestart implies=DM_A\n', 'a member of group'),
+                          (self.rows(a='restart group=Draw'), 'option group takes')):
+            with self.subTest(msg=msg):
+                rc, out = header(rows)
+                self.assertNotEqual(rc, 0)
+                self.assertIn(msg, out)
+
+
+class AudioFollow(unittest.TestCase):   # PEANUTS: audio_follow (peanuts_audiosync.c via peanuts.c pn_as_profile_follow): 1 by default, 0 / 2 taken, others refused
+    def header_text(self, rows):
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, ID).mkdir()
+            (Path(d, ID) / 'game.tsv').write_text(TSV + rows)
+            r = subprocess.run([sys.executable, str(GAME), 'header', ID, str(Path(d, ID) / 'game.h')], env={**os.environ, 'DM_GAMES_DIR': d}, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            return (Path(d, ID) / 'game.h').read_text()
+
+    def test_values(self):
+        self.assertIn('#define DM_GAME_AUDIO_FOLLOW 1', self.header_text(''))
+        for v in ('0', '1', '2'):
+            self.assertIn(f'#define DM_GAME_AUDIO_FOLLOW {v}', self.header_text(f'audio_follow\t{v}\n'))
+
+    def test_rejected(self):
+        for v in ('off', '3', '-1', ''):
+            rc, out = header(f'audio_follow\t{v}\n')
+            self.assertNotEqual(rc, 0, v)
+            self.assertIn('audio_follow must be 0, 1 or 2', out)
+
+
 if __name__ == '__main__':
     unittest.main()

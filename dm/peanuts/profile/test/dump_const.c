@@ -89,6 +89,8 @@ int main(void) {
     printf("event_wait=%d\n", (int)DM_GAME_EVENT_WAIT); printf("occlusion_split_pass=%d\n", (int)DM_GAME_OCCLUSION_SPLIT_PASS);
     printf("low_ram_place_part_mb=%d\n", (int)DM_GAME_LOW_RAM_PLACE_PART_MB); printf("low_ram_img_cache_max_mb=%d\n", (int)DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB);
     printf("low_ram_app_pool_mb=%d\n", (int)DM_GAME_LOW_RAM_APP_POOL_MB); printf("render_default_out=%s\n", DM_GAME_RENDER_DEFAULT_OUT);
+    printf("tex_pool_range=%d\n", (int)DM_GAME_TEX_POOL_RANGE);   // PEANUTS
+    printf("audio_follow=%d\n", (int)DM_GAME_AUDIO_FOLLOW);   // PEANUTS
     { static const int q[4] = DM_GAME_RENDER_QUALITY; printf("render_quality=%d,%d,%d,%d\n", q[0], q[1], q[2], q[3]); }
     printf("nrender_cfg=%d\n", (int)DM_GAME_NRENDER_CFG);
     { static const struct { const char *build; unsigned long long table; unsigned n, stride, out_off, ren_off, sz[8][4], ow, oh, mw, mh, min; } r[] = DM_GAME_RENDER_CFG;

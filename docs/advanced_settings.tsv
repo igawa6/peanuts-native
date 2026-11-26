@@ -86,6 +86,7 @@ DM_FPS_DECOUPLE	developer	Performance			text			both
 DM_FPS_HOLD	developer	Performance			text			both						
 DM_FPS_HOLD60	developer	Performance			text			both						
 DM_FPS_LIMIT	advanced	Performance	Frame rate cap		toggle			game		Game settings > Frame rate cap				
+DM_FPS_LIMIT_DEPTH	developer	Performance			text			both						
 DM_FPS_PATIENCE	developer	Performance			text			both						
 DM_FPS_PIN	developer	Performance			text			both						
 DM_FPS_RETRY	developer	Performance			text			both						
@@ -255,6 +256,7 @@ DM_NVN_TBDR	developer	Graphics			text			both
 DM_NVN_TEXCPU	developer	Diagnostics			text			both						
 DM_NVN_TEXDUMP	developer	Diagnostics			text			both						
 DM_NVN_TEXINFO	developer	Diagnostics			text			both						
+DM_NVN_TEXPOOL_RANGE	developer	Memory			text			both						
 DM_NVN_TEXRAW	developer	Diagnostics			text			both						
 DM_NVN_TEXSNAP	developer	Diagnostics			text			both						
 DM_NVN_TREG_ID	developer	Diagnostics			text			both						
@@ -636,6 +638,7 @@ DM_VK_ONE_LANE	developer	Graphics			text		The game profile's one-lane shaders wi
 DM_VK_ONE_LANE_BASE	developer	Graphics			text			both						
 DM_VK_OQ_SPLIT_PASS	developer	Diagnostics			text		1 with Qualcomm's driver when the game profile asks for it, 0 otherwise	both						
 DM_VK_OVERLAY	developer	Graphics			text			both						
+DM_VK_PACE_EVEN	developer	Performance			text			both						
 DM_VK_PACE_LOG	developer	Diagnostics			text			both						
 DM_VK_PACE_PANEL	developer	Performance			text			both						
 DM_VK_PACE_PROF	developer	Diagnostics			text			both						
@@ -661,10 +664,13 @@ DM_VK_POOL_FB	developer	Memory			text			both
 DM_VK_POOL_FB_EARLY	developer	Diagnostics			text			both						
 DM_VK_POOL_SLOT_BIND	developer	Diagnostics			text			both						
 DM_VK_PREFAULT	developer	Diagnostics			text			both						
+DM_VK_PRESENT_AHEAD_MS	developer	Performance			text			both						
 DM_VK_PRESENT_DEADLINE	developer	Performance			text			both						
 DM_VK_PRESENT_GATE_WAIT	developer	Performance			text		30 ms with Turnip, 0 (off) with other drivers	both						
 DM_VK_PRESENT_GRID	developer	Performance			text			both						
+DM_VK_PRESENT_LATCH_US	developer	Performance			text			both						
 DM_VK_PRESENT_NEAREST	developer	Performance			text			both						
+DM_VK_PRESENT_NOCATCHUP	developer	Performance			text			both						
 DM_VK_PRESENT_OWNFMT	developer	Diagnostics			text			both						
 DM_VK_PRESENT_PREWAIT	developer	Diagnostics			text			both						
 DM_VK_PRESENT_TRACE	developer	Diagnostics			text			both						

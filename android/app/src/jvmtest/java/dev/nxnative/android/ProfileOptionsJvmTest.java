@@ -78,6 +78,30 @@ public final class ProfileOptionsJvmTest {
         check(p.options.size() == 3, "options count: " + p.options.size());
         check(p.optionsEnv(enabled::contains).equals(env), "optionsEnv");
 
+        // PEANUTS begin: option groups (group=<name> as the 8th field, option_group rows as column 43): one member at most, shared words allowed
+        String w = "c55f6b8aefa54324c8e3debe0912c57c,m0x100,11111111,";
+        String grouped = "DM_PACE|Pacing|Even frames|restart;"
+                + "DM_DD_HIGH|High|Like PS4|restart|||" + w + "22222222|draw;"
+                + "DM_DD_ULTRA|Ultra|Twice|restart|||" + w + "33333333~c55f6b8aefa54324c8e3debe0912c57c,m0x104,44444444,55555555|draw";
+        List<Profile.Option> gr = Profile.parseOptions(grouped);
+        check(gr.get(0).group.isEmpty() && gr.get(1).group.equals("draw") && gr.get(2).group.equals("draw"), "group field parsed");
+        check(Profile.groupMembers(gr, "draw").size() == 2 && Profile.groupMembers(gr, "").isEmpty(), "group members");
+        check(Profile.groupChoice(gr, "draw", e -> false) == null, "Default: no member on");
+        check(Profile.buildOptionsEnv(gr, e -> false).isEmpty(), "Default sends nothing");
+        check(Profile.buildOptionsEnv(gr, Set.of("DM_DD_HIGH")::contains).equals(List.of("DM_DD_HIGH=1", "DM_OPTION_PATCHES=" + w + "22222222")), "one member");
+        List<String> both = Profile.buildOptionsEnv(gr, Set.of("DM_PACE", "DM_DD_HIGH", "DM_DD_ULTRA")::contains);
+        check(both.equals(List.of("DM_PACE=1", "DM_DD_HIGH=1", "DM_OPTION_PATCHES=" + w + "22222222")), "two stored members: the first only: " + both);
+        check(Profile.buildOptionsEnv(gr, Set.of("DM_DD_ULTRA")::contains).get(1).equals("DM_OPTION_PATCHES=" + w + "33333333;c55f6b8aefa54324c8e3debe0912c57c,m0x104,44444444,55555555"), "member words, ';' between");
+        check(!gr.get(1).equals(new Profile.Option("DM_DD_HIGH", "High", "Like PS4", false, "", "", w + "22222222")), "group part of equality");
+        check(Profile.parseOptionGroups("").isEmpty() && Profile.parseOptionGroups("draw|Draw distance|How far").get(0).label.equals("Draw distance"), "option_group parsed");
+        String[] cols = new String[44];
+        java.util.Arrays.fill(cols, "");
+        cols[0] = "0100BAC01E57E000"; cols[1] = "Ys X"; cols[2] = "0"; cols[20] = grouped; cols[43] = "draw|Draw distance|How far detail reaches";
+        Profile pg = Profile.parse(String.join("\t", cols)).get(0);
+        check(pg.optionGroups.size() == 1 && pg.optionGroups.get(0).name.equals("draw") && pg.shownGroups().size() == 1, "option groups column");
+        check(Profile.parse(String.join("\t", java.util.Arrays.copyOf(cols, 43))).get(0).optionGroups.isEmpty(), "no option groups column");
+        // PEANUTS end
+
         // Profile.parse without option column
         String oldLine = "0400486024DEC000\tThe Legend of Zelda: Ocarina of Time\t22852\tabcdef012345\t131072 main=aa\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t1";
         Profile pOld = Profile.parse(oldLine).get(0);
