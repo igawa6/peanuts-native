@@ -186,6 +186,18 @@ class IndexCopiedBeforeCheck(unittest.TestCase):
         actual, expected = self.run_site([NOP] * 75)
         self.assertEqual(actual, expected)
 
+    def test_adrp_add_between_check_and_load(self):   # PEANUTS(upstream-candidate)
+        table = 0x4040
+        words = [mov(18, 17, False)] + [NOP] * 4
+        at = len(words) * 4
+        words += [0x7100123f, bhi(at + 4, at + 28), ADRP(9, at + 8, table), ADDI(9, 9, table & 0xfff),
+                  0xb8b27932, ADDR(18, 18, 9), BR(18), RET]
+        for i in range(5): struct.pack_into('<i', IMG, table + 4 * i, at + 28 - table)
+        md = Cs(CS_ARCH_ARM64, CS_MODE_ARM); md.detail = True
+        ins = [p for i, w in enumerate(words) for p in md.disasm(struct.pack('<I', w), 4 * i)]
+        j = next(i for i, p in enumerate(ins) if p.mnemonic == 'br')
+        self.assertEqual(scope['jump_offsets'](ins, j, copy_first=True, far_base=True), [at + 28] * 5)
+
     def test_source_and_index_must_remain_unchanged(self):
         for reg in (17, 18):
             with self.subTest(reg=reg):

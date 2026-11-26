@@ -149,6 +149,7 @@ not edited (see table above).
 | `scripts/pack_android.py` | **fixed this pass (2026-11-13)** — `--modules`/`--mod-exefs`/`--mod-patches`, block-marked (Round 5) | no (Peanuts-specific: code mods, DESIGN-MODS.md) |
 | `scripts/pack_android.py` | marked (2026-11-14, PR #13): the AppleDouble skip in `split_shaders`/`swap_in`, `peanuts_env` | partly: the AppleDouble skip yes (summary 11); `peanuts_env` no |
 | `docs/guides/pc-mac-packing.md` | marked (`<!-- PEANUTS begin/end -->` section: send the pack to the phone) | no (Peanuts-specific) |
+| `dm/tools/patch_nso.py` (`check_before_copy` table-base `adrp`/`add`) + `dm/tools/tests/test_jump_copies.py` | marked (`PEANUTS(upstream-candidate)`); `dm/tools/rewriter_equiv/patch_nso.py.291a52143477` allow-listed in `peanuts/upstream-unmarked.txt` | **yes** — fallback-only jump-table recognition fix (Crash Bandicoot N. Sane Trilogy) |
 
 ## Generic host runtime-profile sites
 

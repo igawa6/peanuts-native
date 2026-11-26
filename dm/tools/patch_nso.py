@@ -898,21 +898,24 @@ def func_of(a):
     if i >= 0: return (starts[i], starts[i + 1] if i + 1 < len(starts) else TEXT_END)
     return (max((e for s, e in DATA_BLOCKS if e <= a), default=0), starts[0]) if starts else (a, a + 4)
 done = set(); windows = []; jumps = {}; tabjumps = {}; tailcalls = set(); retries = []
-def check_before_copy(insl, ctx, ld, idx):
+def check_before_copy(insl, ctx, ld, idx, rb=None):   # PEANUTS(upstream-candidate): allow table-base adrp/add between b.hi and ldrsw (Crash N. Sane Trilogy)
     """The index copied from the checked register before the check, far back (DRAGON QUEST XI S main+0x2dd8cd0: mov w0,w18, then 41 instructions with two other jump tables on x0, then
-    cmp w18,#4; b.hi; ldrsw x18,[x11,x0,lsl #2]; add x18,x18,x11; br x18). Accepted when the cmp and its b.hi come right before the load and the mov is the last writer of the index and of the
+    cmp w18,#4; b.hi; ldrsw x18,[x11,x0,lsl #2]; add x18,x18,x11; br x18). Accepted when the cmp and its b.hi come right before the load (or table-base adrp/add) and the mov is the last writer of the index and of the
     checked register before them. Kingdom Battle's GLSLC (subsdk0+0x7340b8) copies w17 into w18 71 instructions before the load, across two switches that preserve both registers: an arbitrary
     64-instruction limit missed that copy. Follow the writers to the function's start, stopping at calls that can clobber either register or at gaps in decoded code. Blocks in between that branch out
     and back (main+0x2dd8ce0 → main+0x2dd8cb8) write neither. Tried only when every other form has failed (jump_offsets copy_first), so sites that rewrote before come out the same:
     the one br x18 of its kind among the 25,508 x18 sites of that main. → the cmp, or None"""
     k = ctx.index(ld)
-    if k < 2 or ctx[k - 1].mnemonic != 'b.hi' or ctx[k - 2].mnemonic != 'cmp': return None
-    m = re.fullmatch(r'(w\d+), #(0x[0-9a-f]+|\d+)', ctx[k - 2].op_str)
+    b_idx = k - 1
+    while b_idx >= 1 and rb and ctx[b_idx].mnemonic in ('adrp', 'add') and ctx[b_idx].op_str.startswith(rb + ','):
+        b_idx -= 1
+    if b_idx < 1 or ctx[b_idx].mnemonic != 'b.hi' or ctx[b_idx - 1].mnemonic != 'cmp': return None
+    m = re.fullmatch(r'(w\d+), #(0x[0-9a-f]+|\d+)', ctx[b_idx - 1].op_str)
     if not m: return None
-    src, kl = m.group(1), insl.index(ld)
+    src, kl = m.group(1), insl.index(ctx[b_idx - 1])
     def writes(p):   # capstone lists a compare's first operand as written (cmp w18,#4 at main+0x2dd8c30); it only sets the flags
         return set() if p.mnemonic in ('cmp', 'cmn', 'tst') else {'w' + p.reg_name(r)[1:] for r in p.regs_access()[1]}
-    for q in range(kl - 3, -1, -1):
+    for q in range(kl - 1, -1, -1):
         p = insl[q]
         if p.address + 4 != insl[q + 1].address: return None
         if p.mnemonic in ('bl', 'blr') and any(int(r[1:]) <= 18 for r in idx | {src}): return None
@@ -920,7 +923,7 @@ def check_before_copy(insl, ctx, ld, idx):
         if mm and mm.group(1) in idx and mm.group(2) == src: break
         if writes(p) & (idx | {src}): return None
     else: return None
-    return ctx[k - 2]
+    return ctx[b_idx - 1]
 def jump_offsets(insl, j, copy_first=False, far_base=False, forward_base=False):
     """The br x18 is preceded by the offset-table form (Engage main+0x12eec94): cmp w18,#N; b.hi; ldrsw x18,[xB,x18,lsl #2]; add x18,x18,xB.
     The index may be another register, and the bounds check may be on a register copied into it: Link's Awakening's GLSLC (subsdk0+0x1be6e8) has
@@ -963,7 +966,7 @@ def jump_offsets(insl, j, copy_first=False, far_base=False, forward_base=False):
                     cmp = p
                 break
             if cmp: break
-    if not cmp and copy_first: cmp = check_before_copy(insl, ctx, ld, idx)
+    if not cmp and copy_first: cmp = check_before_copy(insl, ctx, ld, idx, rb)   # PEANUTS(upstream-candidate): pass table base register rb
     if not cmp: return None
     n = int(cmp.op_str.split('#')[1], 0) + 1
     k = insl.index(ld); lo = page = None
