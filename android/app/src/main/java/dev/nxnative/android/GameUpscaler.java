@@ -96,11 +96,14 @@ final class GameUpscaler {
     }
     static void env(Context c, String titleId, List<String> env) { env.addAll(lines(c, titleId)); }
 
-    private static void push(Context c, String titleId) {
+    private static void push(Context c, String titleId) { send(c, lines(c, titleId)); }
+
+    // PEANUTS: the file write of push, for WordsRows' Upscaler too (DM_VK_CUPSCALE, DM_VK_CUPSCALE_SHARP, live like these)
+    static void send(Context c, List<String> lines) {
         File ext = c.getExternalFilesDir(null);   // GameActivity's DM_CTL: <app files>/ctl.txt (only the running game reads it)
         if (ext == null) return;
         try (FileWriter w = new FileWriter(new File(ext, "ctl.txt"), true)) {
-            StringBuilder b = new StringBuilder(); for (String l : lines(c, titleId)) b.append("env ").append(l).append('\n');
+            StringBuilder b = new StringBuilder(); for (String l : lines) b.append("env ").append(l).append('\n');   // PEANUTS: the lines come from the caller of send
             w.write(b.toString());
         } catch (IOException e) { Native.note("[RED] game upscaler: the setting could not be sent to the game (" + e.getMessage() + "); it applies at the next start"); }
     }

@@ -39,6 +39,32 @@ public final class ProfileOptionsJvmTest {
         List<Profile.Option> bc = Profile.parseOptions(backwardCompat);
         check(bc.size() == 1 && bc.get(0).implies.isEmpty() && bc.get(0).needs.isEmpty(), "backward compat parsed");
 
+        // PEANUTS: the perf attribute (game.tsv option ... perf): the 8th field of the packed row, false when absent
+        String dofWords = "3b39e0c06b8841f1baf0ea4d54286bfe,m0xa55938,08014039,28008052";
+        List<Profile.Option> dof = Profile.parseOptions("DM_KB_DOF_OFF|Depth of field||restart|||" + dofWords + "|perf|inverted");
+        check(dof.size() == 1 && dof.get(0).perf && dof.get(0).inverted && !dof.get(0).live && dof.get(0).patches.equals(dofWords), "perf inverted option parsed with its code word");
+        check(dof.get(0).label.equals("Depth of field") && dof.get(0).description.isEmpty(), "title only, no description");
+        // PEANUTS: inverted: the switch shows the opposite of the stored option; the stored value, env and patches stay the option's
+        Profile.Option dof0 = dof.get(0);
+        check(dof0.shown(false) && !dof0.shown(true), "inverted: nothing stored = switch ON (the game unchanged)");
+        check(dof0.stored(true) == false && dof0.stored(false), "inverted: switch ON stores false, OFF stores true");
+        for (boolean v : new boolean[] {false, true}) check(dof0.stored(dof0.shown(v)) == v, "shown and stored are inverse");
+        Profile.Option plain = Profile.parseOptions("DM_Y|Y|Z|restart").get(0);
+        for (boolean v : new boolean[] {false, true}) check(plain.shown(v) == v && plain.stored(v) == v, "an option that is not inverted keeps its value");
+        check(!Profile.parseOptions("DM_Y|Y||restart|||w|perf").get(0).inverted && Profile.parseOptions("DM_Y|Y||restart|||||inverted").get(0).inverted && !Profile.parseOptions("DM_Y|Y||restart|||||inverted").get(0).perf, "perf and inverted are separate fields");
+        check(Profile.parseOptions("DM_Y|Y||restart|||||inverted").get(0).toString().endsWith("||inverted"), "inverted without perf in toString");
+        // an old stored value keeps the meaning it had (stored true = the patch is applied): the switch now reads OFF, and the env is the patch's
+        java.util.Set<String> storedOn = new java.util.HashSet<>(java.util.List.of("DM_KB_DOF_OFF"));
+        check(!dof0.shown(storedOn.contains(dof0.env)) && Profile.buildOptionsEnv(dof, storedOn::contains).contains("DM_OPTION_PATCHES=" + dofWords), "stored true: switch OFF and the word is written");
+        check(dof0.shown(false) && Profile.buildOptionsEnv(dof, e -> false).isEmpty(), "stored false (default): switch ON and nothing is written");
+        check(Profile.buildOptionsEnv(dof, e -> false).isEmpty(), "perf option off emits nothing (the game as it is)");
+        check(Profile.buildOptionsEnv(dof, e -> true).equals(List.of("DM_KB_DOF_OFF=1", "DM_OPTION_PATCHES=" + dofWords)), "perf option on: its env line and its one code word");
+        check(!hd.get(0).perf && !s.get(0).perf && !Profile.parseOptions("DM_X|X|Y|restart|||").get(0).perf, "options without the attribute are not perf");
+        check(!Profile.parseOptions("DM_X|X|Y|restart|||w|other").get(0).perf, "only the exact word perf counts");
+        check(!dof.get(0).equals(new Profile.Option("DM_KB_DOF_OFF", "Depth of field", "", false, "", "", dofWords, false, false)), "inverted takes part in equals");
+        check(!dof.get(0).equals(new Profile.Option("DM_KB_DOF_OFF", "Depth of field", "", false, "", "", dofWords, false, true)), "perf takes part in equals");
+        check(dof.get(0).toString().endsWith("|perf|inverted"), "perf and inverted in toString");
+
         String liveStr = "DM_LIVE_TEST|Live switch|A live setting|live";
         List<Profile.Option> l = Profile.parseOptions(liveStr);
         check(l.size() == 1 && l.get(0).live, "live parsed as true");

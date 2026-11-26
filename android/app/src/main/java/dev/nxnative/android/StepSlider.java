@@ -51,6 +51,12 @@ final class StepSlider {
 
     /** A dialog with the slider; with dflt non-null a "Default (dflt)" switch first (on: set.accept(null)). done after OK */
     static void dialog(Context c, String label, String suffix, String[] names, int index, String left, String right, String dflt, boolean own, Consumer<Integer> set, Runnable done) {
+        dialogCheck(c, label, suffix, names, index, left, right, dflt == null ? null : "Default (" + dflt + ")", !own, (on, i) -> set.accept(on ? null : i), done);   // PEANUTS: the general form below
+    }
+
+    // PEANUTS begin: the dialog with a checkbox of its own words ("Game default" for Internal resolution; Frame rate has none). check: the checkbox's text, null for none; checked: its
+    // state when the dialog opens; set gets the state at OK and the step the slider is on; the slider is dimmed while the box is checked
+    static void dialogCheck(Context c, String label, String suffix, String[] names, int index, String left, String right, String check, boolean checked, java.util.function.BiConsumer<Boolean, Integer> set, Runnable done) {
         LinearLayout box = new LinearLayout(c);
         box.setOrientation(LinearLayout.VERTICAL);
         int pad = Ui.dp(c, 20); box.setPadding(pad, pad / 2, pad, 0);
@@ -58,18 +64,19 @@ final class StepSlider {
         AlertDialog[] dlg = new AlertDialog[1];
         LinearLayout slider = view(c, label, names, index, left, right, t -> { if (dlg[0] != null) dlg[0].setTitle(t + suffix); }, i -> cur[0] = i);
         CheckBox def = null;
-        if (dflt != null) {
+        if (check != null) {
             def = new CheckBox(c);
-            def.setText("Default (" + dflt + ")");
-            def.setChecked(!own);
-            slider.setAlpha(own ? 1f : 0.4f);
+            def.setText(check);
+            def.setChecked(checked);
+            slider.setAlpha(checked ? 0.4f : 1f);
             def.setOnCheckedChangeListener((b, on) -> slider.setAlpha(on ? 0.4f : 1f));
             box.addView(def);
         }
         box.addView(slider);
         CheckBox d = def;
         dlg[0] = new PadFocus.Builder(c).setTitle(title(label, names, index) + suffix).setView(box)
-                .setPositiveButton("OK", (x, w) -> { set.accept(d != null && d.isChecked() ? null : cur[0]); done.run(); })
+                .setPositiveButton("OK", (x, w) -> { set.accept(d != null && d.isChecked(), cur[0]); done.run(); })
                 .setNegativeButton("Cancel", null).show();
     }
+    // PEANUTS end
 }

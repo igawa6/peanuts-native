@@ -1109,11 +1109,30 @@ NVN(nvnProgramSetShaders, NVNboolean, NVNprogram *p, int n, const NVNshaderData 
 }
 
 // ---------- Sync / events ----------
+// PEANUTS begin(upstream-candidate): a sync pointer below 0x10000 (a NULL NVNsync the game passes to SyncWait, QueueWaitSync or QueueFenceSync) is no sync object: the host
+// would read or write through it and fault. An earlier port of Mario + Rabbids Sparks of Hope crashed this way after a battle; the
+// guest cause is not known. The call passes as a sync that has nothing to wait for (below), is logged once per function with its guest caller, and is counted
+_Atomic uint64_t nvn_sync_low_n;   // calls with a sync pointer below 0x10000, all three functions together (diagnostics)
+static int sync_low(const char *fn, const void *s, int which, uint64_t ra) {
+    static _Atomic int seen[3];
+    if ((uintptr_t)s >= 0x10000) return 0;
+    atomic_fetch_add_explicit(&nvn_sync_low_n, 1, memory_order_relaxed);
+    if (!atomic_exchange_explicit(&seen[which], 1, memory_order_relaxed)) {
+        module_t *m = module_of((void *)ra);
+        LOG("[RED] [nvn] %s: the sync pointer is %p, not a sync object: the call passes (guest caller %s+%#llx)", fn, s, m ? m->name : "?",
+            m ? (unsigned long long)(ra - (uint64_t)m->base) : (unsigned long long)ra);
+    }
+    return 1;
+}
+// PEANUTS end
 NVN(nvnSyncInitialize, NVNboolean, NVNsync *s, NVNdevice *d) { (void)d; *(sync_t *)s = (sync_t){MAGIC('S', 'Y', 'N', 'C'), 0, 0}; return 1; }
 NVN(nvnSyncFinalize, void, NVNsync *s) { ((sync_t *)s)->magic = 0; }
 NVN(nvnSyncSetDebugLabel, void, NVNsync *s, const char *l) { (void)s; (void)l; }
 // Fence = "all commands previously submitted to the queue have completed": record the fence value of the most recent submit
-NVN(nvnQueueFenceSync, void, NVNqueue *q, NVNsync *s, NVNsyncCondition c, int f) { (void)q; (void)c; (void)f; ((sync_t *)s)->fenced = 1; ((sync_t *)s)->fence = mtl_last_fence(); }
+NVN(nvnQueueFenceSync, void, NVNqueue *q, NVNsync *s, NVNsyncCondition c, int f) {
+    if (sync_low("nvnQueueFenceSync", s, 0, (uint64_t)__builtin_return_address(0))) return;   // PEANUTS(upstream-candidate): a NULL sync is not written
+    (void)q; (void)c; (void)f; ((sync_t *)s)->fenced = 1; ((sync_t *)s)->fence = mtl_last_fence();
+}
 // A sync object that was never fenced waits until timeout, as on a real device; a fenced one is released only after the GPU has actually completed up to that fence value
 // A GPU-side wait on a sync: the host has a single Metal queue that executes submissions in order, so commands before the fence are always done first and nothing needs waiting. A sync not fenced yet (fenced later by another thread) is not waited for here; logged once
 // The Android replay (vka_worker.c) orders the queue's later work after the fence's submission; a sync not fenced yet passes at once, as a snapshot of nothing to wait for (the
@@ -1121,6 +1140,7 @@ NVN(nvnQueueFenceSync, void, NVNqueue *q, NVNsync *s, NVNsyncCondition c, int f)
 __attribute__((weak)) void mtl_queue_wait_fence(uint64_t serial, uint64_t fence) { (void)serial; (void)fence; }
 __attribute__((weak)) void mtl_event_cpu_signal(void) {}
 NVN(nvnQueueWaitSync, NVNboolean, NVNqueue *q, const NVNsync *s) {
+    if (sync_low("nvnQueueWaitSync", s, 1, (uint64_t)__builtin_return_address(0))) return 1;   // PEANUTS(upstream-candidate): a NULL sync has nothing to wait for
     const sync_t *o = (const sync_t *)s; static int once;
     if (!o->fenced) { if (!once++) LOG("[nvn] QueueWaitSync: the sync object has no fence yet: the wait passes"); return 1; }
     pthread_mutex_lock(&g_sub_mu); mtl_queue_wait_fence(((const queue_t *)q)->serial, o->fence); pthread_mutex_unlock(&g_sub_mu);
@@ -1137,6 +1157,7 @@ static _Atomic uint64_t g_sync_ns;
 // sync, [3] a sync never fenced (timed out at once), [4] QueueFinish
 _Atomic uint64_t nvn_sync_wait_n[5];
 NVN(nvnSyncWait, NVNsyncWaitResult, const NVNsync *s, uint64_t timeout) {
+    if (sync_low("nvnSyncWait", s, 2, (uint64_t)__builtin_return_address(0))) return NVN_SYNC_WAIT_RESULT_ALREADY_SIGNALED;   // PEANUTS(upstream-candidate): a NULL sync is already signaled
     const sync_t *o = (const sync_t *)s;
     if (!o->fenced) { atomic_fetch_add_explicit(&nvn_sync_wait_n[3], 1, memory_order_relaxed); return NVN_SYNC_WAIT_RESULT_TIMEOUT_EXPIRED; }
     int (*w)(uint64_t, uint64_t) = o->fenced == 2 ? mtl_wait_acq : mtl_wait;

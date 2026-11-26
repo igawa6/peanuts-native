@@ -482,6 +482,18 @@ Yes. Settings › Graphics › **CRT filter** is **Off**, **Scanlines**, **CRT**
 
 By default the device decides what a connected TV or monitor shows, as for any other app, and Peanuts Native keeps its own pages off it: a TV is never taken for the second screen. Settings › Screens › **TV and monitors** › **Play on the TV** starts a game full screen on the TV or monitor instead. The screen the game left goes black while it plays there, and a companion stays on the second screen.
 
+### Mario + Rabbids Sparks of Hope: what are its picture settings?
+
+This game has its own picture rows instead of **Resolution scale**, on the game's page › **Graphics** (the **Performance** tab on a narrow screen) and on the in-game panel's **Display** tab. They apply from the next start, except the upscaler and the frame rate on the panel; on the panel, Internal resolution says **Applies on next start**.
+
+- **Output resolution** is the size of the game's window: **Native** (the largest of 1080p and 720p that fits your screen, with bars if the shape differs; 720p on a 4:3 screen) or the other size. A true full-screen 4:3 window is not offered.
+- **Internal resolution** is how big the 3D picture is as a percent of the window, from 40 % to 100 % in steps of 10. **Game default** (the choice at first) leaves the game's own 5/6 of the window. The menus and the HUD stay at the output size. A lower value is lighter on the GPU and softer.
+- **Internal upscaler** chooses how the 3D picture is stretched to the output size: **Bilinear** (the game's own), **FSR 1** or **SGSR 1**, the last two with a sharpness slider. On the in-game panel it changes at once. At 100 % there is nothing to stretch, so the three look the same. FSR 1 and SGSR 1 add some GPU time; how much has not been measured on this game yet. It is separate from the **Upscaler** row that fits the finished picture to the screen.
+- **Graphics quality** is **Handheld** (the default) or **Docked**, the console mode the game believes it runs in. It no longer changes the resolution.
+- **Frame rate** is a slider (20, 30, 40, 45, 60); the default is 30. The slider has no **Game owned** step, so a Game owned choice stored before is dropped and reads as 30.
+
+If an old choice of "3D at full window size" was set, it becomes Internal resolution 100 %. If the picture looks wrong with a setting, set it back to its default and tell us which setting and value. These rows have not been checked on a device at the time of writing.
+
 ### What is Tester settings?
 
 A switch in Settings › Developer. Off, a game that has **Resolution** choices shows just those. On, it also shows the rows made for testing: advanced resolution, **Upscaler** and **Dynamic resolution**. Leave it off unless you are trying things out or were asked to change one of those rows.

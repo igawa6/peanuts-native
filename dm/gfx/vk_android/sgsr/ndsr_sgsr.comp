@@ -47,7 +47,11 @@
 // coordinate is the output pixel's centre; ViewportInfo comes in push constants; no highp on the constructors (desktop GLSL); the result is clamped below at 0 but not above at 1 (the input is a float colour
 // or its square root and may exceed 1: Qualcomm's clamp suits a UNORM target and would clip highlights at edges only)
 layout(local_size_x = 8, local_size_y = 8) in;
+#if defined(NDSR_SHARP_PC)   // PEANUTS: the composite upscaler (vka_cupscale.c): EdgeSharpness from the push constants (DM_VK_CUPSCALE_SHARP)
+layout(push_constant) uniform P { vec4 ViewportInfo; uvec2 size; float sharp; } pc;
+#else
 layout(push_constant) uniform P { vec4 ViewportInfo; uvec2 size; } pc;   // ViewportInfo: 1 / input width, 1 / input height, input width, input height
+#endif
 #include "../fsr/ndsr_out.h"
 
 precision mediump float;
@@ -58,7 +62,11 @@ layout(set = 0, binding = 0) uniform mediump sampler2D ps0;
 #define OperationMode 1
 #define UseEdgeDirection
 #define EdgeThreshold 8.0/255.0
+#if defined(NDSR_SHARP_PC)   // PEANUTS: the composite upscaler's EdgeSharpness from the push constants
+#define EdgeSharpness pc.sharp
+#else
 #define EdgeSharpness 2.0
+#endif
 
 float fastLanczos2(float x)
 {
