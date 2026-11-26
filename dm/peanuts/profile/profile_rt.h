@@ -81,6 +81,8 @@ typedef struct {
     char render_default_out[16]; uint32_t render_quality[4];
     uint32_t nrender_cfg; dm_pf_render_cfg_t render_cfg[DM_PROFILE_RENDER_CFG_CAP];
     uint32_t nrt_pool; dm_pf_rt_pool_t rt_pool[DM_PROFILE_RT_POOL_CAP];
+    uint64_t tex_pool_range;   // PEANUTS: game.tsv tex_pool_range (hle_nvn.c texpool_range)
+    uint64_t audio_follow;   // PEANUTS: game.tsv audio_follow (peanuts_audiosync.c, via peanuts.c pn_as_profile_follow)
 } dm_game_profile_t;
 
 // A few checkpoints along the layout (found in review), so a field inserted or resized in the wrong place fails the build here, at the

@@ -29,6 +29,7 @@ final class Profile {
     String window = "";   // game.tsv android_window (build.gradle windowOf): the default Game resolution when the player chose none (Prefs.gameWindow), "" for the main screen's
     boolean vegetationDetail;
     List<Option> options = Collections.emptyList();
+    List<OptionGroup> optionGroups = Collections.emptyList();   // PEANUTS: game.tsv option_group rows (build.gradle optionGroupsOf): options shown as one radio choice
     String scenes = "";   // game.tsv scene_scale rows with a scene_scale_palette, then scene_arg rows (build.gradle sceneOf): "name|label|scale|mode" or "name|label|scale|arg|arguments", ';' between them; Game settings › Resolution › Advanced › 3D scene (SceneRes.presets)
     String presets = "";   // game.tsv res_preset rows with their windows' scene_output rows (build.gradle presetsOf): "id|label|window|mode|height|outW|outH|measured", ';' between them; Game settings › Resolution (ResPresets)
     boolean steps;   // game.tsv has fps_steps rows (build.gradle stepsOf): a framework of whole fixed steps a frame, which Hold 60 fps keeps at one (Prefs.steps)
@@ -165,12 +166,18 @@ final class Profile {
         public final String implies; // env var of option implied by this option, or ""
         public final String needs;   // fixup marker required by this option (e.g. "OOT_PATCHES"), or ""
         public final String patches; // exact-build literal code words, '~' between rows
+        public final String group;   // PEANUTS: the option_group it belongs to (one radio choice, at most one member on), or ""
 
         public Option(String env, String label, String description, boolean live, String implies, String needs) {
             this(env, label, description, live, implies, needs, "");
         }
 
         public Option(String env, String label, String description, boolean live, String implies, String needs, String patches) {
+            this(env, label, description, live, implies, needs, patches, "");
+        }
+
+        public Option(String env, String label, String description, boolean live, String implies, String needs, String patches, String group) {   // PEANUTS: group
+            this.group = group != null ? group : "";
             this.env = env != null ? env : "";
             this.label = label != null ? label : "";
             this.description = description != null ? description : "";
@@ -200,21 +207,62 @@ final class Profile {
             Option that = (Option) o;
             return live == that.live && env.equals(that.env) && label.equals(that.label)
                     && description.equals(that.description) && implies.equals(that.implies)
-                    && needs.equals(that.needs) && patches.equals(that.patches);
+                    && needs.equals(that.needs) && patches.equals(that.patches) && group.equals(that.group);   // PEANUTS: group
         }
 
         @Override public int hashCode() {
-            return java.util.Objects.hash(env, label, description, live, implies, needs, patches);
+            return java.util.Objects.hash(env, label, description, live, implies, needs, patches, group);   // PEANUTS: group
         }
 
         @Override public String toString() {
             return env + "|" + label + "|" + description + "|" + (live ? "live" : "restart")
                     + (hasImplies() ? "|implies=" + implies : "") + (hasNeeds() ? "|needs=" + needs : "")
-                    + (patches.isEmpty() ? "" : "|patches=" + patches);
+                    + (patches.isEmpty() ? "" : "|patches=" + patches) + (group.isEmpty() ? "" : "|group=" + group);   // PEANUTS: group
         }
     }
 
-    /** Parse option rows encoded as "<env>|<label>|<description>|<restart|live>[|<implies>[|<needs>[|<patches>]]]", ';' between them */
+    // PEANUTS begin: option groups (game.tsv option_group <name> <label> <description>, members' group=<name>): Game settings and the in-game panel show the
+    // members as one radio choice, Default (none on) first; choosing one turns the others off (Prefs.gameOptionGroup), and the launch takes at most one member
+    public static final class OptionGroup {
+        public final String name, label, description;
+        public OptionGroup(String name, String label, String description) {
+            this.name = name != null ? name : ""; this.label = label != null ? label : ""; this.description = description != null ? description : "";
+        }
+    }
+
+    /** Parse option_group rows encoded as "<name>|<label>|<description>", ';' between them */
+    static List<OptionGroup> parseOptionGroups(String text) {
+        if (text == null || text.trim().isEmpty()) return Collections.emptyList();
+        List<OptionGroup> out = new ArrayList<>();
+        for (String row : text.split(";")) {
+            String[] f = row.trim().split("\\|", -1);
+            if (f.length >= 3 && !f[0].trim().isEmpty()) out.add(new OptionGroup(f[0].trim(), f[1].trim(), f[2].trim()));
+        }
+        return Collections.unmodifiableList(out);
+    }
+
+    /** A group's members, in the profile's order */
+    static List<Option> groupMembers(List<Option> options, String group) {
+        List<Option> out = new ArrayList<>();
+        if (options != null && group != null && !group.isEmpty()) for (Option o : options) if (group.equals(o.group)) out.add(o);
+        return out;
+    }
+
+    /** The group's member that is on (the first, should stored settings have more), or null for Default */
+    static Option groupChoice(List<Option> options, String group, java.util.function.Predicate<String> isOptionOn) {
+        for (Option o : groupMembers(options, group)) if (isOptionOn.test(o.env)) return o;
+        return null;
+    }
+
+    /** The groups that have members, in the profile's order */
+    List<OptionGroup> shownGroups() {
+        List<OptionGroup> out = new ArrayList<>();
+        for (OptionGroup gr : optionGroups) if (!groupMembers(options, gr.name).isEmpty()) out.add(gr);
+        return out;
+    }
+    // PEANUTS end
+
+    /** Parse option rows encoded as "<env>|<label>|<description>|<restart|live>[|<implies>[|<needs>[|<patches>[|<group>]]]]", ';' between them */
     static List<Option> parseOptions(String text) {
         if (text == null || text.trim().isEmpty()) return Collections.emptyList();
         List<Option> out = new ArrayList<>();
@@ -227,7 +275,8 @@ final class Profile {
                 String implies = f.length > 4 ? f[4].trim() : "";
                 String needs = f.length > 5 ? f[5].trim() : "";
                 String patches = f.length > 6 ? f[6].trim() : "";
-                out.add(new Option(f[0].trim(), f[1].trim(), f[2].trim(), live, implies, needs, patches));
+                String group = f.length > 7 ? f[7].trim() : "";   // PEANUTS: option groups
+                out.add(new Option(f[0].trim(), f[1].trim(), f[2].trim(), live, implies, needs, patches, group));
             }
         }
         return Collections.unmodifiableList(out);
@@ -251,6 +300,7 @@ final class Profile {
         List<String> patches = new ArrayList<>();
         for (Option opt : options) {
             boolean on = isOptionOn.test(opt.env) || findImpliedBy(options, opt, isOptionOn) != null;
+            if (!opt.group.isEmpty()) on = groupChoice(options, opt.group, isOptionOn) == opt;   // PEANUTS: one member of a group at most
             if (on) {
                 env.add(opt.envLine());
                 if (!opt.patches.isEmpty()) patches.add(opt.patches.replace('~', ';'));
@@ -618,6 +668,7 @@ final class Profile {
             p.aspectUntested = c.length > 40 && c[40].equals("1");   // PEANUTS: aspect_plan_untested
             try { p.fpsTarget = c.length > 41 && !c[41].isEmpty() ? Math.max(0, Integer.parseInt(c[41])) : 0; } catch (NumberFormatException e) { p.fpsTarget = 0; }   // PEANUTS: fps_target
             p.fpsRates = c.length > 42 ? c[42] : "";   // PEANUTS: the rates the engine rows hold beyond 60, 30, 20 and 15
+            p.optionGroups = parseOptionGroups(c.length > 43 ? c[43] : "");   // PEANUTS: option groups
             out.add(p);
         }
         return Collections.unmodifiableList(out);

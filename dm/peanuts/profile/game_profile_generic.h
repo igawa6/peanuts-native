@@ -81,6 +81,8 @@
 #define DM_GAME_LOW_RAM_PLACE_PART_MB (g_profile.low_ram_place_part_mb)
 #define DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB (g_profile.low_ram_img_cache_max_mb)
 #define DM_GAME_LOW_RAM_APP_POOL_MB (g_profile.low_ram_app_pool_mb)
+#define DM_GAME_TEX_POOL_RANGE ((int)g_profile.tex_pool_range)   // PEANUTS
+#define DM_GAME_AUDIO_FOLLOW ((int)g_profile.audio_follow)   // PEANUTS
 #define DM_GAME_RENDER_DEFAULT_OUT (g_profile.render_default_out)
 #define DM_GAME_NRENDER_CFG (g_profile.nrender_cfg)
 #define DM_GAME_NRT_POOL (g_profile.nrt_pool)

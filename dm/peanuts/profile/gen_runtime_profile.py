@@ -45,6 +45,8 @@ SCALAR = {
     'EVENT_WAIT': ('event_wait', 'int'), 'OCCLUSION_SPLIT_PASS': ('occlusion_split_pass', 'int'), 'LOW_RAM_PLACE_PART_MB': ('low_ram_place_part_mb', 'int'),
     'LOW_RAM_IMG_CACHE_MAX_MB': ('low_ram_img_cache_max_mb', 'int'), 'LOW_RAM_APP_POOL_MB': ('low_ram_app_pool_mb', 'int'),
     'RENDER_DEFAULT_OUT': ('render_default_out', 'str'), 'NRENDER_CFG': ('nrender_cfg', 'int'), 'NRT_POOL': ('nrt_pool', 'int'),
+    'TEX_POOL_RANGE': ('tex_pool_range', 'int'),   # PEANUTS: hle_nvn.c texpool_range
+    'AUDIO_FOLLOW': ('audio_follow', 'int'),   # PEANUTS: peanuts_audiosync.c (via peanuts.c pn_as_profile_follow)
 }
 # PRESENCE: macros header() emits only when the game.tsv key is set (optional; absent means "the host decides some other way", e.g. by SDK version).
 PRESENCE = {'SHARED_FONT_TTF': 'shared_font_ttf', 'NVN_API_MAJOR': 'nvn_api_major', 'NVN_API_MINOR': 'nvn_api_minor'}
@@ -79,6 +81,8 @@ LAYOUT = [
     ('render_default_out', 'char[16]'), ('render_quality', 'u32[4]'),
     ('nrender_cfg', 'u32'), ('render_cfg', 'row[4]:char[48]+u64+u32x4+u32[8][4]+u32x5'),
     ('nrt_pool', 'u32'), ('rt_pool', 'row[4]:char[48]+char[16]+u64+u32x3+u32[4]x3+u32'),
+    ('tex_pool_range', 'u64'),   # PEANUTS
+    ('audio_follow', 'u64'),   # PEANUTS
 ]
 
 
@@ -453,6 +457,8 @@ def build_profile_bytes(g, modules_override=None):
     p.u32(nrt)
     zrt = row_rt_pool('', '', 0, 0, 0, 0, [], [], [], 0)
     b, a = pack_rows([row_rt_pool(*r) for r in rt], CAPS['rt_pool'], zrt); p.sub(b, a)
+    p.u64(as_int(val('TEX_POOL_RANGE')))   # PEANUTS
+    p.u64(as_int(val('AUDIO_FOLLOW')))   # PEANUTS
 
     out, _ = p.finish()
     return out

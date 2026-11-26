@@ -1,0 +1,113 @@
+# PEANUTS: Ys X: Nordics (US), Switch update 1.0.3 (v196608), SDK 17.5.8, NVN. Falcom's fdk engine (NIS America build). Format: see dm/games/README.md
+title_id	0100BAC01E57E000
+program_id	0100BAC01E57E000
+name	Ys X: Nordics
+ipa	Ys-X-Nordics.ipa
+app_category	public.app-category.role-playing-games
+
+build	v196608	1.0.3	main=c55f6b8aefa54324c8e3debe0912c57c	subsdk0=29b829cc3bb8021bbd447c98f71a66f2	sdk=71b1a025aa30641a53aa4fc53ca742a6
+package	v196608
+shader_versions	v196608
+# main imports NintendoSDK_movie from subsdk0; the host supplies rtld.
+modules	main subsdk0 sdk
+romfs_marker	movie/mp4/ed.mp4
+zip_store	.mp4:.nxopus:.metallib
+
+# The NPDM declares 16 MiB of system resources; main calls SetMemoryHeapSize.
+# PEANUTS: nninitStartup (main+0x8c26f0) sets the heap to the free memory rounded down to 2 MiB less 0x42800000; the fdk allocator (main+0x8c65d8, block size
+# 0x42800000 set at main+0x8c5290) asks AllocateAddressRegion for 10 * 0x42800000 = 0x299000000 bytes (10.39 GiB) after the SDK's 1 GiB node area. 16 GiB of alias as Trails.
+mem_reserve	0x4b0000000
+mem_alias	0x400000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1000000
+
+shader_groups	/asset/=asset
+shader_note	Ys X: Nordics shaders
+
+# PEANUTS: the game locks itself to 30 fps: it writes 30 to fdk::Framework+0x34 (the target rate, 60 in the constructor main+0x81616c) and calls the render device's
+# SetFrameRate(30) (main+0x8aa314: present interval 60 / rate), at main+0x2227d8, +0x22a88c, +0x22b6ac, +0x22bc7c (15 at +0x229f50 and +0x22b41c). The frame step
+# (main+0x8678b0) is the measured time clamped to [1 / Framework+0x34, 1 / Framework+0x30] (+0x30 = 15), so the game clock follows elapsed time.
+# Reviewed row of our own, main 1.0.3 only: the Framework pointer is main+0xc50788; the host writes the frame limit to +0x34 every frame and presents at interval 1.
+# 30 by default (what the game sets), 60 the launcher's choice; Game owned applies none.
+# PEANUTS: 40: three refreshes a frame on a 120 Hz panel, an even cadence where 60 is not held (on the Nova's 120 Hz panel 60 below its rate showed
+# 8.3 / 25 / 33 ms frames while the game stepped 16.7 ms; 40 measured 25.0 ms every frame, step = shown interval). On a 60 Hz panel 40 alternates 16.7 / 33.3 ms.
+fps_limit	30
+fps_limit_min	30
+fps_modes	30,40,60
+fpslocker	c55f6b8aefa54324c8e3debe0912c57c	target_i32	0xc50788/0x34	1	0
+# PEANUTS: the game clock runs on elapsed time (the frame step is the measured time), so the sound stays in real time and does not follow the frame pace
+# (README.md "Frame rate": the automatic mode took the game for one that keeps its sound in step, and the sound played at half speed at 30).
+audio_follow	0
+
+# PEANUTS: the game makes three texture pools of 1,048,576 entries and uses one a frame in turn; the host table holds 2^20 IDs, so pools #2 and #3 lost their registrations
+# and their binds read pool #1's IDs (single frames with other textures while walking). Its highest registered ID is 475 (device log): each pool takes 16384 IDs, so the
+# three pools also fit the host's image table (65536 IDs; with 262144 an image registered into pool #2 was 'beyond the table').
+# Device A/B, 30-s deck walk at 30 fps: 65 bad frames off (DM_NVN_TEXPOOL_RANGE=0), 0 on (README.md "Texture pools").
+tex_pool_range	16384
+
+# PEANUTS: at 60 fps the frame step's floor (1 / Framework+0x34) lengthened the short steps that follow long ones on the phone: game time 1.03-1.18 of real while walking
+# (README.md "Frame rate"). The 60 cap starts this variant of main without the floor (patches.py VARIANT_CUTS['60']); 30 keeps the game's own code.
+variant	60	main	60fps
+# PEANUTS: the 40 cap starts the same variant (the step is the measured time at any rate; the game's own floor would lengthen 40's short steps as it did 60's).
+variant	60	main	40fps
+
+# PEANUTS: at 60 (and 40) fps on a 120 Hz panel, a frame whose copy into the swapchain image misses the compositor's latch was shown a refresh
+# late and the next one a refresh early (8.3 ms), so drops below 60 looked like bursts of 60 and 30. DM_VK_PACE_EVEN=1 sets DM_VK_PRESENT_NOCATCHUP=1 (the chain
+# of present times follows a late frame instead of catching up), DM_VK_PRESENT_AHEAD_MS=33 and DM_FPS_LIMIT_DEPTH=1 (shallow queues: lower latency).
+# Measured on the Retroid Pocket Nova (Turnip T30, 120 Hz), 30-s camera pan at 60: 8.3 ms frames 0.71 -> 0.00-0.06 % (deck), 0.66 -> 0.06-0.12 % (heavier
+# scene), latency game present -> display p50 61.7 -> 55.8-61.4 ms (deck), fps within 0.4 (README.md "Even frame pacing").
+option	DM_VK_PACE_EVEN	Even frame pacing	Smoother frame times at 60/40 fps when the game drops below 60.	restart
+# Recommended on for this title (README.md "Even frame pacing").
+recommend	any	option.DM_VK_PACE_EVEN=on
+
+# PEANUTS: draw distance (README.md "Draw distance") as a floor on the per-map Clip ratios lod_ratio_nx / far_clip_ratio_nx
+# (scene loader, main+0x3ddb08; stored to scene+0x734 / +0x738). Many towns and fields ship 0.3-0.7 on Switch, 1.0 on PS4 (mp_t1200 / mp_t1250: 0.5 -> 1.0).
+# High: the two sites 0x3de8b4 (lod) / 0x3deedc (far) fmov s8,s0 -> fmaxnm s8,s0,s8, so a map's value becomes max(value, default 1.0) (PS4 level).
+# Very high / Ultra: also the defaults 0x3de87c / 0x3deea4 fmov s8,#1.0 -> #1.5 / #2.0, and the "no Clip block" path 0x3de5a4 (far fmov) / 0x3de5a8 (lod mov w8)
+# with the same constant (5 scene files without a Clip block). All words checked against main 1.0.3 and both packs' patched mains (Prepare changes none of them).
+# One radio group (option_group): members share the two site words with the same expected word; the launcher sends one member at most. Expected words with the character rows below: High 6, Very high 14, Ultra 14 (Clip 2 / 6, + 4 character words, + 4 bit-17 words on Very high / Ultra).
+option_group	ysx_draw	Draw distance	How far objects, people and monsters are drawn. Higher settings add GPU load, most in towns.
+option	DM_YSX_DRAW_HIGH	High	About PS4 level.	restart group=ysx_draw
+option	DM_YSX_DRAW_VHIGH	Very high	Between PS4 and PS5.	restart group=ysx_draw
+option	DM_YSX_DRAW_ULTRA	Ultra (experimental)	PS5 or higher.	restart group=ysx_draw
+option_patch	DM_YSX_DRAW_HIGH	c55f6b8aefa54324c8e3debe0912c57c	0x3de8b4	0840201e	0868281e
+option_patch	DM_YSX_DRAW_HIGH	c55f6b8aefa54324c8e3debe0912c57c	0x3deedc	0840201e	0868281e
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x3de8b4	0840201e	0868281e
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x3deedc	0840201e	0868281e
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x3de8b4	0840201e	0868281e
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x3deedc	0840201e	0868281e
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x3de87c	08102e1e	08102f1e
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x3deea4	08102e1e	08102f1e
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x3de5a4	08102e1e	08102f1e
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x3de5a8	08f0a752	08f8a752
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x3de87c	08102e1e	0810201e
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x3deea4	08102e1e	0810201e
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x3de5a4	08102e1e	0810201e
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x3de5a8	08f0a752	0800a852
+# PEANUTS: characters (NPCs, monsters, mounts, player) have their own draw distance, a fixed 24 m.
+# CBasicChr far fade main+0x244630: fmov s1,#24.0 at 0x244824 ... fcsel s9,s1,s0,eq at 0x24483c picks 24 m, or 2000 m on the sea map (flag byte +0x230).
+# The four words 0x244824/0x24482c/0x244830/0x24483c become mov w9,#tier / mov w10,#2000.0 / csel w9,w9,w10,eq / fmov s9,w9 (integer select, no cave):
+# High 48 m, Very high 72 m, Ultra 96 m; the sea case keeps 2000 m. w9/w10 are dead there; flags still come from cmp w8,#0 at 0x244828.
+# Very high / Ultra also nop the four tbnz w,#17 (LOD_ysx flag bit 17 bypasses lod_ratio) at 0x760c / 0x15bad0 / 0x1605b0 / 0x490494,
+# so the 15 flagged models (Carnac tree o_m10plt41, o_m11obj6x/7x, ship hulls) scale their LOD too. All words checked against main 1.0.3 and both packs' patched mains.
+option_patch	DM_YSX_DRAW_HIGH	c55f6b8aefa54324c8e3debe0912c57c	0x244824	0110271e	0948a852
+option_patch	DM_YSX_DRAW_HIGH	c55f6b8aefa54324c8e3debe0912c57c	0x24482c	489fa852	4a9fa852
+option_patch	DM_YSX_DRAW_HIGH	c55f6b8aefa54324c8e3debe0912c57c	0x244830	0001271e	29018a1a
+option_patch	DM_YSX_DRAW_HIGH	c55f6b8aefa54324c8e3debe0912c57c	0x24483c	290c201e	2901271e
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x244824	0110271e	0952a852
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x24482c	489fa852	4a9fa852
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x244830	0001271e	29018a1a
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x24483c	290c201e	2901271e
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x244824	0110271e	0958a852
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x24482c	489fa852	4a9fa852
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x244830	0001271e	29018a1a
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x24483c	290c201e	2901271e
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x760c	2b018837	1f2003d5
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x15bad0	e9008837	1f2003d5
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x1605b0	e9008837	1f2003d5
+option_patch	DM_YSX_DRAW_VHIGH	c55f6b8aefa54324c8e3debe0912c57c	0x490494	eb008837	1f2003d5
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x760c	2b018837	1f2003d5
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x15bad0	e9008837	1f2003d5
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x1605b0	e9008837	1f2003d5
+option_patch	DM_YSX_DRAW_ULTRA	c55f6b8aefa54324c8e3debe0912c57c	0x490494	eb008837	1f2003d5

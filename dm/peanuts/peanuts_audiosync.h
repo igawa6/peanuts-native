@@ -9,7 +9,8 @@
 // Which games: a game whose sound is not tied to its frames (its world runs in real time) must keep real-time sound. So by default (PN_AUDIO_FOLLOW=1) the
 // output follows only within 1 % (inaudible: a slower panel, short drops), until the game shows that it keeps its sound in step: it pauses a group of voices and
 // starts them again within 300 ms while it runs slow (peanuts_audiovoice.c), twice within 60 s. From then on, and on later starts (<DM_TEMP>/audio_follow), the
-// output follows fully. PN_AUDIO_FOLLOW=0 turns it off, 2 follows fully from the start.
+// output follows fully. PN_AUDIO_FOLLOW=0 turns it off, 2 follows fully from the start; without the switch the profile's audio_follow (game.tsv, default 1)
+// decides: 0 for a game whose clock runs on elapsed time, whose sound must not follow its frames (Ys X: Nordics).
 #pragma once
 #include <stdint.h>
 

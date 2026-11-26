@@ -706,6 +706,15 @@ static void fps_limit_wait(void) {
     // PEANUTS: DM_VK_PACE_PANEL: a limit that is the panel's rate or a whole division of it ticks in the panel's measured refreshes (60 on a 59.83 Hz panel: 16.71 ms)
     { uint64_t vka_panel_tick(uint64_t) __attribute__((weak)); if (!fixed && &vka_panel_tick) period = vka_panel_tick(period); }
     if (next > now && next - now <= period) { plat_wait_until(next); now = next; }
+    // PEANUTS: DM_FPS_LIMIT_DEPTH=<n> (restart; default 0 = off): the next frame also waits until all but the last n frames the game presented were handed to the display
+    // (mtl_present_progress), at most two periods, so the game runs behind the display instead of filling the present queue: its measured step follows what the display shows
+    { static int depth = -1, even; if (depth < 0) { const char *e = getenv("DM_FPS_LIMIT_DEPTH"), *ev = getenv("DM_VK_PACE_EVEN"); even = !e && ev && atoi(ev) > 0; depth = e ? atoi(e) : even ? 1 : 0; /* DM_VK_PACE_EVEN=1 (a profile option): 1 at 40 fps or more */ if (depth < 0 || depth > 8) depth = 0; if (depth) LOG("main: frame limit waits for the display: at most %d frames queued ahead of it (DM_FPS_LIMIT_DEPTH)", depth); }
+      void mtl_present_progress(uint64_t *queued, uint64_t *done) __attribute__((weak));
+      if (depth && !fixed && &mtl_present_progress && (!even || lim >= 40)) {
+          uint64_t q, d, t_end = plat_abs_time() + 2 * period;
+          for (;;) { mtl_present_progress(&q, &d); if (d + (uint64_t)depth >= q || plat_abs_time() >= t_end) break; plat_wait_until(plat_abs_time() + 250000); }
+          now = plat_abs_time();
+      } }
     next = (next > now || (next && now - next < period / 2) ? next : now) + period;   // keep the phase through small lateness, restart after a long frame
 }
 

@@ -41,6 +41,19 @@ typedef struct { uint64_t addr; uint64_t last; } cand_t;
 #include "peanuts_audiosync.h"
 #include <time.h>
 __attribute__((weak)) int nvn_game_fps(void);   // dm/gfx/nvn/hle_nvn.c: the game's own frame rate (60, 30 on present interval 2, or the host's cap)
+__attribute__((weak)) int nxhost_fps_limit_get(void);   // dm/host/hle_fpslock.c: the rate the host's frame limiter holds (0: none)
+// The rate one presented frame stands for, for the audio pace. A game on present interval 1 held below 60 by the host's frame limiter (fps_limit / the launcher's
+// cap, with the game told the rate through its own limiter: an fpslocker row) still reports 60 from nvn_game_fps, so at a 30 cap each frame counted 1/60 s, the
+// pace read 0.500 and the sound played at half tempo once the follow took it for a game that keeps its sound in step (Ys X: Nordics; 0.667 at a 40 cap).
+static int as_game_fps(void) {
+    int f = nvn_game_fps ? nvn_game_fps() : 60, l = nxhost_fps_limit_get ? nxhost_fps_limit_get() : 0;
+    return l > 0 && l < f ? l : f;
+}
+// The profile's audio_follow (game.tsv; 0 off, 1 automatic, 2 always), the default of PN_AUDIO_FOLLOW (peanuts_audiosync.c cfg)
+#ifndef DM_GAME_AUDIO_FOLLOW   // a hand-written test profile
+#define DM_GAME_AUDIO_FOLLOW 1
+#endif
+int pn_as_profile_follow(void) { return (int)DM_GAME_AUDIO_FOLLOW; }
 static void rt_tick(void);   // the companion runtime, below
 static PnRt *_Atomic g_rt;   // set once (rt_start, on the presenting thread); read by the tick thread, the page's UI thread (touch, presence) and the lifecycle's thread
 static void rt_ui_publish(void *u, uint32_t w, uint32_t h, const uint32_t *px);
@@ -297,7 +310,7 @@ static void refresh(void) {
 void peanuts_tick(void) {
     pn_ft_note();   // the frame time first: it runs whatever the rest of this tick does
     pn_graph_frame();   // the overlay graph's new bar (peanuts_graph.c)
-    { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); pn_as_frame((uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec, nvn_game_fps ? nvn_game_fps() : 60); }   // the game's pace for the audio output (peanuts_audiosync.c)
+    { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); pn_as_frame((uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec, as_game_fps()); }   // the game's pace for the audio output (peanuts_audiosync.c)
     g_frames++;
     rt_tick();   // the companion runtime: started at the first presented frame after main is loaded; its ticks come from a timer of its own (rt_thread)
     if (g_frames % REFRESH_EVERY) return;
