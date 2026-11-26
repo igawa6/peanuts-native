@@ -408,6 +408,7 @@ The guest address space, heaps, pools, virtual address memory and the allocators
 - **Found on:** [Super Mario 3D World + Bowser's Fury](../../dm/games/010028600EBDA000/README.md) (file system hooks); [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) (NVN entry points).
 
 - **Also (PEANUTS):** the hardware Opus decoder's hooks (`hle_codec.c`: initialize, sample rate, channel count, reset, decode, and the manager's enqueue, execute and dequeue) register through `HLE_FORCE_BIG`: The Witcher 3 initializes its decoders from a thread with a 4 KB stack (`MapMemory … +0x1000`), and the hook's logging overflowed it at the title screen (`CRASH` in `strncpy`, the stack's one page followed by unmapped guest memory). Found on [The Witcher 3: Wild Hunt — Complete Edition](../../dm/games/01003D100E9C6000/README.md).
+- **Also (PEANUTS):** a wrapped function with a 9th or 10th integer argument read garbage for them, because the entry carried only registers over (the GL wrappers of an NVN game whose UI draws with OpenGL: `glTexImage2D`, `glTexSubImage2D`). `dm_bigstack_enter` now also copies the caller's first two stack slots onto the host stack, below the saved sp and return address. `t_bigstack` calls a ten-argument take-over through the switch and on the direct path. Found by codetz7 on NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS (`01005A20190A6000`, igawa6/peanuts-native#637).
 
 ### Deferred-release drain without an autorelease pool
 

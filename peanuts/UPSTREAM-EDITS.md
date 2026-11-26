@@ -2796,3 +2796,14 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+## NVN games with an OpenGL UI on Android (2026-11-26)
+
+NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS draws its UI with OpenGL through EGL into a texture NVN samples. Taken over from the draft igawa6/peanuts-native#637 (codetz7) and split by scope.
+
+| File | Hunks | What | Marker |
+|---|---|---|---|
+| `dm/host/hle_bigstack.c` | 3 | the big-stack entry copies the caller's first two stack slots (a 9th and 10th integer argument: `glTexImage2D`) onto the host stack (codetz7's change), and its comments say so. Every game: any big-stack wrapper of a function with stack-passed arguments | `PEANUTS` |
+| `dm/host/hle.h` | 1 | `HLE_FORCE_BIG`'s comment: two stack slots carried over | `PEANUTS` |
+| `dm/host/tests/t_bigstack.c` | 4 | a ten-argument take-over through the switch and on the direct path; the call helpers use `PLAT_ASM_SYM` (ELF too) | `PEANUTS` |
+| `docs/reference/memory.md` | 1 | "Host calls on small guest stacks": the two stack slots | `PEANUTS` |

@@ -6,7 +6,8 @@
 // it switches to this thread's host stack (512 KB, mapped on first use, with a guard page), calls the implementation with x0-x8 / d0-d7 untouched, and switches back after it returns; outside the guest block (a host thread, or already on the host stack) it jumps straight through.
 // The implementation's own return address is then the instruction after the entry's call, not the game's call site: the entry keeps the game's return address beside the saved sp at the top of the host stack,
 // and dm_bigstack_caller (hle.h) gives it back, so take-overs that log their call site (audio Start / Stop / Close) name the game's code on either path.
-// Only register arguments are carried over: functions with more than 8 integer / 8 floating-point arguments, or variadic ones reading from the stack, cannot use it.
+// Register arguments are carried over, and the first two stack slots of the caller (a 9th and 10th integer argument, or the first two stack-passed floating-point or variadic ones), copied onto
+// the host stack below the saved sp and return address. Functions that take more on the stack cannot use it   // PEANUTS: the two stack slots
 // iOS does not allow generating executable code at run time, so the stubs are generated at compile time by the macro, not written at run time as DM_HLECOUNT does
 #include <pthread.h>
 #include <stdint.h>
@@ -74,11 +75,13 @@ __asm__(
     "    ldr x10, [x9, #0x98]\n"
     "    mov sp, x17\n"
     "    stp x9, x10, [sp, #-16]!\n"
+    "    ldp x11, x12, [x9, #0xa0]\n"   // PEANUTS: the caller's first two stack slots (its sp before the entry's frame), below the saved sp / return address
+    "    stp x11, x12, [sp, #-16]!\n"
     "    blr x16\n"
     ".globl " PLAT_ASM_SYM(dm_bigstack_ret) "\n"
     PLAT_ASM_HIDDEN " " PLAT_ASM_SYM(dm_bigstack_ret) "\n"
     PLAT_ASM_SYM(dm_bigstack_ret) ":\n"
-    "    ldr x9, [sp]\n"
+    "    ldr x9, [sp, #16]\n"   // PEANUTS: the saved sp, above the two copied slots
     "    mov sp, x9\n"
     "    ldp x29, x30, [sp, #0x90]\n"
     "    add sp, sp, #0xa0\n"
