@@ -631,6 +631,7 @@ DM_VK_NANSCAN_STEP	developer	Diagnostics			text			both
 DM_VK_NDSR	developer	Graphics			text			both						
 DM_VK_NDSR_INPUT	developer	Graphics			text			both						
 DM_VK_NDSR_SHARP	developer	Graphics			text			both						
+DM_VK_NO_OCCLUSION	developer	Graphics			text			both						
 DM_VK_OCCLUSION	developer	Graphics			text			both						
 DM_VK_ONE_LANE	developer	Graphics			text		The game profile's one-lane shaders with Qualcomm's driver, none with others	both						
 DM_VK_ONE_LANE_BASE	developer	Graphics			text			both						
@@ -773,6 +774,7 @@ DM_VK_TILED_WB	developer	Diagnostics			text			both						Rendered texture storage
 DM_VK_TL_HOST	developer	Graphics			text			both						
 DM_VK_TL_POLL	developer	Diagnostics			text			both						
 DM_VK_TS_LOG	developer	Diagnostics			text			both						
+DM_VK_TU_FLUSHALL	developer	Graphics			text			both						
 DM_VK_TU_UBWC_HINT	developer	Graphics			text			both						
 DM_VK_UBWC	developer	Graphics			text			both						
 DM_VK_UB_DEFER	developer	Graphics			text			both						

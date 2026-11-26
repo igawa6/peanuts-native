@@ -640,6 +640,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         if (prof != null && prof.vegetationDetail && !Prefs.fullVegetation(this, id)) env.add("DM_VK_VEGETATION=0");
         if (prof != null) env.addAll(prof.optionsEnv(optEnv -> Prefs.gameOption(this, id, optEnv)));
+        // PEANUTS: DM_VK_TU_FLUSHALL=1 (a game option) is TU_DEBUG=flushall, added here with the option's line: Turnip reads TU_DEBUG once, at the process's first Vulkan
+        // device (the readiness check's), so a setenv in the host comes too late; a TU_DEBUG line of env.txt or the game's settings comes later and wins
+        if (env.contains("DM_VK_TU_FLUSHALL=1")) env.add("TU_DEBUG=flushall");
         Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
         GameUpscaler.env(this, id, env);   // the Upscaler (Game settings, the in-game panel): the game's own upscaler and the present's scaling
         env.add(CrtFilter.line(this, id));   // PEANUTS: the CRT filter (Settings › Display, Game settings, the in-game panel; CrtFilter)

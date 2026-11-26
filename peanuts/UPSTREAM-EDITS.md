@@ -1137,6 +1137,15 @@ check all expected words before mutation and use separate RX/RW auxiliary pages.
 The profile stays experimental: title/movie checks do not validate gameplay.
 See [the game note](../dm/games/0100453019AA8000/README.md#experimental-30--60--120-fps).
 
+## Turnip switches for game options: occlusion reports and TU_DEBUG=flushall
+
+Two switches a profile's game option can turn on; both are off unless one does. `dm/gfx/vk_android/vka_exec.c` `oq_on` reads `DM_VK_NO_OCCLUSION=1` as `DM_VK_OCCLUSION=0`
+(an option gives only `KEY=1` lines). `android/app/src/main/java/dev/nxnative/android/GameActivity.java` `settingsEnv` adds `TU_DEBUG=flushall` for `DM_VK_TU_FLUSHALL=1`, and
+`dm/gfx/vk_android/vka_dev.c` logs what Turnip got. One PEANUTS-marked hunk in each; the rows in `docs/env_switches.tsv` and `docs/advanced_settings.tsv`. `dm/tools/tests/test_android_tu_flushall.py` (new,
+PEANUTS on its first line) checks where the `TU_DEBUG` line goes: after the option lines, before the user's.
+[Decals reading depth that holds only some 16-pixel tiles](../docs/reference/rendering.md#decals-reading-depth-that-holds-only-some-16-pixel-tiles-android-turnip),
+[Samples-passed reports that read 0 on Turnip hide decals](../docs/reference/rendering.md#samples-passed-reports-that-read-0-on-turnip-hide-decals-android)
+
 ## Android presentation deadline forwarding
 
 The active game Activity forwards `Display.getPresentationDeadlineNanos()` once during `hostSetup`, then through the existing 500 ms `fpsTick` while active. A missing display sends zero. The JNI bridge preserves positive nanosecond values as 64-bit unsigned values, normalizes nonpositive values to zero and safely ignores a host without the new weak interface. The renderer uses this platform queue-lead requirement when selecting its target presentation grid; half a refresh alone does not describe the compositor's deadline. See the [Android API contract](https://developer.android.com/reference/android/view/Display#getPresentationDeadlineNanos()).

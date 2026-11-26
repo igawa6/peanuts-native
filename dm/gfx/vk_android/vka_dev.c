@@ -334,6 +334,8 @@ static int init_once(void) {
     VLOG("driver: %s (%s), driver ID %d, conformance %u.%u.%u.%u, driver version %#x; %s", pdr.driverName, pdr.driverInfo, pdr.driverID, pdr.conformanceVersion.major,
          pdr.conformanceVersion.minor, pdr.conformanceVersion.subminor, pdr.conformanceVersion.patch, V.props.driverVersion, vka_driver_tag() ? "custom (DM_VK_DRIVER)" : "the system's");
     V.driver_id = (int)pdr.driverID;
+    // PEANUTS: DM_VK_TU_FLUSHALL=1 (a game option) has the launcher put TU_DEBUG=flushall in the environment (GameActivity.settingsEnv): say what Turnip got
+    if (getenv("DM_VK_TU_FLUSHALL") && V.driver_id == VK_DRIVER_ID_MESA_TURNIP) VLOG("DM_VK_TU_FLUSHALL: TU_DEBUG=%s", getenv("TU_DEBUG") ? getenv("TU_DEBUG") : "(unset)");
     // PEANUTS (PR #164): PurpleVK T30 reports 30.2 MHz on this A650, but its timestamp queries read the 19.2 MHz always-on counter (measured against CLOCK_MONOTONIC).
     if (V.driver_id == VK_DRIVER_ID_MESA_TURNIP && V.props.driverVersion == 0x06802063 &&
         strstr(pdr.driverInfo, "git-62ac221a33") && strstr(V.props.deviceName, "Adreno (TM) 650") &&

@@ -217,7 +217,8 @@ static uint64_t g_oqs_reset, g_oqs_rep, g_oqs_const, g_oqs_q, g_oqs_full, g_oqs_
 static int oq_on(void) {
     if (g_oq >= 0) return g_oq;
     g_oq = 0;
-    if (!VKA_ENV("DM_VK_OCCLUSION", 1)) { VLOG("occlusion queries: off (DM_VK_OCCLUSION=0): every samples-passed report writes 1"); return 0; }
+    // PEANUTS: DM_VK_NO_OCCLUSION=1 is DM_VK_OCCLUSION=0 for a game option (options give KEY=1 lines); DM_VK_OCCLUSION, when set, wins
+    if (!VKA_ENV("DM_VK_OCCLUSION", !VKA_ENV("DM_VK_NO_OCCLUSION", 0))) { VLOG("occlusion queries: off (DM_VK_OCCLUSION=0 or DM_VK_NO_OCCLUSION=1): every samples-passed report writes 1"); return 0; }
     if (!vka_ok()) { VRED("occlusion queries: no device: every samples-passed report writes 1"); return 0; }
     VkPhysicalDeviceVulkan12Features f12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     VkPhysicalDeviceFeatures2 f2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &f12};
