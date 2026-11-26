@@ -21,7 +21,7 @@ A patch's binding is what its correctness is anchored to, from the loosest. A pa
 
 ## Gaps
 
-Every patch bound tighter than it could be: the open gaps, then the blocked, kept and unreviewed ones; in each, those reaching the most games first (the games whose profiles register the builds it touches), then those farthest from their goal. 4 patches have no reviewed goal yet.
+Every patch bound tighter than it could be: the open gaps, then the blocked, kept and unreviewed ones; in each, those reaching the most games first (the games whose profiles register the builds it touches), then those farthest from their goal. 6 patches have no reviewed goal yet.
 
 | Now → goal | Patch | Purpose | Status | Evidence | Games | Where | Why |
 |---|---|---|---|---|---|---|---|
@@ -72,6 +72,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → `engine` | ThreadedStreamBuffer load-acquires | race | blocked: no game files of those games on the drive to compare | judgement | 2 | [FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition](../../dm/games/0100CE4010AAC000/README.md); [Pokémon Mystery Dungeon: Rescue Team DX](../../dm/games/01003D200BAA2000/README.md) | the race is in Unity 2018.4's ThreadedStreamBuffer, engine code other Unity games of that era ship (Cuphead, AI: THE SOMNIUM FILES, Raging Loop): a function-matched rule per Unity version |
 | `build` → `game` | Game Freak's frame time of present interval 2 at a fixed address (Pokémon Sword and Shield) | frame rate | blocked: one version of each game on hand | checked: Sword main a3b75bcd3311385a and Shield main a16802625e7826bf (1.3.2): the same offset in both | 2 | [Pokémon Shield](../../dm/games/01008DB008C2C000/README.md); [Pokémon Sword](../../dm/games/0100ABF008968000/README.md) | the game's own table of frame times by present interval (16666667, 33333334, 50000000 ... ns as 64-bit words), which a search for those values could find in any build |
 | `build` → `game` | Unity BucketAllocator ALLOC_BUCKET: 255 blocks of 4 MB → 63 | address space | blocked: no extracted main of either Subnautica on the game drive to fingerprint | checked: the bucket allocator of five Unity 2021 and later mains (not Subnautica's), 2026-10-29 | 2 | [Subnautica](../../dm/games/0100429011144000/README.md); [Subnautica: Below Zero](../../dm/games/010014C011146000/README.md) | Unity 2019's constructor call takes the block count as a constant; Unity 2021 and later read the bucket sizes from boot.config with a default of one block (Cult of the Lamb, Monster Train 2, Blasphemous 2, BALL x PIT, Donkey Kong Country Returns HD; checked 2026-10-29) and need no cut, so no Unity rule. A function-matched rule could carry it over the game's updates |
+| `build` → `host` | Resident Evil Revelations 2: the IR camera wrapper never sets a camera up | runtime | blocked: the irs service hands out a shared memory handle (nn::os::AttachSharedMemory, MapSharedMemory), which the host does not make yet | checked: main d69bca484713baa11285cf91df0c0368 (v131072): the wrapper, GetIrCameraHandle and the irs service getter disassembled, 2026-11-25 | 1 | [Resident Evil Revelations 2](../../dm/games/010095300212A000/README.md) | an old SDK's IR sensor library linked into main has no symbol to hook; an irs service on the host answering as a console with no IR camera would cover every such game |
 | `build` → `host` | resource heap size +16 KB (ExpHeap create size, main+0x130514) | memory | blocked: the native NVN2 sizes of a recorded indexed draw are not established (nxnative #1580) | judgement | 1 | [Super Mario Bros. Wonder - Nintendo Switch 2 Edition](../../dm/games/040015100B514001/README.md) | the shortfall comes from the host's NVN2 command-memory accounting (nxnative #1580); a correct host representation would make the cut unnecessary for every build |
 | `build` → `sdk` | VammManager node area and alignment, SDK 4.4.0 (9de92bad) | address space | blocked: one game ships it | judgement | 1 | [sdk_patches.py](../../dm/tools/sdk_patches.py) | an older implementation no rule covers (its large regions aligned to 32 MB, not the rules' 2 MB); a rule once a second game ships it |
 | `build` → `engine` | Criterion's 60 fps mode, frame ticks and game step at fixed addresses | frame rate | blocked: one game on that engine here | judgement | 1 | [Need For Speed™ Hot Pursuit Remastered](../../dm/games/010029B0118E8000/README.md) | the studio's engine, which its other games ship |
@@ -108,6 +109,8 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | `build` → unreviewed | cutscene frame time from the game clock at a 60 fps target | frame rate | unreviewed | judgement | 1 | [Metroid Dread](../../dm/games/010093801237C000/README.md) | the engine's per-frame function picks the cutscene's audio clock over the game clock by a predicate at a fixed offset |
 | `build` → unreviewed | Fire Emblem Fortune's Weave native 4:3 variant (VARIANT_CUTS['43']: camera aspect and ui2d pane rules) | rendering | unreviewed | judgement | 1 | [Fire Emblem Fortune's Weave](../../dm/games/04007EF01F8AE000/README.md) | an opt-in variant (Game settings › Aspect ratio) of about 230 words in code caves of this main; each ui2d rule names panes of this build's layouts |
 | `build` → unreviewed | rename bUseFixedFrameRate INI lookup key to xUseFixedFrameRate | frame rate | unreviewed | judgement | 1 | [Stray](../../dm/games/010075101EF84000/README.md) | DefaultEngine.ini sets bUseFixedFrameRate=True and FixedFrameRate=30.0, overriding t.MaxFPS; renaming the INI key keeps bUseFixedFrameRate false so hle_fpslock.c unlocks 60 fps |
+| `build` → unreviewed | Resident Evil Revelations 2: a type-9 dialog closes as soon as it shows instead of waiting for a ready counter nothing sets | runtime | unreviewed | checked: main d69bca484713baa11285cf91df0c0368 (v131072): the dialog update main+0x614d84 and the counter setter main+0x6c5c60 (callers main+0x785458, main+0x5c03b4, main+0x77d8a4) disassembled; a probe on main+0x6c5c60 never hit, 2026-11-26 | 1 | [Resident Evil Revelations 2](../../dm/games/010095300212A000/README.md) | the counter is set by a manager (main+0x785320) whose state the host never brings to 3 or 4; which service it waits on is not known yet |
+| `build` → unreviewed | Resident Evil Revelations 2: the title step waits for the title menu to be confirmed, not for the title GUI to stop playing | runtime | unreviewed | checked: main d69bca484713baa11285cf91df0c0368 (v131072): the title state machine main+0x820a78, the title GUI steps main+0x6d58f8 and the timeline engine main+0xa4c208 disassembled; probe runs on an AYN Thor, 2026-11-26 | 1 | [Resident Evil Revelations 2](../../dm/games/010095300212A000/README.md) | the title GUI never stops playing on the host (its timeline keeps waiting on a variable, main+0xa4ec90 type 3); the cause in the host is not found yet, and a host fix would cover the other GUIs that wait the same way |
 
 ## Summary
 
@@ -147,6 +150,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Pokémon Shield](#pokémon-shield) | 4 | 0 | 0 | 0 | 1 | `build` → `game` ×2 |
 | [Pokémon Shining Pearl](#pokémon-shining-pearl) | 0 | 0 | 0 | 0 | 1 | `build` → `engine` |
 | [Pokémon Sword](#pokémon-sword) | 0 | 0 | 0 | 0 | 1 | `build` → `game` |
+| [Resident Evil Revelations 2](#resident-evil-revelations-2) | 12 | 0 | 0 | 0 | 0 | `build` → `host`, `build` → unreviewed ×2 |
 | [Stray](#stray) | 1 | 0 | 0 | 0 | 0 | `build` → unreviewed |
 | [Subnautica](#subnautica) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Subnautica: Below Zero](#subnautica-below-zero) | 1 | 0 | 0 | 0 | 0 | `build` → `game` |
@@ -834,6 +838,28 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 
 - **1.3.2 `main`** `a3b75bcd…`
   - host [hle_fpslock.c:103](../../dm/host/hle_fpslock.c#L103): engine frame limit set to fps_target: Game Freak frame time of interval 2
+
+### Resident Evil Revelations 2
+
+[Resident Evil Revelations 2](../../dm/games/010095300212A000/README.md), `010095300212A000`, [patches.py](../../dm/games/010095300212A000/patches.py).
+
+- **`build` → `host`**, runtime, blocked: the irs service hands out a shared memory handle (nn::os::AttachSharedMemory, MapSharedMemory), which the host does not make yet, checked: main d69bca484713baa11285cf91df0c0368 (v131072): the wrapper, GetIrCameraHandle and the irs service getter disassembled, 2026-11-25: Resident Evil Revelations 2: the IR camera wrapper never sets a camera up. An old SDK's IR sensor library linked into main has no symbol to hook; an irs service on the host answering as a console with no IR camera would cover every such game
+- **`build` → unreviewed**, runtime, unreviewed, checked: main d69bca484713baa11285cf91df0c0368 (v131072): the title state machine main+0x820a78, the title GUI steps main+0x6d58f8 and the timeline engine main+0xa4c208 disassembled; probe runs on an AYN Thor, 2026-11-26: Resident Evil Revelations 2: the title step waits for the title menu to be confirmed, not for the title GUI to stop playing. The title GUI never stops playing on the host (its timeline keeps waiting on a variable, main+0xa4ec90 type 3); the cause in the host is not found yet, and a host fix would cover the other GUIs that wait the same way
+- **`build` → unreviewed**, runtime, unreviewed, checked: main d69bca484713baa11285cf91df0c0368 (v131072): the dialog update main+0x614d84 and the counter setter main+0x6c5c60 (callers main+0x785458, main+0x5c03b4, main+0x77d8a4) disassembled; a probe on main+0x6c5c60 never hit, 2026-11-26: Resident Evil Revelations 2: a type-9 dialog closes as soon as it shows instead of waiting for a ready counter nothing sets. The counter is set by a manager (main+0x785320) whose state the host never brings to 3 or 4; which service it waits on is not known yet
+
+- **1.0.2 `main`** `d69bca48…` ([patches.py:9](../../dm/games/010095300212A000/patches.py#L9))
+  - cut `+0xe34a4c`: IR camera wrapper: cbnz w8 (already set up) → b: never ask the irs service for a camera handle
+  - cut `+0x820adc`: title state 1: bl is-playing → ldr w9, [x0, #0x2bc] (title GUI step)
+  - cut `+0x820ae0`: title state 1: tbnz w0 → cmp w9, #5
+  - cut `+0x820ae4`: title state 1: ldr x8, [x19, #0x18] → b.le (menu not confirmed yet: wait)
+  - cut `+0x820ae8`: title state 1: ldrb w8, [x8, #0x364] → ldrb w8, [x0, #0x364] (x0 still holds the title GUI)
+  - cut `+0x614da4`: dialog update: adrp x9 → ldr w8, [x19, #0x340] (dialog type)
+  - cut `+0x614da8`: dialog update: ldr w8, [x19, #0x62c] → cmp w8, #9
+  - cut `+0x614dac`: dialog update: ldr x9 → b.ne (not type 9: leave it open)
+  - cut `+0x614db0`: dialog update: ldr x9 → nop
+  - cut `+0x614db4`: dialog update: ldr w9, [x9, #0x1bb0] → nop
+  - cut `+0x614db8`: dialog update: cmp w8, w9 → nop
+  - cut `+0x614dbc`: dialog update: b.hi → nop
 
 ### Stray
 
