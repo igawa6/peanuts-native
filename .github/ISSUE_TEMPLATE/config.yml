@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: "Game requests: not accepted"   # PEANUTS: owner 2026-11-26, game requests are not taken as issues
+    url: https://github.com/igawa6/peanuts-native#supported-games
+    about: "Requests for new games, other versions or DLC are not accepted as issues and are closed. This link shows the games and versions the app supports."
   # Hosted on git.eden-emu.dev while GitHub is unavailable. The GitHub links below go back in when the project returns there
   # (Forgejo has no Discussions; Questions and ideas have their own form there).
   - name: Install and use

@@ -48,7 +48,7 @@ Peanuts Native 0.1.8 includes 76 games. The Companion column shows whether a gam
 | Pokémon Sword | `0100ABF008968000` | 1.3.2 | Yes |  |
 | Pokémon Shield | `01008DB008C2C000` | 1.3.2 | Yes |  |
 | The Legend of Zelda: Breath of the Wild | `01007EF00011E000` | 1.6.0, 1.9.0 | Yes |  |
-| The Legend of Zelda: Tears of the Kingdom | `0100F2C0115B6000` | 1.4.3 | No |  |
+| The Legend of Zelda: Tears of the Kingdom | `0100F2C0115B6000` | 1.4.3 | Yes |  |
 | FINAL FANTASY RESONANCE | `0100606026F12000` | 1.0.1 | Yes |  |
 | The Legend of Zelda: Skyward Sword HD | `01002DA013484000` | 1.0.1 | Yes |  |
 | Pokémon Legends: Arceus | `01001F5010DFA000` | 1.1.1 | No |  |

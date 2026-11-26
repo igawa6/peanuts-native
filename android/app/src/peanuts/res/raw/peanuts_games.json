@@ -1407,7 +1407,7 @@
       ],
       "readme_update": "1.4.3",
       "package": "v720896",
-      "companion": false,
+      "companion": true,
       "since": null,
       "contributors": [],
       "profile": "dm/games/0100F2C0115B6000/game.tsv",

@@ -881,7 +881,9 @@ Open an issue at https://github.com/igawa6/peanuts-native/issues and pick the fo
 - **Build problem**: adding a game went wrong (the import, Prepare or the companion fails, stops, never finishes, or the app closes during it). It asks for the `.zip` of **Share log** › **Newest build**, attached as it is.
 - **Setup or app problem**: keys, firmware, the game folder and the library (a missing game, **Wrong version**, **File gone**), storage, installing a driver, a companion or a mod, saves, the second screen, or the app itself.
 - **Desktop builder problem**: building a game on a computer ([BUILDER.md](BUILDER.md)) fails.
-- **Game request** and **Feature request**: one game or one idea per post; search first and add a 👍 to an existing one.
+- **Feature request**: one idea per post; search first and add a 👍 to an existing one.
+
+**Requests for new games are not accepted** as issues, nor requests for another version or DLC of a game: such issues are closed. The games and versions the app supports are in the README's Supported games list.
 - A companion's page shows something wrong: that goes to the [companions' own issues](https://github.com/igawa6/eden-duo-companions/issues).
 
 The problem forms ask the rest mostly as picks from a list: the game with its version, the app version, the device, chip, RAM and Android version, the GPU driver, the Readiness check's verdict (its **Copy report** text goes in the last box), the settings you changed and whether it worked before. Before you report, update the app and build the game again (hold the cover › **Storage** › **Build again**): many reports are fixed by that.

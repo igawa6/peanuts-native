@@ -2,13 +2,13 @@ body:
   - type: markdown
     attributes:
       value: |
-        Ideas and game requests are welcome. Supported games are listed on the [main page](https://github.com/igawa6/peanuts-native).
+        Ideas are welcome; requests for new games are not accepted. Supported games are listed on the [main page](https://github.com/igawa6/peanuts-native).
         **No game files, keys, firmware or links to them**: don't share them, offer them or ask where to get them. Peanuts Native works with your own dump of a game you own. Posts that break this are edited or removed.
   - type: textarea
     id: body
     attributes:
       label: Your idea
-      description: "What you'd like, and why. For a game request, its name and title ID (no files)."
+      description: "What you'd like, and why."
     validations:
       required: true
   - type: checkboxes

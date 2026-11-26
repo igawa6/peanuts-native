@@ -6,6 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
+        **Requests for new games are not accepted.** Issues are for problems with the games and versions the app already supports (the [Supported games](https://github.com/igawa6/peanuts-native#supported-games) list). An issue asking for a game, another version or DLC is closed.
+
         Thanks for the report. Your device is probably not the one this was tested on, so these details are what a problem is traced with. Most fields are a pick from a list.
         **Adding a game went wrong** (the import, Prepare or the companion)? Use **Build problem**. **Keys, firmware, the library, storage, a driver or companion install, saves import** or the app itself? Use **Setup or app problem**.
         Never attach game files, keys, firmware or anything extracted from a game. Logs, saves and screenshots are fine. Write in English if you can; another language is fine too.
@@ -162,7 +164,7 @@ body:
         - "Yoru, Tomosu base game (0100C2901153C000)"
         - "Yoshi's Crafted World 1.0.1 (01006000040C2000)"
         - "One of these games, but another update or the base game (say which below)"
-        - "Another game (say which below)"
+        - "Another game the app supports (say which below; not for requests)"
     validations:
       required: true
   - type: input

@@ -241,10 +241,10 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
   plays, `android_builds` respected, and the package) and `peanuts/games.tsv` (the table's order, the name players know, a display
   version a profile lacks, the companion). The same script writes the Supported games table of `README.md` and `peanuts/docs/README.github.md`
   between its `PEANUTS begin` / `end` markers; `--refresh` adds a row for a game that ships without one and sets the companion column from
-  eden-duo-companions' releases. Seven issue forms, written by `peanuts/scripts/issue_forms.py` from one source: **Game problem** (the log
+  eden-duo-companions' releases. Six issue forms, written by `peanuts/scripts/issue_forms.py` from one source: **Game problem** (the log
   of the run required), **Build problem** (the Share build log `.zip` required), **Setup or app problem** (keys, firmware, the library,
-  storage, drivers, companions, mods, saves, the second screen, the app), **Desktop builder problem**, **Game request**, **Feature
-  request**, and **Question, device report or development topic**; `config.yml` links companion content to eden-duo-companions. They ask
+  storage, drivers, companions, mods, saves, the second screen, the app), **Desktop builder problem**, **Feature
+  request**, and **Question, device report or development topic**; `config.yml` links companion content to eden-duo-companions and says first that game requests are not accepted (every form says so too; the Game request form was removed on 2026-11-26). They ask
   mostly by picks: the game with its version (one option per catalog build, then another version or another game with a line to write it),
   the app version (peanuts/VERSION first), device, chip with its GPU, RAM, Android, the driver family, the settings changed, whether it
   worked before, and a required check that the log is this game's; every form keeps optional text boxes, and Game problem and Setup or app problem take

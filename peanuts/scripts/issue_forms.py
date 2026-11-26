@@ -19,7 +19,10 @@ ROOT = Path(__file__).resolve().parents[2]
 FORMS = ROOT / '.github/ISSUE_TEMPLATE'
 REPO = 'https://github.com/igawa6/peanuts-native'
 OTHER_VERSION = 'One of these games, but another update or the base game (say which below)'
-ANOTHER_GAME = 'Another game (say which below)'
+ANOTHER_GAME = 'Another game the app supports (say which below; not for requests)'
+# PEANUTS: game requests are not taken as issues (owner, 2026-11-26): every form says so first, and the Game request form is gone
+NO_REQUESTS = ('**Requests for new games are not accepted.** Issues are for problems with the games and versions the app already supports '
+               f'(the [Supported games]({REPO}#supported-games) list). An issue asking for a game, another version or DLC is closed.\n')
 
 _spec = importlib.util.spec_from_file_location('games_catalog', Path(__file__).with_name('games_catalog.py'))
 catalog = importlib.util.module_from_spec(_spec)
@@ -464,41 +467,6 @@ def builder_problem():
     }
 
 
-def game_request():
-    return {
-        'name': 'Game request',
-        'description': 'Ask for a game the app does not have yet, or another version of a game it has',
-        'labels': ['new-game'],
-        'body': [
-            md('Every game needs a profile in the app, and a new one takes from a day to weeks, so a request is a wish, not a promise. '
-               'One request per game: first search the open issues, and add a 👍 to an existing request instead of a new one.\n'
-               f'Want to try it yourself? [NEW-GAME.md]({REPO}/blob/main/peanuts/docs/NEW-GAME.md) says how a profile is made.\n'
-               f'**No game files, keys, firmware or links to them**, and no asking where to get them. {LANGUAGE}\n'),
-            pick('kind', 'What you ask for', [
-                'A game the app does not have yet',
-                'Another version (update) of a game it has',
-                'DLC of a game it has',
-                'A game it has, with a mod that needs another version (for example CTGP)',
-            ]),
-            line('name', 'Game', 'Its name as the Switch shows it.', 'Hyrule Warriors: Definitive Edition', required=True),
-            line('title_id', 'Title ID', 'The 16 characters the game\'s sheet shows (for example under Not Supported Yet).',
-                 '0100A1B2C3D4E000', required=True),
-            line('version', 'Version you have', 'The update you would play it with.', '1.0.6'),
-            pick('runs_elsewhere', 'Where it runs today', [
-                'On a Switch emulator (Eden, ...)',
-                'Only on the console',
-                "I don't know",
-            ], multiple=True, required=False),
-            text('why', 'Why this game', 'What makes it worth adding, for example it runs badly elsewhere, or it has a second-screen use.'),
-            line('device', 'Your device', 'If it matters, for example a low-RAM device.', 'AYN Thor Base'),
-            anything('Anything that helps: what you know of the game\'s engine, a test you made, a link to a page about the game (never to '
-                     'files).'),
-            checks('checks', 'Before sending', [('I searched the open issues, and there is no request for this game yet.', True)]),
-            rules(),
-        ],
-    }
-
-
 def feature_request():
     return {
         'name': 'Feature request',
@@ -539,7 +507,7 @@ def question():
         'description': 'Ask how something works, tell how a game runs on your device, or discuss how to build or contribute something',
         'body': [
             md('For a problem, use **Game problem**, **Build problem**, **Setup or app problem** or **Desktop builder problem**: their logs '
-               'and details are what a problem is traced with. For a wish, **Game request** or **Feature request**.\n'
+               'and details are what a problem is traced with. For a wish, **Feature request**; requests for new games are not accepted.\n'
                '**No game files, keys, firmware or links to them**: don\'t share them, offer them or ask where to get them. Peanuts Native '
                f'works with your own dump of a game you own. Posts that break this are edited or removed. {LANGUAGE}\n'),
             pick('kind', 'What is this?', [
@@ -559,14 +527,23 @@ def question():
     }
 
 
+def with_notice(make):
+    """The form, its first text block starting with NO_REQUESTS (so the notice is the first thing a form shows)"""   # PEANUTS: owner 2026-11-26
+    def made():
+        f = make()
+        first = f['body'][0]['attributes']
+        first['value'] = NO_REQUESTS + '\n' + first['value']
+        return f
+    return made
+
+
 FILES = {
-    '1_game_problem.yml': game_problem,
-    '2_build_problem.yml': build_problem,
-    '3_setup_problem.yml': setup_problem,
-    '4_builder_problem.yml': builder_problem,
-    '5_game_request.yml': game_request,
-    '6_feature_request.yml': feature_request,
-    '7_question.yml': question,
+    '1_game_problem.yml': with_notice(game_problem),
+    '2_build_problem.yml': with_notice(build_problem),
+    '3_setup_problem.yml': with_notice(setup_problem),
+    '4_builder_problem.yml': with_notice(builder_problem),
+    '6_feature_request.yml': with_notice(feature_request),
+    '7_question.yml': with_notice(question),
 }
 
 

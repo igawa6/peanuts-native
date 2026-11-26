@@ -5,7 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        For a problem, use **Game problem**, **Build problem**, **Setup or app problem** or **Desktop builder problem**: their logs and details are what a problem is traced with. For a wish, **Game request** or **Feature request**.
+        **Requests for new games are not accepted.** Issues are for problems with the games and versions the app already supports (the [Supported games](https://github.com/igawa6/peanuts-native#supported-games) list). An issue asking for a game, another version or DLC is closed.
+
+        For a problem, use **Game problem**, **Build problem**, **Setup or app problem** or **Desktop builder problem**: their logs and details are what a problem is traced with. For a wish, **Feature request**; requests for new games are not accepted.
         **No game files, keys, firmware or links to them**: don't share them, offer them or ask where to get them. Peanuts Native works with your own dump of a game you own. Posts that break this are edited or removed. Write in English if you can; another language is fine too.
   - type: dropdown
     id: kind

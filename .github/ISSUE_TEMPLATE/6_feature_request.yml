@@ -6,6 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
+        **Requests for new games are not accepted.** Issues are for problems with the games and versions the app already supports (the [Supported games](https://github.com/igawa6/peanuts-native#supported-games) list). An issue asking for a game, another version or DLC is closed.
+
         One idea per post: it is easier to discuss and to close when done. First search the open issues, and add a 👍 to an existing one instead of a new one. Write in English if you can; another language is fine too.
   - type: dropdown
     id: area

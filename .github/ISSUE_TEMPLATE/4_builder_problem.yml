@@ -6,6 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
+        **Requests for new games are not accepted.** Issues are for problems with the games and versions the app already supports (the [Supported games](https://github.com/igawa6/peanuts-native#supported-games) list). An issue asking for a game, another version or DLC is closed.
+
         Building on the device? Use **Build problem**. The desktop builder is described in [BUILDER.md](https://github.com/igawa6/peanuts-native/blob/main/peanuts/docs/BUILDER.md).
         Give paths only as far as they matter, and never attach game files, keys or anything the builder extracted from a game. Write in English if you can; another language is fine too.
   - type: textarea
