@@ -1,0 +1,36 @@
+# Profile generated from the local survey; the Android device run is recorded in README.md. Memory and shader values remain provisional for maintainer review.
+# 01006C7021024000, SDK 18, survey (path omitted)
+
+# ---- Identity ----
+title_id	01006C7021024000
+program_id	01006C7021024000
+
+# ---- App ----
+name	MotoGP 25
+ipa	MotoGP25.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v262144	1.0.4	main=499a85d046c70186ef88c3b0fdc5d274	subsdk0=eaa05846a807df718924f51c796ed63c	sdk=ad9ee4518b1d8ca811fbdf35fc4f26d5
+package	v262144
+shader_versions	v262144
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	motogp25/Content/Paks/pakchunk0-Switch.ucas
+zip_store	.mp4:.pak:.ttf:.txt:.ucas:.metallib
+
+# ---- Memory ----
+# Provisional Unreal virtual-address and alias-region values from the survey profile; verify against an Android memory run before treating them as game-specific requirements.
+mem_reserve	0x1028000000
+mem_alias	0x1000000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 32 MB of system resource
+sys_resource	0x2000000
+
+# ---- Shader split ----
+# the decoded shader code archives: the engine's global shaders and the game's material shaders
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	01006C7021024000 shaders (profile values provisional)
