@@ -396,7 +396,19 @@ static int pull(const char *save, const char *bundle, ss_meta *r, char *kept, si
         if (had && !*kept && backup_dir(save, "local", kept, kn)) return -1;
         snprintf(old, sizeof old, "%s/%s", kept, FOLDERS[i]);
         if (fresh && !access(here, F_OK)) {   // swapped: here holds the cloud's, incoming this device's
+#if PLAT_APPLE
             if (plat_rename_swap(incoming, here) || (had ? rename(incoming, old) : rm_tree(incoming))) return -1;
+#else
+            // PEANUTS begin: Android updates here in place and keeps nothing of it, so this device's save is copied to the backup first; the cloud's moves beside here
+            // (here.new), so that a stopped update's marker names a folder plat_swap_recover takes
+            char neu[PATH_MAX]; snprintf(neu, sizeof neu, "%s.new", here);
+            plat_swap_recover(here);
+            if ((had && plat_clone_tree(here, old)) || (!access(neu, F_OK) && rm_tree(neu)) || rename(incoming, neu)) return -1;
+            int sr = plat_rename_swap(neu, here);
+            if (sr) { if (sr != -2) rm_tree(neu); return -1; }
+            rm_tree(neu);
+            // PEANUTS end
+#endif
         } else if (fresh) { if (rename(incoming, here)) return -1; }
         else if (had && rename(here, old)) return -1;   // a folder the cloud's save does not have: this device's goes, so both hold the same
     }
