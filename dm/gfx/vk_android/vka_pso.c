@@ -10,6 +10,7 @@
 #include "vka_memu_abi.h"
 #include "vka_pwlist.h"
 #include "vka_psogate.h"
+#include "vka_zonly.h"   // PEANUTS: DM_VK_DEPTH_ONLY_BLEND
 #include "vka_psosync.h"   // PEANUTS: the draws that are not skipped while their pipeline is made in the background (vka_gfx_pipeline_now, below)
 #include "vk_prewarm_seed.h"   // the profile's seed list (dm/games/<id>/vk_prewarm.bin; dm/games/game.py seed): dm_vk_prewarm_seed, dm_vk_prewarm_seed_len (0: none)
 #include "../nvn/nvn_mtl.h"
@@ -496,6 +497,22 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     for (int i = 0; i < k->ncolor; i++)
         P->cb[i] = (VkPipelineColorBlendAttachmentState){k->att[i].en, (VkBlendFactor)k->att[i].src, (VkBlendFactor)k->att[i].dst, (VkBlendOp)k->att[i].op,
                                                           (VkBlendFactor)k->att[i].srca, (VkBlendFactor)k->att[i].dsta, (VkBlendOp)k->att[i].opa, k->att[i].mask};
+    // PEANUTS: DM_VK_DEPTH_ONLY_BLEND (vka_zonly.h): on Qualcomm's own driver a draw that writes no colour channel gets wrong pixel shader inputs, so its
+    // fixed-point targets the pixel shader writes are written through blend ZERO, ONE (unchanged; not with a logic op, which would replace them). Read at pipeline creation: restart
+    if (sh[1] && k->ncolor && !k->logic_en && VKA_ENV("DM_VK_DEPTH_ONLY_BLEND", V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY)) {
+        uint32_t bl = 0; uint8_t m[8]; int written = 0;
+        for (int i = 0; i < k->ncolor && i < 8; i++) {
+            m[i] = k->att[i].mask; written |= m[i]; VkFormatProperties fp = {0};
+            if (k->cfmt[i]) vk.vkGetPhysicalDeviceFormatProperties(V.pd, (VkFormat)k->cfmt[i], &fp);
+            if (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT) bl |= 1u << i;
+        }
+        uint32_t w = vka_zonly_targets(k->ncolor, k->cfmt, m, sh[1]->e->fout_mask, bl);
+        for (int i = 0; i < k->ncolor && i < 8; i++) if (w >> i & 1)
+            P->cb[i] = (VkPipelineColorBlendAttachmentState){VK_TRUE, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, 0xf};
+        static _Atomic int nw, nn;
+        if (w && atomic_fetch_add(&nw, 1) < 4) VLOG("depth-only blend: pixel shader %016llx writes no colour: targets %#x written through blend ZERO, ONE (DM_VK_DEPTH_ONLY_BLEND)", (unsigned long long)sh[1]->key, w);
+        else if (!w && !written && atomic_fetch_add(&nn, 1) < 4) VLOG("depth-only blend: pixel shader %016llx writes no colour and has no fixed-point target it writes: drawn as asked", (unsigned long long)sh[1]->key);
+    }
     P->bs = (VkPipelineColorBlendStateCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, .logicOpEnable = k->logic_en, .logicOp = (VkLogicOp)k->logic_op, .attachmentCount = k->ncolor, .pAttachments = P->cb};
     static const VkDynamicState base[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_CULL_MODE, VK_DYNAMIC_STATE_FRONT_FACE,
         VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY, VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE, VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE, VK_DYNAMIC_STATE_DEPTH_COMPARE_OP, VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE,

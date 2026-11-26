@@ -500,6 +500,10 @@ $(B)/t_android_psogate: t_android_psogate.c $(VKA)/vka_psogate.h | $(B)
 # Automatic defaults by driver: the rules and the "[auto]" log line (vka_auto.h; vka_dev.c auto_log)
 $(B)/t_android_auto: t_android_auto.c $(VKA)/vka_auto.h $(VKA)/vka_psogate.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_auto.c
+# PEANUTS: the colour targets a draw that writes no colour is given on Qualcomm's driver (vka_zonly.h; vka_pso.c DM_VK_DEPTH_ONLY_BLEND)
+$(B)/t_android_zonly: t_android_zonly.c $(VKA)/vka_zonly.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_zonly.c
+run: $(B)/t_android_zonly
 # The pipeline cache stamp: which file a run reads after a shader library update (vka_pckeep.h; vka_pso.c pc_open_once)
 $(B)/t_android_pckeep: t_android_pckeep.c $(VKA)/vka_pckeep.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_pckeep.c
