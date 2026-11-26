@@ -561,7 +561,9 @@ static int swap_apply(const char *a, const char *b, int stage1) {
 int plat_rename_swap(const char *a, const char *b) {
     if (swap_sync_tree(a)) return -1;   // PEANUTS: a's files on the storage before anything points at them (#195)
     char m1[4200]; if (snprintf(m1, sizeof m1, "%s.pend1", b) >= (int)sizeof m1) { errno = ENAMETOOLONG; return -1; }
-    if (swap_marker(m1, a)) return -1;                                  // from here on the commit is rolled forward, also after a crash
+    if (swap_marker(m1, a)) {   // PEANUTS: a marker that could not be written (a full disk) goes, or a stays (-2) for the one left
+        int e = errno; int kept = unlink(m1) && errno != ENOENT; errno = e; return kept ? -2 : -1;
+    }                                                                   // from here on the commit is rolled forward, also after a crash
     return swap_apply(a, b, 1) ? -2 : 0;                                // PEANUTS: -2: the marker stays, a must be kept for the roll-forward
 }
 // The folder a marker of b may name: only b's own siblings b.new (a commit), b.re (a work directory's reclone) and b.restore (the Android launcher's save restore,
