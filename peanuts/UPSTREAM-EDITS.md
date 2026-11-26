@@ -2796,3 +2796,35 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### Save commits keep the save folder itself (#485, PR #732; 2026-11-26)
+
+Android's `plat_rename_swap` no longer exchanges the save folder with `<id>.new` (`RENAME_EXCHANGE` gave it a new inode, and a sync tool watching it lost every commit):
+every commit brings the folder to the new version in place under the roll-forward journal that shared storage already used. After review: a failure after the journal
+marker returns -2 and keeps `<id>.new` (or `.work.re`) for the roll-forward, which the next commit or mount runs; stage 2 gives each folder the new version's mode and
+attributes; save sync's pull copies the local save to its backup first and stages the cloud's save as `<id>.new`.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/plat/plat_android.c` | 4 | no `RENAME_EXCHANGE`; `swap_dir_meta`; stage 2 sets folders' mode and attributes; `plat_rename_swap` returns -2 after its marker | `PEANUTS`, `PEANUTS begin`/`end` |
+| `dm/host/plat/plat.h` | 1 | the `plat_rename_swap` / `plat_swap_recover` contract on Apple and Android | `PEANUTS begin`/`end` |
+| `dm/host/hle_fs.c` | 4 | a commit finishes a pending journal first and refuses while one stays; -2 keeps `.new` / `.re`; a mount drops a stopped reclone's journal | `PEANUTS` |
+| `dm/host/save_sync.c` | 1 | `pull` on Android: backup copy, `<id>.new` staging, -2 kept | `PEANUTS begin`/`end` |
+| `dm/tools/tests/test_android_saves.py` | 3 | `swap_code` keeps `plat_rename_swap`; the harness stubs `swap_dir_meta` and exits 2 on -2; `HostSwap`'s three tests | `PEANUTS`, `PEANUTS begin`/`end` |
+| `docs/reference/services.md`, `docs/agents/symptoms.md` (generated) | 1 each | the entry "Commits keep the Android save folder itself" | `PEANUTS begin`/`end`, `(PEANUTS, Android)` |
+| `android/PORTING.md`, `dm/games/01006BB00C6F0000/README.md` | 1 each | the `plat_rename_swap` row; the game note's line | `<!-- PEANUTS -->` |
+
+### Save commits copy only what changed (#571, PR #733; 2026-11-26)
+
+On Android a commit copies into `<id>.new` only the files that changed since the save, with a `.dm-keep` list of everything the new version holds, and stage 1 removes
+from the save only what that list lacks; a mount brings `.work` up to the save in place instead of copying it again. A file is replaced by unlink and rename, so the
+media provider no longer restores the old date on shared storage. A folder whose mode or attributes changed goes into the copy, and folders made for a changed file
+carry their attributes. The Mac keeps its copy-on-write clone and swap.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/plat/plat_android.c` | 11 | `plat_clone_changed`, `plat_update_tree`; `.dm-keep` in stage 1; stage 2 replaces a file or folder of the other kind; `copy_file`'s `times` | `PEANUTS`, `PEANUTS begin`/`end` |
+| `dm/host/plat/plat.h`, `dm/host/plat/plat_apple.h` | 1 each | the two functions; on the Mac a full clone and no update | `PEANUTS begin`/`end` |
+| `dm/host/hle_fs.c` | 2 | a commit copies what changed; a mount updates `.work` | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/SaveStore.java` | 6 | the launcher's journal reads `.dm-keep` and replaces as stage 2 does | `PEANUTS`, `PEANUTS begin`/`end` |
+| `dm/tools/tests/test_android_saves.py` | 3 | the delta scenarios, checked on both sides; `HostDelta`: folder attributes and mode with real xattrs | `PEANUTS`, `PEANUTS begin`/`end` |

@@ -508,12 +508,12 @@ final class SaveStore {
      */
     private static void apply(File a, File b, boolean stage1) throws IOException {
         if (stage1) {
-            stage1(a, b);
+            stage1(a, b, keep(a), "");   // PEANUTS: a delta copy's .dm-keep (#571)
             writeSynced(marker(b, 2), a.getAbsolutePath().getBytes(StandardCharsets.UTF_8));
         }
         if (!marker(b, 1).delete() && marker(b, 1).exists()) throw new IOException("cannot remove " + marker(b, 1));
         dirSync(b);
-        stage2(a, b);
+        stage2(a, b, true);   // PEANUTS
         if (!marker(b, 2).delete() && marker(b, 2).exists()) throw new IOException("cannot remove " + marker(b, 2));
     }
 
@@ -613,29 +613,54 @@ final class SaveStore {
         return did;
     }
 
-    private static void stage1(File a, File b) throws IOException {   // remove from b what a does not have
+    // PEANUTS begin: delta copies (#571), as plat_android.c: stage 1 removes from b only what .dm-keep lacks; stage 2 replaces a file or folder of the other kind
+    static final String KEEP = ".dm-keep";
+
+    private static java.util.Set<String> keep(File a) throws IOException {
+        File k = new File(a, KEEP);
+        if (!k.isFile()) return null;
+        java.util.Set<String> s = new java.util.HashSet<>();
+        for (String p : new String(Files.readAllBytes(k.toPath()), StandardCharsets.UTF_8).split("\0")) if (!p.isEmpty()) s.add(p);
+        return s;
+    }
+
+    private static void stage1(File a, File b, java.util.Set<String> keep, String rel) throws IOException {   // remove from b what a does not have
         String[] names = b.list();
         if (names == null) return;
         for (String n : names) {
             File pa = new File(a, n), pb = new File(b, n);
+            String rr = rel.isEmpty() ? n : rel + "/" + n;
             boolean da = Files.isDirectory(pa.toPath(), LinkOption.NOFOLLOW_LINKS), db = Files.isDirectory(pb.toPath(), LinkOption.NOFOLLOW_LINKS);
-            if (!Files.exists(pa.toPath(), LinkOption.NOFOLLOW_LINKS) || da != db) deleteTree(pb);
-            else if (db) stage1(pa, pb);
+            if (keep != null) {
+                if (!db) { if (!keep.contains(rr)) deleteTree(pb); }
+                else if (keep.contains(rr + "/")) stage1(pa, pb, keep, rr);
+                else deleteTree(pb);
+            }
+            else if (!Files.exists(pa.toPath(), LinkOption.NOFOLLOW_LINKS) || da != db) deleteTree(pb);
+            else if (db) stage1(pa, pb, null, rr);
         }
     }
 
-    private static void stage2(File a, File b) throws IOException {   // move a's files over b's
+    private static void stage2(File a, File b, boolean top) throws IOException {   // move a's files over b's
         String[] names = a.list();
         if (names == null) return;
         for (String n : names) {
+            if (top && n.equals(KEEP)) continue;
             File pa = new File(a, n), pb = new File(b, n);
+            boolean db = Files.isDirectory(pb.toPath(), LinkOption.NOFOLLOW_LINKS);
             if (Files.isDirectory(pa.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                if (!db && Files.exists(pb.toPath(), LinkOption.NOFOLLOW_LINKS)) deleteTree(pb);
                 if (!pb.isDirectory() && !pb.mkdir()) throw new IOException("cannot create " + pb);
-                stage2(pa, pb);
+                stage2(pa, pb, false);
                 pa.delete();
-            } else if (!pa.renameTo(pb)) throw new IOException("cannot move " + pa + " to " + pb);
+            } else {
+                if (db) deleteTree(pb);
+                else if (Files.exists(pb.toPath(), LinkOption.NOFOLLOW_LINKS) && !pb.delete()) throw new IOException("cannot remove " + pb);
+                if (!pa.renameTo(pb)) throw new IOException("cannot move " + pa + " to " + pb);
+            }
         }
     }
+    // PEANUTS end
 
     // ---- Files ----
 
