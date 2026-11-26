@@ -42,7 +42,7 @@ final class ScreenMode {
     static String fixed(String id) {
         Profile p = Profile.of(id);
         if (p != null && (p.resolution.startsWith("scale:") || p.renderCfg())) return "";
-        if (HANDHELD.contains(id) && !FREE.contains(id)) return "Handheld: this game needs it (touch or pointer)";
+        if (HANDHELD.contains(id) && !FREE.contains(id) && !WordsGfx.unlocksMode(p)) return "Handheld: this game needs it (touch or pointer)";   // PEANUTS: a words: game's op_mode handheld is its default, not a lock
         return null;
     }
 
@@ -61,9 +61,20 @@ final class ScreenMode {
         return Prefs.of(c).getInt(Prefs.gameKey(KEY, id), g < 0 ? own(id) : g) == 1 ? 1 : 0;
     }
 
-    static void set(Context c, String id, Integer v) {
-        if (v == null) Prefs.of(c).edit().remove(Prefs.gameKey(KEY, id)).commit();
-        else Prefs.of(c).edit().putInt(Prefs.gameKey(KEY, id), v).commit();
+    /** Keeps the choice for the game's next start (null: back to the default); true when it was written (commit: the game's process may end next, and the launcher reads the same file) */
+    static boolean set(Context c, String id, Integer v) {   // PEANUTS: returns the commit result (it was void), so the in-game panel can say when a choice was not kept
+        if (v == null) return Prefs.of(c).edit().remove(Prefs.gameKey(KEY, id)).commit();
+        return Prefs.of(c).edit().putInt(Prefs.gameKey(KEY, id), v).commit();
+    }
+
+    /** the in-game panel's Graphics quality choice for the next start: written (set), read back, and a log line (Native.note) when it was not kept; no live change of the console mode.
+     *  Also a log line when the control runs (before the write) and one with the value read back when it was kept, so a device log shows whether the handler ran at all */
+    static void keep(Context c, String id, int mode) {
+        Native.note(WordsGfx.gfxPickedLine(id, mode));
+        boolean written = set(c, id, mode);
+        int back = mode(c, id);
+        if (!written || back != mode) Native.note("Graphics quality: the choice was not kept for the next start");
+        else Native.note(WordsGfx.gfxKeptLine(id, mode, back));
     }
 
     /** The host's line (DM_OPMODE: 1 console, 0 handheld): none for a fixed game, nor when the choice is the profile's own mode */
@@ -80,6 +91,7 @@ final class ScreenMode {
         String id = g.titleId, fx = fixed(id);
         if (fx != null && fx.isEmpty()) return null;
         if (fx != null) return new Ui.Setting(a, "📺", "Console mode", null).value(fx);
+        if (WordsGfx.unlocksMode(Profile.of(id))) return wordsRow(a, g, done);   // PEANUTS
         Ui.Setting s = new Ui.Setting(a, "📺", "Console mode", v -> {
             String[] labels = {"Default (" + (global(a) < 0 ? "this game: " + SHORT[own(id)] : "Settings: " + SHORT[global(a)]) + ")", NAMES[0], NAMES[1]};
             new PadFocus.Builder(a).setTitle("Console mode · " + g.name).setSingleChoiceItems(labels, own(a, id) ? mode(a, id) + 1 : 0, (x, w) -> {
@@ -91,6 +103,23 @@ final class ScreenMode {
         String n = NOTES.get(id);
         return s.note((n != null ? n + " " : "The picture size the game draws at, as on a Switch. Handheld also turns on the game's touch screen. ") + "From the next start; while the game runs, its in-game panel changes it at once.");
     }
+
+    // PEANUTS begin: Graphics quality, the row of a words: game (WordsGfx.unlocksMode): this mode, relabelled and with the game's words, Handheld first. The picture's size is Output and
+    // Internal resolution's now (the host writes the window and the 3D scale in both modes), so the mode only sets the game's own quality; it applies at the next start, never live
+    private static Ui.Setting wordsRow(MainActivity a, Game g, Runnable done) {
+        String id = g.titleId;
+        Ui.Setting s = new Ui.Setting(a, "✨", "Graphics quality", v -> {
+            String[] labels = {"Default (" + (global(a) < 0 ? "this game: " + SHORT[own(id)] : "Settings: " + SHORT[global(a)]) + ")", WordsGfx.GFX_NAMES[1], WordsGfx.GFX_NAMES[0]};
+            int checked = own(a, id) ? (mode(a, id) == 1 ? 1 : 2) : 0;
+            new PadFocus.Builder(a).setTitle("Graphics quality · " + g.name).setSingleChoiceItems(labels, checked, (x, w) -> {
+                set(a, id, w == 0 ? null : w == 1 ? 1 : 0);
+                x.dismiss();
+                done.run();
+            }).setNegativeButton("Cancel", null).show();
+        }).value(SHORT[mode(a, id)] + (own(a, id) ? "" : " (default)")).chevron(a);
+        return s;
+    }
+    // PEANUTS end
 
     /** Settings › Performance and picture */
     static Ui.Setting defaultRow(MainActivity a) {

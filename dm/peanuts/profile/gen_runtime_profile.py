@@ -42,9 +42,14 @@ SCALAR = {
     'ROMFS_SUBST': ('romfs_subst', 'str'), 'NWINDOW_FN': ('nwindow_fn', 'int'), 'NSUBGROUP_ONE_LANE': ('nsubgroup_one_lane', 'int'),
     'NMESH_VEGETATION_CUT': ('nmesh_vegetation_cut', 'int'), 'NMESH_PREPASS_CUT': ('nmesh_prepass_cut', 'int'), 'NFPS_STEPS': ('nfps_steps', 'int'),
     'NDRS_CTL': ('ndrs_ctl', 'int'), 'NRES_LEVELS': ('nres_levels', 'int'),
-    'EVENT_WAIT': ('event_wait', 'int'), 'OCCLUSION_SPLIT_PASS': ('occlusion_split_pass', 'int'), 'LOW_RAM_PLACE_PART_MB': ('low_ram_place_part_mb', 'int'),
+    'EVENT_WAIT': ('event_wait', 'int'), 'ALIAS_SYNC': ('alias_sync', 'int'), 'OCCLUSION_SPLIT_PASS': ('occlusion_split_pass', 'int'), 'LOW_RAM_PLACE_PART_MB': ('low_ram_place_part_mb', 'int'),
     'LOW_RAM_IMG_CACHE_MAX_MB': ('low_ram_img_cache_max_mb', 'int'), 'LOW_RAM_APP_POOL_MB': ('low_ram_app_pool_mb', 'int'),
     'RENDER_DEFAULT_OUT': ('render_default_out', 'str'), 'NRENDER_CFG': ('nrender_cfg', 'int'), 'NRT_POOL': ('nrt_pool', 'int'),
+    # PEANUTS(upstream-candidate): window_words / view_scale_words counts, upscale_pass
+    'NWINDOW_WORDS': ('nwindow_words', 'int'), 'NVIEW_SCALE_WORDS': ('nview_scale_words', 'int'), 'HAS_UPSCALE_PASS': ('has_upscale_pass', 'int'),
+    'UPSCALE_PASS_BINDING': ('upscale_pass_binding', 'int'), 'UPSCALE_PASS_VS': ('upscale_pass_vs', 'int'), 'UPSCALE_PASS_PS': ('upscale_pass_ps', 'int'),
+    'NVIEW_SCALE_STEPS': ('nview_scale_steps', 'int'),   # PEANUTS(upstream-candidate)
+    'NVIEW_SCALE_FIXED': ('nview_scale_fixed', 'int'),   # PEANUTS(upstream-candidate)
 }
 # PRESENCE: macros header() emits only when the game.tsv key is set (optional; absent means "the host decides some other way", e.g. by SDK version).
 PRESENCE = {'SHARED_FONT_TTF': 'shared_font_ttf', 'NVN_API_MAJOR': 'nvn_api_major', 'NVN_API_MINOR': 'nvn_api_minor'}
@@ -52,7 +57,8 @@ PRESENCE = {'SHARED_FONT_TTF': 'shared_font_ttf', 'NVN_API_MAJOR': 'nvn_api_majo
 # on purpose (see its header comment). Each needs its own literal parser (the C-literal shapes are fixed by game.py, checked against game.py's own
 # tests by check-all below) and a fixed-capacity encoder matching profile_rt.h.
 ARRAY_NAMES = {'MODULES', 'DISPLAY_VERSIONS', 'WINDOW_FN', 'SUBGROUP_ONE_LANE', 'MESH_VEGETATION_CUT', 'MESH_PREPASS_CUT', 'FPS_STEPS', 'DRS_CTL', 'RES_LEVELS',
-               'RENDER_CFG', 'RENDER_QUALITY', 'RT_POOL'}
+               'RENDER_CFG', 'RENDER_QUALITY', 'RT_POOL', 'WINDOW_WORDS', 'VIEW_SCALE_WORDS',
+               'VIEW_SCALE_STEPS', 'VIEW_SCALE_FIXED'}   # PEANUTS(upstream-candidate): WINDOW_WORDS, VIEW_SCALE_WORDS; VIEW_SCALE_STEPS; VIEW_SCALE_FIXED
 
 KNOWN = set(SCALAR) | set(PRESENCE) | ARRAY_NAMES
 
@@ -75,10 +81,18 @@ LAYOUT = [
     ('nmesh_vegetation_cut', 'u32'), ('mesh_vegetation_cut', 'u64[128]'), ('nmesh_prepass_cut', 'u32'), ('mesh_prepass_cut', 'row[64]:u64x4'),
     ('nfps_steps', 'u32'), ('fps_steps', 'row[8]:char[48]+u64+u32+u32+u32+u64[3]'), ('ndrs_ctl', 'u32'), ('drs_ctl', 'row[8]:char[48]+u64x4'),
     ('nres_levels', 'u32'), ('res_levels', 'row[8]:char[48]+u64+u32+u32+row[12]:u64+u32'),
-    ('event_wait', 'u32'), ('occlusion_split_pass', 'u32'), ('low_ram_place_part_mb', 'u32'), ('low_ram_img_cache_max_mb', 'u32'), ('low_ram_app_pool_mb', 'u32'),
+    ('event_wait', 'u32'), ('occlusion_split_pass', 'u32'), ('low_ram_place_part_mb', 'u32'), ('low_ram_img_cache_max_mb', 'u32'), ('low_ram_app_pool_mb', 'u32'), ('alias_sync', 'u32'),   # PEANUTS(upstream-candidate): alias_sync
     ('render_default_out', 'char[16]'), ('render_quality', 'u32[4]'),
     ('nrender_cfg', 'u32'), ('render_cfg', 'row[4]:char[48]+u64+u32x4+u32[8][4]+u32x5'),
     ('nrt_pool', 'u32'), ('rt_pool', 'row[4]:char[48]+char[16]+u64+u32x3+u32[4]x3+u32'),
+    # PEANUTS(upstream-candidate): window_words / view_scale_words rows (loader.c words_apply), upscale_pass
+    ('nwindow_words', 'u32'), ('window_words', 'row[4]:char[48]+u32+row[8]:u64+u32x2'), ('nview_scale_words', 'u32'), ('view_scale_words', 'row[4]:char[48]+u32+row[8]:u64+u32x2'),
+    ('has_upscale_pass', 'u32'), ('upscale_pass_binding', 'u32'), ('upscale_pass_vs', 'u64'), ('upscale_pass_ps', 'u64'),
+    # PEANUTS(upstream-candidate): view_scale_steps rows. Shared groups append after upscale_pass_*; a clone-local field (e.g. a texel-buffer copy key) stays last;
+    # schema hashes are per clone
+    ('nview_scale_steps', 'u32'), ('view_scale_steps', 'row[4]:char[48]+u32+u32[13]x2'),
+    # PEANUTS(upstream-candidate): view_scale_fixed rows, directly after view_scale_steps (a shared group: before any clone-local field)
+    ('nview_scale_fixed', 'u32'), ('view_scale_fixed', 'row[4]:char[48]+u32x2'),
 ]
 
 
@@ -208,7 +222,10 @@ def parse_res_levels(rhs, n):
 # unaligned uint64_t field, UB even though AArch64 tolerates the actual load). Packer mirrors the C compiler's own layout rules (each field aligned to its
 # own size, a struct's size rounded up to its own largest member alignment, so an array of structs has uniform stride) - the one thing that must stay in
 # step with profile_rt.h's field order by hand; DM_PROFILE_LAYOUT_SIZE (schema_stamp) and the _Static_assert in profile_rt.c catch the two drifting apart.
-CAPS = dict(modules=8, display_versions=16, window_fn=8, subgroup_one_lane=16, mesh_vegetation_cut=128, mesh_prepass_cut=64, fps_steps=8, drs_ctl=8, res_levels=8, render_cfg=4, rt_pool=4)
+CAPS = dict(modules=8, display_versions=16, window_fn=8, subgroup_one_lane=16, mesh_vegetation_cut=128, mesh_prepass_cut=64, fps_steps=8, drs_ctl=8, res_levels=8, render_cfg=4, rt_pool=4,
+            window_words=4, view_scale_words=4, view_scale_steps=4, view_scale_fixed=4)   # PEANUTS(upstream-candidate): window_words, view_scale_words; view_scale_steps; view_scale_fixed
+WORDS_SITES = 8   # PEANUTS(upstream-candidate): sites per window_words / view_scale_words row (profile_rt.h DM_PROFILE_WORDS_SITES, dm/host/imm_words.h IMW_MAX_SITES)
+STEPS_MAX = 13    # PEANUTS(upstream-candidate): entries per view_scale_steps row (profile_rt.h DM_PROFILE_STEPS_MAX, dm/host/imm_words.h IMW_MAX_STEPS)
 
 
 def pad(s, n):
@@ -299,6 +316,64 @@ def parse_rt_pool(rhs, n):
     return out
 
 
+# PEANUTS(upstream-candidate) begin: window_words / view_scale_words: {"build", n, {{off, word, kind}, ...}} rows (game.py header())
+def parse_words(rhs, n):
+    if n == 0: return []
+    out = []
+    for row in split_top(unbrace(rhs))[:n]:
+        p = split_top(unbrace(row))
+        sites = [tuple(as_int(x) for x in split_top(unbrace(s))) for s in split_top(unbrace(p[2]))][:as_int(p[1])]
+        assert len(sites) == as_int(p[1]) and all(len(s) == 3 for s in sites), row
+        out.append((unq(p[0]), sites))
+    return out
+
+
+# view_scale_steps: {"build", {n, {pct, ...}, {word, ...}}} rows (game.py header())
+def parse_steps(rhs, n):
+    if n == 0: return []
+    out = []
+    for row in split_top(unbrace(rhs))[:n]:
+        p = split_top(unbrace(row)); st = split_top(unbrace(p[1]))
+        cnt = as_int(st[0]); pcts = [as_int(x) for x in split_top(unbrace(st[1]))][:cnt]; words = [as_int(x) for x in split_top(unbrace(st[2]))][:cnt]
+        assert len(pcts) == cnt and len(words) == cnt, row
+        out.append((unq(p[0]), list(zip(pcts, words))))
+    return out
+
+
+def row_steps(build, entries):
+    p = Packer(); p.raw(build, 48); p.u32(len(entries))
+    for i in range(STEPS_MAX): p.u32(entries[i][0] if i < len(entries) else 0)
+    for i in range(STEPS_MAX): p.u32(entries[i][1] if i < len(entries) else 0)
+    return p.finish()
+
+
+# view_scale_fixed: {"build", w, h} rows (game.py header())
+def parse_fixed(rhs, n):
+    if n == 0: return []
+    out = []
+    for row in split_top(unbrace(rhs))[:n]:
+        p = split_top(unbrace(row))
+        assert len(p) == 3, row
+        out.append((unq(p[0]), as_int(p[1]), as_int(p[2])))
+    return out
+
+
+def row_fixed(build, w, h):
+    p = Packer(); p.raw(build, 48); p.u32(w); p.u32(h)
+    return p.finish()
+
+
+def row_words(build, sites):
+    p = Packer(); p.raw(build, 48); p.u32(len(sites))
+    sub = Packer()
+    for i in range(WORDS_SITES):
+        off, word, kind = sites[i] if i < len(sites) else (0, 0, 0)
+        s = Packer(); s.u64(off); s.u32(word); s.u32(kind); b, a = s.finish(); sub.sub(b, a)
+    b, a = sub.finish(); p.sub(b, a)
+    return p.finish()
+# PEANUTS end
+
+
 def row_render_cfg(build, table, n, stride, out_off, ren_off, sz, tail):
     p = Packer(); p.raw(build, 48); p.u64(table)
     for v in (n, stride, out_off, ren_off): p.u32(v)
@@ -368,7 +443,10 @@ def build_profile_bytes(g, modules_override=None):
                             (as_int(val('NMESH_VEGETATION_CUT')), CAPS['mesh_vegetation_cut'], 'mesh_vegetation_cut'),
                             (as_int(val('NMESH_PREPASS_CUT')), CAPS['mesh_prepass_cut'], 'mesh_prepass_cut'), (as_int(val('NFPS_STEPS')), CAPS['fps_steps'], 'fps_steps'),
                             (as_int(val('NDRS_CTL')), CAPS['drs_ctl'], 'drs_ctl'), (as_int(val('NRES_LEVELS')), CAPS['res_levels'], 'res_levels'),
-                            (as_int(val('NRENDER_CFG')), CAPS['render_cfg'], 'render_cfg'), (as_int(val('NRT_POOL')), CAPS['rt_pool'], 'rt_pool')):
+                            (as_int(val('NRENDER_CFG')), CAPS['render_cfg'], 'render_cfg'), (as_int(val('NRT_POOL')), CAPS['rt_pool'], 'rt_pool'),
+                            (as_int(val('NWINDOW_WORDS')), CAPS['window_words'], 'window_words'), (as_int(val('NVIEW_SCALE_WORDS')), CAPS['view_scale_words'], 'view_scale_words'),   # PEANUTS(upstream-candidate)
+                            (as_int(val('NVIEW_SCALE_STEPS')), CAPS['view_scale_steps'], 'view_scale_steps'),   # PEANUTS(upstream-candidate)
+                            (as_int(val('NVIEW_SCALE_FIXED')), CAPS['view_scale_fixed'], 'view_scale_fixed')):   # PEANUTS(upstream-candidate)
         if cnt > cap: sys.exit(f"gen_runtime_profile.py: {g.id}: {label} has {cnt} rows, past this script's fixed capacity {cap} (raise CAPS['{label}'] and the matching cap in profile_rt.h)")
 
     p = Packer()
@@ -438,7 +516,7 @@ def build_profile_bytes(g, modules_override=None):
     rl_rows = [row_res_levels(b_, table, lvln, nl, (lists + [(0, 0)] * 12)[:12]) for b_, table, lvln, nl, lists in rl]
     b, a = pack_rows(rl_rows, CAPS['res_levels'], zrl); p.sub(b, a)
 
-    for n in ('EVENT_WAIT', 'OCCLUSION_SPLIT_PASS', 'LOW_RAM_PLACE_PART_MB', 'LOW_RAM_IMG_CACHE_MAX_MB', 'LOW_RAM_APP_POOL_MB'): p.u32(as_int(val(n)))
+    for n in ('EVENT_WAIT', 'OCCLUSION_SPLIT_PASS', 'LOW_RAM_PLACE_PART_MB', 'LOW_RAM_IMG_CACHE_MAX_MB', 'LOW_RAM_APP_POOL_MB', 'ALIAS_SYNC'): p.u32(as_int(val(n)))   # PEANUTS(upstream-candidate): ALIAS_SYNC
     p.raw(unq(val('RENDER_DEFAULT_OUT')), 16)
     rq = [as_int(x) for x in split_top(unbrace(val('RENDER_QUALITY')))]
     assert len(rq) == 4, rq
@@ -453,6 +531,27 @@ def build_profile_bytes(g, modules_override=None):
     p.u32(nrt)
     zrt = row_rt_pool('', '', 0, 0, 0, 0, [], [], [], 0)
     b, a = pack_rows([row_rt_pool(*r) for r in rt], CAPS['rt_pool'], zrt); p.sub(b, a)
+
+    # PEANUTS(upstream-candidate) begin: window_words / view_scale_words rows, upscale_pass
+    zww = row_words('', [])
+    for cnt_name, name, cap in (('NWINDOW_WORDS', 'WINDOW_WORDS', 'window_words'), ('NVIEW_SCALE_WORDS', 'VIEW_SCALE_WORDS', 'view_scale_words')):
+        nw = as_int(val(cnt_name)); ww = parse_words(val(name), nw)
+        for _, sites in ww:
+            if len(sites) > WORDS_SITES: sys.exit(f'gen_runtime_profile.py: {g.id}: a {cap} row has {len(sites)} sites, past this script\'s fixed capacity {WORDS_SITES}')
+        p.u32(nw)
+        b, a = pack_rows([row_words(*r) for r in ww], CAPS[cap], zww); p.sub(b, a)
+    p.u32(as_int(val('HAS_UPSCALE_PASS'))); p.u32(as_int(val('UPSCALE_PASS_BINDING'))); p.u64(as_int(val('UPSCALE_PASS_VS'))); p.u64(as_int(val('UPSCALE_PASS_PS')))
+    # view_scale_steps rows (after upscale_pass_*)
+    nst = as_int(val('NVIEW_SCALE_STEPS')); sts = parse_steps(val('VIEW_SCALE_STEPS'), nst)
+    for _, ent in sts:
+        if len(ent) > STEPS_MAX: sys.exit(f'gen_runtime_profile.py: {g.id}: a view_scale_steps row has {len(ent)} entries, past this script\'s fixed capacity {STEPS_MAX}')
+    p.u32(nst)
+    b, a = pack_rows([row_steps(*r) for r in sts], CAPS['view_scale_steps'], row_steps('', [])); p.sub(b, a)
+    # view_scale_fixed rows (directly after view_scale_steps)
+    nfx = as_int(val('NVIEW_SCALE_FIXED')); fxs = parse_fixed(val('VIEW_SCALE_FIXED'), nfx)
+    p.u32(nfx)
+    b, a = pack_rows([row_fixed(*r) for r in fxs], CAPS['view_scale_fixed'], row_fixed('', 0, 0)); p.sub(b, a)
+    # PEANUTS end
 
     out, _ = p.finish()
     return out

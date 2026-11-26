@@ -42,6 +42,74 @@ class OptionTsv(unittest.TestCase):
         self.assertIn('restart', fps_attrs)
         self.assertIn('needs=OOT_PATCHES', fps_attrs)
 
+    def test_mrkb_depth_of_field_option(self):   # PEANUTS
+        tsv = (REPO / 'dm/games/010067300059A000/game.tsv').read_text(encoding='utf-8').splitlines()
+        opt = [l.split('	') for l in tsv if l.startswith('option	')]
+        if not opt:   # PEANUTS: the row lives in the Kingdom Battle profile; a tree without it (the Sparks of Hope clone) has nothing to pin here
+            self.skipTest('Kingdom Battle DoF row not in this tree (dm/games/010067300059A000/game.tsv has no option row)')
+        self.assertEqual(len(opt), 1)
+        self.assertEqual(opt[0][1:4], ['DM_KB_DOF_OFF', 'Depth of field', ''], 'title only: no description')
+        self.assertEqual([tok for col in opt[0][4:] for tok in col.split()], ['restart', 'perf', 'inverted'])
+        patch = [l.split('	') for l in tsv if l.startswith('option_patch	')]
+        self.assertEqual(patch, [['option_patch', 'DM_KB_DOF_OFF', '3b39e0c06b8841f1baf0ea4d54286bfe', '0xa55938', '08014039', '28008052']])
+        self.assertEqual(int.from_bytes(bytes.fromhex(patch[0][5]), 'little'), 0x52800028, 'mov w8, #1')
+
+    def test_perf_inverted_code_pins(self):   # PEANUTS: the Java / build.gradle half of the old test, tree-independent (runs without the Kingdom Battle row)
+        gradle = GRADLE.read_text(encoding='utf-8')
+        self.assertIn("tok == 'perf'", gradle)
+        self.assertIn('[env, label, desc, mode, implies, needs, patches, perf, inverted]', gradle)
+        self.assertIn("tok == 'inverted'", gradle)
+        gs = (REPO / 'android/app/src/main/java/dev/nxnative/android/GameSettings.java').read_text(encoding='utf-8')
+        self.assertIn('(opt.perf ? picture : options).add(', gs, 'the Performance tab: a Picture row')
+        self.assertIn('opt.shown(Prefs.gameOption(a, id, opt.env))', gs, 'inverted: the row shows the opposite')
+        self.assertIn('Prefs.gameOption(a, id, opt.env, opt.stored(checked));', gs, 'inverted: and stores the option as ever')
+        sp = (REPO / 'android/app/src/main/java/dev/nxnative/android/SidePanel.java').read_text(encoding='utf-8')
+        self.assertIn('if (!opt.live && !opt.perf) continue;', sp, 'the in-game Performance tab')
+        self.assertIn('if (opt.live || opt.perf) continue;', sp, 'not repeated under Next start')
+        self.assertIn('note(WordsGfx.NEXT_START);', sp, 'the restart note is the Graphics rows\' line: Applies on next start')
+        self.assertIn('Prefs.gameOption(act, game(), opt.env, opt.stored(on))', sp)
+        a, b, c = sp.find('perfOptionRows(true);'), sp.find('lsfgNow = Lsfg.rows(act, box, "", '), sp.find('perfOptionRows(false);')   # PEANUTS: Depth of field is directly above Frame gen
+        self.assertTrue(0 < a < b < c, 'Performance tab order: perf options, Frame gen, other live options')
+        self.assertEqual(sp.count('perfOptionRows(true);'), 1)
+        self.assertEqual(sp[a:b].strip().count('\n'), 0, 'nothing between the perf options and the Frame gen rows')
+        self.assertEqual(sp.count('opt.shown(Prefs.gameOption(act, game(), opt.env))'), 2, 'both panel lists show the opposite for inverted')
+        words = (REPO / 'android/app/src/main/java/dev/nxnative/android/WordsGfx.java').read_text(encoding='utf-8')
+        self.assertIn('NEXT_START = "Applies on next start";', words)
+        for p in sorted((REPO / 'dm/games').glob('*/game.tsv')):   # no other profile uses the attributes
+            if p.parent.name == '010067300059A000': continue
+            for l in p.read_text(encoding='utf-8').splitlines():
+                if l.startswith('option\t'):
+                    toks = [tok for col in l.split('\t')[4:] for tok in col.split()]
+                    self.assertNotIn('perf', toks, p.parent.name); self.assertNotIn('inverted', toks, p.parent.name)
+
+    def test_game_py_option_attributes(self):   # PEANUTS: perf / inverted validation, on synthetic profiles through game.py header
+        import os, sys
+        tid = '0100000000F0F000'
+        base = ('title_id\t' + tid + '\nname\tTest\nprogram_id\t' + tid + '\nmodules\tmain\nromfs_marker\tromfs.img\n'
+                'mem_reserve\t0x100000\nmem_alias\t0x100000\nmem_stack\t0x100000\napp_pool\t0x100000\n')
+
+        def header(row):
+            with tempfile.TemporaryDirectory() as d:
+                (Path(d) / tid).mkdir()
+                (Path(d) / tid / 'game.tsv').write_text(base + row + '\n')
+                r = subprocess.run([sys.executable, str(REPO / 'dm/games/game.py'), 'header', tid, str(Path(d) / 'g.h')],
+                                   env={**os.environ, 'DM_GAMES_DIR': d}, capture_output=True, text=True)
+            return r.returncode, r.stderr + r.stdout
+        o = 'option\tDM_T\tT\t'
+        self.assertEqual(header(o + 'A plain description.\trestart')[0], 0)
+        self.assertEqual(header(o + '\trestart perf inverted')[0], 0, 'perf inverted with no description')
+        self.assertEqual(header(o + 'Text here.\trestart inverted')[0], 0)
+        rc, out = header(o + '\trestart')
+        self.assertNotEqual(rc, 0, 'an empty description is for perf options only')
+        self.assertIn('option takes', out)
+        self.assertNotEqual(header(o + '\trestart inverted')[0], 0)
+        rc, out = header(o + 'X.\trestart inverted implies=DM_U')
+        self.assertNotEqual(rc, 0)
+        self.assertIn('cannot also imply', out)
+        rc, out = header(o + 'X.\trestart perfx')
+        self.assertNotEqual(rc, 0)
+        self.assertIn('unknown attribute', out)
+
     def test_gradle_options_of_parser(self):
         gradle = GRADLE.read_text(encoding='utf-8')
         self.assertIn("def optionsOf = { String game ->", gradle)

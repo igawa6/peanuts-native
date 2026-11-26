@@ -20,6 +20,7 @@ static void fbl_pass_begin(void);   // PEANUTS: feedback loops (below, beside DY
 #include "vka_psosync.h"   // PEANUTS: which draws are not skipped while their pipeline is made in the background (draw_body)
 #include "vka_tbuf.h"   // PEANUTS: how a texel buffer is read: in place, through the CPU's copy or through a copy the GPU makes (tbuf_view)
 #include "vka_wbfollow.h"
+#include "vka_cupscale.h"   // PEANUTS: composite upscaler (cup_pre)
 #include <math.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -458,6 +459,7 @@ void vka_rp_end(void) {
     vka_tf_flush(g_cb);  // PEANUTS: what the pass's draws captured by transform feedback: copied into the game's buffers (vka_tf.c)
     R.on = 0; vka_tex_feedback(NULL, NULL, 0);
     if (vka_nan_on()) vka_nan_pass(g_cb, R.cim, R.clv, R.cl0, R.nci);
+    vka_tex_alias_flush(g_cb);   // PEANUTS(upstream-candidate): the pass's linear targets into their aliases of another shape (DM_VK_ALIAS_SYNC)
 }
 static void rt_peek(const char *what, int i, const tex_t *t, const vka_img *im, uint32_t lv, uint32_t l0, uint32_t nl);   // DM_VK_TEX_PEEK
 static void rt_range(const vka_img *im, const view_t *v, int has_v, uint32_t *lv, uint32_t *l0, uint32_t *nl);
@@ -579,6 +581,7 @@ static inline void rs_sc(const p_scissor *sc, int rsc, int64_t *x0, int64_t *y0,
 static int rp_begin(const p_set_rt *rt, int has_rt, const p_scissor *sc, int has_sc, const vka_dstate *d) {
     if (R.on) { if (!g_pass_keep || (rt_same(rt, has_rt, &R.rt, R.has_rt) && rp_area_fits(sc, has_sc, d, rt, has_rt))) return 1; vka_rp_end(); }   // a new SET_RT of other targets ends the pass at its first draw (exec does not)   // a new SET_RT of other targets ends the pass at its first draw (exec does not)
     if (PC.n && !rt_same(rt, has_rt, &PC.rt, 1)) pc_flush();                             // clears of other targets: done before
+    vka_tex_alias_flush(g_cb);   // PEANUTS(upstream-candidate): copies and clears since the last pass, into their aliases before this pass samples them (DM_VK_ALIAS_SYNC)
     // PEANUTS begin: the targets at one scale before the pass is laid out over them (DM_RES_SCALE)
     int rs = vka_rs_on() ? vka_rp_rs(rt, has_rt) : 0;
     if (rs < 0) { vka_rs_st.skip++; return 0; }
@@ -1618,6 +1621,19 @@ static int rs_support(const vka_dstate *d, int st, const vka_shader *sh, VkDescr
     return 1;
 }
 // PEANUTS end
+// PEANUTS begin: composite upscaler (vka_cupscale.h, DM_VK_CUPSCALE): set by cup_pre for the composite draw only. Its pixel shader's 3D picture at binding bind (texture ID
+// tid) is bound as view (the upscaled picture, output-sized), and its uniform buffers that hold the picture's texel size (ub_*) as copies with the output's size there
+static struct { VkImageView view; uint64_t ps; int tid, used, nub; uint32_t bind, sw, sh, ow, oh, ub_bind[4]; uint64_t ub_addr[4]; } g_cup;
+static void cup_ubo(const vka_shader *sh, const vka_res *r, VkDescriptorBufferInfo *bi) {
+    if (sh->key != g_cup.ps || !bi->range || bi->range > 65536) return;
+    for (int j = 0; j < g_cup.nub; j++) if (g_cup.ub_bind[j] == r->binding && g_cup.ub_addr[j] == r->addr) {
+        vka_span s; size_t n = (size_t)bi->range;
+        if (!vka_scratch(n, V.ub_align, &s) || !rd_cb(NULL, r->addr, s.ptr, n)) return;   // (as the GPU will see it at the draw: rd_cb)
+        if (vka_cup_patch_texel(s.ptr, n, g_cup.sw, g_cup.sh, g_cup.ow, g_cup.oh)) *bi = (VkDescriptorBufferInfo){s.buf, s.off, n};
+        return;
+    }
+}
+// PEANUTS end
 static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const vka_res *r, int n, int pool, c0_at *c0) {
     for (int i = 0; i < n; i++) {
         if (g_w.n == VKA_DESC_MAX) { VRED_ONCE("more than %d descriptors in one draw", (int)VKA_DESC_MAX); return 0; }   // PEANUTS: VKA_DESC_MAX
@@ -1634,6 +1650,7 @@ static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const
                 if (ok && storage && (r[i].flags & DMSH_VK_BF_RW)) vka_tex_gw_opaque(r[i].addr, bi->range);   // the shader may store into it
                 if (ok && storage) sb_peek_note(sh->key, st, &r[i]);
                 if (ok && !storage) ub_peek_note(sh->key, st, &r[i]);
+                if (ok && !storage && st == 1 && g_cup.view && g_cup.nub) cup_ubo(sh, &r[i], bi);   // PEANUTS: composite upscaler: the texel-size field at the output's size
                 if (ok) sb_watch_use(sh->key, st, &r[i], storage, bi);
                 break;
             case VKA_R_C1: if (sh->c1_len) *bi = (VkDescriptorBufferInfo){sh->c1.buf, sh->c1.off, (sh->c1_len + 15) & ~(VkDeviceSize)15}; else ok = 0; break;
@@ -1675,6 +1692,7 @@ static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const
                 if (tid && !storage && vka_tex_id_is_buffer(tid) && tbuf_img_gpu(tid, r[i].dim) && vktb_memo_bind_gpu(&g_tig, tid, r[i].dim) && (v = vka_tbuf_image_view(tid, r[i].dim, &fmt))) tid = 0;   // PEANUTS: sampler chosen by the view format
                 // PEANUTS end
                 else if (tid) v = vka_tex_id_view_samp_rec(tid, storage ? 0 : r[i].sid, g_cb, r[i].dim, wbf_view_of_binding(storage, r[i].flags, DMSH_VK_BF_RW), &fmt);   // (a shader image only read: not a GPU write)   // PEANUTS(upstream-candidate): with the binding's sampler (vka_tex.c fb_view_levels); PEANUTS: report the final view format
+                if (tid && v && !storage && st == 1 && g_cup.view && sh->key == g_cup.ps && r[i].binding == g_cup.bind && tid == g_cup.tid) { v = g_cup.view; fmt = VK_FORMAT_R8G8B8A8_UNORM; g_cup.used = 1; }   // PEANUTS: composite upscaler: the upscaled picture (cup_pre)
                 if (tid && v) class_note(sh, st, &r[i], tid, storage);
                 if (tid) tex_peek(sh->key, st, &r[i], v, storage);
                 if (tid && g_rtl_pass && rtl_room()) {   // PEANUTS: DM_VK_RT_LOG: each draw's textures, in order with its draw lines (the tex peek line is logged once per texture)
@@ -2628,6 +2646,73 @@ static void rd_run(const vka_dstate *d) {
     g_rd_prev = rd;
 }
 // PEANUTS end
+// PEANUTS begin: composite upscaler (vka_cupscale.h, DM_VK_CUPSCALE). At each draw, after make_images and before rp_begin: the profile's composite pass (its pixel
+// shader, and vertex shader unless 0) with a 2D texture at its binding that is smaller than the pass's colour target 0 with the same aspect, an 8-bit UNORM picture, and
+// DM_VK_CUPSCALE 2 (FSR 1) or 4 (SGSR 1). Then the upscale is recorded here, outside any render pass: a pass still open (the 3D picture's own, or one a clear or an
+// earlier draw opened over the composite's targets) is ended first and rp_begin opens the composite's again with its contents loaded (clears not yet made stay pending
+// for it, PC). stage_writes then binds the upscaled picture and the texel-size copies for this draw only (g_cup); every other draw, and every frame where a rule fails,
+// keeps the game's own bilinear stretch. Reasons are logged once each (again after a DM_VK_CUPSCALE change), the armed sizes at each change
+static void cup_pre(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d, const p_set_rt *rt, int has_rt) {
+    if (g_cup.view && !g_cup.used) { static int n; if (n++ < 4) VLOG("cupscale: the composite draw was not drawn or did not sample the upscaled picture (binding %u, texture ID %d): the game's own stretch that frame", g_cup.bind, g_cup.tid); }
+    g_cup.view = VK_NULL_HANDLE; g_cup.used = 0; g_cup.nub = 0;
+    vka_cup_pass cp;
+    if (!sh[1] || d->rast_discard || !vka_cupscale_pass(&cp) || sh[1]->key != cp.ps || (cp.vs && (!sh[0] || sh[0]->key != cp.vs))) return;
+    int mode = VKA_ENV("DM_VK_CUPSCALE", 1);
+    static int lmode = -1; static uint32_t noted;
+    if (mode != lmode) { lmode = mode; noted = 0;
+        VLOG("cupscale: DM_VK_CUPSCALE=%d (%s) at the composite %016llx", mode, mode == 2 ? "FSR 1" : mode == 4 ? "SGSR 1" : mode == 1 ? "the game's own bilinear" : mode == 0 ? "off" : "unknown: the game's own", (unsigned long long)cp.ps); }
+    uint32_t sw = 0, sh_ = 0, ow = 0, oh = 0; int tid = 0, why;
+    const vka_res *x = NULL;
+    for (int i = 0; i < g_wk.n[1]; i++) if (g_wk.r[1][i].binding == cp.binding) { x = &g_wk.r[1][i]; break; }
+    if (mode != 2 && mode != 4) why = vka_cup_decide(mode, 0, 0, 0, 0);
+    else if (!x || x->what != VKA_R_TEX || !x->tid || (x->dim & (DMSH_VK_DIM_MASK | DMSH_VK_DIM_ARRAY | DMSH_VK_DIM_MS)) != 1
+             || (x->desc != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER && x->desc != VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)) why = VKA_CUP_BINDING;
+    else if (vka_rs_on()) why = VKA_CUP_RESSCALE;   // (the texel-size field holds the game's sizes, the images are scaled)
+    else {
+        tid = x->tid;
+        vka_img *s = vka_tex_id_img(tid, g_cb);   // (made by make_images, just before)
+        const tex_t *t = has_rt && rt->n > 0 ? rt->color[0] : NULL;   // the output: the game's descriptor of colour target 0 (its image is made by rp_begin, outside any pass)
+        VkFormat f = vka_tex_id_vkfmt(tid);
+        if (!t) why = VKA_CUP_TARGET;
+        else if (!s) why = VKA_CUP_BINDING;
+        else {
+            uint32_t lv = rt->has_cview[0] && rt->cview[0].set_levels ? rt->cview[0].base_level : 0;
+            ow = t->d.width >> lv ? t->d.width >> lv : 1; oh = t->d.height >> lv ? t->d.height >> lv : 1; sw = s->w; sh_ = s->h;
+            if (t->d.target != NVN_TEXTURE_TARGET_2D || s->samples > 1 || s->layers > 1 || s->depth > 1 || !(s->usage & VK_IMAGE_USAGE_SAMPLED_BIT)) why = VKA_CUP_SHAPE;
+            else if (f != VK_FORMAT_R8G8B8A8_UNORM && f != VK_FORMAT_B8G8R8A8_UNORM && f != VK_FORMAT_A8B8G8R8_UNORM_PACK32) why = VKA_CUP_FORMAT;
+            else why = vka_cup_decide(mode, sw, sh_, ow, oh);
+        }
+    }
+    if (why == VKA_CUP_ARM) {
+        int nub = 0; uint32_t ubb[4]; uint64_t uba[4];
+        for (int i = 0; i < g_wk.n[1] && nub < 4; i++) {   // the uniform buffers that hold the picture's texel size (vka_cup_patch_texel)
+            const vka_res *u = &g_wk.r[1][i]; uint8_t b[256]; size_t n = u->size && u->size < 256 ? (size_t)u->size : 256;
+            if (u->what != VKA_R_BUF || u->desc != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || !u->addr) continue;
+            if (rd_cb(NULL, u->addr, b, n) && vka_cup_has_texel(b, n, sw, sh_)) { ubb[nub] = u->binding; uba[nub++] = u->addr; }
+        }
+        if (R.on) vka_rp_end();   // (the upscale is compute: no pass may be open)
+        VkImageView sv = vka_tex_id_view_rec(tid, g_cb, 1, 0, NULL);   // dim 1: 2D, sampled, GENERAL
+        float stops = (float)VKA_ENVF("DM_VK_CUPSCALE_SHARP", 0.25);
+        VkImageView ov = sv ? vka_cupscale_run(g_cb, mode, sv, sw, sh_, ow, oh, stops, &why) : VK_NULL_HANDLE;
+        if (!sv) why = VKA_CUP_BINDING;
+        g_pd[1].n = 0;   // the dispatches' last push is no longer bound (another layout disturbed set 0): the next dispatch pushes again (push_same)
+        if (ov) {
+            g_cup.view = ov; g_cup.ps = cp.ps; g_cup.tid = tid; g_cup.bind = cp.binding; g_cup.sw = sw; g_cup.sh = sh_; g_cup.ow = ow; g_cup.oh = oh;
+            g_cup.nub = nub; memcpy(g_cup.ub_bind, ubb, sizeof ubb); memcpy(g_cup.ub_addr, uba, sizeof uba);
+            static uint32_t l[6]; static float ls = -99.0f; static int lnub = -1; static uint64_t narmed; narmed++;
+            if (l[0] != (uint32_t)mode || l[1] != sw || l[2] != sh_ || l[3] != ow || l[4] != oh || ls != stops || lnub != nub) {
+                l[0] = (uint32_t)mode; l[1] = sw; l[2] = sh_; l[3] = ow; l[4] = oh; ls = stops; lnub = nub;
+                VLOG("cupscale: %s %ux%u -> %ux%u (pass %016llx/%016llx, binding %u; texel-size fields in %d uniform buffer%s; sharpness %.2f stops; composite %llu armed)",
+                     mode == 4 ? "SGSR1" : stops >= 0 ? "FSR1" : "FSR1 (EASU only)", sw, sh_, ow, oh, (unsigned long long)cp.vs, (unsigned long long)cp.ps, cp.binding, nub, nub == 1 ? "" : "s", stops, (unsigned long long)narmed);
+                if (!nub) VLOG("cupscale: no texel-size field (%ux%u or its reciprocal) in the composite's uniform buffers: its own uv math left as it is", sw, sh_);
+            }
+            return;
+        }
+    }
+    if (why != VKA_CUP_ARM && why < 32 && !(noted & 1u << why)) { noted |= 1u << why;
+        VLOG("cupscale: not armed: %s (3D %ux%u, output %ux%u, binding %u, texture ID %d)", vka_cup_why(why), sw, sh_, ow, oh, cp.binding, tid); }
+}
+// PEANUTS end
 static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc, int has_sc, const p_draw *dw, const p_draw_idx *di) {
     if (!g_cb || !draws_on() || !statics()) { g_skipped++; return; }
     if (!(dw ? dw->ind : di->ind) && (dw ? dw->count : di->count) <= 0) return;   // PEANUTS: bounded draw ranges
@@ -2784,9 +2869,23 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
         { uint32_t g = atomic_load_explicit(&vka_env_gen, memory_order_relaxed);
           if (g != blgen) { blgen = g; nblk = 0; for (const char *q = getenv("DM_VK_BIND_LOG"); q && *q && nblk < 64;) { char *e; unsigned long long k = strtoull(q, &e, 16); if (e == q) break; blk[nblk++] = k; q = *e == ',' ? e + 1 : e; } } }
         for (int i = 0; i < nblk && !hit; i++) hit = (sh[0] && blk[i] == sh[0]->key) || (sh[1] && blk[i] == sh[1]->key);
-        if (hit && atomic_fetch_add(&nb, 1) < 12)
+        // PEANUTS: the cap is per (vertex, pixel) shader pair, DM_VK_BIND_LOG_N draws each (default 12; up to 64 pairs, then the old shared cap of 12): the first 12 draws in
+        // all were one frequent pair's (12 draws of 1ccc79259434b0ce / 4ee0c8b51bec5171), and a rarer pair with the same vertex shader (the composite) never came.
+        // Each logged draw has a head line (the pair, its count, colour target 0, the pass open or not), and a uniform buffer of the pixel stage its first 8 words as floats
+        static struct { uint64_t vs, ps; int n; } bp[64]; static int nbp;
+        int bl_n = hit ? VKA_ENV("DM_VK_BIND_LOG_N", 12) : 0, bl_k = -1, bl_go = 0;
+        if (hit) { uint64_t kv = sh[0] ? sh[0]->key : 0, kp = sh[1] ? sh[1]->key : 0;
+            for (int i = 0; i < nbp; i++) if (bp[i].vs == kv && bp[i].ps == kp) { bl_k = i; break; }
+            if (bl_k < 0 && nbp < 64) { bl_k = nbp++; bp[bl_k].vs = kv; bp[bl_k].ps = kp; bp[bl_k].n = 0; }
+            bl_go = bl_k >= 0 ? bp[bl_k].n++ < bl_n : atomic_fetch_add(&nb, 1) < 12;
+            if (bl_go) { const tex_t *t0 = has_rt && rt->n > 0 ? rt->color[0] : NULL;   // (the game's descriptor: no image made here, a pass may be open)
+                VLOG("bind log: draw vs %016llx ps %016llx (draw %d of this pair; up to %d: DM_VK_BIND_LOG_N), colour target 0 %ux%u NVN format %#x, %d colour targets, pass %s",
+                     (unsigned long long)kv, (unsigned long long)kp, bl_k >= 0 ? bp[bl_k].n : 0, bl_n, t0 ? t0->d.width : 0, t0 ? t0->d.height : 0, t0 ? t0->d.format : 0, has_rt ? rt->n : 0, R.on ? "open" : "not open"); } }
+        if (bl_go)
             for (int st = 0; st < VKA_NSTAGE; st++) if (sh[st]) for (int i = 0; i < g_wk.n[st]; i++) { const vka_res *x = &g_wk.r[st][i]; char why[320] = "";
                 if ((x->what == VKA_R_TEX || x->what == VKA_R_IMG) && x->tid) vka_tex_id_desc(x->tid, why, sizeof why);
+                else if (st == 1 && x->what == VKA_R_BUF && x->desc == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER && x->addr) { float w8[8];   // PEANUTS: its first words (a texel size, a uv scale)
+                    if (rd_cb(NULL, x->addr, w8, sizeof w8)) snprintf(why, sizeof why, "first words %g %g %g %g | %g %g %g %g", w8[0], w8[1], w8[2], w8[3], w8[4], w8[5], w8[6], w8[7]); }
                 VLOG("bindings of draw %016llx stage %d: binding %u elem %u what %u desc %u dim %#x flags %#x tid %d sid %d addr %#llx size %#llx %s", (unsigned long long)sh[st]->key, st,
                      x->binding, x->elem, x->what, x->desc, x->dim, x->flags, x->tid, x->sid, (unsigned long long)x->addr, (unsigned long long)x->size, why); }
     }
@@ -2796,6 +2895,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     tex_masks(sh, k.tex_u, k.tex_s);
     vktb_memo_reset(&g_tig);   // PEANUTS: this draw's answers (tbuf_img_gpu)
     if (make_images(d, sh, 1)) { vka_rp_end(); make_images(d, sh, 0); }
+    cup_pre(sh, d, rt, has_rt);   // PEANUTS: composite upscaler (DM_VK_CUPSCALE): outside the pass, before rp_begin
     if (vka_rs_on()) rs_fetch_fix(sh, d);   // PEANUTS: DM_RES_SCALE: a shader that fetches by pixel sees its 2D textures at one scale
     if (R.on && R.bar_pending && bar_hazard(sh, d)) { g_bar_late++; vka_rp_end(); }   // the game barrier taken inside the pass is needed here: the pass ends (its full barrier) first
     if (R.on && UB.n && ub_hazard(d, sh, mesh, dw, di, mdi_n, mdi_st)) vka_rp_end();   // PEANUTS: bounded draw ranges
@@ -3551,6 +3651,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     if (!g_cb || !draws_on() || !statics()) { g_skipped++; return; }
     if (!d->inited) vka_dstate_reset(d);
     vka_rp_end();
+    vka_tex_alias_flush(g_cb);   // PEANUTS(upstream-candidate): earlier copies and clears into their aliases before the dispatch reads them (DM_VK_ALIAS_SYNC)
     vka_shader *sh[VKA_NSTAGE] = {0}; unsigned bad = 0;
     if (!resolve(d->cprog, 5, &sh[5], &bad)) SKIP("dispatch skipped: no shader library");
     if (bad) { g_skipped++; g_skip_dev[VKS_SHADER]++; return; }
@@ -3700,6 +3801,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         VkCommandBuffer was = atomic_exchange(&vka_disp_pend, g_cb);
         if (was == g_cb) g_disp_saved++;   // the one the dispatch before this one left: never recorded
     }
+    vka_tex_alias_flush(g_cb);   // PEANUTS(upstream-candidate): the storage images it wrote into their aliases of another shape (DM_VK_ALIAS_SYNC)
     vka_rw_point(g_cb, 'd', sh[5]->key, 0, 0);
     if (vka_nan_on()) {   // DM_VK_NANSCAN: the storage images this dispatch wrote
         vka_img *ims[32]; int m = 0;

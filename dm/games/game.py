@@ -8,6 +8,7 @@
 #   <NSP folder>/<id>_build/profile/<id>/ and points DM_GAMES_DIR at <id>_build/profile, so the shader tools, the host build and build_ipa.sh all find it.
 #   DM_GAMES_FIRST=1 searches DM_GAMES_DIR before dm/games (the NSP script's --provisional: a provisional profile for a game that has one in dm/games, to test the guesses)
 import os, re, sys
+import struct   # PEANUTS(upstream-candidate): view_scale_steps floats
 from pathlib import Path
 from typing import cast   # PEANUTS(upstream-candidate): regex results validated below before use
 
@@ -128,6 +129,22 @@ def scene_args(g):
     return out
 
 
+def fps_offered(g):   # PEANUTS: the Frame rate slider's offered rates, for the fps_default check
+    """the frame rates the Android launcher's Frame rate slider offers this title, ascending (Prefs.paceCaps without its Game owned entry): the fps_modes rates, else 20, 30, 40, 45 and 60 from fps_limit_min
+    up, or 20, 30 and 60 for a whole-step title (Prefs.steps: fps_steps, or fps_target with a FRAME_STEP in patches.py, and neither fps_step_elapsed, a time_ratio_f32 fpslocker row nor a clock plan row;
+    or an fpslocker row of vsync_u32), as build.gradle's fpsLockerOf and fpsLockerPlanOf join the rows. The launcher's higher 90 and 120 need fps_limit_max and are above any fps_limit (60 at most)"""
+    modes = g.get('fps_modes', '')
+    if modes: return [int(v) for v in modes.split(',')]
+    lock = ';'.join(','.join(r[:5]) for k in ('fpslocker', 'fps_memory') for r in g.values(k))
+    plan = ';'.join(','.join(r[:4]) for k in ('fpslocker_plan', 'fps_plan') for r in g.values(k))
+    pp = g.dir / 'patches.py'; ft = g.get('fps_target', '0')
+    steps = bool(g.values('fps_steps')) or (ft != '0' and pp.is_file() and 'FRAME_STEP' in pp.read_text(encoding='utf-8', errors='replace'))
+    steps = steps and not g.values('fps_step_elapsed') and ',time_ratio_f32,' not in lock and ',clock,-,1' not in plan
+    if steps or ',vsync_u32,' in lock: return [20, 30, 60]
+    lo = 30 if g.get('fps_limit_min', '20') == '30' else 20
+    return [v for v in (20, 30, 40, 45, 60) if v >= lo]
+
+
 def header(g):
     """the host's game_profile.h: the profile constants the host uses, as macros"""
     q = lambda s: '"' + s.replace('\\', '\\\\').replace('"', '\\"') + '"'
@@ -198,6 +215,8 @@ def header(g):
     if tsf not in ('on', 'off'): sys.exit(f'{g.id}: tex_soft must be on or off: {tsf}')
     evw = g.get('event_wait', 'on')   # Android: GPU event and sync waits across NVN queues honoured by the Vulkan replay (vka_worker.c qs_on; DM_VK_EVENT_WAIT overrides): on / off
     if evw not in ('on', 'off'): sys.exit(f'{g.id}: event_wait must be on or off: {evw}')
+    asy = g.get('alias_sync', 'off')   # PEANUTS(upstream-candidate): Android: GPU writes into a linear texture copied into the textures of other shapes over the same storage by default (vka_tex.c as_on; DM_VK_ALIAS_SYNC overrides, 0 / 1): on / off
+    if asy not in ('on', 'off'): sys.exit(f'{g.id}: alias_sync must be on or off: {asy}')   # PEANUTS(upstream-candidate)
     oqs = g.get('occlusion_split_pass', 'off')
     if oqs not in ('on', 'off'): sys.exit(f'{g.id}: occlusion_split_pass must be on or off: {oqs}')
     av1 = g.get('av1_decoder', 'hardware')   # Android: AV1 movies on the phone's hardware decoder (MediaCodec, the default) or dav1d frame-parallel (hle_movie_av1.c mav1_send)
@@ -361,11 +380,15 @@ def header(g):
     if len(vegetation) > 128 or len(vegetation) != len(set(vegetation)):
         sys.exit(f'{g.id}: mesh_vegetation_cut: at most 64 pairs, with unique keys')
     for r in g.values('option'):
-        if len(r) < 3 or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', r[0]) or not r[1].strip() or not r[2].strip():
-            sys.exit(f'{g.id}: option takes <ENV name> <label> <one-line description> [restart|live] [implies=<ENV>] [needs=<marker>]: {r}')
+        toks = [tok for col in r[3:] for tok in col.split()]
+        # PEANUTS: a perf option is a plain switch row (title and state only): its description may be empty; every other option needs one
+        if len(r) < 3 or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', r[0]) or not r[1].strip() or (not r[2].strip() and 'perf' not in toks):
+            sys.exit(f'{g.id}: option takes <ENV name> <label> <one-line description (empty only with perf)> [restart|live] [implies=<ENV>] [needs=<marker>] [perf] [inverted]: {r}')
+        if 'inverted' in toks and any(t.startswith('implies=') for t in toks):
+            sys.exit(f'{g.id}: option inverted cannot also imply another option: {r}')
         for col in r[3:]:
             for tok in col.split():
-                if tok in ('restart', 'live'):
+                if tok in ('restart', 'live', 'perf', 'inverted'):   # PEANUTS: perf = shown in the Performance tab (Game settings, in-game panel) instead of Game options; inverted = the switch shows the opposite of the stored option (on = the option off)
                     pass
                 elif tok.startswith('implies='):
                     imp = tok.split('=', 1)[1]
@@ -376,7 +399,7 @@ def header(g):
                     if not re.fullmatch(r'[A-Za-z0-9_]+', mk):
                         sys.exit(f'{g.id}: option needs takes a fixup marker: {tok}')
                 else:
-                    sys.exit(f'{g.id}: option unknown attribute (expected restart|live, implies=<ENV>, needs=<marker>): {tok}')
+                    sys.exit(f'{g.id}: option unknown attribute (expected restart|live, perf, inverted, implies=<ENV>, needs=<marker>): {tok}')   # PEANUTS: the perf and inverted attributes
     option_names = {r[0]: r for r in g.values('option')}
     option_sites = set()
     mains = {b.get('main') for b in g.builds().values()}
@@ -391,6 +414,136 @@ def header(g):
         option_sites.add(site)
     if len(option_sites) > 128:
         sys.exit(f'{g.id}: option_patch: at most 128 code words')
+    # PEANUTS(upstream-candidate) begin: window_words / view_scale_words / upscale_pass (loader.c words_apply, dm/host/imm_words.h; README.md). A game that builds its window
+    # size and the float of its 3D scale from movz / movk words in its text: the host rewrites the immediates from DM_WINDOW_SIZE=<w>x<h> and DM_SCENE_PCT=<40..100>, each key
+    # all or nothing, after checking every site's word. One row per registered main build, at most 4 rows, each 1 to 8 sites <0xoffset>:<LE word, 8 hex>:<tag>:
+    #   window_words <main build> <off>:<word>:<w|h> ...       the width and height of the window, every pair the game has (a w site and an h site at least)
+    #   view_scale_words <main build> <lo off>:<word>:lo <hi off>:<word>:hi ...    the float32 of pct / 100 in lo / hi pairs: movz Wd,#lo then movk Wd,#hi,lsl #16 (32-bit, the same Wd)
+    #   upscale_pass <vs key> <ps key> <binding>   the game's composite pass (16 hex digits each, a decimal binding), for the Vulkan upscale hook (vka); the host only carries it
+    #   a window site may be an orr Wd, wzr, #imm; view_scale_words may instead be all <off>:<LE word>:f32 sites (floats in main's rodata) with a view_scale_steps row
+    def words_rows(key, tags, pair):
+        rows, out, builds = g.values(key), [], set()
+        for r in rows:
+            toks = ' '.join(r).split()
+            usage = f'{key} takes <registered main build ID (32 hex)> then 1 to 8 sites <0xoffset (a multiple of 4)>:<expected LE word (8 hex), a movz or movk>:<{tags}>: {r}'
+            if len(toks) < 2 or len(toks) > 9 or toks[0] not in mains or toks[0] in builds: sys.exit(f'{g.id}: ' + usage)
+            builds.add(toks[0]); sites, offs = [], set()
+            for t in toks[1:]:
+                m = re.fullmatch(r'0x([0-9a-f]{1,8}):([0-9a-f]{8}):(\w+)', t)
+                if not m or m[3] not in tags.split('|'): sys.exit(f'{g.id}: ' + usage)
+                off, word = int(m[1], 16), int.from_bytes(bytes.fromhex(m[2]), 'little')
+                kind = tags.split('|').index(m[3])
+                # a window site may be an orr Wd, wzr, #imm (sf 0, Rn 31, Rd not 31: written as movz Wd, #v); an f32 site (view_scale_words) is a float in main's rodata
+                orr = not pair and (word & 0xFF8003E0) == 0x320003E0 and word & 31 != 31
+                if off % 4 or off in offs or (kind != 2 and (word & 0x7F800000) not in (0x52800000, 0x72800000) and not orr):
+                    sys.exit(f'{g.id}: {key}: {t}: the offset must be a multiple of 4 and used once, the word a movz or movk' + (' (or an orr Wd, wzr, #imm)' if not pair else '') + f': {r}')
+                offs.add(off); sites.append((off, word, kind))
+            ks = [x[2] for x in sites]
+            if not pair and (0 not in ks or 1 not in ks): sys.exit(f'{g.id}: {key} needs a w site and an h site at least: {r}')
+            if pair and 2 in ks:   # an f32 row (all sites f32, the words of the build's view_scale_steps row); no lo / hi in it
+                if any(k != 2 for k in ks): sys.exit(f'{g.id}: {key}: a row is all lo / hi pairs or all f32 sites, not both: {r}')
+            elif pair:
+                if len(sites) % 2 or ks != [0, 1] * (len(sites) // 2): sys.exit(f'{g.id}: {key} takes lo, hi pairs (a lo site, then its hi site): {r}')
+                for lo, hi in zip(sites[::2], sites[1::2]):
+                    if lo[1] >> 31 or hi[1] >> 31 or lo[1] & 31 != hi[1] & 31 or (lo[1] >> 21) & 3 != 0 or (hi[1] >> 21) & 3 != 1:
+                        sys.exit(f'{g.id}: {key}: a pair is two 32-bit words with the same register, the lo at lsl 0 and the hi at lsl 16: {r}')
+            out.append((toks[0], sites, offs))
+        if len(out) > 4: sys.exit(f'{g.id}: {key}: at most 4 rows (one per main build)')
+        return out
+    wwd, vsw = words_rows('window_words', 'w|h', False), words_rows('view_scale_words', 'lo|hi|f32', True)
+    # view_scale_steps <main build> <P>:<LE word> ... (P a whole 40..100, ascending; each word a finite float32 within 0.001 of P / 100; 100 = 0000803f; at
+    # most 13). Mandatory for a build whose view_scale_words row is f32 (no float32(P / 100) fallback), refused for a lo / hi row (that takes any whole 40..100)
+    f32_builds = {b_ for b_, s_, _ in vsw if s_[0][2] == 2}
+    # view_scale_fixed <main build> <W>x<H> (a fixed-window build: the game keeps its W x H window, DM_OUT_SIZE sets the 3D target and the f32 sites get the ratio,
+    # loader.c words_fixed_apply). One row per build; W and H 16..4096, 16:9; the build needs an f32 view_scale_words row and has no window_words or view_scale_steps row
+    vsf, vsf_builds = [], set()
+    for r in g.values('view_scale_fixed'):
+        usage = f'view_scale_fixed takes <registered main build ID (32 hex)> <W>x<H> (the fixed window, 16..4096 each, 16:9), one row per build: {r}'
+        # exactly what build.gradle reads (tab field 2 = the size, nothing else): key<TAB>build<TAB>WxH, no extra field, and no space or other whitespace in place of a tab
+        if any(re.search(r'\s', f_) for f_ in r): sys.exit(f'{g.id}: view_scale_fixed fields are separated by a TAB (key<TAB>build<TAB>WxH, no space inside a field): {r}')
+        if len(r) != 2: sys.exit(f'{g.id}: ' + usage)
+        toks = r
+        m = re.fullmatch(r'([1-9]\d{1,3})x([1-9]\d{1,3})', toks[1])
+        if not m or toks[0] not in mains or toks[0] in vsf_builds: sys.exit(f'{g.id}: ' + usage)
+        fw_, fh_ = int(m[1]), int(m[2])
+        if not (16 <= fw_ <= 4096 and 16 <= fh_ <= 4096) or fw_ * 9 != fh_ * 16: sys.exit(f'{g.id}: ' + usage)
+        if toks[0] not in f32_builds: sys.exit(f'{g.id}: view_scale_fixed needs an f32 view_scale_words row of main build {toks[0]}: {r}')
+        if any(b_ == toks[0] for b_, _, _ in wwd): sys.exit(f'{g.id}: view_scale_fixed and window_words of main build {toks[0]}: a fixed window has no window_words row: {r}')
+        vsf_builds.add(toks[0]); vsf.append((toks[0], fw_, fh_))
+    # one fixed size a title (build.gradle fixedWindowOf: rows of several builds must name the same W x H); build.gradle also reads only rows whose line starts with the key + TAB
+    if len({(w_, h_) for _, w_, h_ in vsf}) > 1: sys.exit(f'{g.id}: view_scale_fixed rows disagree on the size (one W x H a title, every build the same): {sorted({(w_, h_) for _, w_, h_ in vsf})}')
+    for key_ in ('view_scale_fixed', 'words_gate', 'fps_default'):
+        for ln_ in (g.dir / 'game.tsv').read_text(encoding='utf-8').splitlines():
+            if ln_.split('\t')[0].strip() == key_ and ln_ != key_ and not ln_.startswith(key_ + '\t'): sys.exit(f'{g.id}: {key_} row must start with the key and a TAB, no leading or trailing space on the key: {ln_!r}')
+    if vsf:
+        for k in ('window_fn', 'res_levels', 'render_cfg', 'graphics_scale'):
+            if g.get(k, ''): sys.exit(f'{g.id}: view_scale_fixed and {k} are two levers for one setting: keep one')
+    vsf_c = ['{' + q(b_) + f', {w_}, {h_}' + '}' for b_, w_, h_ in vsf]
+    # words_gate docked_only=<list> hidden=<list> (lists of output, internal, upscaler; each part optional, one at least; at most one row)
+    wgt = g.values('words_gate')
+    if wgt:
+        wg_usage = f'words_gate takes docked_only=<list> and / or hidden=<list>, each a comma-separated list of output, internal, upscaler, at most one row: {wgt}'
+        if len(wgt) > 1: sys.exit(f'{g.id}: ' + wg_usage)
+        toks, seen, items = ' '.join(wgt[0]).split(), set(), set()
+        if not 1 <= len(toks) <= 2: sys.exit(f'{g.id}: ' + wg_usage)
+        for t in toks:
+            m = re.fullmatch(r'(docked_only|hidden)=([a-z,]+)', t)
+            if not m or m[1] in seen: sys.exit(f'{g.id}: ' + wg_usage)
+            seen.add(m[1]); lst = m[2].split(',')
+            if any(x not in ('output', 'internal', 'upscaler') for x in lst) or len(set(lst)) != len(lst) or items & set(lst): sys.exit(f'{g.id}: ' + wg_usage)
+            items |= set(lst)
+    vss, vss_builds = [], set()
+    for r in g.values('view_scale_steps'):
+        toks = ' '.join(r).split()
+        usage = f'view_scale_steps takes <registered main build ID (32 hex)> then 1 to 13 steps <P (40..100, ascending)>:<LE float32 word (8 hex) within 0.001 of P / 100>, 100:0000803f: {r}'
+        if len(toks) < 2 or len(toks) > 14 or toks[0] not in mains or toks[0] in vss_builds: sys.exit(f'{g.id}: ' + usage)
+        vss_builds.add(toks[0]); ent = []
+        for t in toks[1:]:
+            m = re.fullmatch(r'(\d{1,3}):([0-9a-f]{8})', t)
+            if not m: sys.exit(f'{g.id}: ' + usage)
+            p_, w_ = int(m[1]), int.from_bytes(bytes.fromhex(m[2]), 'little')
+            f_ = struct.unpack('<f', bytes.fromhex(m[2]))[0]
+            if not 40 <= p_ <= 100 or (ent and p_ <= ent[-1][0]) or (w_ >> 23) & 0xFF == 0xFF or abs(f_ - p_ / 100) > 0.001 or (p_ == 100 and w_ != 0x3F800000):
+                sys.exit(f'{g.id}: view_scale_steps: {t}: ' + usage)
+            ent.append((p_, w_))
+        if ent[-1][0] != 100: sys.exit(f'{g.id}: view_scale_steps needs the entry 100:0000803f (the launcher always offers 100 %): ' + usage)
+        if toks[0] not in f32_builds: sys.exit(f'{g.id}: view_scale_steps needs an f32 view_scale_words row of main build {toks[0]} (a lo / hi row takes any whole 40..100): {r}')
+        if toks[0] in vsf_builds: sys.exit(f'{g.id}: view_scale_steps and view_scale_fixed of main build {toks[0]}: a fixed window takes no steps (the ratio is computed): {r}')
+        vss.append((toks[0], ent))
+    for b_ in sorted(f32_builds - vss_builds - vsf_builds): sys.exit(f'{g.id}: view_scale_words of main build {b_} is f32: it needs a view_scale_steps row (no float32(P / 100) fallback)')
+    vss_c = ['{' + q(b_) + f', {{{len(e_)}, {{{", ".join(str(p_) for p_, _ in e_)}}}, {{{", ".join(f"0x{w_:08x}u" for _, w_ in e_)}}}}}' + '}' for b_, e_ in vss]
+    # output_default <native | 720p | 1080p>, at most one row; absent = native (build.gradle NX_PEANUTS_OUTPUT_DEFAULT)
+    odf = g.values('output_default')
+    if len(odf) > 1 or (odf and (len(odf[0]) != 1 or odf[0][0] not in ('native', '720p', '1080p'))):
+        sys.exit(f'{g.id}: output_default takes one of native, 720p, 1080p, at most one row: {odf}')
+    # fps_default <n>: the frame rate the words: Frame rate UI starts with when nothing is stored (build.gradle NX_PEANUTS_FPS_DEFAULT). One whole number of 10..60 fps that the slider
+    # offers (fps_offered) and at most fps_limit, so the title needs an fps_limit row; at most one row; no "game" value. The row starts with the key and a TAB (a space makes it a different key that nothing reads)
+    # a words: title (window_words or view_scale_fixed rows: the launcher's Output / Internal / Upscaler / Frame rate rows) gets the Frame rate slider only for a title with a frame limit (Prefs.limited); without an
+    # fps_limit row it would get the legacy radio list (a second "Default", Game owned) next to words rows, so the profile must say its limit (and fps_modes / fps_default if it has them)
+    if (wwd or vsf) and int(fl) == 0: sys.exit(f'{g.id}: a words: title (window_words or view_scale_fixed) needs an fps_limit row, 10 to 60 (its Frame rate is the slider over fps_modes or 20, 30, 40, 45, 60; the host limits to the chosen rate), e.g. fps_limit 60, fps_modes 30,40,60, fps_default 60')
+    fdf = g.values('fps_default')
+    for ln_ in (g.dir / 'game.tsv').read_text(encoding='utf-8').splitlines():
+        if re.match(r'\s*fps_default(?![A-Za-z0-9_])', ln_) and not ln_.startswith('fps_default\t'): sys.exit(f'{g.id}: fps_default row must start with the key and a TAB, no space or other text after the key: {ln_!r}')
+    if fdf:
+        fd_usage = f'fps_default takes one whole number of 10 to 60 frames a second (one of the offered rates of the title, at most fps_limit), at most one row: {fdf}'
+        if len(fdf) != 1 or len(fdf[0]) != 1 or not re.fullmatch(r'[1-9][0-9]', fdf[0][0]): sys.exit(f'{g.id}: ' + fd_usage)
+        fdn = int(fdf[0][0])
+        if int(fl) == 0: sys.exit(f'{g.id}: fps_default needs an fps_limit row (the frame limit it starts under): {fdf}')
+        if fdn > int(fl): sys.exit(f'{g.id}: fps_default {fdn} is above fps_limit {fl}')
+        if fdn not in fps_offered(g): sys.exit(f'{g.id}: fps_default {fdn} is not one of the offered frame rates {fps_offered(g)}')
+    for key, rws in (('window_words', wwd), ('view_scale_words', vsw)):
+        for b_, sites_, offs_ in rws:
+            if any((b_, o) in option_sites for o in offs_): sys.exit(f'{g.id}: {key} and option_patch write the same code word of main build {b_}: keep one')
+    if wwd:
+        for k in ('window_fn', 'res_levels', 'render_cfg', 'graphics_scale'):
+            if g.get(k, ''): sys.exit(f'{g.id}: window_words and {k} are two levers for one setting: keep one')
+    wrow = lambda b_, sites_: '{' + q(b_) + f', {len(sites_)}, {{{", ".join(f"{{0x{o:x}ull, 0x{w_:08x}u, {k_}}}" for o, w_, k_ in sites_)}}}' + '}'
+    wwd_c, vsw_c = [wrow(b_, s_) for b_, s_, _ in wwd], [wrow(b_, s_) for b_, s_, _ in vsw]
+    ups = g.values('upscale_pass')
+    if len(ups) > 1 or (ups and (len(ups[0]) != 3 or not all(re.fullmatch(r'[0-9a-f]{16}', x) for x in ups[0][:2]) or not re.fullmatch(r'\d{1,5}', ups[0][2]) or int(ups[0][2]) > 0xFFFF)):
+        sys.exit(f'{g.id}: upscale_pass takes <vertex shader key (16 hex)> <pixel shader key (16 hex)> <binding (decimal, at most 65535)>, one row: {ups}')
+    ups_c = [f'0x{ups[0][0]}ull', f'0x{ups[0][1]}ull', str(int(ups[0][2]))] if ups else ['0', '0', '0']
+    # PEANUTS end
     # Shaders whose subgroup operations run as subgroups of one invocation on Qualcomm's own driver even where the device has them (vka_shader.c single_lane, one_lane_forced;
     # a workaround, Android): one key per row
     sol = []
@@ -445,6 +598,7 @@ def header(g):
          f'#define DM_GAME_TEX_SOFT {int(tsf == "on")}',
          f'#define DM_GAME_OCCLUSION_SPLIT_PASS {int(oqs == "on")}',
          f'#define DM_GAME_EVENT_WAIT {int(evw == "on")}',
+         f'#define DM_GAME_ALIAS_SYNC {int(asy == "on")}',   # PEANUTS(upstream-candidate)
          f'#define DM_GAME_GPU_TS_SEGMENT {int(gts == "segment")}',
          f'#define DM_GAME_DRAW_BARRIERS_GAME {int(dbr == "game")}',
          f'#define DM_GAME_VCONV_RANGE {int(vcr == "on")}',
@@ -463,6 +617,13 @@ def header(g):
          '#define DM_GAME_RENDER_QUALITY {' + ', '.join(map(str, rq)) + '}', f'#define DM_GAME_RENDER_DEFAULT_OUT {q(aw or "1920x1080")}',
          '#define DM_GAME_RT_POOL {' + (', '.join(rtp) or '{"", "", 0, 0, 0, 0, {0}, {0}, {0}, 0}') + '}', f'#define DM_GAME_NRT_POOL {len(rtp)}',
          '#define DM_GAME_RES_LEVELS {' + (', '.join(rlv) or '{"", 0, 0, 0, {{0, 0}}}') + '}', f'#define DM_GAME_NRES_LEVELS {len(rlv)}',
+         # PEANUTS(upstream-candidate) begin: window_words / view_scale_words / upscale_pass
+         '#define DM_GAME_WINDOW_WORDS {' + (', '.join(wwd_c) or '{"", 0, {{0, 0, 0}}}') + '}', f'#define DM_GAME_NWINDOW_WORDS {len(wwd_c)}',
+         '#define DM_GAME_VIEW_SCALE_WORDS {' + (', '.join(vsw_c) or '{"", 0, {{0, 0, 0}}}') + '}', f'#define DM_GAME_NVIEW_SCALE_WORDS {len(vsw_c)}',
+         f'#define DM_GAME_HAS_UPSCALE_PASS {int(bool(ups))}', f'#define DM_GAME_UPSCALE_PASS_VS {ups_c[0]}', f'#define DM_GAME_UPSCALE_PASS_PS {ups_c[1]}', f'#define DM_GAME_UPSCALE_PASS_BINDING {ups_c[2]}',
+         '#define DM_GAME_VIEW_SCALE_STEPS {' + (', '.join(vss_c) or '{"", {0, {0}, {0}}}') + '}', f'#define DM_GAME_NVIEW_SCALE_STEPS {len(vss_c)}',
+         '#define DM_GAME_VIEW_SCALE_FIXED {' + (', '.join(vsf_c) or '{"", 0, 0}') + '}', f'#define DM_GAME_NVIEW_SCALE_FIXED {len(vsf_c)}',
+         # PEANUTS end
          *([f'#define DM_GAME_NVN_API_MAJOR {api.split(".")[0]}', f'#define DM_GAME_NVN_API_MINOR {api.split(".")[1]}'] if g.get('device_api', '') else []),   # without the key: by the SDK version (hle_nvn.c nvn_api)
          '']
     return '\n'.join(L)

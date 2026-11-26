@@ -81,6 +81,7 @@ int main(int argc, char **argv) {
         printf("\n");
     }
     printf("event_wait=%d\n", (int)p->event_wait); printf("occlusion_split_pass=%d\n", (int)p->occlusion_split_pass);
+    printf("alias_sync=%d\n", (int)p->alias_sync);   // PEANUTS(upstream-candidate)
     printf("low_ram_place_part_mb=%d\n", (int)p->low_ram_place_part_mb); printf("low_ram_img_cache_max_mb=%d\n", (int)p->low_ram_img_cache_max_mb);
     printf("low_ram_app_pool_mb=%d\n", (int)p->low_ram_app_pool_mb); printf("render_default_out=%s\n", p->render_default_out);
     printf("render_quality=%d,%d,%d,%d\n", (int)p->render_quality[0], (int)p->render_quality[1], (int)p->render_quality[2], (int)p->render_quality[3]);
@@ -98,6 +99,18 @@ int main(int argc, char **argv) {
         for (unsigned k = 0; k < t->nt && k < 4; k++) printf(",%u=%ux%u", t->mb[k], t->max_w[k], t->max_h[k]);
         printf("\n");
     }
+    // PEANUTS(upstream-candidate): window_words / view_scale_words / upscale_pass
+    printf("nwindow_words=%d\n", (int)p->nwindow_words);
+    for (int i = 0; i < (int)p->nwindow_words; i++) { printf("window_words[%d]=%s,%u", i, p->window_words[i].build, p->window_words[i].n); for (unsigned k = 0; k < p->window_words[i].n && k < 8; k++) printf(",%llu:%u:%u", (unsigned long long)p->window_words[i].site[k].off, p->window_words[i].site[k].word, p->window_words[i].site[k].kind); printf("\n"); }
+    printf("nview_scale_words=%d\n", (int)p->nview_scale_words);
+    for (int i = 0; i < (int)p->nview_scale_words; i++) { printf("view_scale_words[%d]=%s,%u", i, p->view_scale_words[i].build, p->view_scale_words[i].n); for (unsigned k = 0; k < p->view_scale_words[i].n && k < 8; k++) printf(",%llu:%u:%u", (unsigned long long)p->view_scale_words[i].site[k].off, p->view_scale_words[i].site[k].word, p->view_scale_words[i].site[k].kind); printf("\n"); }
+    printf("upscale_pass=%d,%llu,%llu,%u\n", (int)p->has_upscale_pass, (unsigned long long)p->upscale_pass_vs, (unsigned long long)p->upscale_pass_ps, (unsigned)p->upscale_pass_binding);
+    // PEANUTS(upstream-candidate): view_scale_steps
+    printf("nview_scale_steps=%d\n", (int)p->nview_scale_steps);
+    for (int i = 0; i < (int)p->nview_scale_steps; i++) { printf("view_scale_steps[%d]=%s,%u", i, p->view_scale_steps[i].build, p->view_scale_steps[i].n); for (unsigned k = 0; k < p->view_scale_steps[i].n && k < 13; k++) printf(",%u:%u", p->view_scale_steps[i].pct[k], p->view_scale_steps[i].word[k]); printf("\n"); }
+    // PEANUTS(upstream-candidate): view_scale_fixed
+    printf("nview_scale_fixed=%d\n", (int)p->nview_scale_fixed);
+    for (int i = 0; i < (int)p->nview_scale_fixed; i++) printf("view_scale_fixed[%d]=%s,%u,%u\n", i, p->view_scale_fixed[i].build, p->view_scale_fixed[i].w, p->view_scale_fixed[i].h);
     printf("has_nvn_api=%d\n", (int)p->has_nvn_api);
     printf("nvn_api_major=%d\n", (int)p->nvn_api_major);
     printf("nvn_api_minor=%d\n", (int)p->nvn_api_minor);

@@ -77,6 +77,7 @@
 #define DM_GAME_NDRS_CTL (g_profile.ndrs_ctl)
 #define DM_GAME_NRES_LEVELS (g_profile.nres_levels)
 #define DM_GAME_EVENT_WAIT (g_profile.event_wait)
+#define DM_GAME_ALIAS_SYNC (g_profile.alias_sync)   // PEANUTS(upstream-candidate)
 #define DM_GAME_OCCLUSION_SPLIT_PASS (g_profile.occlusion_split_pass)
 #define DM_GAME_LOW_RAM_PLACE_PART_MB (g_profile.low_ram_place_part_mb)
 #define DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB (g_profile.low_ram_img_cache_max_mb)
@@ -84,6 +85,20 @@
 #define DM_GAME_RENDER_DEFAULT_OUT (g_profile.render_default_out)
 #define DM_GAME_NRENDER_CFG (g_profile.nrender_cfg)
 #define DM_GAME_NRT_POOL (g_profile.nrt_pool)
+// PEANUTS(upstream-candidate): window_words / view_scale_words (their row macros, DM_GAME_WINDOW_WORDS and DM_GAME_VIEW_SCALE_WORDS, are left undefined like the other row tables:
+// loader.c words_apply reads g_profile.window_words / view_scale_words behind DM_RUNTIME_PROFILE) and upscale_pass (read by the Vulkan upscale hook)
+#define DM_GAME_NWINDOW_WORDS (g_profile.nwindow_words)
+#define DM_GAME_NVIEW_SCALE_WORDS (g_profile.nview_scale_words)
+#define DM_GAME_HAS_UPSCALE_PASS (g_profile.has_upscale_pass)
+#define DM_GAME_UPSCALE_PASS_VS (g_profile.upscale_pass_vs)
+#define DM_GAME_UPSCALE_PASS_PS (g_profile.upscale_pass_ps)
+#define DM_GAME_UPSCALE_PASS_BINDING (g_profile.upscale_pass_binding)
+// PEANUTS(upstream-candidate): view_scale_steps (its row macro, DM_GAME_VIEW_SCALE_STEPS, is left undefined like the other row tables: loader.c words_steps reads
+// g_profile.view_scale_steps behind DM_RUNTIME_PROFILE)
+#define DM_GAME_NVIEW_SCALE_STEPS (g_profile.nview_scale_steps)
+// PEANUTS(upstream-candidate): view_scale_fixed (its row macro, DM_GAME_VIEW_SCALE_FIXED, is left undefined like the other row tables: loader.c words_fixed reads
+// g_profile.view_scale_fixed behind DM_RUNTIME_PROFILE)
+#define DM_GAME_NVIEW_SCALE_FIXED (g_profile.nview_scale_fixed)
 
 // Presence macros: upstream's #ifdef/#if-defined call sites are themselves converted (hle_sdk16.c, hle_nvn.c) to read g_profile.has_x at run time under
 // #ifdef DM_RUNTIME_PROFILE; nothing here needs to fake "definedness". Kept as plain reads for anywhere else that just wants the value when present.

@@ -629,6 +629,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         Profile prof = Profile.of(id);
         ScreenMode.env(this, id, env);   // PEANUTS: Console mode (DM_OPMODE) for a game whose Resolution does not set it
         ResScale.env(this, id, env);   // PEANUTS: Resolution scale (DM_RES_SCALE) when it is not 1x
+        WordsRows.env(this, id, env);   // PEANUTS: a words: game's Output size, Internal resolution and Upscaler (DM_WINDOW_SIZE, DM_SCENE_PCT, DM_VK_CUPSCALE*); nothing for any other game
         dev.peanuts.Companion.env(this, id, env);   // PEANUTS: companions off (PN_COMPANION=off) when the title's Second screen is Off, the default without a second display
         if (prof != null) env.addAll(prof.resolutionEnv(Prefs.startWindow(this, id)));   // a Resolution preset's window, else Game resolution's (Prefs.startWindow, ResPresets)
         // Resolution, Upscaling quality and Graphics quality (a render_cfg row: Profile.renderCfg), kept as the setting this run starts with: the loader sizes the render target

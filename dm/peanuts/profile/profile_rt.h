@@ -21,6 +21,9 @@
 #define DM_PROFILE_RENDER_CFG_SLOTS 8   // dm/host/render_cfg.h RCFG_MAX
 #define DM_PROFILE_RT_POOL_CAP 4
 #define DM_PROFILE_RT_POOL_TIERS 4   // dm/host/rt_pool.h RTP_TIERS
+#define DM_PROFILE_WORDS_CAP 4    // PEANUTS(upstream-candidate): window_words / view_scale_words rows (one per main build)
+#define DM_PROFILE_WORDS_SITES 8  // PEANUTS(upstream-candidate): sites per row, dm/host/imm_words.h IMW_MAX_SITES
+#define DM_PROFILE_STEPS_MAX 13   // PEANUTS(upstream-candidate): view_scale_steps entries per row, dm/host/imm_words.h IMW_MAX_STEPS (rows: DM_PROFILE_WORDS_CAP)
 
 // Natural C alignment, not packed (found in review: #pragma pack(1) let call sites take a typed pointer into an unaligned uint64_t field -
 // UB even though AArch64 tolerates the actual load). gen_runtime_profile.py's Packer mirrors these same alignment rules field by field when it writes a
@@ -44,6 +47,15 @@ typedef struct { char build[48]; uint64_t table; uint32_t n, stride, out_off, re
                  uint32_t orig_w, orig_h, max_w, max_h, min_h; } dm_pf_render_cfg_t;
 typedef struct { char build[48]; char module[16]; uint64_t off; uint32_t word, base_mb, nt;
                  uint32_t mb[DM_PROFILE_RT_POOL_TIERS], max_w[DM_PROFILE_RT_POOL_TIERS], max_h[DM_PROFILE_RT_POOL_TIERS]; uint32_t out_h; } dm_pf_rt_pool_t;
+// PEANUTS(upstream-candidate): window_words / view_scale_words rows (loader.c words_apply): the site fields are those of dm/host/imm_words.h imw_site_t (offset in main's text,
+// the word the game has there, kind: 0 w / lo, 1 h / hi), the build string inline; loader.c copies them into imw_site_t before use
+typedef struct { uint64_t off; uint32_t word, kind; } dm_pf_words_site_t;
+typedef struct { char build[48]; uint32_t n; dm_pf_words_site_t site[DM_PROFILE_WORDS_SITES]; } dm_pf_words_t;
+// PEANUTS(upstream-candidate): a view_scale_steps row (an f32 view_scale_words row's words): n entries, pct[i] and the float32 bits word[i] (dm/host/imm_words.h imw_steps_t);
+// a site kind 2 (f32) is a float in main's rodata. Their form is checked where they are used (loader.c words_steps: imw_steps_valid)
+typedef struct { char build[48]; uint32_t n; uint32_t pct[DM_PROFILE_STEPS_MAX]; uint32_t word[DM_PROFILE_STEPS_MAX]; } dm_pf_steps_t;
+// PEANUTS(upstream-candidate): a view_scale_fixed row (a fixed-window build): its window W x H. Checked where it is used (loader.c words_fixed: imw_fixed_valid)
+typedef struct { char build[48]; uint32_t w, h; } dm_pf_fixed_t;
 
 // One title's profile, loaded once at host start (nxhost_main, before anything else reads it) from DM_PROFILE_PATH (profile_rt_load).
 // Field names mirror DM_GAME_* macro names lower-cased; dm/peanuts/profile/game_profile_generic.h is what call sites actually see
@@ -78,9 +90,20 @@ typedef struct {
     uint32_t nres_levels; dm_pf_res_levels_t res_levels[DM_PROFILE_RES_LEVELS_CAP];
 
     uint32_t event_wait, occlusion_split_pass, low_ram_place_part_mb, low_ram_img_cache_max_mb, low_ram_app_pool_mb;
+    uint32_t alias_sync;   // PEANUTS(upstream-candidate): Android linear alias sync on by default (vka_tex.c as_on)
     char render_default_out[16]; uint32_t render_quality[4];
     uint32_t nrender_cfg; dm_pf_render_cfg_t render_cfg[DM_PROFILE_RENDER_CFG_CAP];
     uint32_t nrt_pool; dm_pf_rt_pool_t rt_pool[DM_PROFILE_RT_POOL_CAP];
+    // PEANUTS(upstream-candidate): window_words / view_scale_words rows, and upscale_pass (the composite pass the Vulkan upscale hook arms on: both shader keys and the binding of
+    // the 3D image; has_upscale_pass 0 = no row, the three values 0)
+    uint32_t nwindow_words; dm_pf_words_t window_words[DM_PROFILE_WORDS_CAP];
+    uint32_t nview_scale_words; dm_pf_words_t view_scale_words[DM_PROFILE_WORDS_CAP];
+    uint32_t has_upscale_pass, upscale_pass_binding; uint64_t upscale_pass_vs, upscale_pass_ps;
+    // PEANUTS(upstream-candidate): view_scale_steps rows. Shared groups append after upscale_pass_*; a clone-local field (e.g. a texel-buffer copy key) stays last;
+    // schema hashes are per clone
+    uint32_t nview_scale_steps; dm_pf_steps_t view_scale_steps[DM_PROFILE_WORDS_CAP];
+    // PEANUTS(upstream-candidate): view_scale_fixed rows, directly after view_scale_steps (a shared group: before any clone-local field)
+    uint32_t nview_scale_fixed; dm_pf_fixed_t view_scale_fixed[DM_PROFILE_WORDS_CAP];
 } dm_game_profile_t;
 
 // A few checkpoints along the layout (found in review), so a field inserted or resized in the wrong place fails the build here, at the
@@ -96,6 +119,11 @@ _Static_assert(offsetof(dm_game_profile_t, drs_ctl) % 8 == 0, "dm_pf_drs_ctl_t h
 _Static_assert(offsetof(dm_game_profile_t, res_levels) % 8 == 0, "dm_pf_res_levels_t has uint64_t members: must be 8-byte aligned");
 _Static_assert(offsetof(dm_game_profile_t, render_cfg) % 8 == 0, "dm_pf_render_cfg_t has uint64_t members: must be 8-byte aligned");
 _Static_assert(offsetof(dm_game_profile_t, rt_pool) % 8 == 0, "dm_pf_rt_pool_t has uint64_t members: must be 8-byte aligned");
+_Static_assert(offsetof(dm_game_profile_t, window_words) % 8 == 0, "dm_pf_words_t has uint64_t members: must be 8-byte aligned");   // PEANUTS(upstream-candidate)
+_Static_assert(offsetof(dm_game_profile_t, view_scale_words) % 8 == 0, "dm_pf_words_t has uint64_t members: must be 8-byte aligned");   // PEANUTS(upstream-candidate)
+_Static_assert(offsetof(dm_game_profile_t, upscale_pass_vs) % 8 == 0, "the upscale_pass shader keys are uint64_t: must be 8-byte aligned");   // PEANUTS(upstream-candidate)
+_Static_assert(offsetof(dm_game_profile_t, view_scale_steps) % 4 == 0, "dm_pf_steps_t is char[48] + uint32_t fields: must be 4-byte aligned");   // PEANUTS(upstream-candidate)
+_Static_assert(offsetof(dm_game_profile_t, view_scale_fixed) % 4 == 0, "dm_pf_fixed_t is char[48] + uint32_t fields: must be 4-byte aligned");   // PEANUTS(upstream-candidate)
 _Static_assert(sizeof(dm_game_profile_t) % 8 == 0, "the whole struct must round to its own (8-byte) alignment, like any C array of it would");
 
 extern dm_game_profile_t g_profile;   // the loaded profile; zeroed (all "off"/0/"") until profile_rt_load succeeds

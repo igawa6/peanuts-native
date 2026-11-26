@@ -402,6 +402,7 @@ int vka_rp_is_open(void);                            // a render pass is open in
 void vka_tex_writeback(VkCommandBuffer cb);   // mtl_sub_commit, after the last pass
 // PEANUTS(upstream-candidate): a buffer -> texture copy's bytes into the texture's block-linear storage, in queue order (vka_tex.c; LEGO CITY UNDERCOVER's GPU defragmenter copies that storage); DM_VK_B2T_MIRROR
 int vka_tex_b2t_mirror(VkCommandBuffer cb, const vka_img *im, const tex_t *t, unsigned level, unsigned layer, const NVNcopyRegion *r, VkBuffer sbuf, VkDeviceSize soff, size_t row, size_t span);
+void vka_tex_alias_flush(VkCommandBuffer cb);   // PEANUTS(upstream-candidate): GPU-written linear textures' bytes into their aliases of another shape (DM_VK_ALIAS_SYNC); no pass open in cb
 // Texture pool reads (vka_tex.c, DM_VK_POOL_FB): the texture IDs shaders read through the pool, reported by the GPU, so their images are made and kept while read
 // The bitmap, a storage buffer of 2^20 bits, in a set of its own after the pool's: on Qualcomm's driver a storage buffer in the pool's set, after its 2^20 sampled images,
 // is never written (docs/reference/rendering.md "Texture pool reads report nothing on Qualcomm's driver")
