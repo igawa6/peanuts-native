@@ -1146,6 +1146,12 @@ PEANUTS on its first line) checks where the `TU_DEBUG` line goes: after the opti
 [Decals reading depth that holds only some 16-pixel tiles](../docs/reference/rendering.md#decals-reading-depth-that-holds-only-some-16-pixel-tiles-android-turnip),
 [Samples-passed reports that read 0 on Turnip hide decals](../docs/reference/rendering.md#samples-passed-reports-that-read-0-on-turnip-hide-decals-android)
 
+## Batman: Arkham Knight on Android
+
+The profile's readiness row and its `nxGames` entry in `android/app/gradle.properties`; three game options for the Turnip road fixes (`DM_VK_ONE_LANE` with two
+`subgroup_one_lane` rows, `DM_VK_TU_FLUSHALL`, `DM_VK_NO_OCCLUSION`), each recommended on Turnip. PEANUTS-marked hunks in `game.tsv` and the note; no prewarm seed.
+[Game note](../dm/games/0100ACD0163D0000/README.md#android)
+
 ## Android presentation deadline forwarding
 
 The active game Activity forwards `Display.getPresentationDeadlineNanos()` once during `hostSetup`, then through the existing 500 ms `fpsTick` while active. A missing display sends zero. The JNI bridge preserves positive nanosecond values as 64-bit unsigned values, normalizes nonpositive values to zero and safely ignores a host without the new weak interface. The renderer uses this platform queue-lead requirement when selecting its target presentation grid; half a refresh alone does not describe the compositor's deadline. See the [Android API contract](https://developer.android.com/reference/android/view/Display#getPresentationDeadlineNanos()).
