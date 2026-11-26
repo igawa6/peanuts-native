@@ -76,7 +76,7 @@ Status column: **done** is implemented on Android in this milestone; **stub** lo
 | `hle_cheats.c` | `dispatch_queue` with blocks | a worker thread with a job list; the blocks became functions with a context (`plat_queue_*`) | done |
 | `hle_lifecycle.c` | `dispatch_after`, `DISPATCH_SOURCE_TYPE_SIGNAL` | a sleeping thread; a self-pipe signal handler and a reader thread (`plat_after_ns`, `plat_on_signal`) | done |
 | `hle_fs.c`, `save_sync.c` | `clonefile` | a full copy of the tree with xattrs and times: no copy-on-write on ext4 / f2fs (`plat_clone_tree`) | done (slower) |
-| `hle_fs.c`, `save_sync.c` | `renamex_np(RENAME_SWAP)` | `renameat2(RENAME_EXCHANGE)` (`plat_rename_swap`) | done |
+| `hle_fs.c`, `save_sync.c` | `renamex_np(RENAME_SWAP)` | file renames into the save folder under a roll-forward journal (`plat_rename_swap`; no `RENAME_EXCHANGE`, which would replace the folder a sync tool watches) | done <!-- PEANUTS --> |
 | `hle_fs.c`, `save_sync.c` | `getxattr` / `setxattr` / `removexattr` with `XATTR_NOFOLLOW`, `ENOATTR` | `lgetxattr` / `lsetxattr` / `lremovexattr` in the `user.` namespace, `ENODATA` | done |
 | `hle_fdstat.c` | `fcntl(F_GETPATH)`, `getdtablesize` | `readlink(/proc/self/fd/N)`, `sysconf(_SC_OPEN_MAX)` | done |
 | `save_sync.c` | `sysctlbyname("hw.model")`, `st_mtimespec` | `ro.product.manufacturer` + `ro.product.model`, `st_mtime` | done |

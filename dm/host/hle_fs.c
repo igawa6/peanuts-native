@@ -264,7 +264,11 @@ static Result mount_ex(const char *name, const char *dir, int ro, int txn, int s
         g_mnt[s].txn_root = g_mnt[k].txn_root;
     } else if (txn) {
         char work[1100], neu[1100]; snprintf(work, sizeof work, "%s.work", dir); snprintf(neu, sizeof neu, "%s.new", dir);
-        plat_swap_recover(dir);   // a commit killed inside the file-level swap that stands in for RENAME_EXCHANGE on shared storage is finished (plat_rename_swap)
+        plat_swap_recover(dir);   // a commit killed inside the file-level swap (plat_rename_swap on Android: the save folder is updated in place) is finished
+        {   // PEANUTS: a stopped reclone's journal on the work directory goes with it: the work directory is made again below
+            char wj[1200]; snprintf(wj, sizeof wj, "%s.pend1", work); unlink(wj); snprintf(wj, sizeof wj, "%s.pend2", work); unlink(wj);
+            snprintf(wj, sizeof wj, "%s.re", work); if (!access(wj, F_OK)) rm_tree(wj);
+        }
         mkdir(dir, 0755);
         const char *why = NULL;
         if (!access(work, F_OK) && rm_tree(work)) why = "cannot clear the work directory left over from last time";
@@ -812,10 +816,10 @@ static Result commit_mount_locked(int i, int *notify_error) {
         for (int k = 0; k < 65536; k++) nopen += atomic_load(&g_ftxn[k]) == token;   // these handles point into the deleted old working directory after re-cloning
         // First clone the committed version into a sibling temporary directory; once that succeeds, atomically swap it with the tainted work directory and delete the swapped-out one. If any step fails, do not exit: the work directory stays and the "tainted" mark is put back
         // (the next commit is refused again and recloning is retried); the committed version is unchanged (before, the work directory was deleted first and then recloned, and a failed clone called die, so with a full disk the process exited and the work directory was gone)
-        char re[1100]; snprintf(re, sizeof re, "%s.re", g_mnt[i].dir); int rerr = 0;
+        char re[1100]; snprintf(re, sizeof re, "%s.re", g_mnt[i].dir); int rerr = 0, sr;
         if (!access(re, F_OK) && rm_tree(re)) rerr = errno ? errno : EIO;
         else if (dm_fs_test_fail("reclone") || plat_clone_tree(g_mnt[i].commit, re)) { rerr = errno ? errno : EIO; rm_tree(re); }
-        else if (plat_rename_swap(re, g_mnt[i].dir)) { rerr = errno ? errno : EIO; rm_tree(re); }
+        else if ((sr = plat_rename_swap(re, g_mnt[i].dir))) { rerr = errno ? errno : EIO; if (sr != -2) rm_tree(re); }   // PEANUTS: -2 keeps re for its journal
         else rm_tree(re);                                               // the swapped-out tainted work directory
         if (rerr) { save_poison_txn(txn, perr); LOG("[RED] save transaction: recloning the work directory failed errno=%d -- the work directory is left as it is and stays tainted (the next commit is refused again and retries), the committed version is unchanged", rerr); }
         LOG("[RED] save commit refused: a save write failed in this transaction errno=%d (0-byte files in the work directory: %s); the committed version is unchanged, the work directory %s%s", perr, tl ? torn + 1 : "none", rerr ? "could not be recloned (see the previous line)" : "was recloned from the committed version", nopen ? "; [RED] save files are still open" : "");
@@ -823,11 +827,17 @@ static Result commit_mount_locked(int i, int *notify_error) {
         return RES_FAIL;
     }
     char neu[1100]; snprintf(neu, sizeof neu, "%s.new", g_mnt[i].commit);
-    Result r = RES_OK;
-    if (!access(neu, F_OK) && rm_tree(neu)) { LOG("[RED] save commit: cannot clear the %s left over errno=%d (committed version unchanged)", neu, errno); r = RES_FAIL; }
+    Result r = RES_OK; int sr;
+    plat_swap_recover(g_mnt[i].commit);   // PEANUTS: an earlier commit that failed after its journal marker is finished before its .new is cleared
+    char pm1[1200], pm2[1200]; snprintf(pm1, sizeof pm1, "%s.pend1", g_mnt[i].commit); snprintf(pm2, sizeof pm2, "%s.pend2", g_mnt[i].commit);   // PEANUTS
+    if (!access(pm1, F_OK) || !access(pm2, F_OK)) { LOG("[RED] save commit: an earlier commit's journal (%s.pend1 / .pend2) could not be finished; this commit is refused (it is finished at the next mount)", g_mnt[i].commit); r = RES_FAIL; }   // PEANUTS
+    else if (!access(neu, F_OK) && rm_tree(neu)) { LOG("[RED] save commit: cannot clear the %s left over errno=%d (committed version unchanged)", neu, errno); r = RES_FAIL; }
     else if (plat_clone_tree(g_mnt[i].dir, neu)) { LOG("[RED] save commit: clonefile %s failed errno=%d (committed version unchanged)", neu, errno); r = RES_FAIL; }
-    else if (plat_rename_swap(neu, g_mnt[i].commit)) { LOG("[RED] save commit: atomic swap failed errno=%d (committed version unchanged)", errno); rm_tree(neu); r = RES_FAIL; }
-    else rm_tree(neu);                                                  // the old version that was swapped out
+    else if ((sr = plat_rename_swap(neu, g_mnt[i].commit))) {   // PEANUTS: -2: failed after the journal marker, so neu stays for the roll-forward
+        LOG("[RED] save commit: %s errno=%d", sr == -2 ? "the in-place update failed after its journal marker (it is finished at the next commit or mount)" : "atomic swap failed (committed version unchanged)", errno);
+        if (sr != -2) rm_tree(neu);
+        r = RES_FAIL; }
+    else rm_tree(neu);                                                  // PEANUTS: what the swap left in .new (empty on Android, the old version on the Mac)
     // Timing readouts (integer microseconds, no floating point): how long the clone + atomic swap took; how long in total from this transaction's first save write to the end of the commit (the game writing files + the commit; 0 = no save write in this transaction)
     static int n; if (r == RES_OK) { uint64_t tc2 = plat_clock_ns(CLOCK_MONOTONIC);
         LOG("save commit #%d: %s swapped atomically into %s (%d save writes so far) (clone + swap %llu us, since this transaction's first write %llu us)", ++n, g_mnt[i].dir, g_mnt[i].commit, atomic_load(&g_save_writes),

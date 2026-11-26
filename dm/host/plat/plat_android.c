@@ -462,6 +462,17 @@ int plat_clone_tree(const char *from, const char *to) {
     struct timespec t[2] = {st.st_atim, st.st_mtim}; utimensat(AT_FDCWD, to, t, AT_SYMLINK_NOFOLLOW);
     errno = e; return r;
 }
+// PEANUTS begin: b's folder attributes (its guest name) made a's: those a lacks removed, a's copied
+static void swap_dir_meta(const char *a, const char *b) {
+    char na[1024], nb[1024]; ssize_t n = llistxattr(a, na, sizeof na), m = llistxattr(b, nb, sizeof nb);
+    for (ssize_t o = 0; m > 0 && o < m; o += (ssize_t)strlen(nb + o) + 1) {
+        int keep = 0;
+        for (ssize_t p = 0; n > 0 && p < n; p += (ssize_t)strlen(na + p) + 1) if (!strcmp(na + p, nb + o)) keep = 1;
+        if (!keep) lremovexattr(b, nb + o);
+    }
+    copy_xattrs(a, b);
+}
+// PEANUTS end
 static int swap_rm_cb(const char *p, const struct stat *st, int f, struct FTW *w) { (void)st; (void)f; (void)w; return remove(p); }
 static int swap_rm_tree(const char *p) { return nftw(p, swap_rm_cb, 16, FTW_DEPTH | FTW_PHYS); }
 // PEANUTS begin: every file and folder of a tree on the storage (fsync). plat_clone_tree's copy leaves its data in the page cache, so a swap, or the journal marker
@@ -476,11 +487,12 @@ static int swap_sync_cb(const char *p, const struct stat *st, int f, struct FTW 
 }
 static int swap_sync_tree(const char *p) { return nftw(p, swap_sync_cb, 16, FTW_DEPTH | FTW_PHYS); }
 // PEANUTS end
-// RENAME_EXCHANGE where the filesystem has it (app-private ext4/f2fs). Shared storage (/sdcard, a FUSE mount) answers EINVAL, and renaming a DIRECTORY there costs
-// about 1.2 s each (measured on the phone; a file rename is 10 ms), so three directory renames made a commit take 4 s. There b is brought to a's content by FILE
-// operations under a roll-forward journal instead: marker b.pend1 (holds a's path) is written once a is complete; stage 1 deletes what b has and a lacks; b.pend2
+// b is brought to a's content in place, by FILE operations under a roll-forward journal, on every filesystem. Not RENAME_EXCHANGE, even where the filesystem has it
+// (app-private ext4/f2fs): exchanging the directories gives b a new inode, and a folder sync tool (Syncthing) watching b with inotify keeps watching the swapped-out
+// one, so it never sees a commit (#485). Renaming a DIRECTORY on shared storage (/sdcard, FUSE) also costs about 1.2 s (a file rename 10 ms). The journal: marker b.pend1 (holds a's path) is written once a is complete; stage 1 deletes what b has and a lacks; b.pend2
 // replaces b.pend1; stage 2 renames a's files over b's (each rename atomic), and the markers go. A crash after the marker is finished at the next mount
-// (plat_swap_recover), a crash before it leaves b untouched, so b ends as the old version or the new one, never a mix. a is left empty (the callers delete it).
+// (plat_swap_recover), a crash before it leaves b untouched, so b ends as the old version or the new one, never a mix. a is left empty (the callers delete it); a failure
+// after the marker returns -2 and a must stay for the roll-forward at the next commit or mount.
 static int swap_stage1(const char *a, const char *b) {   // remove from b what a does not have
     DIR *d = opendir(b); if (!d) return errno == ENOENT ? 0 : -1;
     int r = 0;
@@ -504,7 +516,10 @@ static int swap_stage2(const char *a, const char *b) {   // move a's files over 
         char pa[4096], pb[4096];
         if (snprintf(pa, sizeof pa, "%s/%s", a, e->d_name) >= (int)sizeof pa || snprintf(pb, sizeof pb, "%s/%s", b, e->d_name) >= (int)sizeof pb) { r = -1; errno = ENAMETOOLONG; break; }
         struct stat sa; if (lstat(pa, &sa)) continue;
-        if (S_ISDIR(sa.st_mode)) { if (mkdir(pb, sa.st_mode & 07777) && errno != EEXIST) r = -1; else if (!(r = swap_stage2(pa, pb))) rmdir(pa); }
+        if (S_ISDIR(sa.st_mode)) {
+            if (mkdir(pb, sa.st_mode & 07777) && errno != EEXIST) r = -1;
+            else { chmod(pb, sa.st_mode & 07777); swap_dir_meta(pa, pb); if (!(r = swap_stage2(pa, pb))) rmdir(pa); }   // PEANUTS: the folder's mode and guest name (xattrs) too
+        }
         else r = rename(pa, pb);
     }
     int er = errno; closedir(d); errno = er; return r;
@@ -545,11 +560,11 @@ static int swap_apply(const char *a, const char *b, int stage1) {
 }
 int plat_rename_swap(const char *a, const char *b) {
     if (swap_sync_tree(a)) return -1;   // PEANUTS: a's files on the storage before anything points at them (#195)
-    if (!syscall(SYS_renameat2, AT_FDCWD, a, AT_FDCWD, b, 2 /* RENAME_EXCHANGE */)) { swap_dir_sync(b); return 0; }   // PEANUTS: the exchange too
-    if (errno != EINVAL && errno != ENOSYS && errno != EXDEV && errno != ENOTSUP) return -1;
     char m1[4200]; if (snprintf(m1, sizeof m1, "%s.pend1", b) >= (int)sizeof m1) { errno = ENAMETOOLONG; return -1; }
-    if (swap_marker(m1, a)) return -1;                                  // from here on the commit is rolled forward, also after a crash
-    return swap_apply(a, b, 1);
+    if (swap_marker(m1, a)) {   // PEANUTS: a marker that could not be written (a full disk) goes, or a stays (-2) for the one left
+        int e = errno; int kept = unlink(m1) && errno != ENOENT; errno = e; return kept ? -2 : -1;
+    }                                                                   // from here on the commit is rolled forward, also after a crash
+    return swap_apply(a, b, 1) ? -2 : 0;                                // PEANUTS: -2: the marker stays, a must be kept for the roll-forward
 }
 // The folder a marker of b may name: only b's own siblings b.new (a commit), b.re (a work directory's reclone) and b.restore (the Android launcher's save restore,
 // SaveStore.java, which keeps this journal's format and rules). Anything else is refused: the swap deletes from b what a lacks and then deletes a, so a marker naming another

@@ -33,17 +33,21 @@ HARNESS = '''#define _XOPEN_SOURCE 700
 #include <sys/stat.h>
 #include <unistd.h>
 #define LOG(...) (printf(__VA_ARGS__), printf("\\n"))
+static void swap_dir_meta(const char *a, const char *b) { (void)a; (void)b; }
 %s
-int main(int argc, char **argv) { (void)argc; plat_swap_recover(argv[1]); return 0; }
+int main(int argc, char **argv) { if (argc == 4 && !strcmp(argv[1], "swap")) { int r = plat_rename_swap(argv[2], argv[3]); return r == -2 ? 2 : r ? 1 : 0; } plat_swap_recover(argv[1]); return 0; }
 '''
+# PEANUTS: swap_dir_meta (Linux xattrs) is stubbed; plat_rename_swap's -2 (failed after its marker) exits 2
 
 
 def swap_code():
-    """plat_android.c's journal: swap_rm_cb … plat_swap_recover, without plat_rename_swap (Linux's renameat2). macOS's nftw refuses a file as its root (ENOTDIR),
-    which bionic's and glibc's take, so on the Mac swap_rm_tree removes a file itself"""
+    """plat_android.c's journal: swap_rm_cb … plat_swap_recover, plat_rename_swap included (it makes no Linux-only call). macOS's nftw refuses a file as its root
+    (ENOTDIR), which bionic's and glibc's take, so on the Mac swap_rm_tree removes a file itself"""
     s = PLAT.read_text()
     a = s.index('static int swap_rm_cb'); b = s.index('// Linux keeps an application')
-    code = re.sub(r'int plat_rename_swap\(.*?\n}\n', '', s[a:b], flags=re.S)
+    code = s[a:b]   # PEANUTS: plat_rename_swap included (#485)
+    assert 'RENAME_EXCHANGE */' not in code, 'a commit keeps the save folder itself (#485): no directory exchange'
+    code = 'int plat_rename_swap(const char *a, const char *b);\n' + code
     rm = 'static int swap_rm_tree(const char *p) { return nftw(p, swap_rm_cb, 16, FTW_DEPTH | FTW_PHYS); }'
     assert rm in code
     return code.replace(rm, 'static int swap_rm_tree(const char *p) { struct stat st; if (!lstat(p, &st) && !S_ISDIR(st.st_mode)) return unlink(p); '
@@ -173,6 +177,58 @@ class LauncherJvm(unittest.TestCase):
                         if name == 'emptied_copy': self.assertEqual((sh / 'slot0.bin').read_text(), 'slot0 new', 'the save survives')
                         if name == 'both_markers': self.assertEqual((sh / 'slot0.bin').read_text(), 'new')
                         self.assertFalse(any(k.endswith(('.pend1', '.pend2', '.old', '.restore', '.new')) for k in tree(host)), f'{name}: {list(tree(host))}')
+
+
+@unittest.skipUnless(shutil.which('cc'), 'no C compiler')
+class HostSwap(unittest.TestCase):
+    def test_commit_keeps_the_save_folder(self):
+        """A commit (plat_rename_swap of <save>.new over <save>) brings the save to the new version in place: the folder itself stays (its inode), so a folder sync tool
+        watching it with inotify sees the commit (#485); files the new version lacks go, its subfolders come, no marker stays"""
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            (d / 'recover.c').write_text(HARNESS % swap_code())
+            subprocess.run(['cc', '-std=gnu11', '-w', '-o', str(d / 'swap'), str(d / 'recover.c')], check=True, capture_output=True, text=True)
+            s = d / 'saves/040074A01BF12000'; (s / 'old').mkdir(parents=True)
+            (s / 'slot0.bin').write_text('old'); (s / 'stale.bin').write_text('stale'); (s / 'old/x.bin').write_text('x')
+            a = Path(str(s) + '.new'); (a / 'sub').mkdir(parents=True); (a / 'slot0.bin').write_text('new'); (a / 'sub/y.bin').write_text('y')
+            ino = s.stat().st_ino
+            r = subprocess.run([str(d / 'swap'), 'swap', str(a), str(s)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(s.stat().st_ino, ino, 'the save folder is the same folder after the commit')
+            self.assertEqual({k: v for k, v in tree(s).items()}, {'slot0.bin': b'new', 'sub': None, 'sub/y.bin': b'y'})
+            self.assertFalse(Path(str(s) + '.pend1').exists() or Path(str(s) + '.pend2').exists())
+            self.assertFalse(any(p.is_file() for p in a.rglob('*')), 'the new version moved out of <save>.new')
+
+    # PEANUTS begin
+    def build(self, d):
+        (d / 'recover.c').write_text(HARNESS % swap_code())
+        subprocess.run(['cc', '-std=gnu11', '-w', '-o', str(d / 'swap'), str(d / 'recover.c')], check=True, capture_output=True, text=True)
+        return d / 'swap'
+
+    def test_failure_after_the_marker_keeps_the_copy(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d); x = self.build(d)
+            s = d / 'saves/040074A01BF12000'; (s / 'ro').mkdir(parents=True); (s / 'ro/gone.bin').write_text('gone'); (s / 'slot0.bin').write_text('old')
+            a = Path(str(s) + '.new'); (a / 'ro').mkdir(parents=True); (a / 'slot0.bin').write_text('new')
+            (s / 'ro').chmod(0o555)
+            try:
+                r = subprocess.run([str(x), 'swap', str(a), str(s)], capture_output=True, text=True)
+                self.assertEqual(r.returncode, 2, 'a failure after the marker is told apart (-2)')
+                self.assertTrue(Path(str(s) + '.pend1').exists() and (a / 'slot0.bin').exists(), 'the marker and the copy stay')
+            finally:
+                (s / 'ro').chmod(0o755)
+            subprocess.run([str(x), str(s)], check=True, capture_output=True, text=True)
+            self.assertEqual(tree(s), {'ro': None, 'slot0.bin': b'new'})
+            self.assertFalse(Path(str(s) + '.pend1').exists() or Path(str(s) + '.pend2').exists() or a.exists())
+
+    def test_folder_mode_follows_the_new_version(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d); x = self.build(d)
+            s = d / 'saves/040074A01BF12000'; (s / 'sub').mkdir(parents=True); (s / 'sub').chmod(0o755)
+            a = Path(str(s) + '.new'); (a / 'sub').mkdir(parents=True); (a / 'sub/y.bin').write_text('y'); (a / 'sub').chmod(0o700)
+            subprocess.run([str(x), 'swap', str(a), str(s)], check=True, capture_output=True, text=True)
+            self.assertEqual((s / 'sub').stat().st_mode & 0o777, 0o700)
+    # PEANUTS end
 
 
 if __name__ == '__main__':

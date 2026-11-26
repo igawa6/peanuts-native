@@ -194,8 +194,11 @@ uint64_t plat_uc_esr(ucontext_t *uc);
 // ---- Files ----
 PLAT_FN int plat_fd_path(int fd, char *out, size_t n);   // the path an open descriptor names; 0 = found
 PLAT_FN int plat_clone_tree(const char *from, const char *to);   // copy-on-write copy of a tree (clonefile); -1 with errno
-PLAT_FN int plat_rename_swap(const char *a, const char *b);      // swap two paths atomically (RENAME_SWAP / RENAME_EXCHANGE); -1 with errno
-PLAT_FN void plat_swap_recover(const char *b);                    // at mount: finish a plat_rename_swap a crash interrupted (Android shared storage); nothing elsewhere
+// PEANUTS begin: Apple swaps a and b atomically (RENAME_SWAP; b's old content ends in a). Android brings b to a's content in place under a roll-forward journal and leaves a
+// empty, not holding b's old content. -1 with errno: b unchanged. -2 (Android): failed after the journal marker; keep a, plat_swap_recover finishes it
+PLAT_FN int plat_rename_swap(const char *a, const char *b);
+PLAT_FN void plat_swap_recover(const char *b);                    // at mount or before a commit: finish a plat_rename_swap a crash or failure interrupted (Android); nothing elsewhere
+// PEANUTS end
 // Extended attributes of the path itself (never followed); an absent one fails with errno PLAT_ENOATTR
 PLAT_FN ssize_t plat_getxattr(const char *path, const char *name, void *buf, size_t n);
 PLAT_FN int plat_setxattr(const char *path, const char *name, const void *buf, size_t n);
