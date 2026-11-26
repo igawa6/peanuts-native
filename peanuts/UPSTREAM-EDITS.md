@@ -2803,3 +2803,4 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 |---|---|---|---|
 | `dm/gfx/vk_android/vka_draw.c`, `dm/gfx/vk_android/vka_auto.h`, `dm/host/tests/t_android_auto.c` | 1, 1, 3 | Default `DM_VK_DYN_FILTER=0` when `qcom_old` (Qualcomm driver version before 512.800); fixes scrambled blocks and speckles across draws on Qualcomm 512.762.41 (Adreno 750) in OCTOPATH TRAVELER | `PEANUTS(upstream-candidate)` |
 | `docs/advanced_settings.tsv` | 1 | Update `DM_VK_DYN_FILTER` default text to name Qualcomm before 512.800 | generated / allow-listed in `peanuts/upstream-unmarked.txt` |
+| `dm/games/010057D006492000/game.tsv`, `dm/games/010057D006492000/readiness.tsv`, `dm/tools/tests/test_android_frame_rate_games.py` | 1, new, 1 | Recommend Turnip (`driver=18`) on Qualcomm < 512.800, add Android readiness profile (`status playable`), and pin OCTOPATH TRAVELER frame-rate caps | `PEANUTS` |

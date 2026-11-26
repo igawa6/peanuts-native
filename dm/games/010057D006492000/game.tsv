@@ -47,3 +47,6 @@ tex_dirty_upload	on
 # zlib-compressed, inside legacy paks whose blocks are zlib-compressed too (shader_split.py ue_legacy_jobs)
 shader_groups	GlobalShaderCache=global #Engine/=engine #Kingship/=game
 shader_note	OCTOPATH TRAVELER shaders
+
+# PEANUTS(upstream-candidate): README.md (Rendering): Turnip (driver ID 18) runs ~2.3x faster on GPU and ~35 C cooler than Qualcomm < 512.800 (which needs DM_VK_DYN_FILTER=0)
+recommend	driver.id=8,driver.version&0xffc00000=0x80000000,driver.version&0x3ff000<0x320000	driver=18

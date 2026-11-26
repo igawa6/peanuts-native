@@ -267,6 +267,7 @@ EXPECTED = {
     '0100A7C01B792000': ('Minecraft Dungeons II', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '01003D100E9C6000': ('The Witcher 3: Wild Hunt — Complete Edition', 'limit', '-', 'own,60,45,40,30,20', 'own,90,60,45,40,30,20', 'own,120,90,60,45,40,30,20', '-', 'high'),
     '01003D200BAA2000': ('Pokémon Mystery Dungeon: Rescue Team DX', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
+    '010057D006492000': ('OCTOPATH TRAVELER', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),   # PEANUTS
 }
 
 if __name__ == '__main__':

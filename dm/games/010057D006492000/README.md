@@ -30,6 +30,8 @@ Status: brought up on the Mac: the boot, the language notice, the title, a new g
 - Two compute shaders of the global shader cache did not translate (`327fce53f1fce4c1`, `6d87d48e86bd7f3c`: image atomics whose result is used, refused on MSL 2.3), and their dispatch was skipped with a red line. Both build on chain `0ce4b5e8aefb` (a build of those two keys, 2026-10-27; [Image atomics](../../../docs/reference/shaders.md#image-atomics)); not run since.
 - 5,434 shaders (4,517 pixel, 672 vertex, 232 compute, 13 geometry), all but those two built for the Mac; all 5,434 built for iOS.
 
+- **Android (OnePlus 13R, Snapdragon 8 Gen 3, Android 16):** plays at 30 fps on both Qualcomm 512.762.41 (system, with `DM_VK_DYN_FILTER=0` auto-applied for `< 512.800`) and Turnip Mr Purple T30 (`26.3.0-devel`, driver ID 18). Outdoors in Atlasdam (~1,920 draws/frame), Turnip cuts GPU busy time from 16.3/17.9 ms to 6.9/7.8 ms and SoC temp from 88–93 C to 53–57 C, so `game.tsv` recommends Turnip (`driver=18`) on Qualcomm `< 512.800`. <!-- PEANUTS(upstream-candidate) -->
+
 ## Files and shaders
 
 - `Kingship/Content/Paks/Kingship-Switch.pak` (1.97 GB, 103,018 files; the profile's `romfs_marker`) and the update's `Kingship-Switch_0_P.pak` (601 MB, 1,294 files), legacy version 4, Zlib blocks, index not encrypted; beside them 383 CRIWARE `.awb` banks, `CRIWARE/movie01_op.usm` and the vibration data. `UE4CommandLine.txt` holds the project path.
