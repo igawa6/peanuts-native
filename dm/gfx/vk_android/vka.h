@@ -414,6 +414,9 @@ void vka_tex_pfb_draw(void);                   // the draw or dispatch being rec
 void vka_tex_pfb_commit(VkCommandBuffer cb, uint64_t fence);   // the submission's end (vka_exec.c): the bitmap copied to a host slot and cleared
 VkImageView vka_view(vka_img *im, VkFormat fmt, VkImageViewType type, VkImageAspectFlags aspect, uint32_t level, uint32_t nlevels, uint32_t layer, uint32_t nlayers, const VkComponentMapping *swz);
 void vka_tex_prepare(VkCommandBuffer cb, uint64_t fence);   // PEANUTS: submission recording starts at this fence, including uploads not bound by a draw
+int vka_tex_bc_sync_any_pending(void);   // any GPU-written uncompressed aliases waiting for a compressed read
+int vka_tex_bc_sync_reads_pending(const int *ids, int n);   // sampled compressed textures with GPU-written uncompressed aliases waiting to be copied
+void vka_tex_bc_sync_flush_reads(VkCommandBuffer cb, const int *ids, int n, const char *where);   // copy pending aliases for these compressed reads
 void vka_tex_uploads(VkCommandBuffer cb);
 VkDescriptorSet vka_bindless_set(void);
 uint32_t vka_bindless_tex_slots(void);        // PEANUTS: the pool's sampled-image table length, 0 without the pool set

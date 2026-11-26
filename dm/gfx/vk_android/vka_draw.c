@@ -1958,6 +1958,47 @@ static int make_images(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], in
     return any;
 }
 
+// Make sampled images before storage images so a pending BC alias copy is ordered ahead of
+// any write this draw or dispatch is about to issue.
+static int make_sampled_images(vka_shader *const sh[VKA_NSTAGE], int dry) {
+    int any = 0;
+    for (int st = 0; st < VKA_NSTAGE; st++) {
+        if (!sh[st]) continue;
+        const vka_res *r = g_wk.r[st];
+        for (int i = 0; i < g_wk.n[st]; i++) {
+            if ((r[i].what != VKA_R_TEX && r[i].what != VKA_R_IMG) || !r[i].tid
+                || (r[i].desc != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER && r[i].desc != VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+                || (vka_tex_id_is_buffer(r[i].tid) && tbuf_img_gpu(r[i].tid, r[i].dim))) continue;
+            if (!vka_tex_id_pending_rec(r[i].tid, r[i].dim)) continue;
+            any = 1;
+            if (dry) return 1;
+            vka_tex_id_view(r[i].tid, g_cb, r[i].dim, 0, NULL);
+        }
+    }
+    return any;
+}
+static int g_bc_sampled_ids[VKA_NSTAGE * VKA_DESC_MAX];
+static int bc_sync_sampled_ids(vka_shader *const sh[VKA_NSTAGE], int *ids) {
+    int n = 0;
+    for (int st = 0; st < VKA_NSTAGE; st++) {
+        if (!sh[st]) continue;
+        const vka_res *r = g_wk.r[st];
+        for (int i = 0; i < g_wk.n[st]; i++)
+            if ((r[i].what == VKA_R_TEX || r[i].what == VKA_R_IMG) && r[i].tid
+                && (r[i].desc == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || r[i].desc == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+                && n < VKA_NSTAGE * VKA_DESC_MAX) ids[n++] = r[i].tid;
+    }
+    return n;
+}
+static int bc_sync_sampled_pending(vka_shader *const sh[VKA_NSTAGE]) {
+    int n = bc_sync_sampled_ids(sh, g_bc_sampled_ids);
+    return vka_tex_bc_sync_reads_pending(g_bc_sampled_ids, n);
+}
+static void bc_sync_sampled_flush(vka_shader *const sh[VKA_NSTAGE], const char *where) {
+    int n = bc_sync_sampled_ids(sh, g_bc_sampled_ids);
+    vka_tex_bc_sync_flush_reads(g_cb, g_bc_sampled_ids, n, where);
+}
+
 // The draw writes memory: a storage buffer or image it writes, raw global stores (their write log), a geometry shader's claimed writes (from the walk, walk_all)
 static int draw_writes(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) {
     if (sh[2] && sh[2]->gs_fx > 0) return 1;
@@ -2824,7 +2865,15 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     // Choosing its class after make_images can bind a stale CPU image instead of the compute pass's GPU-written rows.
     tex_masks(sh, k.tex_u, k.tex_s);
     vktb_memo_reset(&g_tig);   // PEANUTS: this draw's answers (tbuf_img_gpu)
-    if (make_images(d, sh, 1)) { vka_rp_end(); make_images(d, sh, 0); }
+    int images_pending = make_images(d, sh, 1);
+    if (images_pending || vka_tex_bc_sync_any_pending()) {
+        if (make_sampled_images(sh, 1) && R.on) vka_rp_end();   // sampled images that need first-use work are prepared outside the pass
+        make_sampled_images(sh, 0);
+        int bc_read_pending = bc_sync_sampled_pending(sh);
+        if (bc_read_pending && R.on) vka_rp_end();   // finish writes to an alias before copying it for this compressed read
+        if (bc_read_pending) bc_sync_sampled_flush(sh, "draw sampled texture");
+    }
+    if (images_pending) { vka_rp_end(); make_images(d, sh, 0); }
     if (vka_rs_on()) rs_fetch_fix(sh, d);   // PEANUTS: DM_RES_SCALE: a shader that fetches by pixel sees its 2D textures at one scale
     if (R.on && R.bar_pending && bar_hazard(sh, d)) { g_bar_late++; vka_rp_end(); }   // the game barrier taken inside the pass is needed here: the pass ends (its full barrier) first
     if (R.on && UB.n && ub_hazard(d, sh, mesh, dw, di, mdi_n, mdi_st)) vka_rp_end();   // PEANUTS: bounded draw ranges
@@ -3609,6 +3658,10 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     }
     c0_at c0 = {0};
     walk_all(d, sh);
+    if (vka_tex_bc_sync_any_pending() || make_sampled_images(sh, 1)) {
+        make_sampled_images(sh, 0);
+        if (bc_sync_sampled_pending(sh)) bc_sync_sampled_flush(sh, "dispatch sampled texture");
+    }
     if (vka_rs_on()) rs_fetch_fix(sh, d);   // PEANUTS: DM_RES_SCALE: a shader that fetches by pixel sees its 2D textures at one scale
     if (g_do_nk || g_do_all) dobj_note(sh[5]->key, g_wk.r[5], g_wk.n[5]);   // DM_VK_DISP_OBJ (g_do_nk -1: not read yet)
     p = img_retype(sh[5], &lay, p);
