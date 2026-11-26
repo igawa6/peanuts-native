@@ -267,6 +267,7 @@ static vka_img *g_lrz_prev;   // PEANUTS: the depth image of the last pass that 
 static vka_img *g_linger[32]; static int g_nlinger;   // PEANUTS: GPU-drawn images kept past their last texture object (linger_keep below), under g_tmu
 static void linger_prune_locked(void); static void linger_take(vka_img *im);   // PEANUTS
 static void redo_add_locked(vka_img *im), redo_forget_locked(vka_img *im);   // PEANUTS(upstream-candidate): (the re-read queue, "The CPU wrote the texture's storage")
+static void rw_fallback_whole_locked(vka_img *im);   // PEANUTS(upstream-candidate): (below: a whole re-read of the storage, queued region writes dropped)
 static void unref_locked(vka_img *im) {
     atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release);
     if (--im->refs) return;
@@ -2136,6 +2137,13 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
             }
             if (t->pool && (im->pool != t->pool || revived)) { uint64_t fin = nvn_pool_fin(), g = nvn_pool_live(t->pool, NULL, NULL); if (g) { im->pool = t->pool; im->pfin = fin; im->pgen = g; } } }
         if (!im) im = level_child(t, &f);   // (a texture over mip levels of a live image: that image)
+        // PEANUTS(upstream-candidate): a texture the CPU filled before its first use (WriteTexels with no image yet only notes its serial: mtl_tex_write_region) has that
+        // content in its storage also when it takes over a live image here; only img_create below read the note, so the new texture showed the old one's texels. Unity
+        // makes its dynamic font atlas again over the same memory, with the same size and format, fills it with one whole WriteTexels and finalizes the old one, all in one
+        // frame: the text drew the new glyph layout from the old atlas (SPY×ANYA: Operation Memories, docs/reference/nvn-objects.md "A texture filled before its first
+        // use takes over an image with older content"). Its storage is read again at the next prepare and the image's queued region writes (older bytes) are dropped, as
+        // for a WriteTexels into an imaged texture (mtl_tex_cpu_written); a GPU-drawn image keeps its content
+        if (im && cpuw_take(t->serial, 0)) rw_fallback_whole_locked(im);
         if (im && !im->par) big_share(im, t);   // (another texture object of the same storage and shape: DM_VK_BIGIMG_MB diagnostic)
         uint32_t vmin = 0, base = sparse_sampled(t, &f) ? sparse_base(t->pool, t->mem, &t->d, &t->L, &vmin) : 0;
         int mode = 0;

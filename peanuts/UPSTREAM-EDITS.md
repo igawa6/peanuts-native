@@ -2796,3 +2796,25 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### A texture filled before its first use takes over an image with older content (2026-11-24)
+
+SPY×ANYA: Operation Memories (`010089B01AB44000`) lost letters from text it showed for the first time, from the end of its dash tutorial on, on the AYN Thor.
+Unity makes its dynamic font atlas again over the same memory, with the same size and format, and fills it with one whole `WriteTexels` before its first use.
+That first use took over the old atlas's image without reading the CPU-written note (`g_cpuw`). The re-read queue's half of the first fix (images, not serials,
+in `g_redo`; `redo_forget_locked`) came in with 89e2a03a; this is the takeover half. Entry: `docs/reference/nvn-objects.md`, "A texture filled before its first
+use takes over an image with older content (Vulkan replay)".
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_tex.c` | 2 | a forward declaration of `rw_fallback_whole_locked`; `vka_tex_get` has a taken-over image (or a level child's parent) read again from its storage, its queued region writes dropped, when the texture's serial was noted CPU-written (`cpuw_take`) | `// PEANUTS(upstream-candidate)` |
+| `docs/reference/nvn-objects.md`, `docs/agents/symptoms.md` | 1 each | the entry (between `PEANUTS(upstream-candidate) begin`/`end` comments) and its generated symptom line | as said |
+| `dm/games/010089B01AB44000/README.md` | 4 | the note: the letters marked resolved, its first paragraph, the system driver's silhouettes seen again, a Found on line | inside the note's `PEANUTS` file |
+
+Run: the fix's first form (`redo_add_locked` in place of `rw_fallback_whole_locked`, on 0.1.7) on the AYN Thor with Turnip, a new save over the same route
+before and after (2026-11-21): before, `Talk to Becky` read `a to ec` and the controls panel lost its new letters; after, the panel, every objective and the
+dialogue to `Return home` are whole, re-uploads 25 → 70, no red line. This form (2026-11-24, AYN Thor, a new game each): Turnip Gen8 V38 and the system driver
+(Adreno build 69e13475cb), through the dash tutorial to `Talk to Becky`: the panel and the objective are whole on both, and Henderson's dialogue on Turnip;
+both 30 fps, no red line but the "not yet on Android" ones; re-uploads 71 (Turnip) and 57 (system). The system driver still draws the characters as
+silhouettes (open in the note, not this change). Not run: other games. No shader-chain file is changed.
+Upstream candidate: yes, for every game.
