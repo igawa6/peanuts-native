@@ -1,7 +1,9 @@
 # Trails in the Sky 1st Chapter (`01002C9022770000`)
 
 <!-- PEANUTS -->
-The profile targets Switch update **1.0.7 (`v393216`)** only: SDK 21.4.4, NVN, and the three build IDs in [game.tsv](game.tsv). The lookup tables identify 6,602 shader keys; they contain no shader programs. Prepare uses the player's own dump. Compared with 1.0.4, only `chr_cloth` shaders changed (six keys replaced by eight).
+The profile targets Switch updates **1.0.7 (`v393216`)** and **1.0.8 (`v458752`)**: SDK 21.4.4, NVN, and the build IDs in [game.tsv](game.tsv); the two share subsdk0 and sdk, only main differs. The lookup tables identify 6,605 shader keys, 6,602 for each update; they contain no shader programs. Prepare uses the player's own dump. Compared with 1.0.4, only `chr_cloth` shaders changed (six keys replaced by eight). 1.0.8 changes the volume fog compute shader and two `post_deferred` pixel shaders; the map tags each update's own three keys with its version, so Prepare of the other update does not expect them.
+
+1.0.8's tables come from a full split of its RomFS and main. Its NPDM, the allocator's `0x48200000` block size (at `main+0x56ced4`) and the shadow stitch key are unchanged from 1.0.7. 1.0.8 was played on an AYN Odin 2 (Adreno 740) with Turnip v27.0.0-R1. Prepare ran on the handheld: 6,602 shaders in 5 min 4 s. The title screen reads Ver.1.08, a save written by an earlier update loaded in the City of Rolent, and about five minutes of field play through the streets, Melders' Orbal Factory and Elger's weapon shop held 60 FPS. A save made in 1.0.8 loaded again from the title screen. No battle was reached. The other Android results below are 1.0.7's.
 
 Startup requests the application pool rounded down to 2 MiB, less `0x48200000`, for the heap. The `0xCD500000` pool bounds that request at `0x85200000`. Independently, the allocator requests `10 × 0x48200000` bytes of virtual address space; 1.0.7 sets that `0x48200000` block size at `main+0x56c0d4`, and its NPDM matches the base game's. The profile leaves 16 GiB for alias mappings. These are reservation sizes, not physical RAM measurements.
 
@@ -15,4 +17,4 @@ Frame rate: the game steps by elapsed time. A two-second walk ends at the same p
 
 First launch: `vk_prewarm.bin` holds the pipeline keys of a Turnip run. With it a cold start prepares the shader parts of 1,271 programs in about 8 seconds, and the first scenes draw without pipelines made late; the next start takes about 1 second.
 
-System driver: the stock Qualcomm driver starts the game and draws the title screen, menus and HUD, but the 3D field stays black, also on a second start. Use Turnip.
+System driver: with 1.0.7 the stock Qualcomm driver starts the game and draws the title screen, menus and HUD, but the 3D field stays black, also on a second start. With 1.0.8 on an AYN Odin 2 (Qualcomm 512.676) the title screen and a save load, then the GPU hangs a few seconds into the field, in 2 of 2 runs (`vk: GPU hang: no progress; fence ... not reached in 6.1 s`). Use Turnip.

@@ -223,7 +223,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [The Legend of Zelda: Tears of the Kingdom](0100F2C0115B6000/README.md) | `0100F2C0115B6000` | 1.4.3 | 20.5.22 | Nintendo EPD (sead / agl / gsys) | NVN |
 | [The Witcher 3: Wild Hunt — Complete Edition](01003D100E9C6000/README.md) | `01003D100E9C6000` | 4.04b | 15.3.0 | REDengine 3 (Saber Interactive port), Havok, Wwise | NVN <!-- PEANUTS: from nxnative's RU profile, EU edition --> |
 | [Tomodachi Life: Living the Dream](010051F0207B2000/README.md) | `010051F0207B2000` | 1.0.4 | 20 | Nintendo | NVN |
-| [Trails in the Sky 1st Chapter](01002C9022770000/README.md) | `01002C9022770000` | 1.0.7 | 21.4.4 | Nihon Falcom | NVN | <!-- PEANUTS -->
+| [Trails in the Sky 1st Chapter](01002C9022770000/README.md) | `01002C9022770000` | 1.0.7, 1.0.8 | 21.4.4 | Nihon Falcom | NVN | <!-- PEANUTS -->
 | [Trails in the Sky 2nd Chapter](01007A2027548000/README.md) | `01007A2027548000` | 1.0.3 | 21.4.4 | Nihon Falcom | NVN | <!-- PEANUTS -->
 | [TRIANGLE STRATEGY](0100CC80140F8000/README.md) | `0100CC80140F8000` | 1.1.1 | 12.3.2 | Unreal Engine 4.27 | NVN |
 | [Unicorn Overlord](010069401ADB8000/README.md) | `010069401ADB8000` | 1.05 | 16.2.4 | Vanillaware's engine | NVN |

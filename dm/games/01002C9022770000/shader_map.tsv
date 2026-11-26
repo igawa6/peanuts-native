@@ -1186,7 +1186,7 @@ cs_asset.bin	1	compute	a3e1e423af284eed	/asset/nx/shader/compute_depth_height.nv
 cs_asset.bin	2	compute	8721b2c0b1be1568	/asset/nx/shader/compute_skydome.nvn#GLSLC@0x0
 cs_asset.bin	3	compute	55667b21da89c93c	/asset/nx/shader/compute_volumefog_blur.nvn#GLSLC@0x0
 cs_asset.bin	4	compute	687e133e7186ff04	/asset/nx/shader/compute_volumefog_clear.nvn#GLSLC@0x0
-cs_asset.bin	5	compute	69e046bcfd7a826b	/asset/nx/shader/compute_volumefog_injection.nvn#GLSLC@0x0
+cs_asset.bin	5	compute	69e046bcfd7a826b	/v393216/asset/nx/shader/compute_volumefog_injection.nvn#GLSLC@0x0
 cs_asset.bin	6	compute	c82cb8b5cf0ceed2	/asset/nx/shader/compute_volumefog_scatter.nvn#GLSLC@0x0
 cs_asset.bin	7	compute	ea9d6c8d8dd336d3	/asset/nx/shader/cubemap_blend.nvn#GLSLC@0x0
 cs_asset.bin	8	compute	770559397e473ebb	/asset/nx/shader/cubemap_copy.nvn#GLSLC@0x0
@@ -6283,8 +6283,8 @@ ps_asset.bin	5024	pixel	b29ac3e4dd136e73	/asset/nx/shader/post_colorcorrect.nvn#
 ps_asset.bin	5025	pixel	b3bfb3a8e019475d	/asset/nx/shader/post_copy.nvn#GLSLC@0x0
 ps_asset.bin	5026	pixel	63f72b9c0accc04b	/asset/nx/shader/post_copy_blend.nvn#GLSLC@0x0
 ps_asset.bin	5027	pixel	5b6afcf283f93da1	/asset/nx/shader/post_copy_u32.nvn#GLSLC@0x0
-ps_asset.bin	5028	pixel	d6b693ab092e75d3	/asset/nx/shader/post_deferred.nvn#GLSLC@0x0
-ps_asset.bin	5029	pixel	567fcd0c97a29418	/asset/nx/shader/post_deferred_ex_outline.nvn#GLSLC@0x0
+ps_asset.bin	5028	pixel	d6b693ab092e75d3	/v393216/asset/nx/shader/post_deferred.nvn#GLSLC@0x0
+ps_asset.bin	5029	pixel	567fcd0c97a29418	/v393216/asset/nx/shader/post_deferred_ex_outline.nvn#GLSLC@0x0
 ps_asset.bin	5030	pixel	b0a573a1499c8211	/asset/nx/shader/post_deferred_shadow.nvn#GLSLC@0x0
 ps_asset.bin	5031	pixel	61df449c2c0998a8	/asset/nx/shader/post_deferred_shadow_blur.nvn#GLSLC@0x0
 ps_asset.bin	5032	pixel	f8c55a3cf3e0f568	/asset/nx/shader/post_depthcopy.nvn#GLSLC@0x0
@@ -6603,3 +6603,6 @@ cs_main.bin	7	compute	dcdd8c3c95a3c525	main#GLSLC@0x684668
 cs_main.bin	8	compute	d8b60ca9539519ff	main#GLSLC@0x68a808
 cs_main.bin	9	compute	da17f7db7bcd373e	main#GLSLC@0x68d1d0
 cs_main.bin	10	compute	1c91bae3b31bace5	main#GLSLC@0x68f6a0
+cs_asset.bin	26	compute	49debe757bdabeff	/v458752/asset/nx/shader/compute_volumefog_injection.nvn#GLSLC@0x0
+ps_asset.bin	5288	pixel	1903d5554aad3454	/v458752/asset/nx/shader/post_deferred.nvn#GLSLC@0x0
+ps_asset.bin	5289	pixel	453d5d926b12938b	/v458752/asset/nx/shader/post_deferred_ex_outline.nvn#GLSLC@0x0
