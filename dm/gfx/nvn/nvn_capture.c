@@ -42,6 +42,9 @@ _Static_assert(OP_COUNT_ == 58, "nvn_capture.c: a record op was added or removed
 const char *cap_layout(void) {
     // sizes and pointer offsets as the walk knows them (the asserts above hold them to nvn_obj.h); bump this text with any change to the walk
     return "format 1\nops 54\n"
+#ifdef __ANDROID__   // PEANUTS(upstream-candidate)
+           "pool-local texture and sampler handles\n"   // older Vulkan captures baked host bases into the command stream
+#endif
            "tex_t 128 mem 88 pool 96 serial 120\npool_t 40\ndpool_t 24\nprog_t 112\nsync_t 16\nsamp_par 40\nview_t 16\n"
            "p_set_rt 240 color 8 depth 208\np_bind_program 16\np_bind_vbuf 264 r 8\np_bind_vbuf1 16 addr 8\np_bind_buf 24 addr 8\np_bind_ubo_small 16 addr 8\n"
            "p_bind_handles 280 src 16\np_bind_tex1 24 nobase 0x100 short 16\np_bind_state short\np_draw 48 ind 24 mdi_cnt 32\np_draw_idx 56 ibuf 24 ind 32 mdi_cnt 40\np_dispatch 32 ind 24\np_set_pool 8\n"

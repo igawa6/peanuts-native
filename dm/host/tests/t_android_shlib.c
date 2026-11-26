@@ -6,6 +6,8 @@
 #include "../../gfx/vk_android/vka_bind.h"
 #include "../../gfx/vk_android/vka_abi_compat.h"
 #include "../../gfx/vk_android/vka_gml.h"
+typedef unsigned treg_ent;   // PEANUTS(upstream-candidate): a serial is enough to check registration identity
+#include "../../gfx/vk_android/vka_treg.h"
 #include "../../gfx/nvn/dmsh_chain.h"
 #include "../../gfx/nvn/dmsh_chain_vk.h"
 #include <stdio.h>
@@ -165,20 +167,37 @@ static void test_walk(void) {
     if (n == 13) {
         CHECK(r[0].what == VKA_R_BUF && r[0].addr == 0x10100 && r[0].size == 64 && r[0].binding == 256, "cbuf 2");
         CHECK(r[1].what == VKA_R_NULL, "unbound cbuf reads null");
-        CHECK(r[2].what == VKA_R_TEX && r[2].tid == 7 && r[2].sid == 3, "combined slot 1: %d/%d", r[2].tid, r[2].sid);
-        CHECK(r[3].what == VKA_R_TEX && r[3].tid == 9 && r[3].sid == 11, "separate texture 2 + sampler 5: %d/%d", r[3].tid, r[3].sid);
+        CHECK(r[2].what == VKA_R_TEX && r[2].tid == 107 && r[2].sid == 203, "combined slot 1: %d/%d", r[2].tid, r[2].sid);   // PEANUTS(upstream-candidate)
+        CHECK(r[3].what == VKA_R_TEX && r[3].tid == 109 && r[3].sid == 211, "separate texture 2 + sampler 5: %d/%d", r[3].tid, r[3].sid);
         CHECK(r[4].what == VKA_R_TEX && r[4].tid == 105 && r[4].sid == 206, "handle in a uniform buffer takes the pool bases: %d/%d", r[4].tid, r[4].sid);
         CHECK(r[5].what == VKA_R_BUF && r[5].addr == 0x20040 && r[5].size == 128, "storage buffer");
         CHECK(r[6].what == VKA_R_BUF && r[6].addr == 0x30000 && r[6].size == 0, "storage buffer address from a uniform buffer");
-        CHECK(r[7].what == VKA_R_IMG && r[7].tid == 13, "image slot 2");
+        CHECK(r[7].what == VKA_R_IMG && r[7].tid == 113, "image slot 2");   // PEANUTS(upstream-candidate)
         CHECK(r[8].what == VKA_R_DRV && r[8].bank == 0, "c0");
-        CHECK(r[9].what == VKA_R_NULL && r[10].what == VKA_R_TEX && r[10].tid == 7 && r[10].sid == (3 | 11) && r[10].elem == 1 && r[11].what == VKA_R_NULL,
+        CHECK(r[9].what == VKA_R_NULL && r[10].what == VKA_R_TEX && r[10].tid == 107 && r[10].sid == 200 + (3 | 11) && r[10].elem == 1 && r[11].what == VKA_R_NULL,
               "c2 array: %d %d/%d %d", r[9].what, r[10].tid, r[10].sid, r[11].what);
         CHECK(r[12].what == VKA_R_SUPPORT, "support");
         CHECK(pool, "a pool record marks the draw as using set 1");
     }
+    // Daybreak II rotates three full 20-bit texture pools. A pool switch must
+    // resolve the same recorded handle differently without changing its sampler.
+    for (int bank = 2; bank >= 0; bank--) {
+        s.tex_base = bank << 20;
+        *treg_add(s.tex_base + 7) = 900 + bank;
+    }
+    CHECK(g_ntreg == 3 * TREG_PAGE, "three registered pages, not three 1M-entry arrays");
+    for (int bank = 0; bank < 3; bank++) {
+        s.tex_base = bank << 20;
+        int count = vka_walk(&s, 1, &e, b, 0, 64, rd, NULL, r, 32, &pool, why, sizeof why);
+        CHECK(count == 13 && r[2].tid == s.tex_base + 7 && *treg_lookup(r[2].tid) == 900u + bank &&
+              r[2].sid == 203 && r[3].tid == s.tex_base + 9 && r[3].sid == 211 &&
+              r[7].tid == s.tex_base + 13, "pool %d: direct texture/image or sampler crossed pools", bank);
+        int i = (2 - bank) * TREG_PAGE + 7;
+        CHECK(treg_id(i) == s.tex_base + 7 && treg_at(i) == treg_lookup(treg_id(i)), "capture lost the pool ID");
+    }
+    s.tex_base = 100;
     // PEANUTS: the fallback arrays of dynamic texture handles (tex_dyn_slots; Octopath Traveler 0's particle vertex shaders): element k is slot k (combined, else separate), the sampler
-    // the separate sampler k or the combined handle's; the shader's c2 words are slot indices (VKA_POOL_DYN) and the pool bases are not added
+    // the separate sampler k or the combined handle's; c2 contains indices, the descriptors name resources in the selected pool.
     {
         vka_bstate d; memset(&d, 0, sizeof d);
         d.tex[0][1] = 7 | 3u << 20; d.tex[0][DMSH_SEPTEX_SLOT0 + 2] = 9; d.samp[0][2] = 11u << 20; d.tex_base = 100; d.samp_base = 200;
@@ -191,9 +210,9 @@ static void test_walk(void) {
         int nd = vka_walk(&d, 0, &ed, db, 0, 64, rd, NULL, rd_, 16, &pl, wy, sizeof wy);
         CHECK(nd == 8, "dyn walk: %d results (%s)", nd, wy);
         if (nd == 8) {
-            CHECK(rd_[0].what == VKA_R_NULL && rd_[1].what == VKA_R_TBUF && rd_[1].tid == 7 && rd_[2].what == VKA_R_TBUF && rd_[2].tid == 9 && rd_[3].what == VKA_R_NULL, "dyn texture elements: %d %d/%d", rd_[1].what, rd_[1].tid, rd_[2].tid);
+            CHECK(rd_[0].what == VKA_R_NULL && rd_[1].what == VKA_R_TBUF && rd_[1].tid == 107 && rd_[2].what == VKA_R_TBUF && rd_[2].tid == 109 && rd_[3].what == VKA_R_NULL, "dyn texture elements: %d %d/%d", rd_[1].what, rd_[1].tid, rd_[2].tid);   // PEANUTS(upstream-candidate)
             CHECK((rd_[1].flags & VKA_RF_DYN) && rd_[1].elem == 1, "dyn elements are marked");
-            CHECK(rd_[4].what == VKA_R_NULL && rd_[5].what == VKA_R_TEX && rd_[5].sid == 3 && rd_[6].what == VKA_R_TEX && rd_[6].sid == 11, "dyn sampler elements: %d %d/%d", rd_[5].what, rd_[5].sid, rd_[6].sid);
+            CHECK(rd_[4].what == VKA_R_NULL && rd_[5].what == VKA_R_TEX && rd_[5].sid == 203 && rd_[6].what == VKA_R_TEX && rd_[6].sid == 211, "dyn sampler elements: %d %d/%d", rd_[5].what, rd_[5].sid, rd_[6].sid);
         }
         CHECK(pl == VKA_POOL_DYN, "dyn arrays set only the dynamic bit: %d", pl);
         uint8_t c2[DMSH_DRV_SIZE]; uint32_t w;
@@ -226,7 +245,7 @@ static void test_walk(void) {
         CHECK(vka_tabpool_ids(&s, 1, &et, tb, rd, NULL, ids, 8, &dim) == 0, "an array bound as it is has no pool table");
         vka_tabpool_record(&tb[0]); vka_tabpool_record(&tb[1]);
         na = vka_walk(&s, 1, &et, tb, 0, 64, rd, NULL, r, 32, &tp, why, sizeof why);
-        CHECK(na == 2 && r[0].desc == 0 && r[0].sid == 11 && !r[0].tid && r[1].sid == 44 && (tp & VKA_POOL_READS), "table through the pool: %d results, samplers %d %d, pool %d", na, r[0].sid, r[1].sid, tp);
+        CHECK(na == 2 && r[0].desc == 0 && r[0].sid == 211 && !r[0].tid && r[1].sid == 44 && (tp & VKA_POOL_READS), "table through the pool: %d results, samplers %d %d, pool %d", na, r[0].sid, r[1].sid, tp);   // PEANUTS(upstream-candidate): the bound sampler handle is pool-local, the walk adds samp_base
         int ni = vka_tabpool_ids(&s, 1, &et, tb, rd, NULL, ids, 8, &dim);
         CHECK(ni == 3 && ids[0] == 121 && ids[1] == 122 && ids[2] == 123 && dim == 2, "the table's textures, once: %d (%d %d %d) dim %d", ni, ids[0], ids[1], ids[2], dim);
         CHECK(vka_tabpool_ids(&s, 1, &et, tb, rd, NULL, ids, 2, &dim) == 2, "no more than asked");
@@ -285,8 +304,7 @@ static void test_walk(void) {
     vka_drv_fill(&s, 1, 2, 0, d);
     uint32_t w; memcpy(&w, d + DMSH_C2_TEX + 8, 4); CHECK(w == (7 | 3u << 20), "c2 combined slot 1");
     memcpy(&w, d + DMSH_C2_IMG + 16, 4); CHECK(w == 13, "c2 image slot 2");
-    memcpy(&w, d + DMSH_C2_SAMP + 40, 4); CHECK(w == 11u << 20, "c2 sampler slot 5");
-    s.tex[1][1] = 107 | 203u << 20;
+    memcpy(&w, d + DMSH_C2_SAMP + 40, 4); CHECK(w == 11u << 20, "c2 sampler slot 5");   // PEANUTS(upstream-candidate)
     vka_drv_fill(&s, 1, 2, 1, d); memcpy(&w, d + DMSH_C2_TEX + 8, 4); CHECK(w == (7 | 3u << 20), "c2 of a pool reader holds the game's own IDs: %#x", w);
     s.push[0][4] = 0x5a; vka_drv_fill(&s, 0, DMSH_PUSH_BANK, 0, d); CHECK(d[4] == 0x5a && vka_drv_size(DMSH_PUSH_BANK) == DMSH_PUSH_SIZE, "push block");
     static uint8_t sup[65536]; vka_support_fill(sup, sizeof sup); float one; memcpy(&one, sup + 192 + 16 * 72, 4); CHECK(one == 1.0f && sup[0] == 0, "support buffer");

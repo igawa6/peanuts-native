@@ -1,0 +1,7 @@
+# PEANUTS: experimental Android profile for the base game. Recap and early field control seen on an AYN Thor and an AYN Odin 2 (Turnip); later gameplay and water unverified.
+status	bring-up
+degraded	feature.tessellationShader	1	Tessellation shaders: the base water materials use five hull and five domain shaders; water rendering is unverified and patch draws are not implemented
+required	feature.shaderDrawParameters	1	Shader draw parameters: all 885 vertex shaders of the game declare DrawParameters
+degraded	feature.shaderStorageImageWriteWithoutFormat	1	Storage image writes without a format: ten of the game's shaders use them
+degraded	feature.shaderInt64	1	64-bit integers in shaders: one of the game's shaders uses them
+degraded	feature.bufferDeviceAddress	1	Buffer device addresses: one of the game's shaders declares physical storage buffer addresses
