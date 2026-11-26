@@ -149,6 +149,7 @@ not edited (see table above).
 | `scripts/pack_android.py` | **fixed this pass (2026-11-13)** — `--modules`/`--mod-exefs`/`--mod-patches`, block-marked (Round 5) | no (Peanuts-specific: code mods, DESIGN-MODS.md) |
 | `scripts/pack_android.py` | marked (2026-11-14, PR #13): the AppleDouble skip in `split_shaders`/`swap_in`, `peanuts_env` | partly: the AppleDouble skip yes (summary 11); `peanuts_env` no |
 | `docs/guides/pc-mac-packing.md` | marked (`<!-- PEANUTS begin/end -->` section: send the pack to the phone) | no (Peanuts-specific) |
+| `dm/games/01007A3024D10000/` (new: `game.tsv`, `README.md`, and the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for THE HOUSE OF THE DEAD 2: Remake |
 
 ## Generic host runtime-profile sites
 

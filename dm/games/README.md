@@ -215,6 +215,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Team Sonic Racing](010092B0091D0000/README.md) | `010092B0091D0000` | 1.0.3 | 5.6.0 | Sumo Digital's engine, Wwise | NVN |
 | [Tetris Effect: Connected](0100DE501433A000/README.md) | `0100DE501433A000` | 2.0.2.2 | 13.3.2 | Unreal Engine 4 (IoStore), Wwise | NVN <!-- PEANUTS: Peanuts-only profile; runs on Turnip, system driver untested --> |
 | [The Great Ace Attorney Chronicles](010036E00FB20000/README.md) | `010036E00FB20000` | 1.0.0 (base) | 10.4.1 | Capcom's MT Framework | NVN |
+| [THE HOUSE OF THE DEAD 2: Remake](01007A3024D10000/README.md) | `01007A3024D10000` | 1.0.2 | 19.3.5 | Unity 2022.3.55f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [The Legend of Zelda: Breath of the Wild](01007EF00011E000/README.md) | `01007EF00011E000` | 1.9.0 | 20.5.22 | Nintendo EPD (sead / agl / gsys / ksys, Havok) | NVN |
 | [The Legend of Zelda: Echoes of Wisdom](01008CF01BAAC000/README.md) | `01008CF01BAAC000` | 1.1.0 | 20.5.1 | NintendoWare (G3d / Ui2d / Vfx) | NVN |
 | [The Legend of Zelda: Link's Awakening](01006BB00C6F0000/README.md) | `01006BB00C6F0000` | 1.1.0 | 8.2.0 | Grezzo's engine on NintendoWare | NVN |
