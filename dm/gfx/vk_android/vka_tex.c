@@ -71,6 +71,7 @@ static fmt_ent fmt_ent_of(int f) {
     case 0x39: return C(A4B4G4R4_UNORM_PACK16);   // Maxwell's packed formats start with R in the low bits
     case 0x3A: case 0x3B: return C(A1B5G5R5_UNORM_PACK16);
     case 0x3C: return C(B5G6R5_UNORM_PACK16); case 0x95: return C(R5G6B5_UNORM_PACK16);
+    case 0x97: return C(A1R5G5B5_UNORM_PACK16);   // PEANUTS: BGR5A1, blue in the low bits and alpha in the top one (Naruto x Boruto Ultimate Ninja Storm Connections)
     case 0x3D: return C(A2B10G10R10_UNORM_PACK32); case 0x3E: case 0x6B: return U(A2B10G10R10_UINT_PACK32); case 0x69: return C(A2B10G10R10_SNORM_PACK32); case 0x6A: case 0x6C: return S(A2B10G10R10_SINT_PACK32);
     case 0x3F: return C(B10G11R11_UFLOAT_PACK32); case 0x40: return C(E5B9G9R9_UFLOAT_PACK32);
     case 0x41: return C(BC1_RGB_UNORM_BLOCK); case 0x42: return C(BC1_RGBA_UNORM_BLOCK); case 0x43: return C(BC2_UNORM_BLOCK); case 0x44: return C(BC3_UNORM_BLOCK);

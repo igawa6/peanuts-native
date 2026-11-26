@@ -2796,3 +2796,12 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+## NVN BGR5A1 on Android (2026-11-26)
+
+NVN_FORMAT_BGR5A1 (0x97) had no Vulkan format; NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS samples one such texture. Found while taking over the draft igawa6/peanuts-native#637 (codetz7).
+
+| File | Hunks | What | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_tex.c` | 1 | NVN BGR5A1 (0x97) → `VK_FORMAT_A1R5G5B5_UNORM_PACK16` in `fmt_ent_of` | `PEANUTS` |
+| `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1, 1 | the entry "A material's body invisible or black: NVN_FORMAT_BGR5A1 had no Vulkan format", and its line in the generated index | `PEANUTS` / generated |
