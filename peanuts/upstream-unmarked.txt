@@ -368,3 +368,8 @@ dm/games/01003D100E9C6000/shader_pairs.tsv	tables shader_split.py wrote for The 
 dm/games/01006F8002326000/speedfix60/NOTICE.md	the third-party licence notice of tmouh's ACNH 60 FPS + SpeedFix data (CC BY-NC 4.0): a licence text, kept as the licence asks, with no marker line
 dm/games/01003D100E9C6000/vk_prewarm.bin	a prewarm seed made by dm/tools/vk_prewarm.py from The Witcher 3 (EU) 4.04b on an AYN Thor (292 pipeline keys collected on Turnip, commit c02e6414): binary, tied to this host's key layout; game.tsv and README.md carry the PEANUTS markers
 dm/games/010075101EF84000/patches.py	Stray's patches.py, a file of a profile this fork added (dnyan007, #379): its bytes are part of every Stray module's rewrite key (scripts/pack_android.py rewrite_keys), so a marker comment would make every Stray build convert its code again; game.tsv and README.md carry the PEANUTS markers
+dm/games/0100F6701FED4000/shader_files.tsv	Generated shader split metadata; preserve the input digest.
+dm/games/0100F6701FED4000/shader_facts.tsv	Generated shader split metadata; preserve the input digest.
+dm/games/0100F6701FED4000/shader_map.tsv	Generated shader split metadata; preserve the input digest.
+dm/games/0100F6701FED4000/shader_pairs.tsv	Generated shader split metadata; preserve the input digest.
+dm/games/0100F6701FED4000/pso_pairs.tsv	Generated shader split metadata; preserve the input digest.

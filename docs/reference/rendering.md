@@ -19,7 +19,7 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Symptom:** A stationary dialog flashes rectangles and its font atlas alternates with a much smaller texture when the game rotates descriptor pools.
 - **Cause:** adding the texture pool base to a combined handle can carry into the sampler field. Registrations for later full-size pools also exceed a single pool's 20-bit ID range.
 - **Fix:** keep the pool-local handles during recording; add each executing pool's base after extracting its field. Store direct texture registrations in sparse pages and capture their host IDs, not their page ordinals. GPU bindless array sizes do not change.
-- **Found on:** Trails through Daybreak II (0100F6701FED4000), whose bring-up profile is a separate change. <!-- PEANUTS(upstream-candidate) -->
+- **Found on:** [Trails through Daybreak II](../../dm/games/0100F6701FED4000/README.md). <!-- PEANUTS(upstream-candidate) -->
 
 ### Null textures in diagnostic logs
 
