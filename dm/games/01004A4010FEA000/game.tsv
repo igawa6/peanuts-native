@@ -45,3 +45,9 @@ mem_used	0x7400000
 # ---- Shader split (shader_split.py; the shader objects in root_000.pkz) ----
 shader_groups	/autoshadereff.dat/=eff /shadereff=eff /shader=core
 shader_note	Bayonetta 3 shaders
+
+# ---- Frame rate ----
+# PEANUTS: experimental display-paced caps.
+# Gameplay timing at 30 fps has not yet been verified.
+fps_limit_present	1
+fps_modes	30,60

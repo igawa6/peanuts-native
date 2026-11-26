@@ -77,7 +77,8 @@
     "01006F600FFC8000",
     "0100A7C01B792000",
     "01003D100E9C6000",
-    "01003D200BAA2000"
+    "01003D200BAA2000",
+    "01004A4010FEA000"
   ],
   "games": [
     {
@@ -159,6 +160,25 @@
       "contributors": [],
       "profile": "dm/games/01007300020FA000/game.tsv",
       "note": "dm/games/01007300020FA000/README.md"
+    },
+    {
+      "title_id": "01004A4010FEA000",
+      "name": "Bayonetta 3",
+      "profile_name": "Bayonetta 3",
+      "builds": [
+        {
+          "version": "v131072",
+          "number": 131072,
+          "display": "1.2.0"
+        }
+      ],
+      "readme_update": "1.2.0",
+      "package": "v131072",
+      "companion": false,
+      "since": null,
+      "contributors": [],
+      "profile": "dm/games/01004A4010FEA000/game.tsv",
+      "note": "dm/games/01004A4010FEA000/README.md"
     },
     {
       "title_id": "01009BF0072D4000",
