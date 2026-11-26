@@ -64,7 +64,7 @@ final class SidePanel extends FrameLayout {
     }
 
     // The ids of the choices a rebuild gives the focus back to (restyle)
-    private static final int ID_SIZE = 5000, ID_TEXT = 5100, ID_FIT = 5200, ID_MAP = 5300, ID_ONE = 5400, ID_RES = 5500, ID_RES_PRESET = 5590, ID_CONSOLE = 5600 /* PEANUTS: the two buttons of Console mode */;
+    private static final int ID_SIZE = 5000, ID_TEXT = 5100, ID_FIT = 5200, ID_MAP = 5300, ID_ONE = 5400, ID_RES = 5500, ID_RES_PRESET = 5590, ID_CONSOLE = 5600 /* PEANUTS: the two buttons of Console mode */, ID_WORDS = 5700 /* PEANUTS: the words: game's rows (wordsPicture): +0 Output, +20 Internal upscaler, +40 Graphics quality */;
 
     SidePanel(Activity a, Rows rows) {
         super(a);
@@ -395,7 +395,7 @@ final class SidePanel extends FrameLayout {
         // PEANUTS begin: Console mode (Docked / Handheld) while the game runs, for a game whose Resolution does not set the mode (ScreenMode): the host changes the
         // operation mode and posts the console's change notifications, as when a Switch is taken out of its dock (Native.graphicsModeSet with the scale following the
         // mode, hle_oe.c nxhost_graphics_mode_set); the choice is kept for the game
-        if (ScreenMode.fixed(game()) == null) {
+        if (ScreenMode.fixed(game()) == null && !WordsRows.on(game())) {   // PEANUTS: a words: game has Graphics quality in Display, with no live change
             head("Console mode");
             RadioGroup cm = new RadioGroup(act);
             for (int k = 0; k < 2; k++) { RadioButton b = new RadioButton(act); b.setId(ID_CONSOLE + k); b.setText(ScreenMode.NAMES[k]); cm.addView(b); }
@@ -412,7 +412,9 @@ final class SidePanel extends FrameLayout {
         // PEANUTS end
         head("Frame rate cap");   // the game's own frame rate; frame generation (below, its own heading) adds frames on top
         caps = new RadioGroup(act);
-        if (Prefs.limited(game())) {   // a frame limit, no locking (Prefs.PACE_CAPS)
+        if (Prefs.limited(game()) && WordsRows.on(game())) {   // PEANUTS: a slider over the frame rates (wordsFps; no Game owned), the same cap and the same live change
+            wordsFps();
+        } else if (Prefs.limited(game())) {   // a frame limit, no locking (Prefs.PACE_CAPS)
             int[] choices = FrameRateCaps.menu(), allowed = Prefs.paceOffered(act, game());   // PEANUTS: not above the display's highest refresh rate (fps cap audit B5)
             int cur = Prefs.paceCap(act, game()), hz = Prefs.displayMaxHz(act);
             for (int i = 0; i < choices.length; i++) {
@@ -422,18 +424,7 @@ final class SidePanel extends FrameLayout {
                 if (choices[i] == cur) b.setChecked(true);
                 caps.addView(b);
             }
-            caps.setOnCheckedChangeListener((g, id) -> {
-                int v = choices[id - 3000];
-                Prefs.fpsCap(act, game(), v);
-                boolean startedOwned = act instanceof GameActivity && ((GameActivity)act).gameOwnedAtStart();
-                boolean restart = act instanceof GameActivity && ((GameActivity)act).fpsRestartRequired(v);
-                if (v != FrameRateCaps.GAME_OWNED && !startedOwned && !restart) {
-                    Native.fpsLimitSet(FrameRateCaps.limitRate(v, hz));   // PEANUTS: at most the display's highest rate
-                    Profile p = Profile.of(game());
-                    if (p != null && p.usesFpsModeTarget()) Native.fpsCapSet(p.fpsModeTarget(FrameRateCaps.onScreen(v, hz)));   // PEANUTS: select the native engine mode with the live cap
-                }
-                refresh();
-            });
+            caps.setOnCheckedChangeListener((g, id) -> capPicked(choices[id - 3000]));   // PEANUTS: the body is capPicked (wordsFps' slider shares it)
         } else {
             int live = Integer.parseInt(Native.fpsCapStatus().split(" ")[0]), cur = live >= 0 ? live : Prefs.fpsCap(act, game());   // the cap in effect (env.txt or DM_CTL may have set another)
             if (Prefs.ownRate(act, game())) cur = 0;
@@ -454,10 +445,11 @@ final class SidePanel extends FrameLayout {
                 refresh();
             });
         }
-        box.addView(caps);
+        if (!(Prefs.limited(game()) && WordsRows.on(game()))) box.addView(caps);   // PEANUTS: wordsFps has its own views
         if (Prefs.limited(game())) {
             String why = Prefs.screenNote(act, game());   // PEANUTS: why 90 or 120 is greyed (fps cap audit B5)
-            note((why != null ? why + " " : "") + "Switching to or from Game owned applies on the next start.");
+            if (!WordsRows.on(game())) note((why != null ? why + " " : "") + "Switching to or from Game owned applies on the next start.");   // PEANUTS: a words: game has no Game owned, so no line
+            else if (why != null) note(why);
         }
         if (Prefs.limited(game()) && Prefs.presentOnly(game())) note(Prefs.PRESENT_ONLY_NOTE);   // fps_limit_present: the limit paces the presents only
         if (Prefs.limited(game()) && Prefs.fpsVariant(game())) note(Prefs.FPS_VARIANT_NOTE);   // PEANUTS: the cap starts another version of the game (Profile.fpsVariant)
@@ -487,20 +479,137 @@ final class SidePanel extends FrameLayout {
             box.addView(DrsSlider.view(act, Prefs.drs(act, game()), drsHead::setText, i -> { Prefs.drs(act, game(), i); Native.drsSet(Prefs.DRS[i][0], Prefs.DRS[i][1]); }));
         }
 
+        perfOptionRows(true);   // PEANUTS: the perf options (game.tsv; Depth of field) sit directly above Frame gen
         lsfgNow = Lsfg.rows(act, box, "", () -> { Lsfg.push(act); refresh(); });
+        perfOptionRows(false);   // PEANUTS: the other live options keep their place under Frame gen
+    }
 
+    // PEANUTS begin: the profile's options of the Performance tab: the perf ones (perf == true) or the other live ones (perf == false)
+    private void perfOptionRows(boolean perf) {
         Profile prof = Profile.of(game());
-        if (prof != null) {
-            for (Profile.Option opt : prof.options) {
-                if (!opt.live) continue;
-                android.widget.CheckBox cb = new android.widget.CheckBox(act);
-                cb.setText(opt.label);
-                cb.setChecked(Prefs.gameOption(act, game(), opt.env));
-                cb.setOnCheckedChangeListener((b, on) -> Prefs.gameOption(act, game(), opt.env, on));
-                box.addView(cb);
-            }
+        if (prof == null) return;
+        for (Profile.Option opt : prof.options) {
+            if (!opt.live && !opt.perf) continue;   // PEANUTS: a restart option marked perf (game.tsv) is here, not under Next start
+            if (opt.perf != perf) continue;
+            android.widget.CheckBox cb = new android.widget.CheckBox(act);
+            cb.setText(opt.label);
+            cb.setChecked(opt.shown(Prefs.gameOption(act, game(), opt.env)));   // PEANUTS: inverted shows the opposite of the stored option
+            cb.setOnCheckedChangeListener((b, on) -> Prefs.gameOption(act, game(), opt.env, opt.stored(on)));
+            box.addView(cb);
+            if (!opt.live) note(WordsGfx.NEXT_START);   // the same line as the Graphics rows
         }
     }
+    // PEANUTS end
+
+    // PEANUTS begin: A limited game's cap picked (the radio group and wordsFps' slider share it): kept for the game, and live unless it moves to or from Game owned
+    private void capPicked(int v) {
+        Prefs.fpsCap(act, game(), v);
+        boolean startedOwned = act instanceof GameActivity && ((GameActivity)act).gameOwnedAtStart();
+        boolean restart = act instanceof GameActivity && ((GameActivity)act).fpsRestartRequired(v);
+        if (v != FrameRateCaps.GAME_OWNED && !startedOwned && !restart) {
+            int hz = Prefs.displayMaxHz(act);
+            Native.fpsLimitSet(FrameRateCaps.limitRate(v, hz));   // PEANUTS: at most the display's highest rate
+            Profile p = Profile.of(game());
+            if (p != null && p.usesFpsModeTarget()) Native.fpsCapSet(p.fpsModeTarget(FrameRateCaps.onScreen(v, hz)));   // PEANUTS: select the native engine mode with the live cap
+        }
+        refresh();
+    }
+
+    /** Frame rate of a words: game: a slider over the profile's rates (WordsGfx.fpsSteps), no end words and no "Game owned"; each step is applied at once through capPicked, as the radio list does */
+    private void wordsFps() {
+        String id = game();
+        int[] steps = WordsGfx.fpsSteps(Prefs.paceCaps(id));
+        int shown = WordsGfx.fpsPick(steps, Prefs.paceCap(act, id));
+        String[] names = WordsGfx.fpsNames(steps);
+        TextView h = head("Frame rate");
+        box.addView(StepSlider.view(act, "Frame rate", names, WordsGfx.fpsIndex(steps, shown), null, null, h::setText, i -> capPicked(steps[i])));
+    }
+
+    /**
+     * Picture of a words: game (Display tab): Output resolution (Native, 1080p, 720p), Internal resolution (a slider and a "Game default" box), the Internal upscaler (Bilinear,
+     * FSR 1, SGSR 1, with its sharpness) and Graphics quality (Handheld / Docked). Output, Internal resolution and Graphics quality apply at the next start (no helper text by design; except one "Applies on next start" under Internal resolution, which the user asked for; and the same line under Graphics quality); the Internal upscaler applies now (the live control file, as the Upscaler of other games). Each is the
+     * same stored choice as Game settings' row
+     */
+    private void wordsPicture() {
+        String id = game();
+        Profile p = Profile.of(id);
+        WordsGfx.Gate gt = WordsRows.gate(id);   // PEANUTS: a hidden row is not drawn; a docked_only row is a heading and a dimmed "Docked only" while Graphics quality is Handheld (the same value as Game settings)
+        int gm = ScreenMode.mode(act, id);
+        if (gt.gated(WordsGfx.ROW_OUTPUT, gm)) { head("Output resolution"); dockedOnly(); }
+        else if (gt.shows(WordsGfx.ROW_OUTPUT)) {
+        head("Output resolution");
+        java.util.List<WordsGfx.Out> outs = WordsRows.outs(act, p);
+        WordsGfx.Out cur = WordsGfx.outOf(outs, WordsRows.outPref(act, id));
+        RadioGroup ro = new RadioGroup(act);
+        for (int i = 0; i < outs.size(); i++) { RadioButton b = new RadioButton(act); b.setId(ID_WORDS + i); b.setText(outs.get(i).label()); ro.addView(b); }
+        ro.check(ID_WORDS + outs.indexOf(cur));
+        ro.setOnCheckedChangeListener((gr, rid) -> { WordsRows.outPref(act, id, outs.get(rid - ID_WORDS).value); restyle(rid); });
+        box.addView(ro);
+        }
+
+        if (gt.gated(WordsGfx.ROW_INTERNAL, gm)) { head("Internal resolution"); dockedOnly(); }
+        else if (gt.shows(WordsGfx.ROW_INTERNAL)) {
+        TextView ih = head("Internal resolution");
+        int pct = WordsRows.scenePct(act, id);
+        int[] at = {WordsGfx.pctIndex(pct > 0 ? pct : WordsGfx.PCT_REST)};
+        android.widget.CheckBox def = new android.widget.CheckBox(act);
+        def.setText("Game default");
+        def.setChecked(pct == 0);
+        View[] isl = new View[1];
+        CompoundButton.OnCheckedChangeListener[] defListener = new CompoundButton.OnCheckedChangeListener[1];
+        defListener[0] = (b, on) -> {
+            isl[0].setAlpha(on ? 0.4f : 1f);
+            ih.setText(on ? "Internal resolution: Game default" : StepSlider.title("Internal resolution", WordsGfx.PCT_NAMES, at[0]));
+            WordsRows.scenePct(act, id, on ? null : WordsGfx.PCTS[at[0]]);
+        };
+        isl[0] = StepSlider.view(act, "Internal resolution", WordsGfx.PCT_NAMES, at[0], null, null, t -> ih.setText(def.isChecked() ? "Internal resolution: Game default" : t), i -> {
+            at[0] = i;
+            WordsRows.scenePct(act, id, WordsGfx.PCTS[i]);
+            if (def.isChecked()) { def.setOnCheckedChangeListener(null); def.setChecked(false); def.setOnCheckedChangeListener(defListener[0]); isl[0].setAlpha(1f); }   // moving the slider takes the step: Game default off
+        });
+        isl[0].setAlpha(def.isChecked() ? 0.4f : 1f);
+        def.setOnCheckedChangeListener(defListener[0]);
+        box.addView(def);
+        box.addView(isl[0]);
+        note(WordsGfx.NEXT_START);   // PEANUTS: the one helper line of the Display rows: Internal resolution is written at load and cannot change while the game runs
+        }
+
+        if (gt.gated(WordsGfx.ROW_UPSCALER, gm)) { head("Internal upscaler"); dockedOnly(); }
+        else if (gt.shows(WordsGfx.ROW_UPSCALER)) {
+        head("Internal upscaler");
+        int mode = WordsRows.cupMode(act, id);
+        RadioGroup ru = new RadioGroup(act);
+        for (int i = 0; i < WordsGfx.UP_NAMES.length; i++) { RadioButton b = new RadioButton(act); b.setId(ID_WORDS + 20 + i); b.setText(WordsGfx.UP_NAMES[i]); ru.addView(b); }
+        ru.check(ID_WORDS + 20 + mode);
+        ru.setOnCheckedChangeListener((gr, rid) -> { WordsRows.cupMode(act, id, rid - ID_WORDS - 20); WordsRows.pushUpscaler(act, id); restyle(rid); });
+        box.addView(ru);
+        if (mode != 0) {   // FSR 1 and SGSR 1 have a sharpness
+            TextView sh = new TextView(act);
+            box.addView(sh);
+            box.addView(StepSlider.view(act, "Upscaler sharpness", WordsGfx.SHARP_NAMES, WordsRows.cupSharp(act, id), null, null, sh::setText, i -> { WordsRows.cupSharp(act, id, i); WordsRows.pushUpscaler(act, id); }));
+        }
+        }
+
+        head("Graphics quality");
+        RadioGroup rg = new RadioGroup(act);
+        for (int k = 0; k < 2; k++) { RadioButton b = new RadioButton(act); b.setId(ID_WORDS + 40 + k); b.setText(WordsGfx.GFX_NAMES[WordsGfx.gfxModeOfSlot(k)]); rg.addView(b); }   // Handheld first
+        rg.check(ID_WORDS + 40 + WordsGfx.gfxSlotOfMode(ScreenMode.mode(act, id)));
+        rg.setOnCheckedChangeListener((gr, rid) -> {   // PEANUTS: kept for the next start (console_mode@<id>, the key Game settings, ScreenMode.env and the next start read): no live change of the console mode here
+            ScreenMode.keep(act, id, WordsGfx.gfxModeOfSlot(rid - ID_WORDS - 40));
+            restyle(rid);
+        });
+        box.addView(rg);
+        note(WordsGfx.NEXT_START);   // PEANUTS: the one helper line under Graphics quality: the mode is read at the start (DM_OPMODE), as Internal resolution is
+    }
+
+    /** what a docked_only row shows while Graphics quality is Handheld: the value WordsGfx.DOCKED_ONLY, dimmed, with nothing to press (the same words as Game settings' row) */
+    private void dockedOnly() {
+        TextView t = new TextView(act);
+        t.setText(WordsGfx.DOCKED_ONLY);
+        t.setAlpha(0.5f);
+        box.addView(t);
+    }
+    // PEANUTS end
 
     /** Display: the picture (Fit / Stretch, size, position) and the overlay's items */
     private void display() {
@@ -607,6 +716,7 @@ final class SidePanel extends FrameLayout {
      */
     private void resolutionRow() {
         Profile p = Profile.of(game());
+        if (p != null && p.words()) { wordsPicture(); return; }   // PEANUTS
         if (p != null && p.renderCfg()) { renderRows(p); return; }
         if (p == null || !p.hasResolution()) return;
         head("Resolution");
@@ -801,7 +911,7 @@ final class SidePanel extends FrameLayout {
         Profile prof = Profile.of(game());
         if (prof != null && !prof.options.isEmpty()) {
             for (Profile.Option opt : prof.options) {
-                if (opt.live) continue;
+                if (opt.live || opt.perf) continue;   // PEANUTS: perf options are in the Performance tab
                 android.widget.CheckBox cb = new android.widget.CheckBox(act);
                 cb.setText(opt.label);
                 Profile.Option source = Profile.findImpliedBy(prof.options, opt, env -> Prefs.gameOption(act, game(), env));
@@ -809,9 +919,9 @@ final class SidePanel extends FrameLayout {
                     cb.setChecked(true);
                     cb.setEnabled(false);
                 } else {
-                    cb.setChecked(Prefs.gameOption(act, game(), opt.env));
+                    cb.setChecked(opt.shown(Prefs.gameOption(act, game(), opt.env)));   // PEANUTS: inverted shows the opposite of the stored option
                     cb.setOnCheckedChangeListener((b, on) -> {
-                        Prefs.gameOption(act, game(), opt.env, on);
+                        Prefs.gameOption(act, game(), opt.env, opt.stored(on));
                         if (opt.hasImplies()) build();
                     });
                 }

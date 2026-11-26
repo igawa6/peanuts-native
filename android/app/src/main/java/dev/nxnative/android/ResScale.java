@@ -26,7 +26,7 @@ final class ResScale {
     }
 
     /** A game without the row: its profile has a render_cfg row (its own Resolution and Upscaling quality) */
-    static boolean hidden(String id) { Profile p = Profile.of(id); return p != null && p.renderCfg(); }
+    static boolean hidden(String id) { Profile p = Profile.of(id); return p != null && (p.renderCfg() || WordsGfx.hidesResScale(p)); }   // PEANUTS: a words: game has Internal resolution instead
 
     /** The default for every game, in quarters (1x when nothing is chosen) */
     static int global(Context c) { return QUARTERS[index(Prefs.of(c).getInt(KEY, ONE))]; }

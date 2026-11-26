@@ -402,6 +402,7 @@ int vka_rp_is_open(void);                            // a render pass is open in
 void vka_tex_writeback(VkCommandBuffer cb);   // mtl_sub_commit, after the last pass
 // PEANUTS(upstream-candidate): a buffer -> texture copy's bytes into the texture's block-linear storage, in queue order (vka_tex.c; LEGO CITY UNDERCOVER's GPU defragmenter copies that storage); DM_VK_B2T_MIRROR
 int vka_tex_b2t_mirror(VkCommandBuffer cb, const vka_img *im, const tex_t *t, unsigned level, unsigned layer, const NVNcopyRegion *r, VkBuffer sbuf, VkDeviceSize soff, size_t row, size_t span);
+void vka_tex_alias_flush(VkCommandBuffer cb);   // PEANUTS(upstream-candidate): GPU-written linear textures' bytes into their aliases of another shape (DM_VK_ALIAS_SYNC); no pass open in cb
 // Texture pool reads (vka_tex.c, DM_VK_POOL_FB): the texture IDs shaders read through the pool, reported by the GPU, so their images are made and kept while read
 // The bitmap, a storage buffer of 2^20 bits, in a set of its own after the pool's: on Qualcomm's driver a storage buffer in the pool's set, after its 2^20 sampled images,
 // is never written (docs/reference/rendering.md "Texture pool reads report nothing on Qualcomm's driver")
@@ -680,6 +681,9 @@ void vka_tex_gw_tbuf(uint64_t dst, uint64_t n);   // PEANUTS: an opaque write ma
 uint64_t vka_tex_gw_seq(void);   // PEANUTS: the newest GPU write's sequence number
 int vka_tex_gw_since(uint64_t addr, uint64_t n, uint64_t seq);   // PEANUTS: a GPU write recorded after seq overlaps the range
 int vka_tex_gw_tbuf_pending(uint64_t addr, uint64_t n);   // PEANUTS: 1 = such a write over [addr, addr + n) is not done yet: the CPU does not have its bytes
+void vka_tex_gw_ssbo(uint64_t dst, uint64_t n);   // PEANUTS: an opaque write made by stores through a bounded storage buffer (DM_VK_TBUF_GW_SSBO; vka_tbuf.h)
+int vka_tex_gw_ssbo_pending(uint64_t addr, uint64_t n);   // PEANUTS: 1 = such a write over [addr, addr + n) is not done yet
+void vka_tbuf_img_counts(uint64_t *copies, uint64_t *bytes);   // PEANUTS: buffer texture images copied on the GPU so far, and their bytes (vka_tbuf.c)
 int vka_tex_gw_read(uint64_t addr, uint64_t n, void *out);   // [addr, addr + n) as the GPU sees it now (guest RAM + pending gw_t writes); out NULL = only whether known (no opaque write)
 int vka_tex_gml_take(VkDescriptorBufferInfo *bi);  // a raw global memory write log for one draw or dispatch, read when its submission is done (0 = none free)
 void vka_tex_gw_commit(uint64_t fence);

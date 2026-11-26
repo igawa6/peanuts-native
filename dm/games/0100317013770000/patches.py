@@ -3,8 +3,15 @@
 # pages). Only committed pages consume the application pool, but the 12 GB
 # reservation cannot fit an iPhone's guest block. The failed reservation is
 # unchecked and the first 64 KB page writes to NULL + 0x20000ffff.
-# These platform-limit cuts reserve 3 GB: 2 GB for large allocations, 512 MB for
-# 512 KB pages and 512 MB for 64 KB pages. The large allocator has a separate
+# PEANUTS: These platform-limit cuts reserve 4 GB: 2 GB for large allocations, 1 GB
+# for 512 KB pages and 1 GB for 64 KB pages (they were 3 GB = 2 GB + 512 MB +
+# 512 MB). On the Retroid Pocket Nova the 512 MB 64 KB range filled up in battle
+# loads: the slab source then loops on AllocateAddressRegion(4 GB), which can never
+# fit the alias region, each failed try leaks an SDK node, and the SDK aborts when
+# its 62 MB node area runs out (two crashes). 1 GB per slab range with the
+# large range unchanged keeps every reader of the size fields valid (the sizes
+# are derived at run time) and needs game.tsv mem_reserve 6 GB / mem_alias 5.375 GB
+# (Android only; iOS caps one reservation at 6 GB and has proven 5 GB). The large allocator has a separate
 # maximum page count (w5 at +0x164338, stored at +8 by +0x168310), which must
 # shrink with its range: otherwise its original 65536-page capacity allocates
 # across the class boundary, and free interprets compressed file data as a
@@ -27,10 +34,10 @@
 # issue #483). 65,536 slots keep the pool as built, in 17 MB.
 CUTS = {
     '5b76a43b231e0640521ac66203f7c178': [
-        (0x1642c8, '2800c0d2', '0800a4d2', 'Snowdrop allocator: initialize the three range-size fields to 512 MB (mov x8,#0x20000000); the large range is overridden to 2 GB below'),
-        (0x1642fc, '7600c0d2', '1600b8d2', 'Snowdrop allocator: combined virtual range end uses 3 GB instead of 12 GB (mov x22,#0xc0000000)'),
+        (0x1642c8, '2800c0d2', '0800a8d2', 'Snowdrop allocator: initialize the three range-size fields to 1 GB (mov x8,#0x40000000); the large range is overridden to 2 GB below'),   # PEANUTS: 1 GB slab ranges, 4 GB in all (was 3 GB)
+        (0x1642fc, '7600c0d2', '3600c0d2', 'Snowdrop allocator: combined virtual range end uses 4 GB instead of 12 GB (mov x22,#0x100000000)'),
         (0x164300, 'e1031f2a', '0100b0d2', 'Snowdrop allocator: prepare 2 GB for the large range (mov x1,#0x80000000); AllocateAddressRegion wrapper discards incoming x1'),
-        (0x164308, '6000c0d2', '0000b8d2', 'Snowdrop allocator: reserve 3 GB instead of 12 GB (mov x0,#0xc0000000)'),
+        (0x164308, '6000c0d2', '2000c0d2', 'Snowdrop allocator: reserve 4 GB instead of 12 GB (mov x0,#0x100000000)'),
         (0x16430c, 'e2031faa', '615600f9', 'Snowdrop allocator: override the large range-size field to 2 GB (str x1,[x19,#0xa8]); AllocateAddressRegion wrapper never reads x2'),
         (0x164338, '2500a052', '05009052', 'Snowdrop large allocator: maximum 64 KB page count 65536 -> 32768, matching its 2 GB range (mov w5,#0x8000)'),
         (0x94354, '0108a052', '2100a052', 'Unused 272-byte slot pool: 4,194,304 -> 65,536 slots, 1.06 GB -> 17 MB of address space (mov w1,#0x10000)'),

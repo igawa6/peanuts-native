@@ -800,6 +800,11 @@ typedef struct { uint64_t lo, hi, src, seq, fence; uint32_t kind, value; uint8_t
 static gw_t *g_gw; static int g_ngw, g_gwcap; static uint64_t g_gwseq = 1, g_gw_over, g_gw_late;
 static uint64_t g_gw_done;   // PEANUTS: (under g_tmu) vka_done() as the last vka_tex_prepare read it for the done writes it dropped (vka_tex_gw_tbuf_pending)
 static _Atomic int g_gw_tb;   // PEANUTS: the entries of g_gw that are a storage texel buffer's stores (GW_OPAQUE with value 1: vka_tex_gw_tbuf), so vka_tex_gw_tbuf_pending need not look when there is none. Changed under g_tmu
+static _Atomic int g_gw_ss;   // PEANUTS: the same for a storage buffer's stores (value bit 2: vka_tex_gw_ssbo, DM_VK_TBUF_GW_SSBO; vka_tbuf.h), counted on their own
+static void gw_count(uint32_t bits, int d) {   // PEANUTS: (g_gw_tb, g_gw_ss) bits gained (d = 1) or dropped (d = -1) by an entry
+    if (bits & VKTB_GW_TB) atomic_fetch_add_explicit(&g_gw_tb, d, memory_order_relaxed);
+    if (bits & VKTB_GW_SSBO) atomic_fetch_add_explicit(&g_gw_ss, d, memory_order_relaxed);
+}
 static void gw_add(int kind, uint64_t dst, uint64_t n, uint64_t src, uint32_t value, const void *data) {
     if (!n) return;
     vka_tbuf_wrote(dst, n);   // (images of buffer textures over it are copied again at their next use)
@@ -807,7 +812,7 @@ static void gw_add(int kind, uint64_t dst, uint64_t n, uint64_t src, uint32_t va
     if (g_ngw == g_gwcap) { g_gwcap = g_gwcap ? 2 * g_gwcap : 256; g_gw = realloc(g_gw, (size_t)g_gwcap * sizeof *g_gw); }
     if (kind == GW_OPAQUE)   // the same range again in this submission (a storage buffer bound by draw after draw): one entry, at the newest place
         for (int i = g_ngw - 1; i >= 0 && i >= g_ngw - 16 && !g_gw[i].fence; i--) if (g_gw[i].kind == GW_OPAQUE && g_gw[i].lo == dst && g_gw[i].hi == dst + n) {
-            gw_t w = g_gw[i]; memmove(&g_gw[i], &g_gw[i + 1], (size_t)(g_ngw - 1 - i) * sizeof *g_gw); w.seq = g_gwseq++; if (value && !w.value) atomic_fetch_add_explicit(&g_gw_tb, 1, memory_order_relaxed); w.value |= value; /* PEANUTS: a storage texel buffer's flag stays (vka_tex_gw_tbuf), counted in g_gw_tb */ g_gw[g_ngw - 1] = w; pthread_mutex_unlock(&g_tmu); return; }
+            gw_t w = g_gw[i]; memmove(&g_gw[i], &g_gw[i + 1], (size_t)(g_ngw - 1 - i) * sizeof *g_gw); w.seq = g_gwseq++; gw_count(vka_tbuf_gw_new_bits(w.value, value), 1); w.value |= value; /* PEANUTS: a storage texel buffer's (or storage buffer's) flag stays (vka_tex_gw_tbuf, vka_tex_gw_ssbo), counted per bit in g_gw_tb / g_gw_ss */ g_gw[g_ngw - 1] = w; pthread_mutex_unlock(&g_tmu); return; }
     if (kind == GW_UPDATE)   // the same inline update range again in this submission (Splatoon Raiders' 1,550 occlusion queries: 11,010 updates to 7 ranges): overwrite in place
         for (int i = g_ngw - 1; i >= 0 && i >= g_ngw - 16 && !g_gw[i].fence; i--) {
             if (g_gw[i].kind == GW_COPY) break;
@@ -820,7 +825,7 @@ static void gw_add(int kind, uint64_t dst, uint64_t n, uint64_t src, uint32_t va
         }
     uint8_t *cp = NULL; if (kind == GW_UPDATE && (cp = malloc(n))) memcpy(cp, data, n); else if (kind == GW_UPDATE) kind = GW_OPAQUE;
     g_gw[g_ngw++] = (gw_t){dst, dst + n, src, g_gwseq++, 0, (uint32_t)kind, value, cp};
-    if (kind == GW_OPAQUE && value) atomic_fetch_add_explicit(&g_gw_tb, 1, memory_order_relaxed);   // PEANUTS: (g_gw_tb)
+    if (kind == GW_OPAQUE) gw_count(vka_tbuf_gw_new_bits(0, value), 1);   // PEANUTS: (g_gw_tb, g_gw_ss)
     pthread_mutex_unlock(&g_tmu);
 }
 void vka_tex_gw_copy(uint64_t src, uint64_t dst, uint64_t n) { gw_add(GW_COPY, dst, n, src, 0, NULL); }
@@ -841,10 +846,23 @@ int vka_tex_gw_tbuf_pending(uint64_t addr, uint64_t n) {
     // went from 1 to 0 while a submission was recorded sent a draw to bytes that are uploaded again only at the next prepare (where the write is dropped and the
     // textures over it are re-uploaded). So the answer changes at a prepare, or by a store this thread records
     uint64_t done = g_gw_done;
-    for (int i = g_ngw - 1; i >= 0 && !r; i--) r = vka_tbuf_gw_pending(g_gw[i].lo, g_gw[i].hi, g_gw[i].fence, g_gw[i].kind == GW_OPAQUE && g_gw[i].value, addr, addr + n, done);
+    for (int i = g_ngw - 1; i >= 0 && !r; i--) r = vka_tbuf_gw_pending(g_gw[i].lo, g_gw[i].hi, g_gw[i].fence, g_gw[i].kind == GW_OPAQUE && (g_gw[i].value & VKTB_GW_TB), addr, addr + n, done);   // PEANUTS: bit 1 only (a storage buffer's bit 2 never reaches tbuf_view)
     pthread_mutex_unlock(&g_tmu);
     return r;
 }
+// PEANUTS begin: a bounded storage buffer's stores, kept with value bit 2 (DM_VK_TBUF_GW_SSBO; vka_tbuf.h): an opaque write like any other, and while it is not done a buffer
+// texture over the range read through an image binding takes the copy the GPU makes (vka_draw.c tbuf_img_ask). Asked as vka_tex_gw_tbuf_pending is (the fence as the last prepare read it)
+void vka_tex_gw_ssbo(uint64_t dst, uint64_t n) { gw_add(GW_OPAQUE, dst, n, 0, VKTB_GW_SSBO, NULL); }
+int vka_tex_gw_ssbo_pending(uint64_t addr, uint64_t n) {
+    int r = 0;
+    if (!atomic_load_explicit(&g_gw_ss, memory_order_relaxed)) return 0;
+    pthread_mutex_lock(&g_tmu);
+    uint64_t done = g_gw_done;
+    for (int i = g_ngw - 1; i >= 0 && !r; i--) r = vka_tbuf_gw_pending(g_gw[i].lo, g_gw[i].hi, g_gw[i].fence, g_gw[i].kind == GW_OPAQUE && (g_gw[i].value & VKTB_GW_SSBO), addr, addr + n, done);
+    pthread_mutex_unlock(&g_tmu);
+    return r;
+}
+// PEANUTS end
 // The newest write's sequence number now, and whether a write recorded after `seq` (not done) overlaps [addr, addr + n): a copy of the range taken at `seq` is still what the
 // GPU will read (vka_draw.c tbuf_view's copy kept for the submission)
 uint64_t vka_tex_gw_seq(void) { pthread_mutex_lock(&g_tmu); uint64_t s = g_gwseq - 1; pthread_mutex_unlock(&g_tmu); return s; }
@@ -2208,6 +2226,7 @@ void vka_tex_drop(vka_img *im) {
 vka_img *vka_tex_ref(vka_img *im) { if (im) { pthread_mutex_lock(&g_tmu); im->refs++; im->holds++; im->last_fence = vka_fence_last(); pthread_mutex_unlock(&g_tmu); } return im; }
 static void wb_cancel_locked(vka_img *im);
 static void rw_cancel_locked(vka_img *im, int drop_refs);   // PEANUTS(upstream-candidate): (below, with the region writes' queue)
+static void as_cancel_locked(vka_img *im);   // PEANUTS(upstream-candidate): (below, linear alias sync)
 void vka_tex_drop_pool(const void *pool) {
     if (!pool) return;
     pthread_mutex_lock(&g_tmu);
@@ -2226,6 +2245,7 @@ void vka_tex_drop_pool(const void *pool) {
             wb_cancel_locked(im);
             rw_cancel_locked(im, 0);   // PEANUTS(upstream-candidate): its queued region writes go with it: the count forced below would leave them holding a freed image
             bc_cancel_locked(im);   // PEANUTS: and its bc alias sync entry (the forced count below consumes the queue's reference)
+            as_cancel_locked(im);   // PEANUTS(upstream-candidate): and its linear alias sync entry, likewise
             map_del_im(im);
             im->refs = 1;
             unref_locked(im);
@@ -2695,6 +2715,137 @@ int vka_tex_b2t_mirror(VkCommandBuffer cb, const vka_img *im, const tex_t *t, un
     return 1;
 }
 
+// PEANUTS begin(upstream-candidate): linear alias sync (DM_VK_ALIAS_SYNC, live; default: the profile's alias_sync, off unless game.tsv says on). On the Switch two linear textures of other shapes over the same bytes are one
+// memory: Snowdrop (Mario + Rabbids Sparks of Hope) packs 4 R8 texels in one RGBA8 texel of its half-resolution ambient chain (640x360 R8 and 160x360 RGBA8, both 640-byte
+// rows, over one storage) and reads one as the other. Here they are two images (same_shape: other shape), so what the GPU drew through one never reached the other: the lit
+// shaders' occlusion input read 0 and the shade was black. With the switch on, a GPU write into such a texture queues it; at the next point with no pass open (the pass's end,
+// a dispatch, the next pass's begin, the submission's end: vka_tex_alias_flush) its bytes go through scratch memory into every live sibling of the same byte layout (same
+// storage, same row bytes and stride, same rows; one level, layer and sample; uncompressed colour; at most AS_MAX bytes), which is exact for linear layouts. The sibling is
+// marked GPU-written without being queued itself (no ping-pong); a newer write into a sibling drops the older entry. An earlier port's vk_tex_alias_sync
+enum { AS_N = 64, AS_MAX = 16u << 20 };
+static vka_img *g_as[AS_N]; static int g_nas; static _Atomic int g_as_any;   // under g_tmu (g_as_any: a hint read unlocked)
+static int as_on(void) {   // DM_VK_ALIAS_SYNC (live) over the profile's alias_sync (DM_GAME_ALIAS_SYNC); a line says where the state comes from each time it changes, the first call included
+    int on = VKA_ENV("DM_VK_ALIAS_SYNC", DM_GAME_ALIAS_SYNC);   // (nothing while the profile leaves it off and no env line names it: every other game)
+    static _Atomic int last = -1;
+    int prev = atomic_load_explicit(&last, memory_order_relaxed);
+    if (on != prev && atomic_compare_exchange_strong_explicit(&last, &prev, on, memory_order_relaxed, memory_order_relaxed)) {
+        char b[32]; int env = vka_env_str("DM_VK_ALIAS_SYNC", b, sizeof b) && b[0];
+        if (on || env || prev >= 0) VLOG("alias sync: %s (%s)", on ? "on" : "off", env ? "env" : "profile");
+    }
+    return on;
+}
+static uint64_t as_stride(const vka_img *im) { return im->d.stride ? im->d.stride : (uint64_t)im->w * im->f.bpb; }
+static int as_shape(vka_img *im) {
+    return im && im->mem && im->img && im->inited && (im->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET)) && im->d.target == NVN_TEXTURE_TARGET_2D &&
+           im->levels == 1 && im->layers == 1 && im->depth <= 1 && im->samples <= 1 && im->f.kind < 3 && im->f.bw == 1 && im->f.bh == 1 && im->f.bpb && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT &&
+           !im->par && !im->rsc && !im->soft && !im->base && !im->rs && !im->vpool && !im->is_video && !im->pdead && !img_pool_dead(im);
+}
+static int as_match(vka_img *s, vka_img *o) {   // o takes s's bytes: another shape or format of the same byte layout (both as_shape)
+    if (!o || o == s || o->mem != s->mem || !as_shape(o) || (o->f.vk == s->f.vk && o->w == s->w)) return 0;
+    uint64_t row = (uint64_t)s->w * s->f.bpb;
+    return (uint64_t)o->w * o->f.bpb == row && o->h == s->h && as_stride(o) == as_stride(s) && row * s->h <= AS_MAX &&
+           (s->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) && (o->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+}
+// Diagnostic only (never changes what as_shape / as_match accept): the first condition of as_shape (as_match) that fails, as words, or NULL when it holds
+static const char *as_shape_why(vka_img *im) {
+    if (!im->mem) return "no storage"; if (!im->img) return "no VkImage"; if (!im->inited) return "not initialised";
+    if (!(im->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET))) return "not linear";
+    if (im->d.target != NVN_TEXTURE_TARGET_2D) return "not 2D"; if (im->levels != 1) return "more than 1 level"; if (im->layers != 1 || im->depth > 1) return "more than 1 layer or depth";
+    if (im->samples > 1) return "multisampled"; if (im->f.kind >= 3) return "colour kind >= 3"; if (im->f.bw != 1 || im->f.bh != 1) return "block-compressed"; if (!im->f.bpb) return "no texel size";
+    if (im->aspect != VK_IMAGE_ASPECT_COLOR_BIT) return "not a colour aspect"; if (im->par) return "level child"; if (im->rsc) return "scaled (rsc)"; if (im->soft) return "soft"; if (im->base) return "sparse (base)";
+    if (im->rs) return "scaled (rs)"; if (im->vpool) return "vpool"; if (im->is_video) return "video"; if (im->pdead) return "pool dropped"; if (img_pool_dead(im)) return "pool dropped (img_pool_dead)";
+    return NULL;
+}
+static const char *as_match_why(vka_img *s, vka_img *o) {   // sibling o of the written s (as_shape_why(s) is NULL)
+    const char *w = as_shape_why(o); if (w) return w;
+    if (o->f.vk == s->f.vk && o->w == s->w) return "same format and width";
+    if ((uint64_t)o->w * o->f.bpb != (uint64_t)s->w * s->f.bpb) return "row bytes differ";
+    if (o->h != s->h) return "rows differ";
+    if (as_stride(o) != as_stride(s)) return "stride differs";
+    if ((uint64_t)s->w * s->f.bpb * s->h > AS_MAX) return "larger than the 16 MiB limit";
+    if (!(s->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) return "written image lacks TRANSFER_SRC";
+    if (!(o->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) return "sibling lacks TRANSFER_DST";
+    return NULL;
+}
+static void as_reject_log(vka_img *im) {   // once per (written, sibling) pair, 16 lines in all (under g_tmu): a live sibling over the same storage that the gate rejects
+    enum { AS_DIAG_MAX = 16 };
+    static struct { uint64_t a, b; } seen[AS_DIAG_MAX]; static int nseen;
+    if (nseen >= AS_DIAG_MAX || !im || !im->mem || !(im->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET))) return;
+    const char *ws = as_shape_why(im);
+    int lk;
+    for (vka_img *o = live_first(im->mem, &lk); o && nseen < AS_DIAG_MAX; o = live_next(o, im->mem, &lk)) {
+        if (o == im || o->mem != im->mem || (o->f.vk == im->f.vk && o->w == im->w && o->h == im->h)) continue;   // (the same shape is the same image: nothing to sync)
+        int k = 0; while (k < nseen && !(seen[k].a == im->serial && seen[k].b == o->serial)) k++;
+        if (k < nseen) continue;
+        const char *why = ws ? ws : as_match_why(im, o);
+        if (!why) continue;   // accepted
+        seen[nseen].a = im->serial; seen[nseen++].b = o->serial;
+        VLOG("alias sync: candidate rejected: %s%s: written serial %llu %ux%u VkFormat %d (%llu-byte rows, stride %llu, %u rows, usage copy src %d dst %d) and sibling serial %llu %ux%u VkFormat %d (%llu-byte rows, stride %llu, %u rows, usage copy src %d dst %d) over the same storage %#llx (%d of %d logged)",
+             ws ? "written image: " : (as_shape_why(o) ? "sibling: " : ""), why, (unsigned long long)im->serial, im->w, im->h, im->f.vk, (unsigned long long)im->w * im->f.bpb, (unsigned long long)as_stride(im), im->h,
+             !!(im->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT), !!(im->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT),
+             (unsigned long long)o->serial, o->w, o->h, o->f.vk, (unsigned long long)o->w * o->f.bpb, (unsigned long long)as_stride(o), o->h,
+             !!(o->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT), !!(o->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT), (unsigned long long)(uintptr_t)im->mem, nseen, AS_DIAG_MAX);
+        if (ws) break;   // (the written image itself fails: the first sibling shows it)
+    }
+}
+static void as_queue_locked(vka_img *im) {
+    as_reject_log(im);
+    if (!as_shape(im)) return;
+    int lk, has = 0;
+    for (vka_img *o = live_first(im->mem, &lk); o && !has; o = live_next(o, im->mem, &lk)) has = as_match(im, o);
+    if (!has) return;
+    int dup = 0;
+    for (int i = 0; i < g_nas; i++) {
+        vka_img *q = g_as[i];
+        if (q == im) dup = 1;
+        else if (q && q->mem == im->mem && as_match(im, q)) { g_as[i] = NULL; unref_locked(q); }   // this newer write wins over a sibling's queued one
+    }
+    if (dup) return;
+    if (g_nas == AS_N) { VRED_ONCE("alias sync: more than %d textures wait for a copy into their aliases: the rest are skipped until the next flush", AS_N); return; }
+    im->refs++; g_as[g_nas++] = im; atomic_store(&g_as_any, 1);
+}
+static void as_cancel_locked(vka_img *im) {   // a pool drop's forced free: the queue's reference goes with it
+    for (int i = 0; i < g_nas; i++) if (g_as[i] == im) g_as[i] = NULL;
+}
+static void as_flush_locked(VkCommandBuffer cb) {
+    if (!g_nas) return;
+    int any = 0;
+    for (int i = 0; i < g_nas; i++) {
+        vka_img *s = g_as[i];
+        if (!s) continue;
+        vka_span sp; int have = 0, lk;
+        uint64_t row = (uint64_t)s->w * s->f.bpb, n = row * s->h;
+        for (vka_img *o = cb && as_shape(s) ? live_first(s->mem, &lk) : NULL; o; o = live_next(o, s->mem, &lk)) {
+            if (!as_match(s, o) || !img_own(o, cb)) continue;   // (a zero-shared sibling gets memory of its own first)
+            if (!have) {
+                if (!vka_scratch(n, 16, &sp)) { VRED_ONCE("alias sync: no scratch memory for %llu bytes: texture serial %llu's GPU content does not reach its aliases", (unsigned long long)n, (unsigned long long)s->serial); break; }
+                VkBufferImageCopy c = {sp.off, 0, 0, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, 0, 0}, {s->w, s->h, 1}};   // tightly packed rows of row bytes
+                vka_barrier(cb); vk.vkCmdCopyImageToBuffer(cb, s->img, VK_IMAGE_LAYOUT_GENERAL, sp.buf, 1, &c); vka_barrier(cb);
+                s->last_fence = vka_fence_last(); have = any = 1;
+            }
+            VkBufferImageCopy c = {sp.off, 0, 0, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, 0, 0}, {o->w, o->h, 1}};
+            vk.vkCmdCopyBufferToImage(cb, sp.buf, o->img, VK_IMAGE_LAYOUT_GENERAL, 1, &c);
+            o->gpu_owned = 1; o->last_fence = vka_fence_last();   // (its content is the GPU's now; not queued itself: no copy back the other way)
+            if (s->wb_pending && !o->wb_pending) o->wb_fence = vka_fence_last();   // (s's copy-back in this submission puts the same bytes in the storage: vka_wbfollow.h)
+            static struct { uint64_t a, b; } seen[32]; static int nseen; static uint64_t ncopy; ncopy++;   // (under g_tmu)
+            int k = 0; while (k < nseen && !(seen[k].a == s->serial && seen[k].b == o->serial)) k++;
+            if (k == nseen && nseen < 32) {
+                seen[nseen].a = s->serial; seen[nseen++].b = o->serial;
+                VLOG("alias sync: frame %llu linear texture serial %llu %ux%u VkFormat %d written by the GPU: its bytes copied into serial %llu %ux%u VkFormat %d over the same storage %#llx (%llu-byte rows, stride %llu, %u rows; %llu copies so far; DM_VK_ALIAS_SYNC=0: off)",
+                     (unsigned long long)vka_frame(), (unsigned long long)s->serial, s->w, s->h, s->f.vk, (unsigned long long)o->serial, o->w, o->h, o->f.vk,
+                     (unsigned long long)(uintptr_t)s->mem, (unsigned long long)row, (unsigned long long)as_stride(s), s->h, (unsigned long long)ncopy);
+            }
+        }
+        unref_locked(s);
+    }
+    g_nas = 0; atomic_store(&g_as_any, 0);
+    if (any) vka_barrier(cb);   // the copies before whatever samples the aliases next
+}
+void vka_tex_alias_flush(VkCommandBuffer cb) {   // the recording thread, no pass open in cb
+    if (!atomic_load_explicit(&g_as_any, memory_order_relaxed)) return;
+    pthread_mutex_lock(&g_tmu); as_flush_locked(cb); pthread_mutex_unlock(&g_tmu);
+}
+// PEANUTS end
 void vka_img_written_at(vka_img *im, int color_level, const char *file, int line) {
     if (!im) return;
     if (im->par) {
@@ -2712,6 +2863,7 @@ void vka_img_written_at(vka_img *im, int color_level, const char *file, int line
     im->gpu_owned = 1;
     im->last_fence = vka_fence_last();
     bc_sync_queue_locked(im); // PEANUTS (PR #167)
+    if (as_on()) as_queue_locked(im);   // PEANUTS(upstream-candidate): linear aliases of another shape over its storage (as_queue_locked)
     if (atomic_load_explicit(&vka_rb_track, memory_order_relaxed)) rb_written_locked(im);   // PEANUTS: texture readback: the write, its batch and (from the site's vka_rb_color) a colour target's use are noted, once a companion has asked for a texture
     if (img_wb_kind(im)) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 32)   // which GPU writes a copied-back linear texture takes (the copy-back covers the whole image)
         VLOG("linear texture serial %llu %ux%u format %#x: GPU write at frame %llu (%s:%d)%s", (unsigned long long)im->serial, im->w, im->h, im->d.format,
@@ -2726,6 +2878,7 @@ void vka_img_written_at(vka_img *im, int color_level, const char *file, int line
 }
 void vka_tex_writeback(VkCommandBuffer cb) {
     pthread_mutex_lock(&g_tmu);
+    as_flush_locked(cb);   // PEANUTS(upstream-candidate): linear aliases written since the last flush, before the copy-backs (DM_VK_ALIAS_SYNC)
     int any = 0;
     for (int i = 0; i < g_nwb; i++) {
         vka_img *im = g_wb[i];
@@ -4121,7 +4274,7 @@ void vka_tex_prepare(VkCommandBuffer cb, uint64_t fence) {   // PEANUTS: image r
                 if (g_gw_late <= 8) VLOG("texture serial %llu %ux%u format %#x: a GPU write into its storage (%s %#llx+%#llx) is done, re-uploaded", (unsigned long long)im->serial, im->w, im->h, im->d.format,
                                           w->kind == GW_COPY ? "copy" : w->kind == GW_FILL ? "fill" : w->kind == GW_UPDATE ? "inline update" : "store", (unsigned long long)w->lo, (unsigned long long)(w->hi - w->lo));
             }
-            if (w->kind == GW_OPAQUE && w->value) atomic_fetch_sub_explicit(&g_gw_tb, 1, memory_order_relaxed);   // PEANUTS: (g_gw_tb)
+            if (w->kind == GW_OPAQUE) gw_count(vka_tbuf_gw_new_bits(0, w->value), -1);   // PEANUTS: (g_gw_tb, g_gw_ss)
             free(w->data);
         }
         #undef GW_TAKES

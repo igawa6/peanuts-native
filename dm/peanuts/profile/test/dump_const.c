@@ -87,8 +87,9 @@ int main(void) {
           printf("\n");
       } }
     printf("event_wait=%d\n", (int)DM_GAME_EVENT_WAIT); printf("occlusion_split_pass=%d\n", (int)DM_GAME_OCCLUSION_SPLIT_PASS);
+    printf("alias_sync=%d\n", (int)DM_GAME_ALIAS_SYNC);   // PEANUTS(upstream-candidate)
     printf("low_ram_place_part_mb=%d\n", (int)DM_GAME_LOW_RAM_PLACE_PART_MB); printf("low_ram_img_cache_max_mb=%d\n", (int)DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB);
-    printf("low_ram_app_pool_mb=%d\n", (int)DM_GAME_LOW_RAM_APP_POOL_MB); printf("render_default_out=%s\n", DM_GAME_RENDER_DEFAULT_OUT);
+    printf("low_ram_app_pool_mb=%d\n", (int)DM_GAME_LOW_RAM_APP_POOL_MB); printf("tbuf_ssbo_copy=%d\n", (int)DM_GAME_TBUF_SSBO_COPY); printf("tbuf_store_copy=%d\n", (int)DM_GAME_TBUF_STORE_COPY); printf("render_default_out=%s\n", DM_GAME_RENDER_DEFAULT_OUT);
     { static const int q[4] = DM_GAME_RENDER_QUALITY; printf("render_quality=%d,%d,%d,%d\n", q[0], q[1], q[2], q[3]); }
     printf("nrender_cfg=%d\n", (int)DM_GAME_NRENDER_CFG);
     { static const struct { const char *build; unsigned long long table; unsigned n, stride, out_off, ren_off, sz[8][4], ow, oh, mw, mh, min; } r[] = DM_GAME_RENDER_CFG;
@@ -104,6 +105,22 @@ int main(void) {
           for (unsigned k = 0; k < t[i].nt && k < 4; k++) printf(",%u=%ux%u", t[i].mb[k], t[i].w[k], t[i].h[k]);
           printf("\n");
       } }
+    // PEANUTS(upstream-candidate): window_words / view_scale_words / upscale_pass
+    printf("nwindow_words=%d\n", (int)DM_GAME_NWINDOW_WORDS);
+    { static const struct { const char *build; unsigned n; struct { unsigned long long off; unsigned word, kind; } s[8]; } t[] = DM_GAME_WINDOW_WORDS;
+      for (int i = 0; i < DM_GAME_NWINDOW_WORDS; i++) { printf("window_words[%d]=%s,%u", i, t[i].build, t[i].n); for (unsigned k = 0; k < t[i].n && k < 8; k++) printf(",%llu:%u:%u", t[i].s[k].off, t[i].s[k].word, t[i].s[k].kind); printf("\n"); } }
+    printf("nview_scale_words=%d\n", (int)DM_GAME_NVIEW_SCALE_WORDS);
+    { static const struct { const char *build; unsigned n; struct { unsigned long long off; unsigned word, kind; } s[8]; } t[] = DM_GAME_VIEW_SCALE_WORDS;
+      for (int i = 0; i < DM_GAME_NVIEW_SCALE_WORDS; i++) { printf("view_scale_words[%d]=%s,%u", i, t[i].build, t[i].n); for (unsigned k = 0; k < t[i].n && k < 8; k++) printf(",%llu:%u:%u", t[i].s[k].off, t[i].s[k].word, t[i].s[k].kind); printf("\n"); } }
+    printf("upscale_pass=%d,%llu,%llu,%u\n", (int)DM_GAME_HAS_UPSCALE_PASS, (unsigned long long)DM_GAME_UPSCALE_PASS_VS, (unsigned long long)DM_GAME_UPSCALE_PASS_PS, (unsigned)DM_GAME_UPSCALE_PASS_BINDING);
+    // PEANUTS(upstream-candidate): view_scale_steps
+    printf("nview_scale_steps=%d\n", (int)DM_GAME_NVIEW_SCALE_STEPS);
+    { static const struct { const char *build; struct { unsigned n; unsigned pct[13]; unsigned word[13]; } st; } t[] = DM_GAME_VIEW_SCALE_STEPS;
+      for (int i = 0; i < DM_GAME_NVIEW_SCALE_STEPS; i++) { printf("view_scale_steps[%d]=%s,%u", i, t[i].build, t[i].st.n); for (unsigned k = 0; k < t[i].st.n && k < 13; k++) printf(",%u:%u", t[i].st.pct[k], t[i].st.word[k]); printf("\n"); } }
+    // PEANUTS(upstream-candidate): view_scale_fixed
+    printf("nview_scale_fixed=%d\n", (int)DM_GAME_NVIEW_SCALE_FIXED);
+    { static const struct { const char *build; unsigned w, h; } t[] = DM_GAME_VIEW_SCALE_FIXED;
+      for (int i = 0; i < DM_GAME_NVIEW_SCALE_FIXED; i++) printf("view_scale_fixed[%d]=%s,%u,%u\n", i, t[i].build, t[i].w, t[i].h); }
 #ifdef DM_GAME_NVN_API_MAJOR
     printf("has_nvn_api=1\n"); printf("nvn_api_major=%d\n", (int)DM_GAME_NVN_API_MAJOR); printf("nvn_api_minor=%d\n", (int)DM_GAME_NVN_API_MINOR);
 #else

@@ -627,6 +627,17 @@ int main(void) {
     EXPECT("wait on an unfenced sync = timeout (2)", 2, P(nvnSyncWait)(&s1, 0));
     P(nvnQueueFenceSync)(&q, &s1, NVN_SYNC_CONDITION_ALL_GPU_COMMANDS_COMPLETE, 0);
     EXPECT("wait after fence = already signaled (0)", 0, P(nvnSyncWait)(&s1, 0));
+    // PEANUTS(upstream-candidate): a sync pointer below 0x10000 is no sync object (a NULL sync): the three sync calls pass without reading or writing it, each is counted, and a real sync is not
+    {
+        uint64_t n0 = atomic_load(&nvn_sync_low_n);
+        EXPECT("wait on a NULL sync = already signaled (0)", 0, P(nvnSyncWait)(NULL, 0));
+        EXPECT("QueueWaitSync on a NULL sync passes (1)", 1, P(nvnQueueWaitSync)(&q, NULL));
+        P(nvnQueueFenceSync)(&q, NULL, NVN_SYNC_CONDITION_ALL_GPU_COMMANDS_COMPLETE, 0);
+        EXPECT("wait on a sync at 0xfff8 = already signaled (0)", 0, P(nvnSyncWait)((const NVNsync *)(uintptr_t)0xfff8, 0));
+        EXPECT("the four low-pointer calls are counted", 4, atomic_load(&nvn_sync_low_n) - n0);
+        EXPECT("a real fenced sync still waits as before (0)", 0, P(nvnSyncWait)(&s1, 0));
+        EXPECT("a real sync is not counted", 4, atomic_load(&nvn_sync_low_n) - n0);
+    }
     NVNtexture sc[2]; NVNtextureBuilder tb; P(nvnTextureBuilderSetDevice)(&tb, &dev); P(nvnTextureBuilderSetDefaults)(&tb);
     P(nvnTextureBuilderSetWidth)(&tb, 1280); P(nvnTextureBuilderSetHeight)(&tb, 720); P(nvnTextureBuilderSetFormat)(&tb, NVN_FORMAT_RGBA8);
     P(nvnTextureBuilderSetStorage)(&tb, &pool, 0); P(nvnTextureInitialize)(&sc[0], &tb); P(nvnTextureInitialize)(&sc[1], &tb);

@@ -181,6 +181,7 @@ final class GameSettings {
             if (!SceneRes.presets(prof).isEmpty())   // a profile with scene_scale rows but no presets: the 3D scene below the window by the game's own palette (SceneRes)
                 picture.add(prepared(new Ui.Setting(a, "🎬", "3D scene", v -> scene(a, g, again)), sceneValue(a, g, SceneRes.presets(prof))).chevron(a));
         }
+        if (prof != null && prof.words()) WordsRows.settings(a, g, picture::add, again);   // PEANUTS: Output resolution, Internal resolution, Upscaler (WordsRows); Graphics quality is the next row
         { Ui.Setting cm = ScreenMode.row(a, g, again); if (cm != null) picture.add(cm); }   // PEANUTS: Console mode (Docked / Handheld)
         { Ui.Setting rs = ResScale.row(a, g, again); if (rs != null) picture.add(rs); }   // PEANUTS: Resolution scale (the host's DM_RES_SCALE)
         if (prof != null && prof.renderCfg()) renderRows(a, g, prof, picture, again);   // Resolution, Upscaling quality, Graphics quality instead of Resolution (a render_cfg row)
@@ -253,7 +254,7 @@ final class GameSettings {
                             s.toggle.setEnabled(false);
                             s.view.setAlpha(0.6f);
                         } else {
-                            s.toggle.setChecked(Prefs.gameOption(a, id, opt.env));
+                            s.toggle.setChecked(opt.shown(Prefs.gameOption(a, id, opt.env)));   // PEANUTS: inverted shows the opposite
                             s.toggle.setEnabled(true);
                             s.view.setAlpha(1.0f);
                         }
@@ -265,14 +266,14 @@ final class GameSettings {
 
             for (Profile.Option opt : prof.options) {
                 Ui.Setting setting = new Ui.Setting(a, optionIcon(opt.env), opt.label, null)
-                        .toggle(a, Prefs.gameOption(a, id, opt.env), (button, checked) -> {
+                        .toggle(a, opt.shown(Prefs.gameOption(a, id, opt.env)), (button, checked) -> {   // PEANUTS: inverted shows the opposite of the stored option
                             if (updating[0]) return;
-                            Prefs.gameOption(a, id, opt.env, checked);
+                            Prefs.gameOption(a, id, opt.env, opt.stored(checked));
                             updateRows.run();
                             refresh[0].run();
                         });
                 rowSettings.put(opt.env, setting);
-                options.add(track(recRows, Recommend.OPTION + opt.env, setting));
+                (opt.perf ? picture : options).add(track(recRows, Recommend.OPTION + opt.env, setting));   // PEANUTS: an option marked perf (game.tsv) is a Picture row of the Performance tab
             }
             updateRows.run();
         }
@@ -778,6 +779,7 @@ final class GameSettings {
     }
 
     private static void cap(MainActivity a, Game g, Runnable done) {
+        if (Prefs.limited(g.titleId) && WordsRows.on(g.titleId)) { WordsRows.capDialog(a, g, done); return; }   // PEANUTS: a slider over the frame rates and a Game owned box, for a words: game
         if (Prefs.limited(g.titleId)) {   // a frame limit, no locking (Prefs.PACE_CAPS)
             int[] choices = FrameRateCaps.menu(), allowed = Prefs.paceCaps(g.titleId);
             boolean[] enabled = new boolean[choices.length + 1]; enabled[0] = true;

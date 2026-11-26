@@ -429,6 +429,8 @@ static void *alias_windows_thread(void *arg) {
 typedef struct { uint64_t off, size, via; char who[40]; } region_t;   // via: the outermost sdk return address on the way (the SDK API the request came through)
 static region_t *g_rgn; static int g_nrgn, g_rgn_cap; static pthread_mutex_t g_rgn_lock = PTHREAD_MUTEX_INITIALIZER;   // grows as needed: Unity 6 takes all its memory as regions
 static _Thread_local uint64_t t_rgn_size, t_rgn_via; static _Thread_local char t_rgn_who[40];
+static _Thread_local int t_rgn_pending;    // PEANUTS: set by region_ask, cleared by region_got (the success store); still set at the next ask = that request was refused
+static _Atomic uint64_t g_rgn_refused;     // PEANUTS: refused requests inferred so far, all threads
 // Where a request at an sdk function's entry gate returns to in the game: buf gets "main+0x…", *via the outermost sdk return address on the way (0 = none)
 static void guest_caller(const uint64_t *r, char *buf, size_t n, uint64_t *via) {
     // at the function's entry the return address is the x30 the gate block pushed (at the block's sp, regs[99]: x29, x30; entry.S), x30 itself holds the gate's own
@@ -445,9 +447,17 @@ static void guest_caller(const uint64_t *r, char *buf, size_t n, uint64_t *via) 
 }
 static void region_ask(uint64_t *r, int param) {
     (void)param;
+    if (t_rgn_pending) {   // PEANUTS: the previous request on this thread never reached the success store (Result 0x1803 no room / 0x1003)
+        uint64_t n = atomic_fetch_add(&g_rgn_refused, 1) + 1, p = 1;
+        while (p < n && p <= UINT64_MAX / 10) p *= 10;
+        if (p == n) LOG("[mem] address region refused (inferred): %.2f GB asked, returning to %s, via sdk+%#llx; %llu refused so far",
+                        t_rgn_size / 1073741824.0, t_rgn_who, (unsigned long long)t_rgn_via, (unsigned long long)n);
+    }
     t_rgn_size = r[2]; guest_caller(r, t_rgn_who, sizeof t_rgn_who, &t_rgn_via);
+    t_rgn_pending = 1;   // PEANUTS
 }
 static void region_got(uint64_t *r, int param) {
+    t_rgn_pending = 0;   // PEANUTS
     mem_init();
     uint64_t a = param >= 0 && param < 31 ? r[param] : 0, ab = (uint64_t)(uintptr_t)g_alias;
     if (a < ab || a - ab >= g_alias_cap) return;
