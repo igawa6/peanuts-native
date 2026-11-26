@@ -2796,3 +2796,21 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+## NVN games with an OpenGL UI on Android (2026-11-26)
+
+NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS draws its UI with OpenGL through EGL into a texture NVN samples. Taken over from the draft igawa6/peanuts-native#637 (codetz7) and split by scope.
+
+| File | Hunks | What | Marker |
+|---|---|---|---|
+| `dm/host/hle_bigstack.c` | 3 | the big-stack entry copies the caller's first two stack slots (a 9th and 10th integer argument: `glTexImage2D`) onto the host stack (codetz7's change), and its comments say so. Every game: any big-stack wrapper of a function with stack-passed arguments | `PEANUTS` |
+| `dm/host/hle.h` | 1 | `HLE_FORCE_BIG`'s comment: two stack slots carried over | `PEANUTS` |
+| `dm/host/tests/t_bigstack.c` | 4 | a ten-argument take-over through the switch and on the direct path; the call helpers use `PLAT_ASM_SYM` (ELF too) | `PEANUTS` |
+| `docs/reference/memory.md` | 1 | "Host calls on small guest stacks": the two stack slots | `PEANUTS` |
+| `dm/gfx/nvn/hle_nvn.c`, `dm/gfx/nvn/nvn_obj.h` | 7, 2 | GL interop entry points: `nvnTextureBuilderSetGLTextureName` / `GetGLTextureName` (the texture takes the GL texture's description, no storage; bound to its serial at `TextureInitialize`, released at `Finalize`), `nvnSyncInitializeFromFencedGLSync` (a sync fenced by a GL layer handle, `fenced` 3, waited for in `QueueWaitSync` and `SyncWait`), `nvnSyncCreateGLSync`; weak GL layer functions whose defaults refuse with a red line. Every game, inert unless called. Upstream candidate: yes | `PEANUTS begin` / `PEANUTS` |
+| `dm/gfx/vk_android/vka_gl.c` | new file | EGL and the called GL functions forwarded to the system's OpenGL ES (big host stack, host FPCR); the GL side of the interop: AHardwareBuffer-backed GL textures that take the game's texture name, EGL fences (GL to NVN), the layer's own GLsyncs waited for on the CPU (NVN to GL). Inert until a game calls `eglGetDisplay` | `PEANUTS` |
+| `dm/gfx/vk_android/vka_glattr.h`, `dm/host/tests/t_android_glattr.c` | new files | what the GL layer changes in the game's EGL API and attribute lists, and its test | `PEANUTS` |
+| `dm/host/tests/Makefile` | 2 | `t_android_glattr` | `PEANUTS` |
+| `dm/gfx/vk_android/vka_tex.c`, `vka.h` | 3, 3 | `img_create_gl`: the image of an NVN texture made from a GL texture is its AHardwareBuffer, imported (dedicated memory, GPU-owned, no clear or upload at its first use); `vka_img.gl_ahb`, `vka_dev.gl_ahb`, `vka_gl_ahb` | `PEANUTS` / `PEANUTS begin` |
+| `dm/gfx/vk_android/vka_dev.c` | 2 | `VK_ANDROID_external_memory_android_hardware_buffer` and `VK_EXT_queue_family_foreign` when the game imports EGL and the driver has them (one log line); room for 28 device extensions | `PEANUTS` |
+| `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1, 1 | the entry "An NVN game whose UI draws with OpenGL through EGL (Android)", and its line in the generated index | `PEANUTS` / generated |

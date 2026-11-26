@@ -107,6 +107,7 @@ typedef struct {
     // never (restart). cs_groups: maxComputeWorkGroupCount[0]
     int memu; uint32_t cs_groups;
     int fb_loop;                                    // PEANUTS: VK_EXT_attachment_feedback_loop_layout + _dynamic_state are on (DM_VK_FB_LOOP=0 leaves them off): a draw sampling its own attachment says so (vka_draw.c)
+    int gl_ahb;                                     // PEANUTS: VK_ANDROID_external_memory_android_hardware_buffer is on: a game that imports EGL shares GL textures with NVN (vka_gl.c)
     int xfb;                                        // PEANUTS: VK_EXT_transform_feedback is on (DM_VK_XFB=0 leaves it off): NVN transform feedback is captured (vka_tf.c)
     int cache_ctl;                                  // pipelineCreationCacheControl (core 1.3): a pipeline may be asked for with FAIL_ON_PIPELINE_COMPILE_REQUIRED (vka_pso.c cs_obtain's cache-only try)
     int gpl;                                        // graphics pipeline libraries with fast linking (VK_EXT_graphics_pipeline_library): a pipeline the cache lacks is linked from stage libraries at once, the optimized one made in the background (vka_pso.c)
@@ -139,6 +140,7 @@ uint64_t vka_fp_host(const char *who);
 static inline void vka_fp_back(uint64_t was) { vka_fp_leave(was); }
 int vka_fp_guest(void);
 int vka_ok(void);
+struct AHardwareBuffer *vka_gl_ahb(uint64_t serial);   // PEANUTS: the AHardwareBuffer of an NVN texture made from a GL texture, acquired (the caller releases it); NULL for others (vka_gl.c)
 uint32_t vka_mem_type(uint32_t bits, VkMemoryPropertyFlags want, VkMemoryPropertyFlags avoid);
 VkResult vka_submit(VkCommandBuffer cb, uint64_t signal, uint32_t nwait, const VkSemaphore *wait, const uint64_t *wait_vals, const VkPipelineStageFlags *stages, VkSemaphore bin_signal);
 VkResult vka_submit_fence(VkCommandBuffer cb, uint64_t signal, VkFence fence, uint64_t gate);   // (vka_exec.c: an unsignalled commit's own fence; gate: the gate value it waits for, 0 = none)
@@ -278,6 +280,7 @@ typedef struct vka_img {
     VkImageCreateFlags cflags; uint32_t nvf; VkFormat vf[6];   // as created: flags and the view format list (none: nvf 0), for imageless framebuffers (DM_VK_CLASSIC_RP)
     int refs, inited, gpu_owned, cpu_dirty;
     int is_video;
+    uint8_t gl_ahb;          // PEANUTS: the image of a GL texture's AHardwareBuffer, imported (vka_tex.c img_create_gl, vka_gl.c): GL draws its content
     uint64_t last_frame;
     uint64_t linger;         // PEANUTS: the frame a GPU-drawn image's last texture object was finalized in, kept for one of the same storage and shape (vka_tex.c linger_*); 0 = not lingering
     uint64_t pool_frame;     // the last prune that found a live texture pool slot naming it (vka_tex_prune_locked): shaders may read it through the pool, so it is in use

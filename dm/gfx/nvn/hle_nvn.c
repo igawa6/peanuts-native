@@ -685,6 +685,28 @@ NVN(nvnTextureBuilderSetFormat, void, NVNtextureBuilder *b, NVNformat f) { TB(b)
 NVN(nvnTextureBuilderSetSamples, void, NVNtextureBuilder *b, int s) { TB(b)->d.samples = s; }
 NVN(nvnTextureBuilderSetStride, void, NVNtextureBuilder *b, ptrdiff_t s) { TB(b)->d.stride = (uint32_t)s; }
 NVN(nvnTextureBuilderSetStorage, void, NVNtextureBuilder *b, NVNmemoryPool *p, ptrdiff_t off) { TB(b)->pool = (pool_t *)p; TB(b)->off = off; }
+// PEANUTS begin: GL interop. An NVN game that draws part of its frame with OpenGL through EGL (NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS: Scaleform's UI) names a GL texture
+// for an NVN texture (TextureBuilderSetGLTextureName) and passes fences between the two APIs (SyncInitializeFromFencedGLSync, SyncCreateGLSync). On the console both are one
+// driver. Here the platform's GL layer answers through the functions below; without one their weak defaults refuse with a red line.
+//   nvn_gl_tex_desc: the GL texture's size, levels and format as an NVN description (0: no such texture, or one the layer cannot share), with its context current on this thread
+//   nvn_gl_tex_bind / nvn_gl_tex_release: the NVN texture of that serial shows the GL texture's image (the replay imports it) / no longer
+//   nvn_gl_sync_from_gl: a handle for "the GL commands so far have completed", made at the point of the game's glFenceSync (0: none); nvn_gl_sync_wait / nvn_gl_sync_free
+//   nvn_gl_sync_to_gl: a GLsync the game waits on with glWaitSync / glClientWaitSync, signalled when the NVN fence (fenced as in sync_t) has completed
+__attribute__((weak)) int nvn_gl_tex_desc(uint32_t name, nvn_texdesc *d) { (void)name; (void)d; static int once; if (!once++) LOG("[RED] [nvn] TextureBuilderSetGLTextureName: no OpenGL layer on this platform shares its textures with NVN"); return 0; }
+__attribute__((weak)) void nvn_gl_tex_bind(uint64_t serial, uint32_t name) { (void)serial; (void)name; }
+__attribute__((weak)) void nvn_gl_tex_release(uint64_t serial) { (void)serial; }
+__attribute__((weak)) uint64_t nvn_gl_sync_from_gl(const void *glsync) { (void)glsync; static int once; if (!once++) LOG("[RED] [nvn] SyncInitializeFromFencedGLSync: no OpenGL layer on this platform: the sync is never signalled"); return 0; }
+__attribute__((weak)) int nvn_gl_sync_wait(uint64_t h, uint64_t timeout_ns) { (void)h; (void)timeout_ns; return 0; }
+__attribute__((weak)) void nvn_gl_sync_free(uint64_t h) { (void)h; }
+__attribute__((weak)) uint64_t nvn_gl_sync_to_gl(uint64_t fence, uint32_t fenced) { (void)fence; (void)fenced; static int once; if (!once++) LOG("[RED] [nvn] SyncCreateGLSync: no OpenGL layer on this platform"); return 0; }
+// The texture's attributes are the GL texture's (the console's driver takes them from it, and the game sets none): kept in the builder, which TextureInitialize copies
+NVN(nvnTextureBuilderSetGLTextureName, void, NVNtextureBuilder *b, uint32_t name) {
+    TB(b)->gl_name = 0;
+    nvn_texdesc d = TB(b)->d;
+    if (name && nvn_gl_tex_desc(name, &d)) { TB(b)->d = d; TB(b)->gl_name = name; }
+}
+NVN(nvnTextureBuilderGetGLTextureName, uint32_t, const NVNtextureBuilder *b) { return ((const tex_builder_t *)b)->gl_name; }
+// PEANUTS end
 NVN(nvnTextureBuilderSetPackagedTextureLayout, void, NVNtextureBuilder *b, const NVNpackagedTextureLayout *l) {
     TB(b)->has_layout = l != NULL; if (l) memcpy(TB(b)->layout, l->layout, 8);
     TB(b)->d.pkg_block_h = l ? l->layout[0] + 1 : 0;
@@ -854,7 +876,7 @@ NVN(nvnTextureInitialize, NVNboolean, NVNtexture *t, const NVNtextureBuilder *b)
     const tex_builder_t *s = (const tex_builder_t *)b; tex_t *o = TX(t);
     // Re-initializing a texture object that is still live (without a Finalize first): release the host texture of the old serial first. SMBW re-initializes its transient render targets on the same object every frame and never Finalizes them;
     //   previously every init created a new private MTLTexture and the old one stayed in the serial table forever, so GPU memory grew about 13 MB per frame (killed by the memory watchdog at 24 GB)
-    if (o->magic == MAGIC('T', 'E', 'X', 0) && o->serial) { static uint64_t n; if (!n++) LOG("[nvn] TextureInitialize on a texture object that is still live (no Finalize): releasing the old host texture (first case ser=%llu)", (unsigned long long)o->serial); mtl_tex_release(o); }
+    if (o->magic == MAGIC('T', 'E', 'X', 0) && o->serial) { static uint64_t n; if (!n++) LOG("[nvn] TextureInitialize on a texture object that is still live (no Finalize): releasing the old host texture (first case ser=%llu)", (unsigned long long)o->serial); nvn_gl_tex_release(o->serial); mtl_tex_release(o); }   // PEANUTS: nvn_gl_tex_release (GL interop)
     memset(o, 0, sizeof *o);
     o->magic = MAGIC('T', 'E', 'X', 0); o->d = s->d; o->pool = s->pool; o->off = s->off;
     o->has_layout = s->has_layout; memcpy(o->layout, s->layout, 8); o->set_swz = s->set_swz; o->stencil = s->stencil; o->swz = s->swz;
@@ -868,6 +890,7 @@ NVN(nvnTextureInitialize, NVNboolean, NVNtexture *t, const NVNtextureBuilder *b)
         nvn_tex_layout(&o->d, &o->L);
     }
     o->serial = nvn_new_serial(); mtl_tex_init(o);
+    if (s->gl_name) nvn_gl_tex_bind(o->serial, s->gl_name);   // PEANUTS: GL interop: no storage, the image is the GL texture's
     if (o->mem) pc_use(o->pool, 't', o->off, o->L.size);
     if (o->mem && shp_use(SHK_TEX, (uint64_t)(uintptr_t)o->mem, o->L.size, NULL, NULL) == 2 && !g_shp_place) mtl_pool_place(o->mem, o->L.size, "a texture in a shader-code pool");   // (Shader-code pools: a texture is a data use) PEANUTS(upstream-candidate): placed, never joined (vka_mem.c mtl_pool_place)
     if (o->mem && o->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET)) mtl_pool_need(o->mem, o->L.size, "a linear texture");   // its GPU content is copied back into the storage (vka_tex_writeback)
@@ -893,7 +916,7 @@ NVN(nvnTextureInitialize, NVNboolean, NVNtexture *t, const NVNtextureBuilder *b)
     ft_add(o);
     return 1;
 }
-NVN(nvnTextureFinalize, void, NVNtexture *t) { ft_del(TX(t)->serial); mtl_tex_release(TX(t)); TX(t)->magic = 0; }
+NVN(nvnTextureFinalize, void, NVNtexture *t) { ft_del(TX(t)->serial); nvn_gl_tex_release(TX(t)->serial); mtl_tex_release(TX(t)); TX(t)->magic = 0; }   // PEANUTS: nvn_gl_tex_release (GL interop)
 NVN(nvnTextureGetFlags, NVNtextureFlags, const NVNtexture *t) { return (NVNtextureFlags)CTX(t)->d.flags; }
 NVN(nvnTextureGetWidth, int, const NVNtexture *t) { return (int)CTX(t)->d.width; }
 NVN(nvnTextureGetHeight, int, const NVNtexture *t) { return (int)CTX(t)->d.height; }
@@ -1110,7 +1133,27 @@ NVN(nvnProgramSetShaders, NVNboolean, NVNprogram *p, int n, const NVNshaderData 
 
 // ---------- Sync / events ----------
 NVN(nvnSyncInitialize, NVNboolean, NVNsync *s, NVNdevice *d) { (void)d; *(sync_t *)s = (sync_t){MAGIC('S', 'Y', 'N', 'C'), 0, 0}; return 1; }
-NVN(nvnSyncFinalize, void, NVNsync *s) { ((sync_t *)s)->magic = 0; }
+NVN(nvnSyncFinalize, void, NVNsync *s) { sync_t *o = (sync_t *)s; if (o->magic == MAGIC('S', 'Y', 'N', 'C') && o->fenced == 3) nvn_gl_sync_free(o->fence); o->magic = 0; }   // PEANUTS: a GL fence's handle
+// PEANUTS begin: GL interop (see TextureBuilderSetGLTextureName). main+0x972d40 (NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS 1.70) calls it on the GL thread right after its
+// glFenceSync and glFlush, with a pointer to a 32-bit status it does not read, then waits on the sync with QueueWaitSync before the NVN pass that draws the GL texture
+NVN_NOPROTO(nvnSyncInitializeFromFencedGLSync, NVNboolean, NVNsync *s, NVNdevice *d, const void *glsync, int32_t *status) {
+    (void)d; sync_t *o = (sync_t *)s;
+    if (o->magic == MAGIC('S', 'Y', 'N', 'C') && o->fenced == 3) nvn_gl_sync_free(o->fence);   // (the game initializes its two syncs again every frame)
+    uint64_t h = glsync ? nvn_gl_sync_from_gl(glsync) : 0;
+    *o = (sync_t){MAGIC('S', 'Y', 'N', 'C'), h ? 3u : 0u, h};
+    if (status) *status = 0;
+    return h != 0;
+}
+// A GLsync handle for the GL layer (glWaitSync / glClientWaitSync / glDeleteSync take it) that is signalled when the sync's NVN fence has completed. main+0x973984 calls it
+// after QueueFenceSync on the pass that read the GL texture, then glWaitSync on the result: the next GL frame does not draw into the texture before NVN has read it
+NVN_NOPROTO(nvnSyncCreateGLSync, int32_t, const NVNsync *s, uint64_t *glsync) {
+    const sync_t *o = (const sync_t *)s;
+    if (!glsync) return 1;
+    *glsync = o->magic == MAGIC('S', 'Y', 'N', 'C') && (o->fenced == 1 || o->fenced == 2) ? nvn_gl_sync_to_gl(o->fence, o->fenced) : 0;
+    if (!*glsync) { static int once; if (!once++) LOG("[RED] [nvn] SyncCreateGLSync on a sync with no NVN fence (fenced %u): no GL sync", o->fenced); }
+    return *glsync ? 0 : 1;
+}
+// PEANUTS end
 NVN(nvnSyncSetDebugLabel, void, NVNsync *s, const char *l) { (void)s; (void)l; }
 // Fence = "all commands previously submitted to the queue have completed": record the fence value of the most recent submit
 NVN(nvnQueueFenceSync, void, NVNqueue *q, NVNsync *s, NVNsyncCondition c, int f) { (void)q; (void)c; (void)f; ((sync_t *)s)->fenced = 1; ((sync_t *)s)->fence = mtl_last_fence(); }
@@ -1123,6 +1166,9 @@ __attribute__((weak)) void mtl_event_cpu_signal(void) {}
 NVN(nvnQueueWaitSync, NVNboolean, NVNqueue *q, const NVNsync *s) {
     const sync_t *o = (const sync_t *)s; static int once;
     if (!o->fenced) { if (!once++) LOG("[nvn] QueueWaitSync: the sync object has no fence yet: the wait passes"); return 1; }
+    // PEANUTS: a GL fence (SyncInitializeFromFencedGLSync): the commands recorded after this wait read what GL drew, so this thread records them only once GL has finished
+    // (a CPU wait; the console waits on the GPU)
+    if (o->fenced == 3) { if (!nvn_gl_sync_wait(o->fence, UINT64_MAX)) { static int r; if (!r++) LOG("[RED] [nvn] QueueWaitSync: waiting for a GL fence failed: the queue goes on"); } return 1; }
     pthread_mutex_lock(&g_sub_mu); mtl_queue_wait_fence(((const queue_t *)q)->serial, o->fence); pthread_mutex_unlock(&g_sub_mu);
     return 1;
 }
@@ -1139,6 +1185,7 @@ _Atomic uint64_t nvn_sync_wait_n[5];
 NVN(nvnSyncWait, NVNsyncWaitResult, const NVNsync *s, uint64_t timeout) {
     const sync_t *o = (const sync_t *)s;
     if (!o->fenced) { atomic_fetch_add_explicit(&nvn_sync_wait_n[3], 1, memory_order_relaxed); return NVN_SYNC_WAIT_RESULT_TIMEOUT_EXPIRED; }
+    if (o->fenced == 3) return nvn_gl_sync_wait(o->fence, timeout) ? NVN_SYNC_WAIT_RESULT_CONDITION_SATISFIED : NVN_SYNC_WAIT_RESULT_TIMEOUT_EXPIRED;   // PEANUTS: a GL fence (GL interop)
     int (*w)(uint64_t, uint64_t) = o->fenced == 2 ? mtl_wait_acq : mtl_wait;
     if (w(o->fence, 0)) { atomic_fetch_add_explicit(&nvn_sync_wait_n[0], 1, memory_order_relaxed); return NVN_SYNC_WAIT_RESULT_ALREADY_SIGNALED; }
     uint64_t t0 = now_ns(); int ok = w(o->fence, timeout); atomic_fetch_add(&g_sync_ns, now_ns() - t0);   // the frame's blocked SyncWait time (@sync_ms)

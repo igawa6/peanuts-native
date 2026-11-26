@@ -1,7 +1,9 @@
 // Big-stack entry (hle_bigstack.c, hle.h HLE_FORCE_BIG): a take-over called on a small guest stack runs on the thread's host stack with its register arguments intact, and dm_bigstack_caller
-// gives back the game's call site both after a switch and straight through off the guest block (the audio Start / Stop / Close log it, PR #721)
+// gives back the game's call site both after a switch and straight through off the guest block (the audio Start / Stop / Close log it, PR #721), and a take-over with a 9th and 10th
+// integer argument gets them from the caller's stack on either path (glTexImage2D / glTexSubImage2D have nine)   // PEANUTS
 #include "../hle.h"
 #include <stdio.h>
+#include <string.h>   // PEANUTS: memset
 #include <sys/mman.h>
 
 static uintptr_t g_lo, g_hi;   // the fake guest stack: 16 KB above a guard page
@@ -21,12 +23,35 @@ HLE_FORCE_BIG("_ZN4test5probeEmmd", "unit test", uint64_t, probe, uint64_t a, ui
 // call_on(a, b, d, top, fn): calls fn(a, b, d) with sp = top (0: on this stack); _call_on_site is the return address the call leaves, the "game's call site"
 uint64_t call_on(uint64_t a, uint64_t b, double d, uintptr_t top, const void *fn);
 extern const char call_on_site[];
-__asm__(".text\n.p2align 2\n.globl _call_on\n_call_on:\n"
+__asm__(".text\n.p2align 2\n.globl " PLAT_ASM_SYM(call_on) "\n" PLAT_ASM_SYM(call_on) ":\n"   // PEANUTS: PLAT_ASM_SYM, so the test also builds for ELF (Android, Linux arm64)
         "    stp x29, x30, [sp, #-16]!\n    mov x29, sp\n"
         "    cbz x2, 1f\n    mov sp, x2\n"
         "1:  blr x3\n"
-        ".globl _call_on_site\n_call_on_site:\n"
+        ".globl " PLAT_ASM_SYM(call_on_site) "\n" PLAT_ASM_SYM(call_on_site) ":\n"
         "    mov sp, x29\n    ldp x29, x30, [sp], #16\n    ret\n");
+
+// PEANUTS begin: a take-over with ten integer arguments, the last two passed on the caller's stack (AAPCS64), as a GL wrapper of glTexImage2D gets them
+static uint64_t g_args[10];
+HLE_FORCE_BIG("_ZN4test7probe10Emmmmmmmmmm", "unit test", uint64_t, probe10, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7,
+              uint64_t a8, uint64_t a9) {
+    volatile char big[64 << 10];   // as probe: running on the fake guest stack would fault in its guard page
+    big[0] = 1; big[sizeof big - 1] = 2;
+    uint64_t v[10] = {a0, a1, a2, a3, a4, a5, a6, a7, a8, a9};
+    for (int i = 0; i < 10; i++) g_args[i] = v[i];
+    g_fp = (uintptr_t)__builtin_frame_address(0);
+    return (uint64_t)(big[0] + big[sizeof big - 1]);
+}
+// call_on10(a, top, fn): fn(a[0], ..., a[9]) with sp = top (0: on this stack); a[8] and a[9] go in the two stack slots the call leaves at sp
+uint64_t call_on10(const uint64_t *a, uintptr_t top, const void *fn);
+__asm__(".text\n.p2align 2\n.globl " PLAT_ASM_SYM(call_on10) "\n" PLAT_ASM_SYM(call_on10) ":\n"
+        "    stp x29, x30, [sp, #-16]!\n    mov x29, sp\n    mov x9, x0\n    mov x16, x2\n"
+        "    cbz x1, 1f\n    mov sp, x1\n"
+        "1:  sub sp, sp, #16\n    ldp x10, x11, [x9, #64]\n    stp x10, x11, [sp]\n"
+        "    ldp x0, x1, [x9]\n    ldp x2, x3, [x9, #16]\n    ldp x4, x5, [x9, #32]\n    ldp x6, x7, [x9, #48]\n"
+        "    blr x16\n"
+        "    mov sp, x29\n    ldp x29, x30, [sp], #16\n    ret\n");
+static int args_are(const uint64_t *a) { for (int i = 0; i < 10; i++) if (g_args[i] != a[i]) return 0; return 1; }
+// PEANUTS end
 
 static int checks, fails;
 #define CHECK(c, msg) do { checks++; if (!(c)) { fails++; fprintf(stderr, "FAIL: %s\n", msg); } } while (0)
@@ -52,6 +77,17 @@ int main(void) {
     g_site = NULL; r = call_on(2, 0, 0.0, 0, probe_bs);
     CHECK(r == 6 + 3, "arguments on the direct path");
     CHECK(g_site == (void *)call_on_site, "dm_bigstack_caller passes the call site through on the direct path");
+
+    // PEANUTS begin: stack-passed arguments, through the switch and on the direct path
+    const uint64_t a10[10] = {11, 22, 33, 44, 55, 66, 77, 88, 0x9999999999999999ull, 0xaaaaaaaaaaaaaaaaull};
+    memset(g_args, 0, sizeof g_args); g_fp = 0;
+    r = call_on10(a10, g_hi, probe10_bs);
+    CHECK(r == 3 && args_are(a10), "a 9th and 10th integer argument carried over through the switch");
+    CHECK(g_fp && !dm_guest_as_contains(g_fp), "the ten-argument implementation ran off the guest stack");
+    memset(g_args, 0, sizeof g_args);
+    r = call_on10(a10, 0, probe10_bs);
+    CHECK(r == 3 && args_are(a10), "a 9th and 10th integer argument on the direct path");
+    // PEANUTS end
 
     printf("big-stack entry: %d/%d checks %s\n", checks - fails, checks, fails ? "✗" : "✓");
     return fails != 0;

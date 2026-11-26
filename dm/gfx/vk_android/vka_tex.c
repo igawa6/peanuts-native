@@ -1794,6 +1794,7 @@ static int first_mode(const tex_t *t, const vka_fmt *f, int cpu) {
 static void img_first_use(vka_img *im, const tex_t *t, VkCommandBuffer cb, int mode) {
     vka_img_barrier(cb, im->img, im->aspect, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
     im->inited = 1;
+    if (im->gl_ahb) return;   // PEANUTS: GL interop: GL draws its content (a linear buffer: the layout change keeps its bytes); nothing to clear or upload
     if (mode != ST_ZERO) im->from_mem = 1;
     im->mode = (uint8_t)mode;
     if (im->rs && mode == ST_ZERO && sparse_gpu(t, &im->f)) { im->vbind = 1; sparse_bind(im, cb, 1); }   // (a GPU-written sparse texture: its tiles bound before the clear below)
@@ -2086,6 +2087,44 @@ vka_img *vka_tex_get_src(const tex_t *t, VkCommandBuffer cb) {   // PEANUTS: vka
     g_first_copy_src = prev;
     return im;
 }
+// PEANUTS begin: GL interop (hle_nvn.c, vka_gl.c). An NVN texture made from a GL texture has no storage: its image is the GL texture's AHardwareBuffer, imported (dedicated memory),
+// which GL draws into and the replay samples. Its content is GL's: img_first_use neither clears nor uploads it, and it is the GPU's (gpu_owned). NULL for any other texture
+#include <android/hardware_buffer.h>
+static vka_img *img_create_gl(const tex_t *t, const vka_fmt *f) {
+    if (t->mem || !V.gl_ahb) return NULL;
+    AHardwareBuffer *ahb = vka_gl_ahb(t->serial);
+    if (!ahb) return NULL;
+    static PFN_vkGetAndroidHardwareBufferPropertiesANDROID gp;
+    if (!gp) gp = (PFN_vkGetAndroidHardwareBufferPropertiesANDROID)vk.vkGetDeviceProcAddr(V.dev, "vkGetAndroidHardwareBufferPropertiesANDROID");
+    vka_img *im = calloc(1, sizeof *im);
+    im->serial = t->serial; im->d = t->d; im->L = t->L; im->f = *f; im->refs = 1; im->last_frame = vka_frame(); im->last_fence = vka_fence_last();
+    im->w = t->d.width ? t->d.width : 1; im->h = t->d.height ? t->d.height : 1; im->depth = im->layers = im->levels = im->samples = 1; im->aspect = aspect_of(f->kind);
+    im->usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    VkExternalMemoryImageCreateInfo ei = {VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO, NULL, VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID};
+    VkImageCreateInfo ci = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .pNext = &ei, .imageType = VK_IMAGE_TYPE_2D, .format = f->vk, .extent = {im->w, im->h, 1}, .mipLevels = 1, .arrayLayers = 1,
+                            .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = im->usage, .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+    VkAndroidHardwareBufferPropertiesANDROID hp = {VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID};
+    VkResult r = gp ? gp(V.dev, ahb, &hp) : VK_ERROR_EXTENSION_NOT_PRESENT;
+    uint32_t mt = UINT32_MAX;
+    if (!r) { mt = vka_mem_type(hp.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0); if (mt == UINT32_MAX) mt = vka_mem_type(hp.memoryTypeBits, 0, 0); if (mt == UINT32_MAX) r = VK_ERROR_FORMAT_NOT_SUPPORTED; }
+    if (!r) r = vk.vkCreateImage(V.dev, &ci, NULL, &im->img);
+    VkImportAndroidHardwareBufferInfoANDROID ii = {VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID, NULL, ahb};
+    VkMemoryDedicatedAllocateInfo di = {VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO, &ii, im->img, VK_NULL_HANDLE};
+    VkMemoryAllocateInfo ai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, &di, hp.allocationSize, mt};
+    if (!r) r = vk.vkAllocateMemory(V.dev, &ai, NULL, &im->m.dm);   // (m.size 0, no block: vka_imem_free frees it uncounted; the import holds its own reference to the buffer)
+    if (!r) r = vk.vkBindImageMemory(V.dev, im->img, im->m.dm, 0);
+    AHardwareBuffer_release(ahb);
+    if (r) {
+        VRED("GL texture's image, serial %llu %ux%u VkFormat %d: AHardwareBuffer import %d: NVN shows nothing of it", (unsigned long long)t->serial, im->w, im->h, f->vk, r);
+        if (im->img) vk.vkDestroyImage(V.dev, im->img, NULL);
+        if (im->m.dm) vk.vkFreeMemory(V.dev, im->m.dm, NULL);
+        free(im); return NULL;
+    }
+    im->gl_ahb = 1; im->gpu_owned = 1;
+    VLOG("GL texture's image: serial %llu %ux%u VkFormat %d imported from its AHardwareBuffer (%llu bytes, memory type %u)", (unsigned long long)t->serial, im->w, im->h, f->vk, (unsigned long long)hp.allocationSize, mt);
+    return im;
+}
+// PEANUTS end
 vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
     if (!t || !t->serial || !vka_ok()) return NULL;
     pthread_mutex_lock(&g_tmu);
@@ -2161,7 +2200,8 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
             mode = first_mode(t, &f, cpuw_take(t->serial, 0));
             soft = !base && soft_want(t, &f, mode);
             g_zwant = mode == ST_ZERO && !(t->d.flags & NVN_TEXTURE_FLAGS_IMAGE);   // (size: vkz_candidate)
-            im = img_create(t, &f, soft ? soft_levels(d_levels_of(t)) : base);
+            im = img_create_gl(t, &f);   // PEANUTS: GL interop
+            if (!im) im = img_create(t, &f, soft ? soft_levels(d_levels_of(t)) : base);
             g_zwant = 0;
             if (im && soft) soft_note(im, t);   // (a soft texture: from level 1, "Soft textures" above)
         }

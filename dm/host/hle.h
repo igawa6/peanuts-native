@@ -49,7 +49,7 @@ typedef struct { const char *name; void *fn; const char *why; } hle_force_ent;
     PLAT_TABLE(swforce) static const hle_force_ent hle_force_##cname = {mangled, (void *)cname, why}; \
     static ret cname(__VA_ARGS__)
 // Same as above, but the implementation runs on this thread's big host stack (hle_bigstack.c): what is registered is a stub generated at compile time (the implementation's address goes into x16, then a jump to dm_bigstack_enter).
-// For take-overs with large stack use (the file system sizes its buffers by PATH_MAX): a game thread's stack can be as small as 8 KB. Only register arguments are carried over (<= 8 integer, <= 8 floating point); not for variadic functions
+// For take-overs with large stack use (the file system sizes its buffers by PATH_MAX): a game thread's stack can be as small as 8 KB. Register arguments are carried over (<= 8 integer, <= 8 floating point) and two stack slots (a 9th and 10th integer argument); no more   // PEANUTS: the two stack slots
 #define HLE_FORCE_BIG(mangled, why, ret, cname, ...)                                               \
     static ret cname(__VA_ARGS__) __attribute__((used));                                          \
     extern const char cname##_bs[];                                                               \
