@@ -81,6 +81,7 @@ typedef struct {
     char render_default_out[16]; uint32_t render_quality[4];
     uint32_t nrender_cfg; dm_pf_render_cfg_t render_cfg[DM_PROFILE_RENDER_CFG_CAP];
     uint32_t nrt_pool; dm_pf_rt_pool_t rt_pool[DM_PROFILE_RT_POOL_CAP];
+    uint32_t image_raw32;   // PEANUTS: profile image_raw32 (vka_tex.c id_view)
 } dm_game_profile_t;
 
 // A few checkpoints along the layout (found in review), so a field inserted or resized in the wrong place fails the build here, at the

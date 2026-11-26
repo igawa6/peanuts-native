@@ -104,6 +104,7 @@ int main(void) {
           for (unsigned k = 0; k < t[i].nt && k < 4; k++) printf(",%u=%ux%u", t[i].mb[k], t[i].w[k], t[i].h[k]);
           printf("\n");
       } }
+    printf("image_raw32=%d\n", (int)DM_GAME_IMAGE_RAW32);
 #ifdef DM_GAME_NVN_API_MAJOR
     printf("has_nvn_api=1\n"); printf("nvn_api_major=%d\n", (int)DM_GAME_NVN_API_MAJOR); printf("nvn_api_minor=%d\n", (int)DM_GAME_NVN_API_MINOR);
 #else

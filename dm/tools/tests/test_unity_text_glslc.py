@@ -122,9 +122,11 @@ class GlslcComputeLayout(unittest.TestCase):
         struct.pack_into('<I', blob, start + 0x20, nctl)
         struct.pack_into('<I', blob, start + 0x704, ncode)
         struct.pack_into('<3I', blob, start + 0x748, 32, 1, 1)
-        for magic, ctl_end in ((ss.CS_MAGIC, code_at), (b'\0' * 4, start + nctl)):
+        # PEANUTS: headerless code that starts with a scheduling word recovers too (FIFA 18's sh_irradiance_prefilter.cs, SDK 3.4); an all-zero code area does not
+        sched = struct.pack('<Q', 0x001fc480efe007fc)
+        for magic, ctl_end in ((ss.CS_MAGIC + bytes(4), code_at), (bytes(8), start + nctl), (sched, code_at)):
             with self.subTest(magic=magic.hex()):
-                blob[code_at:code_at + 4] = magic
+                blob[code_at:code_at + 8] = magic
                 [(source, stage, ctl, code)] = ss.glslc_shaders(bytes(blob), 'program.nvn')
                 self.assertEqual((source, stage), ('program.nvn#GLSLC@0x0', 'cs'))
                 self.assertEqual(ctl, bytes(blob[start:ctl_end]))
