@@ -1541,43 +1541,71 @@ def pg_sized_shader(d, label):
     return [(f'{label}#PGSO', st, ctl, code)]
 
 MTARC, MTSPK = b'ARC\0', b'SPK\0'
-def mtarc_members(d, label):
-    """Capcom's MT Framework archive (The Great Ace Attorney Chronicles: 447 '.arc' files under nativeNXx64): 'ARC\\0', u16 version 7, u16 entry count, then one 0x90-byte entry per file
-    {char path[128] ('\\\\'-separated, no extension), u32 type hash, u32 stored length, u32 length in the low 29 bits (flags above), u32 offset}; the data is a zlib stream, or stored when the
-    stored length equals the length. → (path, data) of each entry"""
+def mtarc_layout(d, n):
+    """The entry size of an MT Framework archive of version 7: 0x90 (char path[128]; The Great Ace Attorney Chronicles) or 0x50 (char path[64]; Resident Evil Revelations 2), both
+    ending in the same four u32. The version does not tell them apart, so the layout whose every entry lies inside the file, after the entry table, is the one"""
+    for es in (0x90, 0x50):
+        if 8 + es * n > len(d): continue
+        if all(8 + es * n <= off and off + csz <= len(d) for csz, _, off in (struct.unpack_from('<3I', d, 8 + es * i + es - 0xc) for i in range(n))): return es
+    red(f'MT Framework archive with {n} entries: neither the 0x90 nor the 0x50 entry layout fits the file')
+
+def mtarc_members(d, label, head=None):
+    """Capcom's MT Framework archive: 'ARC\\0', u16 version 7, u16 entry count, then one entry per file {char path[] ('\\\\'-separated, no extension), u32 type hash, u32 stored length,
+    u32 length in the low 29 bits (flags above), u32 offset}; the data is a zlib stream, or stored when the stored length equals the length. The path is 128 bytes (a 0x90-byte entry) in
+    The Great Ace Attorney Chronicles (447 '.arc' files under nativeNXx64) and 64 bytes (a 0x50-byte entry) in Resident Evil Revelations 2 (4,023), see mtarc_layout.
+    With head, only the entries whose data starts with it are decompressed whole (Revelations 2: 19.5 GB of archives, its shader packages in 95 of them). → (path, data) of each entry"""
     import zlib
     ver, n = struct.unpack_from('<HH', d, 4)
     if ver != 7: red(f'{label}: ARC version {ver}: only version 7 is known')
+    es = mtarc_layout(d, n)
     for i in range(n):
-        o = 8 + 0x90 * i
-        path = d[o:o + 0x80].split(b'\0')[0].decode('latin-1')
-        csz, usz, off = struct.unpack_from('<3I', d, o + 0x84); usz &= 0x1fffffff
-        data = d[off:off + csz] if csz == usz else zlib.decompress(d[off:off + csz])
+        o = 8 + es * i
+        path = d[o:o + es - 0x10].split(b'\0')[0].decode('latin-1')
+        csz, usz, off = struct.unpack_from('<3I', d, o + es - 0xc); usz &= 0x1fffffff
+        stored = csz == usz
+        if head is not None and (d[off:off + len(head)] if stored else zlib.decompressobj().decompress(d[off:off + min(csz, 0x4000)], len(head))) != head: continue
+        data = d[off:off + csz] if stored else zlib.decompress(d[off:off + csz])
         if len(data) != usz: red(f'{label}#{path}: {len(data):#x} bytes, the entry says {usz:#x}')
         yield path.replace('\\', '/'), data
 
 def mtspk_shaders(d, label):
-    """MT Framework's shader package ('SPK\\0'; The Great Ace Attorney Chronicles keeps its only one, sc\\NX_64\\root, in sa/NX_64/root.arc): after the package's tables every shader is a
-    code area followed directly by its control section, back to back to the end of the file (230 vertex shaders, then 230 pixel shaders). Each control section names its code length (+0x704),
-    so the code area is the bytes right before it, and every block must start where the previous one ended. The tables that say which vertex and pixel shaders the engine combines are not
-    read, so the shaders are paired as single-stage programs (separable_pairs)"""
+    """MT Framework's shader package ('SPK\\0'), in two layouts. The Great Ace Attorney Chronicles keeps its only one, sc\\NX_64\\root, in sa/NX_64/root.arc: after the package's
+    tables every shader is a code area followed directly by its control section, back to back to the end of the file (230 vertex shaders, then 230 pixel shaders). Each control section names
+    its code length (+0x704), so the code area is the bytes right before it, and every block must start where the previous one ended.
+    Resident Evil Revelations 2 (SDK 1.6.0; one package per archive in sa/NX_64, 95 of them, sc\\NX_64\\<name>) keeps each control section (0x838 bytes, as Mario + Rabbids Kingdom Battle's)
+    directly before its code area, and after the code area 0x4c to 0x7c bytes of the engine's own before the next control section. Its header's u16 at +0xc and +0xe count the vertex and the
+    pixel shaders (S0611: 58 and 58, root: 2,579 and 2,567), which the reader compares with what it found.
+    In both, the tables that say which vertex and pixel shaders the engine combines are not read, so the shaders are paired as single-stage programs (separable_pairs)"""
     out, end, c = [], None, d.find(CTL_MAGIC)
+    if c < 0: return out
+    n0, k0 = struct.unpack_from('<I', d, c + 0x20)[0], struct.unpack_from('<I', d, c + 0x704)[0]
+    after = not (c >= k0 and d[c - k0:c - k0 + 4] == GFX_MAGIC) and d[c + n0:c + n0 + 4] == GFX_MAGIC
     while c >= 0:
         nctl, ncode = struct.unpack_from('<I', d, c + 0x20)[0], struct.unpack_from('<I', d, c + 0x704)[0]
-        a = c - ncode
-        if a < 0 or d[a:a + 4] != GFX_MAGIC or end is not None and a != end: red(f'{label} SPK control section @{c:#x}: its code area does not end right before it')
-        ctl, code = d[c:c + nctl], d[a:c]
+        if after:
+            a = c + nctl
+            if d[a:a + 4] != GFX_MAGIC or a + ncode > len(d) or end is not None and c < end: red(f'{label} SPK control section @{c:#x}: no code area of {ncode:#x} bytes right after it')
+            ctl, code = d[c:a], d[a:a + ncode]
+            nxt = a + ncode
+        else:
+            a = c - ncode
+            if a < 0 or d[a:a + 4] != GFX_MAGIC or end is not None and a != end: red(f'{label} SPK control section @{c:#x}: its code area does not end right before it')
+            ctl, code = d[c:c + nctl], d[a:c]
+            nxt = c + nctl
         st = sph_stage(code)
         why = check(label, st, ctl, code) if st else 'no stage in the SPH'
         if why: red(f'{label} SPK @{a:#x}: {why}')
         out.append((f'{label}#MTSPK@{a:#x}', st, ctl, code))
-        end = c + nctl; c = d.find(CTL_MAGIC, end)
-    if end != len(d): red(f'{label} SPK: the last shader ends at {end}, not at the end of the package ({len(d):#x})')
+        end = nxt; c = d.find(CTL_MAGIC, end)
+    if after:   # the header's counts: root 0x0a13 0x0a13 0x0a07 at +0xa (2,579 vertex and 2,567 pixel shaders found), Demo 0x139 0x139 0x139 (313 and 313)
+        h = struct.unpack_from('<3H', d, 0xa)
+        nvs, nps = sum(st == 'vs' for _, st, _, _ in out), sum(st == 'ps' for _, st, _, _ in out)
+        if (nvs, nps) != (h[1], h[2]): print(f'[RED] {label} SPK: {nvs} vertex and {nps} pixel shaders found, the header says {h[1]} and {h[2]} (+0xa..+0xf: {h[0]} {h[1]} {h[2]}); the shaders found are kept', flush=True)
+    elif end != len(d): red(f'{label} SPK: the last shader ends at {end}, not at the end of the package ({len(d):#x})')
     return out
 
 def mtarc_shaders(d, label, out):
-    for path, m in mtarc_members(d, label):
-        if m[:4] == MTSPK: out.extend(mtspk_shaders(m, f'{label}#{path}'))
+    for path, m in mtarc_members(d, label, MTSPK): out.extend(mtspk_shaders(m, f'{label}#{path}'))
 
 SCNE, ZSTD_MAGIC = b'SCNE', bytes.fromhex('28b52ffd')
 LZ4_FRAME_MAGIC = bytes.fromhex('04224d18')   # the frame of HAL's other .cmp container (the ubin/ map data)
