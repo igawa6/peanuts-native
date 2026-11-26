@@ -121,7 +121,7 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
 | [Donkey Kong Bananza](#donkey-kong-bananza) | 2 | 7 | 0 | 0 | 2 | `build` → `game` ×4, `build` |
 | [DRAGON BALL: Sparking! ZERO](#dragon-ball-sparking-zero) | 11 | 0 | 0 | 0 | 0 | `build` → unreviewed |
 | [EA SPORTS FC 27](#ea-sports-fc-27) | 0 | 0 | 0 | 0 | 2 | `build` → `engine` |
-| [FANTASY LIFE i: The Girl Who Steals Time](#fantasy-life-i-the-girl-who-steals-time) | 5 | 0 | 0 | 0 | 0 | `build` → `game` |
+| [FANTASY LIFE i: The Girl Who Steals Time](#fantasy-life-i-the-girl-who-steals-time) | 10 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition](#final-fantasy-crystal-chronicles-remastered-edition) | 8 | 0 | 0 | 0 | 0 | `build` → `engine` |
 | [FINAL FANTASY TACTICS - The Ivalice Chronicles](#final-fantasy-tactics---the-ivalice-chronicles) | 2 | 0 | 0 | 0 | 0 | `build` → `game` |
 | [Fire Emblem Engage](#fire-emblem-engage) | 1 | 0 | 0 | 0 | 0 | `build` → `engine` |
@@ -400,6 +400,12 @@ Every patch bound tighter than it could be: the open gaps, then the blocked, kep
   - cut `+0x5a9f190`: offline: return no EOS platform handle
   - cut `+0x5a9f680`: offline: return no Epic account ID
   - cut `+0x5b3bca0`: avatar name: dictionary version zero is normal offline; still run the mask and region checks
+- **2.2.0 `main`** `6e4502b8…` ([patches.py:13](../../dm/games/0100755017EE0000/patches.py#L13))
+  - cut `+0x5e1c984`: offline: skip EOS_UI_AddNotifyDisplaySettingsUpdated; retain delegate cleanup
+  - cut `+0x5e5bb50`: offline: do not subscribe to events on the absent online identity interface
+  - cut `+0x5e1cab0`: offline: return no EOS platform handle
+  - cut `+0x5e1cfa0`: offline: return no Epic account ID
+  - cut `+0x5ec5710`: avatar name: dictionary version zero is normal offline; still run the mask and region checks
 
 ### FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition
 
