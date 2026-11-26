@@ -2796,3 +2796,13 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+## Dynamic state on Qualcomm's Vulkan driver (2026-11-26)
+
+Qualcomm's own driver loses some dynamic state at a render pass begin and at a pipeline bind; NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS draws its characters black there. Found while taking over the draft igawa6/peanuts-native#637 (codetz7).
+
+| File | Hunks | What | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_draw.c`, `vka_auto.h` | 7, 1 | `DM_VK_DYN_PASS` (`dyn_pass_begin`): every dynamic state set again at a pass's first draw and after each pipeline bind on Qualcomm's own driver (by driver ID), which lost the depth write enable at a pass begin and the cull mode at a pipeline bind; its `[auto]` rule | `PEANUTS` |
+| `docs/env_switches.tsv`, `docs/advanced_settings.tsv` | 1, 1 | the `DM_VK_DYN_PASS` rows | rows |
+| `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1, 1 | the entry "Characters black on Qualcomm's driver: dynamic state lost at a pass begin or a pipeline bind", and its line in the generated index | `PEANUTS` / generated |

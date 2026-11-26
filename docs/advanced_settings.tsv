@@ -510,6 +510,7 @@ DM_VK_DRV_MEMO	developer	Memory			text			both
 DM_VK_DRV_STAMP	developer	Graphics			text			both						
 DM_VK_DS_FIRST_HERE	developer	Graphics			text			both						
 DM_VK_DYN_FILTER	developer	Diagnostics			text			both						
+DM_VK_DYN_PASS	developer	Graphics			text		On with Qualcomm's driver, off elsewhere	both						
 DM_VK_EAGER_TEX	developer	Diagnostics			text			both						
 DM_VK_ENC	developer	Graphics			text			both						
 DM_VK_ENC_BATCH	developer	Graphics			text			both						

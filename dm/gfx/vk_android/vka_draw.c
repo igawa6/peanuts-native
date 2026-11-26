@@ -9,6 +9,7 @@
 #include "vka.h"
 #include "vka_draw_range.h"   // PEANUTS: bounded draw ranges
 static void fbl_pass_begin(void);   // PEANUTS: feedback loops (below, beside DY)
+static void dyn_pass_begin(void);   // PEANUTS: DM_VK_DYN_PASS (below, beside DY)
 #include "vka_skipwarn.h"
 #include "vka_gmem.h"
 #include "../nvn/nvn_mtl.h"
@@ -27,7 +28,7 @@ static void fbl_pass_begin(void);   // PEANUTS: feedback loops (below, beside DY
 #include <time.h>
 #include <string.h>
 
-static VkCommandBuffer g_cb; static unsigned g_slot; static int g_prof, g_dyn_filter = 1, g_pass_keep = 1, g_vb_filter = 1;   // g_prof: this draw is timed (vka_draw)
+static VkCommandBuffer g_cb; static unsigned g_slot; static int g_prof, g_dyn_filter = 1, g_dyn_pass, g_pass_keep = 1, g_vb_filter = 1;   // g_prof: this draw is timed (vka_draw); PEANUTS: g_dyn_pass
 static int g_prof_all, g_prof_every;   // DM_VK_PROF: every draw timed; the pace line's sample (DM_VK_PACE_PROF): one draw in g_prof_every
 static int g_vin_skip = 1;             // DM_VK_VIN_SKIP (vin_build_kept)
 static int g_inst_on;   // DM_VK_INSTANCE (the instanced runs below)
@@ -166,7 +167,7 @@ void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot) {
     { void vka_mem_rec_thread(void); vka_mem_rec_thread(); }   // the address lookups' cache outside TLS for the recording thread (vka_mem.c)
     drv_memo_reset();   // the last submission's scratch spans go with its fence
     tbc_reset();   // PEANUTS: so do the copies of read-only texel buffers (tbuf_view)
-    g_prof_all = VKA_ENV("DM_VK_PROF", 0) != 0; g_prof = g_prof_all; g_prof_every = VKA_ENV("DM_VK_PACE_LOG", 5000) > 0 ? VKA_ENV("DM_VK_PACE_PROF", 16) : 0; g_dyn_filter = VKA_ENV("DM_VK_DYN_FILTER", 1); g_pass_keep = VKA_ENV("DM_VK_PASS_KEEP", 1); g_vb_filter = VKA_ENV("DM_VK_VB_FILTER", 1); g_inst_on = VKA_ENV("DM_VK_INSTANCE", 0);   // live: from this submission
+    g_prof_all = VKA_ENV("DM_VK_PROF", 0) != 0; g_prof = g_prof_all; g_prof_every = VKA_ENV("DM_VK_PACE_LOG", 5000) > 0 ? VKA_ENV("DM_VK_PACE_PROF", 16) : 0; g_dyn_filter = VKA_ENV("DM_VK_DYN_FILTER", 1); g_dyn_pass = VKA_ENV("DM_VK_DYN_PASS", V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY); g_pass_keep = VKA_ENV("DM_VK_PASS_KEEP", 1); g_vb_filter = VKA_ENV("DM_VK_VB_FILTER", 1); g_inst_on = VKA_ENV("DM_VK_INSTANCE", 0);   // live: from this submission (PEANUTS: DM_VK_DYN_PASS)
     g_vin_skip = VKA_ENV("DM_VK_VIN_SKIP", 1);
     g_vattr_clear = VKA_ENV("DM_VK_VATTR_CLEAR", 1);
     for (int i = 0; i < g_ndp[g_slot]; i++) vk.vkResetDescriptorPool(V.dev, g_dp[g_slot][i], 0);   // the slot's last submission is done (mtl_sub_begin waited for it)
@@ -724,7 +725,7 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const p_scissor *sc, int has
         last = cur; lastw = w;
     }
     if (!R.classic) vk.vkCmdBeginRendering(g_cb, &ri);
-    R.on = 1; vka_n_rp++; if (g_dyn_filter == 2) vka_dyn_invalidate();   // DM_VK_DYN_FILTER=2: the dynamic state set again at each pass (bisect)
+    R.on = 1; vka_n_rp++; if (g_dyn_filter == 2) vka_dyn_invalidate(); else if (g_dyn_pass) dyn_pass_begin();   // DM_VK_DYN_FILTER=2: the dynamic state set again at each pass (bisect); PEANUTS: DM_VK_DYN_PASS
     g_zdir = 0;
     if (dp) { g_zs.npb++; if (dp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) g_zs.nlc++; for (int k = 0; k < nlate; k++) if (late[k]->asp & VK_IMAGE_ASPECT_DEPTH_BIT) g_zs.ncl++; }
     g_rtl_pass = rtl_size(w, h); g_rtl_d = 0;
@@ -2136,6 +2137,11 @@ static void ib_bind(VkBuffer b, VkDeviceSize o, VkDeviceSize size, VkIndexType t
 }
 static void inst_reset(void);
 static void fbl_pass_begin(void) { DY.fbl = ~0u; }   // PEANUTS: feedback loops: emitted again at the pass's first draw
+// PEANUTS: DM_VK_DYN_PASS: every dynamic state is set again at a pass's first draw and after each pipeline bind, as at a command buffer's start. Vulkan keeps
+// dynamic state across render passes and pipeline binds (when the pipeline has it dynamic), but Qualcomm's own driver (512.676, Adreno 740) lost the depth write
+// enable at a pass begin and the cull mode at a pipeline bind: a draw that repeated the last values (so nothing was set again) drew without writing depth or
+// with no culling (Naruto x Boruto Ultimate Ninja Storm Connections: black characters). The instanced runs' rebind after the state (DM_VK_INSTANCE, off by default) is not covered
+static void dyn_pass_begin(void) { DY.valid = 0; }
 void vka_dyn_invalidate(void) { DY.valid = 0; VB.valid = 0; VBC.valid = 0; IB.valid = 0; g_pd[0].n = g_pd[1].n = 0; inst_reset(); }
 #define PT(i) do { if (g_prof) { uint64_t t_ = cntvct(); if ((i) > 0 && g_pt_ph == (i) - 1) g_pt[(i) > 0 ? (i) - 1 : 0] += t_ - g_pt_last; g_pt_last = t_; g_pt_ph = (i); } } while (0)
 // ---------- Instanced runs (DM_VK_INSTANCE) ----------
@@ -2907,7 +2913,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     int ijoin = icand && RUN.open && p == RUN.base.p && DY.valid && DY.pipe == RUN.ipipe && vka_enc_total() == RUN.mark && inst_same_draw(&RUN.base, i_ib, i_io, i_it, di, d);
     if (!ijoin) {
         if (RUN.open) inst_close();
-        if (!DY.valid || !g_dyn_filter || DY.pipe != p) { vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p); DY.pipe = p; VB.vin_stale = 1; }
+        if (!DY.valid || !g_dyn_filter || DY.pipe != p) { vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p); DY.pipe = p; VB.vin_stale = 1; if (g_dyn_pass) DY.valid = 0; }   // PEANUTS: DM_VK_DYN_PASS
     }
     if (vka_nan_on()) vka_nan_draw(mesh ? sh[7]->key : sh[0]->key, fs ? fs->key : 0);
     PT(5);
@@ -2922,7 +2928,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
                     && (VkDeviceSize)i_d + g_w.bi[i_wv].range <= RUN.win_v && (VkDeviceSize)i_d + g_w.bi[i_wp].range <= RUN.win_p;
             if (!ijoin) {   // not the run's draw after all: drawn alone with its own pipeline
                 inst_close(); g_inst_falls++;
-                vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p); DY.pipe = p; VB.valid = 0; g_pd[0].n = 0;
+                vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p); DY.pipe = p; VB.valid = 0; g_pd[0].n = 0; if (g_dyn_pass) DY.valid = 0;   // PEANUTS: DM_VK_DYN_PASS
                 if (!sets_push(&lay, VK_PIPELINE_BIND_POINT_GRAPHICS, g_dry_pool)) { g_skipped++; return; }
             }
         } else {   // a run from the last draw drawn alone: the same draw with the object block moved
@@ -2940,7 +2946,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
             istart = ip && wv >= g_w.bi[i_wv].range && wp >= g_w.bi[i_wp].range && inst_snap(&RUN.base, p, i_ib, i_io, i_it, di, d)
                      && vka_scratch(4 * INST_CAP, 16, &i_ta) && vka_scratch(20, 4, &i_aa);
             if (istart) {
-                vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, ip); DY.pipe = ip; VB.valid = 0;
+                vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, ip); DY.pipe = ip; VB.valid = 0; if (g_dyn_pass) DY.valid = 0;   // PEANUTS: DM_VK_DYN_PASS
                 g_w.bi[i_wv].range = wv; g_w.bi[i_wp].range = wp;
                 vk.vkCmdPushDescriptorSetKHR(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, lay.layout, 0, g_w.n, g_w.w); g_pd[0].n = 0;
                 RUN.ipipe = ip; RUN.wv = i_wv; RUN.wp = i_wp; RUN.win_v = wv; RUN.win_p = wp; RUN.n = 1;   // PEANUTS: bounded draw ranges
