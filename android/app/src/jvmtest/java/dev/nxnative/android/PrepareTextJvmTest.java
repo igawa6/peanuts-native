@@ -184,6 +184,13 @@ public final class PrepareTextJvmTest {
         check(f.text.contains("Android closed it") && !f.text.contains("memory"), "killed: Android closed it, no claim of why: " + f.text);
         check(PrepareText.failureSummary(step, "Legacy error", "").equals("Legacy error"), "old job without separate details");
         check(PrepareText.failureSummary(step, "", "").equals(step + " stopped. " + PrepareText.RETRY_SHARE), "empty failure");
+        // a game file whose index points outside it (shader_split.py damaged(), GitHub issue #561): no Retry, its cause for the build, the file in the player's words
+        f = PrepareText.toolStopped(step, 1, "[RED] /arc/data.trpfs: the game file is damaged: its index points outside it (4 bytes at 0x2081e2f5a lie outside the "
+                + "0x11b5a1290 bytes of the file). Copy or dump the game again, then import it again", log);
+        plain(f.text, "a damaged game file");
+        check(f.fix.equals(PrepareText.FIX_NONE) && f.cause.equals(PrepareText.CAUSE_DAMAGED) && f.text.contains("arc › data.trpfs") && !f.text.contains("Retry")
+                && f.detail.contains("0x2081e2f5a"), "a damaged game file: no Retry, its cause: " + f.text);
+        check(PrepareText.failureSummary(step, f.text, f.detail).equals(f.text), "a damaged game file: the card's line");
         // PEANUTS end
 
         // The progress line never says "0 of 0"

@@ -2458,25 +2458,47 @@ def raw_shaders(d, label, known=()):
     return nx + out   # PEANUTS(upstream-candidate): nx
 
 ONEPACK = b'ONEPACK\0'
+# PEANUTS begin: the FlatBuffers readers check every offset against the file (GitHub issue #561: a garbled index in Pokémon Legends: Z-A's data.trpfs pointed
+# past its end, and the split stopped with a raw struct.error). FbOutside names the place; trpfs_jobs and trinity_shaders say the game file is damaged
+class FbOutside(Exception):
+    def __init__(self, at, n, size): super().__init__(f'{n} bytes at {at:#x} lie outside the {size:#x} bytes of the file'); self.at, self.size = at, size
+
+def fb_u(fmt, d, at):
+    """struct.unpack_from(fmt, d, at)[0], or FbOutside when the bytes are not inside d"""
+    n = struct.calcsize(fmt)
+    if not 0 <= at <= len(d) - n: raise FbOutside(at, n, len(d))
+    return struct.unpack_from(fmt, d, at)[0]
+
+def fb_array(fmt, d, st, n):
+    """n values of one struct format from st, or FbOutside when they are not inside d"""
+    w = struct.calcsize(fmt)
+    if not (0 <= st and 0 <= n and w * n <= len(d) - st): raise FbOutside(st, w * n, len(d))
+    return struct.unpack_from(f'<{n}{fmt[-1]}', d, st)
+
+def damaged(where, e):
+    """The split's end for an index that points outside its own file: a damaged or incomplete game file, which a retry cannot mend (PrepareText.toolStopped)"""
+    red(f'{where}: the game file is damaged: its index points outside it ({e}). Copy or dump the game again, then import it again')
+# PEANUTS end
+
 def fb_field(d, t, i):
     """FlatBuffers: absolute offset of field i of the table at t, None when the field is absent"""
-    vt = t - struct.unpack_from('<i', d, t)[0]
-    if 4 + 2 * i >= struct.unpack_from('<H', d, vt)[0]: return None
-    off = struct.unpack_from('<H', d, vt + 4 + 2 * i)[0]
+    vt = t - fb_u('<i', d, t)   # PEANUTS: offsets checked (fb_u)
+    if 4 + 2 * i >= fb_u('<H', d, vt): return None
+    off = fb_u('<H', d, vt + 4 + 2 * i)
     return t + off if off else None
 
 def fb_vec(d, t, i):
     """FlatBuffers: (start, count) of the vector in field i"""
     p = fb_field(d, t, i)
     if p is None: return 0, 0
-    p += struct.unpack_from('<I', d, p)[0]
-    return p + 4, struct.unpack_from('<I', d, p)[0]
+    p += fb_u('<I', d, p)   # PEANUTS: offsets checked (fb_u)
+    return p + 4, fb_u('<I', d, p)
 
 def fb_refs(d, t, i):   # the tables / strings a vector of offsets points at
     st, n = fb_vec(d, t, i)
-    return [st + 4 * k + struct.unpack_from('<I', d, st + 4 * k)[0] for k in range(n)]
+    return [st + 4 * k + v for k, v in enumerate(fb_array('<I', d, st, n))]   # PEANUTS: offsets checked (fb_array)
 
-def fb_root(d, at=0): return at + struct.unpack_from('<I', d, at)[0]
+def fb_root(d, at=0): return at + fb_u('<I', d, at)   # PEANUTS: offsets checked (fb_u)
 
 def trpfs_jobs(files, parts=64, targeted=False):   # PEANUTS: select Trinity packs for a known shader map
     """Game Freak's Trinity engine (Pokémon Legends: Z-A): almost everything is in arc/data.trpfs, packs of files, with arc/data.trpfd as their index, both FlatBuffers. The descriptor's root table:
@@ -2490,18 +2512,25 @@ def trpfs_jobs(files, parts=64, targeted=False):   # PEANUTS: select Trinity pac
         if not p.endswith('.trpfs') or not os.path.exists(p[:-1] + 'd'): continue
         with open(p, 'rb') as f:
             if f.read(8) != ONEPACK: continue
-        fd = open(p[:-1] + 'd', 'rb').read(); fr = fb_root(fd)
-        hashes = struct.unpack_from(f'<{fb_vec(fd, fr, 0)[1]}Q', fd, fb_vec(fd, fr, 0)[0])
-        names = [fd[s + 4:s + 4 + struct.unpack_from('<I', fd, s)[0]].decode() for s in fb_refs(fd, fr, 1)]
-        pack_of = {h: struct.unpack_from('<Q', fd, fb_field(fd, t, 0))[0] if fb_field(fd, t, 0) is not None else 0 for h, t in zip(hashes, fb_refs(fd, fr, 2))}
-        sizes = [struct.unpack_from('<Q', fd, fb_field(fd, t, 0))[0] for t in fb_refs(fd, fr, 3)]
+        fd = open(p[:-1] + 'd', 'rb').read()
+        try:   # PEANUTS: an index that points outside its own file is a damaged game file (damaged), not a struct.error
+            fr = fb_root(fd)
+            hashes = fb_array('<Q', fd, *fb_vec(fd, fr, 0))
+            names = [fd[s + 4:s + 4 + fb_u('<I', fd, s)].decode() for s in fb_refs(fd, fr, 1)]
+            pack_of = {h: fb_u('<Q', fd, fb_field(fd, t, 0)) if fb_field(fd, t, 0) is not None else 0 for h, t in zip(hashes, fb_refs(fd, fr, 2))}
+            sizes = [fb_u('<Q', fd, fb_field(fd, t, 0)) for t in fb_refs(fd, fr, 3)]
+        except FbOutside as e: damaged(f'/{r[:-1]}d', e)
         with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as d:
-            sr = fb_root(d, struct.unpack_from('<Q', d, 8)[0]); st, n = fb_vec(d, sr, 1)
-            packs = []
-            for off in struct.unpack_from(f'<{n}Q', d, st):
-                pr = fb_root(d, off); h0 = fb_vec(d, pr, 0)
-                if not h0[1] or struct.unpack_from('<Q', d, h0[0])[0] not in pack_of: red(f'{r}: the pack at {off:#x} has no file the descriptor lists')
-                i = pack_of[struct.unpack_from('<Q', d, h0[0])[0]]; packs.append((off, names[i], sizes[i]))
+            try:   # PEANUTS: the same for the packs' table at the end of the file
+                sr = fb_root(d, fb_u('<Q', d, 8)); st, n = fb_vec(d, sr, 1)
+                packs = []
+                for off in fb_array('<Q', d, st, n):
+                    pr = fb_root(d, off); h0 = fb_vec(d, pr, 0)
+                    if not h0[1] or fb_u('<Q', d, h0[0]) not in pack_of: red(f'{r}: the pack at {off:#x} has no file the descriptor lists')
+                    i = pack_of[fb_u('<Q', d, h0[0])]
+                    if i >= min(len(names), len(sizes)): raise FbOutside(off, 8, len(d))   # a pack index past the descriptor's lists
+                    packs.append((off, names[i], sizes[i]))
+            except FbOutside as e: damaged(f'/{r}', e)
         # PEANUTS begin: a Trinity source records the pack name after the archive path. Compare all result tables before accepting this subset.
         if targeted:
             prefix = r + '#'
@@ -2649,12 +2678,13 @@ def trinity_shaders(path, rel, packs, out):
             pr = fb_root(d, off); hs = fb_vec(d, pr, 0)
             for k, t in enumerate(fb_refs(d, pr, 1)):
                 c, ln = fb_field(d, t, 1), fb_field(d, t, 3)
-                comp, n = (struct.unpack_from('<b', d, c)[0] if c is not None else 0), (struct.unpack_from('<Q', d, ln)[0] if ln is not None else 0)
+                comp, n = (fb_u('<b', d, c) if c is not None else 0), (fb_u('<Q', d, ln) if ln is not None else 0)   # PEANUTS: offsets checked (fb_u; FbOutside: the caller says the file is damaged)
                 st, sz = fb_vec(d, t, 4)
+                if not 0 <= st <= len(d) - sz: raise FbOutside(st, sz, len(d))   # PEANUTS: a slice past the end would come out short in silence
                 if comp == 3: data = oodle(d[st:st + sz], n)
                 elif sz == n: data = d[st:st + sz]
                 else: red(f'/{rel}#{name}: file {k} has compression {comp} ({sz} → {n} bytes), which is not known')
-                scan_blob(data, f'/{rel}#{name}#{struct.unpack_from("<Q", d, hs[0] + 8 * k)[0]:016x}', out)
+                scan_blob(data, f'/{rel}#{name}#{fb_u("<Q", d, hs[0] + 8 * k):016x}', out)   # PEANUTS: offsets checked (fb_u)
 
 UE3_TAG = bytes.fromhex('c1832a9e')   # an Unreal package's tag; Unreal Engine 3 has a positive file version after it (u16, Batman: Arkham Knight 0x360), Unreal Engine 4 a negative legacy version (i32)
 def ue3_package(head): return head[:4] == UE3_TAG and len(head) >= 6 and 0 < struct.unpack_from('<H', head, 4)[0] < 0x8000
@@ -3751,7 +3781,8 @@ def scan_file_in(args):
         idrk_shaders(path, '/' + rel, found)
         return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and head[:8] == ONEPACK:   # a range of Trinity packs (trpfs_jobs)
-        trinity_shaders(path, rel, args[2], found)
+        try: trinity_shaders(path, rel, args[2], found)
+        except FbOutside as e: damaged('/' + rel, e)   # PEANUTS: a pack table that points outside the file (GitHub issue #561)
         return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and head[:4] == PDAT:   # a byte range of a phx archive (pdat_jobs)
         pdat_shaders(path, rel, args[2][1], args[2][2], found)

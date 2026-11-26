@@ -61,6 +61,40 @@ there) and compares each `.nup` with the uncompressed dumps' byte for byte: comp
 an XCZ, 1 and 8 reader threads. Then damaged, cut-off and unreadable files and Stop: each refused with its reason, no `.nup` and nothing left beside
 it. Run under AddressSanitizer, UBSan and ThreadSanitizer as well (2026-11-19: clean).
 
+## Plain NCAs checked against their hash layers (nx_verify.c, issue #561)
+
+Before 2026-11-24 a plain NCA's bytes were compared with nothing, so a damaged update (Pokémon Legends: Z-A 2.0.2: `data.trpfs` of the right size with a
+garbled index) became a `.nup` with a garbled file, and the build stopped later at the shader split with a raw `struct.error`. Now `job_nca` compares each
+content NCA's size with its CNMT record and its header (`nca_checks`), the writer refuses a container that ends before its last file, and `nx_sec_verify`
+sets a check on the sections the writer reads: the ExeFS (HierarchicalSha256: one hash table, the master hash in the fs header, a short last block hashed as
+it is) and the RomFS (IVFC: five hash levels from the master hash down, each block zero-padded to its block size). The fs header itself is checked against
+its SHA-256 in the NCA header first: it holds the master hash and every level's place. A patch's RomFS is set up after `nx_nca_set_base`, its levels read
+through the patched image. The levels are read and checked at once (level 5 is 1/512 of the data with 16 KiB blocks); the data is checked in `nx_sec_read_raw` as the
+writer reads it, below the decompression (the hashes cover a compressed section's stored bytes), each block once (an atomic bit per block, any thread). A read
+that covers a block only in part reads the rest of it with `nx_sec_read_unchecked`. A patch reads its base's bytes through the base's own `nx_sec_read_raw`,
+so the base's damage is named as the base's. A section with a hash type or a layout this reader does not know, and a sparse base (its update's check covers
+what is read of it), is not checked: the import goes on as before. NCZs are not checked again (`nx_ncz_prepare` hashes them whole).
+
+Messages: `<file>: the base game|the update v<n>|the DLC <id> is damaged: <why>` (`title_what`). A container cut short is `nx_nca.c`'s own
+`<file>: <nca> lies outside its file (…): the file is cut off` (#697). `dev.peanuts.build.Compressed.failure` makes the card's words of both, one
+sentence shape (`BuildListener.FILE_DAMAGED`: the game's sheet, no Retry).
+`NX_DEBUG=1` prints each check as it is set up and, after a `.nup` is written, how many blocks of each checked section were read.
+
+Tests: `verify_test` (off Windows; ctest). The fixture's NCAs carry real hash layers and fs header hashes (`tests/nsp_fixture.h` `fx_layers`): a plain and an
+LZ4 base with their updates and an add-on import, with and without the base's own package, and reading every file of the patched RomFS and the ExeFS checks
+every block. Then a file cut short (`nx_nca.c`'s message, #697), a container entry shorter than its NCA, and a byte flipped in a base file the update reads, in a base file the update
+replaced (never read: the import goes through), in the update's RomFS header, in the last byte of a file the update carries, in its main, in the base's first
+hash level, in its fs header, in an LZ4 base's stored bytes and in an add-on: each refused with the file and its role, no `.nup`. `nsp_test`, `ncz_test`,
+`xci_test` and `nup_meta_test` (whose NCA has no hash layers this reader knows) pass as before.
+
+Cost, on an AYN Thor (2026-11-25, `nximport_cli nup` from internal storage, each run after `sync` and a pause): Pokémon Legends: Z-A, the base (4.3 GB),
+update 2.0.2 (2.1 GB) and a DLC into a 6.03 GB `.nup` took 11.6 and 12.7 s with the check, 10.9 and 11.7 s without it (upstream main), about a second more.
+Both `.nup`s were the same byte for byte. Peak memory went from 261 to 281 MiB: the last hash level stays in memory (32 bytes per 16 KiB block). Without the
+`sync`, the write-back of the previous run's `.nup` made both swing between 13 and 24 s. `nximport_cli check` read the three files whole in 15 s, all good.
+The update with one byte changed in its middle: upstream main wrote a `.nup` from it in 15.3 s; this importer stopped with
+`…v2.0.2 (damaged copy).nsp: the update v393216 is damaged or incomplete: the bytes at 0x1627d8000 of its RomFS do not match their checksum`, no `.nup`
+(its words then; "is damaged: " now).
+
 ## Java side (this is the class the JNI binds to)
 
 ```java

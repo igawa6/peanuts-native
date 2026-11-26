@@ -26,7 +26,7 @@ compressed one, which is fractions of a second over a thousand megabytes.
   `NX_SHCACHE_BYTES`, 16 MiB, in 8 shards of 128 entries with a lock each. A read that covers an entry whole
   decodes straight into the game's buffer and never enters the cache. A plain AES-CTR section has no cache.
 - Once an image is open its state is only read, so any number of the game's threads read at once.
-- Nothing is hashed at run time. The import does hash; a damaged dump read this way shows as wrong bytes.
+- Nothing is hashed at run time. The import does hash (every block against its NCA's hash layers, `dm/peanuts/import/nx_verify.c`); a damaged dump read this way shows as wrong bytes.
 
 ## The forms
 

@@ -52,9 +52,12 @@ public final class Compressed {
         return share + (int) ((last - share) * frac / of);
     }
 
+    /** What the importer's messages about a game file whose bytes do not match its own checksums say after the file and its part (nx_verify.c, nximport.c) */
+    static final String DAMAGED = " is damaged: ";
+
     /**
-     * An importer error about a compressed file, or about a game file that was cut off, in a player's words (what did not finish, that nothing changed when
-     * unchanged, what to do), or null when it is not one. The importer's own message goes to the log as it is.
+     * An importer error about a compressed file, or about a game file that was cut off or is damaged, in a player's words (what did not finish, that nothing
+     * changed when unchanged, what to do), or null when it is not one. The importer's own message goes to the log as it is.
      */
     public static String failure(String message, String name, boolean unchanged) {
         if (message == null) return null;
@@ -64,7 +67,14 @@ public final class Compressed {
         if (m.contains("lies outside its file"))
             return fileIn(message, "A game file") + " is cut off, so " + game + " was not imported." + same
                     + " The file is shorter than its own contents say, so it was not copied or downloaded completely. Copy the file again, then build the game again.";
-        if (!m.contains(".ncz") && !m.contains(".nsz") && !m.contains(".xcz") && !m.contains("compressed")) return null;
+        boolean compressed = m.contains(".ncz") || m.contains(".nsz") || m.contains(".xcz") || m.contains("compressed");
+        // an uncompressed game file whose bytes do not match the checksums its own hash layers hold ("<file>: the update v<n> is damaged: <why>", issue #561):
+        // the same file stops the same way at every Retry
+        if (!compressed && m.contains(DAMAGED))
+            return fileIn(message, "A game file") + " is damaged, so " + game + " was not imported." + same
+                    + " Its contents do not match the checksums inside it, so it changed when it was copied or downloaded. Copy the file again, or dump it again from"
+                    + " your console, then build the game again.";
+        if (!compressed) return null;
         if (m.contains("keys inside"))
             return file + " does not match your keys, so " + game + " was not imported." + same + " Compress the game again from your own dump, or build from the uncompressed file.";
         if (m.contains("zstd window") || m.contains("ncz layout") || m.contains("block layout") || m.contains("blocks, more than"))

@@ -60,8 +60,9 @@ class Icon(unittest.TestCase):
         cls.importer = None
         if cc():
             exe = d / 'nup_meta_test'
-            # NXIMPORT_SOURCES of the importer's CMakeLists: the NCZ reader (nx_ncz.c) and the vendored zstd decoder it uses (.nsz / .xcz, issue #149)
-            srcs = [IMPORT / 'tests/nup_meta_test.c'] + [IMPORT / f for f in ('nx_crypto.c', 'nx_lz4.c', 'nx_nca.c', 'nx_ncz.c', 'nx_icon.c', 'nx_zip.c', 'nximport.c')]
+            # NXIMPORT_SOURCES of the importer's CMakeLists: the NCZ reader (nx_ncz.c) and the vendored zstd decoder it uses (.nsz / .xcz, issue #149), the check of a
+            # plain NCA's hash layers (nx_verify.c, issue #561)
+            srcs = [IMPORT / 'tests/nup_meta_test.c'] + [IMPORT / f for f in ('nx_crypto.c', 'nx_lz4.c', 'nx_nca.c', 'nx_ncz.c', 'nx_verify.c', 'nx_icon.c', 'nx_zip.c', 'nximport.c')]
             srcs.append(IMPORT / '../../third_party/zstd/zstddeclib.c')
             b = subprocess.run([cc(), '-std=gnu11', '-O1', '-w', '-DZSTDLIB_VISIBLE=', '-DZSTDERRORLIB_VISIBLE=', '-I', str(IMPORT)] + [str(s) for s in srcs]
                                + ['-lz', '-lpthread', '-lm', '-ldl', '-o', str(exe)], capture_output=True, text=True)
