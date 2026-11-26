@@ -29,7 +29,7 @@ class GameSettingsPage(unittest.TestCase):
         self.assertIn('"GPU driver", v -> dev.peanuts.ui.DriverActivity.openForGame(a, g.titleId, g.name)', self.gs)   # PEANUTS: the row opens this game's driver page
         for setter in ('fullVegetation', 'skipLayers', 'hold60', 'decouple', 'instancedDraws', 'classicPasses', 'psoAsync', 'ramSaver', 'pauseOnReturn', 'rumble', 'pinThreads'):
             self.assertIn(f'Prefs.{setter}(a, id, on)', self.gs, f'{setter}: its switch is gone')
-        self.assertIn('Prefs.gameOption(a, id, opt.env, checked)', self.gs, "the profile's options")
+        self.assertIn('Prefs.gameOption(a, id, opt.env, opt.stored(checked))', self.gs, "the profile's options")   # PEANUTS: an inverted option stores the opposite of the switch
 
     def test_short_titles(self):
         t = titles(self.gs)
@@ -94,6 +94,8 @@ class GameSettingsPage(unittest.TestCase):
         self.assertGreater(len(rows), 2)
         for r in rows:
             d = r[3]
+            if not d:   # PEANUTS: a perf option is a plain switch row, title and state only (no added helper text)
+                self.assertIn("perf", " ".join(r[4:]).split(), r[2]); continue
             self.assertGreater(len(d), 40, r[2]); self.assertLess(len(d), 260, r[2])
             for word in ('guest memory', 'allocation', 'update step', 'capped at', ';', '|'): self.assertNotIn(word, d, f'{r[2]}: {word}')
 

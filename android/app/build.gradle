@@ -120,7 +120,25 @@ def renderOf = { String game ->
     def pool = rp.isEmpty() ? '::' : rp[0][5] + ':' + rp[0].drop(6).findAll { it ==~ /\d+=\d+x\d+/ }.join('/') + ':' + (rp[0].find { it.startsWith('out_h=') }?.substring(6) ?: '0')
     "render:${kv['min'] ?: '720'}:${kv['original'] ?: ''}:${kv['max_render'] ?: ''}:${pool}"
 }
-def resolutionOf = { String game -> !renderOf(game).isEmpty() ? renderOf(game) : !tsvRows(game, 'window_fn').isEmpty() || !tsvRows(game, 'res_levels').isEmpty() ? 'window' : tsvRows(game, 'graphics_scale').with { rs -> rs.isEmpty() ? '' : 'scale:' + rs.collect { c -> "${c[1].trim()}=${c[2].trim()}/${c[3].trim()}" }.join(',') } }
+// PEANUTS begin: game.tsv window_words <main build> <off>:<word>:<w|h> ...: the host writes the window size into the game's code at load (loader.c). The launcher then has the words: kind,
+// "words:<largest output WxH>" (Profile.words, WordsGfx: Output resolution, Internal resolution, Upscaler, Graphics quality, Frame rate). The largest output is 1920x1080 for every such profile
+def wordsOf = { String game -> tsvRows(game, 'window_words').isEmpty() ? '' : 'words:1920x1080' }
+// PEANUTS end
+// PEANUTS begin: game.tsv view_scale_fixed <main build> <W>x<H>: a game whose window is fixed at W x H (the host writes the 3D scale into its code, never the window). The launcher gives it the
+// words: kind too ("words:<W>x<H>": the largest output is the window, Profile.wordsMax) and NX_PEANUTS_FIXED_WINDOW ("<title ID>:<W>x<H>", WordsGfx.fixedSize): its Output resolution is the 3D target
+// size (DM_OUT_SIZE), never the window (DM_WINDOW_SIZE). One size a title (rows of other builds must agree); a title without the row gets nothing, so NX_PROFILES of every other title is as it was
+def fixedWindowOf = { String game ->
+    def sizes = tsvRows(game, 'view_scale_fixed').collect { c ->
+        def v = c.size() > 2 ? c[2].trim() : ''
+        if (!(v ==~ /\d+x\d+/)) throw new GradleException("$game: view_scale_fixed needs a <W>x<H> size, not '$v'")
+        v
+    }.unique()
+    if (sizes.size() > 1) throw new GradleException("$game: view_scale_fixed rows disagree on the size: $sizes")
+    sizes ? sizes[0] : ''
+}
+def fixedWordsOf = { String game -> def f = fixedWindowOf(game); f.isEmpty() ? '' : 'words:' + f }
+// PEANUTS end
+def resolutionOf = { String game -> !renderOf(game).isEmpty() ? renderOf(game) : !wordsOf(game).isEmpty() ? wordsOf(game) /* PEANUTS */ : !fixedWordsOf(game).isEmpty() ? fixedWordsOf(game) /* PEANUTS */ : !tsvRows(game, 'window_fn').isEmpty() || !tsvRows(game, 'res_levels').isEmpty() ? 'window' : tsvRows(game, 'graphics_scale').with { rs -> rs.isEmpty() ? '' : 'scale:' + rs.collect { c -> "${c[1].trim()}=${c[2].trim()}/${c[3].trim()}" }.join(',') } }
 // The RomFS checks (game.tsv romfs_check rows, as "<path>|<line>|<expected or main>", ';' between them: Profile.romfsChecks, RomfsCheck.java)
 def romfsChecksOf = { String game -> tsvRows(game, 'romfs_check').findAll { it.size() >= 4 }.collect { c -> [c[1].trim(), c[2].trim(), c[3].trim().replaceAll(/[\\"]/, ' ')].join('|') }.join(';') }
 // The profile's GPU timestamp mode (game.tsv gpu_timestamps: segment or submission, the host's default when it has no row): Game settings › GPU timing names it as "Game default"
@@ -211,6 +229,8 @@ def optionsOf = { String game ->
         def mode = 'restart'
         def implies = ''
         def needs = ''
+        def inverted = ''   // PEANUTS: "inverted" = the switch shows the opposite of the stored option (Profile.Option.inverted)
+        def perf = ''   // PEANUTS: "perf" = the option's row is in the Performance tab (Profile.Option.perf)
         def patches = tsvRows(game, 'option_patch').findAll { it.size() > 1 && it[1] == env }.collect { patch ->
             if (patch.size() != 6 || !(patch[2] ==~ /[0-9a-f]{32}/) || !(patch[3] ==~ /0x[0-9a-f]+/) || !(patch[4] ==~ /[0-9a-f]{8}/) || !(patch[5] ==~ /[0-9a-f]{8}/)) throw new GradleException("$game: invalid option_patch")
             [patch[2], 'm' + patch[3], patch[4], patch[5]].join(',')
@@ -220,9 +240,11 @@ def optionsOf = { String game ->
                 if (tok == 'restart' || tok == 'live') mode = tok
                 else if (tok.startsWith('implies=')) implies = tok.substring('implies='.length()).trim()
                 else if (tok.startsWith('needs=')) needs = tok.substring('needs='.length()).trim()
+                else if (tok == 'perf') perf = 'perf'   // PEANUTS: the perf and inverted option attributes, joined as two more fields
+                else if (tok == 'inverted') inverted = 'inverted'
             }
         }
-        [env, label, desc, mode, implies, needs, patches].collect { it.replaceAll(/[\t\n\\"]/, ' ').replaceAll(/[;|]/, ',').trim() }.join('|')
+        [env, label, desc, mode, implies, needs, patches, perf, inverted].collect { it.replaceAll(/[\t\n\\"]/, ' ').replaceAll(/[;|]/, ',').trim() }.join('|')
     }.join(';')
 }
 // The 3D scene choices for Advanced (or 3D scene): the overlays (game.tsv scene_scale rows, only with a scene_scale_palette row: dm/tools/scene_res.py), "<name>|<label>|<scale>|<mode>",
@@ -311,6 +333,58 @@ def aspectPlanOf = { String game ->
 }
 def aspectsOf = { String game -> tsvRows(game, 'aspect').findAll { it.size() > 1 && it[1].trim() }.collect { it[1].trim() }.join(',') }   // game.tsv aspect rows: the picture shapes whose 3D cameras the host follows, no module variant ("21:9,4:3"); Game settings > Aspect ratio
 def handheldGames = nxGames.findAll { g -> tsvRows(g, 'op_mode').any { it.size() > 1 && it[1].trim() == 'handheld' } }.join(' ')   // PEANUTS: the games whose profile says op_mode handheld (ScreenMode's default for them)
+// PEANUTS: the per-profile Output default: game.tsv "output_default native|720p|1080p" (at most one row) as space-separated "<title ID>:<value>" (WordsGfx.outDefault); no row, no entry
+def outputDefaults = nxGames.collectMany { g ->
+    def rs = tsvRows(g, 'output_default')
+    if (rs.size() > 1) throw new GradleException("$g: more than one output_default row")
+    rs.collect { c ->
+        def v = c.size() > 1 ? c[1].trim() : ''
+        if (!(v in ['native', '720p', '1080p'])) throw new GradleException("$g: output_default must be native, 720p or 1080p, not '$v'")
+        "$g:$v".toString()
+    }
+}.join(' ')
+// PEANUTS: a words: title (resolutionOf) needs an fps_limit row: its Frame rate is the slider only for a limited title (Prefs.limited); without the row the launcher would show the legacy list. dm/games/game.py refuses it too
+nxGames.each { g -> if (resolutionOf(g).startsWith('words:') && fpsLimitOf(g).isEmpty()) throw new GradleException("$g: a words: title (window_words or view_scale_fixed) needs an fps_limit row (10 to 60), e.g. fps_limit 60, fps_modes 30,40,60, fps_default 60") }
+// PEANUTS: the per-profile frame rate default: game.tsv "fps_default <n>" (at most one row; n a whole fps of 10..60 with no sign; the title needs an fps_limit row, n at most that limit, and
+// n one of its offered steps: the fps_modes rates, else 20, 30, 40, 45, 60 from fps_limit_min up) as space-separated "<title ID>:<n>" (WordsGfx.fpsDefault); no row, no entry. dm/games/game.py
+// checks the same rows (and, for a whole-step title, its 60 / 30 / 20 steps), so a bad row fails the build in either place. A key row must start with the key and a TAB, as tsvRows reads it
+def fpsDefaults = nxGames.collectMany { g ->
+    def rs = tsvRows(g, 'fps_default')
+    if (rs.size() > 1) throw new GradleException("$g: more than one fps_default row")
+    rs.collect { c ->
+        def v = c.size() == 2 ? c[1].trim() : ''
+        if (!(v ==~ /[1-9][0-9]/)) throw new GradleException("$g: fps_default must be one whole number of frames a second (10 to 60), not '${c.drop(1).join('\t')}'")
+        def n = v as int
+        def limit = fpsLimitOf(g)
+        if (limit.isEmpty()) throw new GradleException("$g: fps_default needs an fps_limit row")
+        if (n > (limit as int)) throw new GradleException("$g: fps_default $n is above fps_limit $limit")
+        def modes = fpsModesOf(g)
+        def offered = modes ? (modes.split(',') as List) : ['20', '30', '40', '45', '60'].findAll { (it as int) >= (fpsLimitMinOf(g) ?: '20') as int }
+        if (!(v in offered)) throw new GradleException("$g: fps_default $n is not one of the offered frame rates (${offered.join(',')})")
+        "$g:$v".toString()
+    }
+}.join(' ')
+// PEANUTS: the fixed-window titles as space-separated "<title ID>:<W>x<H>" (WordsGfx.fixedSize); no row, no entry
+def fixedWindows = nxGames.collect { g -> def f = fixedWindowOf(g); f.isEmpty() ? '' : "$g:$f".toString() }.findAll { it }.join(' ')
+// PEANUTS: game.tsv "words_gate docked_only=<list> hidden=<list>" (at most one row, at least one part; the lists are from output, internal, upscaler) as space-separated
+// "<title ID>:<spec>", spec = the parts joined by ';' (docked_only=output,internal;hidden=upscaler): WordsGfx.gateOf. No profile.bin field: the launcher alone reads it
+def wordsGates = nxGames.collectMany { g ->
+    def rs = tsvRows(g, 'words_gate')
+    if (rs.size() > 1) throw new GradleException("$g: more than one words_gate row")
+    rs.collect { c ->
+        def parts = c.drop(1).collectMany { it.trim().split(/\s+/) as List }.findAll { it }
+        if (parts.isEmpty()) throw new GradleException("$g: words_gate needs docked_only=<list> and/or hidden=<list>")
+        def seen = [:]
+        parts.each { p ->
+            def kv = p.split('=', 2)
+            if (kv.size() != 2 || !(kv[0] in ['docked_only', 'hidden']) || seen.containsKey(kv[0])) throw new GradleException("$g: words_gate part '$p' is not docked_only=<list> or hidden=<list> (each once)")
+            def names = kv[1].split(',', -1).collect { it.trim() }
+            if (names.any { !(it in ['output', 'internal', 'upscaler']) } || names.unique(false).size() != names.size()) throw new GradleException("$g: words_gate ${kv[0]} must be a list of output, internal, upscaler (no repeats), not '${kv[1]}'")
+            seen[kv[0]] = names.join(',')
+        }
+        ("$g:" + seen.collect { k, v -> "$k=$v" }.join(';')).toString()
+    }
+}.join(' ')
 // Whether the game has cheat files (game.tsv cheats rows: pack_android.py place_cheats copies them into the pack): "1", or empty. The launcher then offers Game settings › Cheats (Cheats.java)
 def cheatsOf = { String game -> tsvRows(game, 'cheats').isEmpty() ? '' : '1' }
 def timeOfDayOf = { String game -> tsvRows(game, 'time_of_day').any { it.size() > 1 && it[1].trim() == '1' } ? '1' : '' }   // the Game tab's Time of day row only for profiles whose day/night cycle follows the user clock
@@ -337,6 +411,10 @@ android {
         buildConfigField 'String', 'NX_BRANCH', "\"${branch ?: 'unknown'}\""
         buildConfigField 'String', 'NX_DIRTY', "\"${commit ? dirty : ''}\""
         buildConfigField 'String', 'NX_PEANUTS_HANDHELD', "\"$handheldGames\""   // PEANUTS: see handheldGames above
+        buildConfigField 'String', 'NX_PEANUTS_OUTPUT_DEFAULT', "\"$outputDefaults\""   // PEANUTS: see outputDefaults above
+        buildConfigField 'String', 'NX_PEANUTS_FPS_DEFAULT', "\"$fpsDefaults\""   // PEANUTS: see fpsDefaults above
+        buildConfigField 'String', 'NX_PEANUTS_FIXED_WINDOW', "\"$fixedWindows\""   // PEANUTS: see fixedWindows above
+        buildConfigField 'String', 'NX_PEANUTS_WORDS_GATE', "\"$wordsGates\""   // PEANUTS: see wordsGates above
         buildConfigField 'String', 'NX_PEANUTS_ID', "\"$nxPeanutsId\""   // PEANUTS: see nxPeanutsId above
         buildConfigField 'boolean', 'NX_LSFG', "$nxLsfg"
         // The play app and the release behave alike (saves/<id>, the user's build tag, no test switches); every other app is a test app
