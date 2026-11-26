@@ -24,15 +24,18 @@ Odin 2 (Snapdragon 8 Gen 2, Adreno 740, 16 GB, Android 13), update 1.70 from a d
 
 | | Turnip 27.0.0-R2 | System driver (Adreno V@0676.32) |
 |---|---|---|
-| Opening movie, title, menus, Training's arena | right | right, but every character draws black (hair and effects right); the environment and the UI are right |
-| A training fight, player-controlled | 30 fps (SurfaceFlinger, frame interval p95 33.3 ms), PSS 4.3 GB | 30 fps (p95 50 ms) |
+| Opening movie, title, menus, Training's arena | right | right (characters black before `DM_VK_DYN_PASS`) |
+| A training fight, player-controlled | 30 fps (SurfaceFlinger, frame interval p95 33.3 ms), PSS 4.3 GB | 30 fps (p95 33.3 ms) |
+| Free Battle (VS Battle, Sage of the Six Paths Naruto, Sasuke, Sakura), player-controlled | right, 30 fps | right, 30 fps; jutsu and chakra effects break into square blocks (open) |
 | Docked → handheld → docked mid-fight | the UI texture is made again at 1120x630 and 1600x900 and shared each time | not switched |
 | `DM_NVN_SHDUMP` | no program missing | no program missing |
 
 - **Resolved, found with the draft's CPU copy:** a black 3D frame wherever the UI covers it (the title's village, the menus' scene, the whole arena in a fight), ghost copies of earlier UI frames (the Training menu over the previous dialog), and a white opening movie. All three were the UI image reaching NVN unordered: [rendering.md, An NVN game whose UI draws with OpenGL through EGL](../../../docs/reference/rendering.md#an-nvn-game-whose-ui-draws-with-opengl-through-egl-android).
 - **Resolved:** the reported missing terrain and sky: with the UI image shared the arena's ground, sky and water show on both drivers, and no shader is missing from the map. They were under the UI's black, not missing.
-- **Open (system driver only):** the characters' bodies draw black. Not the GL layer (the UI and the environment are right on the same frames) and not a missing shader. To find the pixel shader with `DM_VK_SKIP_FS` / `DM_VK_BISECT` on the system driver and compare its module on Turnip.
-- `[RED] vk: NVN format 0x97 has no Vulkan format on this device` on both drivers; which texture uses it is not known yet.
+- **Resolved (system driver):** the characters' bodies drew black. Qualcomm's driver lost the depth write enable at a pass begin and the cull mode at a pipeline bind; `DM_VK_DYN_PASS` sets the dynamic state again there ([rendering.md](../../../docs/reference/rendering.md#characters-black-on-qualcomms-driver-dynamic-state-lost-at-a-pass-begin-or-a-pipeline-bind)). Checked toggled live over 8-16 frames a scene: title, Training's arena, a training fight.
+- **Resolved (both drivers):** Sage of the Six Paths Naruto's costume was flat black at the character select and invisible in fights: its diffuse is the game's one BGR5A1 (0x97) texture, which had no Vulkan format ([rendering.md](../../../docs/reference/rendering.md#a-materials-body-invisible-or-black-nvn_format_bgr5a1-had-no-vulkan-format)). Checked at the character select on both drivers (6 frames each, before and after) and in a Free Battle on both.
+- **Open (system driver only):** jutsu and chakra effects (bursts, the Truth-Seeking Orb sphere, Susanoo) break into square blocks; Turnip draws them whole in the same fights. Not traced yet.
+- **Seen once:** a crash in Android's own UI rendering (`libhwui.so` `ClipStack`, the game process's RenderThread) at the character select on the system driver; not seen again in three runs.
 
 ## Shaders
 
