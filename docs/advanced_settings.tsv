@@ -752,6 +752,7 @@ DM_VK_TABLE_PREMAKE	developer	Graphics			text			both
 DM_VK_TBUF	developer	Graphics			text			both						
 DM_VK_TBUF_COPY	developer	Graphics			text			both						
 DM_VK_TBUF_GW	developer	Graphics			text			both						
+DM_VK_TBUF_GW_SB	developer	Graphics			text			both						
 DM_VK_TBUF_LOG	developer	Diagnostics			text			both						
 DM_VK_TEST_HANG	developer	Diagnostics			text			both						
 DM_VK_TEXU_ELEM	developer	Diagnostics			text			both						

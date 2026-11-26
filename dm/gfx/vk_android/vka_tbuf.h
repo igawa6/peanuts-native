@@ -12,8 +12,12 @@
 //   - else, outside a draw pass (a dispatch), through a copy the GPU makes before the dispatch (vkCmdCopyBuffer into scratch memory, a full barrier before the first
 //     copy and one after the last), which sees what the work recorded before it wrote;
 //   - else (a draw: no copy can be recorded inside its pass) through the CPU's copy as before, noted.
-// Only stores through storage texel buffers count, not every opaque write: a storage buffer bound without a size is marked over the device's whole storage range, which
-// would take the CPU's copy away from buffers the CPU does write (the case the copy was made for).
+// Stores through a storage buffer bound with its size count too (vka_tex.c vka_tex_gw_sb, flagged VKTB_W_SB; DM_VK_TBUF_GW_SB, live, default 1; 0: as before): Fire Emblem:
+// Three Houses' clustered light culling (6797af67f88a4ddd, 20x12x16 groups) writes each cluster's light list through one, and the lighting reads the lists as buffer
+// textures through an image binding. Through the CPU's row image they were an earlier frame's lists: still right while the camera stood, but while it moved whole screen
+// tiles lost their lights for a frame (black flicker in battles and at the monastery, worse the faster the camera moved; Peanuts issue #281).
+// Not every opaque write counts: a storage buffer bound without a size is marked over the device's whole storage range, which would take the CPU's copy away from
+// buffers the CPU does write (the case the copy was made for); copies, fills and inline updates are applied to the CPU's copy (vka_tex_gw_read).
 #ifndef VKA_TBUF_H
 #define VKA_TBUF_H
 #include <stdint.h>
@@ -23,6 +27,10 @@ enum { VKTB_NONE, VKTB_PLACE, VKTB_CPU, VKTB_GPU };   // an empty texel buffer; 
 
 // One GPU write as the tracker keeps it (vka_tex.c gw_t): [lo, hi), its submission's fence (0: the submission being recorded), tb: a storage texel buffer's stores.
 // 1 = it is such a write, overlaps [a, b) and is not done (done: the newest completed fence)
+// The kinds of GPU write the tracker flags (vka_tex.c gw_t value): stores through a storage texel buffer, and through a storage buffer bound with its size. 1 = a write
+// of that value counts as one the CPU's copy does not have (sb: DM_VK_TBUF_GW_SB)
+enum { VKTB_W_TBUF = 1, VKTB_W_SB = 2 };
+static inline int vka_tbuf_gw_counts(uint32_t value, int sb) { return (value & VKTB_W_TBUF) || (sb && (value & VKTB_W_SB)); }
 static inline int vka_tbuf_gw_pending(uint64_t lo, uint64_t hi, uint64_t fence, int tb, uint64_t a, uint64_t b, uint64_t done) {
     return tb && (!fence || fence > done) && lo < b && hi > a;
 }

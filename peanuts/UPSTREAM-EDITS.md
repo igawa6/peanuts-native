@@ -2796,3 +2796,26 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### Buffer textures over a storage buffer the GPU writes (2026-11-26, issue #281)
+
+Fire Emblem: Three Houses' black flicker while the camera moves: its clustered light lists are stored by a compute dispatch through a storage buffer and read as buffer
+textures, and a storage buffer's stores did not count as a pending GPU write (Round 10 left them out), so the lighting read the CPU's earlier copy. Stores through a
+storage buffer bound with its size now count (`DM_VK_TBUF_GW_SB`, live, default 1; `0` is the behaviour before); one bound without a size still does not. Reference entry:
+[Buffer textures over a storage buffer the GPU writes (Android)](../docs/reference/rendering.md#buffer-textures-over-a-storage-buffer-the-gpu-writes-android).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_tbuf.h` | Peanuts-owned | `VKTB_W_TBUF`, `VKTB_W_SB` and `vka_tbuf_gw_counts`; the header comment | (own file) |
+| `dm/gfx/vk_android/vka_tex.c` | 2 | `vka_tex_gw_tbuf` flags `VKTB_W_TBUF`, `vka_tex_gw_sb` flags `VKTB_W_SB`; `vka_tex_gw_tbuf_pending` counts a flag through `vka_tbuf_gw_counts` | inside `// PEANUTS begin`/`end`, `// PEANUTS: ...` |
+| `dm/gfx/vk_android/vka.h` | 1 | `vka_tex_gw_sb` | `// PEANUTS: ...` |
+| `dm/gfx/vk_android/vka_draw.c` | 2 | `stage_writes`: a writable storage buffer bound with its size marks its range with `vka_tex_gw_sb`, else `vka_tex_gw_opaque` as before; `tbuf_img_ask`: the `tbuf img gw` line | `// PEANUTS: ...`, inside `// PEANUTS begin`/`end` |
+| `dm/host/tests/t_android_tbuf.c` | Peanuts-owned | which flagged writes count, the light lists' dispatch-then-draw sequence | (own file) |
+| `docs/env_switches.tsv` | 1 row | `DM_VK_TBUF_GW_SB` | generated table, row by hand |
+| `docs/advanced_settings.tsv` | 1 row | `DM_VK_TBUF_GW_SB`, developer tier (as `DM_VK_TBUF_GW`), from `dm/tools/advanced_switches.py` | generated table |
+| `docs/reference/rendering.md` | 1 entry | the entry above | `<!-- PEANUTS: an entry of this fork. -->` |
+| `dm/games/010055D009F78000/README.md` | 1 line | under "Found on this game" | `<!-- PEANUTS -->` |
+
+Not an upstream candidate as it is: upstream reads a buffer texture through an image binding by its own copy on the GPU every frame (`vka_tbuf.c`), not a row image of
+the CPU's bytes.
+

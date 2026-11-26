@@ -174,6 +174,15 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Fix:** the copies are forgotten at each submission's start (`tbc_reset` from `vka_draw_sub_begin`, `vka_draw.c`), as the driver segment memo is. The copy itself stays.
 - **Found on:** [Hogwarts Legacy](../../dm/games/0100F7E00C70E000/README.md): the cliff talk screen-recorded on the AYN Thor (Turnip Gen8 V38), frames whose near-black pixel count jumps over both neighbours: 27 before, 0 after.
 
+### Buffer textures over a storage buffer the GPU writes (Android)
+
+<!-- PEANUTS: an entry of this fork. -->
+- **Symptom:** (Android) lighting goes black in hard-edged rectangular blocks for single frames while the camera moves, worse the faster it moves, and never while it stands still: torch light stops at a straight edge, whole screen tiles lose their lights. Fire Emblem: Three Houses in battles and at the monastery (Peanuts issue #281), on the system driver and on Turnip alike. No `[RED]` line; `DM_VK_TBUF_COPY` changes nothing (the game binds no texel buffers: `texel buffers per frame: 0.0`).
+- **Cause:** the game culls its lights per cluster in a compute dispatch (`6797af67f88a4ddd`, 20×12×16 groups: 20×12 screen tiles, 16 depth slices) that stores each cluster's light list through a storage buffer, and the lighting reads the lists as buffer textures through an image binding. Such a binding reads this fork's row image of the CPU's bytes unless a GPU write over the range is pending ([Buffer textures on Android](#buffer-textures-on-android); `vka_tbuf.h`), and only stores through a storage texel buffer counted as one: a storage buffer's stores were an unflagged opaque write, which re-uploads the image only once the submission is done. So the lighting read an earlier frame's lists: right while the camera stood, the wrong clusters' lights while it moved.
+- **Fix:** stores through a storage buffer bound with its size are flagged too (`vka_tex_gw_sb`, `VKTB_W_SB`; `stage_writes` in `vka_draw.c`), and count as pending while `DM_VK_TBUF_GW_SB` is on (live, default 1; `vka_tbuf_gw_counts`): a buffer texture over the range is read through the copy the GPU makes at that point of the work. A storage buffer bound without a size still marks no such write, since its mark covers the device's whole storage range and would take the CPU's copy from buffers the CPU writes. The log has `tbuf img gw:` for the first 16 such bindings.
+- **Check:** `t_android_tbuf` (which flagged writes count, and the light lists' dispatch-then-draw sequence). On the AYN Thor in Three Houses' last battle of Cindered Shadows, moving the cursor between two tiles: the black blocks every few frames before, none with the fix on the system driver and on Turnip (Balemuni Apex v2), back at once with `nxctl.sh env DM_VK_TBUF_GW_SB=0`; 60 fps with GPU 7.3 ms a frame either way.
+- **Found on:** [Fire Emblem: Three Houses](../../dm/games/010055D009F78000/README.md).
+
 ### Buffer textures read by 1D integer fetches (row wrap)
 
 - **Symptom:** `texture type mismatch: shader declares 2, texture is 9`; the slot read 0.

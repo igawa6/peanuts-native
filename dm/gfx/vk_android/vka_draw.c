@@ -1496,7 +1496,10 @@ static int tbuf_img_ask(int tid, uint8_t dim) {
     int fits = (dim & DMSH_VK_DIM_MASK) != 1 || (elems + 16383) / 16384 <= V.props.limits.maxImageDimension2D;
     uint64_t bytes = (uint64_t)elems * f.bpb; VkBuffer b; VkDeviceSize o = 0;
     int placed = vka_addr_run(addr, bytes, &b, &o) >= bytes;
-    return vka_tbuf_img_choice(sw, shape, want == have, fits, vka_tex_gw_tbuf_pending(addr, bytes), placed, placed && !(o % f.bpb));
+    int pend = vka_tex_gw_tbuf_pending(addr, bytes), c = vka_tbuf_img_choice(sw, shape, want == have, fits, pend, placed, placed && !(o % f.bpb));
+    if (pend) { static _Atomic int nl; if (atomic_fetch_add(&nl, 1) < 16) VLOG("tbuf img gw: texture ID %d at %#llx (%llu bytes): GPU stores over it are not done: %s", tid, (unsigned long long)addr, (unsigned long long)bytes,
+                                                                                c ? "read through the copy the GPU makes" : "the row image of the CPU's bytes all the same (the copy cannot be made or read)"); }   // PEANUTS
+    return c;
 }
 static int tbuf_img_gpu(int tid, uint8_t dim) {
     int k = vktb_memo_find(&g_tig, tid, dim);
@@ -1631,7 +1634,10 @@ static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const
             int storage = r[i].desc == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             switch (r[i].what) {
             case VKA_R_BUF: ok = storage ? ssbo_desc(r[i].addr, r[i].size, bi) : ubo_desc(r[i].addr, r[i].size, bi);
-                if (ok && storage && (r[i].flags & DMSH_VK_BF_RW)) vka_tex_gw_opaque(r[i].addr, bi->range);   // the shader may store into it
+                if (ok && storage && (r[i].flags & DMSH_VK_BF_RW)) {   // the shader may store into it
+                    if (r[i].size && VKA_ENV("DM_VK_TBUF_GW", 1)) vka_tex_gw_sb(r[i].addr, bi->range);   // PEANUTS: with its size: buffer textures over it are not read through the CPU's copy while the stores are not done (vka_tex_gw_sb)
+                    else vka_tex_gw_opaque(r[i].addr, bi->range);
+                }
                 if (ok && storage) sb_peek_note(sh->key, st, &r[i]);
                 if (ok && !storage) ub_peek_note(sh->key, st, &r[i]);
                 if (ok) sb_watch_use(sh->key, st, &r[i], storage, bi);
