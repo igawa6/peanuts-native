@@ -1137,6 +1137,96 @@ def jump_masked_not(insl, j):
     targets = [tb + struct.unpack_from('<i', IMG, tb + 4 * i)[0] for i in range(n)]
     addresses = {p.address for p in insl}
     return targets if all(t in addresses and not head < t <= end for t in targets) else None
+def jump_offsets_wide(insl, j, back=40):   # PEANUTS: Resident Evil Revelations 2 (SDK 1.6.0)
+    """The offset-table form with the bounds check further back than jump_offsets' 16 instructions: cmp wI,#N; b.hi exit; adrp xB; add xB,xB,#lo; ...; ldrsw xE,[xB,xI,lsl #2];
+    ...; add x18,xE,xB; br x18. Resident Evil Revelations 2 v131072 main+0xd19b08 (MT Framework) sets 16 constants between the load and the br, 24 instructions after its
+    cmp w18,#0x11 (18 entries). Accepted only for one straight run from the cmp to the br (consecutive instructions, no branch in it but the b.hi, whose exit lies outside the run,
+    and no branch from the function into it past the cmp), with the index unchanged from the cmp to the load, the base unchanged from its add to the add of x18, the entry unchanged
+    from the load to that add and x18 untouched from there to the br. Tried after every other recognizer, so the tables they read keep their targets"""
+    run = None
+    for i in range(j - 1, max(-1, j - back - 1), -1):
+        p = insl[i]
+        if p.mnemonic in ('b', 'bl', 'br', 'blr', 'ret', 'cbz', 'cbnz', 'tbz', 'tbnz') or p.mnemonic.startswith('b.'):
+            if p.mnemonic == 'b.hi' and i > 0 and insl[i - 1].mnemonic == 'cmp': run = insl[i - 1:j + 1]
+            break
+    if not run: return None
+    if any(b.address != a.address + 4 for a, b in zip(run, run[1:])): return None
+    cmp, hi = run[0], run[1]
+    m = re.fullmatch(r'w(\d+), #(0x[0-9a-f]+|\d+)', cmp.op_str)
+    if not m: return None
+    idx, n = 'x' + m.group(1), int(m.group(2), 0) + 1
+    head, end = cmp.address, insl[j].address
+    if head <= hi.operands[0].imm <= end: return None
+    add = next((p for p in reversed(run[2:-1]) if p.mnemonic == 'add' and re.fullmatch(r'x18, x\d+, x\d+', p.op_str)), None)
+    if not add: return None
+    _, ent, base = add.op_str.split(', ')
+    ld = next((p for p in reversed(run[2:run.index(add)]) if p.mnemonic == 'ldrsw' and p.op_str == f'{ent}, [{base}, {idx}, lsl #2]'), None)
+    if not ld or base in (ent, idx): return None
+    kl, ka = run.index(ld), run.index(add)
+    def writes(p, reg): return any(p.reg_name(r).replace('w', 'x', 1) == reg for r in p.regs_access()[1])
+    if any(writes(p, idx) for p in run[2:kl]) or any(writes(p, ent) for p in run[kl + 1:ka]) or any(writes(p, 'x18') for p in run[ka + 1:-1]): return None
+    lo = page = None; kb = None
+    for q in range(kl - 1, 1, -1):   # the base's writers inside the run: add xB,xB,#lo after adrp xB, nothing else
+        p = run[q]
+        if not writes(p, base): continue
+        if lo is None and p.mnemonic == 'add' and re.fullmatch(rf'{base}, {base}, #(0x[0-9a-f]+|\d+)', p.op_str): lo = int(p.op_str.split('#')[1], 0); kb = q; continue
+        if lo is not None and p.mnemonic == 'adrp' and p.op_str.startswith(base + ','): page = p.operands[1].imm
+        break
+    if page is None or any(writes(p, base) for p in run[kb + 1:ka + 1] if p is not add): return None
+    for p in insl:
+        if p.mnemonic in ('b', 'bl', 'cbz', 'cbnz', 'tbz', 'tbnz') or p.mnemonic.startswith('b.'):
+            if head < p.operands[-1].imm <= end: return None
+    if any(head < t <= end for targets in tabjumps.values() for t in targets): return None
+    if any(b <= end and b + 4 * width > head + 4 for b, width in jumps.values()): return None
+    tb = page + lo
+    if tb < 0 or tb + 4 * n > len(IMG): return None
+    targets = [tb + struct.unpack_from('<i', IMG, tb + 4 * i)[0] for i in range(n)]
+    addresses = {p.address for p in insl}
+    return targets if all(t in addresses and not head < t <= end for t in targets) else None
+def jump_masked_tbnz(insl, j):   # PEANUTS: Resident Evil Revelations 2 (SDK 1.6.0)
+    """A masked index bounded by a bit test: tbnz wS,#b,exit; and xI,xS,#M; ldrsw xE,[xB,xI,lsl #2]; add x18,xE,xB; br x18, with M = 2^(b+1) - 1, so the tbnz sends every
+    index of 2^b or more away and the table has 2^b entries. Resident Evil Revelations 2 v131072 main+0xc44180 (MT Framework): tbnz w17,#3; and x18,x17,#0xf; ldrsw x18,[x13,x18,lsl #2];
+    add x18,x18,x13 (8 entries), with x13 from adrp + add before the loop around it. The same checks as jump_masked_not: a straight run from the tbnz to the br, nothing written
+    between that it reads, no branch into the run, and every target an instruction of the function outside it. Tried only after the older recognizers fail"""
+    ctx = insl[max(0, j - 16):j + 1]
+    add = next((p for p in reversed(ctx[:-1]) if p.mnemonic == 'add' and re.fullmatch(r'x18, x\d+, x\d+', p.op_str)), None)
+    if not add: return None
+    _, ent, base = add.op_str.split(', '); ka = ctx.index(add)
+    ld = next((p for p in reversed(ctx[:ka]) if p.mnemonic == 'ldrsw' and re.fullmatch(rf'{ent}, \[{base}, x\d+, lsl #2\]', p.op_str)), None)
+    if not ld: return None
+    kl = ctx.index(ld)
+    idx = re.fullmatch(rf'{ent}, \[{base}, (x\d+), lsl #2\]', ld.op_str).group(1)   # pyright: ignore[reportOptionalMemberAccess]  # ld was chosen by this match
+    if base in (ent, idx): return None
+    mask = next((p for p in reversed(ctx[:kl]) if p.mnemonic == 'and' and re.fullmatch(rf'{idx}, x\d+, #(0x[0-9a-f]+|\d+)', p.op_str)), None)
+    if not mask: return None
+    km = ctx.index(mask)
+    if km < 1: return None
+    _, src, imm = mask.op_str.split(', '); m = int(imm[1:], 0)
+    if not m or m & (m + 1) or m > 0xffffffff: return None
+    bit = m.bit_length() - 1; n = 1 << bit
+    test = ctx[km - 1]
+    if test.mnemonic != 'tbnz' or not re.fullmatch(rf'[wx]{src[1:]}, #{bit}, #(0x[0-9a-f]+|\d+)', test.op_str): return None
+    run = ctx[km - 1:]
+    if any(b.address != a.address + 4 for a, b in zip(run, run[1:])): return None
+    head, end = test.address, insl[j].address
+    if head <= test.operands[-1].imm <= end: return None
+    def writes(p, reg):
+        if p.mnemonic in ('cmp', 'cmn', 'tst'): return False
+        if p.mnemonic in ('bl', 'blr') and int(reg[1:]) <= 18: return True
+        return any(p.reg_name(r).replace('w', 'x', 1) == reg for r in p.regs_access()[1])
+    if any(writes(p, idx) for p in ctx[km + 1:kl]) or any(writes(p, ent) for p in ctx[kl + 1:ka]) or \
+       any(writes(p, base) for p in ctx[kl + 1:ka + 1]) or any(writes(p, 'x18') for p in ctx[ka + 1:-1]): return None
+    if any(p.mnemonic in ('b', 'bl', 'br', 'blr', 'ret', 'cbz', 'cbnz', 'tbz', 'tbnz') or p.mnemonic.startswith('b.') for p in ctx[km:-1]): return None
+    for p in insl:
+        if p.mnemonic in ('b', 'bl', 'cbz', 'cbnz', 'tbz', 'tbnz') or p.mnemonic.startswith('b.'):
+            if head < p.operands[-1].imm <= end: return None
+    if any(head < t <= end for targets in tabjumps.values() for t in targets): return None
+    if any(b <= end and b + 4 * width > head + 4 for b, width in jumps.values()): return None
+    tb = copied_base(insl, insl.index(ld), base)
+    if tb is None or tb < 0 or tb + 4 * n > len(IMG): return None
+    targets = [tb + struct.unpack_from('<i', IMG, tb + 4 * i)[0] for i in range(n)]
+    addresses = {p.address for p in insl}
+    return targets if all(t in addresses and not head < t <= end for t in targets) else None
 def jump_adr_offsets(insl, j):
     """Entries relative to an adr rather than to the table (Tears of the Kingdom main+0x393bb0): cmp w0,#5; b.hi; ...; adr x18,#L; ldrsw x1,[x17,x0,lsl #2];
     add x18,x18,x1; br x18 → target = L + entry, with the table base x17 from adrp + add. Tried only where jump_offsets finds nothing. Returns all targets, or None if not recognized"""
@@ -1475,6 +1565,8 @@ def analyse_fn(fa, fb):
                 if not tgt: tgt = jump_masked_not(insl, j)   # a complemented low-bit index with its zero case branched away: exactly mask entries
                 if not tgt: tgt = jump_offsets(insl, j, copy_first=True, far_base=True, forward_base=True)   # a unique base initialized in a later block that branches backward
                 if not tgt: tgt = jump_zero_extended(insl, j)   # a 32-bit checked value zero-extended into the index, with its full path to the br verified
+                if not tgt: tgt = jump_masked_tbnz(insl, j)   # PEANUTS: a masked index whose high bit a tbnz sends away (Resident Evil Revelations 2)
+                if not tgt: tgt = jump_offsets_wide(insl, j)   # PEANUTS: the offset-table form with its check more than 16 instructions back (Resident Evil Revelations 2)
                 assert tgt, f'jump table {ins.address:x}'
                 tabjumps[ins.address] = tgt; continue
             jumps[ins.address] = (base, width)
