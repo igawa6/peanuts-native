@@ -327,7 +327,8 @@ static int init_once(void) {
 
     VkPhysicalDeviceMapMemoryPlacedPropertiesEXT pmp = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_PROPERTIES_EXT};
     VkPhysicalDeviceVulkan13Properties p13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES, .pNext = placed ? &pmp : NULL};
-    VkPhysicalDeviceVulkan11Properties p11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES, .pNext = &p13};
+    VkPhysicalDeviceVulkan12Properties p12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES, .pNext = &p13};   // PEANUTS: shaderDenormPreserveFloat16, logged for fp16_exact
+    VkPhysicalDeviceVulkan11Properties p11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES, .pNext = &p12};
     VkPhysicalDevicePushDescriptorPropertiesKHR ppd = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR, .pNext = &p11};
     VkPhysicalDeviceMaintenance3Properties pm3 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES, .pNext = V.push_desc ? (void *)&ppd : (void *)&p11};
     VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT pgpl = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT, .pNext = &pm3};
@@ -368,6 +369,10 @@ static int init_once(void) {
          p11.subgroupSupportedOperations, p11.subgroupQuadOperationsInAllStages ? "yes" : "no", p13.requiredSubgroupSizeStages);
     V.subgroup_stages = p11.subgroupSupportedStages;
     V.subgroup_quad = !!(p11.subgroupSupportedOperations & VK_SUBGROUP_FEATURE_QUAD_BIT);   // PEANUTS: vka_shader.c quad_shfl
+    // PEANUTS: fp16 subnormals (vka_shader.c fp16_exact). DM_VK_FP16_EXACT=1 (restart) makes the library's half conversions exact for them on any device; off by default
+    V.fp16_exact = VKA_ENV("DM_VK_FP16_EXACT", 0) != 0;
+    VLOG("fp16 subnormals: %s; half conversions %s", p12.shaderDenormPreserveFloat16 ? "the device preserves them" : "the device may flush them (shaderDenormPreserveFloat16 false)",
+         V.fp16_exact ? "made exact for them (DM_VK_FP16_EXACT=1)" : "as built (DM_VK_FP16_EXACT=1 makes them exact)");
     V.cache_ctl = f13.pipelineCreationCacheControl;
     V.subgroup_req_stages = f13.subgroupSizeControl ? p13.requiredSubgroupSizeStages : 0;
     V.subgroup_size = p11.subgroupSize; V.subgroup_min = p13.minSubgroupSize ? p13.minSubgroupSize : p11.subgroupSize; V.subgroup_max = p13.maxSubgroupSize ? p13.maxSubgroupSize : p11.subgroupSize;

@@ -672,8 +672,8 @@ $(B)/t_android_soft: t_android_soft.c $(VKA)/vka_soft.h | $(B)
 $(B)/t_android_memu: t_android_memu.c $(VKA)/vka_memu_spv.c $(VKA)/vka_memu_spv.h $(VKA)/vka_memu_abi.h $(VKA)/vka_memu_order.h $(VKA)/vka_spvpatch.c $(VKA)/vka_shlib.c $(VKA)/vka_bind.c memu/memu_fixtures.h $(B)/zstddeclib.o | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_memu.c $(VKA)/vka_memu_spv.c $(VKA)/vka_spvpatch.c $(VKA)/vka_shlib.c $(VKA)/vka_bind.c $(B)/zstddeclib.o
 # The replay's SPIR-V rewrite of integer-fed vertex inputs (vka_spvpatch.c): the selftest's vertex shader, validated by spirv-val when it is on the PATH; DM_VK_SPV_DIR=<.spv folder> adds those modules
-$(B)/t_android_spvpatch: t_android_spvpatch.c $(VKA)/vka_spvpatch.c $(VKA)/vka_spvpatch.h $(VKA)/vka_selftest_spv.h | $(B)
-	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_spvpatch.c $(VKA)/vka_spvpatch.c
+$(B)/t_android_spvpatch: t_android_spvpatch.c $(VKA)/vka_spvpatch.c $(VKA)/vka_spvpatch.h $(VKA)/vka_selftest_spv.h | $(B)   # PEANUTS: -lm for the half conversion check (rintf)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_spvpatch.c $(VKA)/vka_spvpatch.c -lm
 # PEANUTS begin: coalesced inline uniform buffer updates (dm/gfx/vk_android/vka_ub_defer.h)
 run: $(B)/t_android_ubdefer
 $(B)/t_android_ubdefer: t_android_ubdefer.c $(VKA)/vka_ub_defer.h | $(B)

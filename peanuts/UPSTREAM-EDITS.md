@@ -2167,6 +2167,28 @@ The replay makes those calls quad swaps and broadcasts at pipeline time; no shad
 
 Tests: `t_android_spvpatch`; the game's 28 shuffle pixel shaders rewritten and valid under `spirv-val`; the AYN Thor with Turnip (see the game's README). Upstream candidate: yes (a general Turnip rule, not tied to the game).
 
+### Half conversions exact for fp16 subnormals, behind `DM_VK_FP16_EXACT=1` (2026-11-26)
+
+Adreno 6xx / 7xx report `shaderDenormPreserveFloat16` false on Turnip and on Qualcomm's driver, and the translator turns every half conversion into GLSL.std.450
+`PackHalf2x16` / `UnpackHalf2x16`, which such a device may make with a conversion that flushes values below 2^-14 to 0 (Maxwell keeps them)
+([Half conversions flushing fp16 subnormals on Adreno 6xx / 7xx](../docs/reference/shaders.md#half-conversions-flushing-fp16-subnormals-on-adreno-6xx--7xx)).
+With `DM_VK_FP16_EXACT=1` each module is rewritten when it is made: exact encode and decode of the subnormal range, other values as the hardware gives them.
+Off by default: it touches every module with half conversions, and no release game has shown a picture change with it yet. No shader-chain file is changed.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_spvpatch.c`, `vka_spvpatch.h` | 1 each | `vka_spv_fp16_exact` | `// PEANUTS begin`/`end`; `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_shader.c` | 2 | `fp16_exact` (one span); its call in `prep_words` | `// PEANUTS begin`/`end`, `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_dev.c`, `vka.h` | 2, 1 | `VkPhysicalDeviceVulkan12Properties` read for the log line; `V.fp16_exact` | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_ctl.c` | 1 | `DM_VK_FP16_EXACT` in the restart-only table | `/* PEANUTS */` |
+| `dm/host/tests/t_android_spvpatch.c` | 4 | both instructions rewritten, a module without them left alone, the arithmetic against `_Float16` | `PEANUTS` per hunk / span |
+| `dm/host/tests/Makefile` | 1 | `-lm` on the `t_android_spvpatch` rule (`rintf`) | `# PEANUTS:` |
+| `docs/env_switches.tsv` | 1 row | `DM_VK_FP16_EXACT` | `[PEANUTS]` |
+| `docs/advanced_settings.tsv` | 1 row | `DM_VK_FP16_EXACT`, tier `developer` (`advanced_switches.py`) | generated, allow-listed |
+| `docs/reference/shaders.md` | 1 section | the entry above, and its line in the generated `docs/agents/symptoms.md` | `<!-- PEANUTS -->` |
+
+Tests: `t_android_spvpatch`. Upstream candidate: yes, as an opt-in switch until a release game shows the picture change.
+
 ### Cheats pickers out of the library pickers' request codes (2026-11-22)
 
 `CheatsUi` asked for its cheat file, cheat zip and export with request codes 60 to 62, which `dev.peanuts.ui.LibrarySettings` uses for keys, game and update folder; `MainActivity.onActivityResult` asks `LibrarySettings` first, so Import cheat file was taken as a keys pick and the two zip pickers as folder picks. The cheats codes are now 80 to 82.

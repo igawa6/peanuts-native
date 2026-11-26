@@ -63,3 +63,7 @@ uint32_t *vka_spv_precise_depth(const uint32_t *words, size_t count, size_t *out
 // the calls replaced); NULL with err empty when there is none, NULL with the reason in err when it cannot be rewritten
 uint32_t *vka_spv_quad_shfl(const uint32_t *w, size_t nw, size_t *out_nw, int *sites, char *err, size_t errn);
 // PEANUTS end
+
+// PEANUTS: half-precision conversions (GLSL.std.450 PackHalf2x16 / UnpackHalf2x16) made exact for fp16 subnormals, for a device that flushes them (vka_spvpatch.c vka_spv_fp16_exact):
+// a malloc'd copy (*out_nw words; *sites the instructions rewritten); NULL with err empty when the module has none, NULL with the reason in err when it cannot be rewritten
+uint32_t *vka_spv_fp16_exact(const uint32_t *w, size_t nw, size_t *out_nw, int *sites, char *err, size_t errn);
