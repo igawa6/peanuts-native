@@ -2796,3 +2796,218 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### Frame limit and 3D-size option for one title (2026-11-24)
+
+Mario + Rabbids Sparks of Hope gets `game_args -fpslimit 60` and `fps_limit 30` (the game's own limit lifted so the host's frame limiter sets the rate; default 30) and an opt-in `option` / `option_patch` pair that makes the game's 3D scale 1.0 (two code words, exact main build, off by default). No host C code, patches.py or pack change. The only edits outside the title's profile are documentation and the docs tool.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/0100317013770000/game.tsv`, `README.md` | 1-2 each | the option block, the Frame rate block; two README bullets | `PEANUTS` |
+| `dm/tools/docs_patches.py` | 1 | the `game_args` classification row (a profile key `docs_patches.py` refuses unclassified) | `PEANUTS` |
+| `dm/games/README.md` | 1 | the `game_args` row's "No profile sets any" sentence was stale | `PEANUTS` |
+| `docs/agents/game-patches.md` | regenerated | patch index, by `dm/tools/docs_patches.py` | generated |
+
+Tests: `game.py` header, `gen_runtime_profile.py check-all`, `check-runtime-profile.sh`, `check-profiles.sh`, `docs_patches.py --check`, `advanced_switches.py --check`, the docs, game-profile, Android games and frame-rate-cap suites. Device check pending (`game arguments from the game profile`, `main: frame limit 30 fps`, with the option `selected option code patches: 2 words`).
+
+
+### Graphics settings for a game that builds its size from code words: `window_words`, `view_scale_words`, `upscale_pass`, the launcher rows and the composite upscaler (2026-11-24)
+
+Mario + Rabbids Sparks of Hope builds its window size and its 3D scale from movz / movk immediates in `main`. Three new profile keys let the loader rewrite them from `DM_WINDOW_SIZE` and `DM_SCENE_PCT` (all sites of a key are checked against their expected words first; a mismatch writes nothing and logs one `[RED]` line), and name the composite pass for a Vulkan upscale hook (`DM_VK_CUPSCALE`: bilinear = the game's own, FSR 1, SGSR 1). The launcher shows Output resolution, Internal resolution, Internal upscaler, Graphics quality and Frame rate for a profile with a `window_words` row. The old `DM_MRSOH_3D_FULL` `option` / `option_patch` rows are removed (a stored "on" becomes Internal resolution 100 %). The runtime profile's schema changes (`0x9ff0177d` to `0xcee736f3`, 12,208 to 13,720 bytes): rebuild every `profile.bin` and the generic host together; the other 170 profiles keep their behaviour (the new fields are zero).
+
+Host and profile pipeline:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/imm_words.h` (new), `dm/host/tests/t_imm_words.c` (new), `dm/host/tests/Makefile` | whole files, 1 block | pure movz / movk functions, the parsers, the all-or-nothing apply, the `DM_OPTION_PATCHES` overlap check; 569 checks, golden words assembled with NDK clang | `PEANUTS(upstream-candidate)` |
+| `dm/host/loader.c` | 3 | `#include "imm_words.h"`; `words_row` / `words_option_free` / `words_report` / `words_apply` before `window_apply`; the first line of `window_apply` (`if (words_apply(m)) return;`) | `PEANUTS(upstream-candidate)` |
+| `dm/games/game.py` | 2 | validation of the three keys (`words_rows`; refuses `window_fn`, `res_levels`, `render_cfg`, `graphics_scale` and an `option_patch` on the same words); the eight `DM_GAME_*WORDS` / `UPSCALE_PASS` defines | `PEANUTS(upstream-candidate)` |
+| `dm/peanuts/profile/profile_rt.h`, `profile_rt.c`, `game_profile_generic.h` | 4 / 3 / 1 | caps, `dm_pf_words_t`, the new fields at the end of `dm_game_profile_t` (+ 3 `_Static_assert`s); bounds and NUL checks; the generic `#define`s | `PEANUTS(upstream-candidate)` |
+| `dm/peanuts/profile/gen_runtime_profile.py` | 7 | `SCALAR`, `ARRAY_NAMES`, `LAYOUT`, `CAPS` / `WORDS_SITES`, `parse_words` / `row_words`, the cap check, the encoder | `PEANUTS(upstream-candidate)` |
+| `dm/peanuts/profile/test/dump_const.c`, `dump_runtime.c` | 1 each | the equivalence test prints the new field groups | `PEANUTS(upstream-candidate)` |
+
+Launcher:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/Profile.java` | 1 | `words()` and `wordsMax()` after `hasResolution()` | `PEANUTS begin/end` |
+| `android/app/src/main/java/dev/nxnative/android/StepSlider.java` | 5 | `dialog` delegates to the new `dialogCheck` (a checkbox with its own words: Game default, Game owned); same behaviour for the old callers | trailing + `PEANUTS begin/end` |
+| `android/app/src/main/java/dev/nxnative/android/GameUpscaler.java` | 2 | `push` split into `push` + `send(Context, List<String>)` (the ctl.txt write), same behaviour | line above |
+| `android/app/src/main/java/dev/nxnative/android/GameSettings.java` | 2 | `WordsRows.settings` in Picture (before Console mode); `WordsRows.capDialog` at the top of `cap` | trailing |
+| `android/app/src/main/java/dev/nxnative/android/SidePanel.java` | 7 | `ID_WORDS`; no Console mode block for a words game; the `wordsFps` branch in the cap group and `capPicked` (the radio listener's body moved unchanged); the `wordsPicture` hook in `resolutionRow`; the new methods | trailing + `PEANUTS begin/end` |
+| `android/app/src/main/java/dev/nxnative/android/Prefs.java` | 2 | `GAME_SETTINGS` gets `out_res`, `scene_pct`, `cup_mode`, `cup_sharp`, `fps_last`; `resetGame` drops the old `opt_DM_MRSOH_3D_FULL@<id>` | trailing |
+| `android/app/src/main/java/dev/nxnative/android/GameActivity.java` | 1 | `WordsRows.env` in `settingsEnv` (after `ResScale.env`) | trailing |
+| `android/app/build.gradle` | 1 | `wordsOf` and its use first in `resolutionOf` after the `render_cfg` kind: a `window_words` row gives `words:1920x1080` | `PEANUTS begin/end` + trailing |
+
+Fork-owned files changed: `ScreenMode.java` (a `words:` game is not locked; `wordsRow`, "Graphics quality"), `ResScale.java` (`hidden` for `words:`). New fork files: `WordsGfx.java`, `WordsRows.java`, `android/app/src/jvmtest/java/dev/nxnative/android/WordsGfxJvmTest.java`, `dm/tools/tests/test_android_words_gfx.py`.
+
+Vulkan composite upscaler:
+
+| File | Hunk | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_draw.c` | `#include "vka_cupscale.h"` | the hook's header | `PEANUTS` |
+| `dm/gfx/vk_android/vka_draw.c` | `g_cup` and `cup_ubo` (before `stage_writes`) | the armed pass's view and scratch uniform copy | `PEANUTS` |
+| `dm/gfx/vk_android/vka_draw.c` | two lines in `stage_writes` | the texel-size copy and the view substitution of the composite draw | `PEANUTS` |
+| `dm/gfx/vk_android/vka_draw.c` | `cup_pre` before `draw_body`, and its call after `make_images` | arms the pass: ends an open pass, records the compute upscale between full barriers | `PEANUTS` |
+| `dm/gfx/vk_android/vka_draw.c` | `DM_VK_BIND_LOG` cap | per (vertex, pixel) shader pair (`DM_VK_BIND_LOG_N`, default 12, 64 pairs), a head line for each draw, the first 8 words of pixel-stage uniform buffers as floats | `PEANUTS(upstream-candidate)` |
+| `dm/gfx/vk_android/fsr/ndsr_out.h` | 1 | `NDSR_RGBA8` store | `PEANUTS` |
+| `dm/gfx/vk_android/sgsr/ndsr_sgsr.comp` | 4 | `NDSR_SHARP_PC` (EdgeSharpness from push constants) | `PEANUTS` |
+| `dm/gfx/vk_android/vka_cupscale.c`, `vka_cupscale.h`, `vka_cupscale_spv.h` (new) | whole files | the pure rules (unit tested), the GPU side, the shader arrays | Peanuts-owned |
+| `dm/gfx/vk_android/vka_ctl.c` | 1 | `DM_VK_CUPSCALE`, `DM_VK_CUPSCALE_SHARP`, `DM_VK_CUPSCALE_PASS` in `g_live[]` (only the control file's log label) | `PEANUTS` |
+
+The existing `vka_ndsr_fsr.h` and `vka_ndsr_sgsr.h` arrays are unchanged (the seven arrays regenerate word for word with NDK 28.2 glslc); the shader digest and the pack are unchanged.
+
+Profile, docs and tests:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/0100317013770000/game.tsv`, `README.md` | the Rendering block; the Android section | the `DM_MRSOH_3D_FULL` `option` and both `option_patch` rows replaced by `window_words`, `view_scale_words`, `upscale_pass`; the 3D bullet replaced by the graphics-settings bullet | `PEANUTS` |
+| `dm/games/README.md` | 3 rows | the keys' rows after `rt_pool` | `PEANUTS` |
+| `docs/env_switches.tsv`, `docs/advanced_settings.tsv` | 5 rows each, 2 amended | `DM_SCENE_PCT`, `DM_VK_CUPSCALE`, `DM_VK_CUPSCALE_SHARP`, `DM_VK_CUPSCALE_PASS`, `DM_VK_BIND_LOG_N`; the `DM_WINDOW_SIZE` and `DM_VK_BIND_LOG` rows amended | `[PEANUTS]` in the text / generated |
+| `dm/tools/tests/test_wiki.py` | 4 entries | the four new setting rows are not in upstream's player wiki; they are listed as not documented there (described in `peanuts/docs/FAQ.md`), as Resolution scale is | `# PEANUTS begin`/`end` |
+| `peanuts/docs/FAQ.md`, `android/README.md`, `android/NOTICE.md` | 1 each | the FAQ entry for the picture settings; the launcher bullet; the SGSR file name | `PEANUTS` |
+
+`docs/agents/game-patches.md` needed no change (`dm/tools/docs_patches.py --check` is current: the tool only indexes keys that `header()` reads with a default).
+
+Tests: `gen_runtime_profile.py check-all`, `check-runtime-profile.sh` (header against `profile.bin` for all 171 profiles, the Sparks of Hope row included), `check-profiles.sh`, `advanced_switches.py --check`, `docs_patches.py --check`, `test_env_switches`, `test_wiki`, `test_android_words_gfx` (with the real profile), `t_imm_words` (MinGW), `t_cupscale` (MinGW), NDK clang `-fsyntax-only -Wall` on `loader.c`, `vka_draw.c`, `vka_cupscale.c`. Device check pending: `window: ... (window_words, 4 words)`, `scene scale: ... (view_scale_words, 4 words)`, `cupscale: ...` lines, no `[RED]`. Upstream candidate: the loader branch, the keys and the bind-log change; the launcher rows and the upscaler hook once measured.
+
+### A shared loader extension for a second Snowdrop game: orr window sites, rodata f32 view-scale sites, `view_scale_steps`, `output_default` (2026-11-24)
+
+Mario + Rabbids Kingdom Battle (built in a sibling clone) builds one window width with `orr Wd, wzr, #imm` and reads its 3D scale as a float32 from rodata. The words path is extended so that one shared patch serves both games; Mario + Rabbids Sparks of Hope adds no rows and its profile behaves exactly as before (the new fields are zero).
+- `window_words` sites may be `orr Wd, wzr, #imm` words (`imw_is_orr_wzr`: `(w & 0xFF8003E0) == 0x320003E0`, `Rd` not 31); the whole word becomes `movz Wd, #<value>`; window rows only, never a scale site or half of a lo / hi pair.
+- `view_scale_words` sites may be tagged `f32` (site kind 2): a float32 in main's rodata, inside `[ro_off, data_off)`, 4-byte aligned; a row is all lo / hi or all f32. Written in `words_apply` before sealing, by new `imw_f32_*` functions with their own `[RED]` text; the FPSLocker `r` / `o` overlap check covers f32 sites.
+- New key `view_scale_steps` (mandatory with an f32 row, refused with a lo / hi row): 1 to 13 `P:word` entries, P 40..100 ascending, each word within 0.001 of P / 100, `100:0000803f` required. `DM_SCENE_PCT` writes the table's word; a percent not in it writes nothing. Checked by `game.py` and by the loader (the `profile.bin` is untrusted).
+- New key `output_default` (`native` / `720p` / `1080p`): the launcher's Output resolution when nothing is stored for the title, carried as `BuildConfig.NX_PEANUTS_OUTPUT_DEFAULT`, not in `profile.bin`.
+
+The runtime profile's schema changes (`0xcee736f3` to `0x7fa8b292`, 13,720 to 14,352 bytes): the steps group (`nview_scale_steps`, `view_scale_steps[4]`) is appended after the `upscale_pass_*` fields. Rule for clones that carry their own fields: shared groups append after `upscale_pass_*`; a clone-local field stays last; schema hashes are per clone. Rebuild every `profile.bin` and the generic host together.
+
+Host and profile pipeline:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/imm_words.h` | 11 | `imw_is_orr_wzr`, `IMW_F32`, `IMW_MAX_STEPS`, `IMW_E_STEP`, `imw_steps_t`, the steps check / lookup / parser, `imw_f32_check` / `_commit` / `_apply`; `imw_row_valid`, `imw_window_word`, `imw_parse_site` and `imw_option_overlap` extended with the same signatures | `PEANUTS(upstream-candidate)` |
+| `dm/host/loader.c` | 5 | `words_steps()` and the f32 branch in `words_apply` (words block only) | `PEANUTS(upstream-candidate)` |
+| `dm/host/tests/t_imm_words.c` | 2 | `t_orr_site`, `t_f32_site` and their calls (+201 checks, nothing removed) | `PEANUTS(upstream-candidate)` |
+| `dm/games/game.py` | 6 | the orr window word, `f32` sites, mixed rows refused, `view_scale_steps` and `output_default` validation, the `DM_GAME_VIEW_SCALE_STEPS` / `DM_GAME_NVIEW_SCALE_STEPS` defines | `PEANUTS(upstream-candidate)` |
+| `dm/peanuts/profile/profile_rt.h`, `profile_rt.c`, `game_profile_generic.h` | 4 / 4 / 1 | `DM_PROFILE_STEPS_MAX`, `dm_pf_steps_t`, the steps fields after `upscale_pass_ps` (+ `_Static_assert`); the row-count, `n` and site-kind checks (kind 2 for `view_scale_words` only), the NUL check of the steps builds; the generic `#define` | `PEANUTS(upstream-candidate)` |
+| `dm/peanuts/profile/gen_runtime_profile.py` | 8 | `NVIEW_SCALE_STEPS`, `VIEW_SCALE_STEPS`, the `LAYOUT` entry after `upscale_pass_ps`, `CAPS`, `STEPS_MAX`, `parse_steps`, `row_steps`, the encoder | `PEANUTS(upstream-candidate)` |
+| `dm/peanuts/profile/test/dump_const.c`, `dump_runtime.c` | 1 each | the equivalence test prints the steps rows | `PEANUTS(upstream-candidate)` |
+
+Launcher:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/build.gradle` | 2 | `outputDefaults` (after `handheldGames`; a bad value or a second row fails the build) and the `NX_PEANUTS_OUTPUT_DEFAULT` BuildConfig field | `PEANUTS begin/end` + trailing |
+
+Fork-owned files changed: `WordsGfx.java` (`outDefault`, `outPick`, `outStore`), `WordsRows.java` (`outPref` reads and writes through them), `WordsGfxJvmTest.java` (its block), `dm/tools/tests/test_android_words_gfx.py` (3 tests).
+
+Docs: `dm/games/README.md` (the `window_words` and `view_scale_words` rows amended, the `view_scale_steps` and `output_default` rows), `docs/env_switches.tsv` (`DM_WINDOW_SIZE`, `DM_SCENE_PCT` amended), `android/README.md` (Output resolution's default, Graphics quality's Docked default). `docs/advanced_settings.tsv` and `docs/agents/game-patches.md` need no change (no new switch; `docs_patches.py --check` is current).
+
+No `dm/gfx/**` file and no `game.tsv` changes; the shader-inputs digest is unchanged (`0948c297b3fe` for Mario + Rabbids Sparks of Hope).
+
+Tests: `t_imm_words` 616 checks (770 with `IMW_R17`), `gen_runtime_profile.py check-all`, `check-runtime-profile.sh`, `check-profiles.sh`, `game.py` negative cases, the earlier loader harness (byte-identical output), `test_android_words_gfx` with the JVM test, NDK clang `-fsyntax-only` of `loader.c` in static and generic modes. Not device-tested. Upstream candidate: the loader branch and the keys, with the words path.
+
+### A fixed-window mode for the words path: `view_scale_fixed`, `DM_OUT_SIZE`, runtime Native, `words_gate` (2026-11-24)
+
+A third Snowdrop-style game (built in a sibling clone) keeps its window at one fixed size and reads its 3D scale as float32 words in rodata. The f32 path is extended with a fixed-window mode, so that one shared patch serves all three games; Mario + Rabbids Sparks of Hope and Mario + Rabbids Kingdom Battle add no rows and behave exactly as before (the new fields are zero; their env output and `NX_PROFILES` are byte-identical).
+- New key `view_scale_fixed <main build> <W>x<H>` (16..4096, 16:9, one row per build): the build needs an f32 `view_scale_words` row and has no `window_words` and no `view_scale_steps` row; one lever with `window_fn`, `res_levels`, `render_cfg`, `graphics_scale`. The loader (`words_fixed_apply`) leaves the window alone and writes ratio = min(1, T_h x P / (H x 100)) (or min(1, T_h / H x the site's float) for Game default), in double, cast once to float32, into every f32 site, all or nothing through `imw_f32_check`; T is the new env `DM_OUT_SIZE`. The steps rule becomes three-way: lo / hi takes no steps, windowed f32 needs steps, fixed f32 must have none.
+- New key `words_gate docked_only=<list> hidden=<list>` (lists of `output`, `internal`, `upscaler`): launcher only, carried as `BuildConfig.NX_PEANUTS_WORDS_GATE`, not in `profile.bin`. `docked_only` rows read `Docked only` and send no env while Graphics quality is Handheld; `hidden` rows are not shown and send nothing.
+- Launcher: a fixed-window title gets the kind `words:<W>x<H>` (one more `resolutionOf` clause) and `BuildConfig.NX_PEANUTS_FIXED_WINDOW`; Output resolution sends `DM_OUT_SIZE`, never `DM_WINDOW_SIZE`; its Native is computed at run time (`WordsGfx.nativeFixed`, `64k x 36k`, capped at the window).
+
+The runtime profile's schema changes (`0x7fa8b292` to `0x962d49e1`, 14,352 to 14,576 bytes): the fixed group (`nview_scale_fixed`, `view_scale_fixed[4]`, `dm_pf_fixed_t {build[48], w, h}`) is appended directly after the steps group. Field-order rule for clones: shared groups after `upscale_pass_*` in the order steps, then fixed; a clone-local field stays last; schema hashes are per clone. Rebuild every `profile.bin` and the generic host together.
+
+Host and profile pipeline (hunks from `diff -U0` against the previous snapshot):
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/imm_words.h` | 1 | `IMW_FIXED_MIN` / `IMW_FIXED_MAX`, `IMW_E_RATIO`, `imw_fixed_valid`, `imw_fixed_out_valid`, `imw_fixed_out`, `imw_fixed_ratio`, `imw_fixed_apply`, `imw_parse_fixed` (new functions only; no earlier signature changed) | `PEANUTS(upstream-candidate)` |
+| `dm/host/loader.c` | 4 | `words_fixed()`, `words_fixed_apply()`, the fixed branch at the top of `words_apply` and the windowed `DM_OUT_SIZE ignored` line (words block only; `window_apply` untouched) | `PEANUTS(upstream-candidate)` |
+| `dm/host/tests/t_imm_words.c` | 2 | `t_fixed_window` and its call (+161 checks, nothing removed) | `PEANUTS(upstream-candidate)` |
+| `dm/games/game.py` | 4 | `view_scale_fixed` and `words_gate` validation (an item in both lists is refused), steps refused with a fixed row, the `DM_GAME_VIEW_SCALE_FIXED` / `DM_GAME_NVIEW_SCALE_FIXED` defines | `PEANUTS(upstream-candidate)` |
+| `dm/peanuts/profile/profile_rt.h`, `profile_rt.c`, `game_profile_generic.h` | 3 / 2 / 1 | `dm_pf_fixed_t`, the fixed group after the steps group (+ `_Static_assert`); the count cap and the NUL check of the fixed builds; the generic `#define` | `PEANUTS(upstream-candidate)` |
+| `dm/peanuts/profile/gen_runtime_profile.py` | 7 | `NVIEW_SCALE_FIXED`, `VIEW_SCALE_FIXED`, the `LAYOUT` entry after the steps rows, `CAPS`, `parse_fixed`, `row_fixed`, the encoder | `PEANUTS(upstream-candidate)` |
+| `dm/peanuts/profile/test/dump_const.c`, `dump_runtime.c` | 1 each | the equivalence test prints the fixed rows | `PEANUTS(upstream-candidate)` |
+
+Launcher:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/build.gradle` | 3 | `fixedWindowOf` / `fixedWordsOf`, the `resolutionOf` clause, `fixedWindows` / `wordsGates` (a malformed row fails the build) and the `NX_PEANUTS_FIXED_WINDOW` / `NX_PEANUTS_WORDS_GATE` BuildConfig fields | `PEANUTS begin/end` + trailing |
+
+Fork-owned files changed: `WordsGfx.java` (`fixedSize`, `nativeFixed`, `outs`, `Gate` / `gateOf`, `DOCKED_ONLY`, the `env` overload), `WordsRows.java` (fixed and gated rows), `SidePanel.java` (gated panel rows, `dockedOnly()`), `WordsGfxJvmTest.java` (its block), `dm/tools/tests/test_android_words_gfx.py` (5 tests). `Profile.java` and `ScreenMode.java` are unchanged.
+
+Docs: `dm/games/README.md` (the `view_scale_fixed` and `words_gate` rows; `view_scale_words` and `view_scale_steps` amended: steps are forbidden in fixed mode), `docs/env_switches.tsv` (`DM_OUT_SIZE`; `DM_SCENE_PCT`, `DM_WINDOW_SIZE` amended), `android/README.md` (fixed-window titles, runtime Native, row gating and `Docked only`). `docs/advanced_settings.tsv` and `docs/agents/game-patches.md` need no change.
+
+No `dm/gfx/**` file and no `game.tsv` changes; no profile in this tree has a `view_scale_fixed` or `words_gate` row.
+
+Tests: `t_imm_words` 777 checks (931 with `IMW_R17`), `gen_runtime_profile.py check-all` (171 profiles), `check-runtime-profile.sh`, `check-profiles.sh`, `game.py` negative cases (earlier cases unchanged, 50 new), the earlier loader harnesses (byte-identical output), a fixed-window harness on the real words block, `test_android_words_gfx` (18) with the JVM test. Not device-tested. Upstream candidate: the fixed branch and the keys, with the words path.
+
+### Frame rate without Game owned for a `words:` game, no slider end captions, `Applies on next start`, a tab-strict `view_scale_fixed` (2026-11-24)
+
+After device testing of the first words: rows, the launcher's `words:` rows are simplified, and `game.py` is aligned with what build.gradle reads for `view_scale_fixed`. No host file, no `profile.bin` and no `dm/gfx/**` file changes; the runtime profile schema stays `0x962d49e1` (14,576 bytes) and the Sparks of Hope `profile.bin` is byte-identical to the previous version.
+- **Frame rate** (a `words:` game with a frame limit): a slider only, no **Game owned** box (Game settings and the in-game panel). Default: the stored rate, else the recommended rate, else 30 fps, each on the nearest offered step (`WordsGfx.fpsStart`, `Prefs.paceCap`); the profile's `fps_limit` and `fps_owned_default` are not read for it. A stored Game owned (`-2`) is removed on the next read. `DM_FPS_LIMIT` is now always passed for such a game (`Prefs.chosenFpsCap`), so the 30 default is what runs. Other games keep their radio list, Game owned included.
+- **End captions removed** from the Frame rate (Lighter / Smoother), Internal resolution (Faster / Sharper) and Upscaler sharpness (Softer / Sharper) sliders, in both places. The Game default and Default boxes stay.
+- **`Applies on next start`** (`WordsGfx.NEXT_START`): one line under Internal resolution on the in-game panel's Display tab, the tab's only helper line; not drawn while the row is gated or hidden.
+- **`game.py`**: a `view_scale_fixed` row is tab-strict (exactly `key<TAB>build<TAB>WxH`, no space in place of a tab or inside a field, no extra field), every row of a title must give the same size, and a `view_scale_fixed` or `words_gate` line must start with the key and a TAB. This closes two cross-check mismatches: `game.py` now refuses what build.gradle refuses.
+
+Hunks from `diff -U0` against the previous state:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/game.py` | 3 | the tab-strict field check, one size a title, the key-TAB start rule (inside the words block) | `PEANUTS(upstream-candidate) begin/end` |
+| `android/.../Prefs.java` | 3 | `paceCap` words: branch, `chosenFpsCap` clause, `ownFpsCap` / `wordsOn` / `wordsOwnedStored` | `PEANUTS` trailing |
+| `android/.../SidePanel.java` | 9 | `wordsFps` slider only; no end words on the three sliders; `note(WordsGfx.NEXT_START)`; the Game owned note not drawn for a `words:` game | `PEANUTS` trailing |
+| `android/.../StepSlider.java` | 1 | comment only | `PEANUTS begin` (existing) |
+
+Fork-owned files changed: `WordsGfx.java` (3 hunks: `FPS_DEFAULT`, `fpsNearest`, `fpsStart`, `NEXT_START`), `WordsRows.java` (6: no ends on the dialogs, `capDialog` slider only, `fpsLast` removed, `FPS_LAST` kept for Reset), `WordsGfxJvmTest.java` (1: its block), `dm/tools/tests/test_android_words_gfx.py` (2: `test_no_helper_text` extended, `test_no_end_captions_no_game_owned`, `test_words_slider_has_no_game_owned_step`).
+
+Docs: `android/README.md` (Frame rate, end captions, the helper line), `dm/games/README.md` (`view_scale_fixed` tab-strict and one size a title, `words_gate` key-TAB start, `fps_owned_default` ignored by the UI for a `words:` game, `fps_modes`, `fps_limit`, `fps_limit_present`), `docs/env_switches.tsv` (`DM_FPS_LIMIT`), `peanuts/docs/FAQ.md` and `dm/games/0100317013770000/README.md` (the Sparks of Hope frame rate).
+
+Tests: `t_imm_words` 777 checks (931 with `IMW_R17`), `check-all` (171 profiles), `game.py` negative cases (85/85 earlier cases; 66 new ones refused as expected), `test_android_words_gfx` (20) with the JVM test, the other `test_android_*`. Not device-tested. Three Hopes (`fps_limit 60`, `fps_owned_default 1`) changes from Game owned to 30 fps by default and needs one device check.
+
+### A per-profile frame rate default for a `words:` game: `fps_default` (2026-11-24)
+
+Each game may set the frame rate its Frame rate slider starts with. New `game.tsv` key `fps_default<TAB><n>`: one whole number of 10 to 60 fps, one of the title's offered steps (the `fps_modes` rates; without `fps_modes` the slider's 20, 30, 40, 45, 60 from `fps_limit_min` up, or 20, 30, 60 for a whole-step title) and at most `fps_limit`; at most one row; no `game` value. The key is J-only: no host file, no `profile.bin` field, no `dm/gfx/**` file; the runtime profile schema stays `0x962d49e1` (14,576 bytes), the Sparks of Hope `profile.bin` is byte-identical to the previous version (`b6248d1b...`), and `NX_PROFILES` is unchanged (no new column; the new `BuildConfig` field is empty for Sparks of Hope).
+- **Order** (`WordsGfx.fpsStart`, `Prefs.paceCap`): the player's stored rate, else `fps_default`, else the recommended rate, else 30 fps. A stale Game owned (`-2`) counts as nothing stored. Reset to defaults removes `fps_cap@<title ID>` (already in `Prefs.GAME_SETTINGS`), so the default returns. The Game settings row and dialog and the in-game Performance tab all read `Prefs.paceCap` (no change to `WordsRows.java` or `SidePanel.java`), and `DM_FPS_LIMIT` is the same value (`Prefs.chosenFpsCap` already passes it for a `words:` game). A title without the row behaves exactly as before; neither Sparks of Hope nor Kingdom Battle adds a row.
+- **build.gradle** `fpsDefaults` -> `BuildConfig.NX_PEANUTS_FPS_DEFAULT` (`<title ID>:<n>` space-separated, as `NX_PEANUTS_OUTPUT_DEFAULT`); fails the build on a second row, a value that is not 10..99 digits, a title without an `fps_limit` row, a value above `fps_limit` or one not among the `fps_modes` rates (else 20, 30, 40, 45, 60 from `fps_limit_min`). It does not know the whole-step 60 / 30 / 20 steps; `game.py` does (`fps_offered`) and runs before the build in `nxGenericProfiles`, so the stricter answer wins.
+- **`game.py`** (`fps_offered`, the `fps_default` block): refuses a bad value, a value not offered, more than one row, a value without an `fps_limit` row, a value above it, and a line that does not start with `fps_default` and a TAB.
+- **Test fix folded in (from a Three Hopes tree):** `test_every_profile_unchanged` assumed that only a `window_words` row gives a title the `words:` kind; since the fixed-window change a `view_scale_fixed` row is a second route (build.gradle `resolutionOf`, `fixedWordsOf`), so a profile with that row expects `words:<W>x<H>`. The test now says so, and the new `test_view_scale_fixed_is_a_words_route` covers it on fixture rows (also run through real gradle on scratch fixtures).
+
+- **Three Hopes device-test fixes folded in (launcher, same round):**
+  1. *Row gating live.* The `docked_only` gate (Output, Internal) is read from Graphics quality at every build (`WordsRows.settings`: `ScreenMode.mode` read at build; Game settings builds the page again after a Graphics quality choice, `ScreenMode.wordsRow` `done.run()`; the in-game panel rebuilds in `restyle`). Static reading of the code found that path correct on this tree, so the cause of "never appeared" is not pinned; pure `Gate` flip cases and source-check tests now pin the behaviour. No file outside the list was needed.
+  2. *Game default title.* The Internal resolution and Upscaler sharpness dialogs (`WordsRows.checkDialog`, a copy of `StepSlider.dialogCheck` for these two rows) title themselves by the checkbox while it is checked (`WordsGfx.checkTitle`: "Internal resolution: Game default") and disable the slider; they showed the step the slider rested on (80 %). The row value was already `Game default` (`WordsGfx.pctLabel(0)`); the in-game panel already did the same. `StepSlider.java` is untouched here.
+  3. *Frame rate dialog.* The dialog with a second "Default", Game owned and unavailable rates is the legacy radio list (`GameSettings.cap`), shown because `Prefs.limited` is false for a title without an `fps_limit` row (Three Hopes'). Rule: a `words:` title must have an `fps_limit` row, so `game.py` and build.gradle refuse a `window_words` / `view_scale_fixed` profile without one and the title always gets the words slider (default `fps_default`, else the recommended rate, else 30). `Prefs.limited` is not widened: that would send Three Hopes down the limited launch path (`DM_FPS_LIMIT`, FPSLocker interval) without its author choosing it. No non-words title changes.
+  4. *Which "Upscaler" row.* The row seen for Three Hopes is the upstream present-FSR "Upscaler" row (`GameSettings`, the `GameUpscaler.MODES` row), not the words composite "Internal upscaler" (`WordsRows`, which does honour `hidden=upscaler`). It is not renamed (the owner's request, 2026-11-24); a test pins the two as different rows.
+
+Hunks from `diff -U0` against the previous state:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/game.py` | 3 | `fps_offered`, the key-TAB start rule, the `fps_default` block and the words: title needs an `fps_limit` row | `PEANUTS(upstream-candidate)` (inside the words block) |
+| `android/app/build.gradle` | 2 | `fpsDefaults`, the words: title needs an `fps_limit` row, the `buildConfigField` | `PEANUTS` |
+| `android/.../Prefs.java` | 2 | the `paceCap` words: branch (comment and call) | `PEANUTS` trailing |
+
+Fork-owned files changed: `WordsGfx.java` (3: `fpsStart` with a profile default, `fpsDefault`, `checkTitle`), `WordsRows.java` (3: the two dialogs call `checkDialog`, `checkDialog` and `enable`), `WordsGfxJvmTest.java` (2: `paceLike`, its block), `dm/tools/tests/test_android_words_gfx.py` (6: the `paceCap` expectation, `test_every_profile_unchanged`, `test_view_scale_fixed_is_a_words_route`, `test_fps_default_*`, `test_*`).
+
+Docs: `dm/games/README.md` (the `fps_default` row), `android/README.md` (Frame rate default order).
+
+Tests: JVM block (about 35 assertion sites plus loops), `game.py` negatives (23 refused, 9 accepted, in the unit test), real gradle on scratch fixtures (33 cases). Not device-tested. Three Hopes (`fps_limit 60`, `fps_modes 30,40,60`, `fps_default 60`) starts at 60 fps with nothing stored.
+
+### Mario + Rabbids Kingdom Battle: Depth of field switch, option attributes `perf` and `inverted` (2026-11-24, v2)
+
+A profile `option` row may carry the attribute `perf`: its switch is a Picture row of the game page's Performance tab (and a checkbox of the in-game panel's Performance tab, with "Applies on next start" (`WordsGfx.NEXT_START`, the Graphics rows' line) for a restart option) instead of a Game options row / a Next start checkbox; a `perf` option may have an empty description (title and state only). `inverted`: the switch shows the opposite of the stored option (`Option.shown` / `Option.stored`); the stored value, the env line and the code words stay the option's, so a stored value keeps what it did and nothing flips in effect (not combinable with `implies=`). No other profile uses either, so every other game's rows are where they were. The Kingdom Battle profile uses both for `DM_KB_DOF_OFF` ("Depth of field", on by default = the game unchanged, one `option_patch` word `main+0xa55938`). No host, loader or runtime-profile change (`profile.bin` unchanged).
+
+| File | Edit | Marker |
+|---|---|---|
+| `dm/games/game.py` | `option` accepts the tokens `perf` and `inverted` (an empty description only with `perf`; `inverted` not with `implies=`; usage / error text names them) | `PEANUTS` |
+| `android/app/build.gradle` | `optionsOf` appends the packed fields 8 `perf` and 9 `inverted` | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/Profile.java` | `Option.perf`, `Option.inverted` (+ `shown` / `stored`; new constructors, `parseOptions` fields 7 and 8, `equals` / `hashCode` / `toString`) | `PEANUTS` |
+| `GameSettings.java` | the option's row goes to `picture` when `perf`; its switch shows / stores through `shown` / `stored` | `PEANUTS` |
+| `SidePanel.java` | Performance tab lists `live` or `perf` options (restart note `WordsGfx.NEXT_START`); Next start skips `perf` ones; both lists use `shown` / `stored` | `PEANUTS` |
+| `dm/games/README.md`, `dm/games/010067300059A000/game.tsv`, `README.md`, `ProfileOptionsJvmTest.java`, `test_android_profile_options.py` | the row syntax, the Kingdom Battle option, its docs and tests | `PEANUTS` |
+
+Shared-Java owner (the Sparks of Hope clone) to adopt the same Java / build.gradle hunks (Profile, GameSettings, SidePanel, build.gradle) and `game.py` so a later shared patch does not drop them. Not device-tested.
+
+### Sparks of Hope clone: Kingdom Battle shared changes adopted
+
+The shared hunks of the Kingdom Battle entries above (`game.py`, `build.gradle` `optionsOf` fields 8 and 9, `Profile.java`, `GameSettings.java`, `SidePanel.java`, `dm/games/README.md`, the docs generators and generated docs, the Profile option tests) are applied in this clone. The Kingdom Battle profile files (`dm/games/010067300059A000/**`) are not part of this clone's change, and no Sparks of Hope `game.tsv` row uses `perf` or `inverted`, so this game's menu and options are unchanged. `docs/agents/game-patches.md` is regenerated here (`dm/tools/docs_patches.py`) from this tree's profiles, so it lists `alias_sync` for Sparks of Hope only until the Kingdom Battle profile row lands; run the generator again then.

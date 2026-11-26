@@ -19,6 +19,10 @@ UNDOCUMENTED = {
     'Delete save data': 'Peanuts Native: a row of its Saves tab',
     'Copy to another user': 'Peanuts Native: a row of its Saves tab with two or more users (UserSaves; peanuts/docs/FAQ.md)',
     'Resolution scale': 'Peanuts Native: DM_RES_SCALE (ResScale.java, PEANUTS.md)',
+    'Output resolution': 'Peanuts Native: a game with a window_words row, Mario + Rabbids Sparks of Hope (WordsRows.java, peanuts/docs/FAQ.md)',
+    'Internal resolution': 'Peanuts Native: as Output resolution (DM_SCENE_PCT)',
+    'Internal upscaler': 'Peanuts Native: as Output resolution (DM_VK_CUPSCALE); not the Upscaler row of the output-to-screen stage',
+    'Upscaler sharpness': 'Peanuts Native: as Output resolution (DM_VK_CUPSCALE_SHARP)',
     'Questions and answers': 'Peanuts Native: the row that opens its own FAQ (peanuts/docs/FAQ.md) where upstream\'s opens this wiki',
     # PEANUTS end
 }

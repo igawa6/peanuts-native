@@ -298,6 +298,7 @@ DM_OPMODE	developer	Game			text			both
 DM_OPTION_PATCHES	developer	Game			text			both						
 DM_OPUS_DUMP	developer	Diagnostics			text			both						
 DM_OPUS_SDK	developer	Diagnostics			text			both						
+DM_OUT_SIZE	developer	Graphics			text		Unset: the fixed window size; only for a game with a view_scale_fixed row	both						
 DM_OVERLAY	developer	Game			text			both						
 DM_PACKER_COMMIT	developer	Diagnostics			text			both						
 DM_PAD_DEADZONE	developer	Input			text			both						
@@ -395,6 +396,7 @@ DM_RUMBLE_MIN	developer	Input			text			both
 DM_SAVE	internal	Diagnostics			text			both						Mac or iOS only
 DM_SAVED_CHOICES	internal	Game			text			both						Mac or iOS only
 DM_SAVE_SYNC	internal	Game			text			both						Mac or iOS only
+DM_SCENE_PCT	developer	Graphics			text		Unset: the game's own scale (5/6 of the window); only for a game with a view_scale_words row	both			view_scale_words			
 DM_SCHEME_NAME	developer	Game			text			both						
 DM_SCREEN_MATCH	internal	Game			text			both						Mac or iOS only
 DM_SF_TRACE	developer	Diagnostics			text			both						
@@ -473,6 +475,7 @@ DM_VK_BAR_NARROW	developer	Graphics			text			both
 DM_VK_BC_RT	developer	Graphics			text			both						
 DM_VK_BIGIMG_MB	developer	Diagnostics			text			both						
 DM_VK_BIND_LOG	developer	Diagnostics			text			both						
+DM_VK_BIND_LOG_N	developer	Diagnostics			text			both						
 DM_VK_BISECT	developer	Diagnostics			text			both						
 DM_VK_CAPTURE	internal	Diagnostics			text			both						Mac or iOS only
 DM_VK_CHUNK	developer	Graphics			text			both						
@@ -490,6 +493,9 @@ DM_VK_CS_SHARED_OVER	developer	Diagnostics			text			both
 DM_VK_CS_WARM	developer	Performance			text		1 on Turnip, 0 elsewhere; DM_VK_CS_WARM=1 forces it on	both						
 DM_VK_CS_WARM_MAX	developer	Performance			text			both						
 DM_VK_CS_WARM_STOP_MS	developer	Performance			text			both						
+DM_VK_CUPSCALE	developer	Graphics			text		1: the game's own bilinear stretch; only for a game with an upscale_pass row	both			upscale_pass			
+DM_VK_CUPSCALE_PASS	developer	Graphics			text			both			upscale_pass			
+DM_VK_CUPSCALE_SHARP	developer	Graphics			text		0.25 stops	both						
 DM_VK_DEVICE_FAULT	developer	Graphics			text			both						
 DM_VK_DISPATCH_LOG	developer	Diagnostics			text			both						
 DM_VK_DISPATCH_ORDER	developer	Graphics			text			both						

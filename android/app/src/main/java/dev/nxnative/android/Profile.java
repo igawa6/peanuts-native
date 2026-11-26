@@ -138,6 +138,13 @@ final class Profile {
     /** Whether Game resolution does something for this game (its profile has window_fn, res_levels or graphics_scale rows) */
     boolean hasResolution() { return resolution.equals("window") || resolution.startsWith("scale:"); }
 
+    // PEANUTS begin: the words: kind. A profile with window_words rows (build.gradle resolutionOf: "words:<max WxH>") has the launcher's Output resolution, Internal resolution, Upscaler,
+    // Graphics quality and Frame rate rows (WordsGfx, WordsRows): the host writes the window and the 3D scale into the game's code at load. It has no Game resolution (hasResolution stays false)
+    boolean words() { return resolution.startsWith("words:"); }
+    /** The largest output the profile allows, {w, h}: the kind's size (1920x1080 as build.gradle writes it); {1920, 1080} for a profile that is not words: */
+    int[] wordsMax() { int[] s = words() ? size(resolution.substring(6)) : null; return s != null ? s : new int[] {1920, 1080}; }
+    // PEANUTS end
+
     /**
      * The host's environment lines for a Game resolution choice (Prefs.WINDOWS: "original", "2560x1440", "1920x1080", "1280x720", "960x540", "848x480"): DM_WINDOW_SIZE=&lt;choice&gt; for a game with
      * window_fn rows (its window size) or res_levels rows (a cap on its dynamic resolution); DM_GRAPHICS_SCALE and DM_OPMODE from the choice's graphics_scale row for a game that sizes its scenes by the graphics scale. Such a
@@ -165,12 +172,24 @@ final class Profile {
         public final String implies; // env var of option implied by this option, or ""
         public final String needs;   // fixup marker required by this option (e.g. "OOT_PATCHES"), or ""
         public final String patches; // exact-build literal code words, '~' between rows
+        public final boolean perf;   // PEANUTS: shown in the Performance tab (game.tsv option attribute "perf"), not in Game options
+        public final boolean inverted;   // PEANUTS: game.tsv attribute "inverted": the switch shows the opposite of the stored option (on = the option off); the stored value, the env and the patches are the option's as ever
 
         public Option(String env, String label, String description, boolean live, String implies, String needs) {
             this(env, label, description, live, implies, needs, "");
         }
 
         public Option(String env, String label, String description, boolean live, String implies, String needs, String patches) {
+            this(env, label, description, live, implies, needs, patches, false);
+        }
+
+        public Option(String env, String label, String description, boolean live, String implies, String needs, String patches, boolean perf) {
+            this(env, label, description, live, implies, needs, patches, perf, false);
+        }
+
+        public Option(String env, String label, String description, boolean live, String implies, String needs, String patches, boolean perf, boolean inverted) {
+            this.perf = perf;   // PEANUTS
+            this.inverted = inverted;
             this.env = env != null ? env : "";
             this.label = label != null ? label : "";
             this.description = description != null ? description : "";
@@ -187,6 +206,10 @@ final class Profile {
         public boolean hasImplies() { return !implies.isEmpty(); }
         public boolean hasNeeds() { return !needs.isEmpty(); }
 
+        /** PEANUTS: what the switch shows for the stored option value, and the stored value for what the switch shows (the same for an option that is not inverted) */
+        public boolean shown(boolean stored) { return inverted != stored; }
+        public boolean stored(boolean shown) { return inverted != shown; }
+
         public String envLine() { return env + "=1"; }
 
         /** Whether this option's required fixup marker (if any) is present in the pack */
@@ -200,21 +223,21 @@ final class Profile {
             Option that = (Option) o;
             return live == that.live && env.equals(that.env) && label.equals(that.label)
                     && description.equals(that.description) && implies.equals(that.implies)
-                    && needs.equals(that.needs) && patches.equals(that.patches);
+                    && needs.equals(that.needs) && patches.equals(that.patches) && perf == that.perf && inverted == that.inverted;   // PEANUTS: perf and inverted are compared too
         }
 
         @Override public int hashCode() {
-            return java.util.Objects.hash(env, label, description, live, implies, needs, patches);
+            return java.util.Objects.hash(env, label, description, live, implies, needs, patches, perf, inverted);   // PEANUTS: perf and inverted are hashed too
         }
 
         @Override public String toString() {
             return env + "|" + label + "|" + description + "|" + (live ? "live" : "restart")
                     + (hasImplies() ? "|implies=" + implies : "") + (hasNeeds() ? "|needs=" + needs : "")
-                    + (patches.isEmpty() ? "" : "|patches=" + patches);
+                    + (patches.isEmpty() ? "" : "|patches=" + patches) + (perf || inverted ? "|" + (perf ? "perf" : "") : "") + (inverted ? "|inverted" : "");   // PEANUTS: the perf and inverted fields
         }
     }
 
-    /** Parse option rows encoded as "<env>|<label>|<description>|<restart|live>[|<implies>[|<needs>[|<patches>]]]", ';' between them */
+    /** Parse option rows encoded as "<env>|<label>|<description>|<restart|live>[|<implies>[|<needs>[|<patches>[|perf[|inverted]]]]]", ';' between them */   // PEANUTS: perf and inverted fields
     static List<Option> parseOptions(String text) {
         if (text == null || text.trim().isEmpty()) return Collections.emptyList();
         List<Option> out = new ArrayList<>();
@@ -227,7 +250,9 @@ final class Profile {
                 String implies = f.length > 4 ? f[4].trim() : "";
                 String needs = f.length > 5 ? f[5].trim() : "";
                 String patches = f.length > 6 ? f[6].trim() : "";
-                out.add(new Option(f[0].trim(), f[1].trim(), f[2].trim(), live, implies, needs, patches));
+                boolean perf = f.length > 7 && "perf".equals(f[7].trim());   // PEANUTS: the Performance tab's row (build.gradle optionsOf)
+                boolean inverted = f.length > 8 && "inverted".equals(f[8].trim());   // PEANUTS
+                out.add(new Option(f[0].trim(), f[1].trim(), f[2].trim(), live, implies, needs, patches, perf, inverted));
             }
         }
         return Collections.unmodifiableList(out);
