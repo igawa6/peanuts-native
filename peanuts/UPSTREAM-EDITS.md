@@ -2813,3 +2813,18 @@ attributes; save sync's pull copies the local save to its backup first and stage
 | `dm/tools/tests/test_android_saves.py` | 3 | `swap_code` keeps `plat_rename_swap`; the harness stubs `swap_dir_meta` and exits 2 on -2; `HostSwap`'s three tests | `PEANUTS`, `PEANUTS begin`/`end` |
 | `docs/reference/services.md`, `docs/agents/symptoms.md` (generated) | 1 each | the entry "Commits keep the Android save folder itself" | `PEANUTS begin`/`end`, `(PEANUTS, Android)` |
 | `android/PORTING.md`, `dm/games/01006BB00C6F0000/README.md` | 1 each | the `plat_rename_swap` row; the game note's line | `<!-- PEANUTS -->` |
+
+### Save commits copy only what changed (#571, PR #733; 2026-11-26)
+
+On Android a commit copies into `<id>.new` only the files that changed since the save, with a `.dm-keep` list of everything the new version holds, and stage 1 removes
+from the save only what that list lacks; a mount brings `.work` up to the save in place instead of copying it again. A file is replaced by unlink and rename, so the
+media provider no longer restores the old date on shared storage. A folder whose mode or attributes changed goes into the copy, and folders made for a changed file
+carry their attributes. The Mac keeps its copy-on-write clone and swap.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/plat/plat_android.c` | 11 | `plat_clone_changed`, `plat_update_tree`; `.dm-keep` in stage 1; stage 2 replaces a file or folder of the other kind; `copy_file`'s `times` | `PEANUTS`, `PEANUTS begin`/`end` |
+| `dm/host/plat/plat.h`, `dm/host/plat/plat_apple.h` | 1 each | the two functions; on the Mac a full clone and no update | `PEANUTS begin`/`end` |
+| `dm/host/hle_fs.c` | 2 | a commit copies what changed; a mount updates `.work` | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/SaveStore.java` | 6 | the launcher's journal reads `.dm-keep` and replaces as stage 2 does | `PEANUTS`, `PEANUTS begin`/`end` |
+| `dm/tools/tests/test_android_saves.py` | 3 | the delta scenarios, checked on both sides; `HostDelta`: folder attributes and mode with real xattrs | `PEANUTS`, `PEANUTS begin`/`end` |

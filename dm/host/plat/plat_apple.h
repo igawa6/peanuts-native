@@ -179,8 +179,10 @@ static inline int plat_fd_path(int fd, char *out, size_t n) { char p[MAXPATHLEN]
 static inline int plat_clone_tree(const char *from, const char *to) { return clonefile(from, to, 0) ? -1 : 0; }
 static inline int plat_rename_swap(const char *a, const char *b) { return renamex_np(a, b, RENAME_SWAP); }
 static inline void plat_swap_recover(const char *b) { (void)b; }
+// PEANUTS begin: delta commits (#571) are Android's; the Mac clones (copy-on-write) and swaps as before
 static inline int plat_clone_changed(const char *from, const char *base, const char *to) { (void)base; return plat_clone_tree(from, to); }
 static inline int plat_update_tree(const char *from, const char *to) { (void)from; (void)to; errno = ENOTSUP; return -1; }
+// PEANUTS end
 static inline ssize_t plat_getxattr(const char *path, const char *name, void *buf, size_t n) { return getxattr(path, name, buf, n, 0, XATTR_NOFOLLOW); }
 static inline int plat_setxattr(const char *path, const char *name, const void *buf, size_t n) { return setxattr(path, name, buf, n, 0, XATTR_NOFOLLOW); }
 static inline int plat_removexattr(const char *path, const char *name) { return removexattr(path, name, XATTR_NOFOLLOW); }

@@ -426,7 +426,7 @@ int plat_fd_path(int fd, char *out, size_t n) {
     out[k] = 0; return 0;
 }
 // No copy-on-write clone on ext4 / f2fs: a full copy of the tree, with the guest names (xattrs) and times. The target must not exist, as for clonefile
-static int copy_file(const char *from, const char *to, const struct stat *st, int times) {
+static int copy_file(const char *from, const char *to, const struct stat *st, int times) {   // PEANUTS: times (a delta commit's copy keeps none)
     int in = open(from, O_RDONLY | O_CLOEXEC); if (in < 0) return -1;
     int out = open(to, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, st->st_mode & 07777); if (out < 0) { int e = errno; close(in); errno = e; return -1; }
     uint8_t b[65536]; ssize_t k; int r = 0;
@@ -435,7 +435,7 @@ static int copy_file(const char *from, const char *to, const struct stat *st, in
         for (ssize_t o = 0; o < k;) { ssize_t w = write(out, b + o, (size_t)(k - o)); if (w < 0) { if (errno == EINTR) continue; r = -1; break; } o += w; }
         if (r) break;
     }
-    if (times) { struct timespec t[2] = {st->st_atim, st->st_mtim}; futimens(out, t); }
+    if (times) { struct timespec t[2] = {st->st_atim, st->st_mtim}; futimens(out, t); }   // PEANUTS
     int e = errno; close(in); if (close(out)) r = -1; errno = e; return r;
 }
 static void copy_xattrs(const char *from, const char *to) {
@@ -448,7 +448,7 @@ static void copy_xattrs(const char *from, const char *to) {
 int plat_clone_tree(const char *from, const char *to) {
     struct stat st; if (lstat(from, &st)) return -1;
     if (S_ISLNK(st.st_mode)) { char l[4096]; ssize_t k = readlink(from, l, sizeof l - 1); if (k < 0) return -1; l[k] = 0; return symlink(l, to); }
-    if (!S_ISDIR(st.st_mode)) { if (copy_file(from, to, &st, 1)) return -1; copy_xattrs(from, to); return 0; }
+    if (!S_ISDIR(st.st_mode)) { if (copy_file(from, to, &st, 1)) return -1; copy_xattrs(from, to); return 0; }   // PEANUTS: times
     if (mkdir(to, st.st_mode & 07777)) return -1;
     DIR *d = opendir(from); if (!d) return -1;
     int r = 0;
@@ -473,6 +473,7 @@ static void swap_dir_meta(const char *a, const char *b) {
     copy_xattrs(a, b);
 }
 // PEANUTS end
+// PEANUTS begin: delta commits (#571): a commit copies only what changed since the save, listing everything it keeps in .dm-keep; a mount updates .work in place
 static int swap_rm_tree(const char *p);
 static int xattrs_same(const char *x, const char *y) {
     char nx[1024], ny[1024]; ssize_t a = llistxattr(x, nx, sizeof nx), b = llistxattr(y, ny, sizeof ny);
@@ -548,7 +549,7 @@ static int clone_changed(const char *from, const char *base, const char *to, con
         if (lstat(pf, &st)) { r = -1; break; }
         if (S_ISDIR(st.st_mode)) {
             if (keep_add(k, rr, 1)) { r = -1; break; }
-            if ((lstat(pb, &sb) || !S_ISDIR(sb.st_mode)) && mkdirs_like(from, to, rr)) { r = -1; break; }
+            if ((lstat(pb, &sb) || !S_ISDIR(sb.st_mode) || (st.st_mode & 07777) != (sb.st_mode & 07777) || !xattrs_same(pf, pb)) && mkdirs_like(from, to, rr)) { r = -1; break; }   // a folder whose mode or guest name changed goes too: stage 2 gives the save's folder those
             r = clone_changed(from, base, to, rr, k);
         } else {
             if (keep_add(k, rr, 0)) { r = -1; break; }
@@ -591,7 +592,7 @@ static int update_tree(const char *from, const char *to) {
         char pf[4200], pt[4200]; struct stat sf, st;
         snprintf(pf, sizeof pf, "%s/%s", from, e->d_name); snprintf(pt, sizeof pt, "%s/%s", to, e->d_name);
         if (lstat(pf, &sf)) { r = -1; break; }
-        if (S_ISDIR(sf.st_mode)) r = lstat(pt, &st) ? plat_clone_tree(pf, pt) : update_tree(pf, pt);
+        if (S_ISDIR(sf.st_mode)) r = lstat(pt, &st) ? plat_clone_tree(pf, pt) : (chmod(pt, sf.st_mode & 07777), update_tree(pf, pt));
         else if (!file_same(pf, &sf, pt)) r = (unlink(pt) && errno != ENOENT) ? -1 : copy_entry(pf, &sf, pt);
     }
     int er = errno; closedir(d); errno = er; return r;
@@ -600,6 +601,7 @@ int plat_update_tree(const char *from, const char *to) {
     struct stat st; if (lstat(to, &st) || !S_ISDIR(st.st_mode)) { errno = ENOENT; return -1; }
     return update_tree(from, to);
 }
+// PEANUTS end
 static int swap_rm_cb(const char *p, const struct stat *st, int f, struct FTW *w) { (void)st; (void)f; (void)w; return remove(p); }
 static int swap_rm_tree(const char *p) { return nftw(p, swap_rm_cb, 16, FTW_DEPTH | FTW_PHYS); }
 // PEANUTS begin: every file and folder of a tree on the storage (fsync). plat_clone_tree's copy leaves its data in the page cache, so a swap, or the journal marker
@@ -620,6 +622,7 @@ static int swap_sync_tree(const char *p) { return nftw(p, swap_sync_cb, 16, FTW_
 // replaces b.pend1; stage 2 renames a's files over b's (each rename atomic), and the markers go. A crash after the marker is finished at the next mount
 // (plat_swap_recover), a crash before it leaves b untouched, so b ends as the old version or the new one, never a mix. a is left empty (the callers delete it); a failure
 // after the marker returns -2 and a must stay for the roll-forward at the next commit or mount.
+// PEANUTS begin: a delta copy's .dm-keep: stage 1 removes from b only what the list lacks
 typedef struct { char *buf; char **v; size_t n; } swap_keep;
 static int swap_keep_cmp(const void *x, const void *y) { return strcmp(*(char *const *)x, *(char *const *)y); }
 static void swap_keep_free(swap_keep *k) { free(k->buf); free(k->v); memset(k, 0, sizeof *k); }
@@ -661,7 +664,8 @@ static int swap_stage1(const char *a, const char *b, const swap_keep *k, const c
     }
     int er = errno; closedir(d); errno = er; return r;
 }
-static int swap_stage2(const char *a, const char *b, int top) {   // move a's files over b's
+// PEANUTS end
+static int swap_stage2(const char *a, const char *b, int top) {   // move a's files over b's (PEANUTS: top skips .dm-keep)
     DIR *d = opendir(a); if (!d) return errno == ENOENT ? 0 : -1;
     int r = 0;
     for (struct dirent *e; !r && (e = readdir(d));) {
@@ -679,8 +683,10 @@ static int swap_stage2(const char *a, const char *b, int top) {   // move a's fi
     }
     int er = errno; closedir(d); errno = er; return r;
 }
+// PEANUTS begin: only the folders synced after stage 2 (the renamed files were synced in a)
 static int swap_sync_dirs_cb(const char *p, const struct stat *st, int f, struct FTW *w) { return f == FTW_D || f == FTW_DP ? swap_sync_cb(p, st, f, w) : 0; }
 static int swap_sync_dirs(const char *p) { return nftw(p, swap_sync_dirs_cb, 16, FTW_DEPTH | FTW_PHYS); }
+// PEANUTS end
 static int swap_marker(const char *m, const char *a) {
     int fd = open(m, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600); if (fd < 0) return -1;
     size_t n = strlen(a); int r = write(fd, a, n) == (ssize_t)n ? fsync(fd) : -1; int e = errno; close(fd); errno = e; return r;
@@ -707,7 +713,7 @@ static int swap_has_files(const char *a) {
 static int swap_apply(const char *a, const char *b, int stage1) {
     char m1[4200], m2[4200]; snprintf(m1, sizeof m1, "%s.pend1", b); snprintf(m2, sizeof m2, "%s.pend2", b);
     if (stage1) {
-        swap_keep k; if (swap_keep_load(a, &k) < 0) return -1;
+        swap_keep k; if (swap_keep_load(a, &k) < 0) return -1;   // PEANUTS: .dm-keep
         int r = swap_stage1(a, b, &k, ""); swap_keep_free(&k);
         if (r) return -1;
         if (swap_marker(m2, a) || unlink(m1)) return -1;

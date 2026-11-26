@@ -37,6 +37,8 @@ void dm_thread_service_request(void) {}
 uint64_t plat_clock_ns(clockid_t c) { struct timespec t; clock_gettime(c, &t); return (uint64_t)t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec; }
 int plat_mem_region(uint64_t addr, uint64_t *start, uint64_t *size, int *prot) { (void)addr; (void)start; (void)size; (void)prot; return -1; }
 int plat_clone_tree(const char *from, const char *to) { (void)from; (void)to; errno = ENOTSUP; return -1; }
+int plat_clone_changed(const char *from, const char *base, const char *to) { (void)from; (void)base; (void)to; errno = ENOTSUP; return -1; }
+int plat_update_tree(const char *from, const char *to) { (void)from; (void)to; errno = ENOTSUP; return -1; }
 int plat_rename_swap(const char *a, const char *b) { (void)a; (void)b; errno = ENOTSUP; return -1; }
 void plat_swap_recover(const char *b) { (void)b; }
 ssize_t plat_getxattr(const char *path, const char *name, void *buf, size_t n) { (void)path; (void)name; (void)buf; (void)n; errno = ENODATA; return -1; }

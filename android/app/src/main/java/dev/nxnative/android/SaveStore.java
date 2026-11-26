@@ -508,12 +508,12 @@ final class SaveStore {
      */
     private static void apply(File a, File b, boolean stage1) throws IOException {
         if (stage1) {
-            stage1(a, b, keep(a), "");
+            stage1(a, b, keep(a), "");   // PEANUTS: a delta copy's .dm-keep (#571)
             writeSynced(marker(b, 2), a.getAbsolutePath().getBytes(StandardCharsets.UTF_8));
         }
         if (!marker(b, 1).delete() && marker(b, 1).exists()) throw new IOException("cannot remove " + marker(b, 1));
         dirSync(b);
-        stage2(a, b, true);
+        stage2(a, b, true);   // PEANUTS
         if (!marker(b, 2).delete() && marker(b, 2).exists()) throw new IOException("cannot remove " + marker(b, 2));
     }
 
@@ -613,6 +613,7 @@ final class SaveStore {
         return did;
     }
 
+    // PEANUTS begin: delta copies (#571), as plat_android.c: stage 1 removes from b only what .dm-keep lacks; stage 2 replaces a file or folder of the other kind
     static final String KEEP = ".dm-keep";
 
     private static java.util.Set<String> keep(File a) throws IOException {
@@ -659,6 +660,7 @@ final class SaveStore {
             }
         }
     }
+    // PEANUTS end
 
     // ---- Files ----
 
