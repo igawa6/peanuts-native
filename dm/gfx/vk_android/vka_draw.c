@@ -2888,11 +2888,12 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     VkPipeline p = vka_gfx_pipeline(sh, &lay, &k);
     int warm = !p && vka_pso_last_pending();   // PEANUTS: being made in the background, not refused (g_skip_warm)
     // PEANUTS begin: with DM_VK_PSO_ASYNC a pipeline the cache lacks is made in the background and its draws skipped until then. Not the draws whose result the game
-    // keeps (vka_psosync.h vkps_why: a draw into a target of at most 64x64 of the game's pixels, a draw that writes memory or runs with the rasterizer off):
-    // theirs is made now, on the frame path (Super Mario Odyssey stayed black for a whole first run). Looked at only when a pipeline is missing. A fixed rule, no switch
+    // keeps (vka_psosync.h vkps_why: a draw into a target of at most 64x64 of the game's pixels, or 128x128 a layer for a layered one, a draw that writes memory
+    // or runs with the rasterizer off): theirs is made now, on the frame path (Super Mario Odyssey stayed black for a whole first run). Looked at only when a
+    // pipeline is missing. A fixed rule, no switch
     if (!p && !mesh) {
         float rf = R.rsf > 0.f ? R.rsf : 1.f;   // (the target in the game's own pixels: DM_RES_SCALE)
-        vkps_draw q = {.writes = d->rast_discard || draw_writes(sh, d), .w = (uint32_t)(R.full_w / rf + 0.5f), .h = (uint32_t)(R.full_h / rf + 0.5f)};
+        vkps_draw q = {.writes = d->rast_discard || draw_writes(sh, d), .w = (uint32_t)(R.full_w / rf + 0.5f), .h = (uint32_t)(R.full_h / rf + 0.5f), .layers = R.layers};
         int why = vkps_why(&q);
         if (why) { p = vka_gfx_pipeline_now(sh, why, ind != 0 || mdi != 0 ? -1 : (long long)(dw ? dw->count : di->count), q.w, q.h); warm = 0; }   // (none now: refused)
     }

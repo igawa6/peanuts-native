@@ -2796,3 +2796,19 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### Background pipelines: a small layered target waits for its pipeline (2026-11-26, GitHub issue #578)
+
+Every game with `DM_VK_PSO_ASYNC` on (the launcher's default). Round 10's rule (`vka_psosync.h` `vkps_why`) gets a missing pipeline on the frame path for a draw
+into a target of at most 64x64; a layered target (more than one layer: a cube map or an array) now counts as small up to 128x128 a layer. Crisis Core Reunion's
+first run drew its station white for the whole session: its capture cubes (two 128x128x6 RGBA16F, drawn once at the level load) were skipped while their
+pipelines were made and stayed undefined. 2D targets keep the 64 limit. Verified on the AYN Thor (Turnip R1 and R2, cold).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_psosync.h` | Peanuts-owned | `VKPS_LAYERED_PX`, `vkps_draw.layers`, the layered limit in `vkps_why`, the header comment | (Peanuts-owned file) |
+| `dm/gfx/vk_android/vka_draw.c` | 1 | `draw_body`: the pass's layers (`R.layers`) go into `vkps_draw`; the comment names the layered limit | inside Round 10's `// PEANUTS begin`/`end` |
+| `dm/host/tests/t_android_psosync.c` | Peanuts-owned | the layered cases and their edges | (Peanuts-owned file) |
+| `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1 entry, generated | "A capture cube map skipped for its pipeline stayed undefined: the scene white for the session (Android)"; Round 10's entry points to it | `PEANUTS` in the Symptom text (the index copies it) |
+
+Upstream candidate: yes, with Round 10.
