@@ -1,0 +1,40 @@
+# PEANUTS: NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS, Switch update 1.70 (v655360), SDK 14.3.0. CyberConnect2's NUCC engine on NVN; the Scaleform UI draws with OpenGL ES through EGL.
+# Written by scripts/build_ipa_from_nsp.py (survey, write_profile with dm/games/profile_guess.py) from the update's own files; the name, the display version and the comments are by hand.
+
+# ---- Identity ----
+title_id	01005A20190A6000
+program_id	01005A20190A6000
+
+# ---- App ----
+name	NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS
+ipa	NARUTOXBORUTOUltimateNinjaSTORMCONNECTIONS.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+# 1.70: main's own build path names MasterV170 (the dump has no control data)
+build	v655360	1.70	main=48ece454b61412b9fb46fab2be3f5ef7	subsdk0=c781dd63daf0ddcdb9975da50a198f93	sdk=2aef2cffb104ee7c9e212fd2f4c731e9
+package	v655360
+shader_versions	v655360
+
+# ---- Files ----
+# not loaded, main takes nothing from them the host does not supply: subsdk1 (GLSLC), subsdk2 (NintendoSDK_OpenGL)
+modules	main subsdk0 sdk
+romfs_marker	data/launch/data1.cpk
+zip_store	.bmp:.cache:.cpk:.nsh:.zip:.metallib
+
+# ---- Memory ----
+# the NPDM declares 32 MB of system resource (virtual address memory) and main sets a heap: a 5 GB block with a large alias region; the heap check sizes the heap region from the heap the game asks for
+# the game asked for a 3.14 GB heap: a 3.250 GB heap region (profile_guess.py heap_signals on an Android run's log: SetHeapSize OOM: req 0xc9200000 > cap 0x8000000 with the starting split, then a fault in sdk at nninitStartup)
+# PROVISIONAL: the alias region left beside it (1.25 GB) is not measured yet
+mem_reserve	0x140000000
+mem_alias	0x50000000
+mem_stack	0x10000000
+# the heap check failed for good: 92 MB of modules, more than the used memory reported (profile_guess.py heap_signals on an Android run: SetHeapSize 0xc9200000 + modules 0x5c00000 > app pool 0xcd500000)
+mem_used	0x6000000
+app_pool	0xCD500000
+# the NPDM declares 32 MB of system resource
+sys_resource	0x2000000
+
+# ---- Shader split ----
+shader_groups	/data/=data
+shader_note	NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS shaders
