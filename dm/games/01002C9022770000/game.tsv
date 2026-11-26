@@ -27,3 +27,10 @@ shader_note	Trails in the Sky 1st Chapter shaders
 
 # PEANUTS: the game steps by elapsed time (the same walk covers the same ground at 30 and 60 fps); its own limit is 60, so display pacing caps up to 60 are offered as experimental.
 fps_limit_present	1
+
+# PEANUTS: the game draws its 3D scene at a dynamic resolution between a floor (800x450 docked, 640x360 handheld) and 1600x900, and stays at the floor here; this option loads the floor from the maximum (main+0x8794, main+0x879c), so the scene stays at 1600x900 (the game note)
+option	DM_SKY1_FULL_RES	Full resolution 3D	Draws the 3D scene at the game's own 1600x900 instead of 800x450. Uses more GPU time: steady 60 fps on an Adreno 740, a dropped frame now and then in battles with large effects. Restart the game to apply.	restart
+option_patch	DM_SKY1_FULL_RES	8963a531fa7f27a52323081ace0f2f6e	0x8794	2a0d0b8b	6a0642b9
+option_patch	DM_SKY1_FULL_RES	8963a531fa7f27a52323081ace0f2f6e	0x879c	4b294029	6b0242b9
+option_patch	DM_SKY1_FULL_RES	4cabd528adbc28e8f35ec047c0abc4cd	0x8794	2a0d0b8b	6a0642b9
+option_patch	DM_SKY1_FULL_RES	4cabd528adbc28e8f35ec047c0abc4cd	0x879c	4b294029	6b0242b9
