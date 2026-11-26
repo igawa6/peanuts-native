@@ -713,6 +713,7 @@ static int levels_apply(module_t *m, unsigned cw, unsigned ch) {
 
 // A main build with a render_cfg row takes DM_WINDOW_SIZE as the output of its render configurations instead (hle_render.c), at run time
 #include "render_cfg.h"
+#include "imm_words.h"   // PEANUTS(upstream-candidate): window_words / view_scale_words (words_apply below)
 #ifdef DM_RUNTIME_PROFILE   // PEANUTS: the generic host builds the host row types over the profile's own rows once, at first use
 static rcfg_row_t g_pf_rcfg[DM_PROFILE_RENDER_CFG_CAP]; static pthread_once_t g_pf_rcfg_once = PTHREAD_ONCE_INIT;
 static void pf_rcfg_build(void) {
@@ -738,7 +739,190 @@ static int render_cfg_row(const char *build) {
     for (int i = 0; i < DM_GAME_NRENDER_CFG; i++) if (rows[i].build[0] && !strcmp(rows[i].build, build)) return 1;
     return 0;
 }
+// PEANUTS(upstream-candidate) begin: window_words / view_scale_words (imm_words.h; README.md). A game that builds its window size, and the float of its 3D scale, from movz / movk
+// words in its text (Mario + Rabbids Sparks of Hope) has them written here, for the main build the row names, before the text is sealed and before option_apply_patches:
+//   DM_WINDOW_SIZE=<w>x<h>  every w site of the window_words row gets the width, every h site the height (the sites' register and shift stay the game's)
+//   DM_SCENE_PCT=<40..100>  every lo / hi pair of the view_scale_words row gets the float32 of pct / 100 (100 is exactly 0x3F800000; the game rounds the render size itself)
+//   a window site may be an orr Wd, wzr, #imm (it becomes movz Wd, #v); an f32 view_scale_words row (floats in main's rodata [ro_off, data_off), still writable
+//   here) gets the word of the build's view_scale_steps row for DM_SCENE_PCT, which must be one of its steps ([RED] and nothing written otherwise)
+//   a build with a view_scale_fixed row keeps its window; DM_OUT_SIZE and DM_SCENE_PCT set the ratio its f32 sites get (words_fixed_apply). Steps: a lo / hi
+//   row has none, a windowed f32 row needs them, a fixed f32 row has none
+// Each key is all or nothing: every site's word must be the row's (else one [RED] line, nothing written for that key, the game's own value, never a die), and a site that
+// DM_OPTION_PATCHES (or a DM_FPSLOCKER_PLAN code row) also writes is left to it (option_apply_patches dies when a word is not the one its row expects, and the profile's old
+// 3D option rows write the same words): one [RED] line, nothing written for the key. Unset, empty or "original" (DM_WINDOW_SIZE), and a build or a profile without the row, write nothing
+typedef struct { const char *build; unsigned n; imw_site_t site[IMW_MAX_SITES]; } imw_row_t;
+// The sites of the key's row for this build: their count, 0 for no row of this build (*other: a row of another build), -1 for a row that is not valid
+static int words_row(int key, const char *build, int *other, imw_site_t out[IMW_MAX_SITES]) {
+    int n = 0; *other = 0;
+#ifdef DM_RUNTIME_PROFILE   // PEANUTS: the generic host reads the profile's own rows instead of a static const initialized from the macro
+    unsigned cnt = key == IMW_KEY_WINDOW ? g_profile.nwindow_words : g_profile.nview_scale_words;
+    const dm_pf_words_t *rows = key == IMW_KEY_WINDOW ? g_profile.window_words : g_profile.view_scale_words;
+    for (unsigned i = 0; i < cnt && i < DM_PROFILE_WORDS_CAP; i++) {
+        if (strcmp(rows[i].build, build)) { *other = 1; continue; }
+        if (rows[i].n > IMW_MAX_SITES) return -1;
+        for (unsigned k = 0; k < rows[i].n; k++) { out[k].off = rows[i].site[k].off; out[k].word = rows[i].site[k].word; out[k].kind = rows[i].site[k].kind; }
+        n = (int)rows[i].n;
+        return imw_row_valid(key, out, (unsigned)n) ? n : -1;
+    }
+#else
+    static const imw_row_t win_rows[] = DM_GAME_WINDOW_WORDS, scl_rows[] = DM_GAME_VIEW_SCALE_WORDS;
+    const imw_row_t *rows = key == IMW_KEY_WINDOW ? win_rows : scl_rows;
+    for (int i = 0; i < (key == IMW_KEY_WINDOW ? DM_GAME_NWINDOW_WORDS : DM_GAME_NVIEW_SCALE_WORDS); i++) {
+        if (strcmp(rows[i].build, build)) { *other = 1; continue; }
+        if (rows[i].n > IMW_MAX_SITES) return -1;
+        for (unsigned k = 0; k < rows[i].n; k++) out[k] = rows[i].site[k];
+        n = (int)rows[i].n;
+        return imw_row_valid(key, out, (unsigned)n) ? n : -1;
+    }
+#endif
+    return 0;
+}
+// the build's view_scale_steps row (an f32 view_scale_words row's words for DM_SCENE_PCT): its entry count, 0 for none, -1 for a row that is not valid
+// (the profile is untrusted: imm_words.h imw_steps_valid)
+typedef struct { const char *build; imw_steps_t st; } imw_steps_row_t;
+static int words_steps(const char *build, imw_steps_t *out) {
+    memset(out, 0, sizeof *out);
+#ifdef DM_RUNTIME_PROFILE
+    for (unsigned i = 0; i < g_profile.nview_scale_steps && i < DM_PROFILE_WORDS_CAP; i++) {
+        const dm_pf_steps_t *r = &g_profile.view_scale_steps[i];
+        if (strcmp(r->build, build)) continue;
+        if (r->n > IMW_MAX_STEPS) return -1;
+        out->n = r->n; for (unsigned k = 0; k < r->n; k++) { out->pct[k] = r->pct[k]; out->word[k] = r->word[k]; }
+        return imw_steps_valid(out) ? (int)out->n : -1;
+    }
+#else
+    static const imw_steps_row_t rows[] = DM_GAME_VIEW_SCALE_STEPS;
+    for (int i = 0; i < DM_GAME_NVIEW_SCALE_STEPS; i++) {
+        if (strcmp(rows[i].build, build)) continue;
+        if (rows[i].st.n > IMW_MAX_STEPS) return -1;
+        *out = rows[i].st;
+        return imw_steps_valid(out) ? (int)out->n : -1;
+    }
+#endif
+    return 0;
+}
+// 1 when the key may be written: no DM_OPTION_PATCHES row and no DM_FPSLOCKER_PLAN code row (both check the word they expect when they run, after this) writes one of its sites;
+// else the [RED] line is logged
+static int words_option_free(const char *what, const char *env, const char *val, const char *build, const imw_site_t *s, int n) {
+    static const char *const specs[2] = {"DM_OPTION_PATCHES", "DM_FPSLOCKER_PLAN"};
+    for (int k = 0; k < 2; k++) {
+        int ov = imw_option_overlap(getenv(specs[k]), build, s, (unsigned)n);
+        if (ov > 0) LOG("[RED] %s: %s also writes main+%#llx: nothing written for %s=%s, that word stays", what, specs[k], (unsigned long long)s[ov - 1].off, env, val);
+        else if (ov < 0) LOG("[RED] %s: %s does not parse: nothing written for %s=%s", what, specs[k], env, val);
+        if (ov) return 0;
+    }
+    return 1;
+}
+static void words_report(const char *what, const char *env, const char *val, int rc, const imw_site_t *s, unsigned bad, uint32_t was) {
+    if (rc == IMW_E_WORD) LOG("[RED] %s: main+%#llx is %08x, not the profile's %08x: nothing written for %s=%s, the game's own value", what, (unsigned long long)s[bad].off, was, s[bad].word, env, val);
+    else if (rc == IMW_E_SITE) LOG("[RED] %s: main+%#llx is outside main's text: nothing written for %s=%s, the game's own value", what, (unsigned long long)s[bad].off, env, val);
+    else LOG("[RED] %s: the row does not fit %s=%s (not valid, or a value past an imm16): nothing written, the game's own value", what, env, val);
+}
+// the build's view_scale_fixed row (a fixed-window build): 1 with its size, 0 for none, -1 for a row that is not valid (imm_words.h imw_fixed_valid) or a second
+// row of the build (the profile is untrusted)
+typedef struct { const char *build; unsigned w, h; } imw_fixed_row_t;
+static int words_fixed(const char *build, unsigned *w, unsigned *h) {
+    int found = 0; *w = 0; *h = 0;
+#ifdef DM_RUNTIME_PROFILE
+    for (unsigned i = 0; i < g_profile.nview_scale_fixed && i < DM_PROFILE_WORDS_CAP; i++) {
+        const dm_pf_fixed_t *r = &g_profile.view_scale_fixed[i];
+        if (strcmp(r->build, build)) continue;
+        if (found++) return -1;
+        *w = r->w; *h = r->h;
+    }
+#else
+    static const imw_fixed_row_t rows[] = DM_GAME_VIEW_SCALE_FIXED;
+    for (int i = 0; i < DM_GAME_NVIEW_SCALE_FIXED; i++) {
+        if (strcmp(rows[i].build, build)) continue;
+        if (found++) return -1;
+        *w = rows[i].w; *h = rows[i].h;
+    }
+#endif
+    if (!found) return 0;
+    return imw_fixed_valid(*w, *h) ? 1 : -1;
+}
+// a fixed-window build (view_scale_fixed row): the window stays the game's (DM_WINDOW_SIZE ignored, one line), and its f32 view_scale_words sites get the ratio of
+// DM_OUT_SIZE (the 3D target size T; unset: the fixed size) and DM_SCENE_PCT (unset: Game default), imm_words.h imw_fixed_apply. The rules game.py keeps are checked again
+// (an f32 view_scale_words row; no window_words, no view_scale_steps row; in a profile.bin no window_fn, res_levels or render_cfg row): else one [RED] line and nothing
+// written. Returns 1 (window_apply's window_fn / res_levels path is not taken)
+static int words_fixed_apply(module_t *m, int nf, unsigned fw, unsigned fh) {
+    imw_site_t s[IMW_MAX_SITES], t[IMW_MAX_SITES]; unsigned bad = 0, a = 0, b = 0, pct = 0, tw = fw, th = fh; uint32_t was = 0, first = 0; int other;
+    const char *e = getenv("DM_WINDOW_SIZE"), *eo = getenv("DM_OUT_SIZE"), *pe = getenv("DM_SCENE_PCT");
+    if (imw_parse_size(e, &a, &b)) LOG("[gfx] DM_WINDOW_SIZE ignored: this build has a view_scale_fixed row");
+    if (nf < 0) { LOG("[RED] view_scale_fixed: the profile's row for main build %s is not valid (one row, W and H 16..%u, 16:9): the 3D scale stays the game's", m->build_id, IMW_FIXED_MAX); return 1; }
+    int n = words_row(IMW_KEY_WINDOW, m->build_id, &other, s), nt = words_row(IMW_KEY_SCALE, m->build_id, &other, t);
+    imw_steps_t st; int ns = words_steps(m->build_id, &st);
+    const char *why = n ? "also has a window_words row" : nt < 0 ? "has a view_scale_words row that is not valid" : !nt || t[0].kind != IMW_F32 ? "has no f32 view_scale_words row"
+                    : ns ? "also has a view_scale_steps row (a fixed window takes none)" : NULL;
+#ifdef DM_RUNTIME_PROFILE
+    for (unsigned i = 0; !why && i < g_profile.nwindow_fn && i < DM_PROFILE_WINDOW_FN_CAP; i++) if (!strcmp(g_profile.window_fn[i].build, m->build_id)) why = "also has a window_fn row";
+    for (unsigned i = 0; !why && i < g_profile.nres_levels && i < DM_PROFILE_RES_LEVELS_CAP; i++) if (!strcmp(g_profile.res_levels[i].build, m->build_id)) why = "also has a res_levels row";
+    for (unsigned i = 0; !why && i < g_profile.nrender_cfg && i < DM_PROFILE_RENDER_CFG_CAP; i++) if (!strcmp(g_profile.render_cfg[i].build, m->build_id)) why = "also has a render_cfg row";
+#endif
+    if (why) { LOG("[RED] view_scale_fixed: main build %s %s: nothing written, the window and the 3D scale stay the game's", m->build_id, why); return 1; }
+    int po = imw_fixed_out(eo, fw, fh, &tw, &th), pp = imw_parse_pct(pe, &pct);
+    if (po < 0) { LOG("[RED] DM_OUT_SIZE=%s: must be <width>x<height>, 16:9, at most %u lines: the 3D scale stays the game's", eo, IMW_FIXED_MAX); return 1; }
+    if (pp < 0) { LOG("[RED] DM_SCENE_PCT=%s: must be a whole number from %u to %u; the 3D scale stays the game's", pe, IMW_PCT_MIN, IMW_PCT_MAX); return 1; }
+    if (!pp && th >= fh) { LOG("scene scale: game default (fixed window %ux%u, output %ux%u)", fw, fh, tw, th); return 1; }
+    char ov[24]; snprintf(ov, sizeof ov, "%ux%u", tw, th);
+    const char *env = pp ? "DM_SCENE_PCT" : "DM_OUT_SIZE", *val = pp ? pe : ov;
+    if (!words_option_free("view_scale_words", env, val, m->build_id, t, nt)) return 1;
+    int rc = imw_fixed_apply(t, (unsigned)nt, m->base, m->ro_off, m->data_off, fw, fh, tw, th, pp ? pct : 0, &bad, &was, &first);
+    if (rc == IMW_E_SITE) LOG("[RED] view_scale_words: main+%#llx is outside main's rodata: nothing written for %s=%s, the game's own value", (unsigned long long)t[bad].off, env, val);
+    else if (rc == IMW_E_RATIO) LOG("[RED] view_scale_fixed: the ratio for main+%#llx is not a finite number above 0: nothing written for %s=%s, the game's own value", (unsigned long long)t[bad].off, env, val);
+    else if (rc < 0) words_report("view_scale_words", env, val, rc, t, bad, was);
+    else if (rc == 0) LOG("scene scale: game default (fixed window %ux%u, output %ux%u)", fw, fh, tw, th);
+    else {
+        float f; memcpy(&f, &first, 4); char in[16];
+        if (pp) snprintf(in, sizeof in, "%u %%", pct); else snprintf(in, sizeof in, "game default");
+        LOG("scene scale: %.2f %% (fixed window %ux%u, output %ux%u, internal %s, view_scale_words, %d words)", (double)f * 100.0, fw, fh, tw, th, in, rc);
+    }
+    return 1;
+}
+// 1 when the main build has a window_words row (the window_fn / res_levels path below is then not taken: game.py keeps the keys apart)
+static int words_apply(module_t *m) {
+    if (strcmp(m->name, "main") || m->nro) return 0;
+    { unsigned fw, fh; int nf = words_fixed(m->build_id, &fw, &fh); if (nf) return words_fixed_apply(m, nf, fw, fh); }   // a fixed-window build (above)
+    imw_site_t s[IMW_MAX_SITES]; unsigned bad = 0; uint32_t was = 0; int other, n;
+    n = words_row(IMW_KEY_WINDOW, m->build_id, &other, s);
+    const char *e = getenv("DM_WINDOW_SIZE");
+    if (n) {
+        unsigned w = 0, h = 0; int pr = imw_parse_size(e, &w, &h);
+        if (n < 0) LOG("[RED] window_words: the profile's row for main build %s is not valid: the window stays the game's", m->build_id);
+        else if (pr < 0) LOG("[RED] DM_WINDOW_SIZE=%s: must be <width>x<height> or original; the window stays the game's", e);
+        else if (pr > 0 && words_option_free("window_words", "DM_WINDOW_SIZE", e, m->build_id, s, n)) {
+            int rc = imw_window_apply(s, (unsigned)n, m->base, m->text_end, w, h, &bad, &was);
+            if (rc < 0) words_report("window_words", "DM_WINDOW_SIZE", e, rc, s, bad, was);
+            else LOG("window: %ux%u (window_words, %d words)", w, h, rc);
+        }
+    }
+    int handled = n != 0;
+    imw_site_t t[IMW_MAX_SITES]; int nt = words_row(IMW_KEY_SCALE, m->build_id, &other, t);
+    const char *pe = getenv("DM_SCENE_PCT");
+    unsigned pct = 0; int pp = imw_parse_pct(pe, &pct);
+    // an f32 row (rodata floats) takes the word of the build's view_scale_steps row, which it must have; a lo / hi row must have none
+    imw_steps_t st; int ns = words_steps(m->build_id, &st), f32 = nt > 0 && t[0].kind == IMW_F32;
+    if (nt) {
+        if (nt < 0) LOG("[RED] view_scale_words: the profile's row for main build %s is not valid: the 3D scale stays the game's", m->build_id);
+        else if (f32 ? ns <= 0 : ns != 0)
+            LOG("[RED] view_scale_steps: the profile's row for main build %s is %s: the 3D scale stays the game's", m->build_id,
+                !f32 ? "there, but its view_scale_words row is not f32" : ns ? "not valid" : "missing (an f32 view_scale_words row needs one)");
+        else if (pp < 0) LOG("[RED] DM_SCENE_PCT=%s: must be a whole number from %u to %u; the 3D scale stays the game's", pe, IMW_PCT_MIN, IMW_PCT_MAX);
+        else if (pp > 0 && words_option_free("view_scale_words", "DM_SCENE_PCT", pe, m->build_id, t, nt)) {
+            int rc = f32 ? imw_f32_apply(t, (unsigned)nt, m->base, m->ro_off, m->data_off, &st, pct, &bad, &was)
+                         : imw_scale_apply(t, (unsigned)nt, m->base, m->text_end, pct, &bad, &was);
+            if (rc == IMW_E_STEP) LOG("[RED] view_scale_steps: DM_SCENE_PCT=%s is not one of the profile's steps for main build %s: nothing written, the game's own value", pe, m->build_id);
+            else if (f32 && rc == IMW_E_SITE) LOG("[RED] view_scale_words: main+%#llx is outside main's rodata: nothing written for DM_SCENE_PCT=%s, the game's own value", (unsigned long long)t[bad].off, pe);
+            else if (rc < 0) words_report("view_scale_words", "DM_SCENE_PCT", pe, rc, t, bad, was);
+            else LOG("scene scale: %u %% (view_scale_words, %d words)", pct, rc);
+        }
+    } else if (pp != 0) LOG("scene scale: DM_SCENE_PCT=%s ignored: the profile has no view_scale_words row for main build %s%s", pe, m->build_id, other ? " (it has one for another build)" : "");
+    { const char *eo = getenv("DM_OUT_SIZE"); if (eo && *eo) LOG("[gfx] DM_OUT_SIZE ignored: this build has no view_scale_fixed row"); }   // a windowed build
+    return handled;
+}
+// PEANUTS end
 static void window_apply(module_t *m) {
+    if (words_apply(m)) return;   // PEANUTS(upstream-candidate): window_words / view_scale_words, above
     if (strcmp(m->name, "main") || m->nro || render_cfg_row(m->build_id)) return;
     const char *e = getenv("DM_WINDOW_SIZE");
 #ifdef DM_RUNTIME_PROFILE   // PEANUTS: the generic host reads the profile's own table instead of a static const initialized from the macro

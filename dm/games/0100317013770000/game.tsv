@@ -23,8 +23,9 @@ zip_store	.sdfdata:.sdftoc:.metallib
 
 # ---- Memory ----
 # 5 GB guest layout: Snowdrop commits pages within a 3 GB address region (patches.py), beside the SDK's 62 MB node area (sdk_patches.py) and a 10 MB C-library heap.
-mem_reserve	0x140000000
-mem_alias	0x118000000
+# PEANUTS: Android layout: 6 GB guest block, 5.375 GB alias region, Snowdrop's address region 4 GB = 2 GB large + 1 GB 512 KB pages + 1 GB 64 KB pages (patches.py); the Mac/iOS values above were 5 GB / 4.375 GB / 3 GB. Android only: iOS caps one reservation at 6 GB and has proven 5 GB. Both rows change together (alias <= reserve - 256 MB); see README.md, Memory layout.
+mem_reserve	0x180000000
+mem_alias	0x158000000
 mem_stack	0x10000000
 app_pool	0xCD500000
 # the NPDM declares 16 MB of system resource
@@ -33,6 +34,30 @@ sys_resource	0x1000000
 # ---- Shader split ----
 shader_groups	/moria/=moria
 shader_note	Mario + Rabbids® Sparks of Hope shaders (provisional profile)
+
+# ---- Operation mode ----
+# PEANUTS: handheld for the Retroid Pocket Nova (a handheld). Docked, the coins draw with wrong colours (GitHub issue #483, correct in handheld), and handheld is expected to be the lighter mode (not measured). Not validated on the Mac, which ran docked; docked stays available as an A/B through DM_OPMODE.
+op_mode	handheld
+
+# ---- Rendering ----
+# PEANUTS: Android linear alias sync on by default. The ambient chain packs 4 R8 texels in one RGBA8 texel (640x360 R8 / 160x360 RGBA8 over one storage); without the copy the lit shaders' occlusion input reads 0 and shade draws near-black (Retroid Pocket Nova, Turnip T30: shade-band near-black 48-78 % off, 0.0-0.1 % on). DM_VK_ALIAS_SYNC=0 turns it off for an A/B.
+alias_sync	on
+# PEANUTS: the `[RED]` unaligned storage texel buffer lines on Android (offset 0xff20, alignment 64): a compute dispatch's stores there go through an aligned scratch copy so the writes are kept; DM_VK_TBUF_STORE_COPY=0/1 overrides
+tbuf_store_copy	on
+
+# PEANUTS: graphics settings by code words (replaces the old DM_MRSOH_3D_FULL option). The game builds its window size and its 3D scale from movz/movk immediates in main; the loader rewrites them from DM_WINDOW_SIZE / DM_SCENE_PCT after checking every site against the word listed here (a mismatch writes nothing, one [RED] line).
+# Window size: handheld pair (x21) main+0x28639c / +0x2863a8 and docked pair (x8) +0x2863c8 / +0x2863d4. Words as the game has them (1280x720 handheld, 1920x1080 docked), little endian.
+window_words	5b76a43b231e0640521ac66203f7c178	0x28639c:15a080d2:w	0x2863a8:155ac0f2:h	0x2863c8:08f080d2:w	0x2863d4:0887c0f2:h
+# 3D scale: the float 5/6 (0x3f555555) is built by movz w8,#0x5555 / movk w8,#0x3f55,lsl #16, handheld main+0x3366448 / +0x336644c, docked +0x33664a0 / +0x33664a4. DM_SCENE_PCT=40..100 writes float32(pct/100) there (100 = 0x3f800000); unset leaves the game's own scale.
+view_scale_words	5b76a43b231e0640521ac66203f7c178	0x3366448:a8aa8a52:lo	0x336644c:a8eaa772:hi	0x33664a0:a8aa8a52:lo	0x33664a4:a8eaa772:hi
+# Composite pass for the Vulkan upscale hook (DM_VK_CUPSCALE): vertex shader key, pixel shader key (the composite that samples the 3D picture), binding of the 3D picture. Shader identity read from the shader library; not yet seen in a device bind log.
+upscale_pass	1ccc79259434b0ce	b9583398dfea89da	257
+
+# ---- Frame rate ----
+# PEANUTS: FPS limit. The game's own limit is 30 (present interval 2). `-fpslimit 60` on its command line (parsed at main+0x281e14..0x281e90 of build 5b76a43b...) lets it present at interval 1 with its own clock at 1/60 s; its speed was equal at 30/43/60 fps in the old port's walk probe. Never -nofpslimit (black 3D in the old port) and no -preset.
+game_args	-fpslimit 60
+# PEANUTS: the host's frame limiter holds the rate the launcher's Frame rate cap picks (60 / 45 / 40 / 30 / 20, live from the in-game panel); default 30 = the game's own rate.
+fps_limit	30
 
 # ---- Input ----
 # Movement and camera use both sticks.

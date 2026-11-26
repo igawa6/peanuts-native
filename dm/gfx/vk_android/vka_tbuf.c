@@ -84,6 +84,8 @@ VkBufferView vka_tbuf_view(int id, int writes) {
 // ---------- Images of buffer textures ----------
 typedef struct { uint64_t addr, bytes, last, copied_frame; uint32_t elems, w, h; int format, is2d, laid, dirty; VkImage img; VkDeviceMemory mem; VkImageView v; } timg;
 static timg g_i[NIMG]; static _Atomic int g_ni;
+static _Atomic uint64_t g_img_copies, g_img_bytes;   // PEANUTS: images copied on the GPU (vka_tbuf_refresh) and their bytes, for the replay's per-frame line (vka_draw.c vka_tbuf_stats)
+void vka_tbuf_img_counts(uint64_t *copies, uint64_t *bytes) { *copies = atomic_load(&g_img_copies); *bytes = atomic_load(&g_img_bytes); }   // PEANUTS
 void vka_tbuf_wrote(uint64_t addr, uint64_t n) {
     if (!atomic_load_explicit(&g_ni, memory_order_relaxed)) return;
     pthread_mutex_lock(&g_mu);
@@ -185,6 +187,7 @@ void vka_tbuf_refresh(int id, uint8_t dim, VkCommandBuffer cb) {
         if (rem) rg[nr++] = (VkBufferImageCopy){off + (VkDeviceSize)full * ROW * t.f.bpb, rem, 1, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, (int32_t)full, 0}, {rem, 1, 1}};
     } else rg[nr++] = (VkBufferImageCopy){off, 0, 0, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, 0, 0}, {x->w, 1, 1}};
     vk.vkCmdCopyBufferToImage(cb, buf, x->img, VK_IMAGE_LAYOUT_GENERAL, nr, rg);
+    atomic_fetch_add_explicit(&g_img_copies, 1, memory_order_relaxed); atomic_fetch_add_explicit(&g_img_bytes, bytes, memory_order_relaxed);   // PEANUTS: (vka_tbuf_img_counts)
     vka_barrier(cb);   // the copy before the reads
     x->copied_frame = fr; x->dirty = 0; x->last = fr;
     static int noted; if (!noted++) VLOG("buffer textures: read as %s images, copied from guest memory on the GPU at their first use in a frame and after GPU writes (first: texture ID %d, %u elements, VkFormat %d)",
