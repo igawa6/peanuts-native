@@ -67,7 +67,7 @@ On a PC or Mac the packer may instead use the zbic package from PyPI (GPL-2.0), 
 
 The Upscaler choice **SGSR 1** (`DM_VK_NDSR=4`) runs Qualcomm's [Snapdragon Game Super Resolution 1](https://github.com/SnapdragonStudios/snapdragon-gsr),
 ported to a compute shader in [`dm/gfx/vk_android/sgsr/ndsr_sgsr.comp`](../dm/gfx/vk_android/sgsr/ndsr_sgsr.comp) and built into the host as SPIR-V
-(`dm/gfx/vk_android/vka_ndsr_sgsr.h`), under the BSD 3-Clause License:
+(`dm/gfx/vk_android/vka_ndsr_sgsr.h`; the same source, built again with the output stage of the composite upscaler, is in `dm/gfx/vk_android/vka_cupscale_spv.h`), under the BSD 3-Clause License: <!-- PEANUTS: the composite upscaler's SPIR-V is built from this source too -->
 
 > Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
 >

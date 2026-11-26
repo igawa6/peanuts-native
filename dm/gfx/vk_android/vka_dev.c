@@ -12,6 +12,7 @@
 #include "../../peanuts/peanuts_memory_probe.h"   // PEANUTS: guest-buffer remap probe (#47)
 #include "vka_tlsig.h"
 #include "vka_auto.h"
+#include "vka_tbuf.h"   // PEANUTS: vka_tbuf_ssbo_eff (the start-up line below)
 _Static_assert(VKA_DRV_QCOM == VK_DRIVER_ID_QUALCOMM_PROPRIETARY && VKA_DRV_TURNIP == VK_DRIVER_ID_MESA_TURNIP, "vka_auto.h driver IDs");
 
 // One "[auto] KEY=value because driver_id=N (name)" line for each automatic default by driver this device takes (vka_auto.h), once per run at device creation; a switch
@@ -381,6 +382,11 @@ static int init_once(void) {
     }
     auto_log(&(vka_auto_in){.driver_id = V.driver_id, .qcom_old = V.qcom_old, .mesh_ext = mesh_ext, .memu = V.memu, .vin_dyn_ext = vin_dyn_ext,
                             .prof_one_lane = DM_GAME_NSUBGROUP_ONE_LANE, .prof_prepass_cut = DM_GAME_NMESH_PREPASS_CUT, .prof_oq_split = DM_GAME_OCCLUSION_SPLIT_PASS}, pdr.driverName);
+    // PEANUTS begin: where DM_VK_TBUF_GW_SSBO's value comes from (the environment variable, else the profile's tbuf_ssbo_copy), once at start
+    { char eb[32]; int es = vka_env_str("DM_VK_TBUF_GW_SSBO", eb, sizeof eb);
+      VLOG("tbuf ssbo: GPU copy of buffer textures over storage buffer stores %s (profile tbuf_ssbo_copy %s; DM_VK_TBUF_GW_SSBO %s%s)", vka_tbuf_ssbo_eff(es ? eb : NULL, DM_GAME_TBUF_SSBO_COPY) ? "on" : "off",
+           DM_GAME_TBUF_SSBO_COPY ? "on" : "off", es ? "=" : "unset", es ? eb : ""); }
+    // PEANUTS end
     vka_enc_install();
     vka_gbar_install();   // on top of the encoder: sees every work command the replay records (vka_gbar.c)
     const VkPhysicalDeviceLimits *lim = &V.props.limits;

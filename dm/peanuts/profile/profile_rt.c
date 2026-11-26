@@ -42,6 +42,14 @@ static const char *check_strings(const dm_game_profile_t *p) {
     for (unsigned i = 0; i < DM_PROFILE_RENDER_CFG_CAP; i++) if (!has_nul(p->render_cfg[i].build, sizeof p->render_cfg[i].build)) return "profile: a render_cfg[] entry has no NUL terminator";
     for (unsigned i = 0; i < DM_PROFILE_RT_POOL_CAP; i++)
         if (!has_nul(p->rt_pool[i].build, sizeof p->rt_pool[i].build) || !has_nul(p->rt_pool[i].module, sizeof p->rt_pool[i].module)) return "profile: a rt_pool[] entry has no NUL terminator";
+    // PEANUTS(upstream-candidate): window_words / view_scale_words
+    for (unsigned i = 0; i < DM_PROFILE_WORDS_CAP; i++)
+        if (!has_nul(p->window_words[i].build, sizeof p->window_words[i].build) || !has_nul(p->view_scale_words[i].build, sizeof p->view_scale_words[i].build))
+            return "profile: a window_words[] / view_scale_words[] entry has no NUL terminator";
+    for (unsigned i = 0; i < DM_PROFILE_WORDS_CAP; i++)   // PEANUTS(upstream-candidate): view_scale_steps
+        if (!has_nul(p->view_scale_steps[i].build, sizeof p->view_scale_steps[i].build)) return "profile: a view_scale_steps[] entry has no NUL terminator";
+    for (unsigned i = 0; i < DM_PROFILE_WORDS_CAP; i++)   // PEANUTS(upstream-candidate): view_scale_fixed
+        if (!has_nul(p->view_scale_fixed[i].build, sizeof p->view_scale_fixed[i].build)) return "profile: a view_scale_fixed[] entry has no NUL terminator";
     return NULL;
 }
 
@@ -64,7 +72,9 @@ const char *profile_rt_load(const char *path) {
         g_profile.nwindow_fn > DM_PROFILE_WINDOW_FN_CAP || g_profile.nsubgroup_one_lane > DM_PROFILE_SUBGROUP_ONE_LANE_CAP ||
         g_profile.nmesh_vegetation_cut > DM_PROFILE_MESH_VEGETATION_CUT_CAP || g_profile.nmesh_prepass_cut > DM_PROFILE_MESH_PREPASS_CUT_CAP ||
         g_profile.nfps_steps > DM_PROFILE_FPS_STEPS_CAP || g_profile.ndrs_ctl > DM_PROFILE_DRS_CTL_CAP || g_profile.nres_levels > DM_PROFILE_RES_LEVELS_CAP ||
-        g_profile.nrender_cfg > DM_PROFILE_RENDER_CFG_CAP || g_profile.nrt_pool > DM_PROFILE_RT_POOL_CAP)
+        g_profile.nrender_cfg > DM_PROFILE_RENDER_CFG_CAP || g_profile.nrt_pool > DM_PROFILE_RT_POOL_CAP ||
+        g_profile.nwindow_words > DM_PROFILE_WORDS_CAP || g_profile.nview_scale_words > DM_PROFILE_WORDS_CAP ||   // PEANUTS(upstream-candidate)
+        g_profile.nview_scale_steps > DM_PROFILE_WORDS_CAP || g_profile.nview_scale_fixed > DM_PROFILE_WORDS_CAP)   // PEANUTS(upstream-candidate)
         return "profile: a table row count is past this host's fixed capacity (corrupt or hostile profile.bin)";
     // Inside the rows: the list and dereference counts index fixed arrays, and offsets/sizes stay far below 2^63 so loader.c's and hle_fpslock.c's
     // "offset + size > module size" checks cannot wrap (a module is well under 4 GiB)
@@ -85,6 +95,18 @@ const char *profile_rt_load(const char *path) {
         const dm_pf_rt_pool_t *r = &g_profile.rt_pool[i];
         if (r->nt > DM_PROFILE_RT_POOL_TIERS || r->off > (1ull << 32)) return "profile: a rt_pool row is out of range (corrupt or hostile profile.bin)";
     }
+    // PEANUTS(upstream-candidate): the site count indexes site[], an offset stays far below 2^63 (loader.c's "offset + 4 > text_end" cannot wrap), a kind is 0 or 1; the words'
+    // own form (movz / movk, the pairs, no repeated offset) is checked where they are used (loader.c words_apply: imm_words.h imw_row_valid)
+    for (unsigned t = 0; t < 2; t++) {
+        const dm_pf_words_t *rows = t ? g_profile.view_scale_words : g_profile.window_words; unsigned cnt = t ? g_profile.nview_scale_words : g_profile.nwindow_words;
+        for (unsigned i = 0; i < cnt; i++) {
+            if (rows[i].n > DM_PROFILE_WORDS_SITES) return "profile: a window_words / view_scale_words row has too many sites (corrupt or hostile profile.bin)";
+            for (unsigned k = 0; k < rows[i].n; k++)   // kind 2 (f32, a rodata float) for view_scale_words only; window_words still 0 or 1
+                if (rows[i].site[k].off > (1ull << 32) || rows[i].site[k].kind > (t ? 2u : 1u)) return "profile: a window_words / view_scale_words site is out of range (corrupt or hostile profile.bin)";
+        }
+    }
+    for (unsigned i = 0; i < g_profile.nview_scale_steps; i++)   // PEANUTS(upstream-candidate): the entry count indexes pct[] / word[]; the values are checked at use
+        if (g_profile.view_scale_steps[i].n > DM_PROFILE_STEPS_MAX) return "profile: a view_scale_steps row has too many entries (corrupt or hostile profile.bin)";
     { const char *se = check_strings(&g_profile); if (se) return se; }
     return NULL;
 }

@@ -1,0 +1,75 @@
+# Game profile of Fire Emblem Warriors: Three Hopes (Switch, update v131072 = 1.0.2 over the base game v0, with its DLC stub). Boots on a Retroid Pocket Nova (Turnip T30 and R8); the tutorial and the camp are checked there. Some run-time keys are taken over from Age of Calamity, not measured here
+# PEANUTS: a profile this fork added (a Peanuts profile written from a survey of the game files; upstream has none). README.md beside this file
+# Format: see dm/games/README.md
+# Koei Tecmo's KTGL engine on NVN, SDK 12.3.7 (Fire Emblem Engage's `sdk` and `subsdk0` builds). Modules main + subsdk0 (NintendoSDK_movie: the WebM movies) + sdk.
+# RomFS: the newer RDB (as ROMANCE OF THE THREE KINGDOMS 8 REMAKE): File/CMN/Asset/FDataPackage/Master/root.rdb and system.rdb (indexes, with .rdx) over 1,417 .fdata files (a PDRK header, then
+# IDRK entries, LZ4 or zlib chunks) and 28 data/*.file; the movies are loose .webm. LinkData/ holds small LINKDATA .BIN files (no shaders found there)
+# The keys below start from Hyrule Warriors: Age of Calamity (same developer, engine and movie library); none of them is measured on this game
+
+# ---- Identity ----
+title_id	010071F0143EA000
+program_id	010071F0143EA000
+
+# ---- App ----
+name	Fire Emblem Warriors: Three Hopes
+ipa	FireEmblemWarriorsThreeHopes.ipa
+app_category	public.app-category.action-games
+# camera on the right stick (Age of Calamity's; the game's own layout is not checked yet)
+pad_layout	full
+
+# ---- Versions ----
+build	v131072	1.0.2	main=f62a7d41caac7d6d22d5e1384cee3720	subsdk0=bffed55ea46c1b48ddeabcacdfbf81bf	sdk=56ec24747ec9e7f19b3efb062483a19d
+package	v131072
+shader_versions	v131072
+
+# ---- Files ----
+# load order as on Horizon: main, subsdk0, sdk (subsdk0 = NintendoSDK_movie)
+modules	main subsdk0 sdk
+romfs_marker	File/CMN/Asset/FDataPackage/Master/root.rdb
+zip_store	.bin:.fdata:.file:.rdb:.webm:.metallib
+
+# ---- Memory ----
+# The NPDM declares no system resource (META +0x14 = 0): the game sets its heap with SetHeapSize. The 4 GB block of the other games without virtual address memory, as the survey
+# guessed it (the heap check that would measure it does not run on a PC); the same keys as Age of Calamity and Romance of the Three Kingdoms 8 Remake
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x0
+# no mem_used: the rewritten modules take 59.4 MiB (+ about 2.4 MB of bss), under the default 64 MB by only about 2 MB (Age of Calamity: 66.6 MB, 0x4800000; ROTK8 Remake: 0x5000000).
+# If the host log shows SetHeapSize failing against the used memory size, set mem_used to the modules' size rounded up to 2 MB plus 4 MB (about 0x4400000)
+
+# ---- Textures ----
+# Movie frames (VP9, NV12 to a buffer in a CPU-visible pool, published with nvnMemoryPoolFlushMappedRange), as in Age of Calamity: without the upload its movie stayed black.
+# Taken over from it, not seen on this game yet
+tex_flush_upload	on
+
+# ---- Presentation ----
+# KTGL soldiers' Half2 / Short2 attributes feed integer shader inputs, which the replay converts on the CPU: only over the vertices each draw reads (Age of Calamity's
+# measurement: millions of vertices a frame in battle otherwise). Taken over from it, not measured here
+vconv_range	on
+
+# ---- Rendering fix ----
+# PEANUTS: dynamic lights blinking from frame to frame in the camp and in battle: always on, a fix with no player setting (dm/games/README.md tbuf_ssbo_copy; README.md here;
+# docs/reference/rendering.md, "Buffer textures over storage buffer stores read a stale copy"). The clustered light-culling compute shader (afe3b29178c63f21) writes the light lists through a
+# storage buffer that the pixel shaders read as buffer textures; the host copies those lists on the GPU each frame. Measured on Turnip (T30, R8): one-frame dropouts 14 -> 0 and 4 -> 0, GPU cost
+# within 0.4 ms in the camp. Needs placed guest memory, so the system driver keeps the old behaviour. DM_VK_TBUF_GW_SSBO=0 overrides it (developer only)
+tbuf_ssbo_copy	on
+
+# ---- Graphics settings ----
+# PEANUTS: graphics settings by code words in fixed-window mode (shared loader). The game keeps its 1920x1080 window; the 3D size is the float32 ratio of its
+# gameplay render-size table (index 2, rodata main+0x1d9f618, 0.75 = 0000403f as the game has it), written from the Output size and DM_SCENE_PCT after the word is checked.
+# Output 720p / 1080p / Native (capped at 1080p) sends DM_OUT_SIZE; Internal resolution and Output are Docked only; the composite upscaler rows are hidden
+view_scale_words	f62a7d41caac7d6d22d5e1384cee3720	0x1d9f618:0000403f:f32
+view_scale_fixed	f62a7d41caac7d6d22d5e1384cee3720	1920x1080
+words_gate	docked_only=output,internal	hidden=upscaler
+# PEANUTS: Frame rate slider (shared launcher). A words: title needs an fps_limit row; the slider offers 20, 30, 40, 45 and 60 fps (the same steps as the other
+# fixed-window titles) and starts at 60 (the game's own rate) with nothing stored. The host frame limiter then runs at the slider's rate (DM_FPS_LIMIT); game speed
+# holds at 30 and 40 on the device; 20 and 45 use the same limiter path and are not device-tested
+fps_limit	60
+fps_modes	20,30,40,45,60
+fps_default	60
+
+# ---- Shader split (shader_split.py: KTGL G2S containers in the .fdata entries, GLSLC outputs in main) ----
+shader_groups	/File/=file /LinkData/=linkdata
+shader_note	Fire Emblem Warriors: Three Hopes shaders

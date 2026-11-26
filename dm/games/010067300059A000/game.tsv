@@ -23,8 +23,9 @@ zip_store	.sdfdata:.sdftoc:.metallib
 
 # ---- Memory ----
 # Snowdrop's compact 3 GB address region, SDK node area and 100 MB C-library heap fit this 5 GB guest block.
-mem_reserve	0x140000000
-mem_alias	0x118000000
+# PEANUTS: Android layout: 6 GB guest block, 5.375 GB alias region, Snowdrop's address region 4 GB = 2 GB large + 1 GB 512 KB pages + 1 GB 64 KB pages (patches.py); the Mac/iOS values were 5 GB / 4.375 GB / 3 GB. Android only: iOS caps one reservation at 6 GB and has proven 5 GB. Both rows change together (alias <= reserve - 256 MB).
+mem_reserve	0x180000000
+mem_alias	0x158000000
 mem_stack	0x10000000
 app_pool	0xCD500000
 # the NPDM declares 16 MB of system resource
@@ -38,3 +39,24 @@ shader_note	Mario + Rabbids Kingdom Battle shaders
 depth_mode	zero
 # Movement and camera use both sticks.
 pad_layout	full
+# PEANUTS: KB-38 (MRKB-PN D11): the sky's compute shaders 38c757aa0b2d5dea (binding 5, 208 B) and 6df283f716e87420 (binding 2, 32 B) store into storage texel buffers 32 bytes off the device's 64-byte alignment: through an aligned scratch copy so the sun colour is written and the lighting is not lost; DM_VK_TBUF_STORE_COPY=0/1 overrides
+tbuf_store_copy	on
+# PEANUTS: Android linear alias sync on by default (MRKB-PN D32/R16). The ambient-occlusion chain packs 4 R8 texels in one RGBA8 texel (640x360 R8 and 160x360 RGBA8 sharing one storage, 640-byte rows); the replay makes one image for each shape, so the lit pass read the raw unblurred occlusion and cliff / brick faces showed dashes with an 8 window-pixel period (independent of Internal %, upscaler and depth of field). Device evidence R16 (Retroid Pocket Nova, Turnip T30, APK L, DM_VK_ALIAS_SYNC=1): stripe amplitude at the cliff column 4.01 -> 0.53 and at the lower cliff face 2.87 -> 0.25, lighting and frame rate unchanged, 0 FATAL. DM_VK_ALIAS_SYNC=0 turns it off for an A/B.
+alias_sync	on
+# PEANUTS: FPS limit (MRKB-PN): the game's max fps is FLT_MAX ("no limit"), which it maps to present interval 2 (a fixed 30 fps). `-fpslimit 60` (two arguments, handed to the game's GetHostArgc/Argv, parsed at main+0xe8860c) sets its max fps to 60, so it presents at interval 1 and paces itself with its own CPU timer; the game's speed is time-based (old project: same at 55/60/72 fps). The host's frame limiter (fps_limit) then holds the rate the launcher's Frame rate cap picks (60 / 45 / 40 / 30 / 20), live from the in-game panel. Never `-nofpslimit` (interval 0, black 3D in the old project)
+game_args	-fpslimit 60
+# PEANUTS: default cap 30 = the game's own rate; a words: game's launcher always passes DM_FPS_LIMIT (the slider, 30 by default; shared patch v5 R28), so this row is the host's fallback only
+fps_limit	30
+# PEANUTS: graphics settings by code words (MRKB-PN GFX, D18-D20; shared words path of the Sparks of Hope clone). The game builds its window size from movz/orr immediates in main and reads its 3D scale (5/6) as a float32 from rodata; the loader rewrites them from DM_WINDOW_SIZE / DM_SCENE_PCT after checking every site against the word listed here (a mismatch writes nothing, one [RED] line).
+# Window size (MRSoH row model: docked + handheld pairs): main+0x10985a0 / +0x10985a4 (height, movz w8,#1080 / movz w9,#720) and +0x10985ac / +0x10985b0 (width, orr w9,wzr,#0x780 / movz w10,#1280; the loader writes a whole movz for the orr). All four take the chosen size, so Output applies whichever arm the game takes. The second size (x8, +0x10985e4 / +0x10985e8) is not a site, as in the R6 probe.
+window_words	3b39e0c06b8841f1baf0ea4d54286bfe	0x10985a0:08878052:h	0x10985a4:095a8052:h	0x10985ac:e90f1932:w	0x10985b0:0aa08052:w
+# 3D scale: the rodata float32 5/6 (0x3f555555) at main+0x26e8268, read by +0x760b20 and +0x760c74. DM_SCENE_PCT writes the view_scale_steps word of that percent there (slider % = percent of the Output size; unset = the game's 5/6, 1600x900 at 1080p). Steps are exact 16:9 with a height divisible by 4 at both windows (device-confirmed sizes R6: 1066x600, 1344x756, 512x288, 1920x1080).
+view_scale_words	3b39e0c06b8841f1baf0ea4d54286bfe	0x26e8268:5555553f:f32
+view_scale_steps	3b39e0c06b8841f1baf0ea4d54286bfe	40:cdcccc3e	50:0000003f	60:9a99193f	70:3433333f	80:cdcc4c3f	90:6766663f	100:0000803f
+# Composite pass for the Vulkan upscale hook (DM_VK_CUPSCALE): vertex shader 4923bfcc58031364, pixel shader e4aa9dfe594abeec (device-confirmed R5/R6 bind log), the 3D picture at binding 257 (RGBA8).
+upscale_pass	4923bfcc58031364	e4aa9dfe594abeec	257
+# PEANUTS: the launcher's Output resolution default 1080p (user decision D18; Native on the Nova is 720p, below the game's own 1600x900). Graphics quality stays Docked (no `op_mode handheld` row).
+output_default	1080p
+# PEANUTS: Depth of field switch (MRKB-PN D30). The game's own graphics-preset flag byte main+0x3285585 (set by the apply callback main+0xd2af20, !dof) is read in one place that decides the DoF pass, main+0xa55938 `ldrb w8,[x8]` before `cbnz w8, epilogue` (main+0xa55944). With the option on the load becomes `mov w8,#1`, so the game takes its own dof=0 path (the preset RKB LOW) and the DoF pass never runs. Off (default): no word written, the game as it is. The row is titled "Depth of field" and shows the opposite of the stored option (`inverted`: ON = DoF as the game has it; OFF stores the option and writes the word at the next start), a restart option in the Performance tab (`perf`) with no description.
+option	DM_KB_DOF_OFF	Depth of field		restart perf inverted
+option_patch	DM_KB_DOF_OFF	3b39e0c06b8841f1baf0ea4d54286bfe	0xa55938	08014039	28008052

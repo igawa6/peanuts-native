@@ -204,6 +204,13 @@ final class Prefs {
         int pl = profileLimit(titleId);
         Integer r = recCap(c, titleId);   // the recommended limit comes before the profile's and the main screen's (Recommend.effective)
         Profile p = Profile.of(titleId);
+        if (p != null && p.words()) {   // PEANUTS: a words: game has no "Game owned": its stored choice, else the profile's fps_default, else the recommended one, else 30 fps (the nearest offered step); fps_owned_default is ignored
+            String key = gameKey("fps_cap", titleId);
+            if (wordsOwnedStored(c, titleId)) of(c).edit().remove(key).commit();   // an older "Game owned" choice (-2) is dropped: the default shows
+            int v = WordsGfx.fpsStart(WordsGfx.fpsSteps(paceCaps(titleId)), of(c).getInt(key, -1), WordsGfx.fpsDefault(BuildConfig.NX_PEANUTS_FPS_DEFAULT, titleId), r != null ? r : -1);   // stored, else game.tsv fps_default, else recommended, else 30
+            if (!p.fpsModes.isEmpty()) return p.fpsMode(v);
+            return v > 0 && v < p.fpsLimitMin ? p.fpsLimitMin : v;
+        }
         // PEANUTS: opt-in present pacing and fps_owned_default, Game owned until a pick before 0.1.8, start at 60 fps (30 without 60) until the player picks a cap
         // (Game owned among them); before the profile's limit and the main screen's (FrameRateCaps.defaultLimit)
         boolean owned = FrameRateCaps.ownedBefore(p);
@@ -215,11 +222,12 @@ final class Prefs {
     /** The recommended frame rate cap as the launcher stores it (Recommend.cap), null for none */
     static Integer recCap(Context c, String titleId) { return Recommend.cap(rec(c, titleId, Recommend.FPS_CAP), limited(titleId)); }
     /** Game settings › Reset to defaults: every choice of the game's own back to the main screen's default (Extra environment's lines stay) */
-    static final String[] GAME_SETTINGS = {"window", "render_pct", "gfx_quality", "fps_cap", "gpu_driver", "gpu_ts", "pause_return", "ndsr_choice2", "ndsr_sharp", "drs2", "ram_saver", "decouple", "hold60", "full_vegetation", "gsr2_clarity", "dlss_sharp", "dlss_mode", "scene_res", "res_preset", "aspect", "cheats", "console_mode", "res_scale"};   // PEANUTS: console_mode (ScreenMode), res_scale (ResScale)
+    static final String[] GAME_SETTINGS = {"window", "render_pct", "gfx_quality", "fps_cap", "gpu_driver", "gpu_ts", "pause_return", "ndsr_choice2", "ndsr_sharp", "drs2", "ram_saver", "decouple", "hold60", "full_vegetation", "gsr2_clarity", "dlss_sharp", "dlss_mode", "scene_res", "res_preset", "aspect", "cheats", "console_mode", "res_scale", "out_res", "scene_pct", "cup_mode", "cup_sharp", "fps_last"};   // PEANUTS: console_mode (ScreenMode), res_scale (ResScale), words: games: out_res, scene_pct, cup_mode, cup_sharp, fps_last (WordsRows)
     static void resetGame(Context c, String titleId) {
         SharedPreferences.Editor e = of(c).edit();
         for (String k : GAME_SETTINGS) e.remove(gameKey(k, titleId));
         e.remove(gameKey("lp_mode", titleId));   // Turn Link Play off, retaining the saved host and room for next time.
+        e.remove(WordsGfx.legacyKey(titleId));   // PEANUTS: the old "3D at full window size" switch, if it was never moved to Internal resolution (WordsGfx.migrate)
         Profile p = Profile.of(titleId);
         if (p != null) {
             for (Profile.Option opt : p.options) e.remove(gameKey("opt_" + opt.env, titleId));
@@ -497,7 +505,7 @@ final class Prefs {
         return limited(titleId) ? capOf(v) : FrameRateCaps.targetCap(v, offeredCaps(c, titleId));
     }
     /** Whether the game starts with a cap chosen for it, its own or the recommended one (a limited game passes DM_FPS_LIMIT only then: GameActivity) */
-    static boolean chosenFpsCap(Context c, String titleId) { return ownFpsCap(c, titleId) || recCap(c, titleId) != null; }
+    static boolean chosenFpsCap(Context c, String titleId) { return ownFpsCap(c, titleId) || recCap(c, titleId) != null || limited(titleId) && wordsOn(titleId); }   // PEANUTS: a words: game always passes its rate (30 fps by default), so what the slider shows is what runs
 
     /**
      * Whether the host found that this game picks its own frame rate (its cap status reports no rate it can hold: Native.fpsCapStatus rates 0), as the last run
@@ -510,7 +518,7 @@ final class Prefs {
         if (v == null) of(c).edit().remove(gameKey("fps_cap", titleId)).putString(gameKey(FPS_LIST, titleId), fpsList(titleId)).commit();
         else of(c).edit().putInt(gameKey("fps_cap", titleId), v).putString(gameKey(FPS_LIST, titleId), fpsList(titleId)).commit();
     }
-    static boolean ownFpsCap(Context c, String titleId) { migrateFpsCap(c, titleId); return of(c).contains(gameKey("fps_cap", titleId)); }
+    static boolean ownFpsCap(Context c, String titleId) { migrateFpsCap(c, titleId); return of(c).contains(gameKey("fps_cap", titleId)) && !wordsOwnedStored(c, titleId); }   // PEANUTS: the Frame rate slider of a words: game has no Game owned step, so a stored Game owned is no choice
     // PEANUTS begin: a saved cap keeps its meaning when its game moves between the two lists (fps cap audit B9: 0 is Game owned on the fps_target list, 60 fps on the
     // frame limit list). The list a cap was saved for is kept beside it (fps_cap_list@<title ID>: "limit" or "target"); a cap saved before the marker existed was saved for
     // the list of the rule before 0.1.8 (FrameRateCaps.legacyLimited). Once per game: afterwards the marker names the list the game is on
@@ -527,6 +535,9 @@ final class Prefs {
         e.commit();
     }
     // PEANUTS end
+    // PEANUTS: the Frame rate slider of a words: game has no Game owned step, so a stored "Game owned" (-2) is dropped (paceCap removes it and the default shows)
+    private static boolean wordsOn(String titleId) { Profile p = Profile.of(titleId); return p != null && p.words(); }
+    private static boolean wordsOwnedStored(Context c, String titleId) { return wordsOn(titleId) && of(c).getInt(gameKey("fps_cap", titleId), 0) == FrameRateCaps.GAME_OWNED; }
 
     /** Pause on return (per game, on by default): the game's screen coming back from the background shows it paused, suspended until a tap (GameActivity.onStart) */
     /** Game settings › Controls › Motion sensitivity: how far the phone's gyro turns the game's aim, a step of MOTION_PCT (100 % = the real turn, as on a console); DM_MOTION_SENS, always

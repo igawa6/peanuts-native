@@ -697,6 +697,16 @@ $(B)/t_dkb_wide: t_dkb_wide.c ../android/dkb_wide.c ../android/wide_shape.h ../h
 run: $(B)/t_pkp_aspect
 $(B)/t_pkp_aspect: t_pkp_aspect.c ../android/pkp_aspect.c ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_pkp_aspect.c -lm -pthread
+# PEANUTS(upstream-candidate) begin: window_words / view_scale_words (imm_words.h): the words the loader writes against NDK clang's assembly, the checks and the transaction. It needs no
+# game profile; IMW_R17=<folder with probe_env_L1..L6.txt> also compares the six probe env files' words
+IMW_R17 ?=
+.PHONY: imm-words
+run: imm-words
+imm-words: $(B)/t_imm_words
+	$(B)/t_imm_words $(IMW_R17)
+$(B)/t_imm_words: t_imm_words.c ../imm_words.h ../fpslocker_plan.h | $(B)
+	$(CLANG) -O1 -g -Wall -Wextra -Werror -fsanitize=undefined -I.. -o $@ t_imm_words.c
+# PEANUTS end
 
 # PEANUTS begin: the host side of the companion runtime, on a Linux PC: make GAME=<id> peanuts-host (in `run` on a Linux host). The host's files are compiled as they
 # are, as if for Android (their declarations; what differs on a PC is replaced in each test). t_peanuts_stopworld: every game thread stopped (hle_thread.c

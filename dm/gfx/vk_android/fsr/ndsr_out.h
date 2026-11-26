@@ -14,6 +14,11 @@ void ndsr_store(ivec2 p, vec3 c) {
     if (SQ) c *= c;
     imageStore(dst, p, uvec4(ndsr_uf(c.r, 4u, 0x7bfu) | ndsr_uf(c.g, 4u, 0x7bfu) << 11 | ndsr_uf(c.b, 5u, 0x3dfu) << 22, 0u, 0u, 0u));
 }
+// PEANUTS: NDSR_RGBA8: the composite upscaler's output (vka_cupscale.c, DM_VK_CUPSCALE): the replay's RGBA8 image a game's composite pass samples in place of its 8-bit
+// UNORM 3D picture: clamped to [0, 1] (no NaN), alpha 1 (the composite writes its own)
+#elif defined(NDSR_RGBA8)
+layout(set = 0, binding = 1, rgba8) uniform writeonly image2D dst;
+void ndsr_store(ivec2 p, vec3 c) { if (SQ) c *= c; c = mix(clamp(c, vec3(0.0), vec3(1.0)), vec3(0.0), isnan(c)); imageStore(dst, p, vec4(c, 1.0)); }
 #elif defined(NDSR_MID)
 layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D dst;
 void ndsr_store(ivec2 p, vec3 c) { if (SQ) c *= c; imageStore(dst, p, vec4(c, 1.0)); }   // (RGBA16F: signed, kept as it is for RCAS)
