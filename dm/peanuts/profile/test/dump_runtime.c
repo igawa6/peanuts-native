@@ -98,6 +98,7 @@ int main(int argc, char **argv) {
         for (unsigned k = 0; k < t->nt && k < 4; k++) printf(",%u=%ux%u", t->mb[k], t->max_w[k], t->max_h[k]);
         printf("\n");
     }
+    printf("image_raw32=%d\n", (int)p->image_raw32);
     printf("has_nvn_api=%d\n", (int)p->has_nvn_api);
     printf("nvn_api_major=%d\n", (int)p->nvn_api_major);
     printf("nvn_api_minor=%d\n", (int)p->nvn_api_minor);

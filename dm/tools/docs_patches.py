@@ -170,6 +170,8 @@ SWITCH_BINDING = [
      'why': 'separate passes restore disappearing cave geometry on Qualcomm 891.14. The exact interaction between the queries and the depth attachment remains open'}),
     ('event_wait', 'off', {'what': 'GPU event and sync waits across queues passed on the Vulkan replay', 'now': 'game', 'goal': 'host', 'purpose': 'frame rate',
      'why': 'parked waits cost this game a third of its frame rate and lose the device on Turnip V39; waits that cost no extra submissions would let every game keep them'}),
+    ('image_raw32', '', {'what': 'integer-class shader images over 4-byte textures viewed as raw R32', 'now': 'game', 'goal': 'host', 'purpose': 'rendering',   # PEANUTS
+     'why': f'what the translator declares for raw surface loads and what the Switch gives the shader; per game only until more games have run with it: {DEFAULT_SOON}'}),
     ('tex_dyn_slots', '', {'what': "buffer-texture handles indexed through c2's tables", 'now': 'game', 'goal': 'host', 'purpose': 'shaders',
      'why': "right only where the handle comes from c2's tables: the translator could prove that per shader"}),
     ('feedback_snap', '', {'what': 'draws that sample their own colour attachment read a snapshot', 'now': 'game', 'goal': 'host', 'purpose': 'rendering',

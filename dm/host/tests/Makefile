@@ -97,6 +97,8 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_nvn_dpool
 	$(B)/t_android_t2tpath
 	$(B)/t_android_wbfollow
+# PEANUTS: shader images viewed as raw R32 (profile image_raw32)
+	$(B)/t_android_raw32
 	$(B)/t_nvn_levelof
 	$(B)/t_android_pckeep
 	$(B)/t_android_pwlist
@@ -495,6 +497,10 @@ run: $(B)/t_nvn_levelof
 $(B)/t_android_wbfollow: t_android_wbfollow.c $(VKA)/vka_wbfollow.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_wbfollow.c
 run: $(B)/t_android_wbfollow
+# PEANUTS: which shader image bindings are viewed as their texel's raw bits, R32_UINT / R32_SINT (vka_raw32.h; vka_tex.c id_view, profile image_raw32)
+$(B)/t_android_raw32: t_android_raw32.c $(VKA)/vka_raw32.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_raw32.c
+run: $(B)/t_android_raw32
 $(B)/t_android_psogate: t_android_psogate.c $(VKA)/vka_psogate.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_psogate.c
 # Automatic defaults by driver: the rules and the "[auto]" log line (vka_auto.h; vka_dev.c auto_log)

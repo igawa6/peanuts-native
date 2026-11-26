@@ -29,6 +29,7 @@
 #include "vka_tbuf.h"   // PEANUTS: which GPU writes keep a texel buffer from being read through the CPU's copy
 #include "vka_texcontent.h"   // PEANUTS: which first-sampled textures take their content from their storage, NVN2 and NVN1 (dm/host/tests/t_android_texcontent.c)
 #include "vka_wbfollow.h"
+#include "vka_raw32.h"   // PEANUTS: profile image_raw32 (id_view)
 #include "vka_block_linear_spv.h"   // PEANUTS: the block-linear write-back shader (block_linear.comp)
 #include "../nvn/nvn_tex.h"
 
@@ -3744,6 +3745,10 @@ static VkImageView id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage,
         // class when the image's format list takes it (learned on first use: vka_view, then the next images of this format and size are made with it). Not the bits' own class
         // otherwise: that reads as unbound
         ovr = class_twin(vf.vk, want);
+        // PEANUTS: profile image_raw32 (DM_VK_RAW32 overrides): an integer-class shader image over a 4-byte texture of another class is the texel's raw bits, r32ui / r32i
+        // (vka_raw32.h; FIFA 18's GPU texture compressors). Off by default until more games than FIFA 18 have run with it
+        int r32 = raw32_class(VKA_ENV("DM_VK_RAW32", DM_GAME_IMAGE_RAW32) != 0, storage != 0, want, vf.bpb, vf.bw, vf.bh, im->aspect == VK_IMAGE_ASPECT_COLOR_BIT);
+        if (r32) ovr = r32 == 1 ? VK_FORMAT_R32_UINT : VK_FORMAT_R32_SINT;
         if (!ovr || vf.kind > 2) { pthread_mutex_lock(&g_tmu); im_unhold_locked(im); pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
     }
     VkFormat need = storage ? img_view_learn_fmt(ovr ? ovr : vf.vk, im) : VK_FORMAT_UNDEFINED;   // (a storage view in a format the image's list lacks: learned, the image remade below)
