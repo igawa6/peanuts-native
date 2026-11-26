@@ -2796,3 +2796,21 @@ Left as they were: the hunks the check also flags that were unmarked before 0.1.
 `dm/games/0100A6301214E000/game.tsv`, `dm/games/game.py`, `hle_nvn.c` `nvnWindowGetPresentInterval`, `vka_tex.c` (one line), `dm/host/dm.h`,
 `hle_fpslock.c` `limit_raw`, `loader.c` (two lines), `dm/host/tests/t_android_smap.c`, `dm/tools/docs_patches.py`, and the tests `test_android_soc.py`,
 `test_fpslocker_plan.py`, `test_game_profile.py`, `test_option_patch.py`, `test_vka_tex_registration.py`.
+
+### Bring-up of FINAL FANTASY (Pixel Remaster) (2026-11-25)
+
+The profile folder `dm/games/01000EA014150000/` is new: `scripts/build_ipa_from_nsp.py` with `dm/games/profile_guess.py`
+wrote `game.tsv` from the game's survey and `shader_split.py` wrote the seven tables beside it (1,655 programs from the
+v262144 update, `split: shaders: 1655`, no `[RED]`). The eight tables are as `shader_split.py` wrote them, and
+`check-profiles.sh` passes with the profile in place (186 titles checked, exit 0). The game plays on a phone (see the
+game note); its memory keys in `game.tsv` were
+changed after crashes, and the shader tables are as generated, so the profile stays marked provisional.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/01000EA014150000/game.tsv`, `dm/games/01000EA014150000/README.md` | new files | FINAL FANTASY (Pixel Remaster) `01000EA014150000`, build `v262144` (display 1.2.0): the generated provisional profile and its notes | `# PEANUTS: new profile, provisional`, `<!-- PEANUTS: new profile, provisional -->` |
+
+The seven generated tables (`bf_want.tsv`, `pso_manifest.tsv`, `pso_pairs.tsv`, `shader_facts.tsv`, `shader_map.tsv`,
+`shader_map.tsv.conflicts.tsv`, `shader_pairs.tsv`) are allow-listed in `peanuts/upstream-unmarked.txt`: they are data
+tables read row by row and stay byte-identical to what `shader_split.py` wrote.
+
