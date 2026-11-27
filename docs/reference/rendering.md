@@ -21,6 +21,13 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Fix:** keep the pool-local handles during recording; add each executing pool's base after extracting its field. Store direct texture registrations in sparse pages and capture their host IDs, not their page ordinals. GPU bindless array sizes do not change.
 - **Found on:** Trails through Daybreak II (0100F6701FED4000), whose bring-up profile is a separate change. <!-- PEANUTS(upstream-candidate) -->
 
+### Many small descriptor pools read another pool's textures
+
+- **Symptom:** the title screen draws button icons over its logo, a dialogue box is filled with scene art, and the HUD is drawn from the font page; the log repeats `[RED] texture pools exceed 16` / `sampler pools exceed 16` (about 290,000 lines in 90 s).
+- **Cause:** the game keeps hundreds of small texture and sampler pools live (272 and 257 entries: NVN's 256 reserved descriptors, then 16 or 1 of its own), keeps making new ones over fresh memory and never finalizes the old. The host gave each pool a 512-entry range in a table of 16 (`nvn_dpool.h`), and every pool past the 16th took the first pool's numbering. The sampler table holds 16,384 IDs (`mtl_reg_samp`), so more ranges of that size alone would drop samplers past the 32nd pool.
+- **Fix:** a small pool (512 entries or fewer, not the first) gets a range for its own IDs only, past the reserved ones: 16 host entries for a 272-entry pool, base = range start - 256 (a registration below ID 256 into such a pool is skipped with a `[RED]` line). 1,024 slots; each table has a limit (textures `TREG_GPU`, samplers 16,384); two pool objects over the same memory share a range; when every slot or the table is taken, the pool least recently initialized, registered into or bound gives its slot up (`[RED] … given up for a newer one is used again` when one comes back). The pool lines are rate-limited (1, 10, 100, … times). Check: `t_nvn_dpool`.
+- **Found on:** ASTLIBRA Revision (0100F8D01A06E000), AYN Thor, Turnip: 512 texture and 256 sampler pools live after 15 minutes of play, none given up. <!-- PEANUTS(upstream-candidate) -->
+
 ### Null textures in diagnostic logs
 
 - **Symptom:** clang reports null dereferences in `nvnWindowInitialize` and `clear_tex`; clearing a null texture crashes with `DM_NVN_PASSDUMP=1`.

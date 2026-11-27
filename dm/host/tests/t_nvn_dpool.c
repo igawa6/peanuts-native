@@ -30,12 +30,39 @@ int main(void) {
     int bd = nvn_dpool_add(&u, &d, 4096);
     CHECK(bd == ba, "a 4,096-entry pool did not take the freed 4,096-entry range (it took %d)", bd);
     CHECK(nvn_dpool_find(&u, &a) == 0 || nvn_dpool_find(&u, &a) == bd, "a finalized pool still has its old base");
-    // 16 live pools fill the table; the 17th has no range of its own (-1), and a release makes one
-    nvn_dpool_tab v = {0}; static char p[17];
-    for (int i = 0; i < 16; i++) nvn_dpool_add(&v, &p[i], 256);
-    CHECK(nvn_dpool_add(&v, &p[16], 256) == -1, "a 17th live pool got a range");
+    // PEANUTS(upstream-candidate): NVN_NDPOOL live pools fill the table; a release makes room for the next without giving up a live one
+    nvn_dpool_tab v = {0}; static char p[NVN_NDPOOL + 1];
+    for (int i = 0; i < NVN_NDPOOL; i++) nvn_dpool_add(&v, &p[i], 256);
     nvn_dpool_release(&v, &p[3]);
-    CHECK(nvn_dpool_add(&v, &p[16], 256) > 0, "a pool made after one of 16 was finalized got no range");
+    CHECK(nvn_dpool_add(&v, &p[NVN_NDPOOL], 256) > 0 && !v.evicted, "a pool made after one was finalized gave up a live pool");
+    // ASTLIBRA Revision during play: thousands of new 272-entry pools (256 reserved + 16) over fresh memory, none finalized. Each small pool takes 16 host entries;
+    // the scene's pool (bound every frame) and the newest ones keep their own numbering; the least recently used give their slots up; the table stays in its limit
+    for (int lim = 0; lim < 2; lim++) {
+        nvn_dpool_tab z = {0}; z.limit = lim ? 4096 * 4 : 1 << 20;
+        static char scene2, many[5000]; static char zmem[5000 * 8704];
+        nvn_dpool_add2(&z, &scene2, 4096, zmem);
+        int zbad = 0, zlate = 0;
+        for (int i = 0; i < 5000; i++) {
+            int b = nvn_dpool_add2(&z, &many[i], 272, zmem + 65536 + i * 8704);
+            if (b + NVN_DPOOL_RESERVED < 4096 || b + 272 > z.limit) zbad++;
+            for (int j = i > 3 ? i - 3 : 0; j <= i; j++) if (nvn_dpool_touch(&z, &many[j], 0) + NVN_DPOOL_RESERVED < 4096) zlate++;   // the newest few are registered into and bound
+            if (nvn_dpool_touch(&z, &scene2, 0) != 0) zbad++;
+        }
+        CHECK(!zbad, "limit %d: %d of 5,000 new pools took the scene pool's IDs or went past the table, or the scene pool lost its base", z.limit, zbad);
+        CHECK(!zlate, "limit %d: %d uses of the newest pools found no slot", z.limit, zlate);
+        CHECK(z.next <= z.limit && z.next <= 4096 + NVN_NDPOOL * 16, "limit %d: the table grew to %d entries", z.limit, z.next);
+        CHECK(nvn_dpool_live(&z) >= (lim ? 700 : NVN_NDPOOL), "limit %d: only %d pools kept their slots", z.limit, nvn_dpool_live(&z));
+        for (int i = 4990; i < 5000; i++) for (int j = i + 1; j < 5000; j++) {
+            int bi = nvn_dpool_find(&z, &many[i]), bj = nvn_dpool_find(&z, &many[j]);
+            CHECK(bi + 272 <= bj + 256 || bj + 272 <= bi + 256, "pools %d and %d overlap (%d, %d)", i, j, bi, bj);
+        }
+    }
+    // a small pool's reserved IDs have no range: its first own ID (256) sits right after the previous pool's
+    nvn_dpool_tab r = {0}; static char r0, r1, r2;
+    nvn_dpool_add(&r, &r0, 4096);
+    int r1b = nvn_dpool_add(&r, &r1, 272), r2b = nvn_dpool_add(&r, &r2, 257), sm = 0;
+    CHECK(r1b + 256 == 4096 && r2b + 256 == 4096 + 16, "small pools' IDs from 256 start at %d and %d, not 4096 and 4112", r1b + 256, r2b + 256);
+    CHECK(nvn_dpool_touch(&r, &r1, &sm) == r1b && sm, "a small pool is not marked small");
     printf("%s: %s\n", __FILE__, fails ? "FAILED" : "ok");
     return fails != 0;
 }
