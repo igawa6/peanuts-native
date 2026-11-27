@@ -4106,6 +4106,10 @@ void vka_tex_prepare(VkCommandBuffer cb, uint64_t fence) {   // PEANUTS: image r
     g_recorded_fence = vto_retire_fence(g_recorded_fence, fence);   // PEANUTS: before draining writes or releasing the table lock; never move back on another queue
     pfb_consume_locked();   // the texture IDs read through the pool in submissions done: their images stamped used, null slots written again with their images ("Texture pool reads")
     vka_tex_prune_locked();   // (the limit measured again every 60 frames; nothing to do under it)
+    // Fallback for reads the draw/dispatch hook cannot see: a bindless texture-pool handle is read with
+    // r[i].tid == 0, so no sampled ID names its BC alias. Drain only what is still queued from earlier
+    // submissions, before this submission's commands are recorded; intra-submission ordering is unchanged.
+    bc_sync_flush_locked(cb, NULL, 0, "submit (previous)");
     int n_up = 0;
     for (int i = 0; i < g_nredo; i++) {   // CPU writes to textures that already have an image (WriteTexels): from now on they follow their storage
         vka_img *im = g_redo[i];   // PEANUTS(upstream-candidate): (NULL: freed while queued, redo_forget_locked)
