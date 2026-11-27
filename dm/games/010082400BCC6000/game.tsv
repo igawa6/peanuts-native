@@ -1,0 +1,38 @@
+# Game profile of Untitled Goose Game (Switch, update v458752 / ), Unity 2018.4.1f1 IL2CPP with FMOD, SDK 8.2.0, NVN.
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Format: see dm/games/README.md
+
+# ---- Identity ----
+title_id	010082400BCC6000
+program_id	010082400BCC6000
+
+# ---- App ----
+name	Untitled Goose Game
+ipa	UntitledGooseGame.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v458752		main=dbc3424ab22de644a987386dc692d327	subsdk0=8df876f80ce4ceee62360b31405c452f	sdk=3ae34e689d7a35f13cbf42bfd672af8b
+package	v458752
+shader_versions	v458752
+
+# ---- Files ----
+# every module main imports from; subsdk0 is NintendoSDK_movie
+modules	main subsdk0 sdk
+romfs_marker	Data/sharedassets2.assets.resS
+zip_store	.assets:.bank:.dat:.ress:.metallib
+
+# ---- Memory ----
+mem_reserve	0x140000000
+mem_alias	0x118000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1000000
+
+# ---- Shader split ----
+shader_groups	/Data/=data
+shader_note	Untitled Goose Game shaders
+present_interval	display
+fps_limit	60
+fps_limit_max	120
+fps_limit_min	30

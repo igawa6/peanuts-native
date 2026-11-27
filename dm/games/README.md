@@ -237,6 +237,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [TRIANGLE STRATEGY](0100CC80140F8000/README.md) | `0100CC80140F8000` | 1.1.1 | 12.3.2 | Unreal Engine 4.27 | NVN |
 | [Unicorn Overlord](010069401ADB8000/README.md) | `010069401ADB8000` | 1.05 | 16.2.4 | Vanillaware's engine | NVN |
 | [Unicorn Overlord, Asian release](010054B01AD92000/README.md) | `010054B01AD92000` | 1.05 | 16.2.4 | Vanillaware's engine | NVN |
+| [Untitled Goose Game](010082400BCC6000/README.md) | `010082400BCC6000` |  | 8.2.0 | Unity 2018.4.1f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [WarioWare: Get It Together!](0100563010E0C000/README.md) | `0100563010E0C000` | 1.0.0 | 10.4.1 | NintendoWare Bezel Engine 1.50 | NVN <!-- PEANUTS: Peanuts-only profile; plays on an AYN Thor (Turnip) -->
 | [Well Dweller](0100217023F6C000/README.md) | `0100217023F6C000` | 1.0.0 | 22.2.0 | GameMaker Studio 2 (its runner) | OpenGL |
 | [Viewfinder](0100F9D023176000/README.md) | `0100F9D023176000` | 1.0.0 (base) | 19.3.9 | Unity 2022.3.61f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
