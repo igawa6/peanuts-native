@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include "../nvn/nvn_dpool.h"
 
-enum { TREG_PAGE = 256, TREG_GPU = 1 << 20, TREG_PAGES = NVN_NDPOOL * TREG_GPU / TREG_PAGE };
+enum { TREG_PAGE = 256, TREG_GPU = 1 << 20, TREG_PAGES = 16 * TREG_GPU / TREG_PAGE };   // PEANUTS(upstream-candidate): 16 M IDs, as with the 16 pools it was sized by: pools' ranges stay far below TREG_GPU (nvn_dpool.h)
 static treg_ent *g_tpage[TREG_PAGES];
 static unsigned g_torigin[TREG_PAGES];   // insertion order: stable capture ordinals without scanning holes
 static int g_ntreg;

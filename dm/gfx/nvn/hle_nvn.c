@@ -617,49 +617,80 @@ NVN(nvnMemoryPoolGetBufferAddress, NVNbufferAddress, const NVNmemoryPool *p) {
 // default 8×8 white texture overwrote the UI's textures, and the title menu's labels, the name entry and other menus drew as plain bars or not at all. The scene also registers each draw's
 // textures into fresh IDs of a ring in its large pool (8,729 and up a few seconds in); with the table's capacity taken from the last pool alone, those all read as empty slots and the screen was black
 // The ranges: nvn_dpool.h
-static nvn_dpool_tab g_tpt, g_spt;
+// PEANUTS(upstream-candidate): small pools, table limits and least-recently-used slots (nvn_dpool.h). The tables' limits: the texture IDs Vulkan's set 1 addresses (vka_treg.h TREG_GPU), the sampler IDs the sampler table holds (vka_tex.c mtl_reg_samp)
+static nvn_dpool_tab g_tpt = {.limit = 1 << 20}, g_spt = {.limit = 4096 * 4};
 static pthread_mutex_t g_dpool_mu = PTHREAD_MUTEX_INITIALIZER;
-static int dpool_add(nvn_dpool_tab *t, const void *pool, int n, const char *kind) {   // → the pool's base (assigned at its first Initialize)
+static int pow10_hit(int k) { int p = 1; while (p < k && p < 1000000000 / 10) p *= 10; return k == p; }   // said at 1, 10, 100, ... times: a line per call buries the log
+static const void *dpool_store(const NVNmemoryPool *p, ptrdiff_t off) { const pool_t *o = (const pool_t *)p; return o && o->mem ? (const void *)(o->mem + off) : 0; }
+static int dpool_add(nvn_dpool_tab *t, const void *pool, int n, const void *store, const char *kind) {   // → the pool's base (assigned at its first Initialize)
+    static int full_said, ev_said;
     pthread_mutex_lock(&g_dpool_mu);
-    int had = t->n, b = nvn_dpool_add(t, pool, n);
+    unsigned ev0 = t->evicted;
+    int had = t->n, b = nvn_dpool_add2(t, pool, n, store), live = nvn_dpool_live(t), next = t->next, slots = t->n;
+    unsigned ev = t->evicted;
     pthread_mutex_unlock(&g_dpool_mu);
-    if (b < 0) { LOG("[RED] %s pools exceed %d: later ones share the first pool's numbering", kind, NVN_NDPOOL); return 0; }
-    if (t->n > had && had) LOG("[nvn] pool #%d (%s, %d entries): numbered from %d in the host table, separate from the earlier pools", t->n, kind, n, b);
+    if (b < 0) {
+        int k = __atomic_add_fetch(&full_said, 1, __ATOMIC_RELAXED);
+        if (pow10_hit(k)) LOG("[RED] %s pools: no slot left (%d live, table %d of %d, %d times so far): later ones share the first pool's numbering", kind, live, next, t->limit, k);
+        return 0;
+    }
+    if (slots > had && had && slots <= 64) LOG("[nvn] pool #%d (%s, %d entries): numbered from %d in the host table, separate from the earlier pools", slots, kind, n, b);
+    if (slots > had && (slots == 128 || slots == 256 || slots == 512 || slots == NVN_NDPOOL)) LOG("[nvn] %s pools: %d slots, %d live, table %d of %d", kind, slots, live, next, t->limit);
+    if (ev > ev0 && pow10_hit(__atomic_add_fetch(&ev_said, 1, __ATOMIC_RELAXED)))
+        LOG("[nvn] %s pools: %u older ones given up for newer ones (%d live, %d slots, table %d of %d: the game makes new pools without finalizing the old)", kind, ev, live, slots, next, t->limit);
     return b;
 }
-static int dpool_base(nvn_dpool_tab *t, const void *pool) { pthread_mutex_lock(&g_dpool_mu); int b = nvn_dpool_find(t, pool); pthread_mutex_unlock(&g_dpool_mu); return b; }
+// The host ID of a pool's ID; -1 to skip it: a reserved ID (below 256) of a small pool (nvn_dpool.h). A pool with no slot (given up for a newer one) reads the first pool's numbering
+static int dpool_id(nvn_dpool_tab *t, const void *pool, int id) {
+    static int lost_said, res_said;
+    pthread_mutex_lock(&g_dpool_mu);
+    int small = 0, b = nvn_dpool_touch(t, pool, &small); unsigned ev = t->evicted;
+    pthread_mutex_unlock(&g_dpool_mu);
+    const char *kind = t == &g_tpt ? "texture" : "sampler";
+    if (b < 0) {
+        if (ev && pow10_hit(__atomic_add_fetch(&lost_said, 1, __ATOMIC_RELAXED)))
+            LOG("[RED] a %s pool given up for a newer one is used again (%d times so far, %u given up): it reads the first pool's numbering", kind, lost_said, ev);
+        return id;
+    }
+    if (small && id < NVN_DPOOL_RESERVED) {
+        if (pow10_hit(__atomic_add_fetch(&res_said, 1, __ATOMIC_RELAXED))) LOG("[RED] the game uses reserved %s ID %d of a small pool (%d times so far): skipped", kind, id, res_said);
+        return -1;
+    }
+    return b + id;
+}
+static int dpool_base(nvn_dpool_tab *t, const void *pool) { return dpool_id(t, pool, NVN_DPOOL_RESERVED) - NVN_DPOOL_RESERVED; }   // what a bound pool's IDs are added to
 static void dpool_release(nvn_dpool_tab *t, const void *pool) { pthread_mutex_lock(&g_dpool_mu); nvn_dpool_release(t, pool); pthread_mutex_unlock(&g_dpool_mu); }
 int nvn_dpool_base(const void *pool, int tex) { return dpool_base(tex ? &g_tpt : &g_spt, pool); }   // the replay's bound pools (nvn_mtl.m state_op)
 // The Android frame replayer (dm/gfx/vk_android/vka_replay.c), which runs in the host library without the game: a captured descriptor pool's bases, as its Initialize gave them
 void nvn_dpool_base_set(const void *pool, int tex_base, int samp_base) {
     pthread_mutex_lock(&g_dpool_mu);
-    if (g_tpt.n < NVN_NDPOOL) g_tpt.e[g_tpt.n++] = (nvn_dpool_ent){pool, tex_base, 0};
-    if (g_spt.n < NVN_NDPOOL) g_spt.e[g_spt.n++] = (nvn_dpool_ent){pool, samp_base, 0};
+    if (g_tpt.n < NVN_NDPOOL) g_tpt.e[g_tpt.n++] = (nvn_dpool_ent){pool, tex_base, tex_base, 0, 0, 0, 0};   // PEANUTS(upstream-candidate)
+    if (g_spt.n < NVN_NDPOOL) g_spt.e[g_spt.n++] = (nvn_dpool_ent){pool, samp_base, samp_base, 0, 0, 0, 0};
     pthread_mutex_unlock(&g_dpool_mu);
 }
 // The pools each command buffer last bound are kept in its own host state (cmd_t tex_base / samp_base). They used to be a 64-entry list of command buffers that was never cleared:
 // Dark Souls Remastered binds one of 12 sampler pools in more than 64 command buffers, and every later one read its samplers through the first pool's numbering
 NVN(nvnTexturePoolInitialize, NVNboolean, NVNtexturePool *tp, const NVNmemoryPool *p, ptrdiff_t off, int n) {
     *(dpool_t *)tp = (dpool_t){(const pool_t *)p, off, n}; OLOG("TexturePool n=%d", n);
-    dpool_add(&g_tpt, tp, n, "texture"); mtl_set_tex_pool_n(g_tpt.next);
+    dpool_add(&g_tpt, tp, n, dpool_store(p, off), "texture"); mtl_set_tex_pool_n(g_tpt.next);   // PEANUTS(upstream-candidate)
     return 1;
 }
 NVN(nvnTexturePoolFinalize, void, NVNtexturePool *tp) { dpool_release(&g_tpt, tp); }   // its range is free for a later pool (nvn_dpool.h)
 NVN(nvnTexturePoolRegisterTexture, void, const NVNtexturePool *tp, int id, const NVNtexture *t, const NVNtextureView *v) {
-    mtl_reg_tex(dpool_base(&g_tpt, tp) + id, (const tex_t *)t, (const view_t *)v);
+    int h = dpool_id(&g_tpt, tp, id); if (h >= 0) mtl_reg_tex(h, (const tex_t *)t, (const view_t *)v);   // PEANUTS(upstream-candidate)
 }
 // Image descriptors live in the same pool index space as texture descriptors, and image handles are pool indices (nvnDeviceGetImageHandle; BindImages below), so an image
 // registers into the same table. Hyrule Warriors: Age of Calamity registers the images its compute shaders write in the first battle (earlier games registered only textures)
 NVN(nvnTexturePoolRegisterImage, void, const NVNtexturePool *tp, int id, const NVNtexture *t, const NVNtextureView *v) {
-    mtl_reg_image(dpool_base(&g_tpt, tp) + id, (const tex_t *)t, (const view_t *)v);
+    int h = dpool_id(&g_tpt, tp, id); if (h >= 0) mtl_reg_image(h, (const tex_t *)t, (const view_t *)v);   // PEANUTS(upstream-candidate)
 }
 NVN(nvnSamplerPoolInitialize, NVNboolean, NVNsamplerPool *sp, const NVNmemoryPool *p, ptrdiff_t off, int n) {
-    *(dpool_t *)sp = (dpool_t){(const pool_t *)p, off, n}; OLOG("SamplerPool n=%d", n); dpool_add(&g_spt, sp, n, "sampler"); return 1;
+    *(dpool_t *)sp = (dpool_t){(const pool_t *)p, off, n}; OLOG("SamplerPool n=%d", n); dpool_add(&g_spt, sp, n, dpool_store(p, off), "sampler"); return 1;   // PEANUTS(upstream-candidate)
 }
 NVN(nvnSamplerPoolFinalize, void, NVNsamplerPool *sp) { dpool_release(&g_spt, sp); }   // (nvn_dpool.h)
-NVN(nvnSamplerPoolRegisterSampler, void, const NVNsamplerPool *sp, int id, const NVNsampler *s) { mtl_reg_samp(dpool_base(&g_spt, sp) + id, &((const samp_t *)s)->p); }
+NVN(nvnSamplerPoolRegisterSampler, void, const NVNsamplerPool *sp, int id, const NVNsampler *s) { int h = dpool_id(&g_spt, sp, id); if (h >= 0) mtl_reg_samp(h, &((const samp_t *)s)->p); }   // PEANUTS(upstream-candidate)
 // straight from a builder, without a sampler object (FINAL FANTASY TACTICS - The Ivalice Chronicles registers its samplers this way)
-NVN(nvnSamplerPoolRegisterSamplerBuilder, void, const NVNsamplerPool *sp, int id, const NVNsamplerBuilder *b) { mtl_reg_samp(dpool_base(&g_spt, sp) + id, &((const samp_builder_t *)b)->p); }
+NVN(nvnSamplerPoolRegisterSamplerBuilder, void, const NVNsamplerPool *sp, int id, const NVNsamplerBuilder *b) { int h = dpool_id(&g_spt, sp, id); if (h >= 0) mtl_reg_samp(h, &((const samp_builder_t *)b)->p); }   // PEANUTS(upstream-candidate)
 // Unreal Engine reads a descriptor pool's size back at device setup (Octopath Traveler 0)
 NVN(nvnTexturePoolGetMemoryPool, const NVNmemoryPool *, const NVNtexturePool *tp) { return (const NVNmemoryPool *)((const dpool_t *)tp)->pool; }
 NVN(nvnTexturePoolGetMemoryOffset, ptrdiff_t, const NVNtexturePool *tp) { return (ptrdiff_t)((const dpool_t *)tp)->off; }
