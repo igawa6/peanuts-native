@@ -55,6 +55,7 @@ resource, so `IsVirtualAddressMemoryEnabled` is false, as on Horizon.
 - `main` imports 405 symbols the host's reference game does not (126 libc, 113 C++, 66 `nn::os`), including the
   `nv::InitializeGraphics` entry point; `subsdk0` is the movie module.
 - `main.npdm` program id `0100EB100AB42000`; 2484520 instructions decoded in `main` (360 undecodable words).
+- **The 3D scene looked soft (igawa6#920).** The game's dynamic resolution (`main+0xa2bb0`) times the GPU from the end of its frame's first timer query to the end of its last (`main+0x7a35c`). While that averages over 32.5 ms it steps the scale down by 25/1000, to the map's minimum (960 of the 1536x864 targets here), and below the map's limit (28 ms here) it steps back up. With the default `gpu_timestamps submission` every report of a submission gets one time, so the two ends are equal and the game falls back to the previous frame's first query: it reads a whole frame. Read live on the phone (Turnip 27.0.0, 2026-11-27, one spot): 32.5-34.2 ms, scale 0.625, the scene at 960x540. With `gpu_timestamps segment` it reads 17.5-18.7 ms there, the scale stays 1.0 and the scene fills 1536x864, at the same 30 fps. The same family as Trails in the Sky's blurry characters (#427, #822), except that here a zero span reads as a whole frame, not as 0. <!-- PEANUTS -->
 
 ## Open
 
