@@ -460,6 +460,19 @@ def ubo_tex_c2_sampler(name):
 # PEANUTS end
 
 
+# PEANUTS(upstream-candidate) begin: an interface array covers one location per element. The translator declares a stage's generic attributes as one vec4[16] at
+# location 0 when the shader indexes them at run time (an IPA / ALD whose attribute address comes from a constant buffer: Metroid Prime Remastered's materials pick
+# their UV set that way); m.io() names only location 0, so vin_mask bound attribute 0 alone and attributes 1-15 read undefined values (flat, opaque quads)
+def io_locations(m, sc):
+    """{location: element type} of the Location-decorated Input / Output variables, an array spread over one location per element (vec4 or smaller elements)"""
+    out = {}
+    for loc, (_, t) in m.io(sc).items():
+        el, n = m.strip_arrays(t) if m.op(t) == spv.OP_TYPE_ARRAY else (t, 1)
+        for i in range(max(n, 1)): out[loc + i] = el
+    return out
+# PEANUTS end
+
+
 def classify(stage, r, res, m):
     """A descriptor variable → its binding record (dict): the kind and slot from its name (dmsh_build.py reflect's rules, on the SPIR-V names the MSL members come from)"""
     nm, desc = r['name'], r['desc']
@@ -583,7 +596,7 @@ def facts_of(key, stage, m, job, res):
     fn = spv.functions_named(m)
     if 'dmsh_hmma16816_f16' in fn: f |= VK['F_HMMA']
     if job.get('no_facts'): f |= VK['F_NO_FACTS']
-    vin = {loc: t for loc, (_, t) in m.io(spv.SC_INPUT).items()} if stage == 'vs' else {}
+    vin = {loc: t for loc, t in io_locations(m, spv.SC_INPUT).items() if loc < 32} if stage == 'vs' else {}   # PEANUTS(upstream-candidate): an input array binds every attribute it covers
     fout = {loc: t for loc, (_, t) in m.io(spv.SC_OUTPUT).items()} if stage == 'ps' else {}
     def ty(t):
         it = m.int_type(m.scalar_of(t))
@@ -668,6 +681,7 @@ def finish(key, w, job, c1):
             if rx.returncode or not os.path.exists(sp): return 'translation failed', ('integer-input retranslation: ' + rx.stderr.strip())[:160], None
             res = json.load(open(os.path.join(w, key + '.res.json'))); m = spv.Module(open(sp, 'rb').read())
     vcull = stage == 'gs' and spv.private_viewport_mask(m)   # before strip_unused_caps: the capability goes with the output
+    if stage == 'vs': spv.split_input_arrays(m)   # PEANUTS(upstream-candidate): an input array as one input per attribute, which the replay can retype (vk_android_spv.py split_input_arrays)
     dropped = spv.strip_unused_caps(m)
     added = spv.formatless_storage_caps(m)
     added += spv.extended_format_caps(m)   # PEANUTS: the capability of an image format outside the base set (vk_android_spv.py)
@@ -687,8 +701,8 @@ def finish(key, w, job, c1):
     pad = []
     if stage == 'vs':
         want_in = set().union(*[PS_INPUTS.get(p, set()) for p in PAIRS.get(key, ())]) if PAIRS.get(key) else set()
-        pad = spv.init_outputs(m, want_in)
-    elif stage == 'ps': PS_INPUTS[key] = set(m.io(spv.SC_INPUT))
+        pad = spv.init_outputs(m, want_in - set(io_locations(m, spv.SC_OUTPUT)))   # PEANUTS(upstream-candidate): no pad over a location an output array already covers
+    elif stage == 'ps': PS_INPUTS[key] = set(io_locations(m, spv.SC_INPUT))   # PEANUTS(upstream-candidate): an input array reads every location it covers
     prim = spv.per_primitive_inputs(m, MESH_PRIM[key]) if stage == 'ps' and key in MESH_PRIM else []
     gl = stage in ('vs', 'ds', 'gs') and spv.gl_depth(m, VK['SPEC_GL_DEPTH'])
     if stage == 'ms':   # the translator adds the constant itself (job gl_depth_spec: a mesh program may not read its outputs back)
@@ -1425,7 +1439,7 @@ def translate_keys(ks, count=True):
                             if open_packs([k]): run_batch([k], False)
                             continue
                         _b = next(m for m in _r[1] if m[0] == VK['MOD_BASE'])   # pyright: ignore[reportOptionalSubscript]  # PEANUTS(upstream-candidate): a reused successful result includes its reflection and modules.
-                        PS_INPUTS[k] = set(spv.Module(delta.spirv(stored_bytes(_b[2]), _b[3], zstd)).io(spv.SC_INPUT))
+                        PS_INPUTS[k] = set(io_locations(spv.Module(delta.spirv(stored_bytes(_b[2]), _b[3], zstd)), spv.SC_INPUT))   # PEANUTS(upstream-candidate): as io_locations
         batches = [_phase[i:i + BATCH] for i in range(0, len(_phase), BATCH)]
         if not batches: continue
         pool = pool_for(-(-len(ks) // BATCH))

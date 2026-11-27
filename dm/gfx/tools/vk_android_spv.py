@@ -1949,3 +1949,54 @@ def hmma_lds(m, keep=None):
     m.index()
     promote_locals(m)
     return calls
+
+
+# PEANUTS(upstream-candidate) begin: a vertex shader's input array as separate inputs
+def split_input_arrays(m):
+    """A vertex shader that reads its generic attributes at a computed index gets them from the translator as one Input array (vec4[16] at location 0). The replay can
+    retype only a whole Input variable to the integer class of its attribute's format (vka_spvpatch.c vka_spv_vin_retype): an array element read as float from an integer
+    format is undefined. Each such array becomes one Input vec4 per element at its location, and the array a Private variable that the entry function fills from them
+    before its body, so the computed index reads the same values. → the locations split"""
+    if m.model != 'vs': return []
+    done = []
+    for var in [v for v in m.interface() if m.vars.get(v, (0, None))[1] == SC_INPUT and DEC_LOCATION in m.decos.get(v, {})]:
+        ptr, _ = m.vars[var]; t = m.pointee(ptr)[1]
+        if m.op(t) != OP_TYPE_ARRAY: continue
+        el, n = m.types[t][2], m.consts.get(m.types[t][3], (0, [0]))[1][0]
+        base = m.decos[var][DEC_LOCATION][0]
+        if m.op(el) != OP_TYPE_VECTOR or not 0 < n <= 32 - base: continue
+        chains, in_fn = [], False
+        for x in m.ins:
+            op = x[0] & 0xffff
+            in_fn = (in_fn or op == OP_FUNCTION) and op != OP_FUNCTION_END
+            if op in (OP_ACCESS_CHAIN, OP_IN_BOUNDS_ACCESS_CHAIN) and x[3] == var: chains.append(x)
+            elif in_fn and var in maybe_ids(x) and op != OP_LOAD: raise ValueError(f'input array used by opcode {op}')
+        twins = {}
+        for x in chains:
+            if x[1] not in twins: twins[x[1]] = m.add_type(OP_TYPE_POINTER, SC_PRIVATE, m.pointee(x[1])[1])
+            x[1] = twins[x[1]]
+        pptr = m.add_type(OP_TYPE_POINTER, SC_PRIVATE, t)
+        pin = m.add_type(OP_TYPE_POINTER, SC_INPUT, el)
+        ins = [m.new_id() for _ in range(n)]
+        keep = []
+        for x in m.ins:
+            op = x[0] & 0xffff
+            if op == OP_DECORATE and x[1] == var: continue
+            if op == OP_VARIABLE and x[2] == var: continue   # declared again below as Private
+            if op == OP_ENTRY_POINT:
+                _, k = string_at(x, 3)
+                x = x[:k] + [v for v in x[k:] if v != var or m.header[1] >= 0x10400] + ins; x[0] = len(x) << 16 | OP_ENTRY_POINT
+            keep.append(x)
+        m.ins = keep
+        at = next(k for k, y in enumerate(m.ins) if y[0] & 0xffff == OP_DECORATE)
+        m.ins[at:at] = [[4 << 16 | OP_DECORATE, v, DEC_LOCATION, base + i] for i, v in enumerate(ins)]
+        m._insert_decl([4 << 16 | OP_VARIABLE, pptr, var, SC_PRIVATE])
+        for v in ins: m._insert_decl([4 << 16 | OP_VARIABLE, pin, v, SC_INPUT])
+        m.index()
+        loads = [m.new_id() for _ in ins]; whole = m.new_id()
+        k = first_block_insert_point(m, m.entry_function())
+        m.ins[k:k] = [[4 << 16 | OP_LOAD, el, l, v] for l, v in zip(loads, ins)] + [[(3 + n) << 16 | OP_COMPOSITE_CONSTRUCT, t, whole, *loads], [3 << 16 | OP_STORE, var, whole]]
+        done += [base + i for i in range(n)]
+    if done: m.index()
+    return done
+# PEANUTS end
