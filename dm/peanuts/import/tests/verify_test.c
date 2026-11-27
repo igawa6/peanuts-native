@@ -18,7 +18,7 @@
 static int fails, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { fails++; printf("  FAIL "); } else printf("  ok   "); printf(__VA_ARGS__); printf("\n"); fflush(stdout); } while (0)
 
-static const uint64_t TID = 0x0100CCCC0000C000ull, TID_LZ4 = 0x0100CCCC0000D000ull, TID_SLACK = 0x0100CCCC0000E000ull;
+static const uint64_t TID = 0x0100CCCC0000C000ull, TID_LZ4 = 0x0100CCCC0000D000ull, TID_SLACK = 0x0100CCCC0000E000ull, TID_STUB = 0x0100CCCC0000F000ull;   // PEANUTS: TID_STUB
 static char dir[500];
 
 static uint8_t *slurp(const char *p, size_t *n) {
@@ -181,6 +181,22 @@ int main(void) {
       copy_file(gs.base, bp); flip(bp, at_sec(&l, 1, l5 + 7)); unlocate(&l);
       const char *e5[] = { what_base, "hash level 5 of its RomFS does not match its checksum", NULL };
       refused("a byte of the long-levels base's level 5", sin, 2, TID_SLACK, e5); nximport_set_keep_base(0); }
+    // PEANUTS: a base with no RomFS section (a 7 MB stub base: ExeFS only) and an update whose patch carries the whole RomFS: the patch gets no base, every
+    // block of its RomFS is checked against the update's own levels, and a byte of a file it carries is named as the update's
+    { FxGame gn; fx_base_no_romfs = 1; fx_game(&k, dir, "stub", TID_STUB, 0, 0, &gn); fx_base_no_romfs = 0;
+      { const char *sin[] = { gn.base, gn.upd }; good("a base with no RomFS and an update that carries the whole RomFS", sin, 2, TID_STUB); }
+      Loc l; locate(gn.upd, &l); int su = nx_nca_find_section(&l.n, NX_FS_ROMFS);
+      int ok = su >= 0 && !nx_nca_set_base(&l.n, su, NULL, -1) && !nx_sec_verify(&l.n, su, "update");
+      NxNode *r = ok ? nx_romfs_tree(&l.n, su) : NULL; ok = ok && r && !read_all(r);
+      uint64_t done = 0, all = 0; nx_sec_check_count(&l.n, su, &done, &all);
+      CHECK(ok && all > 8 && done == all, "  with no base, reading every file checks every block of its RomFS: %llu of %llu%s%s", (unsigned long long)done,
+            (unsigned long long)all, ok ? "" : ": ", ok ? "" : nximport_last_error());
+      nx_node_free(r);
+      int own = -1; for (int i = 0; i < gn.nuf; i++) if (gn.uf[i].size > 4096) { own = i; break; }
+      if (own < 0) abort();
+      copy_file(gn.base, bp); copy_file(gn.upd, up); flip(up, at_sec(&l, 1, carried(&l, FX_HASH + gn.uf[own].at + gn.uf[own].size / 2))); unlocate(&l);
+      const char *sin[] = { bp, up }; const char *e[] = { what_upd, "of its RomFS do not match their checksum", NULL };
+      refused("  a byte of a file it carries, over the base with no RomFS", sin, 2, TID_STUB, e); }
     // the add-on's own data
     { Loc l; locate(a.path, &l); snprintf(p, sizeof p, "%s/dlcbad.nsp", dir); copy_file(a.path, p);
       flip(p, at_sec(&l, 0, FX_HASH + 0x60)); unlocate(&l);

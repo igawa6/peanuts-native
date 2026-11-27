@@ -129,6 +129,7 @@ typedef struct FxSeg { uint64_t v, len, b; } FxSeg;
 
 // ---- a compressed data level: img cut into entries (LZ4 blocks of literals, stored, zeros), then the bucket-tree table (16 KiB nodes: the root, then sets of
 // 682 entries of 0x18: virtual offset, physical offset, type, physical size). A base run is one stored entry, so the patch can still map its bytes.
+static int fx_base_no_romfs;   // PEANUTS: set: fx_game's base has no RomFS section (ExeFS only, like a 7 MB stub base) and its update's patch carries every byte itself
 static int fx_bad_psize;   // set: the first LZ4 entry's table row claims one byte more than LZ4 can make of the entry (a damaged table)
 static void fx_compress(const FxBuf *img, const FxSeg *seg, int nseg, FxBuf *phys, FxSeg *pseg, int *npseg, uint64_t *toff, uint64_t *tsize, uint32_t *cnt) {
     typedef struct { uint64_t virt, phys; uint8_t type; uint32_t psize; } E;
@@ -392,11 +393,13 @@ static void fx_game(const FxKeys *k, const char *dir, const char *tag, uint64_t 
     fx_romfs(g->bf, NB, &g->bimg);
     FxNca bn; memset(&bn, 0, sizeof bn); uint8_t build[32]; FxSec *S = &bn.sec[1];
     fx_exefs(&bn.sec[0], build); fx_hex(g->bbuild, build, 16);
+    if (!fx_base_no_romfs) {   // PEANUTS: (fx_base_no_romfs: no RomFS section)
     S->present = 1; S->fs_type = NX_FS_ROMFS; S->crypt = 3; S->data_off = FX_HASH;
     { uint8_t *hash = fx_bytes(FX_HASH); fx_put(&S->body, hash, FX_HASH); free(hash); }
     if (compressed) { FxSeg none; int nn; fx_compress(&g->bimg, &none, 0, &S->body, &none, &nn, &S->toff, &S->tsize, &S->tcnt); }
     else fx_put(&S->body, g->bimg.p, g->bimg.n);
     fx_hash_sec(S);   // before the copy below: the update's runs of the base are of its bytes as stored
+    }
     FxBuf bbody = S->body;   // the base section as stored (kept: the update's shared files are runs of it)
     { uint8_t *keep = malloc(bbody.n); memcpy(keep, bbody.p, bbody.n); bbody.p = keep; }
     fx_title(k, g->base, tid, tid, 0, 0, &bn, 0, 0, xci);
@@ -407,7 +410,7 @@ static void fx_game(const FxKeys *k, const char *dir, const char *tag, uint64_t 
         if (i % 4 == 0 && i > 10) continue;
         FxFile *f = &g->uf[g->nuf++]; *f = g->bf[i];
         if (i % 4 == 1) { f->size = fx_sizes[(i + 7) % 20]; f->data = fx_bytes((size_t)f->size); }
-        else if (!compressed) f->base = (int64_t)(FX_HASH + g->bf[i].at);
+        else if (!compressed && !fx_base_no_romfs) f->base = (int64_t)(FX_HASH + g->bf[i].at);   // PEANUTS: (no base RomFS: carried by the patch)
     }
     for (int i = 0; i < 20; i++) {
         FxFile *f = &g->uf[g->nuf++]; fx_name(f->path, sizeof f->path, 100 + i, "u"); f->base = -1;

@@ -364,6 +364,23 @@ static void test_provider(const FxGame *g) {
 }
 
 static int rm_cb(const char *p, const struct stat *st, int flag, struct FTW *f) { (void)st; (void)flag; (void)f; return remove(p); }
+// PEANUTS: a base with no RomFS section (Batman: Arkham Knight's 7 MB base: ExeFS and a logo) and an update whose patch carries the whole RomFS: the importer
+// gives the patch no base and every file comes from the update; an update whose patch maps ranges of the base cannot be read over such a base
+static void test_stub_base(const FxKeys *k, const FxGame *plain, const char *dir) {
+    FxGame g; char nup[700], bad[700], tid[17]; printf("1 the importer, a base with no RomFS and an update that carries the whole RomFS\n");
+    fx_base_no_romfs = 1; fx_game(k, dir, "stub", TID, 0, 0, &g); fx_base_no_romfs = 0;
+    snprintf(tid, sizeof tid, "%016llx", (unsigned long long)g.tid); snprintf(nup, sizeof nup, "%s/stub.nup", dir); snprintf(bad, sizeof bad, "%s/stub-bad.nup", dir);
+    { const char *in[2] = { g.base, g.upd };
+      int made = !nximport_write_nup(nup, in, 2, tid, NULL, NULL);
+      CHECK(made, "the base with no RomFS and its update make a .nup%s%s", made ? "" : ": ", made ? "" : nximport_last_error());
+      if (made) {   // (mounting a .nup that is not there is fatal for the host)
+          CHECK(mount_rom("lstub", nup, g.ubuild) && !files_differ("lstub", g.uf, g.nuf), "every file read from it is the fixture's");
+          CHECK(!nximport_verify_nup(nup, NULL, NULL), "and it verifies"); } }
+    { const char *in[2] = { g.base, plain->upd };
+      CHECK(nximport_write_nup(bad, in, 2, tid, NULL, NULL) && strstr(nximport_last_error(), "reads parts of the base game's RomFS") && !strstr(nximport_last_error(), "is damaged"),
+            "an update that maps ranges of the base, over a base with no RomFS: refused, not as a damaged file, \"%s\"", nximport_last_error()); }
+}
+
 int main(void) {
     const char *td = getenv("TMPDIR"); char dir[500], keys[600], wrong[600], spec[1300], nup[700]; FxKeys k, kw; FxGame plain, comp, card;
     snprintf(dir, sizeof dir, "%s/nsp_test-XXXXXX", td && *td ? td : "/tmp");
@@ -395,6 +412,7 @@ int main(void) {
     test_aoc(&k, dir);
     test_refused(&k, &plain, dir, keys, wrong);
     test_provider(&comp);
+    test_stub_base(&k, &plain, dir);
 
     nftw(dir, rm_cb, 16, FTW_DEPTH | FTW_PHYS);
     for (int i = 0; i < g_nmnt; i++) if (g_mnt[i].img) { romfs_image_close(g_mnt[i].img); g_mnt[i].img = NULL; }   // on a network folder a file still open stays as a hidden name
