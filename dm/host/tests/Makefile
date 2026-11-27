@@ -102,6 +102,8 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_sampfilter
 # PEANUTS: bounded draw ranges
 	$(B)/t_android_draw_range
+# PEANUTS: coalesced inline uniform buffer updates
+	$(B)/t_android_ubdefer
 	$(B)/t_android_place
 	$(B)/t_android_ovl
 	$(B)/t_android_pace
@@ -662,6 +664,11 @@ $(B)/t_android_memu: t_android_memu.c $(VKA)/vka_memu_spv.c $(VKA)/vka_memu_spv.
 # The replay's SPIR-V rewrite of integer-fed vertex inputs (vka_spvpatch.c): the selftest's vertex shader, validated by spirv-val when it is on the PATH; DM_VK_SPV_DIR=<.spv folder> adds those modules
 $(B)/t_android_spvpatch: t_android_spvpatch.c $(VKA)/vka_spvpatch.c $(VKA)/vka_spvpatch.h $(VKA)/vka_selftest_spv.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_spvpatch.c $(VKA)/vka_spvpatch.c
+# PEANUTS begin: coalesced inline uniform buffer updates (dm/gfx/vk_android/vka_ub_defer.h)
+run: $(B)/t_android_ubdefer
+$(B)/t_android_ubdefer: t_android_ubdefer.c $(VKA)/vka_ub_defer.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_ubdefer.c
+# PEANUTS end
 
 # Optional local-wireless host checks. COOP_DIR is the separately pinned module;
 # the default test run does not require it or open any network connection.

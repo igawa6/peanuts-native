@@ -8,6 +8,7 @@
 #if defined(__ANDROID__)
 #include "vka.h"
 #include "vka_draw_range.h"   // PEANUTS: bounded draw ranges
+#include "vka_ub_defer.h"     // PEANUTS: coalesced inline uniform buffer updates
 static void fbl_pass_begin(void);   // PEANUTS: feedback loops (below, beside DY)
 #include "vka_skipwarn.h"
 #include "vka_gmem.h"
@@ -216,41 +217,36 @@ static struct {
 // pass for each update split Splatoon Raiders' 6400x6400 ink-map occlusion-query pass 150-1,550 times a frame (7 inline updates per query). While R.on is open, the updates are
 // recorded in g_gw at once (vka_tex_gw_update) and coalesced here: draws in the pass whose uniform buffers overlap UB bind a scratch shadow reconstructed by vka_tex_gw_read, a
 // draw whose non-UBO buffers overlap UB (or whose UBO has an uncompleted opaque GPU write) ends the pass first (ub_hazard), and vka_rp_end flushes UB to placed guest RAM
-enum { UB_MAX = 256 };
 static struct {
-    int n, m_valid; uint64_t lo, hi, seq, m_seq, m_addr, m_size; vka_span m_span;
-    struct { uint64_t dst, n, cap; uint8_t *data; } e[UB_MAX];
+    int m_valid; uint64_t seq, m_seq, m_addr, m_size; vka_span m_span;
+    vka_ub_q q;   // PEANUTS: coalesced inline uniform buffer updates (vka_ub_defer.h)
 } UB;
-static int ub_overlaps(uint64_t addr, uint64_t size) {
-    uint64_t b = size <= UINT64_MAX - addr ? addr + size : UINT64_MAX;   // PEANUTS: bounded draw ranges
-    if (!UB.n || !size || b <= UB.lo || addr >= UB.hi) return 0;
-    for (int i = 0; i < UB.n; i++) if (UB.e[i].dst < b && addr < UB.e[i].dst + UB.e[i].n) return 1;
-    return 0;
-}
-static void ub_apply(uint64_t addr, void *out, size_t size) {
-    uint64_t b = addr + size;
-    if (!UB.n || !size || b <= UB.lo || addr >= UB.hi) return;
-    uint8_t *c = out;
-    for (int i = 0; i < UB.n; i++) {
-        uint64_t lo = UB.e[i].dst > addr ? UB.e[i].dst : addr, hi = UB.e[i].dst + UB.e[i].n < b ? UB.e[i].dst + UB.e[i].n : b;
-        if (lo < hi) memcpy(c + (lo - addr), UB.e[i].data + (lo - UB.e[i].dst), (size_t)(hi - lo));
-    }
-}
+static int ub_overlaps(uint64_t addr, uint64_t size) { return vka_ub_overlaps(&UB.q, addr, size); }   // PEANUTS
+static void ub_apply(uint64_t addr, void *out, size_t size) { vka_ub_apply(&UB.q, addr, out, size); }   // PEANUTS
 static void ub_flush(void) {
-    if (!UB.n) return;
-    int n = UB.n; UB.n = 0; UB.m_valid = 0;
+    if (!UB.q.n) return;
+    int n = UB.q.n; vka_ub_reset(&UB.q); UB.m_valid = 0;
     uint64_t last_d = 0, last_n = 0;
-    // PEANUTS begin: stage-scoped barriers for inline uniform buffer copies
+    // PEANUTS begin: stage-scoped barriers and batched staging for inline uniform buffer copies
     vka_barrier_stages(g_cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
     vka_rw_pre(g_cb);
+    uint64_t total_sz = 0; vka_span batch = {0}; int batched = 0;
+    if (n > 1) {
+        for (int i = 0; i < n; i++) if (UB.q.e[i].n) total_sz += (UB.q.e[i].n + 15) & ~(uint64_t)15;
+        if (total_sz && total_sz <= 262144 && vka_scratch(total_sz, 16, &batch)) batched = 1;
+    }
+    uint64_t boff = 0;
     for (int i = 0; i < n; i++) {
-        uint64_t dst = UB.e[i].dst, sz = UB.e[i].n; const uint8_t *data = UB.e[i].data;
-        for (int j = 0; j < i; j++) if (UB.e[j].dst < dst + sz && dst < UB.e[j].dst + UB.e[j].n) {   // PEANUTS: #503 #505 #562 #563
+        uint64_t dst = UB.q.e[i].dst, sz = UB.q.e[i].n; const uint8_t *data = UB.q.e[i].data;
+        if (!sz) continue;
+        for (int j = 0; j < i; j++) if (UB.q.e[j].dst < dst + sz && dst < UB.q.e[j].dst + UB.q.e[j].n) {   // PEANUTS: #503 #505 #562 #563
             vka_barrier_stages(g_cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
             break;
         }
-        vka_span s; if (!sz || !vka_scratch(sz, 16, &s)) { VRED_ONCE("inline uniform update at %#llx (%llu bytes): no staging memory, the update is lost", (unsigned long long)dst, (unsigned long long)sz); continue; }
+        vka_span s;
+        if (batched) { s = (vka_span){.buf = batch.buf, .off = batch.off + boff, .ptr = (uint8_t *)batch.ptr + boff}; boff += (sz + 15) & ~(uint64_t)15; }
+        else if (!vka_scratch(sz, 16, &s)) { VRED_ONCE("inline uniform update at %#llx (%llu bytes): no staging memory, the update is lost", (unsigned long long)dst, (unsigned long long)sz); continue; }
         memcpy(s.ptr, data, (size_t)sz);
         for (uint64_t done = 0; done < sz;) {
             VkBuffer b; VkDeviceSize o; uint64_t k = vka_addr_run(dst + done, sz - done, &b, &o);
@@ -264,7 +260,7 @@ static void ub_flush(void) {
     // PEANUTS end
     if (last_n) vka_rw_point(g_cb, 'u', 0, last_n, last_d);
 }
-void vka_ub_flush(void) { if (!R.on && UB.n) { vka_disp_settle(g_cb); ub_flush(); } }   // PEANUTS: flush outside-pass deferred UBs
+void vka_ub_flush(void) { if (!R.on && UB.q.n) { vka_disp_settle(g_cb); ub_flush(); } }   // PEANUTS: flush outside-pass deferred UBs
 static void inst_close(void);
 int vka_rp_ub_defer(uint64_t dst, uint64_t n, const void *data) {
     if (!g_cb || !n || n > 65536 || !VKA_ENV("DM_VK_UB_DEFER", 1)) return 0;   // PEANUTS: also allow outside a pass
@@ -274,36 +270,9 @@ int vka_rp_ub_defer(uint64_t dst, uint64_t n, const void *data) {
         if (!k) return 0;
         done += k;
     }
-    int slot = -1;
-    for (int i = UB.n - 1; i >= 0; i--) {
-        uint64_t lo = UB.e[i].dst, hi = lo + UB.e[i].n;
-        if (lo <= dst && dst + n <= hi) { slot = i; break; }
-        if (i == UB.n - 1 && hi == dst) { slot = i; break; }
-        if (lo < dst + n && dst < hi) break;
-    }
-    if (slot >= 0) {
-        uint64_t need = (dst - UB.e[slot].dst) + n;
-        if (need > UB.e[slot].cap) {
-            uint64_t nc = need < 256 ? 256 : need * 2; uint8_t *p = realloc(UB.e[slot].data, (size_t)nc);
-            if (!p) return 0;
-            UB.e[slot].data = p; UB.e[slot].cap = nc;
-        }
-        memcpy(UB.e[slot].data + (dst - UB.e[slot].dst), data, (size_t)n);
-        if (need > UB.e[slot].n) UB.e[slot].n = need;
-    } else {
-        if (UB.n == UB_MAX) return 0;
-        int i = UB.n;
-        if (n > UB.e[i].cap) {
-            uint64_t nc = n < 256 ? 256 : n * 2; uint8_t *p = realloc(UB.e[i].data, (size_t)nc);
-            if (!p) return 0;
-            UB.e[i].data = p; UB.e[i].cap = nc;
-        }
-        memcpy(UB.e[i].data, data, (size_t)n);
-        UB.e[i].dst = dst; UB.e[i].n = n;
-        if (!UB.n || dst < UB.lo) UB.lo = dst;
-        UB.n++;
-    }
-    if (dst + n > UB.hi) UB.hi = dst + n;
+    int changed = 0;
+    if (!vka_ub_defer(&UB.q, dst, n, data, &changed)) return 0;   // PEANUTS: coalesced inline uniform buffer updates
+    if (!changed) return 1;
     UB.seq++; UB.m_valid = 0;
     vka_tex_gw_update(dst, n, data);
     { void inst_reset_on_ub(void); inst_reset_on_ub(); }
@@ -939,7 +908,7 @@ static VkPrimitiveTopology topo_class(VkPrimitiveTopology t) {   // the pipeline
 // ---------- Guest memory as descriptors ----------
 static int cpu_read(uint64_t addr, void *out, size_t n) {   // guest bytes as the CPU sees them now, overlaid with any inline updates deferred in the open pass
     int ok = vka_addr(addr, n, NULL, NULL, NULL) ? (memcpy(out, (const void *)(uintptr_t)addr, n), 1) : !plat_mem_read(addr, out, n);
-    if (ok && UB.n) ub_apply(addr, out, n);
+    if (ok && UB.q.n) ub_apply(addr, out, n);   // PEANUTS
     return ok;
 }
 // PEANUTS begin(upstream-candidate): a uniform word read when the draw's bindings are resolved (vka_walk: a storage buffer's address or a texture handle the shader takes
@@ -950,7 +919,7 @@ static int cpu_read(uint64_t addr, void *out, size_t n) {   // guest bytes as th
 // before each draw: a stale address drew another chunk's vertices (stretched slabs, walls gone for a frame). DM_VK_RD_GW=0 (live): the read before this
 static int rd_cb(void *ctx, uint64_t addr, void *out, size_t n) {
     (void)ctx;
-    if (n && VKA_ENV("DM_VK_RD_GW", 1) && vka_addr(addr, n, NULL, NULL, NULL) && vka_tex_gw_read(addr, n, out)) { if (UB.n) ub_apply(addr, out, n); return 1; }   // (placed memory only: inline updates go nowhere else)
+    if (n && VKA_ENV("DM_VK_RD_GW", 1) && vka_addr(addr, n, NULL, NULL, NULL) && vka_tex_gw_read(addr, n, out)) { if (UB.q.n) ub_apply(addr, out, n); return 1; }   // (placed memory only: inline updates go nowhere else)   // PEANUTS
     return cpu_read(addr, out, n);
 }
 // PEANUTS end
@@ -1025,7 +994,7 @@ static int ubo_desc(uint64_t addr, uint64_t size, VkDescriptorBufferInfo *bi) {
     if (!size || size > V.ub_range) size = size ? V.ub_range : 65536 < V.ub_range ? 65536 : V.ub_range;
     VkBuffer b; VkDeviceSize o;
     uint64_t run = vka_addr_run(addr, size, &b, &o);
-    if (UB.n && ub_overlaps(addr, run ? run : size)) {
+    if (UB.q.n && ub_overlaps(addr, run ? run : size)) {   // PEANUTS
         uint64_t sz = run && run < size ? run : size;
         if (UB.m_valid && UB.m_seq == UB.seq && UB.m_addr == addr && UB.m_size == sz) { *bi = (VkDescriptorBufferInfo){UB.m_span.buf, UB.m_span.off, sz}; return 1; }
         vka_span s; if (!vka_scratch(sz, V.ub_align, &s)) return 0;
@@ -1437,20 +1406,28 @@ typedef struct { VkWriteDescriptorSet w[VKA_DESC_MAX]; VkDescriptorBufferInfo bi
 static writes_t g_w;
 // A texture or image read by a shader that declares it in another numeric class (float / uint / sint) than the view the game binds: logged once per shader, stage and binding
 // (the first 64), with the texture. Such a binding is read through a view of the shader's class of the same texel size (vka_tex.c class_twin) unless its module is retyped
+// PEANUTS begin: fast-path DM_VK_TEX_PEEK check and shared g_class_nlog guard
+static int tex_peek_any(void) {
+    static int any = -1;
+    if (any < 0) { const char *q = getenv("DM_VK_TEX_PEEK"); any = q && *q ? 1 : 0; }
+    return any;
+}
+static int g_class_nlog;
 static void class_note(const vka_shader *sh, int st, const vka_res *r, int tid, int storage) {
-    static uint64_t seen[4096]; static int nlog;
+    static uint64_t seen[4096];
     int want = r->dim & DMSH_VK_DIM_SINT ? 2 : r->dim & DMSH_VK_DIM_UINT ? 1 : 0;
     uint64_t h = (sh->key ^ (uint64_t)st << 56 ^ (uint64_t)r->binding << 40 ^ (uint64_t)want << 38) | 1;
     uint32_t s = (uint32_t)(h * 0x9e3779b97f4a7c15ull >> 52);
     for (uint32_t n = 0; n < 4096; n++, s = (s + 1) & 4095) { if (seen[s] == h) return; if (!seen[s]) break; }
-    if (nlog >= 64) return;
+    if (g_class_nlog >= 64) return;
     seen[s] = h;
     int have = vka_tex_id_class_rec(tid);
     if (have == want) return;
-    nlog++;
+    g_class_nlog++;
     static const char *cn[3] = {"float", "uint", "sint"}; char why[320]; vka_tex_id_desc(tid, why, sizeof why);
     VLOG("class: shader %016llx stage %d binding %u declares a %s %s, texture ID %d is %s (%s)", (unsigned long long)sh->key, st, r->binding, cn[want], storage ? "image" : "texture", tid, cn[have], why);
 }
+// PEANUTS end
 static vka_res g_res[512];   // the NaN scan's own walk (DM_VK_NANSCAN_FS)
 // PEANUTS: texel buffers. A buffer texture (NVN target BUFFER) read or written through a texel buffer binding is a VkBufferView over its elements in the placed guest memory segment
 // that holds them (the bytes the CPU writes: placed memory is host coherent), made once per (buffer, offset, range, format) and kept while the segment table stands (vka_mem_gen:
@@ -1636,6 +1613,7 @@ static int rs_support(const vka_dstate *d, int st, const vka_shader *sh, VkDescr
     return 1;
 }
 // PEANUTS end
+static uint64_t g_bs_frame, g_bs_fence;   // PEANUTS: fetched once per bind_sets for vka_tex_img_samp_rec
 static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const vka_res *r, int n, int pool, c0_at *c0) {
     for (int i = 0; i < n; i++) {
         if (g_w.n == VKA_DESC_MAX) { VRED_ONCE("more than %d descriptors in one draw", (int)VKA_DESC_MAX); return 0; }   // PEANUTS: VKA_DESC_MAX
@@ -1681,6 +1659,15 @@ static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const
         case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER: case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE: case VK_DESCRIPTOR_TYPE_SAMPLER: case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
             int storage = r[i].desc == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; uint64_t ti_ = g_prof ? cntvct() : 0;
             VkImageView v = VK_NULL_HANDLE; VkSampler s = VK_NULL_HANDLE; VkImageLayout lay = VK_IMAGE_LAYOUT_GENERAL;
+            // PEANUTS begin: combined image+sampler descriptor memo fast path
+            if (r[i].desc == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER && (r[i].what == VKA_R_TEX || r[i].what == VKA_R_IMG) && r[i].tid > 0 && !g_rtl_pass && !tex_peek_any()
+                && vka_tex_img_samp_rec(r[i].tid, r[i].sid, g_cb, r[i].dim, g_bs_frame, g_bs_fence, &v, &s)) {
+                if (g_class_nlog < 64) class_note(sh, st, &r[i], r[i].tid, 0);
+                *ii = (VkDescriptorImageInfo){s, v, lay};
+                w->pImageInfo = ii; if (g_prof) { g_ps[4] += cntvct() - ti_; g_ps[5]++; }
+                break;
+            }
+            // PEANUTS end
             VkFormat fmt = VK_FORMAT_UNDEFINED; int sid = r[i].sid;   // PEANUTS: choose the sampler for the final view (including class retypes), not the texture ID's format
             if (r[i].desc != VK_DESCRIPTOR_TYPE_SAMPLER) {
                 int tid = r[i].what == VKA_R_TEX || r[i].what == VKA_R_IMG ? r[i].tid : 0;
@@ -1875,7 +1862,8 @@ static int sets_push(const vka_layout *lay, VkPipelineBindPoint bp, int any_pool
 }
 static void memu_bind_arena(void);
 static int bind_sets(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, VkPipelineBindPoint bp, c0_at *c0) {
-    g_w.n = 0;
+    uint64_t vka_frame(void);   // PEANUTS
+    g_w.n = 0; g_bs_frame = vka_frame(); g_bs_fence = vka_fence_last();   // PEANUTS
     int any_pool = 0;
     uint64_t t1_ = g_prof ? cntvct() : 0;
     for (int st = 0; st < VKA_NSTAGE; st++) {
@@ -1932,16 +1920,18 @@ static int make_images(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], in
     for (int st = 0; st < VKA_NSTAGE; st++) {
         if (!sh[st]) continue;
         const vka_res *r = g_wk.r[st];
-        for (int i = 0; i < g_wk.n[st]; i++) if ((r[i].what == VKA_R_TEX || r[i].what == VKA_R_IMG) && r[i].tid && r[i].desc != VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER && r[i].desc != VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER   // PEANUTS: a texel buffer is no image (tbuf_view), read or written
-                                                 && !(r[i].desc != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE && vka_tex_id_is_buffer(r[i].tid) && tbuf_img_gpu(r[i].tid, r[i].dim))   // PEANUTS: nor is a buffer texture bind_sets reads through upstream's copy (below)
-                                                 && (vka_tex_id_pending_rec(r[i].tid, r[i].dim) || (r[i].what == VKA_R_IMG && vka_tex_id_storage_pending(r[i].tid)))) {   // (an image remade with storage use copies its content: outside the pass)
-            any = 1; if (dry) return 1;
-            vka_tex_id_view(r[i].tid, g_cb, r[i].dim, wbf_view_of_binding(r[i].what == VKA_R_IMG, r[i].flags, DMSH_VK_BF_RW), NULL);
+        // PEANUTS begin: single-pass image preparation over stage bindings
+        for (int i = 0; i < g_wk.n[st]; i++) {
+            if ((r[i].what != VKA_R_TEX && r[i].what != VKA_R_IMG) || !r[i].tid || r[i].desc == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER || r[i].desc == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER) continue;
+            int is_buf = vka_tex_id_is_buffer(r[i].tid);
+            if (is_buf && r[i].desc != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE && tbuf_img_gpu(r[i].tid, r[i].dim)) {
+                if (r[i].what == VKA_R_TEX && tbuf_img_make(r[i].tid, r[i].dim, dry)) { any = 1; if (dry) return 1; }
+            } else if (vka_tex_id_pending_rec(r[i].tid, r[i].dim) || (r[i].what == VKA_R_IMG && vka_tex_id_storage_pending(r[i].tid))) {
+                any = 1; if (dry) return 1;
+                vka_tex_id_view(r[i].tid, g_cb, r[i].dim, wbf_view_of_binding(r[i].what == VKA_R_IMG, r[i].flags, DMSH_VK_BF_RW), NULL);
+            }
         }
-        for (int i = 0; i < g_wk.n[st]; i++) if (r[i].what == VKA_R_TEX && r[i].tid && r[i].desc != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE && vka_tex_id_is_buffer(r[i].tid) && tbuf_img_gpu(r[i].tid, r[i].dim)   // PEANUTS: only where the choice is upstream's copy (tbuf_img_gpu)
-                                                 && tbuf_img_make(r[i].tid, r[i].dim, dry)) {   // a buffer texture read as an image: its copy (vka_tbuf.c), outside the pass   // PEANUTS: tbuf_img_make (upstream: vka_tbuf_pending, then vka_tbuf_refresh)
-            any = 1; if (dry) return 1;
-        }
+        // PEANUTS end
         // PEANUTS begin: the first entries of a table of handles the stage reads through the pool (vka_bind.h vka_tabpool_ids) are made here too, as the array's bindings
         // made them: the pool reads' feedback alone makes a texture, or names one made already (by a copy into it: a streamed texture) in its slot, a frame after its
         // first read (black for that frame). One made already gets its slot and is stamped used through the memo, as its binding did (the log's "texture pool reads:
@@ -2827,7 +2817,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     if (make_images(d, sh, 1)) { vka_rp_end(); make_images(d, sh, 0); }
     if (vka_rs_on()) rs_fetch_fix(sh, d);   // PEANUTS: DM_RES_SCALE: a shader that fetches by pixel sees its 2D textures at one scale
     if (R.on && R.bar_pending && bar_hazard(sh, d)) { g_bar_late++; vka_rp_end(); }   // the game barrier taken inside the pass is needed here: the pass ends (its full barrier) first
-    if (R.on && UB.n && ub_hazard(d, sh, mesh, dw, di, mdi_n, mdi_st)) vka_rp_end();   // PEANUTS: bounded draw ranges
+    if (R.on && UB.q.n && ub_hazard(d, sh, mesh, dw, di, mdi_n, mdi_st)) vka_rp_end();   // PEANUTS: bounded draw ranges
     if (R.on && (R.df || R.sf) && rt_same(rt, has_rt, &R.rt, R.has_rt)) {   // SetRenderTargets of the same targets between a depth write and sampling depth (or sampling depth then writing it)
         int ds = (R.rt_cont || !R.dread) ? depth_sampled(sh, d) : 0;
         int hd_ = R.df != VK_FORMAT_UNDEFINED, hs_ = R.sf != VK_FORMAT_UNDEFINED;

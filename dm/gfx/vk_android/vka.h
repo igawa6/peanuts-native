@@ -494,6 +494,7 @@ int vka_tex_id_class(int id);                       // the numeric class of text
 int vka_tex_id_class_rec(int id);                   // the same, memoized for the recording thread (by the ID's registration version)
 VkSampler vka_samp_id_rec(int id, VkFormat view_fmt);   // PEANUTS: direct combined sampler for this view; UNDEFINED = separate sampler; NULL = not registered
 VkSampler vka_samp_default(void);                   // the sampler an unbound sampler slot reads with (nearest, clamp to edge)
+int vka_tex_img_samp_rec(int tid, int sid, VkCommandBuffer cb, uint8_t dim, uint64_t frame, uint64_t fence, VkImageView *out_v, VkSampler *out_s);   // PEANUTS: combined image+sampler descriptor memo for recording thread
 
 // ---------- Shaders (vka_shader.c) ----------
 // The game's Vulkan shader library, <pack>/shaders/v-<DMSH_VK_CHAIN>/dmsh_vk.lib (DM_VK_SHLIB overrides the path), loaded at the first program the replay resolves.
