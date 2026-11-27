@@ -82,10 +82,19 @@ int vka_walk(const vka_bstate *s, int st, const dmsh_vk_entry *e, const dmsh_vk_
                 if (a) { r.what = VKA_R_BUF; r.addr = a; r.size = 0; }   // the size is not known: to the end of the chunk
                 break; }
             case DMSH_VK_KIND_TEX: case DMSH_VK_KIND_TEX_UBO: case DMSH_VK_KIND_TEX_C2A: {
-                int tid = b->kind == DMSH_VK_KIND_TEX_UBO ? (noslot ? 0 : ubo_tex_id(s, (uint32_t)ubo_word(s, st, reg, b->off + ubo_elem(b, k), 4, rd, ctx)))
+                // PEANUTS(upstream-candidate): a texture word and a sampler word in two uniform buffers are ORed into one handle, as the GPU does (Ryujinx ReadPackedId).
+                // The translator names which of the two words it calls the texture's from the order of the compiler's OR, so with the words the other way round the texture word
+                // holds only the sampler bits (texture 0: the binding was dropped and read zeros) and the sampler word only the texture bits. Read both, OR them, split the result.
+                // PEANUTS(upstream-candidate): Of Ryujinx's ReadPackedId (TextureHandle.cs) cases: SeparateSamplerHandle is this raw OR; SeparateSamplerId is DMSH_VK_BF_SAMP_RAW (its << 20 marks the sampler word in either order, BindlessElimination.cs), left to samp_of;
+                // the constant sampler is DMSH_VK_KIND_SAMP_ID, which never reaches here.
+                int orh = b->kind == DMSH_VK_KIND_TEX_UBO && b->skind == DMSH_VK_KIND_SAMP_UBO && !(b->flags & DMSH_VK_BF_SAMP_RAW) && !noslot;
+                uint32_t oh = 0;
+                if (orh) oh = (uint32_t)ubo_word(s, st, reg, b->off + ubo_elem(b, k), 4, rd, ctx) | (uint32_t)ubo_word(s, st, b->sreg, b->soff + ubo_elem(b, k), 4, rd, ctx);
+                int tid = orh ? ubo_tex_id(s, oh)
+                        : b->kind == DMSH_VK_KIND_TEX_UBO ? (noslot ? 0 : ubo_tex_id(s, (uint32_t)ubo_word(s, st, reg, b->off + ubo_elem(b, k), 4, rd, ctx)))
                         : b->kind == DMSH_VK_KIND_TEX_C2A ? ubo_tex_id(s, (uint32_t)vka_c2_handle(s, st, b->off + 8u * k))   // PEANUTS(upstream-candidate)
                         : noslot ? 0 : ubo_tex_id(s, (uint32_t)vka_tex_slot(s, st, (unsigned)reg));
-                int sid = b->skind ? samp_of(s, st, b, k, rd, ctx) : 0;
+                int sid = orh ? ubo_samp_id(s, oh) : b->skind ? samp_of(s, st, b, k, rd, ctx) : 0;
                 if (tid) { r.what = VKA_R_TEX; r.tid = tid; r.sid = sid; }
                 break; }
             case DMSH_VK_KIND_TBUF: {

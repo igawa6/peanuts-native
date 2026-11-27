@@ -146,6 +146,12 @@ static void test_walk(void) {
     s.tex_base = 100; s.samp_base = 200; s.base_instance = 61; s.samples = 4;
     uint32_t h = 5 | 6u << 20; memcpy(g_mem + 0x10, &h, 4);   // a handle in uniform slot 0 at byte 0x10
     uint64_t sa = 0x30000; memcpy(g_mem + 0x20, &sa, 8);
+    // PEANUTS(upstream-candidate): a handle split over two uniform buffers (slot 0 and slot 2: slot 2 starts at byte 0x100 of g_mem) is the OR of both words. Reversed: the translator's
+    // texture word (slot 0, 0x50) holds only the sampler bits and its sampler word (slot 2, 8) only the texture bits; standard: the other way round.   // PEANUTS(upstream-candidate)
+    { uint32_t sw = 6u << 20, tw = 5; memcpy(g_mem + 0x50, &sw, 4); memcpy(g_mem + 0x108, &tw, 4); memcpy(g_mem + 0x58, &tw, 4); memcpy(g_mem + 0x110, &sw, 4); }   // PEANUTS(upstream-candidate)
+    // PEANUTS(upstream-candidate): both words carry sampler bits (texture word: texture 5, sampler 1; sampler word: sampler 2): the sampler is the OR of both fields, as the GPU does (the intended change: before, only the sampler word's 2 was read).
+    // Guards: SAMP_RAW (the sampler word is an ID, not a handle: no OR, the texture from its own word) and NOSLOT (no texture).
+    { uint32_t tw = 5 | 1u << 20, sw = 2u << 20, raw = 9; memcpy(g_mem + 0x60, &tw, 4); memcpy(g_mem + 0x118, &sw, 4); memcpy(g_mem + 0x68, &tw, 4); memcpy(g_mem + 0x120, &raw, 4); memcpy(g_mem + 0x70, &tw, 4); memcpy(g_mem + 0x128, &sw, 4); }   // PEANUTS(upstream-candidate)
     dmsh_vk_bind b[] = {
         {.kind = DMSH_VK_KIND_CBUF, .desc = 6, .binding = 256, .count = 1, .reg = 2, .soff = 0xFFFF},
         {.kind = DMSH_VK_KIND_CBUF, .desc = 6, .binding = 257, .count = 1, .reg = 9, .soff = 0xFFFF},   // not bound
@@ -159,12 +165,17 @@ static void test_walk(void) {
         {.kind = DMSH_VK_KIND_TEX_C2A, .desc = 1, .binding = 265, .count = 3, .off = DMSH_C2_TEX, .skind = DMSH_VK_KIND_SAMP_C2A, .soff = DMSH_C2_SAMP + 8 * 5, .dim = 1},
         {.kind = DMSH_VK_KIND_TEX_POOL, .desc = 2, .binding = 0, .set = 1},
         {.kind = DMSH_VK_KIND_SUPPORT, .desc = 6, .binding = 266, .count = 1, .reg = -1},
+        {.kind = DMSH_VK_KIND_TEX_UBO, .desc = 1, .binding = 267, .count = 1, .reg = 0, .off = 0x50, .skind = DMSH_VK_KIND_SAMP_UBO, .sreg = 2, .soff = 8, .dim = 1},      // reversed words   // PEANUTS(upstream-candidate)
+        {.kind = DMSH_VK_KIND_TEX_UBO, .desc = 1, .binding = 268, .count = 1, .reg = 0, .off = 0x58, .skind = DMSH_VK_KIND_SAMP_UBO, .sreg = 2, .soff = 0x10, .dim = 1},   // standard words   // PEANUTS(upstream-candidate)
+        {.kind = DMSH_VK_KIND_TEX_UBO, .desc = 1, .binding = 269, .count = 1, .reg = 0, .off = 0x60, .skind = DMSH_VK_KIND_SAMP_UBO, .sreg = 2, .soff = 0x18, .dim = 1},   // sampler bits in both words   // PEANUTS(upstream-candidate)
+        {.kind = DMSH_VK_KIND_TEX_UBO, .desc = 1, .binding = 270, .count = 1, .reg = 0, .off = 0x68, .skind = DMSH_VK_KIND_SAMP_UBO, .sreg = 2, .soff = 0x20, .dim = 1, .flags = DMSH_VK_BF_SAMP_RAW},   // PEANUTS(upstream-candidate)
+        {.kind = DMSH_VK_KIND_TEX_UBO, .desc = 1, .binding = 271, .count = 1, .reg = 0, .off = 0x70, .skind = DMSH_VK_KIND_SAMP_UBO, .sreg = 2, .soff = 0x28, .dim = 1, .flags = DMSH_VK_BF_NOSLOT},   // PEANUTS(upstream-candidate)
     };
     dmsh_vk_entry e = {.stage = DMSH_VK_STAGE_FS, .bind_count = sizeof b / sizeof *b};
     vka_res r[32]; char why[200] = ""; int pool = 0;
     int n = vka_walk(&s, 1, &e, b, 0, 64, rd, NULL, r, 32, &pool, why, sizeof why);
-    CHECK(n == 13, "walk: %d results (%s)", n, why);
-    if (n == 13) {
+    CHECK(n == 18, "walk: %d results (%s)", n, why);   // PEANUTS(upstream-candidate)
+    if (n == 18) {   // PEANUTS(upstream-candidate)
         CHECK(r[0].what == VKA_R_BUF && r[0].addr == 0x10100 && r[0].size == 64 && r[0].binding == 256, "cbuf 2");
         CHECK(r[1].what == VKA_R_NULL, "unbound cbuf reads null");
         CHECK(r[2].what == VKA_R_TEX && r[2].tid == 107 && r[2].sid == 203, "combined slot 1: %d/%d", r[2].tid, r[2].sid);   // PEANUTS(upstream-candidate)
@@ -177,6 +188,11 @@ static void test_walk(void) {
         CHECK(r[9].what == VKA_R_NULL && r[10].what == VKA_R_TEX && r[10].tid == 107 && r[10].sid == 200 + (3 | 11) && r[10].elem == 1 && r[11].what == VKA_R_NULL,
               "c2 array: %d %d/%d %d", r[9].what, r[10].tid, r[10].sid, r[11].what);
         CHECK(r[12].what == VKA_R_SUPPORT, "support");
+        CHECK(r[13].what == VKA_R_TEX && r[13].tid == 105 && r[13].sid == 206, "handle split over two buffers, reversed words, is ORed (texture 0 and sampler 0 without the OR): %d/%d", r[13].tid, r[13].sid);   // PEANUTS(upstream-candidate)
+        CHECK(r[14].what == VKA_R_TEX && r[14].tid == 105 && r[14].sid == 206, "handle split over two buffers, standard words: %d/%d", r[14].tid, r[14].sid);   // PEANUTS(upstream-candidate)
+        CHECK(r[15].what == VKA_R_TEX && r[15].tid == 105 && r[15].sid == 203, "sampler bits in both words are ORed: %d/%d", r[15].tid, r[15].sid);   // PEANUTS(upstream-candidate)
+        CHECK(r[16].what == VKA_R_TEX && r[16].tid == 105 && r[16].sid == 209, "SAMP_RAW: texture from its own word, sampler the ID plus the base: %d/%d", r[16].tid, r[16].sid);   // PEANUTS(upstream-candidate)
+        CHECK(r[17].what == VKA_R_NULL, "NOSLOT binds no texture: %d", r[17].what);   // PEANUTS(upstream-candidate)
         CHECK(pool, "a pool record marks the draw as using set 1");
     }
     // Daybreak II rotates three full 20-bit texture pools. A pool switch must
@@ -189,7 +205,7 @@ static void test_walk(void) {
     for (int bank = 0; bank < 3; bank++) {
         s.tex_base = bank << 20;
         int count = vka_walk(&s, 1, &e, b, 0, 64, rd, NULL, r, 32, &pool, why, sizeof why);
-        CHECK(count == 13 && r[2].tid == s.tex_base + 7 && *treg_lookup(r[2].tid) == 900u + bank &&
+        CHECK(count == 18 && r[2].tid == s.tex_base + 7 && *treg_lookup(r[2].tid) == 900u + bank &&   // PEANUTS(upstream-candidate)
               r[2].sid == 203 && r[3].tid == s.tex_base + 9 && r[3].sid == 211 &&
               r[7].tid == s.tex_base + 13, "pool %d: direct texture/image or sampler crossed pools", bank);
         int i = (2 - bank) * TREG_PAGE + 7;
