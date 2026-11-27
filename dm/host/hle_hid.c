@@ -607,6 +607,14 @@ void dm_pad_assign_callback(void (*fn)(int op, int a, int b)) { atomic_store(&g_
 static int player_of_npad(uint32_t id) { return id == connected_id() ? 0 : id > 0 && id < DM_PLAYERS ? (int)id : -1; }
 HLE_FORCE("_ZN2nn3hid14DisconnectNpadERKj", "disconnect a controller: the front end lets its controller go until it presses again", void, h_hid_Disconnect, const uint32_t *id) {
     int p = id ? player_of_npad(*id) : -1;
+    // PEANUTS(upstream-candidate): the Handheld npad is the console's own controls, which a console does not disconnect (its Disconnect Controllers setting leaves the
+    // attached Joy-Con too), so its controller stays player 1. Echoes of Wisdom disconnects every npad again and again on its load and file screens: the built-in
+    // controller, let go there, came back only on a button press, and its stick did nothing (issue #872)
+    if (id && *id == NPAD_HANDHELD) {
+        static _Atomic int said;
+        if (!atomic_exchange(&said, 1)) LOG("hid: the game disconnects npad %#x, the console's own controls: they stay connected, as on a console (said once)", *id);
+        return;
+    }
     LOG("hid: the game disconnects npad %#x (player %d)", id ? *id : 0, p + 1);
     void (*fn)(int, int, int) = atomic_load(&g_assign_fn);
     if (p >= 0 && fn) { fn(DM_PAD_DISCONNECT, p, 0); style_changed(id ? *id : 0); }
