@@ -75,18 +75,24 @@ public final class GameShortcuts {
                 .build();
     }
 
-    /** The cover, cropped to a full-bleed square adaptive icon, else a letter tile on banana yellow (upstream Shortcuts.icon's look, kept the same) */
+    /** The whole cover in the part of an adaptive icon a launcher shows, on its own average colour (ShortcutArt), else a letter tile on banana yellow (upstream
+     *  Shortcuts.icon's look, kept the same) */
     private static Icon icon(Context c, String name, Bitmap cover) {
-        return cover != null ? Icon.createWithAdaptiveBitmap(squared(cover)) : letterIcon(c, name);
+        return cover != null ? Icon.createWithAdaptiveBitmap(framed(cover)) : letterIcon(c, name);
     }
 
-    private static Bitmap squared(Bitmap src) {
+    // Not cropped and full-bleed any more: a launcher shows only the middle 72 of 108 dp, so a tall cover showed about half of itself, zoomed in (issue #258)
+    private static Bitmap framed(Bitmap src) {
         int size = 432;   // 108 dp at 4x
-        int sw = src.getWidth(), sh = src.getHeight(), side = Math.min(sw, sh);
         Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas cv = new Canvas(out);
-        Rect from = new Rect((sw - side) / 2, (sh - side) / 2, (sw - side) / 2 + side, (sh - side) / 2 + side);
-        cv.drawBitmap(src, from, new Rect(0, 0, size, size), null);
+        Bitmap small = Bitmap.createScaledBitmap(src, 16, 16, true);   // the background's colour from a 16 x 16 copy, not every pixel of a large cover
+        int[] px = new int[16 * 16];
+        small.getPixels(px, 0, 16, 0, 0, 16, 16);
+        if (small != src) small.recycle();
+        cv.drawColor(ShortcutArt.average(px));
+        int[] r = ShortcutArt.fit(src.getWidth(), src.getHeight(), size);
+        cv.drawBitmap(src, null, new Rect(r[0], r[1], r[2], r[3]), new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG));
         return out;
     }
 
