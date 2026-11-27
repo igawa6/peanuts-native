@@ -17,7 +17,8 @@ The app builds 1.17 only (`android_builds v1114112`).
 ## Files and shaders
 
 - One pak, `Artemis/Content/Paks/pakchunk0-Switch.pak` (pak version 11, index not encrypted, 95,833 files: Oodle, Zlib and stored entries). The update's pak replaces the base game's.
-- The shaders are in two shader code archives inside it, stored without pak compression: `Artemis/Content/ShaderArchive-Global-SF_GLSL_SWITCH.ushaderbytecode` and `ShaderArchive-Artemis_Chunk0-SF_GLSL_SWITCH.ushaderbytecode`. Each shader in them is Oodle-compressed (`shader_groups ShaderArchive-Global-=global ShaderArchive-=game`).
+- The shaders are in two shader code archives inside it, stored without pak compression: `Artemis/Content/ShaderArchive-Global-SF_GLSL_SWITCH.ushaderbytecode` and `ShaderArchive-Artemis_Chunk0-SF_GLSL_SWITCH.ushaderbytecode`. Each shader in them is compressed; its records read as LZ4 (`uepak.py` `lz4_records`, tried before Oodle; the split's log says `(LZ4)`), so no Oodle decoder is needed (`shader_groups ShaderArchive-Global-=global ShaderArchive-=game`).
+- **The PC builder builds it** on Linux and macOS (`PC_DECODE`, no Oodle worker): on an arm64 Mac, from 1.17 with its 14 DLC, the split had all 15,885 of the profile's keys (2026-11-27).
 - **How the tables were made:** on a PC, as for Hogwarts Legacy: `shader_split.py` with `DM_UE_DECODE` and `DM_OODLE_OOZ` (the open-source ooz decoder, `unoodle`, [dm/third_party/ooz](../../third_party/ooz/README.md)) on the update's RomFS and `main`, `J=8`. 15,885 shaders (compute 1,171, geometry 52, pixel 10,168, vertex 4,494; game 14,317, global 1,568). ooz is not the game's own Oodle, and its output has no checksum; the phone's Prepare decodes the same archives with the game's own decoder and keeps its targeted split only when the tables are the same.
 
 ## Frame rate <!-- PEANUTS -->

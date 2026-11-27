@@ -474,6 +474,14 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Fix:** shared and local memory arrays get a type of their own (`CodeGen/Spirv/Declarations.cs` `DeclareMemories`, `TypeArray(…, forceIdAllocation: true)`).
 - **Found on:** [Orbitals](../../dm/games/040032B023CA4000/README.md): 24 compute shaders.
 
+### The ooz worker decodes Oodle Leviathan wrongly on arm64
+<!-- PEANUTS: an entry of this fork. -->
+
+- **Symptom:** a PC build with the ooz worker (`DM_OODLE_OOZ`, `unoodle`) stops at the shader split with `shader 0 is neither an LSLG record nor an NVN2 one` for an IoStore shader library, after `ue: 2 archives decoded`. The records start with `LSLG` and a valid stage tag, but their control section's magic `34 12 76 98` comes again every 8 bytes: a match copied from the wrong place. The worker itself reports nothing.
+- **Cause:** ooz's Leviathan decoder (`dm/third_party/ooz/kraken.cpp`, pinned upstream) adds negative offsets held in `size_t` to the output pointer (`&dst[last_offset]` in `LeviathanModeSub` and the other literal modes, `copyfrom = dst + offset` in `Leviathan_ProcessLz`). That pointer overflow is undefined in C++; MSVC, which ooz was written for, wraps it, and clang at `-O1` and above takes it as impossible and miscompiles the copies. Mermaid, Selkie and Kraken streams do not reach that code, so FINAL FANTASY RESONANCE decoded right with the same worker. Not the NEON port: the same `ooz_neon.h` at `-O0` decodes right, and `-fsigned-char` changes nothing.
+- **Fix:** `dm/third_party/ooz/build.sh` compiles with `-fno-strict-overflow` beside `-fwrapv` (gcc and clang: pointer arithmetic wraps too); no source change. `peanuts_build.py` rebuilds an older worker, as `build.sh` is one of its inputs. The ooz README records the check ([Leviathan on arm64](../../dm/third_party/ooz/README.md#leviathan-on-arm64-macos)).
+- **Found on:** [Minecraft Dungeons II](../../dm/games/0100A7C01B792000/README.md) 1.1.3.0 on arm64 macOS (Apple clang 21): all 2,126 Oodle streams Leviathan, 2,110 decoded wrongly; with the flag all 2,126 as at `-O0`, and the split has all 15,826 of the profile's keys. FINAL FANTASY RESONANCE's 5,919 Mermaid streams come out byte for byte as before.
+
 ### A movie pak is mistaken for an Unreal shader archive
 <!-- PEANUTS: Unreal movie-only package detection. -->
 

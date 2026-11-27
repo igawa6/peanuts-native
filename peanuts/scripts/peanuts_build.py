@@ -263,6 +263,8 @@ PC_DECODE = {
     '0100F7E00C70E000': True,    # PEANUTS: Hogwarts Legacy 1.0.5 (Unreal pak, Oodle Kraken): a PC build's split had all 65,047 of the profile's keys, its tables the profile's byte for byte (2026-11-22)
     '01005270232F2000': True,    # OCTOPATH TRAVELER 0 (Unreal pak, Oodle Mermaid): its streams and keys were checked, a build from its game files was not run
     '01003E601E324000': False,   # DRAGON QUEST III HD-2D Remake (Unreal pak, LZ4)
+    '0100A7C01B792000': True,    # Minecraft Dungeons II 1.1.3.0 (Unreal IoStore, Oodle Leviathan): an arm64 Mac build's split had all 15,826 of the profile's keys (2026-11-27)
+    '0100739018020000': False,   # LEGO 2K Drive 1.17 (Unreal pak, LZ4 shader archives): an arm64 Mac build's split had all 15,885 of the profile's keys (2026-11-27)
 }
 
 # The games whose shaders sit in Oodle-compressed archives this computer has no checked decoder for: refused before the import (check_device_steps) unless a decoder

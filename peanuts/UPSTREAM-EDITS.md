@@ -3335,3 +3335,20 @@ view (Settings › Developer) shows the testers' toasts and the in-game menu's t
 | `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 1 | the ignored adb command's toast with Developer view only | `// PEANUTS:` |
 | `android/app/src/main/java/dev/nxnative/android/SidePanel.java` | 4 | the two "DM_CTL is off" notes, the cap line and the frame generation state (`DevView.panel`, `DevView.frameGen`) | `// PEANUTS:` |
 | `android/app/src/main/java/dev/nxnative/android/Lsfg.java` | 2 | "Not in this build" and the mode line through `DevView.panel` | `// PEANUTS:` / `/* PEANUTS */` |
+
+### The ooz worker's Leviathan decode on arm64 (2026-11-27)
+
+On an Apple Silicon Mac the PC builder's `unoodle` decoded Oodle Leviathan streams wrongly and without an error (Minecraft Dungeons II: 2,110 of its 2,126
+streams; the split stopped at `shader 0 is neither an LSLG record nor an NVN2 one`). ooz's Leviathan modes add negative offsets held in `size_t` to the output
+pointer, which clang at `-O1` and above miscompiles as an impossible overflow. `dm/third_party/ooz/build.sh` adds `-fno-strict-overflow`; the pinned
+`kraken.cpp` is unchanged ([the reference entry](../docs/reference/shaders.md#the-ooz-worker-decodes-oodle-leviathan-wrongly-on-arm64)). `PC_DECODE` gains
+Minecraft Dungeons II (Oodle Leviathan) and LEGO 2K Drive (LZ4 shader archives, no Oodle), both checked on that Mac against every key of their profiles.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `docs/reference/shaders.md` | 1 section | the entry above, and its line in the generated `docs/agents/symptoms.md` | `<!-- PEANUTS: an entry of this fork. -->` |
+
+Peanuts-owned, no marker needed: `dm/third_party/ooz/build.sh` and `README.md` (this fork's folder), `peanuts/scripts/peanuts_build.py` (`PC_DECODE`),
+`peanuts/docs/BUILDER.md`, the two game notes.
+
+Upstream candidate: no (Banana Native has no ooz worker).
