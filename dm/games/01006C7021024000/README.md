@@ -10,6 +10,7 @@ On Android with the Vulkan host, the player's wearpack showed noisy pixels in cu
 - **Game:** build `v262144`, version 1.0.4, main build ID `499A85D046C70186`; SDK nnSdk 18.3.1.
 - **Log:** the run log and its digest are attached to the pull request. The digest reports readiness PASS, eight frame loops reached, no unexpected `[RED]` groups (13 expected Android stubs), 6,233 frames counted at a 30 fps target, and ends with `stopped by the user`; the phone was hot five times during that run.
 - **Coverage:** one device and one custom driver. The system driver, other phones, and other games on this branch were not checked.
+- **8 GB / driver note:** both runs were on an 8 GB phone, below the README's 12 GB recommendation, with PurpleVK T30 selected through `DM_VK_DRIVER`. Both reached the frame loop and rendered normally. There was no run on the system driver, so whether the game needs this driver on 8 GB remains open.
 
 - **Profile build:** `v262144`
 - **SDK:** 18
