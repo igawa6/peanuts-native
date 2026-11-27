@@ -180,6 +180,7 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Symptom:** 24 shaders before the control-length fix, 1,355 after.
 - **Cause:** its GLSLC (output version 0x1d.2) writes the 0x848 / 0x850-byte controls and headerless compute code described in the RDB entry, which `glslc_shaders` used to drop. A few outputs of version 0x1d.0 keep something else at control +0x20 (odd values such as 0x136b), so a control length must be a multiple of 4; the section-header reading now takes 8 of them ([GLSLC outputs read through their section headers](#glslc-outputs-read-through-their-section-headers)).
 - **Found on:** [Fire Emblem: Three Houses](../../dm/games/010055D009F78000/README.md) (the older KTGL).
+- **PEANUTS:** [DEAD OR ALIVE Xtreme 3 Scarlet](../../dm/games/01009CC00C97C000/README.md) keeps the same packages in LINKDATA archives that carry their index inside (`data_NN.lnk`: `b0NN`, count, file size, alignment, then the 32-byte entries) and compresses an entry as 0x10-aligned chunks, each a `u32` `0x8000 |` zlib length or plain length; `linkdata_entries` reads either index and `kt_lnk` inflates those entries. Before the reader the split found 23 of its 544 RomFS and `main` shaders.
 
 ### KTGL on NVN2: Switch 2 GLSLC outputs and LD_ / LI_ LINKDATA
 
