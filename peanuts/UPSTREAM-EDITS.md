@@ -108,6 +108,7 @@ not edited (see table above).
 | `dm/games/010035F022078000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for DRAGON BALL: Sparking! ZERO |
 | `dm/games/01006B601380E000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Kirby's Return to Dream Land Deluxe |
 | `dm/games/0100C5000F294000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Battle Brothers |
+| `dm/games/01009CC00C97C000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for DEAD OR ALIVE Xtreme 3 Scarlet |
 | `dm/games/0100DE501433A000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Tetris Effect: Connected |
 | `dm/games/010085500130A000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for LEGO CITY UNDERCOVER |
 | `dm/games/01008FE00E2F6000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: new One Piece Pirate Warriors 4 profile |
@@ -3335,3 +3336,14 @@ view (Settings › Developer) shows the testers' toasts and the in-game menu's t
 | `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 1 | the ignored adb command's toast with Developer view only | `// PEANUTS:` |
 | `android/app/src/main/java/dev/nxnative/android/SidePanel.java` | 4 | the two "DM_CTL is off" notes, the cap line and the frame generation state (`DevView.panel`, `DevView.frameGen`) | `// PEANUTS:` |
 | `android/app/src/main/java/dev/nxnative/android/Lsfg.java` | 2 | "Not in this build" and the mode line through `DevView.panel` | `// PEANUTS:` / `/* PEANUTS */` |
+
+### DEAD OR ALIVE Xtreme 3 Scarlet, LINKDATA with its index inside (2026-11-27)
+
+The game's first profile (`dm/games/01009CC00C97C000/`) and the split's reader of its `.lnk` archives. The shader reader is not a shader-cache input (`dmsh_chain.py` `FILES`), so no library
+version moves.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/shader_split.py` | 3 | `lnk_entries`, `kt_lnk`, `linkdata_entries` and their use in `linkdata_jobs` / `linkdata_shaders`, plus a header line: LINKDATA archives that carry their index inside (`data_NN.lnk`), whose compressed entries are 0x10-aligned chunks of a `u32` (`0x8000 |` zlib length, or plain length) and its bytes. `linkdata_entries` reads Three Houses' `DATA0.bin` beside `DATA1.bin` as before (the same tuples) and the index inside a `.lnk`; both callers take its entries. The game's split went from 23 shaders to 544 (551 with the boot-time GLSLC capture). Checked on all 7,873 compressed entries of the update's and the add-ons' archives. Upstream candidate: yes | `PEANUTS(upstream-candidate)` |
+| `dm/tools/tests/test_split_linkdata.py` | new | synthetic `.lnk` (compressed and plain chunks, cut, broken zlib, size mismatch) and a `DATA0.bin` / `DATA1.bin` pair, through `linkdata_jobs` and `linkdata_shaders`; it passes on the reader before and after the change | `PEANUTS` |
+| `docs/reference/shaders.md`, `docs/agents/01-extract.md` | 1 each | the `.lnk` form under SPKG packages in KTGL LINKDATA, and beside Three Houses' LINKDATA | `PEANUTS` |

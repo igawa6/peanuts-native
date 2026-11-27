@@ -20,6 +20,7 @@
 #   · G2S (Koei Tecmo's KTGL, Hyrule Warriors: Age of Calamity): GLSLC compiler outputs inside the IDRK entries of the RDB data files (zlib in chunks), see idrk_shaders;
 #       ROMANCE OF THE THREE KINGDOMS 8 REMAKE's newer RDB keeps them in .fdata files (a PDRK header, then IDRK entries of zlib or LZ4 chunks)
 #   · SPKG (the older KTGL of Fire Emblem: Three Houses): shader packages of G2S containers, loose and inside the LINKDATA archive DATA0.bin / DATA1.bin, see kt_shaders and linkdata_jobs
+#       DEAD OR ALIVE Xtreme 3 Scarlet's data_NN.lnk carry their index inside, with entries of 0x10-aligned zlib chunks, see linkdata_entries and kt_lnk   # PEANUTS(upstream-candidate)
 #   · SDF (Capcom's RE Engine, Monster Hunter Rise): shader definitions inside the PAK archives (KPKA, entries zstd / deflate compressed), only the newest copy of each path, see kpka_jobs and sdf_shaders
 #   · Trinity packs (Game Freak, Pokémon Legends: Z-A): BNSH inside the files of arc/data.trpfs (Oodle Mermaid, decoded by the game's own decoder in the Mac host), see trpfs_jobs and trinity_shaders
 #   · SPK (Capcom's MT Framework, The Great Ace Attorney Chronicles): the shader package inside an ARC archive (zlib entries), code area + control section per shader, see mtarc_members and mtspk_shaders
@@ -921,25 +922,62 @@ def linkdata_index(path):
     idx = idx and os.path.join(os.path.dirname(path), idx)
     return idx if idx and os.path.exists(idx) else None
 
+def lnk_entries(path):   # PEANUTS(upstream-candidate): LINKDATA with its index inside
+    """The entries of a LINKDATA archive that carries its own index, or None: DEAD OR ALIVE Xtreme 3 Scarlet's data_NN.lnk (data_00.lnk 4.1 GB, 7,099 entries; each DLC
+    one more): char[8] 'b0NN', u64 count, u64 file size, u64 alignment (0x800), then count entries of DATA0.bin's form → [(offset, inflated length, stored length, compressed)]"""
+    if not path.endswith('.lnk'): return None
+    with open(path, 'rb') as f:
+        h = f.read(32)
+        if len(h) < 32 or h[:2] != b'b0': return None
+        n, size = struct.unpack_from('<QQ', h, 8)
+        if not n or size != os.path.getsize(path) or 32 + 32 * n > size: return None
+        t = f.read(32 * n)
+    return list(struct.iter_unpack('<QQQQ', t))
+
+def kt_lnk(d, n):   # PEANUTS(upstream-candidate)
+    """A compressed entry of a .lnk archive (lnk_entries): chunks of up to 16 KB inflated, each a u32 and its bytes at 0x10 alignment, the u32 0x8000 | the length of one zlib stream,
+    or the length of the plain bytes when the chunk does not compress (data_00.lnk entry 3709: the last 784 bytes) → the n inflated bytes, or None"""
+    import zlib
+    out, o, got = [], 0, 0
+    while got < n:
+        if o + 4 > len(d): return None
+        u = struct.unpack_from('<I', d, o)[0]; s = u & 0x7fff; o += 4
+        if u >> 16 or not s or o + s > len(d): return None
+        try: part = zlib.decompress(d[o:o + s]) if u & 0x8000 else d[o:o + s]
+        except zlib.error: return None
+        out.append(part); got += len(part); o = (o + s + 0xf) & ~0xf
+    out = b''.join(out)
+    return out if len(out) == n else None
+
+def linkdata_entries(path):   # PEANUTS(upstream-candidate): the index beside the archive or inside it
+    """A LINKDATA archive's 32-byte entries {u64 offset, u64 inflated length, u64 stored length, u64 compressed} and the inflater of its compressed entries (None: kt_shaders reads
+    them as stored), from the index beside it (linkdata_index) or inside it (lnk_entries, kt_lnk) → (entries, inflate), or None"""
+    idx = linkdata_index(path)
+    if idx:
+        with open(idx, 'rb') as f: t = f.read()
+        return list(struct.iter_unpack('<QQQQ', t[:len(t) // 32 * 32])), None
+    ents = lnk_entries(path)
+    return (ents, kt_lnk) if ents else None
+
 def linkdata_jobs(path, rel, parts=64):
     """A LINKDATA archive's index (linkdata_index; Three Houses' DATA1.bin is 6.9 GB) has 32-byte entries {u64 offset, u64 inflated length, u64 stored length, u64 compressed}. The entries are split into
-    ranges of about equal stored size, one scan job each. → [(path, rel, (first entry, end entry)), …], or None when there is no index beside the file"""
-    idx = linkdata_index(path)
-    if not idx: return None
-    n = os.path.getsize(idx) // 32; step = os.path.getsize(path) / parts; jobs, lo = [], 0
-    with open(idx, 'rb') as f: ents = [struct.unpack('<QQQQ', f.read(32)) for _ in range(n)]
+    ranges of about equal stored size, one scan job each. → [(path, rel, (first entry, end entry)), …], or None when there is no index beside the file (or inside it: linkdata_entries)"""
+    ents = linkdata_entries(path)   # PEANUTS(upstream-candidate): the index beside the file or inside it (linkdata_entries)
+    if not ents: return None
+    ents = ents[0]; n = len(ents); step = os.path.getsize(path) / parts; jobs, lo = [], 0   # PEANUTS(upstream-candidate): the entries' count
     for i in range(1, n + 1):
         if i == n or ents[i][0] >= (len(jobs) + 1) * step: jobs.append((path, rel, (lo, i))); lo = i
     return jobs
 
 def linkdata_shaders(path, rel, rng, out):
     from romfs import mmap
-    index = linkdata_index(path)
+    index = linkdata_entries(path)   # PEANUTS(upstream-candidate): beside the file or inside it
     if not index: return red(f'{path}: the LINKDATA index its scan jobs were planned from is gone')
-    with open(index, 'rb') as f: idx = f.read()
+    ents, inflate = index   # PEANUTS(upstream-candidate)
     with open(path, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as d:
         for i in range(*rng):
-            off, n, stored, comp = struct.unpack_from('<QQQQ', idx, i * 32)
+            off, n, stored, comp = ents[i]   # PEANUTS(upstream-candidate): ents[i]
+            if n and comp and inflate: kt_shaders(inflate(d[off:off + stored], n) or red(f'{path}: entry {i} does not inflate'), f'/{rel}#{i}', out); continue   # PEANUTS(upstream-candidate)
             if n: kt_shaders(d[off:off + (stored if comp else n)], f'/{rel}#{i}', out)
 
 KPKA = b'KPKA'

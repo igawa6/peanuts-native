@@ -1,0 +1,44 @@
+# Game profile of DEAD OR ALIVE Xtreme 3 Scarlet, the free-to-play edition (基本無料版; Switch, update 1.0.6 = v393216). Plays on Android at 30 fps
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts-only profile, not in Banana Native
+# Koei Tecmo's KTGL engine on NVN, SDK 6.4.2; modules main + subsdk0 (GLSLC, NVN's runtime shader compiler, the same build as Fire Emblem: Three Houses') + subsdk1 (NintendoSDK_movie) + sdk.
+# RomFS: LINKDATA archives that carry their own index (00/data_00.lnk 4.1 GB, 7,099 entries; 01-06/data_NN.lnk; one per DLC), MP4 movies in 00/movie, XHS sound banks.
+# The shaders are GLSLC outputs in 17 entries of data_00.lnk (shader_split.py lnk_entries / kt_lnk), in main, and 7 compiled at boot (glslc_capture); the DLC archives hold none
+
+# ---- Identity ----
+title_id	01009CC00C97C000
+program_id	01009CC00C97C000
+
+# ---- App ----
+name	DEAD OR ALIVE Xtreme 3 Scarlet
+ipa	DeadOrAliveXtreme3Scarlet.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v393216	1.0.6	main=71102550c57d57db950d16f3eb5af72e	subsdk0=8d073b25b9abda677e6967cef9ef6070	subsdk1=16577266bb9797abf6029f85025f6d35	sdk=184751379007f9c50fc96ba4d26a5dca
+package	v393216
+shader_versions	v393216
+
+# ---- Presentation ----
+# The game runs at 30 fps on the Switch, and its logic steps once a frame: KTGL's frame-rate mode 0 (60 fps) only changes the presentation (README.md, Frame rate)
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 subsdk1 sdk
+romfs_marker	00/data_00.lnk
+zip_store	.lnk:.mp4:.xhs:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: a 3328 MB heap region. Fire Emblem: Three Houses' layout (the same engine and SDK generation), not measured for this game
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon (Big Brain Academy: Brain vs. Brain sets a heap only then)
+sys_resource	0x0
+
+# ---- Shader split ----
+# KTGL compiles 7 built-in GLSL shaders at boot with the game's own GLSLC (subsdk0; the sources are in main), as in Fire Emblem: Three Houses: captured on an Android
+# phone with DM_GLSLC_CAPTURE=<version dir>/glslc_capture (hle_glslc.c); all 7 outputs are byte for byte among Three Houses' 9
+shader_groups	/00/=00 /05/=05 /02/=02 /04/=04 /01/=01 /03/=03 /06/=06 /glslc_capture/=runtime
+shader_note	DEAD OR ALIVE Xtreme 3 Scarlet shaders

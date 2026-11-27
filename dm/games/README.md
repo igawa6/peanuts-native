@@ -87,6 +87,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [DARK SOULS: REMASTERED](01004AB00A260000/README.md) | `01004AB00A260000` | 1.0.3 | 4.5.0 | FromSoftware's engine | NVN |
 | [DAVE THE DIVER](010097F018538000/README.md) | `010097F018538000` | 1.0.6.1267 | 20.5.29 | Unity 6000.0.52f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Dead Cells](0100646009FBE000/README.md) | `0100646009FBE000` | 1.25.0 | 13.3.5 | Heaps / HashLink (HL/C) | NVN |
+| [DEAD OR ALIVE Xtreme 3 Scarlet](01009CC00C97C000/README.md) | `01009CC00C97C000` | 1.0.6 | 6.4.2 | Koei Tecmo's KTGL | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2](0100AD80208A8000/README.md) | `0100AD80208A8000` | 1.80 | 16.2.3 | Unreal Engine 5.3.2 | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Diablo III: Eternal Collection](01001B300B9BE000/README.md) | `01001B300B9BE000` | 2.7.7.92380 | 8.2.0 | Blizzard's engine, FMOD | NVN |
 | [Digimon Story Time Stranger](010062E01FE0C000/README.md) | `010062E01FE0C000` | 1.2.2 | 20.5.21 | Media.Vision's engine (MVGL archives), CRIWARE | NVN <!-- PEANUTS: Peanuts-only profile --> |
