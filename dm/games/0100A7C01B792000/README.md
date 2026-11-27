@@ -35,3 +35,4 @@ The survey's guess for Unreal: `mem_reserve 0x1028000000`, `mem_alias 0x10000000
 ## Found on this game
 
 - **A pack made on Windows keeps most of the PC's threads idle** (the rewrite of `main` serial for most of its 17 minutes, the shaders on about one core): [Packing](../../../docs/reference/packing.md#a-pack-made-on-windows-keeps-most-of-the-pcs-threads-idle).
+- **The ooz worker decoded its Oodle Leviathan streams wrongly on an arm64 Mac** (2,110 of 2,126; the split stopped at `shader 0 is neither an LSLG record nor an NVN2 one`), until `build.sh` compiled it with `-fno-strict-overflow`: [Shaders](../../../docs/reference/shaders.md#the-ooz-worker-decodes-oodle-leviathan-wrongly-on-arm64). The PC builder now builds it on Linux and macOS (`PC_DECODE`).
