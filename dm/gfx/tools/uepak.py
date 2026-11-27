@@ -168,7 +168,8 @@ def magic_back(f):
     """(how far from the end the footer's magic is, the pak version): a legacy footer is the last 0x2d bytes (magic 0x2c from the end); version 11's magic is 0xc8 from the end in
     Octopath Traveler 0 (UE5) and 0xcc in Unreal Engine 4.27 (DRAGON QUEST VII Reimagined: five whole 32-byte compression method names after the SHA-1)"""
     size = f.seek(0, 2)
-    for back, foot in ((0x2c, 0x2d), (0xc8, 0xc8 + 21), (0xcc, 0xcc + 21)):
+    # PEANUTS: and 0xac with four 32-byte names (version 8 of Unreal Engine 4.22/4.23: JUMP FORCE - Deluxe Edition's pakchunk0/1-Switch.pak); the names after the fourth read empty
+    for back, foot in ((0x2c, 0x2d), (0xac, 0xac + 21), (0xc8, 0xc8 + 21), (0xcc, 0xcc + 21)):
         if size < foot: continue   # shorter than this footer
         f.seek(-back, 2); m, ver = struct.unpack('<II', f.read(8))
         if m == PAK_MAGIC: return back, ver
@@ -260,15 +261,18 @@ class Pak:
     def __init__(self, path, key=None):
         self.path, self.key = path, key; self.f = open(path, 'rb')
         enc, ioff, isz, self.methods, self.version = footer(self.f)
+        # PEANUTS: version 8 with the four-name footer (Unreal Engine 4.22: JUMP FORCE - Deluxe Edition) keeps an FPakEntry's compression method index in one byte, not four,
+        # so the entry is 50 bytes (+ 4 + 16 per block when compressed), in the index and in front of each file
+        self.meth8 = self.version == 8 and magic_back(self.f)[0] == 0xac; self.head = 50 if self.meth8 else 53
         if enc and not key: raise ValueError(f'{path}: the index is encrypted and no key was given')
         r = R(self.read_at(ioff, isz, enc), what=f'{path}: the index')
         self.mount = r.fstr(); self.count = r.take('<i')
         if self.version in LEGACY:   # one FPakEntry per file, kept as parsed
             self.files = {}
             for _ in range(self.count):
-                name = r.fstr(); off, size, raw, meth = r.take('<qqqi'); r.raw(20)
+                name = r.fstr(); off, size, raw, meth = r.take('<qqqB' if self.meth8 else '<qqqi'); r.raw(20)   # PEANUTS: meth8
                 blocks = [r.take('<qq') for _ in range(r.take('<i'))] if meth else []
-                e, bsz = r.take('<BI'); head = 53 + (4 + 16 * len(blocks) if meth else 0)
+                e, bsz = r.take('<BI'); head = self.head + (4 + 16 * len(blocks) if meth else 0)   # PEANUTS: self.head
                 if self.version < 5: blocks = [(s - off, t - s) for s, t in blocks]
                 else: blocks = [(s, t - s) for s, t in blocks]
                 self.files[name] = dict(off=off, raw=raw, size=size, method=(LEGACY_METHODS.get(meth, f'flags {meth}') if self.version < 8 else self.methods[meth - 1] if 0 < meth <= len(self.methods) else f'method {meth}') if meth else '', encrypted=e, block_size=bsz, blocks=blocks or [(head, size)])
@@ -306,7 +310,7 @@ class Pak:
         """A file's bytes, block by block (each block holds block_size raw bytes, the last one the rest). Zlib and LZ4 blocks are decoded here (OCTOPATH TRAVELER II: Zlib); any other
         method needs decode(block bytes, raw length) → bytes: the game's own decoder in the Mac host (shader_split.py oodle); Octopath Traveler 0's archives go through the Oodle job instead"""
         e = self.entry(path)
-        if not e['method']: return self.read_at(e['off'] + 53, e['size'], e['encrypted'])
+        if not e['method']: return self.read_at(e['off'] + self.head, e['size'], e['encrypted'])   # PEANUTS: self.head (53, 50 for meth8)
         import zlib
         bad = (zlib.error,)   # a block its decoder refuses
         if e['method'] == 'Zlib': decode = zlib_block
