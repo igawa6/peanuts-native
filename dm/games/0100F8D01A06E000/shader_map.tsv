@@ -1,0 +1,34 @@
+# kind: evidence  shaders compiled at run time by GLSLC, captured on the device (GLSLC in RomFS + main) → control section + code area keys (dm/gfx/tools/shader_split.py)
+# column 5 records where each key first appears; no PC shader pairing supplied
+package	index	stage	dm_ctl_sha16	source
+ps_other.bin	0	pixel	0b4d736583526df4	/glslc_capture/0b39290411f6ade0.glslc#GLSLC@0x0
+ps_other.bin	1	pixel	780447b36ff3131f	/glslc_capture/110d6d537d864b01.glslc#GLSLC@0x0
+ps_other.bin	2	pixel	bf3710cbf2ec95cb	/glslc_capture/1d78e635f7aad9f8.glslc#GLSLC@0x0
+ps_other.bin	3	pixel	9224c59e4427ad17	/glslc_capture/20434095772dbbd0.glslc#GLSLC@0x0
+vs_other.bin	0	vertex	38e7f70d9a044926	/glslc_capture/2e7d00f3b174fd12.glslc#GLSLC@0x0
+vs_other.bin	1	vertex	814070ea50b5aa50	/glslc_capture/31445ef2090f074c.glslc#GLSLC@0x0
+vs_other.bin	2	vertex	4174d3899d7fe4f5	/glslc_capture/35a0414145c60108.glslc#GLSLC@0x0
+ps_other.bin	4	pixel	cc0c532c227f847d	/glslc_capture/40067174436b69f4.glslc#GLSLC@0x0
+ps_other.bin	5	pixel	15af5b4725965f3a	/glslc_capture/4c9aeba402d86232.glslc#GLSLC@0x0
+vs_other.bin	3	vertex	08b24d0a6817cbba	/glslc_capture/5f44dc665ec97ace.glslc#GLSLC@0x0
+ps_other.bin	6	pixel	05239c36f79907dd	/glslc_capture/67800f07a3349cf9.glslc#GLSLC@0x0
+ps_other.bin	7	pixel	472cdd7e3fa103bb	/glslc_capture/6e90a63ca9ba65a5.glslc#GLSLC@0x0
+ps_other.bin	8	pixel	77f4cf86641f54f7	/glslc_capture/79b80c13c6a0bb12.glslc#GLSLC@0x0
+ps_other.bin	9	pixel	800e1c71c44b472f	/glslc_capture/882013236a4ddd74.glslc#GLSLC@0x0
+ps_other.bin	10	pixel	3cc77dcd6db80fd4	/glslc_capture/93e6a4fe576451ab.glslc#GLSLC@0x0
+ps_other.bin	11	pixel	e8644fdbacba3a2c	/glslc_capture/9474f11caa920682.glslc#GLSLC@0x0
+ps_other.bin	12	pixel	ffa2c6457113ca57	/glslc_capture/99d289de77d43fb4.glslc#GLSLC@0x0
+ps_other.bin	13	pixel	2ff3b41677512897	/glslc_capture/a9216f3053e26180.glslc#GLSLC@0x0
+ps_other.bin	14	pixel	be2c2af4ca4d7787	/glslc_capture/ace6def86d5591fb.glslc#GLSLC@0x0
+ps_other.bin	15	pixel	82c5f097af116457	/glslc_capture/ad938a316a4946f1.glslc#GLSLC@0x0
+vs_other.bin	4	vertex	9a989042c3fbc4ce	/glslc_capture/ada1fd801df894b3.glslc#GLSLC@0x0
+ps_other.bin	16	pixel	972218a564b61f7a	/glslc_capture/af824416c0ce7267.glslc#GLSLC@0x0
+vs_other.bin	5	vertex	f66670e3961fcfb3	/glslc_capture/b869a821a2136e05.glslc#GLSLC@0x0
+ps_other.bin	17	pixel	909c598b342fb3b8	/glslc_capture/be2d0024341c6e17.glslc#GLSLC@0x0
+vs_other.bin	6	vertex	04d91a7c561351f5	/glslc_capture/cbf756eeacc3a4b3.glslc#GLSLC@0x0
+ps_other.bin	18	pixel	bcdc212d4196bad2	/glslc_capture/d0941c904791476d.glslc#GLSLC@0x0
+ps_other.bin	19	pixel	23b10df80a853355	/glslc_capture/daf99dc83ada6d90.glslc#GLSLC@0x0
+ps_other.bin	20	pixel	1310641fa8e9d1a0	/glslc_capture/e67e8c05940ab8d7.glslc#GLSLC@0x0
+vs_other.bin	7	vertex	e683f81cf089fb8c	/glslc_capture/e700f680ec7b0481.glslc#GLSLC@0x0
+ps_other.bin	21	pixel	f94e5068f0945adf	/glslc_capture/f5f7ccadcfd95126.glslc#GLSLC@0x0
+ps_other.bin	22	pixel	9883917bf5d0fd87	/glslc_capture/fd39193afc842471.glslc#GLSLC@0x0

@@ -1,0 +1,42 @@
+# Game profile of ASTLIBRA Revision (Switch, update v393216)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# KEIZO's own engine (no middleware), SDK 16.2.0, NVN. subsdk0 is GLSLC: the game compiles its shaders at run time, so the shader tables hold the
+# outputs captured on a device with DM_GLSLC_CAPTURE (hle_glslc.c); a player's Build captures them on the phone (dev.peanuts.build.RuntimeShaders).
+# Status: provisional profile (dm/games/profile_guess.py from the survey); memory values not measured, the survey's guess
+
+# ---- Identity ----
+title_id	0100F8D01A06E000
+program_id	0100F8D01A06E000
+
+# ---- App ----
+name	ASTLIBRA Revision
+ipa	ASTLIBRARevision.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v393216	1.1.0	main=41d74a97c43ac72ca58f1173a618081a	subsdk0=e0d8adcc446cf14d6af1a51193f72e30	sdk=3053b22935e32ddf15ef81997603e5c2
+package	v393216
+shader_versions	v393216
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Sound/Music/● 沼.ogg
+zip_store	.ogg:.ogv:.opus:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: a 3328 MB heap region
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon (Big Brain Academy: Brain vs. Brain sets a heap only then)
+sys_resource	0x0
+
+# ---- Shader split ----
+# PEANUTS: most of the run-time shaders are compiled at scene changes after the title, not at boot: the build's capture boot (an empty save) presses
+# A every 3 s from 8 s on, as Crash Team Racing Nitro-Fueled's does. NOT SEEN ON A DEVICE: how far it gets in 150 s is not measured
+capture_keys	8:A*45/3
+shader_groups	/Image2K/=image2k /Image720p/=image720p /Sound/=sound /DAT/=dat /SAVE/=save /Image/=image /Voice/=voice
+shader_note	shaders compiled at run time by GLSLC, captured on the device

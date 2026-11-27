@@ -1,5 +1,7 @@
 # Upstream edits — marker status and contribution candidates
 
+- Upstream candidate: descriptor pools. A small pool (NVN's 256 reserved descriptors plus a few of the game's) takes a host range for its own IDs only; 1,024 slots, per-table limits (textures `TREG_GPU`, samplers 16,384), pools over the same memory share a range, and the least recently used pool gives its slot up when the table is full (`dm/gfx/nvn/nvn_dpool.h`, `hle_nvn.c`, `vka_treg.h`, `dm/host/tests/t_nvn_dpool.c`; [rendering.md](../docs/reference/rendering.md#many-small-descriptor-pools-read-another-pools-textures)). ASTLIBRA Revision keeps hundreds of 272-entry pools live.
+
 - Upstream candidate: Vulkan direct texture and sampler bindings resolve against the executing queue’s descriptor pools. The CPU registry retains sparse texture IDs beyond one full pool without enlarging GPU tables. Trails through Daybreak II rotates three such pools.
 
 - Scarlet and Violet 4.0.0 and Kakarot 1.70 add game profiles and generated shader tables. The PC splitter accepts build-specific regular variation pairs, and the packer loads optional shader keys once per split. The host adds elapsed integer timing rows and offline Bluetooth replies.
@@ -107,6 +109,7 @@ not edited (see table above).
 | `dm/games/01006A800016E000/README.md` | marked (Super Smash Bros. Ultimate, Android notes) | no |
 | `dm/games/010035F022078000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for DRAGON BALL: Sparking! ZERO |
 | `dm/games/01006B601380E000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Kirby's Return to Dream Land Deluxe |
+| `dm/games/0100F8D01A06E000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for ASTLIBRA Revision |
 | `dm/games/0100C5000F294000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Battle Brothers |
 | `dm/games/0100DE501433A000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Tetris Effect: Connected |
 | `dm/games/010085500130A000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for LEGO CITY UNDERCOVER |
