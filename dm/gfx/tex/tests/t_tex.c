@@ -314,6 +314,31 @@ int main(void) {
               (unsigned long long)nvn_tex_level_offset(&d, 1), (unsigned long long)L.size);
     }
 
+    // ---------- S3 sparse 3D tiles (PEANUTS): the standard 3D block shape, so each 64 KB tile holds one tw x th x td brick, tiles in x → y → z order ----------
+    // Metroid Prime Remastered's 512x256x368 light volumes (BC6H 0x50, DXT1 0x42; flag SPARSE): laid out with 1-GOB block rows, a tile was 128x32x16 texels of BC6H, the game's
+    // pre-swizzled bricks were read scattered over the volume and the volumetric fog came out unlit
+    printf("S3 sparse 3D tiles (standard 3D block shape)\n");
+    {
+        static const struct { int fmt; uint32_t tw, th, td; uint64_t size; } c3[2] = {{0x50, 64, 64, 16, 0x2E00000}, {0x42, 128, 64, 16, 0x1700000}};
+        for (int c = 0; c < 2; c++) {
+            nvn_texdesc d = {2, c3[c].fmt, 0x20, 0, 512, 256, 368, 1, 0, 0}; nvn_texlayout L; nvn_tex_layout(&d, &L);
+            uint32_t tw, th, td; nvn_tex_sparse_tiles(&d, &tw, &th, &td);
+            CHECK(tw == c3[c].tw && th == c3[c].th && td == c3[c].td && L.size == c3[c].size, "S3 format %#x: tiles %ux%ux%u storage %#llx, expected %ux%ux%u / %#llx", c3[c].fmt, tw, th, td,
+                  (unsigned long long)L.size, c3[c].tw, c3[c].th, c3[c].td, (unsigned long long)c3[c].size);
+            uint32_t rb, rows, slices, bpb; uint64_t base; unsigned tH, tD;
+            if (nvn_deswizzle_geom(&d, 0, 0, &rb, &rows, &slices, &base, &tH, &tD, &bpb)) { CHECK(0, "S3 format %#x: no geometry", c3[c].fmt); continue; }
+            uint32_t ntx = 512 / tw, nty = 256 / th; int bad = 0;
+            for (uint32_t z = 0; z < slices && !bad; z++) for (uint32_t y = 0; y < rows && !bad; y++) for (uint32_t x = 0; x < rb / bpb && !bad; x++) {
+                uint64_t o = nvn_bl_offset(x * bpb, y, z, rb, rows, tH, tD), t = ((uint64_t)(z / td) * nty + y * 4 / th) * ntx + x * 4 / tw;
+                if (o / 0x10000 != t) { bad = 1; CHECK(0, "S3 format %#x block (%u, %u, %u) at %#llx, not in tile %llu", c3[c].fmt, x, y, z, (unsigned long long)o, (unsigned long long)t); }
+            }
+            CHECK(!bad, "S3 format %#x: bricks", c3[c].fmt);
+            d.flags = 0; nvn_tex_layout(&d, &L);   // not sparse: the automatic 1-GOB block height, 16-GOB block depth
+            CHECK(L.tileH == 0 && L.tileD == 4, "S3 format %#x not sparse: block height %u depth %u, expected 0 / 4", c3[c].fmt, L.tileH, L.tileD);
+        }
+        printf("  S3 512x256x368 BC6H / DXT1 sparse: 64x64x16 / 128x64x16-texel tiles, one brick each\n");
+    }
+
     printf("%s: %d/%d checks passed\n", fails ? "RED" : "all passed", checks - fails, checks);
     return fails ? 1 : 0;
 }
