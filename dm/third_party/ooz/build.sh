@@ -31,9 +31,11 @@ if [ "$ARCH" = arm64 ]; then
 	cp "$Z/ooz_neon.h" "$S/"
 	patch -s -d "$S" -p1 --no-backup-if-mismatch < "$Z/ooz-arm64.patch"
 fi
-# -fno-strict-aliasing: the decoder reads and writes through casted pointers throughout; -fwrapv: it was written for MSVC, which wraps signed overflow.
+# -fno-strict-aliasing: the decoder reads and writes through casted pointers throughout; -fwrapv: it was written for MSVC, which wraps signed overflow;
+# -fno-strict-overflow: pointer arithmetic wraps too. Leviathan adds negative offsets held in size_t to dst (&dst[last_offset], dst + offset); clang at -O1
+# and above treats that pointer overflow as impossible and miscopies the matches (Minecraft Dungeons II on arm64 macOS: 2,110 of 2,126 streams wrong).
 # These are the flags of the validated build (README.md), -msse4.1 on x86-64 only. Compiled from inside the copy with relative names, so no path of this machine
 # is in the program.
-( cd "$S" && "$@" -O2 -g0 -fno-strict-aliasing -fwrapv $ARCH_FLAGS -w -I . -o "$OUT.tmp" unoodle.cpp kraken.cpp )
+( cd "$S" && "$@" -O2 -g0 -fno-strict-aliasing -fwrapv -fno-strict-overflow $ARCH_FLAGS -w -I . -o "$OUT.tmp" unoodle.cpp kraken.cpp )
 mv "$OUT.tmp" "$OUT"
 rm -rf "$S"

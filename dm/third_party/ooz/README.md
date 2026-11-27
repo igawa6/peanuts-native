@@ -70,7 +70,7 @@ Nothing in `kraken.cpp` or `stdafx.h` is edited in place. `build.sh` copies them
 | `ooz-arm64.patch` | arm64 only, 4 added lines: `stdafx.h` includes `ooz_neon.h` in place of `<x86intrin.h>` on `__aarch64__`. No decoder code changes |
 | `ooz_neon.h` | arm64 only, the 21 SSE2 intrinsics `kraken.cpp` calls (`_mm_loadu_si128`, `_mm_unpacklo_epi8`, `_mm_movemask_epi8`, ...) and MSVC's `_rotl`, written with AArch64 NEON or plain C, each with SSE2's exact result. GPL-3.0-or-later, as the program it is compiled into |
 | `unoodle.cpp` | The worker, 108 lines: the pipe protocol, the stubs for the two decoders left out, and the fail-closed checks under [Safety](#safety) |
-| `build.sh` | `build.sh <output program> [compiler]`: checks the hashes, copies, patches, compiles with `-O2 -fno-strict-aliasing -fwrapv` and, on x86-64, `-msse4.1`. The decoder reads and writes through casted pointers throughout and was written for MSVC; those two flags give gcc and clang MSVC's reading of that code. The program holds no path of the build machine: built twice in different folders with the same compiler it is the same file |
+| `build.sh` | `build.sh <output program> [compiler]`: checks the hashes, copies, patches, compiles with `-O2 -fno-strict-aliasing -fwrapv -fno-strict-overflow` and, on x86-64, `-msse4.1`. The decoder reads and writes through casted pointers throughout, was written for MSVC, and adds negative offsets held in `size_t` to pointers (Leviathan's `&dst[last_offset]`, `dst + offset`); those three flags give gcc and clang MSVC's reading of that code ([Leviathan on arm64](#leviathan-on-arm64-macos)). The program holds no path of the build machine: built twice in different folders with the same compiler it is the same file |
 | `COPYING` | The GNU General Public License, version 3 |
 
 The compiler flags and the patches are the ones of the validated builds below; change none of them without running the checks again.
@@ -111,7 +111,20 @@ map and every record of the package hashed again.
 RESONANCE 1.0.1's `.nsp` files: the split's keys were all 73,496 of the profile's and no other (`ooz_split_checked`), and the pack played on an AYN Thor from
 a save in Chapter 1. Before that, `peanuts/tests/test_unoodle.py` compared every intrinsic of `ooz_neon.h` with SSE2's definition on 20,000 random registers.
 
-Not checked: Leviathan and Selkie streams as such; any other game on arm64 (Arceus and Octopath Traveler 0 were checked on x86-64 only); clang beyond one job
+### Leviathan on arm64 macOS
+
+2026-11-27, arm64 macOS (Apple clang 21), through the PC builder from Minecraft Dungeons II 1.1.3.0's `.nsp` files, all 2,126 of its Oodle streams Leviathan
+(`8c 0c`). Built with `-O2 -fno-strict-aliasing -fwrapv` only, the worker decoded 2,110 of them wrongly and without an error: the split stopped at
+`shader 0 is neither an LSLG record nor an NVN2 one`, and the records held the control section's magic again every 8 bytes, a match copied from the wrong place.
+`-fsigned-char` changed nothing; `-O0`, `-fwrapv-pointer` and `-fno-strict-overflow` each gave the same 2,126 outputs, and with `-O0` the split had all
+15,826 of the profile's shader keys and no other (`ooz_split_checked`). Cause: Leviathan's literal and match copies add negative offsets held in `size_t` to
+`dst` (`&dst[last_offset]` in `LeviathanModeSub` and the other modes, `copyfrom = dst + offset` in `Leviathan_ProcessLz`), a pointer overflow UBSan reports
+at `kraken.cpp:2956`-`2979` and `3248`; clang at `-O1` and above takes it as impossible. MSVC, which ooz was written for, wraps it. Fix: `build.sh` adds
+`-fno-strict-overflow` (gcc and clang: pointer and signed arithmetic wrap), no source change. With it: the 2,126 Leviathan streams as with `-O0`; FINAL FANTASY
+RESONANCE 1.0.1's 5,919 Mermaid streams byte for byte as the worker without it, its split again all 73,496 keys, and its library the same file as the
+pack on the AYN Thor; `peanuts/tests/test_unoodle.py` passes.
+
+Not checked: Selkie streams as such; Leviathan on x86-64; any other game on arm64 (Arceus and Octopath Traveler 0 were checked on x86-64 only); clang beyond one job
 on x86-64; any other system. ooz issue #6 (a tANS-coded Mermaid chunk whose lookup table does not fit the scratch space) did not occur in these 16,515 type 10
 streams; it is a clean refusal when it does, and no fix for it is included.
 
