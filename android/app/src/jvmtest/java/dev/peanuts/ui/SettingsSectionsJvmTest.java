@@ -32,6 +32,16 @@ public final class SettingsSectionsJvmTest {
 
         // the rows of the long page, by the heading they were built under
         eq("library/Folders", SettingsSections.place("Game folder", "Library"));
+        // PEANUTS: every folder a row of its kind, then Add folder, then the per-game Folders and Rescan (issue #546)
+        eq("library/Folders", SettingsSections.place("Update and DLC folder", "Library"));
+        eq("library/Folders", SettingsSections.place("Build folder", "Library"));
+        eq("library/Folders", SettingsSections.place("Add folder", "Library"));
+        SettingsSections.Section lib = SettingsSections.section("library");
+        String[] folderOrder = {"Game folder", "Update and DLC folder", "Build folder", "Add folder", "Folders", "Rescan"};
+        for (int i = 1; i < folderOrder.length; i++)
+            yes(SettingsSections.order(lib, "Folders", folderOrder[i - 1]) < SettingsSections.order(lib, "Folders", folderOrder[i]), folderOrder[i - 1] + " before " + folderOrder[i]);
+        eq("update", SettingsSections.place("Update and DLC folder", "Library").icon);
+        eq("add", SettingsSections.place("Add folder", "Library").icon);
         eq("library/Space", SettingsSections.place("Storage", "System"));
         eq("console/Keys and firmware", SettingsSections.place("Keys", "Library"));
         eq("console/Keys and firmware", SettingsSections.place("Firmware", "Library"));
@@ -39,13 +49,17 @@ public final class SettingsSectionsJvmTest {
         eq("graphics/Driver", SettingsSections.place("GPU driver", "System"));
         eq("graphics/Picture", SettingsSections.place("Upscaler", "Performance and picture"));
         eq("graphics/Speed", SettingsSections.place("Overlay", "Display"));
-        eq("controls/Buttons", SettingsSections.place("Xbox button label swap", "Controls"));
         eq("screens/Second screen", SettingsSections.place("Swap screens", "Library"));
         eq("screens/Display", SettingsSections.place("Keep the screen on while preparing", "System"));
+        // PEANUTS: the Xbox button label swap row is removed (owner 2026-11-26)
         eq("users/Users", SettingsSections.place("Users", "System"));
         eq("users/Miis", SettingsSections.place("Miis", "Library"));
         eq("app/Feel", SettingsSections.place("Haptics", "Library"));
+        eq("app/In-game panel", SettingsSections.place("Mods tab", "Library"));   // PEANUTS: not under Controls, which is the controller's
         eq("app/Updates", SettingsSections.place("Check for updates", "Updates"));
+        eq("app/Extras", SettingsSections.place("Smooth Experience", "Library"));   // PEANUTS: Smooth Experience (dev.peanuts.smooth), built with Library's rows
+        eq("app/Extras", SettingsSections.place("Start screen", "Library"));   // its parts right under it
+        eq("developer/Testing", SettingsSections.place("Developer view", "Library"));
         eq("help/Questions and logs", SettingsSections.place("Questions and answers", "Updates"));
         eq("help/Questions and logs", SettingsSections.place("Share log", "Help"));
         eq("developer/Testing", SettingsSections.place("Advanced", "System"));

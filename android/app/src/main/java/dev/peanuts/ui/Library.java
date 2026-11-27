@@ -52,6 +52,7 @@ import java.io.File;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -151,6 +152,7 @@ public final class Library {
     private final Map<String, Boolean> companions = new HashMap<>();   // title ID → a companion is installed (read once per pass; cleared by a scan and a build's end)
     // the build card's live parts (null when it is not on screen)
     private TextView buildStatus, buildBody, buildPct;
+    private Button buildGoOn;   // the build card's Go on anyway, shown while the packer waits in a heat pause it lifts (BuildPipeline.goOnOffered, GitHub #803)
     private ProgressBar buildBar;
     // the building game's cover marks (null when the Building filter shows the card instead)
     private TextView coverChip;
@@ -329,6 +331,7 @@ public final class Library {
      */
     @SuppressWarnings("unchecked")
     public static <G> void fill(Activity a, LinearLayout box, List<G> games, View ondeviceCard, Predicate<G> shows, Function<G, View> card, Consumer<G> manage, Runnable refresh) {
+        box.post(() -> LayoutChoice.offer(a));   // how the in-game menus look, asked at the app's start until it is picked (twice at most)
         if (current == null || current.a != a) current = new Library(a);
         Library l = current;
         l.box = box; l.games = new ArrayList<>(games); l.ondeviceCard = ondeviceCard; gen++;
@@ -842,8 +845,7 @@ public final class Library {
         for (LibraryScanner.Title t : lastTitles) if (t.launch != null && samePath(t.launch.getPath(), dump.getPath())) { if (id == null || id.isEmpty()) id = t.titleId; if (name == null) name = t.name; break; }
         if (id == null || id.isEmpty()) return false;   // upstream's own check says what is wrong with the dump
         BuildRequest r = new BuildRequest(id.toUpperCase(Locale.ROOT), name != null ? name : dump.getName(), dump, null, null, null, null);
-        String root = PeanutsPrefs.gameDir(a);
-        r.gameDir = root == null ? null : new File(root);
+        r.gameDir = PeanutsPrefs.homeFor(a, dump);   // the game folder that holds the file, else the first (issue #546)
         r.buildDestination = PeanutsPrefs.chosenBuildDir(a, r.titleId);
         Library l = current != null && current.a == a ? current : null;
         if (l != null && l.building(r.titleId)) { Toast.makeText(a, r.name + " is being built now.", Toast.LENGTH_LONG).show(); return true; }
@@ -1089,16 +1091,18 @@ public final class Library {
             }
         }
         Collections.sort(bl, (x, y) -> Integer.compare(buildRank(x), buildRank(y)));   // upstream's Prepare first, like its card, then the build, the queue in its order, what stopped
-        Collections.sort(rd, (x, y) -> x.used() != y.used() ? Long.compare(y.used(), x.used()) : x.name().compareToIgnoreCase(y.name()));
-        Collections.sort(bd, (x, y) -> x.name().compareToIgnoreCase(y.name()));
-        Collections.sort(np, (x, y) -> x.name().compareToIgnoreCase(y.name()));
+        playTimes = dev.peanuts.launch.PlayTime.all(a);   // once per render: Sort by play time and the bottom screen's card of a focused cover
+        noteAdded(rows);
+        String sort = PeanutsPrefs.librarySort(a);
+        Comparator<Row> order = LibrarySort.order(sort, Row::name, Row::used, this::added, this::playMs);
+        List<Row> allRows = LibrarySort.all(bl, rd, bd, np, order, PeanutsPrefs.librarySortGrouped(a));   // sorts rd, bd and np too
         List<Row> show = new ArrayList<>();   // the cover grid: one grid, the filters are the sections (the Building filter shows the full cards instead)
         switch (filter) {
             case BUILDING: break;
             case READY: show.addAll(rd); break;
             case BUILD: show.addAll(bd); break;
             case NO_PROFILE: show.addAll(np); break;
-            default: show.addAll(bl); show.addAll(rd); show.addAll(bd); show.addAll(np);
+            default: show.addAll(allRows);
         }
         int hidden = hiddenGameCount();
         int cols = coverColumns();
@@ -1129,7 +1133,7 @@ public final class Library {
         box.removeAllViews();
         tiles.clear(); keyed.clear();
         lostKey = null; restoreKey = null;   // the removal above is not a focus lost to restore at the next rebuild
-        buildStatus = null; buildBody = null; buildPct = null; buildBar = null; coverChip = null; coverStrip = null; firstCover = null;
+        buildStatus = null; buildBody = null; buildPct = null; buildBar = null; buildGoOn = null; coverChip = null; coverStrip = null; firstCover = null;
         if (ondeviceCard != null && ondeviceCard.getParent() instanceof ViewGroup) ((ViewGroup) ondeviceCard.getParent()).removeView(ondeviceCard);
         shown = sig;
         if (setup) PUi.add(box, setupCard(), 0);
@@ -1173,6 +1177,16 @@ public final class Library {
             LinearLayout.LayoutParams alp = PUi.wrap(); alp.leftMargin = PUi.dp(a, 8);
             top.addView(allB, alp);
         }
+        // icon only: a label would push the filter chips off a handheld's row; the sheet shows the order in use
+        android.widget.ImageView sortB = PUi.iconButton(a, R.drawable.ic_sort, "Sort: " + LibrarySort.label(sort),
+                PUi.Kind.QUIET, Haptics.on(Haptics.Word.CLICK, v -> sortDialog()));
+        sortB.setImageDrawable(PUi.icon(a, R.drawable.ic_sort, R.color.bn_accent));
+        sortB.setOnKeyListener(shoulders);
+        focusRing(sortB, Color.TRANSPARENT);
+        track(sortB, "sort", null);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(PUi.dp(a, 44), PUi.dp(a, 44)); slp.leftMargin = PUi.dp(a, 4);
+        slp.gravity = android.view.Gravity.CENTER_VERTICAL;
+        top.addView(sortB, slp);
         Button findB = PUi.button(a, find.isEmpty() ? "Find" : PUi.joined("Find", find), PUi.Kind.QUIET, Haptics.on(Haptics.Word.CLICK, v -> findDialog()));
         findB.setCompoundDrawablesRelativeWithIntrinsicBounds(PUi.icon(a, R.drawable.ic_search, R.color.bn_accent), null, null, null);
         findB.setCompoundDrawablePadding(PUi.dp(a, 6));
@@ -1187,7 +1201,9 @@ public final class Library {
             int n = PeanutsPrefs.roots(a).size();
             note = PUi.add(box, PUi.small(a, "Looking in " + n + (n == 1 ? " folder…" : " folders…")), 8);
         } else if (rows.isEmpty() && pc == null && !setup) {
-            note = PUi.add(box, PUi.small(a, "No games found in " + PeanutsPrefs.gameDir(a) + ". Put NSP, NSZ, XCI, XCZ, .nup files or dump folders there, then Rescan (Settings › Library)."), 8);
+            List<String> dirs = PeanutsPrefs.gameDirs(a);
+            note = PUi.add(box, PUi.small(a, (dirs.size() == 1 ? "No games found in " + dirs.get(0) + ". Put NSP, NSZ, XCI, XCZ, .nup files or dump folders there"
+                    : "No games found in your " + dirs.size() + " game folders. Put NSP, NSZ, XCI, XCZ, .nup files or dump folders in one of them") + ", then Rescan (Settings › Library)."), 8);
         }
         if (note != null && !hadNote) Motion.fadeIn(note);
         hadNote = note != null;
@@ -1211,7 +1227,6 @@ public final class Library {
 
         int cell = (Math.min(widthDp(), 900) - 40 - PUi.GAP * (cols - 1)) / cols;   // Banana's 20 dp gutters and 12 dp gaps
         List<View> cells = new ArrayList<>();
-        playTimes = dev.peanuts.launch.PlayTime.all(a);   // once per render: the bottom screen's card of a focused cover (bottom)
         for (Row r : show) cells.add(coverCell(r, cell));
         grid(cells, cols, 16);
         boolean first = lastCells == 0 && !cells.isEmpty();   // the grid shows after an empty one (the first scan ended): it enters as after a filter change
@@ -1228,8 +1243,9 @@ public final class Library {
     private String signature(List<Row> show, View pc, Build b, boolean buildCard, int building, int all, int ready, int toBuild, int noProfile, int hidden, int cols) {
         StringBuilder s = new StringBuilder(64 + show.size() * 48);
         s.append(gen).append('|').append(filter).append('|').append(find).append('|').append(showHidden).append('|').append(hidden).append('|').append(cols).append('|').append(widthDp())
+                .append('|').append(PeanutsPrefs.librarySort(a)).append(PeanutsPrefs.librarySortGrouped(a))
                 .append('|').append(all).append(',').append(ready).append(',').append(toBuild).append(',').append(noProfile).append(',').append(building)
-                .append('|').append(scanning ? PeanutsPrefs.roots(a).size() : -1).append('|').append(PeanutsPrefs.gameDir(a))
+                .append('|').append(scanning ? PeanutsPrefs.roots(a).size() : -1).append('|').append(PeanutsPrefs.gameDirs(a))
                 .append('|').append(pc == null ? 0 : System.identityHashCode(pc)).append('|').append(buildCard);
         if (b != null) s.append('|').append(b.id).append(',').append(b.step).append(',').append(b.failed).append(',').append(b.code).append(',').append(b.error.hashCode());
         for (Row r : show) {
@@ -1347,6 +1363,70 @@ public final class Library {
         focusGrid = true;
         animateNext = true;
         render();
+    }
+
+    // ---- Sort ----
+
+    /** When each game came into the library (LibrarySort.firstSeen, kept in PeanutsPrefs), by title ID: read again once per list (gen) for Recently added */
+    private final Map<String, Long> addedAt = new HashMap<>();
+    private int addedGen = -1;
+
+    /** Reads every game's first-seen time and keeps one for each game the library has not seen before (its file's time, else now) */
+    private void noteAdded(List<Row> rows) {
+        if (addedGen == gen) return;
+        addedGen = gen;
+        addedAt.clear();
+        Map<String, Long> fresh = new HashMap<>();
+        long now = System.currentTimeMillis();
+        for (Row r : rows) {
+            long t = PeanutsPrefs.firstSeen(a, r.id());
+            if (t <= 0) {
+                File f = r.title != null ? (r.title.launch != null ? r.title.launch : r.title.base != null ? r.title.base.file : null)
+                        : r.entry != null && !r.entry.gameDir.isEmpty() ? new File(r.entry.gameDir) : null;
+                t = LibrarySort.firstSeen(f == null ? 0 : f.lastModified(), now);
+                fresh.put(r.id(), t);
+            }
+            addedAt.put(r.id(), t);
+        }
+        if (!fresh.isEmpty()) PeanutsPrefs.firstSeen(a, fresh);
+    }
+
+    private long added(Row r) { Long t = addedAt.get(r.id()); return t == null ? 0 : t; }
+
+    private long playMs(Row r) {
+        dev.peanuts.launch.PlayLedger.Entry e = playTimes.get(r.id().toUpperCase(Locale.ROOT));
+        return e == null ? 0 : e.ms;
+    }
+
+    private void sortDialog() {
+        String cur = PeanutsPrefs.librarySort(a);
+        LinearLayout wrap = new LinearLayout(a);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        android.widget.RadioGroup g = new android.widget.RadioGroup(a);
+        for (int i = 0; i < LibrarySort.MODES.length; i++) {
+            android.widget.RadioButton rb = new android.widget.RadioButton(a);
+            rb.setId(View.generateViewId());
+            rb.setText(LibrarySort.HINTS[i] == null ? LibrarySort.LABELS[i] : PUi.joined(LibrarySort.LABELS[i], LibrarySort.HINTS[i]));
+            rb.setMinHeight(PUi.dp(a, 48));
+            rb.setTag(LibrarySort.MODES[i]);
+            g.addView(rb);
+            if (i == LibrarySort.index(cur)) rb.setChecked(true);
+        }
+        wrap.addView(g, PUi.fill());
+        android.widget.Switch apart = new android.widget.Switch(a);
+        apart.setText("Keep Ready, Build needed and Not supported yet apart");
+        apart.setChecked(PeanutsPrefs.librarySortGrouped(a));
+        apart.setMinHeight(PUi.dp(a, 48));
+        PUi.add(wrap, apart, 8);
+        g.setOnCheckedChangeListener((x, id) -> {
+            View v = g.findViewById(id);
+            if (v == null) return;
+            Haptics.play(v, Haptics.Word.CLICK);
+            PeanutsPrefs.librarySort(a, (String) v.getTag());
+            animateNext = true; render();
+        });
+        apart.setOnCheckedChangeListener((x, on) -> { Haptics.play(x, Haptics.Word.CLICK); PeanutsPrefs.librarySortGrouped(a, on); animateNext = true; render(); });
+        PUi.sheet(a, "Sort", wrap).setPositiveButton("Done", null).show();
     }
 
     private void findDialog() {
@@ -1858,11 +1938,11 @@ public final class Library {
             switch (code) {
                 case BuildListener.ADDON_MISSING: {
                     // Prepare stopped and asks (dev.peanuts.build.AutoRelax): the shaders come with add-on content that was not imported. What mends it, by
-                    // what is there: no DLC folder set, the folder rows; DLC found for the game, Import again; else the sheet (its DLC row adds a file).
+                    // what is there: no update and DLC folder set, its folder picker; DLC found for the game, Import again; else the sheet (its DLC row adds a file).
                     // Try anyway is the other choice, asked once with what it costs
                     boolean nup = t != null && t.base != null && t.base.isNup();
-                    if (nup && PeanutsPrefs.dlcDir(a) == null && !GameSheet.dlcFound(t))
-                        left = PUi.button(a, "Set the DLC folder", PUi.Kind.TONAL, Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.extraFolders(a)));
+                    if (nup && PeanutsPrefs.addonDirs(a).isEmpty() && !GameSheet.dlcFound(t))
+                        left = PUi.button(a, "Add a DLC folder", PUi.Kind.TONAL, Haptics.on(Haptics.Word.TICK, v -> LibraryFolders.pick(a, dev.peanuts.folders.FolderKinds.ADDONS, false)));
                     else if (nup && GameSheet.dlcFound(t))
                         left = PUi.button(a, "Import again with DLC", PUi.Kind.TONAL, Haptics.on(Haptics.Word.TICK, v -> GameSheet.importAgain(a, this, t, CompanionPort.forTitle(catalog, t.titleId), null)));
                     else left = PUi.button(a, "Open the game's sheet", PUi.Kind.TONAL, Haptics.on(Haptics.Word.CLICK, v -> openSheet.run()));
@@ -1902,6 +1982,13 @@ public final class Library {
             right = play;
         }
         PUi.add(c, PUi.pair(a, left, right), 14);
+        // a heat pause Go on anyway lifts (#803): the card's own button, first under the bar; the body says why (Prepare.pausedLine)
+        if (!b.failed) {
+            buildGoOn = PUi.button(a, "Go on anyway", PUi.Kind.PRIMARY, v -> { Haptics.play(v, Haptics.Word.HEAVY); BuildPipeline.goOnAnyway(a); v.setVisibility(View.GONE); });
+            buildGoOn.setContentDescription("Go on anyway: build " + name + " without pausing for heat");
+            buildGoOn.setVisibility(View.GONE);
+            PUi.add(c, buildGoOn, 10);
+        }
         // a build that stopped or failed: its build log, or its newest game run when it has one too (BuildLogUi.shareLog asks which)
         if (b.failed) {
             LinearLayout quiet = PUi.row(a);
@@ -1933,19 +2020,20 @@ public final class Library {
         }
         if (buildStatus == null) return;
         PUi.status(buildStatus, stepWords(b), b.failed ? R.color.bn_danger : b.step.equals("done") ? R.color.bn_leaf : R.color.bn_accent);
+        if (buildGoOn != null) buildGoOn.setVisibility(!b.failed && BuildPipeline.goOnOffered(b.titleId) ? View.VISIBLE : View.GONE);   // #803
         if (b.failed) {
             String first = b.error.split("\n")[0].trim();
             LibraryScanner.Title bt = titleFor(b.titleId);
             boolean btNup = bt != null && bt.base != null && bt.base.isNup();
             String action = b.reimport && b.step.equals("import") && !BuildListener.OUT_OF_SPACE.equals(b.code) ? " Open the game's sheet and tap Import again."
-                    : BuildListener.ADDON_MISSING.equals(b.code) ? (btNup && PeanutsPrefs.dlcDir(a) == null && !GameSheet.dlcFound(bt) ? " No DLC folder is set. Tap Set the DLC folder, then import the game again."
+                    : BuildListener.ADDON_MISSING.equals(b.code) ? (btNup && PeanutsPrefs.addonDirs(a).isEmpty() && !GameSheet.dlcFound(bt) ? " No update and DLC folder is set. Tap Add a DLC folder, then import the game again."
                             : btNup && GameSheet.dlcFound(bt) ? " DLC for this game was found. Tap Import again with DLC to add it." : " Add the DLC on the DLC row of the game's sheet.")
                     : BuildListener.FILE_DAMAGED.equals(b.code) ? ""   // its message says what to do (Compressed.failure)
                     : BuildListener.FILE_MISSING.equals(b.code) ? " Open the game's sheet to pick the file again."
                     : BuildListener.WRONG_VERSION.equals(b.code) ? (first.contains("Build anyway") ? "" : " To try it anyway, open the game's sheet and tap Build anyway. Or pick the update the sheet recommends.")
                     : BuildListener.INVALID_DUMP.equals(b.code) ? (bt != null && bt.base != null && dev.peanuts.build.VersionFolder.is(bt.base.file) ? ""   // its message says where the files go (GitHub issue #370)
                             : " Details says why. Open the game's sheet to check the files, or dump the game again.")
-                    : BuildListener.OUT_OF_SPACE.equals(b.code) ? (first.contains("Free up") ? "" : " Free up some space, then tap Retry.")
+                    : BuildListener.OUT_OF_SPACE.equals(b.code) ? (first.contains("Free up") || first.contains("Free some") ? "" : " Free up some space, then tap Retry.")   // the packer's own sentence says "Free some space" (PrepareText)
                     : BuildListener.STALLED.equals(b.code) || BuildListener.CANCELLED.equals(b.code) ? (first.contains("Resume") ? "" : " Tap Resume to go on from where it stopped.")
                     : BuildListener.TOOL_STOPPED.equals(b.code) || first.contains("Tap ") || first.contains(" tap ") ? "" : " Tap Retry to build again.";   // a first line that says what to tap gets no second instruction
             buildBody.setText((first.isEmpty() ? "The build stopped." : first) + action);
@@ -2037,8 +2125,7 @@ public final class Library {
         BuildRequest r = new BuildRequest();
         r.titleId = s.titleId; r.name = s.name; r.base = s.base; r.update = s.update;
         r.dlcs = new ArrayList<>(s.dlcs);
-        String root = PeanutsPrefs.gameDir(a);
-        r.gameDir = root == null ? null : new File(root);
+        r.gameDir = PeanutsPrefs.homeFor(a, s.base);   // the game folder that holds the game's file, else the first (issue #546)
         r.buildDestination = PeanutsPrefs.chosenBuildDir(a, s.titleId);
         r.companionPackage = s.installCompanion ? s.companionPackage : null;
         r.replaceNup = s.replaceNup; r.deleteOldFirst = s.deleteOldFirst;   // Import again (GameSheet.importAgain)
@@ -2074,7 +2161,7 @@ public final class Library {
 
     /** The build's notifications (its progress, and its end while the app is not in front) need the permission; asked as upstream's Prepare asks (Ondevice) */
     private void askNotify() {
-        if (a.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+        if (android.os.Build.VERSION.SDK_INT >= 33 && a.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)   // Android 12: no such permission, nothing to ask
             a.requestPermissions(new String[] {android.Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFY);
     }
 
@@ -2134,19 +2221,20 @@ public final class Library {
         }
         PUi.add(c, steps, 16, PUi.wrap());
         boolean keys = PeanutsPrefs.hasKeys(a);
-        String game = PeanutsPrefs.gameDir(a);
+        List<String> games = PeanutsPrefs.gameDirs(a);
+        String game = games.isEmpty() ? null : games.size() == 1 ? games.get(0) : games.size() + " game folders";
         // Keys and firmware fonts are a one-time setup requirement before Build, not per-build (owner, 2026-11-13): no longer worded "Optional" here, since
         // Build itself is gated on both (GameSheet, Library.startBuild). Browsing this screen (Show my games, below) still needs only the game folder.
         PUi.add(c, PUi.body(a, LibrarySettings.KEYS_FIRMWARE_GUIDANCE), 12);
         PUi.add(c, new PUi.Setting(a, "🔑", "Keys", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.pickKeys(a)))
                 .value(keys ? "Added: prod.keys is in the app." : "Needed before building. Importing an NSP, NSZ, XCI or XCZ needs it; browsing your folders here does not.").chevron(a).view, 16);
-        PUi.add(c, new PUi.Setting(a, "📁", "Game folder", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.pickFolder(a, LibrarySettings.REQ_GAME, "Pick your game folder")))
+        PUi.add(c, new PUi.Setting(a, "📁", "Game folder", Haptics.on(Haptics.Word.TICK, v -> LibraryFolders.pick(a, dev.peanuts.folders.FolderKinds.GAMES, false)))
                 .value(game != null ? game : "Required. Every NSP, NSZ, XCI, XCZ, .nup and dump folder inside is shown on this screen.").chevron(a).view, 0);
         // P5: folded in as its own numbered step, same Setting-row shape as the other three, instead of a quiet text button below the action row
-        String updateDir = PeanutsPrefs.updateDir(a), dlcDir = PeanutsPrefs.dlcDir(a);
-        CharSequence updDlcValue = updateDir == null && dlcDir == null ? "Point at your update and DLC files if they're not inside the game folder already. Skip if everything's together."
-                : PUi.joined(updateDir != null ? "Update: " + updateDir : "Update: not set", dlcDir != null ? "DLC: " + dlcDir : null);
-        PUi.add(c, new PUi.Setting(a, "⬆️", "Updates & DLC", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.extraFolders(a))).value(updDlcValue).chevron(a).view, 0);
+        List<String> addons = PeanutsPrefs.addonDirs(a);
+        CharSequence updDlcValue = addons.isEmpty() ? "Point at your update and DLC files if they're not inside the game folder already. Skip if everything's together."
+                : addons.size() == 1 ? addons.get(0) : addons.size() + " folders";
+        PUi.add(c, new PUi.Setting(a, "⬆️", "Updates & DLC", Haptics.on(Haptics.Word.TICK, v -> LibraryFolders.pick(a, dev.peanuts.folders.FolderKinds.ADDONS, false))).value(updDlcValue).chevron(a).view, 0);
         PUi.add(c, new PUi.Setting(a, "🔤", "Firmware", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.pickFirmwareSource(a)))
                 .value(LibrarySettings.fontsValue(a, "Needed before building. A missing font can crash some games at boot.")).chevron(a).view, 0);
         PUi.Action show = PUi.action(a, R.drawable.ic_add, "Show my games", PUi.Kind.PRIMARY, v -> {

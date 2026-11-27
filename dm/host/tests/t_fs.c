@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>   // PEANUTS: concurrent image read/size/close test
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -194,6 +195,18 @@ static void nup_tests(const char *root) {
     g_nmnt = 0; unsetenv("DM_ROMFS");
 }
 
+// PEANUTS begin: worker for lock-free image I/O test
+typedef struct { uint64_t h; int ok; } io_arg;
+static void *io_worker(void *vp) {
+    io_arg *a = vp; int64_t sz = 0; size_t nr = 0; char b[16] = {0};
+    if (h_fs_GetFileSize(&sz, a->h) == RES_OK && sz == 5 &&
+        h_fs_ReadFile(&nr, a->h, 0, b, sizeof b - 1) == RES_OK && nr == 5 && !strcmp(b, "only1")) {
+        h_fs_CloseFile(a->h);
+        a->ok = 1;
+    }
+    return NULL;
+}
+// PEANUTS end
 int main(void) {
     char root[1024], save[1100], work[1200], p[1200];
     const char *sp = getenv("TMPDIR"); snprintf(root, sizeof root, "%s/t_fs.XXXXXX", sp ? sp : "/private/tmp");
@@ -414,6 +427,123 @@ int main(void) {
         snprintf(p, sizeof p, "%s/a", save); CHECK(same(p, "pending"), "committed a = pending");
         g_test_users = 1;
     }
+
+    // PEANUTS begin: Unmount of add-on content, detached image slots, generation numbers, duplicate mounts, and lock-free image I/O
+    printf("⑩ Unmount of add-on content (multi-DLC): folder, RomFS image, slot reuse, and open handles\n");
+    {   extern int g_test_users; g_test_users = 1; g_nmnt = 0;
+        char aocd[1100], d1[1200], d2[1200], f[1300];
+        snprintf(aocd, sizeof aocd, "%s/aocd", root); mkdir(aocd, 0755);
+        snprintf(d1, sizeof d1, "%s/1", aocd); mkdir(d1, 0755);
+        snprintf(d2, sizeof d2, "%s/2", aocd); mkdir(d2, 0755);
+        snprintf(f, sizeof f, "%s/dlc1.txt", d1); put(f, "one");
+        snprintf(f, sizeof f, "%s/shared.txt", d1); put(f, "from1");
+        snprintf(f, sizeof f, "%s/dlc2.txt", d2); put(f, "two");
+        snprintf(f, sizeof f, "%s/shared.txt", d2); put(f, "from2");
+        setenv("DM_AOC_DIR", aocd, 1);
+
+        CHECK(h_fs_MountAoc("aoc", 1, NULL, 0) == RES_OK, "mount add-on 1 folder as aoc:");
+        CHECK(read_fs("aoc:/dlc1.txt", got, sizeof got) && !strcmp(got, "one"), "reads add-on 1's file");
+        CHECK(read_fs("aoc:/shared.txt", got, sizeof got) && !strcmp(got, "from1"), "reads add-on 1's shared file");
+        h_fs_Unmount("aoc");
+        CHECK(!h_fs_IsMounted("aoc"), "Unmount frees aoc: even with one user");
+        CHECK(h_fs_MountAoc("aoc", 2, NULL, 0) == RES_OK && g_nmnt == 1, "mount add-on 2 folder as aoc:, reusing slot 0");
+        CHECK(read_fs("aoc:/dlc2.txt", got, sizeof got) && !strcmp(got, "two"), "reads add-on 2's file");
+        CHECK(read_fs("aoc:/shared.txt", got, sizeof got) && !strcmp(got, "from2"), "reads add-on 2's shared file");
+        uint64_t fh = 0;
+        CHECK(h_fs_OpenFile(&fh, "aoc:/dlc1.txt", MODE_READ) != RES_OK, "add-on 1's file is no longer on aoc:");
+        h_fs_Unmount("aoc");
+
+        // RomFS images 1.img (/a="dlc1", /u="only1") and 2.img (/a="dlc2", /u="only2")
+        char aoci[1100], ip1[1200], ip2[1200], ip3[1200];
+        snprintf(aoci, sizeof aoci, "%s/aoci", root); mkdir(aoci, 0755);
+        snprintf(ip1, sizeof ip1, "%s/1.img", aoci); snprintf(ip2, sizeof ip2, "%s/2.img", aoci); snprintf(ip3, sizeof ip3, "%s/3.img", aoci);
+        {   uint8_t img[32 + 9 + 3 * 24 + 2] = {0}; uint64_t hd[3] = {41, 3 * 24 + 2, 3};
+            img_ent e[3] = {{1, 2, 0, 0, 0, 0}, {32, 4, 0, 1, 1, 0}, {36, 5, 1, 1, 1, 0}};
+            memcpy(img, "DMROMFS1", 8); memcpy(img + 8, hd, sizeof hd); memcpy(img + 32, "dlc1only1", 9); memcpy(img + 41, e, sizeof e); memcpy(img + 41 + sizeof e, "au", 2);
+            FILE *fp = fopen(ip1, "wb"); fwrite(img, 1, sizeof img, fp); fclose(fp);
+            memcpy(img + 32, "dlc2only2", 9);
+            fp = fopen(ip2, "wb"); fwrite(img, 1, sizeof img, fp); fclose(fp);
+            fp = fopen(ip3, "wb"); fwrite("DMROMFS1", 1, 8, fp); fclose(fp);
+        }
+        setenv("DM_AOC_DIR", aoci, 1); g_nmnt = 0;
+        int cycles = 0;
+        for (; cycles < MAX_MOUNT + 8; cycles++) {
+            int idx = (cycles & 1) ? 2 : 1;
+            if (h_fs_MountAoc("aoc", idx, NULL, 0) != RES_OK) break;
+            if (!read_fs("aoc:/a", got, sizeof got) || strcmp(got, idx == 1 ? "dlc1" : "dlc2")) break;
+            h_fs_Unmount("aoc");
+            if (g_mnt[0].img != NULL) break;
+        }
+        CHECK(cycles == MAX_MOUNT + 8 && g_nmnt == 1 && !g_mnt[0].img, "%d image mount/unmount cycles reuse slot 0 and close each image", MAX_MOUNT + 8);
+
+        // Open file handle kept across Unmount("aoc") + MountAoc("aoc", 2): mount slot 0 is freed immediately while detached image slot stays alive
+        CHECK(h_fs_MountAoc("aoc", 1, NULL, 0) == RES_OK, "mount add-on 1 image");
+        int si1 = g_mnt[0].img_slot;
+        uint64_t h1 = 0; CHECK(h_fs_OpenFile(&h1, "aoc:/u", MODE_READ) == RES_OK && h1, "open aoc:/u on add-on 1");
+        h_fs_Unmount("aoc");
+        CHECK(!g_mnt[0].name[0] && g_mnt[0].img == NULL && g_imgs[si1].img != NULL && g_imgs[si1].closing, "unmounted with an open file: mount slot freed, detached image kept alive");
+        CHECK(h_fs_MountAoc("aoc", 2, NULL, 0) == RES_OK && g_nmnt == 1 && g_mnt[0].img_slot != si1, "mount add-on 2 reuses mount slot 0 immediately with a new image slot");
+        CHECK(read_fs("aoc:/a", got, sizeof got) && !strcmp(got, "dlc2"), "aoc: now reads add-on 2");
+        size_t nread = 0; memset(got, 0, sizeof got);
+        CHECK(h_fs_ReadFile(&nread, h1, 0, got, sizeof got - 1) == RES_OK && nread == 5 && !strcmp(got, "only1"), "the open handle from add-on 1 still reads add-on 1 (%s)", got);
+        h_fs_CloseFile(h1);
+        CHECK(g_imgs[si1].img == NULL && !g_imgs[si1].in_use, "closing the last open handle closes the detached unmounted image and frees its image slot");
+        h_fs_Unmount("aoc");
+
+        // Duplicate mount + single unmount, and conflicting duplicate mount (0x7802)
+        CHECK(h_fs_MountAoc("aoc", 1, NULL, 0) == RES_OK, "duplicate mount test: first mount aoc 1");
+        CHECK(h_fs_MountAoc("aoc", 1, NULL, 0) == RES_OK && g_mnt[0].mount_refs == 2, "duplicate mount of same target increments mount_refs");
+        CHECK(h_fs_MountAoc("aoc", 2, NULL, 0) == RES_MOUNT_NAME_EXISTS, "duplicate mount of different target under same name returns 0x7802");
+        h_fs_Unmount("aoc");
+        CHECK(h_fs_IsMounted("aoc") && read_fs("aoc:/a", got, sizeof got) && !strcmp(got, "dlc1"), "single Unmount keeps mount alive while mount_refs > 0");
+        h_fs_Unmount("aoc");
+        CHECK(!h_fs_IsMounted("aoc"), "second Unmount frees mount when mount_refs reaches 0");
+
+        // Handle generation mismatch after image slot reuse
+        CHECK(h_fs_MountAoc("aoc", 1, NULL, 0) == RES_OK, "generation test: mount add-on 1");
+        int gsi = g_mnt[0].img_slot; uint16_t gen1 = g_imgs[gsi].gen;
+        uint64_t stale_h = 0; CHECK(h_fs_OpenFile(&stale_h, "aoc:/u", MODE_READ) == RES_OK && stale_h, "open handle on add-on 1");
+        h_fs_CloseFile(stale_h);
+        h_fs_Unmount("aoc");
+        CHECK(h_fs_MountAoc("aoc", 2, NULL, 0) == RES_OK && g_mnt[0].img_slot == gsi && g_imgs[gsi].gen != gen1, "reusing image slot increments generation");
+        uint64_t h2 = 0; CHECK(h_fs_OpenFile(&h2, "aoc:/u", MODE_READ) == RES_OK && atomic_load(&g_imgs[gsi].refs) == 1, "open handle on add-on 2 (refs=1)");
+        int64_t stale_sz = -1;
+        CHECK(h_fs_ReadFile(&nread, stale_h, 0, got, sizeof got - 1) != RES_OK, "stale handle ReadFile fails after slot reuse");
+        CHECK(h_fs_GetFileSize(&stale_sz, stale_h) != RES_OK, "stale handle GetFileSize fails after slot reuse");
+        h_fs_CloseFile(stale_h);
+        CHECK(atomic_load(&g_imgs[gsi].refs) == 1, "stale handle CloseFile does not unbalance new image's refcount (refs=%d)", atomic_load(&g_imgs[gsi].refs));
+        CHECK(h_fs_ReadFile(&nread, h2, 0, got, sizeof got - 1) == RES_OK && nread == 5 && !strcmp(got, "only2"), "new handle still reads add-on 2");
+        h_fs_CloseFile(h2);
+        h_fs_Unmount("aoc");
+
+        // Failed soft add-on mount cleans up slot without leaking
+        CHECK(h_fs_MountAoc("aoc", 3, NULL, 0) == RES_TARGET_NOT_FOUND && !h_fs_IsMounted("aoc"), "failed soft add-on mount returns target not found and does not leave mount");
+        CHECK(h_fs_MountAoc("aoc", 1, NULL, 0) == RES_OK && g_nmnt == 1, "subsequent mount reuses slot cleanly after failed soft mount");
+
+        // Image ReadFile / GetFileSize / CloseFile do not block on g_path_lock (simulating Android save commit/copy)
+        uint64_t ch = 0; CHECK(h_fs_OpenFile(&ch, "aoc:/u", MODE_READ) == RES_OK && ch, "open handle for lock-free I/O test");
+        h_fs_Unmount("aoc");
+        pthread_mutex_lock(&g_path_lock);
+        io_arg arg = {ch, 0};
+        pthread_t th; pthread_create(&th, NULL, io_worker, &arg);
+        pthread_join(th, NULL);
+        pthread_mutex_unlock(&g_path_lock);
+        CHECK(arg.ok, "image GetFileSize, ReadFile, and CloseFile complete while g_path_lock is held");
+
+        // Multi-user save slot with open save fd is not reused by non-save mount until fd closes
+        g_nmnt = 0; g_test_users = 2;
+        CHECK(h_fs_MountSave("save", NULL) == RES_OK, "multi-user: mount save in slot 0");
+        uint64_t sfh = 0; CHECK(h_fs_OpenFile(&sfh, "save:/a", MODE_WRITE) == RES_OK && sfh, "open save file on slot 0");
+        h_fs_Unmount("save");
+        CHECK(h_fs_MountAoc("aoc", 1, NULL, 0) == RES_OK && g_nmnt == 2 && !strcmp(g_mnt[1].name, "aoc"), "non-save mount skips slot 0 while save fd is open");
+        h_fs_Unmount("aoc");
+        h_fs_CloseFile(sfh);
+        CHECK(h_fs_MountAoc("aoc", 1, NULL, 0) == RES_OK && g_nmnt == 2 && !strcmp(g_mnt[0].name, "aoc"), "once save fd closes, slot 0 can be reused");
+        h_fs_Unmount("aoc");
+        g_test_users = 1;
+        unsetenv("DM_AOC_DIR");
+    }
+    // PEANUTS end
 
     char cmd[1200]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", root); system(cmd);
     printf("== %d checks, %d failed ==\n", checks, fails);

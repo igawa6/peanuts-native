@@ -285,8 +285,14 @@ class Main(Base):
         return Path(seen['DM_ROOT']), said
 
     def test_asks_for_nothing_and_builds_beside_the_dump(self):
+        # PEANUTS begin: a dump of a game with a profile in dm/games, whose registered version is an update: Breath of the Wild 1.9.0 (TID's profile, Donkey Kong
+        # Bananza, is a Switch 2 profile Peanuts Native does not carry)
+        botw, ver = 0x01007EF00011E000, 1114112
+        self.dump = self.dump.parent / 'botw'
+        version(self.dump / 'base', tid=botw, marker='old'); version(self.dump / f'updates/{ver}', tid=botw, main=b'new code', marker='new')
         work, said = self.run_main()
-        self.assertEqual(work, self.dump / f'{TID:016X}_build')
+        self.assertEqual(work, self.dump / f'{botw:016X}_build')
+        # PEANUTS end
         self.assertTrue(any(s.startswith('a dump folder: ') for s in said), said)
 
     def test_title_id_must_match(self):

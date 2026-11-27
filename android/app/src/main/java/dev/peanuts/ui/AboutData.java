@@ -19,7 +19,7 @@ final class AboutData {
     };
 
     /** The contributors of the README's list, davdxpx first, then in the README's order */
-    static final String[] CONTRIBUTED = {"davdxpx", "intermission88", "elliott-groves", "tapionallanaire", "dnyan007", "skyhong2002", "ssv0225", "999sian", "ts-miller", "shamonj03", "fireworksordie", "nomnomab", "danielcamilo1", "g0giberry", "gerdguerrero", "ArchOwlen"};
+    static final String[] CONTRIBUTED = {"davdxpx", "intermission88", "elliott-groves", "tapionallanaire", "dnyan007", "skyhong2002", "ssv0225", "999sian", "ts-miller", "shamonj03", "fireworksordie", "nomnomab", "danielcamilo1", "g0giberry", "gerdguerrero", "thehobbit85", "zelkibuilds", "Tauburn42", "Alliance-Sky", "buinghia98", "bryan-era24", "marojiro", "codetz7", "ArchOwlen"};
 
     /** Built on: name, what it is, its license, its page */
     static final String[][] BUILT_ON = {

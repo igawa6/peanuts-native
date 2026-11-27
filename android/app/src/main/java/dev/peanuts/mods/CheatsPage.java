@@ -396,7 +396,7 @@ public final class CheatsPage {
     private static void cheats(Activity a, LinearLayout content, Model m) {
         Game g = m.g;
         LinearLayout first = PUi.add(content, PUi.listCard(a), 12);
-        PUi.Setting show = new PUi.Setting(a, "", "Show in the game", null).value("The Mods tab in the in-game panel")
+        PUi.Setting show = new PUi.Setting(a, "", "Show in the game", null).value("The Cheats and Mods tabs in the quick menu")
                 .toggle(a, PeanutsPrefs.modsTab(a, g.titleId), (b, x) -> { Feel.toggled(b, x); PeanutsPrefs.modsTab(a, g.titleId, x); explainShow(a, x, b); });
         rowLook(show.view, "controller");
         show.view.setOnClickListener(v -> show.toggle.toggle());
@@ -675,7 +675,7 @@ public final class CheatsPage {
         e.icon = "controller";
         e.title = "Show in the game";
         e.place = "Mods & Cheats";
-        e.text = "The Mods tab of the in-game panel, for this game. Off hides the tab; the cheats you turned on still run.";
+        e.text = "The Cheats and Mods tabs of the quick menu, for this game. Off hides them; the cheats you turned on still run.";
         e.on = on;
         e.flip = sw::toggle;
         e.key = "mods-show";

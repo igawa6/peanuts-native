@@ -35,6 +35,7 @@ public final class GameScreen extends Presentation {
     private BananaBackgroundView bg;
     private StartView start;
     private StatsView stats;
+    private android.view.View grip;   // the in-game menu's grip on the Now playing page (the stats page has its own)
 
     private GameScreen(Activity game, Display d) { super(game, d, R.style.Theme_Banana); }
 
@@ -86,6 +87,9 @@ public final class GameScreen extends Presentation {
     /** The build tag (GameActivity.fpsTick), always shown small on the stats page; null: none */
     public static void buildTag(CharSequence tag) { if (shown != null && shown.stats != null) shown.stats.buildTag(tag); }
 
+    /** The top screen's start screen went at the game's first frame (StartCover): the start page gives way with it */
+    static void refresh() { if (shown != null) shown.apply(); }
+
     /** After the companion's window is up, so the display never shows Android's launcher between the two */
     public static void closeSoon() { UI.postDelayed(GameScreen::close, 250); }
 
@@ -103,7 +107,8 @@ public final class GameScreen extends Presentation {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);   // the game keeps the controller
         getWindow().setDecorFitsSystemWindows(false);
         getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(PUi.col(getContext(), R.color.bn_bg)));
-        FrameLayout root = new FrameLayout(getContext());
+        boolean menuHere = dev.peanuts.ingame.BottomMenu.on(getContext());   // a swipe up from the bottom edge opens the in-game menu here (BottomMenu.edgeRoot)
+        FrameLayout root = menuHere ? dev.peanuts.ingame.BottomMenu.edgeRoot(getContext()) : new FrameLayout(getContext());
         root.setBackgroundColor(PUi.col(getContext(), R.color.bn_bg));
         bg = new BananaBackgroundView(getContext());
         root.addView(bg, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -112,6 +117,10 @@ public final class GameScreen extends Presentation {
         stats = new StatsView(getContext());
         stats.setVisibility(android.view.View.GONE);
         root.addView(stats, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        if (menuHere) {   // the grip shows where (the stats page has its own)
+            grip = dev.peanuts.ingame.BottomMenu.grip(getContext());
+            root.addView(grip);
+        }
         setContentView(root);
     }
 
@@ -122,14 +131,16 @@ public final class GameScreen extends Presentation {
     /** Loading: drifting, breathing, gliding. Playing: the game's live stats (StatsView), or a still page with its cover (Settings › Library) */
     private void apply() {
         if (start == null) return;
-        boolean loading = mode == LOADING;
+        boolean starting = mode != LOADING && StartCover.waiting();   // Smooth Experience's start screen waits for the game's first frame on the top screen
+        boolean loading = mode == LOADING || starting;
         boolean live = !loading && PeanutsPrefs.bottomScreenGamesPage(getContext()).equals(PeanutsPrefs.GAMES_STATS);
         start.setVisibility(live ? android.view.View.GONE : android.view.View.VISIBLE);
         stats.setVisibility(live ? android.view.View.VISIBLE : android.view.View.GONE);
         if (live) stats.bind(name, icon, dev.peanuts.Companion.startedAt());
         stats.setRunning(live);
         start.bind(name, icon);
-        start.status(loading ? "Starting the companion" : "Now playing");
+        start.status(starting ? "Starting the game" : loading ? "Starting the companion" : "Now playing");
+        if (grip != null) grip.setVisibility(!loading && !live ? android.view.View.VISIBLE : android.view.View.GONE);
         start.quiet(!loading);
         start.setAnimating(loading);
         bg.setRunning(loading);

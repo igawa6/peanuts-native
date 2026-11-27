@@ -419,8 +419,11 @@ VkDescriptorSet vka_bindless_set(void);
 uint32_t vka_bindless_tex_slots(void);        // PEANUTS: the pool's sampled-image table length, 0 without the pool set
 VkDescriptorSetLayout vka_bindless_layout(void);
 void vka_barrier_at(VkCommandBuffer cb, const char *file, int line);   // a full memory barrier (the replay orders every transfer op after the previous one)
+void vka_barrier_stages_at(VkCommandBuffer cb, VkPipelineStageFlags src, VkAccessFlags src_acc, VkPipelineStageFlags dst, VkAccessFlags dst_acc, const char *file, int line);   // PEANUTS: stage-scoped memory barrier
 void vka_xp_ts(VkCommandBuffer cb, int site);   // DM_VK_XP_TS experiment (vka_tex.c)
 #define vka_barrier(cb) vka_barrier_at(cb, __FILE_NAME__, __LINE__)   // the site names the step that ends there in DM_VK_GPUPROF's report (vka_gprof.c)
+#define vka_barrier_stages(cb, s, sa, d, da) vka_barrier_stages_at(cb, s, sa, d, da, __FILE_NAME__, __LINE__)   // PEANUTS
+int vka_bar_scoped(void);   // PEANUTS: DM_VK_BAR_SCOPED (live, default 1); 0: every vka_barrier_stages is a full barrier again and vka_gbar.c classifies barriers as before #505/#562
 // The barrier a dispatch leaves pending (vka_draw.c vka_dispatch, "Dispatch order"): NVN orders one dispatch against the next only through the game's own barriers, so the
 // replay records the barrier after a dispatch only before other GPU work in the same command buffer (vka_disp_settle). Any full barrier recorded into it meanwhile settles it
 extern _Atomic(VkCommandBuffer) vka_disp_pend;
@@ -518,6 +521,7 @@ typedef struct vka_shader {
     struct vka_memu_sh *memu_d;         // a task / mesh shader drawn through compute: its layout and compute / vertex forms (vka_memu.c), made at its first draw
     uint8_t memu;                       // such a form itself: 1 a task / mesh shader as compute (the arena, records and push constant in its layout), 2 a generated vertex shader (the arena)
     uint64_t chash;                     // its library entry's hash (vka_shlib_entry_hash), for the pipeline cache's stamp (vka_pso.c); 0 = not in the library
+    vkrs_fb rs_fb;                      // PEANUTS: the 2D textures it fetches from or sizes by pixel (vkrs_spv_scan, #703): the ones rs_fetch_fix brings to one scale
     uint8_t rs_fetch;                   // PEANUTS: it reads the support buffer's render_scale[1 + i] (a fetch by pixel or a size query of a 2D texture: vka_resscale.h vkrs_spv_scan), read only while DM_RES_SCALE is on
 } vka_shader;
 // An instanced variant's key (vka_draw.c's instanced runs): its base shader's key XOR this. It is no key of the shader library, and the variant depends on the uniform
@@ -617,7 +621,8 @@ void vka_draw_cb_switch(VkCommandBuffer cb);
 void vka_dyn_invalidate(void);                       // the draws' dynamic state is set again in full at the next draw (another pipeline was bound)
 int vka_pass_keep(void);                             // DM_VK_PASS_KEEP=0: a SET_RT ends the pass, as before
 void vka_rp_set_rt(const p_set_rt *rt);              // OP_SET_RT while a pass stays open: notes a continuation of the same targets
-int vka_rp_ub_defer(uint64_t dst, uint64_t n, const void *data);   // OP_UPDATE_UB while a pass is open: 1 = kept for the pass's UBOs and flushed at vka_rp_end
+int vka_rp_ub_defer(uint64_t dst, uint64_t n, const void *data);   // OP_UPDATE_UB while a pass is open (PEANUTS: or outside with DM_VK_UB_DEFER_OUTSIDE): 1 = kept for the pass's UBOs and flushed at vka_rp_end / vka_ub_flush
+void vka_ub_flush(void);   // PEANUTS: flush deferred inline uniform updates when no pass is open
 int vka_rp_open_for(const p_set_rt *rt, int has_rt);   // a pass is open over these targets
 int vka_rp_on(void);                                 // a pass is open
 int vka_mesh_on(void);                               // VK_EXT_mesh_shader is on (and its draws are not drawn through compute)
@@ -708,10 +713,12 @@ void vka_present_init(void);
 // The overlay's counts (vka_fps.c): each image the present thread handed to the swapchain (shown), the game's own or a generated one; frame generation's state
 void vka_fps_note(int shown, int generated);
 void vka_fps_fg(int state, int mult);
-// Frame generation (vka_framegen.c; LSFG in lsfg/, GPL-3.0-or-later): for the game frame about to be presented (its window texture, crop, period, timeline value and NVN format), the images
+// PEANUTS(upstream-candidate): Frame generation (vka_framegen.c; LSFG in lsfg/, GPL-3.0-or-later): for the game frame about to be presented (its window texture, crop, period, timeline value, NVN format,
+// and the previous game frame's display-acquire and game-wait durations in seconds), the images
 // to present before it (gen, at most VKA_FG_MAX, the present takes its own references), how long each image of this frame should stay (hold, seconds; 0 = the game's period)
 // and the output period for the window's frame rate (0 = frame generation off). Present thread only
 enum { VKA_FG_MAX = 3 };
-int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence, int format, vka_img **gen, double *hold, double *out_period);
+int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence, int format,
+                 double acq_s, double game_wait_s, vka_img **gen, double *hold, double *out_period);   // PEANUTS(upstream-candidate): acq_s, game_wait_s
 uint64_t vka_refresh_ns(void);   // vka_present.c: the panel's refresh period in ns from display timing, 0 when not known (present thread)
 #include "vka_tf.h"   // PEANUTS: NVN transform feedback (vka_tf.c)

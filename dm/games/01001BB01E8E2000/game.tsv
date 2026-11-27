@@ -1,0 +1,26 @@
+# PEANUTS: FANTASIAN Neo Dimension, Unity 2022.3.30f1 IL2CPP / NVN.
+title_id	01001BB01E8E2000
+program_id	01001BB01E8E2000
+name	FANTASIAN Neo Dimension
+ipa	FantasianNeoDimension.ipa
+app_category	public.app-category.games
+
+build	v0	1.0.0	main=7f7f24ffaac0693b63f61d375b5e42ef	subsdk0=29b829cc3bb8021bbd447c98f71a66f2	sdk=71b1a025aa30641a53aa4fc53ca742a6
+build	v131072	1.0.2	main=5f32560bdbf4f4a93a6ad8cb96e1fe47	subsdk0=29b829cc3bb8021bbd447c98f71a66f2	sdk=71b1a025aa30641a53aa4fc53ca742a6
+package	v131072
+shader_versions	v131072
+
+modules	main subsdk0 sdk
+romfs_marker	Data/Managed/Metadata/global-metadata.dat
+zip_store	.assets:.config:.contdata:.dat:.lua:.ress:.metallib
+
+# Both builds' nninitStartup reserves pool minus used memory in the alias region.
+# Unity exhausted a 1 GiB pool during fresh-save startup on Android.
+mem_reserve	0x140000000
+mem_alias	0x100000000
+mem_stack	0x28000000
+app_pool	0x80000000
+sys_resource	0x1000000
+
+shader_groups	/Data/=data
+shader_note	FANTASIAN Neo Dimension shaders

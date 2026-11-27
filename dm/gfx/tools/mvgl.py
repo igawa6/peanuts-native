@@ -54,7 +54,15 @@ def doboz(b):
 # A file whose stored length is below its length is one LZ4 block (not doboz). The layout is told by its tables ending exactly at the data start.
 def wide(h):
     nt, nn, nd, start, size = struct.unpack_from('<IIIQQ', h, 4)
-    return 0x20 + nt * 16 + nn * 0x80 + nd * 16 == start
+    return 0x20 + nt * 16 + nn * 0x80 + nd * 16 == start or 0x20 + nt * 16 + nn * 0x80 + nd * 24 == start   # PEANUTS: or 24-byte data entries (data_entry)
+# PEANUTS end
+
+
+# PEANUTS begin: The Hundred Line -Last Defense Academy- (010093C0215B4000, RomFS *.nx64.mvgl): the same 64-bit layout, but data entries of 24 bytes each
+# (u64 offset, u64 length, u64 stored length). Told the same way, by the tables ending exactly at the data start; 16 is tried first, so Digimon's archives read as before
+def data_entry(h):
+    nt, nn, nd, start, size = struct.unpack_from('<IIIQQ', h, 4)
+    return 16 if 0x20 + nt * 16 + nn * 0x80 + nd * 16 == start else 24 if 0x20 + nt * 16 + nn * 0x80 + nd * 24 == start else 0
 # PEANUTS end
 
 
@@ -65,14 +73,15 @@ class Archive:
         h = self.f.read(0x20); self.f.seek(0x14); self.wide = h[:4] == b'MDB1' and wide(h)
         if self.wide:
             nt, nn, nd, self.start, self.size = struct.unpack_from('<IIIQQ', h, 4); self.f.seek(0x20)
-            tree, names, data = self.f.read(nt * 16), self.f.read(nn * 0x80), self.f.read(nd * 16)
+            de = data_entry(h); fmt = '<QII' if de == 16 else '<QQQ'   # PEANUTS: 24-byte data entries (data_entry, above)
+            tree, names, data = self.f.read(nt * 16), self.f.read(nn * 0x80), self.f.read(nd * de)
             self.files = {}
             for k in range(nt):
                 idx = struct.unpack_from('<I', tree, k * 16 + 4)[0]
                 if idx == 0xffffffff: continue
                 ext = names[k * 0x80:k * 0x80 + 4].rstrip(b'\0 ').decode('latin1')
                 name = names[k * 0x80 + 4:(k + 1) * 0x80].split(b'\0')[0].decode('latin1')
-                off, n, cn = struct.unpack_from('<QII', data, idx * 16)
+                off, n, cn = struct.unpack_from(fmt, data, idx * de)   # PEANUTS: the entry size and format of data_entry
                 self.files[name + '.' + ext] = (self.start + off, n, cn)
             return
         # PEANUTS end

@@ -44,6 +44,10 @@ gpu_timestamps	segment
 tex_flush_upload	on
 # Some title backgrounds are filled after initialization without an NVN flush.
 tex_dirty_upload	on
+# PEANUTS: buffers in the game's 1.3 GiB memory pool (0x405e200000+0x53840000) lie across two of its placed parts that join to 288 to 368 MiB, past the
+# 256 MiB default: they were not joined and their draws were skipped (missing textures, a black box; GitHub issues #394, #651). With 512 a 6 GB phone
+# joined every range (24 joins, the largest 192 MiB in 123 ms, no "not joined" line). DM_VK_PLACE_JOIN_MB still overrides it
+place_join_mb	512
 
 # ---- Shader split ----
 shader_groups	/Enlighten/=enlighten /movie/=movie /sound/=sound /movie_logo/=movielogo

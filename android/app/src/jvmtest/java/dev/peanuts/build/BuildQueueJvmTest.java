@@ -146,6 +146,9 @@ public final class BuildQueueJvmTest {
             same(Arrays.asList(A, B), ids(r.waiting()), "before the others");
             same(t, r.get(a.id).tries, "its tries");
             same(1, r.place(r.get(a.id)), "its place stays");
+            check(r.get(a.id).cut, "it is marked as cut off (the service looks up what ended it)");   // PEANUTS: #348
+            check(!r.get(b.id).cut, "the one that only waited is not");
+            same("prepare", r.get(a.id).step, "the step it was cut off in is kept");
             r.start(a.id, now++);
         }
         BuildQueue last = new BuildQueue(f);
@@ -155,6 +158,7 @@ public final class BuildQueueJvmTest {
         check(s.message.contains("ended " + BuildQueue.MAX_TRIES + " times"), "it says why: " + s.message);
         same(b.id, last.next().id, "the queue goes on with the next");
         same("1 of 2", last.placeText(s), "it keeps its place in the batch");
+        check(!new BuildQueue(f).get(b.id).cut, "the mark is not in the file: a queue read again marks only what still ran");   // PEANUTS: #348
     }
 
     /** A failed or stopped item does not stop the queue */

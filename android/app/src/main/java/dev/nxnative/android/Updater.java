@@ -177,7 +177,7 @@ final class Updater {
         HttpsURLConnection c = open(UpdateCheck.busted(s.api, Long.toString(System.currentTimeMillis())), s.accept, s.name, API_CONNECT_MS, API_READ_MS, true);
         String body;
         try (InputStream in = c.getInputStream()) {
-            byte[] b = in.readNBytes(MAX_LIST + 1);
+            byte[] b = Streams.readUpTo(in, MAX_LIST + 1);   // PEANUTS: Android 12 (Streams: in.readNBytes from API 33)
             if (b.length > MAX_LIST) throw new Failure(s.name + "'s answer is too large");
             body = new String(b, StandardCharsets.UTF_8);
         } finally { c.disconnect(); }
@@ -469,18 +469,31 @@ final class Updater {
         Log.i(TAG, "install session " + id + " committed");
     }
 
+    // PEANUTS begin: Android 12 defence in depth (the receiver already requires the app's signature permission there): the Intent the installer hands back is
+    // its confirmation screen, CONFIRM_INSTALL, never one that opens this app's own screens or carries URI grants of this app. Not used from API 33 (the flow as before)
+    static boolean confirmIntent(Context c, Intent confirm) {
+        if (!"android.content.pm.action.CONFIRM_INSTALL".equals(confirm.getAction())) return false;
+        String own = c.getPackageName();
+        if (own.equals(confirm.getPackage()) || (confirm.getComponent() != null && own.equals(confirm.getComponent().getPackageName()))) return false;
+        return (confirm.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)) == 0;
+    }
+    // PEANUTS end
+
     /** The installer's answers: its confirmation screen (the player taps Update there), or why it failed */
     private static synchronized void receiver(Context app) {
         if (receiverOn) return;
         receiverOn = true;
-        app.registerReceiver(new BroadcastReceiver() {
+        BroadcastReceiver rx = new BroadcastReceiver() {   // PEANUTS: Android 12 (registered below)
             @Override public void onReceive(Context c, Intent i) {
                 int st = i.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
                 String msg = i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
                 Activity a = front.get();
                 if (st == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-                    Intent confirm = i.getParcelableExtra(Intent.EXTRA_INTENT, Intent.class);
+                    @SuppressWarnings("deprecation")   // PEANUTS: Android 12: the typed overload is API 33, Android 12 has only the untyped one
+                    Intent confirm = android.os.Build.VERSION.SDK_INT >= 33 ? i.getParcelableExtra(Intent.EXTRA_INTENT, Intent.class) : (Intent) i.getParcelableExtra(Intent.EXTRA_INTENT);
                     if (confirm == null) return;
+                    if (android.os.Build.VERSION.SDK_INT < 33 && !confirmIntent(c, confirm)) { Log.w(TAG, "installer answer ignored: not the install confirmation"); return; }   // PEANUTS
                     if (a != null && !gone(a)) a.startActivity(confirm);
                     else c.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 } else if (st == PackageInstaller.STATUS_SUCCESS) {
@@ -491,6 +504,9 @@ final class Updater {
                         msg(a, "Update not installed", msg != null ? msg : "The installer answered status " + st + ".");
                 }
             }
-        }, new IntentFilter(app.getPackageName() + ACTION), Context.RECEIVER_NOT_EXPORTED);
+        };
+        // PEANUTS: from API 33 not exported (the call as before); on Android 12 the app's signature permission (InternalBroadcast): the installer answers through
+        // this app's own PendingIntent (explicit to this package), which is sent as this app and so holds it
+        dev.peanuts.InternalBroadcast.register(app, rx, new IntentFilter(app.getPackageName() + ACTION));
     }
 }

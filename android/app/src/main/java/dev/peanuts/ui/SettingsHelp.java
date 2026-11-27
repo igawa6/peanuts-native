@@ -26,10 +26,10 @@ public final class SettingsHelp {
     static {
         Map<String, Help> m = new HashMap<>();
         // Library
-        put(m, "Game folder", "The folder the app looks in for your games: NSP, NSZ, XCI and XCZ files, .nup files and dump folders. Everything inside shows on Home.", "Not set");
-        put(m, "Update folder", "Another folder with game updates as NSP or NSZ files, matched to their games by title ID. Hold the row to forget the folder.", "Not set");
-        put(m, "DLC folder", "Another folder with DLC as NSP or NSZ files, matched to their games by title ID. Hold the row to forget the folder.", "Not set");
-        put(m, "Build folders", "Where new builds are written, on the phone or on an SD card. The first folder is the default, and a game's sheet can pick another.", null);
+        put(m, "Game folder", "A folder the app looks in for your games: NSP, NSZ, XCI and XCZ files, .nup files and dump folders. Everything inside shows on Home. Open it to remove it from the list; its files stay where they are.", null);
+        put(m, "Update and DLC folder", "A folder with game updates and DLC as NSP or NSZ files, matched to their games by title ID. Open it to remove it from the list; its files stay where they are.", null);
+        put(m, "Build folder", "Where new builds are written, on the phone or on an SD card. The first folder is the default, and a game's sheet can pick another.", null);
+        put(m, "Add folder", "Adds a folder with games, with updates and DLC, or for builds: it asks what is in it, then opens the folder picker. Add several in a row, on the phone and on an SD card.", null);
         put(m, "Folders", "One game's folders: where its game files, its pack and its saves are. With more than one game, it asks which game first.", null);
         put(m, "Rescan", "Reads the folders again, for games you added or removed while the app was open.", null);
         put(m, "Free up space", "Deletes the original dump of a game that is built already. The game keeps playing from its build. Keep the original while a later update may come: an update needs it.", null);
@@ -46,7 +46,7 @@ public final class SettingsHelp {
         put(m, "Resolution scale", "Draws the game's picture at a multiple of the size the game asks for. Above 1x is sharper and needs more of the GPU, below 1x is lighter. From the next start.", "1x");
         put(m, "Upscaler", "How the game's picture is scaled up to the screen. FSR and SGSR also sharpen it, the plain filters only scale.", "SGSR 1");
         put(m, "FSR sharpness", "How strongly FSR sharpens the picture. Higher is crisper and can show hard edges.", "Default");
-        put(m, "CRT filter", "Draws the picture as a CRT shows it: scanlines, and for the CRT looks an aperture-grille mask and a vignette, curved as well. A game can have its own, and the in-game panel changes it live.", "Off");
+        put(m, "CRT filter", "Draws the picture as a CRT shows it: scanlines, and for the CRT looks an aperture-grille mask and a vignette, curved as well. A game can have its own, and the quick menu changes it live.", "Off");
         put(m, "Dynamic resolution", "Lets a game draw smaller while a scene is heavy, so its frame rate holds.", "40%");
         put(m, "Frame rate cap", "The highest frame rate games run at. A lower cap saves battery and keeps the device cooler.", "60 fps");
         put(m, "Frame generation", "Draws frames between the game's own, for smoother motion with a little more input delay. Needs Lossless.dll.", "Off");
@@ -54,11 +54,10 @@ public final class SettingsHelp {
         put(m, "Overlay", "Shows the frame rate and other values over the game. Tap the row to pick what it shows.", "On");
         // Controls
         put(m, "Button mapping", "Which button of your controller presses which Switch button. A game can have its own.", null);
-        put(m, "Xbox button label swap", "For a controller labelled like an Xbox pad: whether A and B, and X and Y, change places.", "Off");
         put(m, "On-screen controls", "When the touch controls show over the game.", "Auto");
         put(m, "Show / hide button", "The small button at the top centre of the game that hides the on-screen controls.", "On");
-        put(m, "Controller: in-game panel", "How a controller opens the in-game panel. By touch it opens with a swipe in from the right edge, or Back.", "Home, or hold − and +");
-        put(m, "Mods tab", "The in-game panel's Mods tab: the game's cheats and mods while it runs. A game's own Mods & Cheats page can hide it for that game.", "On");
+        put(m, "Controller: in-game panel", "How a controller opens the in-game menus: pressed, the game menu; held, the quick menu. By touch, swipe in from the left edge for the game menu or from the right edge for the quick menu.", "Home, or hold − and +");
+        put(m, "Quick menu button", "A button of your own that opens the quick menu in a game at once. Home (on the AYN Thor: Back) still opens the game menu, and held the quick menu.", "Not set");
         put(m, "Rumble", "Lets games rumble the controller, or the phone when no controller is connected.", "On");
         // Screens
         put(m, "Bottom screen", "On a device with a second screen: the game you are on, with Play and its page, while you are in the app. Off leaves that screen to Android.", "On");
@@ -74,7 +73,12 @@ public final class SettingsHelp {
         // App
         put(m, "Haptics", "The app's touch feedback. System follows Android's setting, Off turns the app's own feedback off.", "System");
         put(m, "Motion", "The app's animations. System follows Android's setting, Reduced keeps fades and progress only.", "System");
+        put(m, "Mods tab", "The quick menu's Cheats and Mods tabs: the game's cheats and mods while it runs, each tab when the game has some. A game's own Mods & Cheats page can hide them for that game.", "On");
         put(m, "Check for updates", "Looks for a newer version of the app on GitHub.", null);
+        put(m, "Smooth Experience", "A game starts and plays without technical details: a peanut and the game's cover instead of log lines, and no notices about graphics work over the game. The parts show under it while it is on. The logs keep every detail.", "Off");
+        put(m, "Start screen", "Part of Smooth Experience: the game's cover and a peanut instead of log lines, until the game shows.", "On");
+        put(m, "Preparing graphics notice", "Part of Smooth Experience: no notice while a game makes graphics in the background. On a first run parts of the picture may be missing for a moment.", "On");
+        put(m, "Graphics driver notice", "Part of Smooth Experience: no notice when the graphics driver left out parts of the picture.", "On");
         // Help
         put(m, "Readiness check", "Checks whether this device can run your games: Android, memory, file access, the GPU and its driver, and each game's needs.", null);
         put(m, "Graphics self-test", "Draws a test picture for a few seconds, with no game, and says whether the GPU and its driver passed.", null);
@@ -84,6 +88,7 @@ public final class SettingsHelp {
         put(m, "Advanced", "Every switch the app's host offers, by area, with a search. Each starts at Auto, which writes nothing.", "Auto");
         put(m, "Tester settings", "Shows the rows made for testing in a game's settings: advanced resolution, Upscaler and Dynamic resolution.", "Off");
         put(m, "ADB control (debug)", "Lets adb commands add games, start Prepare and install GPU drivers. Turn it on only while you use adb.", "Off");
+        put(m, "Developer view", "Shows the messages only testers need, such as an unknown switch or an ignored adb command, and the in-game menu's tool words. Off, those messages go to the log only and the in-game menu says it in plain words. On for an app installed before this version, off for a new one.", null);
         ALL = Collections.unmodifiableMap(m);
     }
 

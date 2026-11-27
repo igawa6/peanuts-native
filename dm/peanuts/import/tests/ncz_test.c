@@ -192,6 +192,10 @@ int main(void) {
       for (i = 0; i < ne; i++) { uint32_t no; memcpy(&no, b + 0x10 + 0x18 * i + 0x10, 4); const char *nm = (const char *)b + 0x10 + 0x18 * ne + no; if (nz_is(nm, ".ncz")) break; }
       uint64_t sz; memcpy(&sz, b + 0x10 + 0x18 * i + 8, 8); sz -= 3000; patch(bad, 0x10 + 0x18 * i + 8, &sz, 8); free(b);
       IN_BAD; refused("a solid NCZ whose stream ends before its body does", "cut off", in, 3, TID); }
+    { char cut[700]; struct stat st; snprintf(cut, sizeof cut, "%s/cut-base.nsp", dir); damaged(g.base, cut);   // a plain NSP copied only halfway (issues #488, #674)
+      if (stat(cut, &st) || truncate(cut, st.st_size / 2)) abort();
+      const char *in[] = { cut, g.upd, a.path }; refused("a plain NSP cut off halfway", "cut-base.nsp: ", in, 3, TID);
+      CHECK(strstr(nximport_last_error(), " lies outside its file (") && strstr(nximport_last_error(), "the file is cut off"), "  the message starts with the file's name and says it is cut off (%s)", nximport_last_error()); }
 
     printf("6 Stop\n");
     { char out[700]; Prog q; memset(&q, 0, sizeof q); strcpy(q.stop_on, "unpack/"); snprintf(out, sizeof out, "%s/stop.nup", dir); const char *in[] = { p[B_SOLID], g.upd, a.path };

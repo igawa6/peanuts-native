@@ -66,7 +66,7 @@ static const char *const g_restart[] = {"DM_RES_SCALE", "DM_RES_SCALE_POT", /* P
                                         "DM_VK_PSO_ASYNC", "DM_VK_SPV_OVERRIDE", "DM_VK_TL_HOST", "DM_VK_TABLE_POOL", /* PEANUTS: handle tables through the pool (vka_shader.c tabpool) */ "DM_VK_XFB", /* PEANUTS: transform feedback (vka_tf.c) */ NULL};
 // Switches the replay reads again after a change (VKA_ENV, or at use); a table, so the log line can say which kind a key is
 static const char *const g_live[] = {"DM_VK_TABLE_PREMAKE", /* PEANUTS: a table's first textures made at the draw (vka_draw.c make_images) */ "DM_VK_DRAW", "DM_VK_STATS", "DM_VK_HANG_S", "DM_VK_HANG_EXIT", "DM_VK_FRAME_RATE", "DM_VK_FRAME_RATE_HOLD", "DM_VK_PCACHE_SAVE_S", "DM_VK_GPL_GIVEUP", "DM_VK_GPL_PROBE", "DM_VK_PREWARM_KEEP", "DM_VK_PRETRANSFORM", "DM_VK_FSR", "DM_VK_FSR_SHARP", "DM_VK_TEX_TRACK",
-                                     "DM_VK_CHUNK", "DM_VK_PASS_CLEARS", "DM_VK_PASS_KEEP", "DM_VK_DYN_FILTER", "DM_VK_PROF", "DM_VK_ROWS", "DM_VK_SYNCLOG", "DM_VK_UBWC", "DM_VK_IMG_UPGRADE", "DM_VK_DONE_LAST", "DM_VK_AFF_REPLAY", "DM_VK_AFF_ALL",
+                                     "DM_VK_CHUNK", "DM_VK_PASS_CLEARS", "DM_VK_PASS_KEEP", "DM_VK_DYN_FILTER", "DM_VK_DS_PASS" /* PEANUTS(upstream-candidate) */, "DM_VK_PROF", "DM_VK_ROWS", "DM_VK_SYNCLOG", "DM_VK_UBWC", "DM_VK_IMG_UPGRADE", "DM_VK_DONE_LAST", "DM_VK_AFF_REPLAY", "DM_VK_AFF_ALL",
                                      "DM_VK_NANSCAN_DUMP", "DM_VK_TEX_STATS", "DM_VK_TEX_STATS_LINES", "DM_VK_TEX_STATS_DRAWS", "DM_VK_TEX_STATS_TABLE", "DM_VK_RT_LOG", "DM_VK_RT_LOG_LINES", "DM_VK_VB_FILTER", "DM_VK_ENC_BATCH", "DM_VK_ENC_SPIN", "DM_VK_BAR_KEEP", "DM_VK_DRV_MEMO", "DM_VK_PUSH_DELTA", "DM_VK_UPLOAD_MT", "DM_VK_UPLOAD_MT_MIN",
                                      "DM_LSFG", "DM_LSFG_MULT", "DM_LSFG_TARGET", "DM_LSFG_FLOW", "DM_VK_DISPATCH_ORDER",
                                      "DM_VK_NDSR", "DM_VK_NDSR_SHARP", "DM_VK_NDSR_INPUT", "DM_VK_PRESENT_NEAREST", "DM_VK_CRT", "DM_VK_CRT_LINES", /* PEANUTS: the CRT filter (vka_present.c crt_copy) */ NULL};   // (the Upscaler: the in-game panel sends the first, second and fourth)
@@ -111,7 +111,7 @@ void vka_ctl_sub(void) {   // mtl_sub_begin: the submit lock is held, no submiss
 }
 
 // ---------- Frame statistics: capture and stats ----------
-extern uint64_t vka_n_rp, vka_n_bar;   // vka_draw.c, vka_tex.c
+extern uint64_t vka_n_rp, vka_n_bar, vka_n_sbar;   // vka_draw.c, vka_tex.c (PEANUTS: vka_n_sbar)
 void vka_exec_counts(uint64_t *ops, uint64_t *subs, uint64_t *rec_ns);   // vka_exec.c
 double mtl_gpu_ms(uint64_t f);
 enum { NREC = 128 };
@@ -120,7 +120,7 @@ static frec g_rec[NREC];
 static _Atomic long g_capture; static uint64_t g_cap_from, g_cap_to; static _Atomic int g_stats;
 static void snap(frec *r, uint64_t f) {
     r->frame = f; r->t = now_ns(); uint64_t pipes; vka_draw_stats(&r->draws, &r->skipped, &r->disp, &pipes);
-    r->rp = vka_n_rp; r->bar = vka_n_bar; vka_exec_counts(&r->ops, &r->subs, &r->rec_ns);
+    r->rp = vka_n_rp; r->bar = vka_n_bar + vka_n_sbar; vka_exec_counts(&r->ops, &r->subs, &r->rec_ns);   // PEANUTS: total barriers
 }
 static void cap_line(uint64_t f) {   // frame f, once its GPU time is in (8 frames on)
     const frec *a = &g_rec[f % NREC], *b = &g_rec[(f + 1) % NREC];

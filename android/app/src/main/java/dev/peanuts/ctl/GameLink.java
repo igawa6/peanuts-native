@@ -17,7 +17,7 @@ import dev.peanuts.ui.GameControls;
 
 /**
  * GameActivity registers this receiver at onCreate and lets it go at onDestroy. It takes GameLive.ACTION, which Ctl sends from the launcher's process as an
- * ordered broadcast with the app's own package set; the receiver is not exported (Context.RECEIVER_NOT_EXPORTED), so only this app's own processes reach it.
+ * ordered broadcast with the app's own package set; the receiver is not exported (Context.RECEIVER_NOT_EXPORTED; on Android 12 it requires the app's signature permission: InternalBroadcast), so only this app's own processes reach it.
  * onReceive runs on the game's main thread, where GameControls.host() is read and called as the stats page does, and sets the broadcast's result (RESULT_OK
  * and GameLive.EXTRA_ANSWER) that Ctl's final receiver reads.
  */
@@ -37,7 +37,8 @@ public final class GameLink {
             }
         };
         try {
-            game.registerReceiver(r, new IntentFilter(GameLive.ACTION), Context.RECEIVER_NOT_EXPORTED);
+            // From API 33 not exported; on Android 12 the senders need the app's signature permission (Ctl sends it from this app, with its package set)
+            dev.peanuts.InternalBroadcast.register(game, r, new IntentFilter(GameLive.ACTION));
             return r;
         } catch (RuntimeException e) {
             Log.w(Ctl.TAG, "live game commands not available: " + e);

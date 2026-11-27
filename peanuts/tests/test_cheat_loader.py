@@ -73,10 +73,10 @@ class Sources(unittest.TestCase):
         for call in ('ModsPanel.opening(', 'ModsPanel.build(', 'ModsPanel.padKey(', 'ModsPanel.shows()', 'ModsPanel.afterLayout('):
             self.assertRegex(panel, re.escape(call) + r'.*// PEANUTS', f'SidePanel: the marked hook {call}')
         self.assertRegex(panel, r'static String\[\] TAB_NAMES = .*// PEANUTS')
-        self.assertRegex(panel, r'static int TAB_GENERAL = 3;\s+// PEANUTS')
+        self.assertRegex(panel, r'static int TAB_CONTROLS = 2, TAB_GENERAL = 3;\s+// PEANUTS')
         self.assertRegex(panel, r'if \(!ModsPanel\.shows\(\)\) cheatRows\(\);', "General keeps upstream's cheat switches only without the Mods tab")
         mp = (LAUNCHER / 'ModsPanel.java').read_text(encoding='utf-8')
-        self.assertIn('{"Performance", "Display", "Controls", MODS, "General"}', mp, 'Mods sits between Controls and General')
+        self.assertRegex(mp, r'if \(shows\) names\.add\(CHEATS\);\s+if \(mods\) names\.add\(MODS\);\s+names\.add\("Controls"\);', 'the quick menu: Cheats, then Mods, before Controls (the canvas page "In-game menus")')
         bridge = (LAUNCHER / 'CheatsBridge.java').read_text(encoding='utf-8')
         for call in ('Native.cheatStatus()', 'Native.cheatsReload()', 'Native.cheatSet('):
             self.assertIn(call, bridge, f'the tab reaches {call} through CheatsBridge (Native is package-private)')
@@ -85,7 +85,10 @@ class Sources(unittest.TestCase):
         self.assertIn('R.style.Theme_Banana_Dialog', tab, "the tab's dialogs are the app's sheet, also in the game's process")
         self.assertIn('android.R.attr.dialogPreferredPadding', tab, "the details' text starts under the sheet's title, as a message does")
         sections = (APP / 'main/java/dev/peanuts/ui/SettingsSections.java').read_text(encoding='utf-8')
-        self.assertIn('r("Mods tab", "mods")', sections, 'Settings › Controls has the Mods tab row')
+        app = sections[sections.index('new Section("app"'):sections.index('new Section("help"')]
+        controls = sections[sections.index('new Section("controls"'):sections.index('new Section("screens"')]
+        self.assertIn('new Group("In-game panel", r("Mods tab", "mods"))', app, 'Settings › App › In-game panel has the Mods tab row')
+        self.assertNotIn('Mods tab', controls, "Settings › Controls is the controller's: buttons, touch and the controller")
 
     def test_a_value_cheat_has_a_number(self):   # Part F
         mc = (LAUNCHER / 'ModCheats.java').read_text(encoding='utf-8')

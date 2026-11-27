@@ -48,7 +48,7 @@ public final class SettingsSearchJvmTest {
         eq("[Frame rate cap, Dynamic resolution, Overlay]", find("frame rate"));
         eq("[Keys]", find("prod.keys"));   // what it does
         eq("[Console mode, Keys, Firmware, Time of day, Users, Miis]", find("console"));   // a title first, then the section Console, then what the rows do
-        eq("[GPU driver, Readiness check, Graphics self-test, ADB control (debug)]", find("driver"));
+        eq("[GPU driver, Graphics driver notice, Readiness check, Graphics self-test, ADB control (debug)]", find("driver"));   // PEANUTS: Smooth Experience's part (a title)
         eq("[Free up space, Storage]", find("space"));
         eq("[Miis, Firmware]", find("mii"));   // the firmware brings the Mii parts
         eq("[Upscaler]", find("sgsr"));   // its default

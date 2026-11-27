@@ -21,6 +21,7 @@ No code of the game is cut. The game asks for present interval 1, so it needs no
 - **Resolved: a title of only its cream clear colour, then a crash at the first movie, with the hardware pool (3.2 GB).** StandardAllocator's region took 3.14 GB at alias +0.06 GB, and Unity's own regions reached +4.25 GB of the 4.38 GB alias region 25 s after boot, with 1.0 GB mapped. The title's assets did not load: each frame cleared to the background colour and drew 117 draws, none of them visible. A press of A started the intro movie, and the movie thread crashed in Unity's `ALLOC_DEFAULT_THREAD` allocator (a write at `NULL + 0xffffe0`, `main+0x6f86ec`). The heap check's 15 s ended at +4.10 GB, just outside the 0.25 GB margin at which `profile_guess.py` picks a 1 GB pool. With `app_pool 0x40000000` StandardAllocator's region is 0.93 GB, the title draws in full and the movie plays.
 - Those runs also logged `[RED] texture object invalid while recording` (call site `main+0xc18474`), `texture object no longer valid` and `no render target could get an MTLTexture` once each, about 25 s after boot. No run with the 1 GB pool has logged them; not investigated further.
 - **Current:** with the 1 GB pool the alias region reaches +2.26 GB at the title and +3.51 GB in the first fight, with at most 1.75 GB mapped; about 2.7 GB resident and 1.0 GB of Metal allocations on the Mac.
+- **PEANUTS, Android: `mem_map_limit off` (a workaround).** With the map limit on, Unity's allocator crashed at `main+0x6f86ec` after `MapPhysicalMemory` was refused with the pool full: a 4 MB map at 0.93 GB mapped, 45 s after boot, past the intro movie; with a 1.5 GB pool, a 2 MB map at 1.43 GB, 66 s after boot (AYN Thor, Turnip). The fault address is the last 32 bytes of the refused block: the allocator writes to it without checking the result. The Mac runs above came before the map limit and mapped up to 1.75 GB, so the key restores the layout they measured, as for [Castlevania: Belmont's Curse](../0100BA4026E94000/README.md). With it off: about 8.5 minutes at 60 fps with no crash and no red line, at most 1.76 GB mapped and the alias region up to +3.26 GB (AYN Thor, the PurpleVK Turnip build). <!-- PEANUTS -->
 
 ## Files and shaders
 
@@ -50,6 +51,8 @@ No code of the game is cut. The game asks for present interval 1, so it needs no
 ## Open
 
 - iOS: no IPA built yet; untested on a device.
+- Android: why Unity maps past the pool. The hardware pool (3.2 GB) is too large for the 4.38 GB alias region and the 1 GB pool is too small with the map limit on; `mem_map_limit off` stands in until the layout is sized to what the game maps. <!-- PEANUTS -->
+- Android: on a Turnip build (PurpleVK, Mesa 26.3.0-devel, git `62ac221a33`; AYN Thor, Adreno 740) the inventory menu draws stretched triangles and solid blocks over its panels while its text is right, with no red line in the log. On the system driver and on Turnip 27.0.0-R2 the menu draws right, so it follows that driver build. Fire effects still look slightly off; not investigated. <!-- PEANUTS -->
 - Only update 1.5.28 is registered. The base game 1.0.0 (v0) has a different `main` build and would come from a derived profile.
 
 ## Found on this game

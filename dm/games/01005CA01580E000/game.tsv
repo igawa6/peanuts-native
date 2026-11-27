@@ -47,13 +47,7 @@ present_interval	display
 fps_limit	60
 fps_limit_max	120
 
-# Cucholix HD resolution mod, main 1.0.2 only. Uncompressed NSO offsets minus its 0x100 header.
-# Independent opt-in; does not alter the FPS plan or the owned dump/pack.
-option	DM_P5R_HD	HD resolution	Render at 1080p docked or 720p handheld. Restart the game to apply.	restart
-option_patch	DM_P5R_HD	d4b150b29a931cd381e2a30318fc299f	0x10a4c80	0978c0f2	09a0c0f2
-option_patch	DM_P5R_HD	d4b150b29a931cd381e2a30318fc299f	0x10a4c90	88438052	085a8052
-option_patch	DM_P5R_HD	d4b150b29a931cd381e2a30318fc299f	0x10a4cfc	08b480d2	08f080d2
-option_patch	DM_P5R_HD	d4b150b29a931cd381e2a30318fc299f	0x10a4d00	4865c0f2	0887c0f2
+# PEANUTS: the HD resolution option (DM_P5R_HD, a community 1080p mod) is removed (owner 2026-11-26)
 
 # Reviewed FPSLocker code plan: exact main build and expected bytes; no pack-file mutation.
 fpslocker_plan	d4b150b29a931cd381e2a30318fc299f	c0x0	-	0000221e

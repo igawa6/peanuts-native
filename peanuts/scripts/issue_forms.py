@@ -177,8 +177,8 @@ DEVICE = [
         "Another chip, or I don't know",
     ], 'The device\'s settings show it under About phone, or look the model up. The chip, not the GPU alone.'),
     pick('ram', 'RAM', ['Less than 8 GB', '8 GB (Android may show 7.x GB)', '12 GB', '16 GB', '24 GB or more']),
-    pick('android', 'Android version', ['Android 13', 'Android 14', 'Android 15', 'Android 16', 'Android 17', 'Newer than Android 17',
-                                        'Older than Android 13']),
+    pick('android', 'Android version', ['Android 12 or 12L', 'Android 13', 'Android 14', 'Android 15', 'Android 16', 'Android 17', 'Newer than Android 17',
+                                        'Older than Android 12']),
 ]
 
 DRIVER = [

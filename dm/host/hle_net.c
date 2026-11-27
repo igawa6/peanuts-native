@@ -49,7 +49,15 @@ int dm_sk_geterr(void) { return t_skerr; }   // hle_coop.c: the co-op module's B
 // on Poll(fds, 0, 33 ms), 11,000 calls a second. An endless wait on nothing never returns on hardware; here it returns 0 after 100 ms: a thread in a host hook pauses for a garbage
 // collector (IL2CPP's, hle_thread.c) only once the hook returns, and the caller can still see a shutdown
 void dm_guest_sleep_ns(int64_t ns);
-static int sk_idle(int64_t ms) { dm_guest_sleep_ns((ms < 0 ? 100 : ms) * 1000000); return 0; }
+// PEANUTS(upstream-candidate) begin: the waits of Poll and Select are native waits of the game's thread (hle_thread.c dm_thread_native_wait), as an HLE's condition wait and
+// the pacing sleep (hle_nvn.c sleep_until_ns) are: the thread cannot come back to game code from one while a stop of all threads holds (dm_guest_stop_all), so the stop
+// need not catch it in game code. Unbracketed, a thread that polls in a loop is in game code for microseconds between 100 ms waits, and the stop's signal, sent every
+// 100 us for at most 25 ms, never found it there: FINAL FANTASY RESONANCE's Unreal HttpManagerThread (Poll of its wakeup eventfd, 100 ms, from boot on) made all 40 tries
+// of a companion's load plan time out, so its guest helper was never installed. Eventfd waits hold g_efd_mu across the bracket, which is safe: g_efd_mu is taken only here,
+// never under G, and the threads that would take it are stopped
+static void sk_sleep_ns(int64_t ns) { dm_thread_native_wait(1); dm_guest_sleep_ns(ns); dm_thread_native_wait(0); }
+// PEANUTS(upstream-candidate) end
+static int sk_idle(int64_t ms) { sk_sleep_ns((ms < 0 ? 100 : ms) * 1000000); return 0; }   // PEANUTS(upstream-candidate): sk_sleep_ns
 
 // ---------- eventfd: a local counter, not networking, so it is served offline as well ----------
 // nn::socket::EventFd is Linux's eventfd on the bsd service: a 64-bit counter that write adds to and read takes (all of it, or 1 with the semaphore flag), readable while
@@ -75,7 +83,10 @@ static int efd_wait(int64_t ms) {   // waits for a change of any counter, at mos
     struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts);
     int64_t ns = ts.tv_nsec + (ms < 0 || ms > 100 ? 100 : ms) * 1000000;
     ts.tv_sec += ns / 1000000000; ts.tv_nsec = ns % 1000000000;
-    return pthread_cond_timedwait(&g_efd_cv, &g_efd_mu, &ts) != ETIMEDOUT;
+    dm_thread_native_wait(1);   // PEANUTS(upstream-candidate): a native wait (sk_sleep_ns above)
+    int r = pthread_cond_timedwait(&g_efd_cv, &g_efd_mu, &ts);
+    dm_thread_native_wait(0);   // PEANUTS(upstream-candidate)
+    return r != ETIMEDOUT;
 }
 static int efd_close(int fd) {   // 1 when fd was an eventfd (now closed)
     pthread_mutex_lock(&g_efd_mu); int i = efd_slot(fd); if (i >= 0) g_efd[i].used = 0; pthread_mutex_unlock(&g_efd_mu);
@@ -158,7 +169,7 @@ static int coop_mixed_poll(coop_node *cn, sk_pollfd *p, uint64_t n, int ms) {
             base += count;
         }
         if (ready || left <= 0) return ready;
-        dm_guest_sleep_ns(2000000);
+        sk_sleep_ns(2000000);   // PEANUTS(upstream-candidate): a native wait (sk_sleep_ns)
         left -= 2;
     }
 }

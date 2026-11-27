@@ -16,6 +16,7 @@
 #include <math.h>
 #ifdef NX_LSFG
 #include "lsfg/lsfg.h"
+#include "vka_fg_pace.h"   // PEANUTS(upstream-candidate): closed-loop pacing math
 #endif
 
 static _Atomic int g_on = -1, g_mult = 2, g_target, g_flow = 75, g_state;   // g_state: 0 off, 1 generating, 2 on and not generating, -1 unavailable
@@ -53,8 +54,9 @@ int nxhost_framegen_status(char *buf, int n) {
 }
 
 #ifndef NX_LSFG
-int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence, int format, vka_img **gen, double *hold, double *out_period) {
-    (void)serial; (void)crop; (void)period; (void)fence; (void)format; (void)gen;
+int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence, int format,
+                 double acq_s, double game_wait_s, vka_img **gen, double *hold, double *out_period) {   // PEANUTS(upstream-candidate)
+    (void)serial; (void)crop; (void)period; (void)fence; (void)format; (void)acq_s; (void)game_wait_s; (void)gen;
     settings_init(); *hold = 0; *out_period = 0;
     if (atomic_load(&g_on) > 0) { atomic_store(&g_state, -1); reason("%s", "not in this build (built without NX_LSFG)"); vka_fps_fg(-1, 1); }
     return 0;
@@ -67,7 +69,7 @@ static struct {
     lsfg_chain *chain; VkExtent2D ext; int flow;
     vka_img *out[LSFG_MAX_GENERATIONS]; VkImageView out_view[LSFG_MAX_GENERATIONS];
     VkCommandPool pool; struct { VkCommandBuffer cb; VkFence fence; vka_img *held; } fr[NFG]; unsigned fi;
-    lsfg_pacer pacer; uint64_t count; uint32_t warm_streak;
+    lsfg_pacer pacer; uint64_t count; uint32_t warm_streak; size_t prev_ng;   // PEANUTS(upstream-candidate): prev_ng
     double out_period, longer_since;   // the output period the window's frame rate is set for, and since when a longer one is wanted
 } F;
 
@@ -114,7 +116,7 @@ static void teardown(void) {
         if (F.out[i]) vka_tex_drop(F.out[i]);   // the last reference: destroyed by vka_tex.c (with the views the present made of it)
         F.out[i] = NULL;
     }
-    lsfg_pacer_reset(&F.pacer); F.count = 0; F.warm_streak = 0; F.out_period = 0; F.longer_since = 0;
+    lsfg_pacer_reset(&F.pacer); F.count = 0; F.warm_streak = 0; F.prev_ng = 0; F.out_period = 0; F.longer_since = 0;   // PEANUTS(upstream-candidate)
 }
 
 // An output as a vka_img, so the present shows it as it shows the window texture (blit or the rotated copy) and keeps it alive while it reads it
@@ -237,7 +239,8 @@ static void fg_dump(unsigned k, uint64_t count, size_t ng) {
     if (mem) vk.vkFreeMemory(V.dev, mem, NULL);
 }
 
-int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence, int format, vka_img **gen, double *hold, double *out_period) {
+int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence, int format,
+                 double acq_s, double game_wait_s, vka_img **gen, double *hold, double *out_period) {   // PEANUTS(upstream-candidate)
     settings_init();
     *hold = 0; *out_period = 0;
     int on = atomic_load(&g_on) > 0, mult = atomic_load(&g_mult), target = atomic_load(&g_target), flow = atomic_load(&g_flow);
@@ -286,28 +289,20 @@ int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence
     }
     F.pacer.decoupled = &nxhost_fps_decoupled && nxhost_fps_decoupled();   // the game's speed follows its measured rate (hle_fpslock.c sead_rate), not only held by the limiter
     F.pacer.min_base = (float)VKA_ENV("DM_LSFG_MIN_FPS", 30);   // its floor (live)
-    lsfg_plan plan = lsfg_pacer_plan(&F.pacer, LSFG_MAX_GENERATIONS, mult, target, mono_s());
-    uint64_t count = F.count++;
-    int warm = plan.warm && count + 1 >= 2;
-    F.warm_streak = warm ? F.warm_streak + 1 : 0;
-    size_t ng = warm && F.warm_streak >= 2 ? plan.generations : 0;
-    if (ng > LSFG_MAX_GENERATIONS) ng = LSFG_MAX_GENERATIONS;
-    // The panel shows one image a refresh (FIFO): more images per game frame than refreshes in the game's period hold the present thread, and the game behind it, to a
-    // fraction of its rate. The window asks for the output rate (out_period above), but the system may keep the panel lower: on the Honor phone (LTPO) it sometimes stayed at
-    // 60 Hz with the request for 120, and x2 held Donkey Kong Bananza's 60 fps menus at 30 fps (its level was reached 18 s later, int-792f6e4d t1). Generated frames only
-    // as many as the refreshes in the game's own period leave room for (its requested period, not the measured interval, which a throttled game would lengthen)
     // DM_VK_FG_REFRESH_CAP=0: no cap (a driver whose display timing reports a refresh the panel does not run at)
-    uint64_t rns = VKA_ENV("DM_VK_FG_REFRESH_CAP", 1) ? vka_refresh_ns() : 0; int capped = 0;
-    if (ng && rns && period > 0) {
-        // The game's frame period: the present's (at least the frame limit's, above), or the measured one when longer. With DM_PRESENT_INTERVAL=display (Donkey Kong
-        // Bananza's uncapped mode) every present declares the host's tick (8.3 ms at 120 Hz) whatever the game's own rate, which left no refresh for a generated frame and
-        // generation never started; held at 60 on a 120 Hz panel its measured interval came out at 15.3-15.5 ms (1.85 refreshes, under the 1.9 below), where the limit's
-        // 16.7 ms leaves room for the one generated frame that fits
-        double gp = F.pacer.smoothed_interval > period ? F.pacer.smoothed_interval : period;
-        double n = gp * 1e9 / (double)rns;   // refreshes in a game frame (60 fps on 120.46 Hz: 2.01; on 60.00 Hz: 1.00)
-        size_t fit = n < 1.9 ? 0 : (size_t)(n + 0.1) - 1;
-        if (ng > fit) { ng = fit; capped = 1; F.pacer.issued = ng; }   // the pacer counts what was generated (its unloaded rate is measured on frames without)
-    }
+    uint64_t rns = VKA_ENV("DM_VK_FG_REFRESH_CAP", 1) ? vka_refresh_ns() : 0;
+    uint64_t count = F.count;
+    // PEANUTS(upstream-candidate): break FIFO/display_timing slowdown feedback loop in vka_fg_pace_step
+    vka_fg_pace_out po = vka_fg_pace_step(&F.pacer, &F.count, &F.warm_streak, LSFG_MAX_GENERATIONS, mult, target, period, rns, mono_s(), F.prev_ng, acq_s, game_wait_s);
+    int warm = po.warm, capped = po.capped;
+    size_t ng = po.ng;
+    { static int was_thr, nthr;
+      if (po.throttled && (!was_thr || nthr < 4) && nthr < 16) {
+          nthr++;
+          VLOG("frame generation: display backpressure detected (acq %.1f ms, game wait %.1f ms, smoothed %.1f ms -> %.1f ms, period %.1f ms)",
+               acq_s * 1e3, game_wait_s * 1e3, F.pacer.smoothed_interval * 1e3, po.interval * 1e3, period * 1e3);
+      }
+      was_thr = po.throttled; }
 
     unsigned k = F.fi++ % NFG;
     if (!F.fr[k].cb) {
@@ -345,12 +340,9 @@ int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence
       if (d != last) { last = d; left = d > 0 ? d : 0; }
       if (left > 0 && ng) { left--; fg_dump(k, count, ng); } }
     for (size_t g = 0; g < ng; g++) gen[g] = F.out[g];
-    double interval = F.pacer.smoothed_interval > 0 ? F.pacer.smoothed_interval : period;
-    if (interval < period) interval = period;
-    if (ng) *hold = interval / (double)(ng + 1);
-    // A hold within 0.15 refresh of a whole number of refreshes is that number: the measured interval runs a little long (34 ms at a 30 fps frame step), and a hold of 17 ms on a
-    // 16.7 ms panel let each image's desired time (vka_present.c, the previous one's plus the hold) drift across a refresh every few dozen frames, two images in one refresh
-    if (ng && rns) { double r = *hold * 1e9 / (double)rns, w = floor(r + 0.5); if (w >= 1 && fabs(r - w) <= 0.15) *hold = w * (double)rns / 1e9; }
+    F.prev_ng = ng;   // PEANUTS(upstream-candidate)
+    double interval = po.interval;
+    if (ng) *hold = po.hold;
     int st2 = ng ? 1 : 2;
     static int was_capped;
     if (atomic_exchange(&g_state, st2) != st2 || (st2 == 2 && capped != was_capped)) {

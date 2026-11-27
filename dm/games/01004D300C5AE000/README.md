@@ -48,14 +48,21 @@ No code of the game is cut, and no run-time key is set. The game asks for presen
 
 ### Android: frame limits from 20 to 120
 
-Reviewed `fpslocker` rows in [`game.tsv`](game.tsv) apply the memory writes of the [FPSLocker Warehouse config for this build](https://github.com/masagrator/FPSLocker-Warehouse/blob/v4/SaltySD/plugins/FPSLocker/patches/01004D300C5AE000/A6CE40DC3AEDB1BE.yaml) (v4; its interval offsets found by Hazerou), on Android and for main `a6ce40dc…` (1.1.0) only. No code is patched and no shader is rebuilt.
+Reviewed `fpslocker` rows in [`game.tsv`](game.tsv) write the game's own frame timer and dynamic resolution, on Android and for main `a6ce40dc…` (1.1.0) only, through the pointers of the [FPSLocker Warehouse config for this build](https://github.com/masagrator/FPSLocker-Warehouse/blob/v4/SaltySD/plugins/FPSLocker/patches/01004D300C5AE000/A6CE40DC3AEDB1BE.yaml) (v4; found by Hazerou). No code is patched and no shader is rebuilt.
 
 | Row | Address | What it does |
 |---|---|---|
-| `zero_i32` | `[main+0xA76728]+0x50` | the game's frame interval, 2 as shipped; 0 takes off its own 30 fps pacing and, by the config's note, makes the game step by the time that passed |
+| `constant_i32 1:1` | `[main+0xA76728]+0x2c` | the least 1/60 s ticks a frame waits in the timer's measured mode: 2 as shipped (30 fps), 1 lets the game run to 60 in its own mode |
 | `inverse_f32 30:1.95`, `30:1.7` | `[[[[main+0xA767B0]+0x140]+0x1B0]+0x20]+0x34`, `+0x38` | the dynamic resolution's GPU frame-time budget, most and least: 1.95 and 1.7 at 30 fps, scaled by 30 / the limit |
 
-The host's frame limit then picks the rate once the player chooses one: the launcher's choices from 20 to 120 (`fps_limit_max 120`, 60 for `fps_limit 60`), and Game owned for the game's own 30 fps (a restart). Game owned was the default (`fps_owned_default 1`) until 0.1.8, see below; since then the game starts at 60. The budget's chain is four pointers deep, one more than the rows took, so the row format now takes four offsets after the first pointer ([`fpslocker_rows.h`](../../host/fpslocker_rows.h), `test_fpslocker_rows.py`).
+**The frame timer** (current; read in main 1.1.0 and 1.0.0). `[main+0xA76728]` is set by its constructor (`main+0x526560`) to the timer object + 0x10. Its mode at +0x60 (`[main+0xA76728]+0x50`) picks how a frame is paced (`main+0x533CD0`, `main+0x532E30`):
+
+- **2, as shipped:** one update a frame; the frame waits until at least `+0x3c` ticks of 1/60 s have passed (polling a 10 µs sleep), and the step is the ticks the frame took, at least 1, averaged over the last 4 frames (`+0x44`) and at most 60 (`+0x34`, 60.0). Set to 2 while the game runs: its 30 fps.
+- **0:** fixed updates of `+0x10` ticks. A late frame is caught up with more updates and no drawing, up to `+0x20` (10, from the constructor) in a row (the check at `main+0x532FB8`, the counter at `+0x74`).
+
+The Warehouse config sets the mode to 0 (its `zero_i32` at `+0x50`), which these rows used until 2026-11-24. At 30 fps that is two updates a frame, twice the game's own work on the CPU, and when the updates outlast 16.7 ms the catch-up never ends: 10 to 11 updates for each drawn frame. On an AYN Thor (Turnip 27.0.0 R2, the CPU clocks held near 1.8 GHz) a 30 limit fell to 4 to 9 fps in the overworld after about 100 s and stayed there for over a minute (whole frames of 210 to 325 ms, the main thread waiting on its three workers, the GPU 5 ms); a bound of 2 on the catch-up (`+0x20`) held it at 20 to 25. The game's own mode with the host's limit at 30 held 29.4 to 30 for 5.5 minutes in the same area, and with the least wait at 1 the 60 limit ran at 59.5 to 59.7 at the game's normal speed. GitHub issue #153 (a Snapdragon 8+ Gen 1 at 4 to 6 fps) is the same catch-up.
+
+The host's frame limit picks the rate: the launcher's choices from 20 to 120 (`fps_limit_max 120`), 60 by default since 0.1.8 (see below; Game owned was the default before, `fps_owned_default 1`), and Game owned for the game's own pacing (a restart). The budget's chain is four pointers deep, one more than the rows took, so the row format now takes four offsets after the first pointer ([`fpslocker_rows.h`](../../host/fpslocker_rows.h), `test_fpslocker_rows.py`).
 
 Run on an AYN Thor (Adreno 740, Turnip 27.0.0 R2, 1920x1080), 2026-11-18, a pack built on a PC, from Continue: 4 s standing, 3 s of walking forward by the wall clock, then on to the first guide movie, 120 frames captured on the way. The writes land in play (`reviewed FPS memory writes applied at 60 fps`), not at the prompts or the opening movie, which run at the panel's rate either way.
 
@@ -71,9 +78,35 @@ So the game's speed follows the wall clock at every limit, and 60 holds on the T
 
 Open: **120 on a 120 Hz panel.** The window asked for 120 (`window frame rate 120 fps`) and the Thor's panel stayed at 60 Hz, also with Android's peak and minimum refresh rate set to 120 for the run (put back after); what holds the panel there was not found, so no frame was shown above 60. Also open: 40, 45 and 90, 20's late frames, the opening movie under a limit other than 60, other areas and a long session, and frame generation with a limit.
 
-**Game owned by default since GitHub issue #153.** On a Snapdragon 8+ Gen 1 (Poco F5 Pro, Turnip 27.0.0 R2, 0.1.5) the overworld collapsed to 3 to 6 fps at the 30 and the 60 limit alike, and Game owned held 30 there and in the levels. In the 30-limit log the frames slowed step by step as the overworld loaded (24, 16, 11, 6, then about 4 fps) while the GPU's median frame stayed near 30 ms and the replay recorded in about 10 ms: whole frames of 240 to 380 ms went to the game's threads waiting on each other. With the interval at 0 the game steps by the time that passed, and on this phone a slow frame hands the next one more work. The launcher now starts the game Game owned until the player picks a rate; the 20 to 120 limits stay, for phones that hold them (the Thor above). Open: a bound on the elapsed step, which would let the limits hold on slower phones.
+**Resolved: GitHub issue #153.** On a Snapdragon 8+ Gen 1 (Poco F5 Pro, Turnip 27.0.0 R2, 0.1.5) the overworld collapsed to 3 to 6 fps at the 30 and the 60 limit alike, and Game owned held 30 there and in the levels; the cause is the mode 0 catch-up above, which the rows no longer select (not yet run on that phone). On the Thor a limit is also evener on screen than Game owned: Game owned at interval 1 on the 60 Hz panel left 2,890 of 3,288 frames uneven on screen (`on-screen … dropped`) and a 50-80 ms hitch every 2-3 s in play (the main thread waiting on a worker), the 30 limit 3 of 4,190. The first table above was run with the mode-0 rows.
 
-**60 fps by default since 0.1.8** (the owner's call, 2026-11-24, for every game that started Game owned): with no pick the game starts at the 60 limit, so the reviewed rows above run from the first start. On a phone like the Poco F5 Pro above, pick **Game owned** in the game's Frame rate cap; a saved pick stays.
+Run on an AYN Thor (Adreno 740, Turnip 27.0.0 R2, 1920x1080), 2026-11-24, with these rows, the CPU's middle cores held at 1.79 GHz by a clock tune (the fast core at 1.84):
+
+| Limit | Where | Frames a second | Frame time | Notes |
+|---|---|---|---|---|
+| 30 | the overworld by Natural Plains, about 2.3 minutes | 29.9 in almost every 5 s window (29.0 lowest) | p50 33.5 ms, p95 33.5-33.6 ms | 3 of 4,190 frames dropped on screen; the two longest (106 and 140 ms) while an area loaded 53 and 161 MB of textures |
+| 45 | levels and the overworld, about 3.5 minutes | 43.2 to 45.2 | p50 22.2 ms | about 60 °C; a 60 Hz panel shows 45 as frames of one and two refreshes |
+| 60 | a level's meadow | 47 to 51 (1.79 GHz), 49 to 51 (2.05 GHz), 55 to 57 (2.8 GHz, the stock clocks, near 84 °C) | 18 to 21 ms in busy parts | the game's speed normal by eye |
+
+The same rows, a build of main 0.1.7 with this profile only (which then started at 30) (Turnip 27.0.0 R2, the same clock tune), 2026-11-25, Game settings reset to the defaults first:
+
+| Limit | Where | Frames a second | Frame time | On screen |
+|---|---|---|---|---|
+| 30, with nothing picked | the overworld, levels and movies, about 2.6 minutes | 29.8 in almost every 5 s window (29.0 lowest) | p50 33.5 ms, p95 33.6 ms; the longest 182 ms while an area loaded 161 MB of textures | 3 of 4,490 frames uneven |
+| 20 | about 2.5 minutes | 19.7 to 20.1 | p50 50.3 ms, p95 50.3 ms | 3 of 3,290 |
+| 40 | about 1.5 minutes | 39.1 to 40.0 | p50 25.0 ms, p95 25.0 ms | 49 of 4,790 |
+
+The game's speed was normal by eye at each limit.
+
+**Keeping it fixed.** Do not take the Warehouse's interval row (`zero_i32` at `+0x50`) back: it is the mode-0 catch-up. `peanuts/tests/test_profile_fpslocker.py` fails if a row writes `+0x50` or `+0x10`, or if the `+0x2c` row is missing, and it parses every profile's rows with the host's parser (one refused row, such as a `constant_i32` value written `2` instead of `2:1`, makes the host drop the whole set). A player's log with the collapse shows the log digest's `game-catchup-stall` rule.
+
+**For a new main build.** The rows are keyed by the main's build ID, so a new update runs without them (the limits pace presentation only) until they are carried over. Find the timer in that main and check each offset by disassembly before adding rows for its build ID: the constructor stores `obj + 0x10` to the pointer and sets `+0x3c` to 1 and `+0x20` to 10 (1.1.0: `main+0x526470`-`0x526590`, the store at `main+0x526560`); the pacing reads the mode (`ldr w8, [x19, #0x60]`; `cmp w8, #2`) at the frame's start and before its wait (1.1.0: `main+0x532E30`, `main+0x533CD0`), and mode 2 waits `[x19, #0x3c]` ticks (`main+0x533D14`); each tick count is the elapsed time divided by 16,666,666 ns. `dm/tools/nso_fnmap.py` maps the functions from 1.1.0; the 1.0.0 main has the same code (its pacing at `main+0x5326C0`-`0x533160`).
+
+**Current, open: 60 in busy levels is bound by the CPU.** The game's main thread, its three workers (`0x100e`, `0x100f`, `0x1010`, about 40 % of a core each) and the command encoder share the 4 middle cores the launcher gives them, while the GPU is busy 63 % of the time. The Thor's kernel pauses its fast core while nothing runs there (`core_ctl`: `min_cpus 0`, at stock clocks too), so the replay thread that the launcher places on that core is left on all cores, the small ones included. Not yet run: 90, a session of 10 minutes or more, and the system driver.
+
+**Current, open: the overworld's round trees are drawn nearly black** on Turnip (bright green on the Switch), with the grass, buildings, water and Kirby right. Not caused by this change or by pull requests #503 and #506 (the same with `DM_VK_PUSH_DELTA=0` and `DM_VK_UBWC=0`); not yet compared with an older build or the system driver.
+
+**60 fps by default since 0.1.8** (the owner's call, 2026-11-24, for every game that started Game owned): with no pick the game starts at the 60 limit, so the reviewed rows above run from the first start; with the game's own timer kept (2026-11-24) they no longer collapse at 60. Where 60 cannot be held (the Thor's busy levels with its CPU clocks held down, below), 30 or 45 is even; a saved pick stays.
 
 <!-- PEANUTS end -->
 
@@ -124,6 +157,7 @@ Not run yet: Fill on a screen wider than 16:9, the HUD at 8:7, the menus and the
 
 ## Found on this game
 
+- [A fixed-step mode chosen by a frame limit catches up until the frame rate collapses](../../../docs/reference/frame-rate.md#a-fixed-step-mode-chosen-by-a-frame-limit-catches-up-until-the-frame-rate-collapses-android). <!-- PEANUTS -->
 - [HAL's `.cmp` containers: a size-prefixed frame](../../../docs/reference/shaders.md#hals-cmp-containers-a-size-prefixed-frame).
 - [A host lock held across a same-core handoff](../../../docs/reference/threads.md#a-host-lock-held-across-a-same-core-handoff).
 - [Write faults made writable page by page split GPU memory past vm.max_map_count](../../../docs/reference/memory.md#write-faults-made-writable-page-by-page-split-gpu-memory-past-vmmax_map_count-android).

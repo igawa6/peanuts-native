@@ -1,6 +1,7 @@
-"""A game's page in areas (dev.peanuts.ui.GamePage, GameAreas; dev.nxnative.android.GamePagePort): the areas' table on the JVM
-(android/app/src/jvmtest's GameAreasJvmTest; skipped without a JDK), and the wiring: the marked hooks in GameSettings, the port's harvest of upstream's
-tabs, Mods & Cheats as an area (CheatsPage.area), Back and Home, and a drawable for every icon the table names."""
+"""A game's page in areas (dev.peanuts.ui.GamePage, GameAreas; dev.nxnative.android.GamePagePort): the areas' table and Y's presses (Presses,
+#599) on the JVM (android/app/src/jvmtest's GameAreasJvmTest and PressesJvmTest; skipped without a JDK), and the wiring: the marked hooks in
+GameSettings, the port's harvest of upstream's tabs, Mods & Cheats as an area (CheatsPage.area), Back and Home, and a drawable for every icon the
+table names."""
 import re
 import shutil
 import subprocess
@@ -30,6 +31,15 @@ class Jvm(unittest.TestCase):
             subprocess.run(['javac', '-encoding', 'UTF-8', '-Xlint:all', '-Werror', '-d', t, str(UI / 'GameAreas.java'), str(UI / 'GameHelp.java'),
                             str(APP / 'jvmtest/java/dev/peanuts/ui/GameHelpJvmTest.java')], check=True)
             r = subprocess.run(['java', '-cp', t, 'dev.peanuts.ui.GameHelpJvmTest'], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertRegex(r.stdout, r'^ok \d+')
+
+    def test_presses_jvm(self):
+        # issue #599: the release of the Y press that opened the page (Library's cover) does not play; a press on the page does
+        with tempfile.TemporaryDirectory(prefix='presses_') as t:
+            subprocess.run(['javac', '-encoding', 'UTF-8', '-Xlint:all', '-Werror', '-d', t, str(UI / 'Presses.java'),
+                            str(APP / 'jvmtest/java/dev/peanuts/ui/PressesJvmTest.java')], check=True)
+            r = subprocess.run(['java', '-cp', t, 'dev.peanuts.ui.PressesJvmTest'], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertRegex(r.stdout, r'^ok \d+')
 
@@ -77,8 +87,20 @@ class Wiring(unittest.TestCase):
     def test_y_plays_but_not_in_mods_and_cheats(self):
         page = (UI / 'GamePage.java').read_text(encoding='utf-8')
         self.assertIn('e.getKeyCode() != KeyEvent.KEYCODE_BUTTON_Y || GameAreas.MODS.equals(area)', page)
+        self.assertIn('if (playPress.released(e.getKeyCode(), e.getAction(), e.getRepeatCount(), e.getDownTime(), e.getFlags())) play.performClick();', page,
+                      'Y plays at the release of a press the page saw (#599)')
+        self.assertNotIn('ACTION_UP', page[page.index('private static boolean playKey('):page.index('private static View paneTarget()')],
+                         'no release without its press plays')
+        lib = (UI / 'Library.java').read_text(encoding='utf-8')
+        self.assertIn('if (ev.getAction() == KeyEvent.ACTION_DOWN && ev.getRepeatCount() == 0 && code == KeyEvent.KEYCODE_BUTTON_Y) {', lib,
+                      "the cover's Y acts at the press, which the page never sees: PressesJvmTest plays that order")
         ys = [l.strip() for l in page.splitlines() if '"Y"' in l]
         self.assertTrue(all('PLAY = {"Y", "Play"}' in l for l in ys), f'Y only in the keys of the second screen, no Y glyph on the Play button: {ys}')
+
+    def test_presses_constants_match_android(self):
+        # KeyEvent.ACTION_DOWN / ACTION_UP / FLAG_CANCELED, and the key codes PressesJvmTest uses (KEYCODE_BUTTON_Y / _A / _L1)
+        self.assertIn('ACTION_DOWN = 0, ACTION_UP = 1, FLAG_CANCELED = 0x20', (UI / 'Presses.java').read_text(encoding='utf-8'))
+        self.assertIn('Y = 100, A = 96, L1 = 102', (APP / 'jvmtest/java/dev/peanuts/ui/PressesJvmTest.java').read_text(encoding='utf-8'))
 
     def test_every_icon_has_a_drawable(self):
         src = (UI / 'GameAreas.java').read_text(encoding='utf-8')
@@ -113,6 +135,14 @@ class Wiring(unittest.TestCase):
         self.assertIn('boolean show = pad && e != null && e.keys != null && !e.keys.isEmpty();', panel, 'the keys only while a controller is connected')
         self.assertIn('if (page == EXPLAIN) bindKeys(shownExplain);', panel, 'a controller that comes or goes shows or hides them')
         self.assertIn('exCard.animate().cancel();', panel, 'a fade still running does not take the card back to nothing')
+
+    def test_the_shader_update_is_one_line(self):
+        page = (UI / 'GamePage.java').read_text(encoding='utf-8')
+        self.assertNotIn('detach(got.shader)', page, 'no card of text over the tiles')
+        self.assertIn('PUi.add(side, shaderLine(a, got.shader), 12);', page, "wide: one line in the game's panel, under the play time")
+        self.assertIn('PUi.add(p, shaderLine(a, got.shader), 10);', page, 'a phone: one line under Play')
+        self.assertIn('update.performClick()', page, "the sheet's Update shaders is the card's own button (upstream's action)")
+        self.assertIn('if (now == shaderView) { explainShader(); return true; }', page, "the second screen has the card's words")
 
     def test_no_separator_glyphs_in_the_pages_words(self):
         for f in ('GamePage.java', 'GameAreas.java', 'GameHelp.java'):

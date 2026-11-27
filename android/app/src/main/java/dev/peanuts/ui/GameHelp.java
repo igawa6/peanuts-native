@@ -47,7 +47,6 @@ public final class GameHelp {
         m.put("Rumble", "Lets this game rumble the controller, or the phone when no controller is connected.");
         m.put("Button mapping", "Which button of your controller presses which Switch button, for this game. Default follows Settings.");
         m.put("Motion sensitivity", "How far the phone's gyro turns the aim. From the next start.");
-        m.put("Xbox button labels", "For a controller labelled like an Xbox pad: whether A and B, and X and Y, change places.");
         // Companion
         m.put("Companion", "The second screen's page made for this game: install it, update it or remove it.");
         m.put("Second screen", "Whether the companion shows on the second screen while the game runs.");

@@ -40,3 +40,22 @@ shader_groups	/BmGame/=bmgame
 shader_note	Batman: Arkham Knight shaders (Unreal Engine 3 global and combined shader caches)
 # the engine shares one control section among shaders whose sections differ only in GLSLC's compile information (+0x778..+0x791 and +0x7d0..+0x7e7), so the keys leave those bytes out (README.md, Files and shaders)
 shader_key_skip	0x770+0x78
+
+# PEANUTS: Turnip road fixes, recommended on Turnip (driver.id=18; README.md, Android). The tile pass (compute 752e5bf8b7496d94, 45x26 groups of 16x16 with shared memory and
+# subgroup operations) and its helper (da62b52f4641ad83) give wrong per-tile results on Turnip: the wet road layer is missing in light-grey 16-pixel squares. Their subgroup
+# operations as one-invocation subgroups draw the roads clean. The keys apply on Qualcomm's driver by default; the option turns them on for any driver
+subgroup_one_lane	752e5bf8b7496d94
+subgroup_one_lane	da62b52f4641ad83
+option	DM_VK_ONE_LANE	Road tiles fix	Runs the tile shaders one lane at a time so roads draw without grey squares. Restart the game to apply.	restart
+# PEANUTS: recommended on Turnip for the grey road squares on Turnip (README.md, Android)
+recommend	driver.id=18	option.DM_VK_ONE_LANE=on
+# PEANUTS: dark stair-stepped 16-pixel blocks over the road markings: the road decals read depth the G-buffer pass's earlier draws wrote, which Turnip holds only in some
+# 16-pixel tiles at that point (docs/reference/rendering.md). TU_DEBUG=flushall draws them clean at the same 30 fps
+option	DM_VK_TU_FLUSHALL	Road markings fix	Flushes the GPU's caches after every draw, so road markings and decals draw without dark blocks. Turnip only. Restart the game to apply.	restart
+# PEANUTS: recommended on Turnip for the dark blocks over road markings on Turnip (README.md, Android; docs/reference/rendering.md)
+recommend	driver.id=18	option.DM_VK_TU_FLUSHALL=on
+# PEANUTS: road decals switching on and off with the camera still: the game hides a decal while its samples-passed report reads 0, and on Turnip most reports read 0
+# (docs/reference/rendering.md). With every report written 1 they stay drawn, at the same 30 fps
+option	DM_VK_NO_OCCLUSION	Decal blinking fix	Counts every object as visible so road markings and decals stop blinking. Restart the game to apply.	restart
+# PEANUTS: recommended on Turnip for the decals blinking on Turnip (README.md, Android; docs/reference/rendering.md)
+recommend	driver.id=18	option.DM_VK_NO_OCCLUSION=on

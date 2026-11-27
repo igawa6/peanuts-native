@@ -104,10 +104,16 @@ final class Status {
         m.put("keys", PeanutsPrefs.hasKeys(c));
         m.put("firmware", PeanutsPrefs.hasFonts(c));
         Map<String, Object> folders = new LinkedHashMap<>();
-        folders.put("game", folder(PeanutsPrefs.gameDir(c)));
-        folders.put("update", folder(PeanutsPrefs.updateDir(c)));
-        folders.put("dlc", folder(PeanutsPrefs.dlcDir(c)));
+        folders.put("game", folder(PeanutsPrefs.gameDir(c)));   // the first of each list, as before issue #546; every folder in the lists below
+        List<String> addons = PeanutsPrefs.addonDirs(c);
+        folders.put("update", folder(addons.isEmpty() ? null : addons.get(0)));
+        folders.put("dlc", folder(addons.size() < 2 ? null : addons.get(1)));
         folders.put("build", folder(PeanutsPrefs.buildDir(c)));
+        List<Map<String, Object>> gameFolders = new ArrayList<>(), addonFolders = new ArrayList<>();
+        for (String path : PeanutsPrefs.gameDirs(c)) gameFolders.add(folder(path));
+        for (String path : addons) addonFolders.add(folder(path));
+        folders.put("game_folders", gameFolders);
+        folders.put("addon_folders", addonFolders);
         List<Map<String, Object>> buildFolders = new ArrayList<>();
         for (String path : PeanutsPrefs.buildDirs(c)) buildFolders.add(folder(path));
         folders.put("build_folders", buildFolders);

@@ -1,5 +1,5 @@
-"""The games an APK carries by default: android/app/gradle.properties' nxGames is every game supported on Android, the profiles whose readiness.tsv has a status row
-(dm/games/README.md "Readiness rows"), so a build made without -PnxGames never lacks one (a player's card once said "Could not prepare" for a game the APK did not have).
+"""The games an APK carries by default: android/app/gradle.properties' nxGames is every game supported on Android (PEANUTS: peanuts/release-titles.txt, Switch 1 only)
+(upstream: the profiles whose readiness.tsv has a status row), so a build made without -PnxGames never lacks one (a player's card once said "Could not prepare" for a game the APK did not have).
 Each listed game has what build.gradle reads of it: game.tsv with build rows, and shader_map.tsv for Prepare's shaders."""
 import unittest
 from pathlib import Path
@@ -14,13 +14,8 @@ def default_games():
     return []
 
 
-def android_profiles():
-    out = set()
-    for t in (REPO / 'dm/games').glob('*/readiness.tsv'):
-        for line in t.read_text(encoding='utf-8').splitlines():
-            c = line.split('\t')
-            if len(c) >= 2 and c[0] == 'status' and c[1].strip() in ('playable', 'bring-up'): out.add(t.parent.name)
-    return out
+def release_titles():   # PEANUTS: Switch 1 games only (owner, 2026-11-26): nxGames is the release list, not upstream's readiness rows
+    return set((REPO / 'peanuts/release-titles.txt').read_text(encoding='utf-8').split())
 
 
 class Games(unittest.TestCase):
@@ -28,8 +23,9 @@ class Games(unittest.TestCase):
         games = default_games()
         self.assertTrue(games, 'gradle.properties has no nxGames row')
         self.assertEqual(len(games), len(set(games)), 'a game twice in nxGames')
-        self.assertEqual(set(games), android_profiles(), 'nxGames must be the profiles with a readiness.tsv status row')
-        self.assertEqual(games[0], '040074A01BF12000', 'the first (the default game, the self-test\'s host) stays Donkey Kong Bananza')
+        self.assertEqual(set(games), release_titles(), 'nxGames must be peanuts/release-titles.txt')   # PEANUTS begin: Switch 1 only
+        self.assertEqual(games[0], '01007EF00011E000', 'the first (the default game, the self-test\'s host) stays Breath of the Wild')
+        self.assertFalse([g for g in games if not g.startswith('01')], 'a Switch 2 title ID in nxGames (Peanuts Native is Switch 1 only)')   # PEANUTS end
 
     def test_listed_games_have_what_the_build_reads(self):
         for g in default_games():

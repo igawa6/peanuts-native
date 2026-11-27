@@ -74,7 +74,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private PadPanel.Combo combo = new PadPanel.Combo(PadPanel.OPEN_BOTH);
     private final HashMap<Integer, HashSet<Integer>> gameKeys = new HashMap<>();
     private final HashSet<Integer> panelKeys = new HashSet<>();
-    private final Runnable comboHeld = () -> { if (panel != null && combo.fire(android.os.SystemClock.uptimeMillis())) panel.padToggle(); };
+    private final Runnable comboHeld = () -> { if (panel != null && combo.fire(android.os.SystemClock.uptimeMillis())) InGamePanel.toggle(this, true); };   // PEANUTS: − and + held open the game menu (InGamePanel)
     private File log;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private PadMotion padMotion;   // a gamepad's own gyroscope and accelerometer as its player's six-axis sensor (PadMotion), the phone's own sensors stay the host's
@@ -90,6 +90,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     private dev.peanuts.ui.GameControls.Host controlsHost;   // PEANUTS: this screen's controls (GameControls.clear)
     private android.content.BroadcastReceiver peanutsCtl;   // PEANUTS: the adb control's live game commands (dev.peanuts.ctl.GameLink)
+    private final dev.peanuts.display.RotationWatch rotationWatch = new dev.peanuts.display.RotationWatch(this, ui, Native::motionRotation);   // PEANUTS: the display rotation the host maps the phone's motion sensors with, every turn (#811)
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -151,7 +152,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         root.addView(panel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         controls.openSettings = panel::open;
         combo = new PadPanel.Combo(Prefs.panelPad(this));   // Settings › Controller: in-game panel
-        panel.padButtons(PadPanel.confirmBack(Prefs.padMap(this, id), Prefs.xboxButtons(this, id) == 2 ? 2 : 0));   // the game's own A and B, as the host maps them from this start
+        panel.padButtons(PadPanel.confirmBack(Prefs.padMap(this, id), 0));   // the game's own A and B, as the host maps them from this start (PEANUTS: 0, Xbox button label swap removed)
         panel.onOpen = this::releaseGameInput;
         // The layout editor needs the whole screen: the panel closes, and Paused (over the controls: its first tap would continue the game) hides while it is open;
         // the game stays paused
@@ -177,6 +178,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         controls.onSwitch = v -> handle.setVisibility(v ? View.VISIBLE : View.GONE);
         controls.setMode(TouchControls.mode(this));
         root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> handle.setTranslationY((b - t) * 0.3f - 70 * dp));
+        InGamePanel.attach(this, root, panel);   // PEANUTS: the game menu at the left (dev.peanuts.ingame.GameMenu) and its swipe in from the left edge
         // Paused (pause(): the in-game panel's Pause, or the screen coming back with pause-on-return on): the game is suspended until a tap, or A / Start on a gamepad.
         // Under the panel and its handle, so Stop stays reachable
         pausedView = new TextView(this);
@@ -396,6 +398,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (!skipShown) ui.postDelayed(skipRun, 30000);
     }
     private void skipShow(int pct) {
+        if (dev.peanuts.smooth.Smooth.hides(this, dev.peanuts.smooth.SmoothItems.SKIP)) { Native.note("skipped work: " + pct + " % of draws; the notice is off (Smooth Experience)"); return; }   // PEANUTS
         GpuDriver.Info drv = GpuDriver.selected(this, titleId());
         String st = Native.skipStatus();
         Native.note("skipped work: notice shown (" + pct + " % of draws; driver: " + (drv == null ? "system" : drv.label()) + ")");
@@ -424,12 +427,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     // still make while draws are skipped for them (Native.warmStatus): shown, small, at the top, while that is above 0, with the count; gone when it is 0. A host without
     // the entry point (-1) is not asked again. Without it a first run looked broken: EA SPORTS FC 27's pitch was black for a minute with no word why on screen
     private TextView warmView;
+    private boolean warmQuiet;   // Smooth Experience took the notice: its log line is written once a run
     private final Runnable warmRun = this::warmTick;
     private void warmStart() { ui.removeCallbacks(warmRun); ui.postDelayed(warmRun, 1000); }
     private void warmTick() {
         if (rootView == null) return;
         int n = stopped || paused ? 0 : Native.warmStatus();
-        if (dev.peanuts.ui.WarmNotice.shown(n)) {
+        if (dev.peanuts.ui.WarmNotice.shown(n) && dev.peanuts.smooth.Smooth.hides(this, dev.peanuts.smooth.SmoothItems.WARM)) {   // Smooth Experience: the log only, once
+            if (!warmQuiet) Native.note("preparing graphics: " + n + " pipelines waiting; the notice is off (Smooth Experience)");
+            warmQuiet = true;
+        } else if (dev.peanuts.ui.WarmNotice.shown(n)) {
             if (warmView == null) {
                 warmView = new TextView(this);
                 warmView.setTextColor(Color.WHITE);
@@ -561,6 +568,35 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     private static boolean isEmpty(File d) { String[] l = d.list(); return l == null || l.length == 0; }
 
+    // PEANUTS begin: the save backed up before the first start of another app version, pack or save folder (issue #514: SaveStore.beforeNewBuild), under the save's
+    // lock (saveDir took it) and before the host has the save. Where Back up saves puts its copies (the shared save-backups/<id>, else the app's own when backups
+    // go out as a .zip: SaveUi.target), so Restore saves lists it. A test run's own save, and a save whose commit the host finishes at mount, get none. A backup
+    // that cannot be made stops no start: a toast says so, and the next start tries again
+    private void beforeNewBuild(File save, File game, String id, String saveId, File packDir) throws IOException {
+        if (testSave != null || "recovering".equals(saveHow)) return;
+        if (!dev.peanuts.settings.ModsSection.codeModsOn(this, id, game, packDir)) return;   // games with code mods only (owner 2026-11-26)
+        File shared = Prefs.backupsDir(game, saveId), appRoot = AppStorage.root(this);
+        File backups = SaveZip.export(shared, appRoot, android.os.Environment.isExternalStorageManager() && SaveZip.writable(shared)) ? SaveZip.appBackups(appRoot, saveId) : shared;
+        String start = BuildConfig.VERSION_NAME + " " + BuildConfig.NX_COMMIT + "\t" + packDir.getAbsolutePath() + "\t" + save.getAbsolutePath();
+        String note;
+        try {
+            List<SaveStore.Backup> made = SaveStore.beforeNewBuild(save, new ArrayList<>(UserSaveDirs.others(save).values()), backups,
+                    new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date()), new File(getFilesDir(), "save-starts/" + saveId + ".txt"), start);
+            if (made.isEmpty()) return;
+            note = "backed up before the first start of this build: " + made.get(0).dir + (made.size() > 1 ? " and " + (made.size() - 1) + " more" : "");
+        } catch (IOException | RuntimeException e) {
+            String why = e.getMessage() != null ? e.getMessage() : e.toString();
+            // the game's own pack while code mods are on (Play without mods): the start #514 lost saves to, so it does not go on without the copy (start's catch: fail)
+            if (!dev.peanuts.build.ModdedBuild.isVariantPack(packDir))
+                throw new IOException("Your save could not be backed up (" + why + "), so the game does not start without its code mods: it could write over the save you made with them. "
+                        + "Back up saves on the game's Saves tab, or wait for the build with mods.");
+            note = "not backed up before the first start after an update or a pack change (" + why + ")";
+            Toast.makeText(this, "Your save could not be backed up before the first start after an update or a pack change: " + why, Toast.LENGTH_LONG).show();
+        }
+        saveNote = saveNote == null ? note : saveNote + "; " + note;
+    }
+    // PEANUTS end
+
     private static void copyTree(File from, File to) throws IOException {
         if (from.isDirectory()) {
             if (!to.isDirectory() && !to.mkdirs()) throw new IOException("cannot create " + to);
@@ -579,6 +615,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private final List<String> quietNotes = new ArrayList<>();   // PEANUTS: start lines for the log only, no toast (a default frame rate's missing variant)
     private List<String> advNotes = new ArrayList<>();   // the [adv] log lines: every override in effect and where it came from (AdvancedSettings.notes)
     private String shapeNote;   // Aspect ratio › Screen shape: the window it read and the shape passed, for the log
+    private String langNote;    // the game language changed to one the game's NACP has, for the log   // PEANUTS: #639
+
+    /** The game's NACP SupportedLanguageFlag: a .nup's meta block (its control.nacp record), a folder dump's control data; 0 when not known */
+    static int gameLanguages(String game) {
+        if (game == null) return 0;
+        File g = new File(game);
+        try { return Nup.isNup(g) ? Nup.peek(g).gameMeta().languages : Nacp.languages(DumpLayout.controlDir(g)); }
+        catch (IOException | RuntimeException e) { return 0; }
+    }
     private int readinessEnv;   // the lines the readiness check ran with (readinessHold), for the log
 
     /** Where a user line with this key came from, for the [RED] line: the last of env.txt, the game's settings, env-<id>.txt that has it */
@@ -640,6 +685,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         if (prof != null && prof.vegetationDetail && !Prefs.fullVegetation(this, id)) env.add("DM_VK_VEGETATION=0");
         if (prof != null) env.addAll(prof.optionsEnv(optEnv -> Prefs.gameOption(this, id, optEnv)));
+        // PEANUTS: DM_VK_TU_FLUSHALL=1 (a game option) is TU_DEBUG=flushall, added here with the option's line: Turnip reads TU_DEBUG once, at the process's first Vulkan
+        // device (the readiness check's), so a setenv in the host comes too late; a TU_DEBUG line of env.txt or the game's settings comes later and wins
+        if (env.contains("DM_VK_TU_FLUSHALL=1")) env.add("TU_DEBUG=flushall");
         Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
         GameUpscaler.env(this, id, env);   // the Upscaler (Game settings, the in-game panel): the game's own upscaler and the present's scaling
         env.add(CrtFilter.line(this, id));   // PEANUTS: the CRT filter (Settings › Display, Game settings, the in-game panel; CrtFilter)
@@ -690,14 +738,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // PEANUTS: and a game that starts at its default limit (FrameRateCaps.defaultLimit), which its profile's own limit (none for opt-in present pacing) is not
             if (Prefs.chosenFpsCap(this, id) || FrameRateCaps.ownedBefore(prof)) { int pace = Prefs.paceCap(this, id); env.add("DM_FPS_LIMIT=" + limitRate(pace)); }   // PEANUTS: limitRate, at most the display's highest rate
         } else if (cap >= 0) env.add("DM_FPS_TARGET=" + cap);
+        if (prof != null && prof.thermalCap) env.add("DM_THERMAL_CAP=1");   // PEANUTS: thermal_cap: rates above 30 hold 30 while the phone is hot (opt-in; an env.txt DM_THERMAL_CAP=0 comes later and wins)
         if (Prefs.steps(id) && Prefs.hold60(this, id)) env.add("DM_FPS_HOLD60=1");   // Hold 60 fps: one step a frame at the cap of 60 (the in-game panel changes it live)
         String gpuNote = GpuDriver.env(this, id, env);   // the game's GPU driver, else the main screen's (DM_VK_DRIVER)
         dev.peanuts.overlay.Hud.driver(GpuDriver.selected(this, id) != null ? GpuDriver.selected(this, id).label() : Readiness.driverWord(Prefs.facts(this, Recommend.SYSTEM)));   // PEANUTS: the overlay's DRV row
         String ts = Prefs.gpuTs(this, id);   // Game settings › GPU timing; unset: the profile's gpu_timestamps (a DM_NVN_GPU_TS line of env.txt or the game's own lines comes later and wins)
         if (ts != null) env.add("DM_NVN_GPU_TS=" + ts);
-        int xb = Prefs.xboxButtons(this, id);   // Xbox button label swap (Game settings, Settings)
-        if (xb > 0) env.add("DM_XBOX_LABELS=1");
-        if (xb == 2) env.add("DM_PAD_LABELLED=2");
+        // PEANUTS: the Xbox button label swap (DM_XBOX_LABELS, DM_PAD_LABELLED=2) is removed (owner 2026-11-26); both stay as Advanced switches
         if (Prefs.instancedDraws(this, id)) env.add("DM_VK_INSTANCE=1");   // Game settings › Instanced draws
         if (Prefs.classicPasses(this, id)) env.add("DM_VK_CLASSIC_RP=1");   // Game settings › Classic render passes
         if (Prefs.skipLayersGame(id) && Prefs.skipLayers(this, id)) env.add("DM_VK_SKIP_FS=" + Prefs.skipLayersKeys(id));   // Game settings › Speedhack: Turn off hidden layers
@@ -733,8 +780,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         int picSize = Prefs.pictureSize(this, id);   // the in-game panel's Picture size; 100 (the default) is not passed
         if (picSize < PictureFit.SIZE_MAX) env.add("DM_VK_PICTURE_SIZE=" + picSize);
-        String lang = GameLanguage.env(Prefs.gameLang(this, id), GameSettings.phoneTag());   // Game settings › Game language: the phone's by default (a DM_LANG line of the user's wins)
+        int langs = gameLanguages(getIntent().getStringExtra("game"));   // the game's NACP languages: a language it lacks becomes one it has, as on the console   // PEANUTS: #639
+        String lang = GameLanguage.env(Prefs.gameLang(this, id), GameSettings.phoneTag(), langs);   // Game settings › Game language: the phone's by default (a DM_LANG line of the user's wins)
         if (lang != null) env.add(lang);
+        langNote = lang != null && !lang.equals(GameLanguage.env(Prefs.gameLang(this, id), GameSettings.phoneTag()))   // PEANUTS: #639
+                ? "[nxlaunch] game language: " + lang + " (the game's NACP languages 0x" + Integer.toHexString(langs) + " lack the one asked for)" : null;
         env.addAll(Users.env(Users.list(this), dev.peanuts.users.WhoPlaysActivity.startUser(this, getIntent(), Users.defaultUid(this))));   // PEANUTS: Settings › Users: the users the game's account calls list and its user selector offers (hle_account.c), and the one it starts with: the one Who's playing? picked
         return gpuNote;
     }
@@ -820,7 +870,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             for (Readiness.Check c : fails) placed |= "ext.VK_KHR_map_memory2".equals(c.fact) || "ext.VK_EXT_map_memory_placed".equals(c.fact) || "feature.memoryMapPlaced".equals(c.fact);
             GpuDriver.Info drv = GpuDriver.selected(this, id);
             boolean custom = Readiness.customDriversFit(f);   // the custom drivers are Adreno drivers: no help on another GPU (its reported vendor ID)
-            if (placed && dev.peanuts.ui.MaliDriver.arm(f)) m.append(dev.peanuts.ui.MaliDriver.advice(drv == null ? null : drv.label(), f));   // PEANUTS: on Mali a PanVK build with placed maps, never System (#262)
+            // PEANUTS: Android 12 (API 31/32): the app runs there, games need Android 13 (Readiness's android.sdk row fails only below 33): said plainly, in place of the rest
+            boolean android12 = Build.VERSION.SDK_INT < 33 && Readiness.failed(fails, "android.sdk");
+            if (android12) m.append(android12Note(custom));   // PEANUTS
+            else if (placed && dev.peanuts.ui.MaliDriver.arm(f)) m.append(dev.peanuts.ui.MaliDriver.advice(drv == null ? null : drv.label(), f));   // PEANUTS: on Mali a PanVK build with placed maps, never System (#262)
             else if (placed && drv == null && !custom) m.append(".\n\nThis GPU's own driver has no placed memory maps, so nothing is drawn: the screen stays black while the game runs. "
                     + "The custom drivers the app can install are for Adreno GPUs only, so this phone cannot draw the game yet.");
             else if (placed) m.append(".\n\nWith this GPU driver (").append(drv == null ? "System" : drv.label()).append(") nothing is drawn: the screen stays black while the game runs. ")
@@ -832,6 +885,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             start();
         }
     }
+
+    // PEANUTS begin: Android 12's start-up notice (readinessDecide), after the "Missing: ..." list
+    static String android12Note(boolean adreno) {
+        return "\n\nAndroid 12: games need Android 13 or newer"
+                + (adreno ? ", or a Snapdragon GPU driver that provides Vulkan 1.3 (Settings › GPU driver). Without one the game may stop at start or draw nothing."
+                          : ". The custom GPU drivers are for Snapdragon (Adreno) GPUs only, so they cannot help on this phone.")
+                + "\n\nThe rest of the app works on Android 12: library, settings, imports and saves.";
+    }
+    // PEANUTS end
 
     /** The Details of the start-up notice: each failure and warning with its sentence, then the GPU and memory */
     private static String details(List<Readiness.Check> fails, List<Readiness.Check> warns, String gpu) {
@@ -931,6 +993,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     private void start() {
         String id = getIntent().getStringExtra("title_id"), name = getIntent().getStringExtra("name");
+        dev.peanuts.ui.StartCover.add(this, rootView, rootView.indexOfChild(pausedView), overlay, this::end);   // PEANUTS: Smooth Experience's start screen in place of the log's lines (dev.peanuts.ui.StartCover)
         File game = new File(getIntent().getStringExtra("game")), packDir = new File(getIntent().getStringExtra("pack"));
         File files = getExternalFilesDir(null);
         try {
@@ -958,7 +1021,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // its temp, logs and host are its own. So every start of it (the card's edition switch, a frontend, a shortcut) plays the same save
             String saveId = pack.application.isEmpty() ? id : pack.application;
             File save = dev.peanuts.build.ShaderCapture.save(this);   // PEANUTS: a preparation boot never opens the player's save
-            if (save == null) save = saveDir(files, game, saveId);   // PEANUTS
+            if (save == null) { save = saveDir(files, game, saveId); beforeNewBuild(save, game, id, saveId, packDir); }   // PEANUTS: beforeNewBuild (#514)
             File temp = mkdirs(new File(files, "temp/" + id)), root = mkdirs(new File(files, "root"));   // PEANUTS: save is chosen above
             // The DLC links live in internal app storage: the external files folder is shared storage (FUSE), which refuses symbolic links (errno not yet confirmed on a phone; a refused link is now a [RED] line), so
             // every link failed there and no game saw its DLC (docs/reference/packing.md "DLC links in shared storage"). Their targets stay where they are
@@ -978,11 +1041,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 env.add("DM_ROMFS_PROGRAM_" + e.getKey() + "=" + e.getValue());
             try (java.io.InputStream fin = getAssets().open(GameFonts.ASSET)) {   // the shared-font stand-in (dm/third_party/fonts): the host serves it instead of the phone's own fonts; a DM_FONT_DIR line of the user's comes later and wins
                 File fontDir = new File(getFilesDir(), "fonts");
-                GameFonts.place(fontDir, GameFonts.STANDARD, fin.readAllBytes());
+                GameFonts.place(fontDir, GameFonts.STANDARD, Streams.readAll(fin));   // PEANUTS: Android 12 (Streams: the same call from API 33)
                 env.add(GameFonts.envLine(fontDir));
             } catch (IOException e) { unknownNotes.add("[nxlaunch] the shared font stand-in is not placed (" + e.getMessage() + "): the host uses the phone's own fonts"); }
             try (java.io.InputStream fin = getAssets().open(GameFonts.EXT_ASSET)) {   // the button icons in game text (shared-font type 5: hle_sdk16.c), in the same folder; without it they draw as '?'
-                GameFonts.place(new File(getFilesDir(), "fonts"), GameFonts.EXT, fin.readAllBytes());
+                GameFonts.place(new File(getFilesDir(), "fonts"), GameFonts.EXT, Streams.readAll(fin));   // PEANUTS: Android 12 (Streams: the same call from API 33)
             } catch (java.io.FileNotFoundException e) {   // an APK built without fontTools: the host's [YELLOW] line says so
             } catch (IOException e) { unknownNotes.add("[nxlaunch] the button-icon font is not placed (" + e.getMessage() + "): button icons in game text draw as '?'"); }
             String gpuNote = settingsEnv(id, pack, env);   // PEANUTS: pass the pack build for FPSLocker selection
@@ -1083,12 +1146,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (readinessEnv > 0) Native.note("[nxlaunch] readiness check: ran with the game's " + readinessEnv + " environment lines (all but the paths), set before the GPU driver's first device");
             for (String n : unknownNotes) Native.note(n);
             for (String n : quietNotes) Native.note(n);   // PEANUTS
-            if (!unknownNotes.isEmpty()) android.widget.Toast.makeText(this, unknownNotes.get(0).replace("[RED] ", ""), android.widget.Toast.LENGTH_LONG).show();
+            { String t = dev.peanuts.smooth.DevView.startToast(this, unknownNotes); if (t != null) android.widget.Toast.makeText(this, t.replace("[RED] ", ""), android.widget.Toast.LENGTH_LONG).show(); }   // PEANUTS: Developer view off: a switch nothing reads goes to the log only
             if (!refused.isEmpty()) {
                 String msg = "not taken: " + String.join(", ", refused) + ": the launcher sets the game's paths (DM_SAVE, DM_ROMFS, DM_TEMP, DM_ROOT, DM_AOC_DIR, HOME)"
                         + (testApp() ? "; DM_SAVE is taken from env-<title ID>.txt only" : "");
                 Native.note("[RED] env: " + msg);
-                android.widget.Toast.makeText(this, "Environment lines " + msg, android.widget.Toast.LENGTH_LONG).show();
+                if (!dev.peanuts.smooth.DevView.plain(this)) android.widget.Toast.makeText(this, "Environment lines " + msg, android.widget.Toast.LENGTH_LONG).show();   // PEANUTS: Developer view off: the log only
             }
             if (testSave != null) Native.note("[nxlaunch] test app: DM_SAVE from env-" + id + ".txt: " + testSave);
             Native.note("frame generation: " + (Lsfg.on(this) ? "on" : "off") + "; " + Lsfg.note);
@@ -1096,6 +1159,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             Native.note(Recommend.logLine(Prefs.recStates(this, id)));   // each recommended setting with its value and source (yours / recommended / default); env.txt lines come later and win
             if (resNote != null) Native.note(resNote);
             if (shapeNote != null) Native.note(shapeNote);
+            if (langNote != null) Native.note(langNote);   // PEANUTS: #639
             for (String n : advNotes) Native.note(n);
             if (sceneNote != null) Native.note(sceneNote);
             input = Native.hasInput();
@@ -1236,6 +1300,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         dev.peanuts.ctl.GameLink.unregister(this, peanutsCtl);   // PEANUTS
         peanutsCtl = null;
         runningDisplayMode.clear(this);   // PEANUTS: release this game window's display request
+        rotationWatch.pause();   // PEANUTS: #811 (onPause did it already; a destroy without one keeps no listener)
         dev.peanuts.Companion.stop();   // PEANUTS
         dev.peanuts.launch.PlayTime.flush(this);   // PEANUTS: total play time, what is still in memory
         TextInput.gone(this);
@@ -1266,6 +1331,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     // never runs beside the game (SaveUi asks SaveStore.inUse); the process ending releases it ----
     private static SaveStore.Lock saveLock;
     private static File saveLocked;
+    static File runSave() { return saveLocked; }   // PEANUTS: the save this game runs on, for the game menu's Back up the save (InGamePanel)
 
     private static synchronized void holdLock(File save) throws IOException {
         if (saveLock != null && SaveStore.same(saveLocked, save)) return;   // this process holds it already (the game's screen opened again)
@@ -1364,12 +1430,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (text.contains("[nvn] frame ") || text.contains("[longframe]") || text.contains("window frame rate")) drawing = true;   // the host logs these once frames are presented
             if (text.contains("CRASH sig=") || text.contains("FATAL")) failed = true;
             overlay.setVisibility(!drawing || failed || TouchControls.showLog(this) ? View.VISIBLE : View.GONE);
+            dev.peanuts.ui.StartCover.tail(this, overlay, drawing, failed, TouchControls.showLog(this));   // PEANUTS: the start screen goes at the first frame, a failure shows its card
             String[] lines = text.split("\n");
             StringBuilder s = new StringBuilder();
             for (int i = Math.max(from > 0 ? 1 : 0, lines.length - 8); i < lines.length; i++) s.append(lines[i]).append('\n');
             overlay.setText(s.toString().trim());
         } catch (IOException ignored) { /* next time */ }
-        ui.postDelayed(this::tail, 1000);
+        ui.postDelayed(this::tail, dev.peanuts.ui.StartCover.next(1000));   // PEANUTS: every 250 ms while the start screen waits for the first frame
     }
 
     // ---- The host's side of the Activity: input devices, audio focus and route, motion, lifecycle ----
@@ -1391,7 +1458,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         java.util.List<PadOrder.Pad> now = new java.util.ArrayList<>();
         for (int id : inputManager.getInputDeviceIds()) { InputDevice d = InputDevice.getDevice(id); if (gamepadLike(d)) now.add(pad(d)); }
         order.start(now);   // best first: an external controller is player 1 before a phone's own gamepad-like device (PadOrder)
-        Native.motionRotation(getDisplay().getRotation());
+        if (resumedNow) rotationWatch.resume(); else rotationWatch.now();   // PEANUTS: resumed before the start, onResume did not follow the turns (#811)
         if (resumedNow && !paused) { Native.motionStart(); padMotion.resume(); }   // the screen was resumed before the game started (onResume then did nothing): the sensors start here
         audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
@@ -1425,6 +1492,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     // SidePanel's Console mode and Frame rate cap rows
     /** PEANUTS: the rates the host holds now (Native.fpsCapStatus' second), as SidePanel.refresh takes them: none in a build without a cap, -1 (not known: the last run's,
      *  or the profile's) until the game presents (its main is not known before) */
+    /** PEANUTS: whether the thermal cap holds rates above 30 at 30 now (Native.fpsCapStatus' fifth; a profile's thermal_cap) */
+    static boolean heldForHeat() {
+        try { String[] f = Native.fpsCapStatus().split(" "); return f.length > 4 && f[4].equals("1"); } catch (RuntimeException e) { return false; }
+    }
     static int liveRates() {
         try {
             String[] f = Native.fpsCapStatus().split(" ");
@@ -1484,7 +1555,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 if (Prefs.limited(titleId())) return v == FrameRateCaps.GAME_OWNED ? 0 : v <= 0 ? 60 : v;
                 return Math.max(v, 0);
             }
+            @Override public boolean heldForHeat() { return GameActivity.heldForHeat(); }   // PEANUTS
             @Override public String capNote() {
+                if (heldForHeat()) return Prefs.HEAT_TEXT;   // PEANUTS: the thermal cap holds the rate, whatever was picked
                 if (!Prefs.limited(titleId())) return null;
                 int v = cap();
                 boolean pending = fpsRestartRequired(v) || (v == FrameRateCaps.GAME_OWNED) != gameOwnedAtStart();
@@ -1646,13 +1719,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         resumedNow = true;   // also before the start: start() can come after the first onResume (the readiness check), and hostSetup() then starts the sensors
         if (!started) return;
         Native.lifecycle(3);
-        Native.motionRotation(getDisplay().getRotation());
+        rotationWatch.resume();   // PEANUTS: told again, then every turn while resumed (#811: a half turn between the landscape sides changes no configuration)
         if (!paused) { Native.motionStart(); if (padMotion != null) padMotion.resume(); }   // paused: the sensors stay off (they would wake the host at their rate for a frozen game); unpause starts them
     }
     private boolean resumedNow;
     @Override protected void onPause() {
         runningDisplayMode.clear(this);   // PEANUTS: a background activity keeps no display request
         resumedNow = false;
+        rotationWatch.pause();   // PEANUTS: #811
         if (started) { Native.motionStop(); if (padMotion != null) padMotion.pause(); Native.lifecycle(0); }
         super.onPause();
     }
@@ -1665,7 +1739,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         super.onConfigurationChanged(c);
         fitOrientation();   // a fold or an unfold changes the display: the other screen may want the other answer
         dev.peanuts.TvPicture.fit(this);   // PEANUTS: the game moved to a TV or back to the device's screen (#358)
-        if (started) Native.motionRotation(getDisplay().getRotation());
+        if (started) rotationWatch.now();   // PEANUTS: through RotationWatch, which tells the host only a change (#811)
     }
 
     @Override public void surfaceCreated(SurfaceHolder h) { Native.setSurface(h.getSurface()); }
@@ -1732,19 +1806,23 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
         if (dev.peanuts.build.ShaderCapture.active(this) && gamepad(e.getSource())) return true;   // PEANUTS: no gameplay input during preparation
         if (prewarmCover != null && gamepad(e.getSource())) return super.dispatchKeyEvent(e);   // PEANUTS: Preparing shaders: the pad moves over its buttons; nothing goes to the game or the panel under it
+        if (dev.peanuts.ui.StartCover.takesPad() && gamepad(e.getSource())) return super.dispatchKeyEvent(e);   // PEANUTS: the start screen's failure card: the pad moves over Share log and Close
         if (panel == null) return super.dispatchKeyEvent(e);   // no host for this game (onCreate): only the message is shown
         // A controller opens and closes the in-game panel (PadPanel.Combo: Home, or − and + held; Settings › Controller: in-game panel); while it is open the pad moves
         // through it and the game gets no pad keys. A key the panel took a press of stays the panel's until it comes up
         int k = e.getKeyCode();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN, up = e.getAction() == KeyEvent.ACTION_UP;
+        if (InGamePanel.backKey(this, e, prewarmCover != null)) return true;   // PEANUTS: the controller's Back pressed opens the game menu, held the quick menu (not under the cover, in preparation, in the controller applet)
+        if (InGamePanel.quickKey(this, e)) return true;   // PEANUTS: the player's own button for the quick menu (dev.peanuts.ui.QuickButton)
         if (gamepad(e.getSource()) || k == KeyEvent.KEYCODE_BUTTON_MODE) {
-            int c = combo.key(k, down, e.getRepeatCount(), e.getEventTime());
-            if (c == PadPanel.TOGGLE) { panel.padToggle(); return true; }
+            int c = InGamePanel.key(this, combo, k, down, e.getRepeatCount(), e.getEventTime());   // PEANUTS: Home held opens the quick menu
+            if (c == PadPanel.TOGGLE) { InGamePanel.toggle(this, true); return true; }   // PEANUTS: Home pressed opens the game menu, or closes either menu
             if (c == PadPanel.EAT) { if (up) panelKeys.remove(k); return true; }   // the pair's release after it fired (the panel may have taken its press)
             long due = combo.due();
             ui.removeCallbacks(comboHeld);
             if (due >= 0) ui.postAtTime(comboHeld, due);   // the event's time is uptimeMillis
         }
+        if (InGamePanel.menuKey(this, e, gamepad(e.getSource()))) return true;   // PEANUTS: the game menu has the controller while it is open
         if (panel.isOpen() && gamepad(e.getSource())) {
             boolean took = panel.padKey(e);
             if (took && down) panelKeys.add(k);
@@ -1789,6 +1867,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     @Override public boolean onGenericMotionEvent(MotionEvent e) {
         if (dev.peanuts.build.ShaderCapture.active(this)) return true;   // PEANUTS: no gameplay input during preparation
+        if (InGamePanel.menuMotion(this, e)) return true;   // PEANUTS: the stick moves the game menu's selection
         if (panel != null && panel.isOpen() && (e.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK) return panel.padMotion(e);   // the panel's, never the game's
         if (!input || panel.isOpen() || paused || (e.getSource() & InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK || e.getAction() != MotionEvent.ACTION_MOVE || e.getDevice() == null)
             return super.onGenericMotionEvent(e);
@@ -1803,7 +1882,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     /** Back (the phone's button or its edge swipe) opens and closes the in-game panel, which has Stop; while the controller applet's join screen shows, it cancels that */
     @SuppressWarnings("deprecation")
-    @Override public void onBackPressed() { if (prewarmCover != null) return; /* PEANUTS: Preparing shaders has its own Close; the panel is under it */ if (dev.peanuts.build.ShaderCapture.active(this)) { dev.peanuts.build.ShaderCapture.cancel(this); return; } /* PEANUTS: Back cancels preparation */ if (panel != null && !panel.isOpen() && CtrlScreen.back()) return; if (panel != null) panel.toggle(); else end(); }
+    @Override public void onBackPressed() { if (prewarmCover != null) return; /* PEANUTS: Preparing shaders has its own Close; the panel is under it */ if (dev.peanuts.build.ShaderCapture.active(this)) { dev.peanuts.build.ShaderCapture.cancel(this); return; } /* PEANUTS: Back cancels preparation */ if (panel != null && !panel.isOpen() && CtrlScreen.back()) return; if (panel != null) InGamePanel.back(this); /* PEANUTS: the game menu, or one step back in the quick menu (InGamePanel) */ else end(); }
 
     // For CtrlScreen: the view tree it goes into (under the in-game panel), and whether a gamepad is connected (then the on-screen controls are hidden and cannot join)
     FrameLayout rootView() { return rootView; }

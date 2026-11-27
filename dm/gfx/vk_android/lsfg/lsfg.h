@@ -27,7 +27,7 @@ const char *lsfg_status_name(int status);
 typedef struct {
     double last_frame, stable_until, probe_until, next_probe, deficit_since;   // seconds (CLOCK_MONOTONIC); 0 = unset
     float smoothed_interval, output_credit, probe_base_rate, unloaded_base_rate;
-    size_t issued, probe_previous_limit, limit; uint32_t probe_failures;
+    size_t issued, probe_previous_limit, limit; uint32_t probe_failures, burst_streak;   // PEANUTS(upstream-candidate): sustained rate recovery across burst filter
     double below_since;   // decoupled: since when the base has been under min_base while generating (0 = not)
     float min_base;   // set by the caller with decoupled: the floor (DM_LSFG_MIN_FPS, default 30; 0 = none)
     int decoupled;   // set by the caller: the game's speed follows its measured rate (the host's frame limiter), so a slower base does not slow the game down
@@ -35,6 +35,8 @@ typedef struct {
 typedef struct { size_t generations; int warm; } lsfg_plan;
 // multiplier 2..4 (images per game frame with target_rate 0), target_rate 0 or the output rate to hold (the multiplier then follows it)
 lsfg_plan lsfg_pacer_plan(lsfg_pacer *p, size_t capacity, int multiplier, int target_rate, double now);
+// PEANUTS(upstream-candidate): sample_interval > 0 overrides a longer wall-clock interval for smoothed_interval when display/FIFO backpressure throttled arrival
+lsfg_plan lsfg_pacer_plan_paced(lsfg_pacer *p, size_t capacity, int multiplier, int target_rate, double now, float sample_interval);
 void lsfg_pacer_reset(lsfg_pacer *p);
 
 // ---------- The chain (lsfg_chain.c), Vulkan; needs the replay's device (vka.h) ----------

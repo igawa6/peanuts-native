@@ -693,7 +693,7 @@ int main(void) {
     // unit table: main's singletons moved into this image's data (the only change to the file), the pool's block of 250 units of 0x8B0 bytes on the heap,
     // a force descriptor per unit (id at +0x10; player forces 0, 4, 5, 6, 7), PersonData with caps (+0x232) and a weapon mask (+0x262), the two EXP tables ----
     {
-        static const char *const FE = "../../games/04007EF01F8AE000/cheats/DB93B0125F485060.txt";   // make -C dm/host/tests runs here
+        static const char *const FE = "../../../peanuts/tests/fixtures/profiles/fortunes-weave/cheats/DB93B0125F485060.txt";   // make -C dm/host/tests runs here; PEANUTS: a fixture (the Switch 2 profile is not carried)
         FILE *f = fopen(FE, "r"); if (!f) { perror(FE); return 1; }
         static char fe[16384]; size_t n = fread(fe, 1, sizeof fe - 1, f); fe[n] = 0; fclose(f);
         static const char *const reloc[][2] = { { "0220A350", "00005A00" }, { "0220AB10", "00005A10" },   // UnitPool*, GameUserData*

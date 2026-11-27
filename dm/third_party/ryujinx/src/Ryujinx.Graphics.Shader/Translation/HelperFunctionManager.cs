@@ -12,9 +12,13 @@ namespace Ryujinx.Graphics.Shader.Translation
         private readonly Dictionary<int, int> _functionIds;
         private readonly ShaderStage _stage;
 
+        // PEANUTS: the shader's own functions (main and its CAL subroutines) are ids 0 to OwnFunctionCount - 1; every helper added later gets a higher id
+        public int OwnFunctionCount { get; }
+
         public HelperFunctionManager(List<Function> functionList, ShaderStage stage)
         {
             _functionList = functionList;
+            OwnFunctionCount = functionList.Count;   // PEANUTS: see OwnFunctionCount
             _functionIds = new Dictionary<int, int>();
             _stage = stage;
         }

@@ -96,7 +96,7 @@ class ViperZip(unittest.TestCase):
             root = Path(directory); rom = root / 'RomFS'; rom.mkdir(); main = root / 'main'; main.write_bytes(b'NSO0' + bytes(0xfc))
             (rom / 'data.zip').write_bytes(vzip([member('8a2c93ccb633872a', viper(*nvn2_stage(0x0461))), member('aa31b510cc6cebaa', viper(*nvn2_stage(0x1462)))]))
             dest = root / 'out'; dest.mkdir(); outputs = [dest / n for n in ('pkg', 'map.tsv', 'facts.tsv', 'pairs.tsv', 'pso.tsv')]
-            proc = subprocess.run([sys.executable, REPO / 'dm/gfx/tools/shader_split.py', rom, main, *outputs], capture_output=True, text=True, env=dict(os.environ, DM_GAME='0400E88025B1A000', J='2'))
+            proc = subprocess.run([sys.executable, REPO / 'dm/gfx/tools/shader_split.py', rom, main, *outputs], capture_output=True, text=True, env=dict(os.environ, DM_GAME='01007EF00011E000', J='2'))   # PEANUTS: a Switch 1 profile (upstream: Star Fox, not carried)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr); self.assertNotIn('[RED]', proc.stdout + proc.stderr)
             self.assertIn('shaders: 2 (', proc.stdout)
             self.assertIn('/data.zip/8a2c93ccb633872a#VIPER', (dest / 'map.tsv').read_text())

@@ -1,0 +1,12 @@
+# PEANUTS: Sea of Stars (01008C0016544000) Android readiness requirements.
+# Playable on OnePlus 13R (Snapdragon 8 Gen 3, 11.0 GiB totalMem) with Turnip T30 (v983040): 20+ minutes / 88,113 frames at 60.0 fps median; Qualcomm 512.762.41 renders broken graphics and hits VK_ERROR_DEVICE_LOST (game.tsv recommends Turnip on Qualcomm < 512.800).
+status	playable
+
+# Memory: 2.03 GB peak physical mapped on an 11.0 GiB totalMem phone; phones with less RAM are untested.
+degraded	ram_gib	10	Memory: tested on a 12 GB phone (11.0 GiB totalMem, 2.03 GB peak physical mapped); smaller phones are untested
+
+# Shader library capabilities (dm/tools/library_caps.py on v983040 Android library, 3,898 modules: 1,901 vs, 1,905 ps, 91 cs, 1 gs):
+required	feature.shaderDrawParameters	1	Shader draw parameters: all 1,901 vertex modules read them
+required	limit.maxComputeSharedMemorySize	32768	Compute shared memory: 4 compute modules take 32,768 bytes
+degraded	feature.geometryShader	1	Geometry shaders: 1 geometry shader module uses them; without it that draw is skipped
+degraded	feature.shaderStorageImageWriteWithoutFormat	1	Storage image writes without a format: 5 shader modules use them

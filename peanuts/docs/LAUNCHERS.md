@@ -141,7 +141,7 @@ adb shell am start -n dev.nxnative.android.peanuts/dev.peanuts.launch.LaunchActi
 Or, for a game already in the library, by its title ID instead of its file:
 
 ```bash
-adb shell am start -n dev.nxnative.android.peanuts/dev.peanuts.launch.LaunchActivity -e title_id 040074A01BF12000 -e run true
+adb shell am start -n dev.nxnative.android.peanuts/dev.peanuts.launch.LaunchActivity -e title_id 01007EF00011E000 -e run true
 ```
 
 (`--ez run true` only tells `am` the extra's type is boolean; `FrontendLaunch` itself does not read a

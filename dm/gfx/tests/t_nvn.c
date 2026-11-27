@@ -554,45 +554,55 @@ int main(void) {
         EXPECT("lists of 56..504 bytes stay in their 512 (no host segment)", (504 - 56) / 8 + 1, jumps_fit);
         P(nvnCommandBufferFinalize)(&c3); P(nvnMemoryPoolFinalize)(&mp);
     }
-    // 5b''. Host segment sizes (hostseg_size), as Super Mario Odyssey grants 512 bytes from an empty pool before recording: such a grant gets a HOSTSEG_SMALL segment; a recording
-    //       that outgrows it with no callback JUMPs into a full one and replays whole through its first handle; a record larger than HOSTSEG_SZ gets a segment that holds it;
-    //       a free small segment is not taken for a full one, and the cap counts every segment's bytes
+    // PEANUTS begin: #807, rooms for empty-pool grants
+    // 5b''. Host segment sizes (hostseg_size) and rooms (cmdarena_grant), as Super Mario Odyssey grants 512 bytes from an empty pool before recording: such a grant gets a room of
+    //       HOSTSEG_SMALL; a recording that outgrows it with no callback JUMPs into a full segment and replays whole through its first handle, and the next grant does not land
+    //       on that JUMP; a list that ends in its room gives the tail back and the next grant starts at its END; a record larger than HOSTSEG_SZ gets a segment that holds it;
+    //       the cap counts every segment's and chunk's bytes
     {
         NVNcommandBuffer c4, c5; P(nvnCommandBufferInitialize)(&c4, &dev); P(nvnCommandBufferInitialize)(&c5, &dev);
-        EXPECT("empty pool, 512 bytes, outside a recording: a small segment", HOSTSEG_SMALL, hostseg_size(CB(&c4), 1, 512));
         EXPECT("empty pool, 0 bytes: a full segment", HOSTSEG_SZ, hostseg_size(CB(&c4), 1, 0));
         EXPECT("empty pool, more than HOSTSEG_SMALL: a full segment", HOSTSEG_SZ, hostseg_size(CB(&c4), 1, HOSTSEG_SMALL + 1));
         EXPECT("a record larger than HOSTSEG_SZ: a segment that holds it", 1, hostseg_size(CB(&c4), 0, HOSTSEG_SZ + 64) >= HOSTSEG_SZ + 64 + 16);
         P(nvnCommandBufferAddCommandMemory)(&c4, NULL, 0, 512);
         uint8_t *small = CB(&c4)->cur;
-        EXPECT("the grant lends HOSTSEG_SMALL bytes", HOSTSEG_SMALL, CB(&c4)->end - small);
+        EXPECT("the grant lends a room of HOSTSEG_SMALL bytes", HOSTSEG_SMALL, CB(&c4)->end - small);
         P(nvnCommandBufferBeginRecording)(&c4);
         EXPECT("empty pool, 512 bytes, inside a recording: a full segment", HOSTSEG_SZ, hostseg_size(CB(&c4), 1, 512));
-        static uint8_t dst[8192] __attribute__((aligned(4096))), d1[32], d2[HOSTSEG_SMALL + 256];
-        memset(dst, 0, sizeof dst); memset(d1, 0x35, sizeof d1); memset(d2, 0x6A, sizeof d2);
+        static uint8_t dst[8192] __attribute__((aligned(4096))), d1[32], d2[HOSTSEG_SMALL + 256], d3[48];
+        memset(dst, 0, sizeof dst); memset(d1, 0x35, sizeof d1); memset(d2, 0x6A, sizeof d2); memset(d3, 0x17, sizeof d3);
         NVNmemoryPoolBuilder db; NVNmemoryPool dp; P(nvnMemoryPoolBuilderSetDefaults)(&db); P(nvnMemoryPoolBuilderSetStorage)(&db, dst, sizeof dst); P(nvnMemoryPoolInitialize)(&dp, &db);
         P(nvnCommandBufferUpdateUniformBuffer)(&c4, (uintptr_t)dst, sizeof dst, 0, sizeof d1, d1);
         P(nvnCommandBufferUpdateUniformBuffer)(&c4, (uintptr_t)dst, sizeof dst, 64, sizeof d2, d2);
         NVNcommandHandle h4 = P(nvnCommandBufferEndRecording)(&c4);
         op_hdr h0, h1; memcpy(&h0, small, sizeof h0); memcpy(&h1, small + h0.size, sizeof h1);
-        EXPECT("the handle is the small segment's start", (uintptr_t)small, h4);
+        EXPECT("the handle is the room's start", (uintptr_t)small, h4);
         EXPECT("the record that does not fit follows a JUMP", OP_JUMP, h1.op);
-        P(nvnQueueSubmitCommands)(&q, 1, &h4); P(nvnQueueFinish)(&q);
+        P(nvnCommandBufferAddCommandMemory)(&c5, NULL, 0, 512);
+        EXPECT("the next grant does not land on that JUMP", 1, CB(&c5)->cur >= small + HOSTSEG_SMALL || CB(&c5)->cur + HOSTSEG_SMALL <= small);
+        P(nvnCommandBufferBeginRecording)(&c5);
+        P(nvnCommandBufferUpdateUniformBuffer)(&c5, (uintptr_t)dst, sizeof dst, 64 + sizeof d2, sizeof d3, d3);
+        NVNcommandHandle h5 = P(nvnCommandBufferEndRecording)(&c5);
+        uint8_t *after = CB(&c5)->cur;
+        EXPECT("a list that ended in its room keeps no bytes after its END", 0, CB(&c5)->end - after);
+        P(nvnCommandBufferInitialize)(&c5, &dev);   // as Odyssey: initialized again before the next list
+        P(nvnCommandBufferAddCommandMemory)(&c5, NULL, 0, 512);
+        EXPECT("the next grant starts at that END", (uintptr_t)align8(after), (uintptr_t)CB(&c5)->cur);
+        NVNcommandHandle hh[2] = {h4, h5};
+        P(nvnQueueSubmitCommands)(&q, 2, hh); P(nvnQueueFinish)(&q);
         EXPECT("the first record replays", 0, memcmp(dst, d1, sizeof d1));
         EXPECT("the record past the JUMP replays", 0, memcmp(dst + 64, d2, sizeof d2));
+        EXPECT("the second list replays", 0, memcmp(dst + 64 + sizeof d2, d3, sizeof d3));
         P(nvnCommandBufferBeginRecording)(&c4);
         uint8_t *big = cmd_alloc(CB(&c4), HOSTSEG_SZ + 64);
         EXPECT("a record larger than HOSTSEG_SZ fits its segment with OP_RESERVE after it", 1, CB(&c4)->end - big >= HOSTSEG_SZ + 64 + OP_RESERVE);
         P(nvnCommandBufferEndRecording)(&c4);
-        pthread_mutex_lock(&g_hostseg_mu); int si = -1; for (int i = 0; i < g_nhostseg; i++) if (g_hostseg[i].mem == small) si = i; if (si >= 0) g_hostseg[si].busy = 0; pthread_mutex_unlock(&g_hostseg_mu);
-        P(nvnCommandBufferAddCommandMemory)(&c5, NULL, 0, 0);
-        EXPECT("a free small segment is not taken for a full one", 1, si >= 0 && CB(&c5)->cur != small && CB(&c5)->end - CB(&c5)->cur == HOSTSEG_SZ);
-        P(nvnCommandBufferAddCommandMemory)(&c5, NULL, 0, 512);
-        EXPECT("but is taken again for a small one", 1, CB(&c5)->cur == small);
         uint64_t sum = 0; for (int i = 0; i < g_nhostseg; i++) sum += g_hostseg[i].n;
-        EXPECT("the cap counts every segment's bytes", sum, g_hostseg_bytes);
+        EXPECT("the cap counts every segment's and chunk's bytes", sum + (uint64_t)g_cmdarena_chunks * HOSTSEG_SZ, g_hostseg_bytes);
+        EXPECT("two chunks for the rooms (the open room keeps its lane, the next grant takes another)", 2, g_cmdarena_chunks);
         P(nvnCommandBufferFinalize)(&c4); P(nvnCommandBufferFinalize)(&c5); P(nvnMemoryPoolFinalize)(&dp);
     }
+    // PEANUTS end
 
     // 5b. Sync must hold the CPU back: first queue 24 copies of 64 MiB to keep the GPU busy, with the last one copying src to dst;
     //     the CPU rewrites src only after the fence wait returns. If the wait is released early, that last copy reads the rewritten src.

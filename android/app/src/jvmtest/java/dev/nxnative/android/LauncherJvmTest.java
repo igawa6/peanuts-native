@@ -68,6 +68,7 @@ public final class LauncherJvmTest {
         edges(new File(t, "edges"));
         review3(new File(t, "review3"));
         migrate(new File(t, "migrate"));
+        beforeNewBuild(new File(t, "before-new-build"));   // PEANUTS: issue #514
         System.out.println("ok " + n);
     }
 
@@ -281,6 +282,49 @@ public final class LauncherJvmTest {
         try { SaveStore.backup(s, new File(s, "inside"), "x"); check(false, "a backups folder inside the save is refused"); } catch (IOException e) { n++; }
         try { SaveStore.backup(new File(t, "nothing"), bk, "x"); check(false, "no save folder is refused"); } catch (IOException e) { n++; }
     }
+
+    // PEANUTS begin: the backup before the first start of a new build (issue #514: SaveStore.beforeNewBuild), taken under the save's lock as GameActivity does
+    static void beforeNewBuild(File t) throws Exception {
+        File s = save(t, "lp"), bk = new File(t, "save-backups/040074A01BF12000"), stamp = new File(t, "files/save-starts/040074A01BF12000.txt");
+        File other = new File(s.getPath() + SaveStore.USER_SUFFIX + "0123456789abcdef0123456789abcdef");
+        write(new File(other, "slot0.bin"), "other user");
+        List<File> others = java.util.Collections.singletonList(other);
+        String modded = "0.1.7 aaa\t/packs/040074A01BF12000-mod-86c06ecc5c84\t" + s.getAbsolutePath(), update = "0.1.8 bbb\t/packs/040074A01BF12000-mod-86c06ecc5c84\t" + s.getAbsolutePath(),
+                plain = "0.1.8 bbb\t/packs/040074A01BF12000\t" + s.getAbsolutePath();
+        SaveStore.Manifest lp = SaveStore.scan(s);
+        try (SaveStore.Lock l = SaveStore.lock(s)) {
+            List<SaveStore.Backup> m = SaveStore.beforeNewBuild(s, others, bk, "20261125-003000", stamp, modded);
+            check(m.size() == 2 && m.get(0).name.equals("20261125-003000" + SaveStore.BEFORE_UPDATE), "no last start known: the save and the other user's are backed up");
+            check(SaveStore.scan(new File(m.get(0).dir, "main")).diff(lp) == null && m.get(0).source.equals(s.getAbsolutePath()), "the backup holds the save as it was");
+            check(SaveStore.when(m.get(0).name).endsWith("(automatic, before the first start of a new build)"), "Restore saves says what it is");
+            check(SaveStore.beforeNewBuild(s, others, bk, "20261125-003100", stamp, modded).isEmpty(), "the same build again: no backup");
+            write(new File(s, "slot0.bin"), "slot0 lp, played on");
+            check(SaveStore.beforeNewBuild(s, others, bk, "20261125-003200", stamp, modded).isEmpty(), "played on the same build: still none");
+            SaveStore.Manifest played = SaveStore.scan(s);
+            m = SaveStore.beforeNewBuild(s, others, bk, "20261125-003408", stamp, update);
+            check(m.size() == 1 && SaveStore.scan(new File(m.get(0).dir, "main")).diff(played) == null, "the app updated: the save is backed up, the unchanged other user's is not again");
+            check(SaveStore.beforeNewBuild(s, others, bk, "20261125-003500", stamp, plain).isEmpty(), "another pack, the save as the newest backup holds it: no second copy");
+            write(new File(s, "slot0.bin"), "new game written over it");
+            check(SaveStore.beforeNewBuild(s, others, bk, "20261125-003600", stamp, modded).size() == 1, "another pack and a changed save: backed up");
+            check(SaveStore.list(bk).size() == 4, "every backup stays: none is ever removed");
+            boolean kept = false;
+            for (SaveStore.Backup b : SaveStore.list(bk)) if (b.source.equals(s.getAbsolutePath()) && SaveStore.scan(new File(b.dir, "main")).diff(played) == null) kept = true;
+            check(kept, "the save from before the update is still there after later starts");
+        }
+        File empty = new File(t, "saves/0100000000010000"), stamp2 = new File(t, "files/save-starts/0100000000010000.txt");
+        empty.mkdirs();
+        try (SaveStore.Lock l = SaveStore.lock(empty)) {
+            check(SaveStore.beforeNewBuild(empty, java.util.Collections.emptyList(), bk, "20261125-004000", stamp2, plain).isEmpty() && stamp2.isFile(), "an empty save: no backup, the start noted");
+        }
+        File bad = new File(t, "not-a-folder");
+        write(bad, "x");
+        File s3 = save(new File(t, "third"), "x"), stamp3 = new File(t, "files/save-starts/third.txt");
+        try (SaveStore.Lock l = SaveStore.lock(s3)) {
+            try { SaveStore.beforeNewBuild(s3, java.util.Collections.emptyList(), new File(bad, "bk"), "20261125-005000", stamp3, plain); check(false, "a backups folder that cannot be made fails"); }
+            catch (IOException e) { check(!stamp3.exists(), "no backup made: the start is not noted, the next start tries again"); }
+        }
+    }
+    // PEANUTS end
 
     static void restore(File t) throws Exception {
         File s = save(t, "old"), bk = new File(t, "save-backups/040074A01BF12000");

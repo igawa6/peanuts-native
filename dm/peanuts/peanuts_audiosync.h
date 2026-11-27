@@ -6,10 +6,10 @@
 // The host plays the game's sound at the game's pace instead: it measures game time (presented frames / the game's frame rate) against real time, and how far
 // the sound ran ahead of the game, and sets the tempo so both stay together (0.5x to 1.03x). The pitch stays: a time-stretch (WSOLA) changes the tempo, a
 // resampler takes only the last 1 % (inaudible). Loads, pauses and menus (no frames, or a pace far from the game's rate) play in real time.
-// Which games: a game whose sound is not tied to its frames (its world runs in real time) must keep real-time sound. So by default (PN_AUDIO_FOLLOW=1) the
-// output follows only within 1 % (inaudible: a slower panel, short drops), until the game shows that it keeps its sound in step: it pauses a group of voices and
-// starts them again within 300 ms while it runs slow (peanuts_audiovoice.c), twice within 60 s. From then on, and on later starts (<DM_TEMP>/audio_follow), the
-// output follows fully. PN_AUDIO_FOLLOW=0 turns it off, 2 follows fully from the start.
+// Which games: by default (PN_AUDIO_FOLLOW=1) every game's output follows its pace within 1 % only (the resampler, inaudible), and keeps its speed otherwise.
+// 0.1.8 followed in full once a game paused and restarted a group of voices within 300 ms twice within 60 s while it ran slow (peanuts_audiovoice.c), and on
+// later starts (<DM_TEMP>/audio_follow); with a frame rate cap below the game's own rate that slowed and stretched the sound (#600), so since 0.1.9 the finding
+// is only logged and an old audio_follow file is ignored. PN_AUDIO_FOLLOW=0 turns it off, 2 follows fully from the start (WSOLA time-stretch, pitch kept).
 #pragma once
 #include <stdint.h>
 

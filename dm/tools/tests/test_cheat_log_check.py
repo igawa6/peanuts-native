@@ -10,8 +10,35 @@ assert spec is not None and spec.loader is not None
 clc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(clc)
 
-OOT = '0400486024DEC000'
-FE = '04007EF01F8AE000'
+# PEANUTS begin: the two cheat files this test read (Ocarina of Time's and Fire Emblem Fortune's Weave's, Switch 2 profiles) are not carried; two synthetic
+# profiles of the same shape (notes and section labels, chains, a master-less list) stand in, in a temporary tree that clc.REPO points at
+import shutil   # noqa: E402
+import tempfile   # noqa: E402
+
+OOT = '0100000000AA0000'
+FE = '0100000000BB0000'
+CHEATS = {
+    OOT: ('E0F3CCFAF50065AE', '[Synthetic game data; notes: README Cheats]\n[--SectionStart:Player--]\n[Infinite Rupees (999)]\n580F0000 04E842A8\n580F1000 000000D8\n'
+          '780F0000 0000966C\n640F0000 00000000 000003E7\n[Infinite Health (experimental)]\n580F0000 04E842A8\n780F0000 00009694\n540E2F00 00000028\nA4EF0000\n'
+          '[--SectionEnd:Player--]\n[--SectionStart:Ammo--]\n[Infinite Arrows (99)]\n580F0000 04E842A8\n780F0000 00009D4C\n640F0000 00000000 00000063\n[--SectionEnd:Ammo--]\n'),
+    FE: ('DB93B0125F485060', '[Synthetic game data; notes: README Cheats]\n[Max Gold]\n580F0000 01234560\n780F0000 00000010\n640F0000 00000000 0098967F\n'
+         '[All Units Level 20]\n580F0000 01234560\n780F0000 00000200\n600F0000 00000000 00000014\n'),
+}
+
+
+def setUpModule():
+    tmp = Path(tempfile.mkdtemp(prefix='cheat_log_check_'))
+    for tid, (build, text) in CHEATS.items():
+        (tmp / 'dm/games' / tid / 'cheats').mkdir(parents=True)
+        (tmp / 'dm/games' / tid / 'cheats' / f'{build}.txt').write_text(text, encoding='utf-8')
+    global _real_repo, _tmp
+    _real_repo, _tmp, clc.REPO = clc.REPO, tmp, tmp
+
+
+def tearDownModule():
+    clc.REPO = _real_repo
+    shutil.rmtree(_tmp, ignore_errors=True)
+# PEANUTS end
 
 
 def log_for(title_id, skip=(), extra=()):

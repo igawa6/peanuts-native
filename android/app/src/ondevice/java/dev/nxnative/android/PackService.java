@@ -50,7 +50,9 @@ import java.util.regex.Pattern;
  *     stops and leaves a notification with Resume.</li>
  * <li>Battery below 20 % and not charging, or thermal status SEVERE or worse (PackPolicy): the tool is interrupted, the job waits (paused, wake lock released) and
  *     goes on by itself when charging / cooled (thermal MODERATE or better). Each pause and each going on is a line in the step's log with the thermal status, the
- *     thermal headroom and the battery. A heat pause offers Go on anyway (ACTION_GO_ON: the card and the notification), which lifts it while this service runs the job.</li>
+ *     thermal headroom and the battery. A heat pause offers Go on anyway (ACTION_GO_ON: the card and the notification), which lifts it while this service runs the job.
+ *     PEANUTS (#803): a heat pause interrupts only a step that keeps what it did (PackPolicy.heatStops); the others are held where they are (hold) and go on
+ *     from there, and it goes on at LIGHT or better, or at MODERATE after PackPolicy.COOL_MS.</li>
  * <li>Android 14+'s 6 hours a day for dataSync services (onTimeout): paused like Pause, reason "timeout"; the launcher's Resume, once the app is open, goes on.</li>
  * </ul>
  * The launcher binds with a Messenger (MSG_REGISTER with replyTo) and gets MSG_STATE messages, data "job" = job.json's text, as the job changes.
@@ -100,10 +102,26 @@ public final class PackService extends Service {
     private static final List<Runnable> afterUpgrade = new CopyOnWriteArrayList<>();   // every job start that came meanwhile (review m6), each re-checked when run (m9)
     private PrepareText.Failure failure;   // what the last step that failed said for the card (step() sets it with its reason; the worker thread only)
     private volatile boolean heatOverride;   // Go on anyway: the heat pause is lifted while this service runs the job
+    // PEANUTS begin: the heat pause holds the step in hand where it is instead of ending it (#803: the code step was interrupted at each pause and began
+    // again from 0, 74 times in 4 hours on an AYN Odin 3 on its charger)
+    private volatile boolean held;   // the tool in hand is held (holdFile), not interrupted
+    private volatile long heatSince;   // when the heat pause began, or the status last fell below SEVERE in it (elapsedRealtime): PackPolicy.COOL_MS
+    private int heatPauses;   // heat pauses in this run of the job (Job.heatPauses: Go on anyway first from PackPolicy.HOT_AGAIN_AT)
+    private final Runnable heatRecheck = this::policy;   // the cool-down ends without a thermal change to call policy()
+    // A step asked to hold is held only once its tool says so (HELD_LINE, pack_android.py: its worker group stopped, or the rewrite in this process waiting at
+    // a progress line): until then it runs (a rewrite in this process up to its next progress line), and a tool that never holds (identify, pack) runs to
+    // its step's end. job.json says paused from that line on, not before (holdTaken), and at CRITICAL or worse a step not held by HOLD_GRACE_MS is stopped
+    // (policy): it runs again when the phone has cooled down. Found in review: the card said paused while the step ran on into CRITICAL heat
+    private final Object holdLock = new Object();
+    private volatile boolean holdSeen;   // the tool said it is held (HELD_LINE) since the hold was asked
+    private volatile long heldAt;   // when the hold was asked (elapsedRealtime)
+    static final String HELD_LINE = "held where it is";   // the start of pack_android.py's line (wait_while_held, _rewrite_worker_once), trimmed
+    static final long HOLD_GRACE_MS = 3_000;   // a worker group is stopped within 0.5 s of the hold file
+    // PEANUTS end
     private int batteryPct = 100, thermal;
     private boolean charging = true;
     private long lastNote, lastSave, lastSend;
-    private final PowerManager.OnThermalStatusChangedListener thermalListener = s -> { thermal = s; policy(); };
+    private final PowerManager.OnThermalStatusChangedListener thermalListener = s -> { if (s < PackPolicy.SEVERE && thermal >= PackPolicy.SEVERE) heatSince = SystemClock.elapsedRealtime(); thermal = s; policy(); };   // PEANUTS: heatSince, the cool-down from the fall below SEVERE (#803)
     private final BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) { battery(i); policy(); }
     };
@@ -118,7 +136,8 @@ public final class PackService extends Service {
         wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "nxnative:pack");
         wake.setReferenceCounted(false);
         engine = PackEngine.create(this);
-        battery(registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED), Context.RECEIVER_NOT_EXPORTED));
+        // PEANUTS: from API 33 not exported (the call as before); on Android 12 the app's signature permission (InternalBroadcast; the system, which sends this, passes it)
+        battery(dev.peanuts.InternalBroadcast.register(this, batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED)));
         thermal = pm.getCurrentThermalStatus();
         pm.addThermalStatusListener(getMainExecutor(), thermalListener);
         policy();
@@ -127,6 +146,8 @@ public final class PackService extends Service {
     @Override public void onDestroy() {
         unregisterReceiver(batteryReceiver);
         pm.removeThermalStatusListener(thermalListener);
+        main.removeCallbacks(heatRecheck);   // PEANUTS: no cool-down check on a service that is gone (#803)
+        unhold();   // PEANUTS: a held worker group is not left stopped (SIGSTOP) behind a service that is gone: the hold file goes, the tool goes on or takes the stop
         if (wake.isHeld()) wake.release();
         super.onDestroy();
     }
@@ -211,7 +232,8 @@ public final class PackService extends Service {
         }
         // PEANUTS end
         // A sticky restart (no intent: the process was killed) resumes only a job that was running; a start resumes one that is not done
-        boolean go = check || !checkAsked && j != null && (intent == null ? "running".equals(j.state()) : !"done".equals(j.state()) || j.apkChanged());   // PEANUTS: check ||, !checkAsked: a check's start never runs a job (an app update's job waits for the user)
+        // PEANUTS: a sticky restart also resumes a job the policy paused (heat, battery: PackPolicy.resumesAfterRestart), which waits in the pause again
+        boolean go = check || !checkAsked && j != null && (intent == null ? PackPolicy.resumesAfterRestart(j.state(), j.reason()) : !"done".equals(j.state()) || j.apkChanged());   // PEANUTS: check ||, !checkAsked: a check's start never runs a job (an app update's job waits for the user)
         if (go && intent == null) stepLog(j, "going on after Android ended the job's process (a sticky restart; " + readings() + ")");
         if (!go && (worker == null || !worker.isAlive())) {
             // startForegroundService must be answered by startForeground even when there is nothing to do
@@ -308,6 +330,8 @@ public final class PackService extends Service {
         }
         stopReason = null;
         heatOverride = !heatTrusted();   // asked again for each run of the job, unless Go on anyway was tapped on this device before (PEANUTS, #93)
+        heatPauses = 0;   // PEANUTS: counted per run of the job (#803)
+        j.heatPauses(0);   // PEANUTS
         if (heatOverride) stepLog(j, "heat: Go on anyway was chosen on this device before, so SEVERE does not pause this run (critical or worse still does)");   // PEANUTS
         if (intent != null) j.endedAll();   // the user's Start / Resume / Retry: earlier deaths in a step count no more (only sticky restarts add up)
         // PEANUTS: a build with code mods (Job.modArgs, dev.peanuts.build.Prepare.runModded) is not remembered: Home's panel follows the remembered job
@@ -377,6 +401,7 @@ public final class PackService extends Service {
 
     private void requestStop(String reason) {
         stopReason = reason;
+        unhold();   // PEANUTS: a held tool takes the interrupt as a running one does (#803)
         engine.interrupt();
         synchronized (lock) { lock.notifyAll(); }
         Thread w = worker;
@@ -441,26 +466,92 @@ public final class PackService extends Service {
     private void heatTrusted(boolean trusted) { getSharedPreferences(HEAT_PREFS, MODE_PRIVATE).edit().putBoolean(HEAT_GO_ON, !trusted).apply(); }
     // PEANUTS end
 
-    /** The automatic pause (PackPolicy): below 20 % on battery, or SEVERE heat (until MODERATE or better) unless Go on anyway lifted it */
+    /** The automatic pause (PackPolicy): below 20 % on battery, or SEVERE heat (until LIGHT, or MODERATE after the cool-down: PEANUTS #803) unless Go on anyway lifted it */
     private void policy() {
-        String r = PackPolicy.reason(batteryPct, charging, thermal, autoReason, heatOverride);
+        boolean hot = "thermal".equals(autoReason);   // PEANUTS
+        String r = PackPolicy.reason(batteryPct, charging, thermal, autoReason, heatOverride, hot ? SystemClock.elapsedRealtime() - heatSince : 0);   // PEANUTS: the cool-down
         String was = autoReason;
         autoReason = r;
         Job j = job;
         boolean working = worker != null && worker.isAlive();
         if (r != null && !r.equals(was)) {
             String why = r.equals("battery") ? "battery below " + PackPolicy.BATTERY_MIN + " % and not charging" : "thermal status " + PackPolicy.thermalName(thermal)
-                    + (heatOverride ? " (critical or worse pauses even after Go on anyway)" : " (SEVERE or worse pauses; it goes on at MODERATE or better)");
-            if (working) stepLog(j, "pausing: " + r + ": " + why + "; " + readings());
+                    + (heatOverride ? " (critical or worse pauses even after Go on anyway)" : " (SEVERE or worse pauses; it goes on at LIGHT or better, or at MODERATE after " + PackPolicy.COOL_MS / 1000 + " s)");   // PEANUTS: #803
+            // PEANUTS begin: the heat pause's start, its count, and the step it holds instead of ending (#803)
+            if (r.equals("thermal")) {
+                heatSince = SystemClock.elapsedRealtime();
+                if (working && j != null && j != checkJob) j.heatPauses(++heatPauses);
+            }
+            int at = j == null ? -1 : j.current();
+            boolean hold = r.equals("thermal") && inTool && !checking && at >= 0 && !PackPolicy.heatStops(Job.STEPS[at]);
+            if (working) stepLog(j, "pausing: " + r + ": " + why + "; " + readings() + (r.equals("thermal") ? " (heat pause " + heatPauses + " of this run)" : ""));
+            // PEANUTS end
             else Log.i(TAG, "pausing: " + r + " (no job running): " + readings());
-            if (inTool) engine.interrupt();
+            if (hold) hold(j);   // PEANUTS: #803
+            else if (inTool) engine.interrupt();
         }
         if (r == null && was != null) {
-            if (working) stepLog(j, "going on after the " + was + " pause: " + readings());
+            if (working) stepLog(j, "going on after the " + was + " pause: " + readings() + (held ? " (the step goes on from where it was held)" : ""));   // PEANUTS: #803
             else Log.i(TAG, "going on: " + readings());
+            // PEANUTS begin: a held step goes on where it is (#803)
+            boolean wasHeld;
+            synchronized (holdLock) {
+                wasHeld = held && j != null;
+                if (wasHeld) { unhold(); j.state("running", null, null); }
+            }
+            if (wasHeld) save(j, true);
+            // PEANUTS end
             synchronized (lock) { lock.notifyAll(); }
         }
+        // PEANUTS begin: at CRITICAL or worse a step asked to hold that has not said it is held is stopped (holdLock's note); a held one uses no CPU and stays held
+        if ("thermal".equals(r) && held && !holdSeen && inTool && thermal >= PackPolicy.CRITICAL && SystemClock.elapsedRealtime() - heldAt >= HOLD_GRACE_MS) {
+            stepLog(j, "heat " + PackPolicy.thermalName(thermal) + ": the step did not hold where it is (its tool cannot hold, or has not reached a point where it can): "
+                    + "it is stopped and runs again when the phone has cooled down; " + readings());
+            unhold();
+            engine.interrupt();
+        }
+        // the cool-down at MODERATE ends with no thermal change to call this again (#803)
+        main.removeCallbacks(heatRecheck);
+        if ("thermal".equals(r)) main.postDelayed(heatRecheck, 15_000);
+        // PEANUTS end
     }
+
+    // PEANUTS begin: the heat pause holds the step in hand (#803). The tool reads PN_HOLD_FILE (pack_android.py held()): while the file is there the rewrite's
+    // worker processes are stopped (SIGSTOP, SIGCONT when it goes) or the rewrite in this process waits at its next progress line, so the step goes on from
+    // where it was. A tool that cannot hold (the identify and pack steps, seconds long) finishes its step, and the job waits before the next one
+    // (waitWhileAuto). job.json says paused meanwhile: the card and the notification show the pause and Go on anyway, and the build's watchdog takes it for
+    // a pause, not a hang (Prepare)
+    private File holdFile() { return new File(getNoBackupFilesDir(), "pack-hold"); }
+
+    private void hold(Job j) {
+        try {
+            if (!holdFile().createNewFile() && !holdFile().isFile()) throw new IOException("not made");
+        } catch (IOException e) {
+            stepLog(j, "the step cannot be held (" + holdFile() + ": " + e.getMessage() + "): it finishes, and the build waits before the next step");
+            return;
+        }
+        synchronized (holdLock) { held = true; holdSeen = false; heldAt = SystemClock.elapsedRealtime(); }
+        stepLog(j, "the step is asked to hold where it is (not ended): it goes on from there when the phone has cooled down; a tool that cannot hold finishes its step first");
+        save(j, true);   // its heat pause count; job.json says paused once the tool says it is held (holdTaken)
+    }
+
+    /** The tool said it is held (HELD_LINE, Tail): job.json says paused now, for the card and the notification, and the watchdog takes it for a pause */
+    private void holdTaken(Job j) {
+        synchronized (holdLock) {
+            if (!held || holdSeen) return;
+            holdSeen = true;
+            if (!"thermal".equals(autoReason)) return;
+            j.state("paused", "thermal", null);
+            j.reasonDetail(PackPolicy.plainReadings(batteryPct, charging, thermal), PackPolicy.canOverride("thermal", thermal));
+        }
+        save(j, true);
+    }
+
+    private void unhold() {
+        synchronized (holdLock) { held = false; holdSeen = false; }
+        if (holdFile().exists() && !holdFile().delete()) Log.w(TAG, "the hold file could not be deleted: " + holdFile());
+    }
+    // PEANUTS end
 
     // ---- The job ----
 
@@ -766,6 +857,8 @@ public final class PackService extends Service {
 
     /** Waits while the policy pauses the job; false when the job is to stop */
     private boolean waitWhileAuto(Job j) throws InterruptedException {
+        // PEANUTS: a step that could not be held ended while the job said paused (hold, #803), and the pause is over: the next step runs as running
+        if (autoReason == null && stopReason == null && "paused".equals(j.state()) && "thermal".equals(j.reason())) { j.state("running", null, null); save(j, true); }
         if (autoReason == null) return stopReason == null;
         if (wake.isHeld()) wake.release();
         String shown = null;
@@ -1049,6 +1142,7 @@ public final class PackService extends Service {
         // the Python half around the translator ran under one GIL, ~0.4 core (vk_android_build.py DMSH_VK_WORKER, split_pool.py). DMSH_VK_WORKERS=1 in env.txt turns them off
         PackEngine.setenv("DMSH_VK_WORKER", pyLib == null ? "" : "/system/bin/linker64 " + new File(PackNative.repo().getParentFile(), "python/bin/nxpack_worker").getPath());   // PEANUTS
         PackEngine.setenv("DMSH_VK_WORKERS", String.valueOf(pyLib == null ? 1 : shaderWorkers));   // PEANUTS
+        PackEngine.setenv("PN_HOLD_FILE", holdFile().getPath());   // PEANUTS: the heat pause holds the tool where it is (hold, #803)
         // Tests: ondevice/env.txt, KEY=VALUE lines, overrides any of the above for the tools (e.g. DMSH_VK_XLATE_J=6 to compare the translator's threads)
         File envFile = new File(od, "env.txt");
         if (envFile.isFile()) for (String l : Files.readAllLines(envFile.toPath(), StandardCharsets.UTF_8)) {
@@ -1059,6 +1153,7 @@ public final class PackService extends Service {
         Tail tail = new Tail(j, checking ? "check" : s, log);   // PEANUTS: the check's progress goes to a step of its own, not the done shaders step's
         tail.start();
         int code;
+        unhold();   // PEANUTS: no hold left from a step or a process before (#803)
         inTool = true;
         long began = SystemClock.elapsedRealtime();   // PEANUTS
         try {
@@ -1068,6 +1163,7 @@ public final class PackService extends Service {
         } finally {
             inTool = false;
             tail.finish();
+            if (held) unhold();   // PEANUTS: a tool that could not hold ended its step; the job waits before the next one (waitWhileAuto, #803)
         }
         Log.i(TAG, s + ": exit " + code);
         long sec = (SystemClock.elapsedRealtime() - began) / 1000;
@@ -1382,6 +1478,8 @@ public final class PackService extends Service {
                 } else if (st.find()) {
                     j.stepNote(step, st.group(1).trim());
                     changed = true;
+                } else if (line.startsWith(HELD_LINE)) {   // PEANUTS: the tool is held now (holdTaken, #803)
+                    holdTaken(j);
                 } else if (step.equals("shaders") && (m = BUILT.matcher(line)).find()) {   // PEANUTS: the library's summary line: shaders that did not translate or validate (Try anyway writes the library without them)
                     long of = Long.parseLong(m.group(1));
                     j.shadersFailed(of - Long.parseLong(m.group(2)), of);
@@ -1484,13 +1582,20 @@ public final class PackService extends Service {
                 PendingIntent.getService(this, 1, pause, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build();
         if (waiting) {
             String why = PrepareText.capital(Job.reasonText(j.reason())) + "." + (j.reasonDetail().isEmpty() ? "" : "\n" + PrepareText.capital(j.reasonDetail()) + ".");   // PEANUTS: build text in the player's words (0.1.8)
-            b.setContentText(PrepareText.capital(Job.reasonText(j.reason())) + ".").setStyle(new Notification.BigTextStyle().bigText(j.stepText() + ", " + pct + " %\n" + why))
-                    .setSubText("Step " + (i + 1) + " of " + Job.STEPS.length + ", " + pct + " %").setOngoing(true).addAction(pauseAction);
+            boolean again = j.canGoOn() && j.hotAgain();   // PEANUTS: repeated heat pauses: Go on anyway first, and why (#803)
+            if (again) why += "\n" + PackPolicy.HOT_AGAIN;   // PEANUTS
+            b.setContentText(again ? PackPolicy.HOT_AGAIN : PrepareText.capital(Job.reasonText(j.reason())) + ".").setStyle(new Notification.BigTextStyle().bigText(j.stepText() + ", " + pct + " %\n" + why))   // PEANUTS: again
+                    .setSubText("Step " + (i + 1) + " of " + Job.STEPS.length + ", " + pct + " %").setOngoing(true);   // PEANUTS: the Pause action after Go on anyway when it comes first
+            Notification.Action goOnAction = null;   // PEANUTS
             if (j.canGoOn()) {
                 Intent goOn = new Intent(this, PackService.class).setAction(ACTION_GO_ON).putExtra(EXTRA_FROM, "notification");
-                b.addAction(new Notification.Action.Builder(null, "Go on anyway",
-                        PendingIntent.getService(this, 3, goOn, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
+                goOnAction = new Notification.Action.Builder(null, "Go on anyway",   // PEANUTS: goOnAction
+                        PendingIntent.getService(this, 3, goOn, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build();
             }
+            // PEANUTS begin: #803
+            if (again) b.addAction(goOnAction).addAction(pauseAction);
+            else { b.addAction(pauseAction); if (goOnAction != null) b.addAction(goOnAction); }
+            // PEANUTS end
             return b.build();
         }
         if (running) {

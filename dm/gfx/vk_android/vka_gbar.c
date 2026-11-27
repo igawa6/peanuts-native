@@ -12,6 +12,8 @@
 #include "vka_gbar.h"
 #include <stdio.h>
 
+_Static_assert(VKGB_STAGE_COMPUTE == VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT && VKGB_STAGE_ALL == VK_PIPELINE_STAGE_ALL_COMMANDS_BIT && VKGB_ACC_SHADER_WRITE == VK_ACCESS_SHADER_WRITE_BIT
+               && VKGB_ACC_MEM_READ == VK_ACCESS_MEMORY_READ_BIT && VKGB_ACC_MEM_WRITE == VK_ACCESS_MEMORY_WRITE_BIT, "vkgb_host_bar's bits");   // PEANUTS
 static _Atomic(VkCommandBuffer) g_tcb;   // the replay's command buffer being recorded (vka_gbar_cb); the state below is the replay thread's
 static vkgb G; static vkgb_stats GS, GS0;
 
@@ -56,11 +58,17 @@ W(vkCmdDispatchBase, VKGB_C_DISPATCH, (VkCommandBuffer cb, uint32_t bx, uint32_t
 // toward the host) is work of its own: what is pending is recorded before it
 static void VKAPI_CALL g_vkCmdPipelineBarrier(VkCommandBuffer cb, VkPipelineStageFlags s, VkPipelineStageFlags d, VkDependencyFlags f, uint32_t nm, const VkMemoryBarrier *m,
                                               uint32_t nb, const VkBufferMemoryBarrier *b, uint32_t ni, const VkImageMemoryBarrier *i) {
-    int full = 0;
-    if (s == VK_PIPELINE_STAGE_ALL_COMMANDS_BIT && d == VK_PIPELINE_STAGE_ALL_COMMANDS_BIT)
-        for (uint32_t k = 0; k < nm && !full; k++) full = (m[k].srcAccessMask & VK_ACCESS_MEMORY_WRITE_BIT) && (m[k].dstAccessMask & (VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT)) == (VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
+    // PEANUTS begin: treat COMPUTE->ALL as VKGB_C_FULL (avoids duplicate settle) and reset since=VKGB_NONE after non-compute scoped barriers to ALL_COMMANDS
+    // (vkgb_host_bar); DM_VK_BAR_SCOPED=0 (live) keeps the rule from before them
+    int full = 0, dst_all = 0, scoped = vka_bar_scoped();
+    for (uint32_t k = 0; k < nm && !full; k++) {
+        int h = vkgb_host_bar(s, d, m[k].srcAccessMask, m[k].dstAccessMask, nb || ni, scoped);
+        if (h == VKGB_H_FULL) full = 1; else if (h == VKGB_H_SINCE_NONE) dst_all = 1;
+    }
     pre(cb, full ? VKGB_C_FULL : VKGB_C_WORK);
     N.vkCmdPipelineBarrier(cb, s, d, f, nm, m, nb, b, ni, i);
+    if (dst_all && cb && cb == atomic_load_explicit(&g_tcb, memory_order_relaxed)) G.since = VKGB_NONE;
+    // PEANUTS end
 }
 #define GB_HOOK(f) N.f = vk.f; if (N.f) vk.f = g_##f;
 void vka_gbar_install(void) {   // vka_dev.c, after vka_enc_install

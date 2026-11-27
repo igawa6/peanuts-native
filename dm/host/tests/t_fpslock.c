@@ -3,12 +3,16 @@
 #define DM_FPS_STEPS_ROWS {{"5eb5eb5eb5eb5eb5eb5eb5eb5eb5eb5e", 0x100000, 0x210, 0x214, 1, {0x8}}}
 #define DM_FPS_NSTEPS_ROWS 1
 #define DM_TEST_PIN 1   // sead_pin runs on the Mac here, so the start-up path of the pin is tested, not only sead_pin_wanted
+#define DM_TEST_THERMAL 1   // PEANUTS: the tests' own dm_thermal_capped (thermal_check)
 #include "../hle_fpslock.c"
 #include <assert.h>
 #include <math.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
+// PEANUTS: hle_nvn.c thermal_capped, controlled (thermal_check); each call counted
+static int g_hot, g_hot_calls;
+int dm_thermal_capped(void) { g_hot_calls++; return g_hot; }
 
 static module_t test_modules[1];
 module_t *g_mod = test_modules;
@@ -249,6 +253,28 @@ static void step_check(void) {
     dm_fps_state = NULL; nxhost_fps_limit_set(30); assert(dm_fps_limit_step() == 0 && nxhost_fps_limit_get() == 30);   // no frame step: the limiter alone
 }
 
+// PEANUTS: limit_raw under the thermal cap: a limit above 30 holds 30 while it holds (the limiter's rate, nxhost_fps_limit_get, as for FPSLocker rows); 30 or less and
+// no limit stay; the cap is asked whatever the limit (so its 30 calm seconds count at a limit of 30, and a limit raised after it is not held); a frame step holds 30 too
+static void thermal_check(void) {
+    dm_fps_state = NULL; g_hot = 0;
+    nxhost_fps_limit_set(60); assert(nxhost_fps_limit_get() == 60);
+    g_hot = 1; assert(nxhost_fps_limit_get() == 30);   // held for heat
+    nxhost_fps_limit_set(45); assert(nxhost_fps_limit_get() == 30);
+    nxhost_fps_limit_set(120); assert(nxhost_fps_limit_get() == 30);
+    nxhost_fps_limit_set(20); assert(nxhost_fps_limit_get() == 20);   // below 30: as chosen
+    int calls = g_hot_calls;
+    nxhost_fps_limit_set(30); assert(nxhost_fps_limit_get() == 30 && g_hot_calls > calls);   // at 30 the cap is still asked, so its recovery goes on
+    nxhost_fps_limit_set(0); calls = g_hot_calls; assert(nxhost_fps_limit_get() == 0 && g_hot_calls > calls);   // no limit: the game's own rate
+    g_hot = 0; nxhost_fps_limit_set(60); assert(nxhost_fps_limit_get() == 60);   // cooled while at 30 or none: raised at once
+    g_hot = 1; assert(nxhost_fps_limit_get() == 30);
+    g_hot = 0; assert(nxhost_fps_limit_get() == 60);   // the hold ends with the cap
+    static uint8_t page[0x40]; dm_fps_state = page; setenv("DM_FPS_TARGET", "60", 1);
+    nxhost_fps_limit_set(60); assert(dm_fps_limit_step() == 60);
+    g_hot = 1; assert(dm_fps_limit_step() == 30 && nxhost_fps_limit_get() == 30);   // a frame step: 2 vsyncs
+    g_hot = 0; assert(dm_fps_limit_step() == 60);
+    dm_fps_state = NULL;
+}
+
 // A framework's fixed steps per frame (steps_tick): the cap is the steps a frame through its mode, the game's own mode comes back, the frame limit folds in, presentation follows the game
 static void steps_check(int which) {
     size_t len = 0x200000; uint8_t *base = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0); assert(base != MAP_FAILED);
@@ -293,6 +319,7 @@ static void steps_check(int which) {
 int main(void) {
     for (int i = 0; i < 3; i++) { pid_t p = fork(); assert(p >= 0); if (!p) { steps_check(i); _exit(0); } int status; assert(waitpid(p, &status, 0) == p); assert(WIFEXITED(status) && WEXITSTATUS(status) == 0); }
     sead_rate_check();
+    { pid_t p = fork(); assert(p >= 0); if (!p) { thermal_check(); _exit(0); } int status; assert(waitpid(p, &status, 0) == p); assert(WIFEXITED(status) && WEXITSTATUS(status) == 0); }   // PEANUTS: thermal_check
     { pid_t p = fork(); assert(p >= 0); if (!p) { step_check(); _exit(0); } int status; assert(waitpid(p, &status, 0) == p); assert(WIFEXITED(status) && WEXITSTATUS(status) == 0); }
     // Each process starts the production one-time initialization with a fresh build and target.
     for (int i = 0; i < 23; i++) {   // PEANUTS: 23 (case 22, FC 27 1.8d.f570)
@@ -300,5 +327,5 @@ int main(void) {
         if (!p) { check(i); _exit(0); }
         int status; assert(waitpid(p, &status, 0) == p); assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     }
-    puts("Frame limits: integer/float FPS, milliseconds, vsync copies, floors behind pointers and under the controller's maximum, caps set while running, build gates and overrides, sead's controller at the measured rate (on and off live), framework step counts passed");
+    puts("Frame limits: integer/float FPS, milliseconds, vsync copies, floors behind pointers and under the controller's maximum, caps set while running, build gates and overrides, sead's controller at the measured rate (on and off live), framework step counts, the thermal cap's hold of the frame limit passed");   // PEANUTS: the thermal cap
 }

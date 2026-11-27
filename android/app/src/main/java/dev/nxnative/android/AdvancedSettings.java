@@ -27,7 +27,7 @@ final class AdvancedSettings {
     static synchronized List<AdvancedTable.Row> table(Context c) {
         if (cache == null) {
             try (InputStream in = c.getAssets().open(AdvancedTable.ASSET)) {
-                cache = AdvancedTable.parse(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+                cache = AdvancedTable.parse(new String(Streams.readAll(in), StandardCharsets.UTF_8));   // PEANUTS: Android 12 (Streams: the same call from API 33)
             } catch (IOException | IllegalArgumentException e) { cache = new ArrayList<>(); }
         }
         return cache;
@@ -38,7 +38,7 @@ final class AdvancedSettings {
     /** What a switch does, from docs/env_switches.tsv (assets/advanced/), for the developer rows; null when unknown */
     static synchronized String meaning(Context c, String name) {
         if (meanings == null) {
-            try (InputStream in = c.getAssets().open(AdvancedTable.MEANINGS_ASSET)) { meanings = AdvancedTable.meanings(new String(in.readAllBytes(), StandardCharsets.UTF_8)); }
+            try (InputStream in = c.getAssets().open(AdvancedTable.MEANINGS_ASSET)) { meanings = AdvancedTable.meanings(new String(Streams.readAll(in), StandardCharsets.UTF_8)); }   // PEANUTS: Android 12 (Streams: the same call from API 33)
             catch (IOException e) { meanings = new java.util.HashMap<>(); }
         }
         return meanings.get(name);

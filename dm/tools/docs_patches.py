@@ -164,6 +164,8 @@ SWITCH_BINDING = [
      'why': "the most image memory the game's scenes need, measured on the game; the measured limit still acts below it"}),
     ('low_ram_app_pool_mb', '', {'what': 'a smaller memory total reported to the game on a device of 12 GB or less, the pool unchanged', 'now': 'game', 'goal': 'game', 'purpose': 'memory',
      'why': "the total the game's SDK sizes its cache of freed pages from, measured on the game; the pool and the map limit stay the profile's"}),
+    ('place_join_mb', '', {'what': "a larger run of a pool's placed parts joined into one", 'now': 'game', 'goal': 'host', 'purpose': 'rendering',   # PEANUTS: GitHub issues #394, #651
+     'why': "a join holds the joined bytes twice for a moment, so the default stays 256 MiB; a larger default for every game once the transient is measured on the phones of 8 GB or less"}),
     ('tex_soft', '', {'what': 'large block-compressed textures kept without their finest level', 'now': 'game', 'goal': 'game', 'purpose': 'memory',
      'why': 'a loss of detail chosen for a game that does not fit a device otherwise'}),
     ('occlusion_split_pass', 'on', {'what': 'split Qualcomm depth passes after counted occlusion queries', 'now': 'game', 'goal': 'host', 'purpose': 'rendering',
@@ -192,6 +194,8 @@ SWITCH_BINDING = [
     ('fps_step_elapsed', '', {'what': 'launch with elapsed-time frame-step hooks enabled', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'keep the game clock active while display pacing selects the frame rate'}),
     # PEANUTS: Document the Game owned default for a game whose elapsed-time plan is opt-in.
     ('fps_owned_default', '', {'what': 'start Game owned until the player picked a frame rate (Android, before 0.1.8; since then it starts at 60 fps, Game owned a choice)', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': "the game's own pacing where its elapsed-time plan collapses on slower phones"}),
+    # PEANUTS: Document the opt-in thermal cap (Hogwarts Legacy).
+    ('thermal_cap', '', {'what': 'hold 30 fps while the phone is hot (Android)', 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': "a choice per game: one whose frame limits heat a phone into its GPU throttle"}),
     ('fps_limit', '', {'what': "the host's frame limit by default (Android)", 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': 'a choice per game: steady frames and less heat where its own rate wanders below 60'}),
     ('ue_fps_cvar', '', {'what': "the game's own Unreal frame-limit variable", 'now': 'game', 'goal': 'game', 'purpose': 'frame rate', 'why': "the game's own variable, which its settings apply to t.MaxFPS; the rewriter finds it by name (ue_cvar.py)"}),
     ('perf_mode', '', {'what': 'Boost whatever the operation mode', 'now': 'game', 'goal': 'game', 'purpose': 'runtime', 'why': 'a combination a Switch 1 never reports: a choice per game'}),

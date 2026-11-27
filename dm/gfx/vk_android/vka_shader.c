@@ -816,7 +816,7 @@ static void rs_scan(vka_shader *s, const vka_shlib *L, const dmsh_vk_entry *e, c
     if (!w) return;
     uint32_t bind = UINT32_MAX;
     for (uint32_t k = 0; k < e->bind_count; k++) if (s->b[k].kind == DMSH_VK_KIND_SUPPORT && s->b[k].set == DMSH_VK_SET_DRAW) bind = s->b[k].binding;
-    unsigned fl = vkrs_spv_scan(w, nb / 4, bind);
+    unsigned fl = vkrs_spv_scan(w, nb / 4, bind, &s->rs_fb);
     free(w);
     s->rs_fetch = (fl & VKRS_SPV_TEX) != 0;
     atomic_fetch_add(&vka_rs_sh[0], 1);

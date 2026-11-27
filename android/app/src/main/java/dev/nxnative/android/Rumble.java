@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
 final class Rumble {
     private final Vibrator phone;
     private final Map<Integer, Vibrator> byPlayer = new HashMap<>();   // under this
-    private final VibrationAttributes attrs = new VibrationAttributes.Builder().setUsage(VibrationAttributes.USAGE_MEDIA).build();
+    private final VibrationAttributes attrs = android.os.Build.VERSION.SDK_INT >= 33 ? new VibrationAttributes.Builder().setUsage(VibrationAttributes.USAGE_MEDIA).build() : null;   // PEANUTS: Android 12 (API 33 class; null below)
     private static final int TICK_MS = 40, STEP = 6;   // the envelope's rate, and the least amplitude change (of 255) worth a new vibration
     private static final float DECAY = 0.6f;            // a tick's fall once the game goes quiet: about 0.2 s from full to off
     /** Per vibrator (players can share the phone's): the value now, the peak since the last tick, the level sent (0..1, under this) */
@@ -113,7 +113,10 @@ final class Rumble {
         for (Map.Entry<Vibrator, Integer> m : send.entrySet()) {
             if (m.getValue() == 0) m.getKey().cancel();
             // One long step that repeats: held until the next change replaces it or cancel() stops it
-            else m.getKey().vibrate(VibrationEffect.createWaveform(new long[] {10_000}, new int[] {m.getValue()}, 0), attrs);
+            // PEANUTS begin: Android 12: vibrate(effect, VibrationAttributes) is API 33; below it the vibrator's default usage
+            else if (android.os.Build.VERSION.SDK_INT >= 33) m.getKey().vibrate(VibrationEffect.createWaveform(new long[] {10_000}, new int[] {m.getValue()}, 0), attrs);
+            else m.getKey().vibrate(VibrationEffect.createWaveform(new long[] {10_000}, new int[] {m.getValue()}, 0));
+            // PEANUTS end
         }
     }
 

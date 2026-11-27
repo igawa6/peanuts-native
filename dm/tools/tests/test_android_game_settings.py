@@ -21,9 +21,10 @@ class GameSettingsPage(unittest.TestCase):
         self.gs = (SRC / 'GameSettings.java').read_text(encoding='utf-8')
 
     def test_every_setting_reachable(self):
+        # PEANUTS: xbox(a, g, again) is gone with the Xbox button label swap (owner 2026-11-26)
         for call in ('presets(a, g, again)', 'resolution(a, g, again)', 'scene(a, g, again)', 'upscaler(a, g, again)', 'sharpness(a, g, again)', 'dlssMode(a, g, again)',
                      'clarity(a, g, again)', 'dlssSharp(a, g, again)', 'display(a, g, again)', 'aspect(a, g, again)', 'cap(a, g, again)', 'drs(a, g, again)',
-                     'gpuTiming(a, g, again)', 'language(a, g, again)', 'xbox(a, g, again)', 'PadMapUi.forGame(a, g, again)', 'env(a, g, again)',
+                     'gpuTiming(a, g, again)', 'language(a, g, again)', 'PadMapUi.forGame(a, g, again)', 'env(a, g, again)',
                      'Prefs.resetGame(a, id)', 'Prefs.backToRecommended(a, id)'):
             self.assertIn(call, self.gs, f'{call}: its row is gone')
         self.assertIn('"GPU driver", v -> dev.peanuts.ui.DriverActivity.openForGame(a, g.titleId, g.name)', self.gs)   # PEANUTS: the row opens this game's driver page
@@ -91,7 +92,7 @@ class GameSettingsPage(unittest.TestCase):
 
     def test_option_descriptions_for_players(self):   # game.tsv option rows: plain sentences for the player, no developer wording
         rows = [l.split('\t') for p in sorted((REPO / 'dm/games').glob('*/game.tsv')) for l in p.read_text(encoding='utf-8').splitlines() if l.startswith('option\t')]
-        self.assertGreater(len(rows), 2)
+        self.assertTrue(rows)   # PEANUTS: two option rows are left once the Switch 2 profiles are gone (upstream: more than 2)
         for r in rows:
             d = r[3]
             self.assertGreater(len(d), 40, r[2]); self.assertLess(len(d), 260, r[2])

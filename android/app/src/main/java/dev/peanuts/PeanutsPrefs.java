@@ -39,12 +39,57 @@ public final class PeanutsPrefs {
     /** What the importer that last read the firmware takes from one (LibrarySettings.FIRMWARE_READ); 0 when it was read before the app kept this */
     public static int firmwareRead(Context c) { return of(c).getInt("firmware_read", 0); }
     public static void firmwareRead(Context c, int what) { of(c).edit().putInt("firmware_read", what).apply(); }
-    public static String gameDir(Context c) { return of(c).getString("game_dir", null); }
-    public static void gameDir(Context c, String p) { put(c, "game_dir", p); }
-    public static String updateDir(Context c) { return of(c).getString("update_dir", null); }
-    public static void updateDir(Context c, String p) { put(c, "update_dir", p); }
-    public static String dlcDir(Context c) { return of(c).getString("dlc_dir", null); }
-    public static void dlcDir(Context c, String p) { put(c, "dlc_dir", p); }
+    /** The first game folder, null when there is none (where "is a game folder set" is all a caller asks; the list is {@link #gameDirs}) */
+    public static String gameDir(Context c) {
+        List<String> l = gameDirs(c);
+        return l.isEmpty() ? null : l.get(0);
+    }
+
+    /**
+     * The game folders (issue #546: several, on the phone and an SD card). The first stays in "game_dir", where the app kept its one game folder before, so an
+     * install that had one has it here as the first, and the others follow in "game_dirs_extra". The same way as the build folders (buildDirs)
+     */
+    public static List<String> gameDirs(Context c) {
+        return dev.peanuts.folders.FolderList.read(java.util.Collections.singletonList(of(c).getString("game_dir", null)), extra(c, "game_dirs_extra"));
+    }
+    public static void gameDirs(Context c, List<String> dirs) { list(c, "game_dir", null, "game_dirs_extra", dirs); }
+
+    /**
+     * The folders with updates and DLC (one kind since issue #546: the scan tells an update from a DLC by what the file holds, never by its folder). The update
+     * folder and the DLC folder an older version kept ("update_dir", "dlc_dir") are the first two; added ones follow in "addon_dirs_extra". A change keeps the
+     * first in "update_dir" and moves the DLC folder into the list
+     */
+    public static List<String> addonDirs(Context c) {
+        SharedPreferences p = of(c);
+        return dev.peanuts.folders.FolderList.read(java.util.Arrays.asList(p.getString("update_dir", null), p.getString("dlc_dir", null)), extra(c, "addon_dirs_extra"));
+    }
+    public static void addonDirs(Context c, List<String> dirs) { list(c, "update_dir", "dlc_dir", "addon_dirs_extra", dirs); }
+
+    /** A JSON list of paths in key ("[]" when none or unreadable) */
+    private static List<String> extra(Context c, String key) {
+        List<String> out = new ArrayList<>();
+        try {
+            JSONArray a = new JSONArray(of(c).getString(key, "[]"));
+            for (int i = 0; i < a.length(); i++) { String d = a.optString(i, ""); if (!d.isEmpty()) out.add(d); }
+        } catch (org.json.JSONException ignored) { /* the first folder still works */ }
+        return out;
+    }
+
+    /** A folder list kept as its first in firstKey and the others in extraKey; oldKey (a second single folder of an older version) is folded into the list */
+    private static void list(Context c, String firstKey, String oldKey, String extraKey, List<String> dirs) {
+        SharedPreferences.Editor e = of(c).edit();
+        if (dirs.isEmpty()) e.remove(firstKey); else e.putString(firstKey, dirs.get(0));
+        if (oldKey != null) e.remove(oldKey);
+        JSONArray extra = new JSONArray();
+        for (int i = 1; i < dirs.size(); i++) extra.put(dirs.get(i));
+        if (extra.length() == 0) e.remove(extraKey); else e.putString(extraKey, extra.toString());
+        e.apply();
+    }
+
+    /** The game folder an import of this game file writes its .nup into when no build folder is set: the game folder that holds it, else the first; null without one */
+    public static File homeFor(Context c, File gameFile) {
+        return dev.peanuts.folders.FolderList.home(gameDirs(c), gameFile == null ? null : gameFile.getAbsolutePath());
+    }
 
     /** Settings › Library › Build folder: null (default) = beside the game, today's behaviour. A folder the user picked, on the phone or an SD card,
      *  to keep every build organized by title ID instead (one folder per game, nothing loose at its top level): {@code <build folder>/<title ID>/}. */
@@ -159,29 +204,36 @@ public final class PeanutsPrefs {
     /** Settings > Library > Motion: false (default) = the launcher's animations follow the system's animator scale, true = fades and the progress fill only */
     public static boolean motionReduced(Context c) { return of(c).getBoolean("motion_reduced", false); }
     public static void motionReduced(Context c, boolean on) { of(c).edit().putBoolean("motion_reduced", on).apply(); }
+    /** Settings > App > Extras > Smooth Experience (dev.peanuts.smooth.Smooth): the switch, off by default, and each of its items (SmoothItems), on by default.
+     *  commit, not apply: the game's process reads them at its start, which may come right after the change */
+    public static boolean smooth(Context c) { return of(c).getBoolean("smooth", false); }
+    public static void smooth(Context c, boolean on) { of(c).edit().putBoolean("smooth", on).commit(); }
+    public static boolean smoothItem(Context c, String key) { return of(c).getBoolean("smooth_" + key, true); }
+    public static void smoothItem(Context c, String key, boolean on) { of(c).edit().putBoolean("smooth_" + key, on).commit(); }
     /** Settings > Library > Swap screens: false (default) = the game on the built-in screen and the companion on the other display, true = the other way round
      *  (a clip-on top screen that Android lists as the external display, GitHub issue #131). dev.peanuts.Screens applies it */
     public static boolean swapScreens(Context c) { return of(c).getBoolean("swap_screens", false); }
     public static void swapScreens(Context c, boolean on) { of(c).edit().putBoolean("swap_screens", on).apply(); }
+    /** Home's Sort: "last" (default: last played, then A–Z), "az", "added" (newest game file first) or "time" (most play time first) */
+    public static String librarySort(Context c) { return of(c).getString("library_sort", "last"); }
+    public static void librarySort(Context c, String mode) { of(c).edit().putString("library_sort", mode).apply(); }
+    /** Home's Sort: true (default) = Ready, Build needed and Not supported yet stay apart in All, the order applies inside each; false = one list */
+    public static boolean librarySortGrouped(Context c) { return of(c).getBoolean("library_sort_grouped", true); }
+    public static void librarySortGrouped(Context c, boolean on) { of(c).edit().putBoolean("library_sort_grouped", on).apply(); }
 
     /** Settings › TV and monitors (dev.peanuts.Screens, #358): true a game plays on a connected TV or monitor; false (the default) the system decides what the TV
      *  shows (Android mirrors the screen, a handheld's firmware may turn its own screens off), and Peanuts only keeps its pages off the TV */
     public static boolean tvPlay(Context c) { return of(c).getBoolean("tv_play", false); }
     public static void tvPlay(Context c, boolean on) { of(c).edit().putBoolean("tv_play", on).apply(); }
 
-    /** The roots the library scans: the game folder first, then the update and DLC folders when set and different, then the build folder (walked the same
-     *  two levels deep, so its {@code <title ID>/<name>.nup} entries are found) */
+    /** The roots the library scans: the game folders first, then the update and DLC folders, then the build folders (walked the same two levels deep, so their
+     *  {@code <title ID>/<name>.nup} entries are found); a folder in two lists once */
     public static List<File> roots(Context c) {
+        List<String> all = new ArrayList<>(gameDirs(c));
+        all.addAll(addonDirs(c));
+        all.addAll(buildDirs(c));
         List<File> out = new ArrayList<>();
-        for (String p : new String[] {gameDir(c), updateDir(c), dlcDir(c)}) {
-            if (p == null || p.isEmpty()) continue;
-            File f = new File(p);
-            if (!out.contains(f)) out.add(f);
-        }
-        for (String p : buildDirs(c)) {
-            File f = new File(p);
-            if (!out.contains(f)) out.add(f);
-        }
+        for (String p : dev.peanuts.folders.FolderList.read(all, null)) out.add(new File(p));
         return out;
     }
 
@@ -190,6 +242,14 @@ public final class PeanutsPrefs {
     private static String key(String titleId, String what) { return "t." + titleId.toUpperCase(Locale.ROOT) + "." + what; }
 
     /** The update file the user chose for a title (null: the newest found) */
+    /** When Home first saw the game (dev.peanuts.ui.LibrarySort.firstSeen; Sort's Recently added), 0 before that */
+    public static long firstSeen(Context c, String titleId) { return of(c).getLong(key(titleId, "first_seen"), 0); }
+    /** Keeps first-seen times by title ID, in one write */
+    public static void firstSeen(Context c, java.util.Map<String, Long> seen) {
+        SharedPreferences.Editor e = of(c).edit();
+        for (java.util.Map.Entry<String, Long> s : seen.entrySet()) e.putLong(key(s.getKey(), "first_seen"), s.getValue());
+        e.apply();
+    }
     public static String chosenUpdate(Context c, String titleId) { return of(c).getString(key(titleId, "update"), null); }
     public static void chosenUpdate(Context c, String titleId, String path) { put(c, key(titleId, "update"), path); }
 
@@ -233,9 +293,40 @@ public final class PeanutsPrefs {
     public static boolean modsTab(Context c, String titleId) { return of(c).getBoolean(key(titleId, "mods_tab"), true); }
     public static void modsTab(Context c, String titleId, boolean on) { of(c).edit().putBoolean(key(titleId, "mods_tab"), on).apply(); }
 
-    /** Settings › Controls › Mods tab: the in-game panel's Mods tab for every game; on by default */
+    /** Settings › App › Mods tab: the in-game panel's Mods tab for every game; on by default */
     public static boolean modsTabAll(Context c) { return of(c).getBoolean("mods_tab", true); }
     public static void modsTabAll(Context c, boolean on) { of(c).edit().putBoolean("mods_tab", on).apply(); }
+
+    /** Settings › Controls › Controller › Quick menu button (dev.peanuts.ui.QuickButton): the key code of the player's own button for the in-game quick menu,
+     *  0 none; the launcher writes it, the game's process reads it at its start */
+    public static int quickKey(Context c) { return of(c).getInt("quick_key", 0); }
+    public static void quickKey(Context c, int keyCode) { of(c).edit().putInt("quick_key", keyCode).apply(); }
+
+    /**
+     * The in-game menus' layout: two menus (the game menu at the left, the quick menu at the right), one menu at the right, or one menu on the bottom screen.
+     * Picked once in the launcher's question (dev.peanuts.ui.LayoutChoice, kept in "peanuts", which the launcher writes) and changed later in the menu's own
+     * settings (Layout, dev.nxnative.android.InGamePanel, kept in the game's prefs file, which its process writes): each with when, the newer one counts.
+     * Two menus until one is picked
+     */
+    public static final int LAYOUT_TWO = 0, LAYOUT_RIGHT = 1, LAYOUT_BOTTOM = 2;
+    private static SharedPreferences panel(Context c) { return c.getSharedPreferences("peanuts_panel", Context.MODE_PRIVATE); }
+    public static int menuLayout(Context c) {
+        SharedPreferences game = panel(c), launcher = of(c);
+        boolean inGame = game.contains("menu_layout") && game.getLong("menu_layout_at", 0) >= launcher.getLong("menu_layout_pick_at", 0);
+        int v = inGame ? game.getInt("menu_layout", LAYOUT_TWO) : launcher.getInt("menu_layout_pick", LAYOUT_TWO);
+        return v == LAYOUT_RIGHT || v == LAYOUT_BOTTOM ? v : LAYOUT_TWO;
+    }
+    /** The menu's own settings (the game's process) */
+    public static void menuLayout(Context c, int layout) { panel(c).edit().putInt("menu_layout", layout).putLong("menu_layout_at", System.currentTimeMillis()).apply(); }
+    /** The launcher's question */
+    public static void menuLayoutPick(Context c, int layout) {
+        of(c).edit().putInt("menu_layout_pick", layout).putLong("menu_layout_pick_at", System.currentTimeMillis()).apply();
+    }
+    /** A layout was picked, in the launcher's question or in the menu's own settings: the question is not asked again */
+    public static boolean menuLayoutPicked(Context c) { return of(c).contains("menu_layout_pick") || panel(c).contains("menu_layout"); }
+    /** How often the launcher's question showed (LayoutChoice.TIMES at most: closed without a pick, once more at the next start) */
+    public static int menuLayoutAsked(Context c) { return of(c).getInt("menu_layout_asked", 0); }
+    public static void menuLayoutAsked(Context c, int times) { of(c).edit().putInt("menu_layout_asked", times).apply(); }
 
     /** The in-game panel's tab shown last (its name), so it opens there again; "" none yet. In a file of its own: the game's process writes it, and the launcher's
      *  process, which keeps "peanuts" in memory, would write its older copy back over it */

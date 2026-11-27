@@ -334,6 +334,8 @@ static int init_once(void) {
     VLOG("driver: %s (%s), driver ID %d, conformance %u.%u.%u.%u, driver version %#x; %s", pdr.driverName, pdr.driverInfo, pdr.driverID, pdr.conformanceVersion.major,
          pdr.conformanceVersion.minor, pdr.conformanceVersion.subminor, pdr.conformanceVersion.patch, V.props.driverVersion, vka_driver_tag() ? "custom (DM_VK_DRIVER)" : "the system's");
     V.driver_id = (int)pdr.driverID;
+    // PEANUTS: DM_VK_TU_FLUSHALL=1 (a game option) has the launcher put TU_DEBUG=flushall in the environment (GameActivity.settingsEnv): say what Turnip got
+    if (getenv("DM_VK_TU_FLUSHALL") && V.driver_id == VK_DRIVER_ID_MESA_TURNIP) VLOG("DM_VK_TU_FLUSHALL: TU_DEBUG=%s", getenv("TU_DEBUG") ? getenv("TU_DEBUG") : "(unset)");
     // PEANUTS (PR #164): PurpleVK T30 reports 30.2 MHz on this A650, but its timestamp queries read the 19.2 MHz always-on counter (measured against CLOCK_MONOTONIC).
     if (V.driver_id == VK_DRIVER_ID_MESA_TURNIP && V.props.driverVersion == 0x06802063 &&
         strstr(pdr.driverInfo, "git-62ac221a33") && strstr(V.props.deviceName, "Adreno (TM) 650") &&
@@ -1165,6 +1167,7 @@ void vka_floor_span(uint64_t frame, uint64_t ns) {           // the completion t
 }
 uint64_t vka_floor_span_of(uint64_t frame) { unsigned k = frame % FSPAN; return atomic_load(&g_fspan_f[k]) == frame ? atomic_load(&g_fspan[k]) : 0; }   // 0 = not in (vka_perf.c DM_VK_ADPF_SPAN)
 static int cmp_u64(const void *a, const void *b) { uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y; }
+static int g_kg_host;   // KGSL host DCVS: only "highest" (1) or default governor (0)   // PEANUTS: #506
 static int floor_auto(int top, uint64_t f) {
     static int cur = -1; static uint64_t last_f, changed_f;
     if (cur < 0 || cur > top) cur = top;
@@ -1177,14 +1180,19 @@ static int floor_auto(int top, uint64_t f) {
     double p90 = v[n * 9 / 10] / 1e6, per = vka_floor_period_ns() / 1e6;
     int was = cur;
     g_p90_sum += p90; g_p90_n++;
-    double hi = VKA_ENVF("DM_VK_GPU_FLOOR_HI", 2.0), lo = VKA_ENVF("DM_VK_GPU_FLOOR_LO", 5.0);   // ms below the period: raise above per - hi, lower below per - lo
-    // A step down that has to be taken back within 60 frames is not tried again for a while (300 frames, doubling up to 4,800 each time it fails again): on the Adreno
-    // 840 a floor of 75 instead of 100 added 5-15 ms to the level's span at once, and the controller went up and down every few frames
+    // KGSL host DCVS accepts only 0 (governor) and 1 (highest); stepping by 25 keeps the GPU at highest through 75/50/25,   // PEANUTS: #506
+    // and jumping straight to max clock is expensive, so only boost within 1 ms of the period by default.
+    int host_bin = !V.perf_hint && g_kg_host;
+    double hi = VKA_ENVF("DM_VK_GPU_FLOOR_HI", host_bin ? 1.0 : 2.0), lo = VKA_ENVF("DM_VK_GPU_FLOOR_LO", 5.0);   // ms below the period: raise above per - hi, lower below per - lo
+    // A step down that has to be taken back within 300 frames is not tried again for a while (300 frames, doubling up to 4,800 each time it fails again): on the Adreno
+    // 840 a floor of 75 instead of 100 added 5-15 ms to the level's span at once, and on host-DCVS the KGSL idle hysteresis + 30-frame window can take ~100-150 frames
+    // to reflect a failed drop.
     static uint64_t hold_until, backoff = 300, lowered_f;
+    int step = host_bin ? top : 25;   // PEANUTS: #506
     if (p90 > per - 0.5) cur = top;
-    else if (p90 > per - hi) cur = cur + 25 > top ? top : cur + 25;
-    else if (p90 < per - lo && f - changed_f >= 60 && f >= hold_until) { cur = cur - 25 < 0 ? 0 : cur - 25; lowered_f = f; }
-    if (cur > was && lowered_f && f - lowered_f < 60) { hold_until = f + backoff; backoff = backoff * 2 > 4800 ? 4800 : backoff * 2; lowered_f = 0; }
+    else if (p90 > per - hi) cur = cur + step > top ? top : cur + step;   // PEANUTS: #506
+    else if (p90 < per - lo && f - changed_f >= 60 && f >= hold_until) { cur = cur - step < 0 ? 0 : cur - step; lowered_f = f; }
+    if (cur > was && lowered_f && f - lowered_f < 300) { hold_until = f + backoff; backoff = backoff * 2 > 4800 ? 4800 : backoff * 2; lowered_f = 0; }
     if (lowered_f && f - lowered_f > 600) { backoff = 300; lowered_f = 0; }   // a step down that held
     if (cur != was) { changed_f = f; if (VKA_ENV("DM_VK_GPU_FLOOR_LOG", 0)) VLOG("GPU clock floor %d -> %d %%: frame %llu, span p90 %.1f ms of %.1f", was, cur, (unsigned long long)f, p90, per); }
     g_floor_frames[cur / 25 < 5 ? cur / 25 : 4]++;
@@ -1220,7 +1228,7 @@ struct kgsl_gp { unsigned int type; void *value; size_t sizebytes; };
 #define KGSL_IOCTL_SETPROPERTY _IOW(0x09, 0x32, struct kgsl_gp)
 enum { KG_FDS = 4, KG_IDS = 1024, KG_CTX = 8 };
 static int g_kg_fd[KG_FDS], g_kg_nfd; static uint8_t g_kg_own[KG_FDS][KG_IDS / 8];
-static struct { int fd; unsigned id; } g_kg[KG_CTX]; static int g_kg_n, g_kg_host;   // the queue's contexts; host DCVS: only "highest"
+static struct { int fd; unsigned id; } g_kg[KG_CTX]; static int g_kg_n;   // the queue's contexts   // PEANUTS: #506
 static int kg_set(int fd, unsigned id, int type, unsigned level) {
     unsigned lv = level; struct kgsl_dc c = {(unsigned)type, id, &lv, sizeof lv}; struct kgsl_gp g = {0x12, &c, sizeof c};   // KGSL_PROP_PWR_CONSTRAINT
     int r; do r = ioctl(fd, KGSL_IOCTL_SETPROPERTY, &g); while (r < 0 && (errno == EINTR || errno == EAGAIN));

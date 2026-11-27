@@ -53,7 +53,7 @@ public final class SettingsSections {
 
     public static final List<Section> ALL = Collections.unmodifiableList(java.util.Arrays.asList(
             new Section("library", "Library", "library", "Where the app finds your games, the space they take and the time you played.",
-                    new Group("Folders", r("Game folder", "folder"), r("Update folder", "update"), r("DLC folder", "dlc"), r("Build folders", "build"),
+                    new Group("Folders", r("Game folder", "folder"), r("Update and DLC folder", "update"), r("Build folder", "build"), r("Add folder", "add"),
                             r("Folders", "folder"), r("Rescan", "search")),
                     new Group("Space", r("Free up space", "trash"), r("Storage", "storage")),
                     new Group("Play time", r("Played", "clock"))),
@@ -66,9 +66,9 @@ public final class SettingsSections {
                             r("FSR sharpness", "search"), r("CRT filter", "screen-landscape"), r("Dynamic resolution", "gauge")),
                     new Group("Speed", r("Frame rate cap", "gauge"), r("Frame generation", "gauge"), r("Use fast cores", "gauge"), r("Overlay", "list"))),
             new Section("controls", "Controls", "controller", DEFAULTS,
-                    new Group("Buttons", r("Button mapping", "controller"), r("Xbox button label swap", "controller")),
+                    new Group("Buttons", r("Button mapping", "controller")),
                     new Group("Touch", r("On-screen controls", "game"), r("Show / hide button", "game")),
-                    new Group("Controller", r("Controller: in-game panel", "controller"), r("Mods tab", "mods"), r("Rumble", "controller"))),
+                    new Group("Controller", r("Controller: in-game panel", "controller"), r("Quick menu button", "controller"), r("Rumble", "controller"))),
             new Section("screens", "Screens", "companion", "What each screen shows, and when the screen stays on.",
                     new Group("Second screen", r("Bottom screen", "companion"), r("Games without a companion", "screens-cover"), r("Swap screens", "swap-off"),
                             r("Dual-screen companions", "companion")),
@@ -77,22 +77,26 @@ public final class SettingsSections {
             new Section("users", "Users", "user", "Who plays, and the Miis games can use.",
                     new Group("Users", r("Users", "user")),
                     new Group("Miis", r("Miis", "user"))),
-            new Section("app", "App", "settings", "How the app feels, and its updates.",
+            new Section("app", "App", "settings", "How the app feels, its in-game panel, and its updates.",
                     new Group("Feel", r("Haptics", "controller"), r("Motion", "play")),
-                    new Group("Updates", r("Check for updates", "download"))),
+                    new Group("In-game panel", r("Mods tab", "mods")),
+                    new Group("Updates", r("Check for updates", "download")),
+                    new Group("Extras", r("Smooth Experience", "peanut"), r("Start screen", "play"), r("Preparing graphics notice", "hourglass"),
+                            r("Graphics driver notice", "driver"))),
             new Section("help", "Help", "info", "Checks for this device, the log, and answers to common questions.",
                     new Group("Checks", r("Readiness check", "check"), r("Graphics self-test", "play")),
                     new Group("Questions and logs", r("Questions and answers", "info"), r("Share log", "share"))),
             new Section("developer", "Developer", "build", "For testing and for adb. Leave these as they are unless you were asked to change one.",
-                    new Group("Testing", r("Advanced", "settings"), r("Tester settings", "build"), r("ADB control (debug)", "build"))),
+                    new Group("Testing", r("Advanced", "settings"), r("Tester settings", "build"), r("ADB control (debug)", "build"), r("Developer view", "terminal"))),
             new Section("about", "About", "peanut", "The app, the games in it and the people who made it.")));
 
     /** What each section holds, in a few words: a tablet's tile of it (SettingsPage's hub) */
     private static final String[][] SUMMARY = {
             {"library", "Game, update and DLC folders, builds, space and play time"}, {"console", "Keys, firmware and the clock"},
             {"graphics", "GPU driver, picture and speed"}, {"controls", "Buttons, touch controls and the controller"},
-            {"screens", "Both screens, a TV, rotation, keeping the screen on"}, {"users", "Users and Miis"}, {"app", "Haptics, motion and updates"},
-            {"help", "Readiness check, self-test, log and answers"}, {"developer", "Advanced, tester settings and adb"},
+            {"screens", "Both screens, a TV, rotation, keeping the screen on"}, {"users", "Users and Miis"},
+            {"app", "Haptics, motion, the in-game panel, updates and Smooth Experience"},
+            {"help", "Readiness check, self-test, log and answers"}, {"developer", "Advanced, tester settings, adb and Developer view"},
             {"about", "The app, its games, credits, licenses and Peanuts cracked"}};
 
     /** A section's few words of what it holds; its line when there are none. twoScreens: the device has a second screen (Screens says so) */

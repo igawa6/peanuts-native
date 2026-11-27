@@ -42,6 +42,8 @@ public final class BuildQueue {
         public String state = WAITING, code = "", message = "", step = "";
         public long added, started, ended;
         public int tries;
+        /** Put back at the front when the file was read: its last run ended with the app's process (started is that run's start). Not in the file */
+        public boolean cut;
 
         Item(int id, int batch, BuildRequest request, boolean buildAnyway) { this.id = id; this.batch = batch; this.request = request; this.buildAnyway = buildAnyway; }
 
@@ -338,6 +340,7 @@ public final class BuildQueue {
                 items.add(firstOpen(), i);
             } else {
                 i.state = WAITING;
+                i.cut = true;   // the service looks up what ended that run (BuildWatch) before it runs the game again
                 items.add(firstOpen(), i);
             }
         }

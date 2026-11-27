@@ -21,8 +21,8 @@ import romfs_image
 import pack_dump
 import nso
 
-TID = 0x040074A01BF12000   # Donkey Kong Bananza: a profile in dm/games (modules main sdk)
-VER = 458752
+TID = 0x010028600EBDA000   # Super Mario 3D World + Bowser's Fury: a profile in dm/games (modules main sdk)   # PEANUTS: upstream: Donkey Kong Bananza, a Switch 2 profile Peanuts does not carry
+VER = 262144
 DLC = TID + 0x1001
 
 
@@ -69,8 +69,8 @@ def dump(root):
         (d / 'romfs/Shader/big.bin').write_bytes(BIG)
         (d / 'romfs/Shader/deep/er/same1').write_bytes(b'same bytes ' * 50); (d / 'romfs/Shader/deep/er/same2').write_bytes(b'same bytes ' * 50)
     (root / f'updates/{VER}/romfs/only_in_update').write_text('new')
-    (root / 'dlc/040074a01bf13001/0/romfs').mkdir(parents=True)
-    (root / 'dlc/040074a01bf13001/0/romfs/dlcfile').write_text('dlc ' * 10)
+    (root / 'dlc/010028600ebdb001/0/romfs').mkdir(parents=True)   # PEANUTS: the add-on of TID
+    (root / 'dlc/010028600ebdb001/0/romfs/dlcfile').write_text('dlc ' * 10)
 
 
 def write_nup(src, out, *args):
@@ -113,7 +113,7 @@ class Read(Fixture):
         self.assertFalse((romfs.Path(f'{self.nup}:base/exefs') / '.listing').exists())   # the writer leaves dump-tool listings out (SPEC §6.3)
 
     def test_same_tree_as_the_folders(self):
-        for sel, folder in (('base', 'base'), (f'update/{VER}', f'updates/{VER}'), (f'addon/{DLC:016x}', 'dlc/040074a01bf13001/0')):
+        for sel, folder in (('base', 'base'), (f'update/{VER}', f'updates/{VER}'), (f'addon/{DLC:016x}', 'dlc/010028600ebdb001/0')):   # PEANUTS: the add-on of TID
             for sub in ('exefs', 'romfs'):
                 if not (self.dump / folder / sub).is_dir(): continue
                 want = {k: v for k, v in self.tree(self.dump / folder / sub).items() if not k.endswith('.listing')}
@@ -201,7 +201,7 @@ class RawOnly(Fixture):
 
     def test_no_zstd_module_needed(self):   # a raw-only file reads with no zstd module at all; a zstd file then names the missing module
         code = ('import sys; sys.modules["compression.zstd"] = None; sys.modules["backports"] = None; sys.path.insert(0, sys.argv[1]); import romfs, nup\n'
-                'p = romfs.Path(sys.argv[2] + ":update/458752/romfs"); print(sum(len(f.read_bytes()) for f in p.rglob("*") if f.is_file()))\n')
+                'p = romfs.Path(sys.argv[2] + ":update/262144/romfs"); print(sum(len(f.read_bytes()) for f in p.rglob("*") if f.is_file()))\n')   # PEANUTS: VER
         r = subprocess.run([sys.executable, '-I', '-c', code, str(REPO / 'dm/tools'), str(self.nup)], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(int(r.stdout), sum(f.stat().st_size for f in (self.dump / f'updates/{VER}/romfs').rglob('*') if f.is_file()))
@@ -284,7 +284,7 @@ class Tools(Fixture):
                 pack_android.main()
             packs[tag] = out
         rows = {t: (p / 'pack.tsv').read_text().splitlines() for t, p in packs.items()}
-        self.assertIn(f'romfs\tupdates/{VER}/romfs', rows['folder']); self.assertIn('aoc\t1\tdlc/040074a01bf13001/0/romfs', rows['folder'])
+        self.assertIn(f'romfs\tupdates/{VER}/romfs', rows['folder']); self.assertIn('aoc\t1\tdlc/010028600ebdb001/0/romfs', rows['folder'])   # PEANUTS: the add-on of TID
         self.assertIn(f'romfs\tGame.nup:update/{VER}/romfs', rows['nup']); self.assertIn(f'aoc\t1\tGame.nup:addon/{DLC:016x}/romfs', rows['nup'])
         strip = lambda rs: [r for r in rs if not r.startswith(('romfs\t', 'aoc\t'))]
         self.assertEqual(strip(rows['nup']), strip(rows['folder']))

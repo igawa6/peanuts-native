@@ -171,7 +171,7 @@ final class AboutPage {
         int id = c.getResources().getIdentifier("peanuts_games", "raw", c.getPackageName());
         if (id == 0) return out;
         try (InputStream in = c.getResources().openRawResource(id)) {
-            JSONObject j = new JSONObject(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+            JSONObject j = new JSONObject(new String(dev.nxnative.android.Streams.readAll(in), StandardCharsets.UTF_8));
             appVersion = j.optString("app_version", "");
             JSONArray games = j.getJSONArray("games");
             for (int i = 0; i < games.length(); i++) {

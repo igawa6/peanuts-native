@@ -4,7 +4,7 @@
 
 Update 1.0.2 (`v131072`) over the base game, SDK 5.4.151. Game Freak's engine, the one before [Pokémon Sword](../0100ABF008968000/README.md)'s, on NVN with Wwise audio. Modules `main`, `subsdk0` (GLSLC), `subsdk1` (the movie module) and `sdk`.
 
-**Status (current): plays on Android with Turnip; the 3D scene is black on Qualcomm's driver.** On an AYN Thor (Adreno 740, Android 13), packed from the base game and 1.0.2, with Turnip T30 (26.3.0) it plays the new-game intro, the naming (software keyboard), Oak's lab and the first save at 30 fps, the Switch's rate, with the firmware's shared fonts and the phone's motion for the throws. On the system driver (Qualcomm 676.53) it runs at the same rate, but the intro's characters are black silhouettes and, from a save in Oak's lab, the whole 3D scene is black: the menu and the 2D interface draw, the music plays (below).
+**Status (current): plays on Android with Turnip and with Qualcomm's driver.** On an AYN Thor (Adreno 740, Android 13), packed from the base game and 1.0.2, with Turnip T30 (26.3.0) it plays the new-game intro, the naming (software keyboard), Oak's lab and the first save at 30 fps, the Switch's rate, with the firmware's shared fonts and the phone's motion for the throws. On the system driver (Qualcomm 676.53) it runs at the same rate; its black 3D scene (below) was the driver losing depth / stencil state at a new render pass, fixed in the host. The title screen and Oak's lab draw there since.
 
 The host already has two fixes made on this game: the user clock difference asked at the first save (`dm/host/hle_time.c`) and the AudioOut setup moved to a host thread for the stack it takes at startup (`dm/host/hle_audio.c`), both from Banana Native's PR #36.
 
@@ -50,14 +50,15 @@ From the survey, before any rewrite:
 
 ## Found on this game
 
-- On Qualcomm's driver (676.53, AYN Thor) every model of the new-game intro draws as a black silhouette: Professor Oak, Pikachu and the rival, steady from frame to frame, with the background, particles and text correct. The appearance choice in the same intro draws its model correctly. Turnip T30 (26.3.0) draws the same scenes correctly. Neither log has a shader or pipeline failure (every pipeline made, no `[RED]` line beyond the expected stubs), and the texture pool reads use their own descriptor set ([Texture pool reads report nothing on Qualcomm's driver](../../../docs/reference/rendering.md#texture-pool-reads-report-nothing-on-qualcomms-driver-android)). Loading a save in Oak's lab on the same driver gives a black 3D scene (the menu over it draws; GPU 5.8 ms a frame, so the draws run), and the title screen lacks some of its 3D elements. Every asynchronous pipeline was made on both drivers (the ones not counted as made were made on the frame path, `not skipped … pipelines of small targets`). The Qualcomm write drop through shader-image views in another format ([Shader-image views in another format without storage use](../../../docs/reference/rendering.md#shader-image-views-in-another-format-without-storage-use-on-the-vulkan-replay)) is fixed in this build. Cause not found.
+- Resolved (2026-11-20): on Qualcomm's driver (676.53, AYN Thor) every model of the new-game intro drew as a black silhouette, the title screen lacked its 3D characters and Oak's lab was black under the 2D interface, while Turnip T30 drew them. The lab's scene target (1280x720 B10G11R11) held 0 in every pixel with the same draw state and the same sampled textures as on Turnip; the lit pass follows the 2048x2048 shadow-map pass with the same depth state (test, write, `LESS`), so the replay set no depth state in it, and the driver does not keep it across passes. Fixed for every driver in the host (Turnip unchanged): [Depth and stencil state lost at a new render pass on Qualcomm's driver](../../../docs/reference/rendering.md#depth-and-stencil-state-lost-at-a-new-render-pass-on-qualcomms-driver-android). Checked in the title and the lab.
 - The game sets `hid supported controller styles 0x5a` on the device, as read from the code; player 1 plays on the Handheld npad. The phone's gyroscope reaches the six-axis sensor (218 samples a second).
 - The survey warns that SDK 5 differs from the host's SDK 16 object sizes (`docs/reference/nvn-objects.md`); other SDK 4 and 5 games play (Mario Kart 8 Deluxe 4.4.0, Resident Evil 4 5.4.0).
 - Pokémon Sword asks for this game's play statistics through `pdm::QueryApplicationPlayStatistics` ([Sword's note](../0100ABF008968000/README.md)); nothing in this profile depends on it.
 
 ## Open
 
-- The black 3D scene on Qualcomm's driver: which pass of the scene comes out black and what it reads that differs between the drivers.
+- On Qualcomm's driver, with the fix, a few dark pixels flicker on Oak's coat near his hand and pocket as he sways (shadow speckle, different from frame to frame); Turnip T30 shows none in the same spot. Cause not looked at: likely the shadow map's depth-compare filtering (a 2048x2048 D24S8 map read with `OpImageSampleDrefImplicitLod`, linear filter, clamp to border) differing on the driver.
+- The new-game intro on Qualcomm's driver with the fix: not run again.
 - Play past Oak's lab (Pallet Town, Route 1, a catch) on Turnip.
 - Memory: the heap request with `mem_used 0x4600000`, checked on a device (the host logs `SetHeapSize`).
 - Frame rate, once it runs.

@@ -342,12 +342,12 @@ class Rows(unittest.TestCase):
 class Profiles(unittest.TestCase):
     """Every profile's res_preset, scene_output and scene_scale rows parse, and Ocarina of Time's presets have the scales its notes give"""
     def test_every_profile(self):
-        for g in game.all_games():
+        for g in list(game.all_games()) + [game.load(str(REPO / 'peanuts/tests/fixtures/profiles/ocarina'))]:   # PEANUTS: and the Ocarina of Time fixture
             if g.values('res_preset') or g.values('scene_output') or g.values('scene_scale'):
                 scene_res.presets(g); scene_res.res_presets(g)
 
     def test_oot(self):
-        g = game.load('0400486024DEC000')
+        g = game.load(str(REPO / 'peanuts/tests/fixtures/profiles/ocarina'))   # PEANUTS: its rows, a fixture (the Switch 2 profile is not carried)
         ps = {p[0]: p for p in scene_res.res_presets(g)}
         self.assertEqual(list(ps), ['quality', 'medium', 'performance'])
         self.assertEqual((ps['quality'][1], ps['quality'][4]), ('1920x1080', None), 'the default is today\'s start: 1080p and the game\'s own palette')

@@ -24,7 +24,7 @@ UP = APP / 'main/java/dev/nxnative/android'
 OND = APP / 'ondevice/java/dev/nxnative/android'
 OWN = APP / 'main/java/dev/peanuts'
 SRC = [OWN / 'pack' / n for n in ('FirstImport.java', 'PackImport.java', 'Upstream.java')]
-REAL = [UP / f'{n}.java' for n in ('PackZip', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Nup', 'Nsp', 'Zstd', 'Profile', 'ShaderLibs', 'SaveStore', 'PackFind')]
+REAL = [UP / f'{n}.java' for n in ('PackZip', 'Pack', 'DumpLayout', 'BuildCheck', 'RomfsCheck', 'Nup', 'Nsp', 'Zstd', 'Profile', 'ShaderLibs', 'SaveStore', 'PackFind', 'Streams')]   # Streams: Android 12 (PackZip reads through it)
 TEST = APP / 'jvmtest/java/dev/peanuts/pack/FirstImportJvmTest.java'
 
 BUILD_CONFIG = '''package dev.nxnative.android;

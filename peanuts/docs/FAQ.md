@@ -1,6 +1,6 @@
 # Peanuts Native FAQ
 
-For version 0.1.8. Labels in **bold** are the words the app shows. "Settings" is the gear button on the home screen. "Hold the cover" means a long press on a game's cover (or Y on a controller).
+For version 0.1.9. Labels in **bold** are the words the app shows. "Settings" is the gear button on the home screen. "Hold the cover" means a long press on a game's cover (or Y on a controller).
 
 ## Quick answers
 
@@ -19,7 +19,7 @@ You need three things from your own console first: your game dumps, your `prod.k
 1. Install the APK and open the app. The first screen is the card **Set up your games**. It lists four steps: **1 Keys**, **2 Game folder**, **3 Updates & DLC**, **4 Firmware**.
 2. Tap **Keys** and pick your `prod.keys`. You should see the message **Keys accepted**, and the row reads **Added: prod.keys is in the app.**
 3. Tap **Game folder** and pick the folder that holds your dumps. The first time, a dialog **Allow file access** appears. Tap **Open settings**, turn on All files access for Peanuts Native, and go back to the app. You should see the folder's path in the row.
-4. Optional: tap **Updates & DLC** if your update or DLC files are in other folders. Set **Update folder** and **DLC folder**, then **Done**. Skip this if everything is inside the game folder.
+4. Optional: tap **Updates & DLC** if your update or DLC files are in a folder of their own, and pick it. Skip this if everything is inside the game folder. More folders of either kind can be added later in Settings › Library › **Add folder**.
 5. Tap **Firmware**, then **Folder** or **Zip file**, and pick your firmware dump. The row reads **Reading the firmware…** and then **Firmware added from …**. Do this after the keys: the fonts cannot be read without them.
 6. Tap **Show my games**. You should see a grid of covers. A game that can be built has a **Build** label on its cover.
 7. Optional: install a GPU driver in Settings › Graphics › **GPU driver**. See [Which driver is recommended?](#which-driver-is-recommended)
@@ -43,7 +43,7 @@ It is not an emulator in the usual sense: it does not emulate the console's hard
 
 ### Which devices does it run on?
 
-It is developed and tested on the AYN Thor (dual screen, Snapdragon 8 Gen 2, 16 GB). The stated needs are Android 13 or later, a 64-bit ARM device and a Snapdragon (Adreno) GPU with a Vulkan 1.3 driver. Other devices are untested. On a single-screen device the game still runs, without the companion.
+It is developed and tested on the AYN Thor (dual screen, Snapdragon 8 Gen 2, 16 GB). The stated needs are Android 13 or later, a 64-bit ARM device and a Snapdragon (Adreno) GPU with a Vulkan 1.3 driver. On Android 12 the app installs and opens (experimental): the library, settings, imports and saves work, but games need Android 13, and starting one says so. Other devices are untested. On a single-screen device the game still runs, without the companion.
 
 ### How much RAM do I need?
 
@@ -68,7 +68,7 @@ You dump your own games, keys and firmware from your own console. The app ships 
 ### Where do my files go?
 
 - Your dumps stay where you put them, in the game folder you picked.
-- Settings › Library › **Build folders** lets you add folders on internal storage and the SD card. The game sheet's **Build destination** chooses where that game's new build goes.
+- Settings › Library › **Add folder** › **Builds** adds build folders on internal storage and the SD card. The game sheet's **Build destination** chooses where that game's new build goes.
 - Keys and extracted fonts are kept inside the app.
 - Saves are in the app's own storage. The game's **Saves** tab shows the exact path.
 
@@ -90,13 +90,13 @@ Both come from your own console. The app contains no keys and no firmware, and i
 
 1. Open Settings › Console › **Keys**. The same row is on the first-run card, and a game's sheet has **Add keys…** while keys are missing.
 2. The file picker opens with the hint **Pick your prod.keys**. Pick the `prod.keys` file from your own console. A file larger than 1 MB is refused.
-3. The app copies the file into its own storage and checks it.
+3. The app checks the file and, when it is a usable `prod.keys`, keeps it in its own storage.
 
-What you should see: the message **Keys accepted**. The row then reads **prod.keys is in the app (N bytes)**.
+What you should see: the message **Keys loaded**. The row then reads **prod.keys is in the app (N bytes)**.
 
-### The app says "The importer does not accept these keys". What is wrong?
+### The app says "That file is not a prod.keys the app can read". What is wrong?
 
-The file is not a usable `prod.keys`. The message names what is missing, for example **has no header_key** or **has no key_area_key_application_00**. Pick the right file to replace it. Note that the rejected file is kept, so the row still reads **prod.keys is in the app**. A build will fail until you replace it.
+The file you picked is not a usable `prod.keys` (the app's log names what is missing, for example **has no header_key**). Nothing was changed: keys you added before stay as they were. Pick the `prod.keys` from your own console.
 
 ### A build stops with "prod.keys has no titlekek_…". What now?
 
@@ -152,13 +152,19 @@ Some games also need the fonts to start at all, for example Echoes of Wisdom. If
 
 Then tap a game's cover to open its sheet. Check the **Base**, **Update**, **DLC** and **Dual-screen companion** rows and tap **Build**. The build imports the game, prepares it and installs the companion. Only one build runs at a time.
 
-Later, change the folders in Settings › Library. **Rescan** reads them again.
+Later, add or remove folders in Settings › Library. **Rescan** reads them again.
 
 ### Where does the app look for my games?
 
-In the **Game folder**, the **Update folder**, the **DLC folder** and the **Build folder**, each up to two folders deep. It finds `.nsp`, `.xci`, `.nsz`, `.xcz` and `.nup` files and dump folders: in the dump tools' layout (`base/`, `updates/<version>/`), in the console's layout as OunceCake serves it (`base/program/0/`), and one version's folder (`exefs` and `romfs` at its top). A dump folder's version is its `updates/<version>/`, else the version its `main` was built for, so a game updated on a PC shows as that update. Build prepares a dump from `base/` or `updates/<version>/`: for one version's folder, make a folder named `base` in it and move `exefs` and `romfs` there. Updates and DLC are matched to their game by title ID, wherever they are in those folders. A file deeper than two folders is not found: move it up, or point the folder setting at it. Mods for other emulators are skipped: folders named `mods`, `load` or `atmosphere`, and one version's folder whose `exefs` lacks the game's `main`, `main.npdm` or `sdk` (a mod may bring its own `main`, never `sdk`). To use a mod here, add it on the game's page, see [Mods](#mods).
+In every folder listed in Settings › Library: each **Game folder**, **Update and DLC folder** and **Build folder**, each up to two folders deep. It finds `.nsp`, `.xci`, `.nsz`, `.xcz` and `.nup` files and dump folders: in the dump tools' layout (`base/`, `updates/<version>/`), in the console's layout as OunceCake serves it (`base/program/0/`), and one version's folder (`exefs` and `romfs` at its top). A dump folder's version is its `updates/<version>/`, else the version its `main` was built for, so a game updated on a PC shows as that update. Build prepares a dump from `base/` or `updates/<version>/`: for one version's folder, make a folder named `base` in it and move `exefs` and `romfs` there. Updates and DLC are matched to their game by title ID, wherever they are in those folders. A file deeper than two folders is not found: move it up, or point the folder setting at it. Mods for other emulators are skipped: folders named `mods`, `load` or `atmosphere`, and one version's folder whose `exefs` lacks the game's `main`, `main.npdm` or `sdk` (a mod may bring its own `main`, never `sdk`). To use a mod here, add it on the game's page, see [Mods](#mods).
 
 If the home screen says **No games found in …**, put your files in that folder and tap Settings › Library › **Rescan**.
+
+### Can I use several game folders?
+
+Yes, and several folders for updates and DLC, and several build folders, for example one on internal storage and one on the microSD card. In Settings › Library, tap **Add folder**, choose what is in the folder (**Games**, **Updates and DLC** or **Builds**) and pick it. The sheet stays open, so you can add the next folder right away; tap **Done** when you have them all. Every folder is a row of its own in Settings › Library. Tap one to remove it from the list: its files stay where they are, and its games leave Home until you add it again. A game you build from an NSP or XCI without a build folder gets its `.nup` in the game folder its file is in.
+
+If you set a game folder, an update folder and a DLC folder in an earlier version, they are in the list after the update, nothing to do.
 
 ### What do the labels on a cover mean?
 
@@ -175,6 +181,8 @@ If the home screen says **No games found in …**, put your files in that folder
 
 The filters at the top are **All**, **Building** (only while something builds), **Ready**, **Build needed** and **Not Supported Yet**. **Wrong version** and **File gone** games are under **Build needed**. **Find** searches by name.
 
+**Sort** (the icon beside Find) orders the games by **Last played** (the default), **Name A–Z**, **Recently added** or **Play time**. Recently added goes by when the library first found the game (for games it already had before this, the time of the game's file), so importing a game again does not move it. With **Keep Ready, Build needed and Not supported yet apart** on (the default), **All** shows Ready games first, then Build needed, then Not Supported Yet, each in the chosen order; off, it shows one list. Games that are building stay at the top either way. The app remembers your choice.
+
 ### What does "Wrong version" mean, and how do I fix it?
 
 Every supported game has a profile in the app, and the profile lists the game versions it was made for. The app compares the version of your update with that list. With no update, it compares the base game's version. **Wrong version** means your version is not on the list.
@@ -188,8 +196,8 @@ The usual causes and their fixes:
 
 | Cause | How it looks | Fix |
 |---|---|---|
-| No update file was found | **Update** reads **None found · Choose…**, **You have: v0** | Put the update from your own console in the game folder or the **Update folder**, then **Rescan**. Or tap the **Update** row and pick the file. |
-| The update is in a folder the app does not scan | The same | Set Settings › Library › **Update folder**, or tap the **Update** row and pick the file. |
+| No update file was found | **Update** reads **None found · Choose…**, **You have: v0** | Put the update from your own console in a game folder or an **Update and DLC folder**, then **Rescan**. Or tap the **Update** row and pick the file. |
+| The update is in a folder the app does not scan | The same | Add the folder in Settings › Library › **Add folder** › **Updates and DLC**, or tap the **Update** row and pick the file. |
 | Your update is newer or older than the supported ones | **You have** shows a version that is not in **This build supports** | Use the update the app lists, dumped from your own console. If you have it, tap the **Update** row (**Choose another…**) and pick it. |
 | Keys are not added yet | Every version reads **v0** | Add **Keys**, then **Rescan**. |
 
@@ -241,7 +249,7 @@ How the three labels differ:
 The base game or its newest update was in your folder at the last scan and is not there now. Typical causes: the file was moved, renamed or deleted, or the microSD card was removed.
 
 1. Put the file back, or insert the card.
-2. Tap Settings › Library › **Rescan**. If the folder itself moved, pick the **Game folder** again.
+2. Tap Settings › Library › **Rescan**. If the folder itself moved, add it again with Settings › Library › **Add folder** and remove the old row.
 3. For an update, you can also tap the **Update** row in the sheet and pick the file again.
 
 Until then the sheet says **Pick the file again above before building** and **Build** is off.
@@ -250,7 +258,7 @@ For a game that is already built, tapping the cover shows the dialog **Game file
 
 ### Which games are supported?
 
-The project's README lists all 76 games included in 0.1.8, the updates each supports and which have an Eden Duo catalog entry.
+The project's README lists all 87 games included in 0.1.9, the updates each supports and which have an Eden Duo catalog entry.
 
 The games tested for 0.1.1 were Link's Awakening, Echoes of Wisdom, Fire Emblem: Three Houses, Fire Emblem Engage, Metroid Dread, Super Mario Odyssey, Mario Kart 8 Deluxe, Animal Crossing: New Horizons, Persona 5 Royal, Castlevania: Belmont's Curse, Octopath Traveler 0, Pokémon Brilliant Diamond, Pokémon Sword and Breath of the Wild (new, little tested). Super Mario Bros. Wonder and Dragon Quest III HD-2D Remake are in the app too, but were not tested on a device yet. 0.1.2 adds Pokémon Shining Pearl, Pokémon Shield, Final Fantasy Resonance, Skyward Sword HD, Pokémon Legends: Arceus and Resident Evil 4, all new and little tested, and Kirby's Return to Dream Land Deluxe, which was run by its contributor on their own AYN Thor only. 0.1.4 adds Crash Team Racing Nitro-Fueled, Kirby and the Forgotten Land, Super Mario 3D World + Bowser's Fury, Chained Echoes, My Time at Sandrock, Monster Sanctuary and Yoru, Tomosu, all new and little tested, and Xenoblade Chronicles X: Definitive Edition as an experiment. Super Mario Bros. Wonder was checked on a device for 0.1.4, on its 1.2.1 update, the only one the app builds now.
 
@@ -261,6 +269,8 @@ The games tested for 0.1.1 were Link's Awakening, Echoes of Wisdom, Fire Emblem:
 0.1.7 adds Trails in the Sky 1st Chapter, Yoshi's Crafted World, Tetris Effect: Connected, New Pokémon Snap, Digimon Story Time Stranger, Hogwarts Legacy and Star Ocean The Second Story R. Build New Pokémon Snap on the phone: the PC builder cannot build it yet.
 
 0.1.8 adds Stray, 13 Sentinels: Aegis Rim, Captain Toad: Treasure Tracker, Advance Wars 1+2: Re-Boot Camp, FANTASY LIFE i: The Girl Who Steals Time, Pokémon: Let's Go, Pikachu!, Pokémon: Let's Go, Eevee!, Viewfinder, SPY×ANYA: Operation Memories, Super Mario RPG, WarioWare: Get It Together!, LEGO 2K Drive, LEGO CITY UNDERCOVER, LEGO MARVEL Super Heroes, Minecraft Dungeons II, The Witcher 3: Wild Hunt Complete Edition and Pokémon Mystery Dungeon: Rescue Team DX. Play the two Pokémon: Let's Go games with a Turnip driver: Qualcomm's own driver draws the 3D scene of Let's Go, Pikachu! black, and Let's Go, Eevee! was not tried on it. Build Pokémon Mystery Dungeon: Rescue Team DX from its base game 1.0.0.
+
+0.1.9 adds One Piece: Pirate Warriors 4, FINAL FANTASY XII THE ZODIAC AGE, FINAL FANTASY Pixel Remaster, Battle Brothers, The Hundred Line -Last Defense Academy-, DRAGON QUEST VII Reimagined, Sea of Stars, FANTASIAN Neo Dimension, CRISIS CORE FINAL FANTASY VII REUNION, Batman: Arkham Knight and OCTOPATH TRAVELER. Play The Hundred Line, Sea of Stars, CRISIS CORE and Batman: Arkham Knight with a Turnip driver: on Qualcomm's own driver The Hundred Line draws no 3D world, Sea of Stars draws broken graphics on drivers before 512.800, and CRISIS CORE and Batman: Arkham Knight crash. CRISIS CORE can look washed out white on its first start; start it again. DRAGON QUEST VII Reimagined was not tried on a phone yet. FANTASY LIFE i: The Girl Who Steals Time also supports update 2.2.0, and Trails in the Sky 1st Chapter supports update 1.0.8.
 
 The 0.1.5 verification build was checked on an AYN Thor with Turnip v26.2.0 R5. Demon Slayer 2 reached the playable rooftop fight against Daki at about 30 fps. Tears of the Kingdom reached the opening cave and responded to movement. Kirby and the Forgotten Land prepared all 418 pipeline keys on its first launch, then reused the cache on relaunch. The other six additions have earlier, game-specific device checks.
 
@@ -281,11 +291,12 @@ While a build runs or waits, the home screen has a **Screens off** button left o
 Yes. While a game builds, the sheet's button says **Add to queue**: the game waits in the build queue and starts when the games before it are done, one at a time. You can queue your games, put the device on its charger and go to sleep. **Build all…** on the home screen (beside Find) asks first, then queues every game that needs a build: those that say **Build needed**, those whose build stopped, and built games whose build is of an earlier version of the app. Games whose file is gone or whose version this app does not list are left out: their sheet asks first.
 
 - A waiting game's cover says **Queued** and its place, such as **Queued, 3 of 5**. The **Building** filter lists them under **Up next**, each with **Remove**; the game's sheet (hold the cover, or Y) has **Remove from queue** too. Removing changes none of its files.
+- While a game builds, the build pauses when the phone gets too hot and goes on by itself once it has cooled, from where it stopped. The card says so. If it keeps pausing (a phone on its charger heats up more), tap **Go on anyway** on the card: the build then goes on without pausing for heat, and later builds on this device do too.
 - Before each game the queue waits while the device is hot, while the battery is below 20 % and not charging, while you play a game, while a build with mods runs, and while a pack of the next game is being imported (Import pack…). It goes on by itself. The notification says what it waits for.
-- A game whose build fails or that you stop is marked **Build stopped**, and the next game starts. Its card says why and offers **Resume** or **Retry**, and **Dismiss** removes the card.
+- A game whose build fails, crashes or hangs, or that you stop, is marked **Build stopped**, and the next game starts by itself. A build that makes no progress and does no work for 30 minutes counts as hung, and so does a build with mods. Its card says why and offers **Resume** or **Retry**, and **Dismiss** removes the card. What the build made so far is kept, so **Resume** goes on from there.
 - Before a game starts, the app checks that its `.nup` fits the free space, and that the pack has at least 0.5 GB to be made in. If not, it stops that game before writing anything and goes on with the next.
 - **Stop** on the card, or **Cancel** in the notification, stops the game that builds; the queue goes on. **Cancel all** in the notification, or **Stop all** on the Up next card, stops everything. **Pause** on the Prepare card pauses the whole queue; **Resume** on the Up next card goes on where it stopped.
-- If Android ends the app, or you restart the device, the queue goes on when Android starts the app's build service again or when you next open the app. The game that was building starts again where it stopped.
+- If Android ends the app, or you restart the device, the queue goes on when Android starts the app's build service again or when you next open the app. The game that was building starts again where it stopped. If the app ended three times while building the same game, or crashed while importing its files, that game is marked **Build stopped** and the queue goes on without it.
 
 ### What notifications does a build show?
 
@@ -305,7 +316,7 @@ Probably not. Large games can stay on one step for many minutes. Open the **Buil
 
 ### Can I build on a microSD card?
 
-Yes. Add folders on internal storage and the microSD card in Settings › Library › **Build folders**. Tap a folder there to make it the default or forget it. Peanuts searches every configured folder for existing builds.
+Yes. Add folders on internal storage and the microSD card in Settings › Library › **Add folder** › **Builds**. Tap a build folder's row to make it the default or remove it from the list. Peanuts searches every configured folder for existing builds.
 
 In the game's Build or Rebuild pop-up, tap **Build destination** above the space estimate. Choose **Default** or pick a folder for that game. You can also add a folder there. A newly imported `.nup` and its `pack/` go into the title-ID folder at the selected destination. If you start from an existing `.nup`, only the pack goes to the selected destination.
 
@@ -385,7 +396,7 @@ Yes. A game's pack is what Build makes: its code for this app and its shaders. *
 
 ### How do updates and DLC work?
 
-Put them in the game folder, or set Settings › Library › **Update folder** and **DLC folder**. They are matched to their games by title ID. The sheet shows the update it will use, the newest one found unless you chose another (**Choose another…** picks a different file), and the DLC it found (**Add…** picks more).
+Put them in a game folder, or add the folders they are in with Settings › Library › **Add folder** › **Updates and DLC** (as many as you have). They are matched to their games by title ID. The sheet shows the update it will use, the newest one found unless you chose another (**Choose another…** picks a different file), and the DLC it found (**Add…** picks more).
 
 For a game that is built already, the cover says when it found a newer update the app knows for the game, or DLC its `.nup` does not hold yet: an **Update** mark, and "Update 3.0.4 found" or "An add-on found" in its state. A tap asks first: **Build** takes them in with Import again, **Play** plays the game as it is, **Not now** asks no more for these (the mark then reads **Update later**). Nothing is built without the tap. Such a build keeps what did not change since the last build of the game (its shaders, its code, the game files the shader search read) and makes only the rest, so it takes a fraction of a first build; its ready message says what came from earlier builds. Later, while the device is plugged in and no game runs, the app checks every shader it kept against a translation made from the start.
 
@@ -397,7 +408,7 @@ This is not the message for a game the app knows in several versions. There the 
 
 The build stops there and lets you choose. Its card has two buttons:
 
-- **Import again with DLC**, when the app found DLC for the game. Without a DLC folder the button is **Set the DLC folder**: set it (or add the DLC file in the game's sheet, **DLC** row), then tap **Import again with DLC**. It makes the `.nup` again with the DLC and builds the game. Whether the missing shaders are then found is not known: no game has needed this yet. See [Import again](#what-is-import-again-and-when-do-i-need-it).
+- **Import again with DLC**, when the app found DLC for the game. Without an update and DLC folder the button is **Add a DLC folder**: pick the folder with the DLC (or add the DLC file in the game's sheet, **DLC** row), then tap **Import again with DLC**. It makes the `.nup` again with the DLC and builds the game. Whether the missing shaders are then found is not known: no game has needed this yet. See [Import again](#what-is-import-again-and-when-do-i-need-it).
 - **Try anyway** builds without those shaders: the base game runs, and what the add-on adds is drawn without those materials. The game's sheet then says "Built without DLC shaders", and **Import again** there is the way to try for them later.
 
 Older versions of the app went on without asking here, so a game built by one of them can lack these shaders with no message. **Import again** is the thing to try there too.
@@ -422,9 +433,9 @@ With an update, the `.nup` now holds the update alone. The update already carrie
 
 ### How do I start and stop a game, and which controls work?
 
-Tap a ready cover. To stop, open the in-game panel and choose **Stop the game**. The panel opens with a swipe in from the right edge, with Back, or on a controller with Home or by holding − and + for half a second.
+Tap a ready cover. To stop, open the game menu and choose **Stop the game**. The game menu opens with Back, a swipe in from the left edge, or on a controller with Home (on the AYN Thor: the controller's Back) or by holding − and + for half a second; held, Home or Back opens the quick menu with the game's settings.
 
-Games take the handheld's own buttons and sticks, external controllers and on-screen touch controls. Settings has **On-screen controls** (Auto, On, Off), **Button mapping**, **Xbox button label swap** and **Rumble**. Each game can override them in its own settings.
+Games take the handheld's own buttons and sticks, external controllers and on-screen touch controls. Settings has **On-screen controls** (Auto, On, Off), **Button mapping** and **Rumble**. Each game can override them in its own settings.
 
 ### What frame rate do games run at?
 
@@ -456,7 +467,7 @@ Some of these rows show only with Settings › Developer › **Tester settings**
 
 Yes. **Console mode** is in Settings › Graphics and in each game's settings (hold the cover › **Performance** › Picture). **Docked** makes the game draw as it does on a TV, up to 1080p. **Handheld** makes it draw as on the Switch's own screen, up to 720p: that is lighter, so it can hold a higher frame rate, and the app's upscaler fills the screen. Handheld also turns on the game's touch screen. With nothing chosen, each game uses its own mode, which is Docked for most.
 
-The row applies from the next start. To change it while you play, open the in-game panel: **Console mode** is at the top of its first tab, above **Frame rate cap**. It changes at once, as when a Switch leaves its dock, and is kept for that game. Some games take the new picture size only at their next scene or their next start.
+The row applies from the next start. To change it while you play, open the quick menu: **Console mode** is at the top of its first tab, above **Frame rate cap**. It changes at once, as when a Switch leaves its dock, and is kept for that game. Some games take the new picture size only at their next scene or their next start.
 
 A few games are fixed to Handheld because they need the touch screen or the pointer there. Games that have their own **Resolution** row do not show Console mode: their Resolution sets it.
 
@@ -486,6 +497,14 @@ By default the device decides what a connected TV or monitor shows, as for any o
 
 A switch in Settings › Developer. Off, a game that has **Resolution** choices shows just those. On, it also shows the rows made for testing: advanced resolution, **Upscaler** and **Dynamic resolution**. Leave it off unless you are trying things out or were asked to change one of those rows.
 
+### Can a game start without the log lines and notices?
+
+Yes. Turn on Settings › App › **Smooth Experience**. While a game starts you then see its cover and a peanut instead of log lines, and there is no **Preparing graphics** or graphics driver notice over the game. Each part has its own switch under it. Errors still show: a start that stops shows a card with **Share log**, and **Preparing shaders** still shows its progress. The log keeps everything. It is off by default.
+
+### What is Developer view?
+
+A switch in Settings › Developer. On, you also get the messages only testers need, such as a switch nothing reads or a command from another app that was ignored, and the in-game menu uses its technical words. Off, those messages go to the log only and the in-game menu says the same in plain words. Messages about your save, cheats, fonts and errors show either way. It is on if you had the app before 0.1.9 and off on a new install.
+
 ### Where are a game's own settings, such as its language?
 
 Hold its cover. A game's settings override the defaults in Settings. **Reset to defaults** puts them back.
@@ -500,7 +519,7 @@ Yes. **Settings › App** has two rows. **Haptics** is **System** or **Off**. **
 
 ### Where are my saves, and can I import one?
 
-Saves are in the app's own storage, under `saves/<title ID>`. The **Saves** tab shows the path and has **Back up saves**, **Restore saves**, **Import save** (a `.zip` or a save folder) and **Delete save data**, which starts the game from the beginning. Stop the game first. Before a restore, an import or a delete, the app backs up the current save, so **Restore saves** can bring it back.
+Saves are in the app's own storage, under `saves/<title ID>`. The **Saves** tab shows the path and has **Back up saves**, **Restore saves**, **Import save** (a `.zip` or a save folder) and **Delete save data**, which starts the game from the beginning. Stop the game first. Before a restore, an import or a delete, the app backs up the current save, so **Restore saves** can bring it back. For a game with code mods, the app also backs up the save before the first start after an app update, and before the first start of another build of the game, with or without mods: **Restore saves** lists it as "automatic, before the first start of a new build". The app never deletes a backup.
 
 Each user in **Settings › Users** has a save of their own: the first user's is `saves/<title ID>`, another user's is `saves/<title ID>_user_<their ID>` beside it. With two or more users the **Saves** tab shows a card for each user at its top, starting at the user playing now; tap one, and the rows work on that user's save: a backup, a restore or an import goes to them only, and every question names them. **Copy to another user** gives the picked user's save to another user (theirs is backed up first). A game's device save, which some games keep apart (Mario Kart 8 Deluxe), is every user's and stays as it is. A removed user's saves stay on the phone and show as **Removed user**: back them up, copy them to a user or delete them. In **Settings › Users**, a user's card has **Show saves**: the games they have a save of; tap one to open its **Saves** tab with that user picked.
 
@@ -845,13 +864,13 @@ A build that failed or was cancelled does not start again by itself. Tap **Build
 
 A mod that hooks the game through an `.ips` patch and a module of its own can work this way: Luminescent Platinum on Pokémon Brilliant Diamond builds and runs. A mod that patches the game's code while the game runs (exlaunch-style hooks) does not work yet. The section then shows **A module's hooks will not run** before you build. If a set of mods cannot be built at all, it shows **Cannot build with these mods** and the reason.
 
-Once it reads **Ready**, every start of the game uses the mods that are on: the page's **Play**, a tap on the cover, a home screen shortcut. Turn a mod off or delete it and the game starts without it. While code mods are on but their build is not ready yet (it is running, waiting or failed), the game starts without them and says so. Nothing of a code mod is used then, not its files or cheats either: they belong to its code. Mods that are only files or cheats apply either way. If you change which code mods are on, the new set is built by itself, and a set that was built before is used again as it is. After you rebuild the game itself, replace a mod's files or update the app, tap **Rebuild with mods**: it redoes the parts that changed and keeps the rest.
+Once it reads **Ready**, every start of the game uses the mods that are on: the page's **Play**, a tap on the cover, a home screen shortcut. Turn a mod off or delete it and the game starts without it. While code mods are on but their build is not ready (it is running, waiting or failed, or it was made by an older version of the app and is made again), **Play** does not start the game. It says how far the build is and when it should be ready, and starts the build if it has not started yet. A home screen shortcut or a frontend opens the app's home screen with the same message. The game without its code mods can read the save you made with the mods and write over it at its start, before its first picture: Pokémon Brilliant Diamond does this to a Luminescent Platinum save. **Play without mods** in that message starts the game without them once, after a warning. Nothing of a code mod is used then, not its files or cheats either: they belong to its code. Mods that are only files or cheats apply either way. If you change which code mods are on, the new set is built by itself, and a set that was built before is used again as it is. After you rebuild the game itself, replace a mod's files or update the app, tap **Rebuild with mods**: it redoes the parts that changed and keeps the rest.
 
 ### How do I use cheats?
 
 Open the game's page › **Mods & Cheats**. Cheats that come with the app are listed there. **Add** takes a cheat file (`.txt`), a `.zip` or a folder, in the Atmosphère, Eden, Yuzu or Ryujinx layout. Each cheat has a switch; a switch works at once while the game runs and is kept for its next start. A file made for another game is refused, and one for another version of the game asks first.
 
-While you play, the in-game panel has a **Mods** tab with the same switches, each with its state (**Running**, the buttons it waits for, **Not possible here** or **Next start**). A cheat that sets a number has a field to change it; the cheat file itself is never changed. Settings › Controls › **Mods tab** turns the tab off.
+While you play, the quick menu has **Cheats** and **Mods** tabs with the same switches, each with its state (**Running**, the buttons it waits for, **Not possible here** or **Next start**). A cheat that sets a number has a field to change it; the cheat file itself is never changed. Settings › App › **Mods tab** turns the tabs off.
 
 ## Troubleshooting
 
@@ -894,19 +913,19 @@ A screenshot or a short video helps for a wrong picture. Never attach or link ga
 
 ### Do I need to rebuild my games after an update?
 
-A game built with 0.1.7 does not need a new build for its shaders: the first time you play it on 0.1.8 they are updated in a few seconds (**Updating shaders**), instead of being made again. If that cannot be done for a game, it plays with its old shaders and offers the shader update as before. Animal Crossing: New Horizons needs **Build again** for its new 60 fps choice.
+After updating to 0.1.9, each game's shaders are made again once. This version translates shaders in a new way, so shaders made by 0.1.8 or 0.1.7 cannot be updated in place in a few seconds as before. Until they are made again, the game keeps playing with the shaders it has, without this version's graphics fixes. The game's page shows **Shader update · Optional** beside the game: tap it, then **Update shaders**, then **Rebuild** on the sheet that opens (or open **Build again** and tap **Rebuild**). The shaders are then made on the device in the background, and the game still plays meanwhile. It takes about as long as the shader part of a first build, from about 10 minutes for a small game to 40 minutes or more for one with many shaders, so keep the device charging. The game's code is kept, except for Trails in the Sky 1st Chapter and FANTASY LIFE i, whose code is made again too. A game with code mods waits for its build with mods: **Play** says when it is ready. The first start with the new shaders can show black or missing objects for a few seconds, once per game.
 
 In general, rebuilding every game after an app update is recommended. An update can change how a game's code and shaders are prepared, and a game built by an older version keeps the old result until it is built again. Hold the game's cover, open **Storage**, tap **Build again**, then **Rebuild**. Your saves are not touched. It is quick when the game's code is otherwise current. What the update changed is made again, which can take as long as a first build (all the shaders, when the update changed how they are translated); what it did not change is kept from the last build.
 
-The game's sheet, opened with **Build again**, says which app version made its graphics. "Built with 0.1.7" or "Built with this app version" is fine: shaders from 0.1.7 update themselves in a few seconds the next time the game starts. A warning **Built with 0.1.3**, or any version before 0.1.7, means the game still plays but misses the graphics fixes since then, and only **Rebuild** brings them.
+The game's sheet, opened with **Build again**, says which app version made its graphics. "Built with this app version" is up to date. "Built with 0.1.8" or "Built with 0.1.7" comes with a plain note: the game's shaders are made again once after this update, with **Rebuild** or **Update shaders**, and it plays with the ones it has until then. A warning **Built with 0.1.3**, or any version before 0.1.7, means the game still plays but misses the graphics fixes since then, and only **Rebuild** brings them.
 
 ### Will I lose my saves?
 
-No. An update keeps the app's storage, and saves are in it. Uninstalling can delete them: Android asks whether to keep the app's data. Use **Back up saves** first.
+No. An update keeps the app's storage, and saves are in it. For a game with code mods, the first start after an update backs up its save first, so **Restore saves** can bring back the save from before the update. For other games, use **Back up saves** before updating if you want a copy. A game with code mods waits for its build with mods after an update: **Play** says when it is ready. Uninstalling can delete saves: Android asks whether to keep the app's data. Use **Back up saves** first.
 
 ### How do I tell which version I have?
 
-The build name is under the app's title on the home screen and in Settings › **About**. A release build reads `peanuts-native-0.1.8`. Every log starts with it too.
+The build name is under the app's title on the home screen and in Settings › **About**. A release build reads `peanuts-native-0.1.9`. Every log starts with it too.
 
 ## Credits
 

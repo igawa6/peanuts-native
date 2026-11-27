@@ -32,6 +32,11 @@ def built_rows():
             rows += ROW.findall(between(src, 'static Ui.Setting defaultRow(', '\n    }\n'))
     lib = (UI / 'LibrarySettings.java').read_text(encoding='utf-8')
     rows += ROW.findall(between(lib, 'public static void add(Activity a, LinearLayout content)', 'private static CharSequence companionsValue'))
+    # the folder rows (LibraryFolders.rows, called from add): Add folder, and one row of each folder titled by its kind (FolderKinds, issue #546)
+    folders = (UI / 'LibraryFolders.java').read_text(encoding='utf-8')
+    rows += ROW.findall(between(folders, 'static void rows(Activity a, LinearLayout card) {', '\n    }\n'))
+    kinds = (APP / 'main/java/dev/peanuts/folders/FolderKinds.java').read_text(encoding='utf-8')
+    rows += re.findall(r'new FolderKind\("\w+", "([^"]+)"', kinds)
     return rows
 
 

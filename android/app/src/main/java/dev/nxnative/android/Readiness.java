@@ -55,7 +55,7 @@ final class Readiness {
     /** What the host needs whatever the game: vka_dev.c stops without the first ones (Vulkan 1.3, the queue, timeline semaphores, dynamic rendering), and without
      *  placed memory maps, update-after-bind texture tables or a swapchain it runs but draws or shows nothing (its [RED] lines say so) */
     static final List<Req> HOST = Collections.unmodifiableList(List.of(
-            new Req(true, "android.sdk", "33", "Android 13 or newer: the app is built for it"),
+            new Req(true, "android.sdk", "33", "Android 13 or newer: games need it (the app itself runs on Android 12)"),   // PEANUTS: Android 12 (the reason shows only when the row fails, below API 33)
             new Req(true, "vk.instance", "1.3", "Vulkan 1.3 loader: the graphics replay is written for Vulkan 1.3"),
             new Req(true, "vk.api", "1.3", "Vulkan 1.3 GPU driver: the graphics replay is written for Vulkan 1.3"),
             new Req(true, "queue.graphicsCompute", "1", "A graphics and compute queue: everything is submitted to one such queue"),
@@ -243,6 +243,9 @@ final class Readiness {
         if (fact.equals("android.sdk")) return "Android SDK";
         return fact + ":";
     }
+
+    /** PEANUTS: whether one of these checks is the requirement on fact (Check.fact): GameActivity's Android 12 notice */
+    static boolean failed(List<Check> l, String fact) { for (Check c : l) if (fact.equals(c.fact)) return true; return false; }
 
     static boolean any(List<Check> l, Status s) { for (Check c : l) if (c.status == s) return true; return false; }
 

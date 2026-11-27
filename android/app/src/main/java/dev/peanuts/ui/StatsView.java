@@ -450,6 +450,7 @@ public final class StatsView extends FrameLayout {
         tagLp.bottomMargin = -pad + PUi.dp(c, 2);   // the tag (about 12 dp) fits in the padding (16 or 24 dp) under the card
         content.addView(buildTag, tagLp);
         addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        if (dev.peanuts.ingame.BottomMenu.on(getContext())) content.addView(dev.peanuts.ingame.BottomMenu.grip(getContext()));   // the menu's grip: a swipe up opens it; it moves with the pixel shifter
         sheet = sheet(c);
         sheet.setVisibility(sheetOpen ? View.VISIBLE : View.GONE);
         addView(sheet, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -868,6 +869,7 @@ public final class StatsView extends FrameLayout {
 
     /** The cap pill's text: the cap the game runs at ("120 FPS", "GAME OWNED"), and the picked one while it waits for a restart ("120 \u2192 90 FPS", "60 FPS \u2192 GAME") */
     private static String capText(GameControls.Host h) {
+        if (h.heldForHeat()) return "30 FPS (HOT)";   // held for heat: its pop-up's line says until when
         int run = h.capRunning(), picked = h.cap();
         String a = h.capLabel(run).toUpperCase(Locale.ROOT);
         if (picked == run || picked == -1) return a;

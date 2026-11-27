@@ -119,6 +119,42 @@ public final class ModdedBuild {
         return busy ? AUTO_WAIT : AUTO_START;
     }
 
+    /**
+     * What Play says while code mods are on and their build with mods cannot be played (issue #514). The game itself would start then, and Pokemon Brilliant
+     * Diamond started that way read Luminescent Platinum's save and wrote a new one over it about 11 s after the start, before its first picture, so stopping
+     * the game could not save it. So no start takes the game's own pack while its code mods are on (dev.nxnative.android.MainActivity.launch, FrontendLaunch):
+     * the player waits for the build, or picks Play without mods after a warning. name: the game's; stale: there is a build with mods, of another version of
+     * the app or the game (variantProblem, ModsSection.variantProblem, the launcher's own pack check); percent: how far this game's build with mods is, -1 when
+     * none runs; elapsedMs: how long it has run; waits: it waits for another build, an install or a delete; failed: why its last try failed, null: none
+     */
+    public static String waitText(String name, boolean stale, int percent, long elapsedMs, boolean waits, String failed) {
+        StringBuilder b = new StringBuilder(name).append(stale ? " has code mods on, and their build with mods was made for another version of the app or the game. It has to be made again. "
+                : " has code mods on, and their build with mods is not ready yet. ");
+        if (percent >= 0) {
+            b.append("It is being made now: ").append(percent).append(" %");
+            String eta = eta(elapsedMs, percent);
+            if (eta != null) b.append(", ready in ").append(eta);
+            b.append(". ");
+        } else if (waits) b.append("It starts by itself when the build that is running now finishes. ");
+        else if (failed != null) b.append("The last try failed: ").append(failed.trim()).append(failed.trim().endsWith(".") ? " " : ". ").append("The game's Mods & Cheats area can start it again. ");
+        else if (stale) b.append("Tap Rebuild with mods in the game's Mods & Cheats area to make it again. ");
+        else b.append("The game's Mods & Cheats area makes it. ");
+        return b.append("Play when it is ready: without its mods the game can write over the save you made with them, even before its first picture shows.").toString();
+    }
+
+    /** What is left of a build with mods, from how long it has run and how far it is: "about a minute", "about 4 min"; null below 5 % (too early to tell) and at 100 % */
+    public static String eta(long elapsedMs, int percent) {
+        if (percent < 5 || percent >= 100 || elapsedMs <= 0) return null;
+        long min = (elapsedMs * (100 - percent) / percent + 59_999) / 60_000;
+        return min <= 1 ? "about a minute" : "about " + min + " min";
+    }
+
+    /** The warning before Play without mods (issue #514): what can happen to the save, and the backup the start makes first (dev.nxnative.android.SaveStore.beforeNewBuild) */
+    public static String withoutModsWarning(String name) {
+        return name + " starts without its code mods. The game may change or replace the save you made with the mods, even before its first picture shows, and that "
+                + "cannot be undone in the game. The app backs up the save first when it changed since the last backup, and Restore saves on the game's Saves tab brings it back. If that backup fails, the game does not start.";
+    }
+
     /** {@link #variantProblem}'s answer for a variant that has no pack yet */
     public static final String NOT_BUILT = "not built";
 

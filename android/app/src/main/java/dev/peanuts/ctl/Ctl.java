@@ -484,7 +484,7 @@ public final class Ctl {
     }
 
     private static void scan(Activity a, Result res) throws Request.Bad, ReflectiveOperationException {
-        if (PeanutsPrefs.gameDir(a) == null) throw new Request.Bad("no_game_dir", "No game folder is set (Settings › Library).");
+        if (PeanutsPrefs.gameDirs(a).isEmpty()) throw new Request.Bad("no_game_dir", "No game folder is set (Settings › Library).");
         home(a);
         CtlPort.rescan(a);
         res.ok("The folders are being read again (Settings › Library › Rescan). screen.home.scanning says when it has ended; the library follows.");

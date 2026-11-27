@@ -127,7 +127,8 @@ final class LibraryScanner {
     List<Title> scan() {
         loadCache();
         List<Source> sources = new ArrayList<>();
-        for (File root : PeanutsPrefs.roots(ctx)) walk(root, sources);
+        java.util.Set<String> seen = new java.util.HashSet<>();   // a folder inside another of the lists (Switch and Switch/Updates): each file once
+        for (File root : PeanutsPrefs.roots(ctx)) walk(root, sources, seen);
         // the user's own picks (the sheet's Choose… / Add…), probed like the scan's files
         for (Title t : groupPreview(sources)) {
             String up = PeanutsPrefs.chosenUpdate(ctx, t.titleId);
@@ -139,14 +140,14 @@ final class LibraryScanner {
         Map<String, String> profiles = Upstream.profiles();
         Map<String, String> catalogNames = CompanionPort.names(ctx);
         List<Upstream.Entry> list = Upstream.games(ctx);
-        String gameDir = PeanutsPrefs.gameDir(ctx);
         for (Title t : titles.values()) {
             // the home folder and what to launch
             if (t.base != null && t.base.isDump()) { t.home = t.base.file; t.launch = t.base.file; }
             else if (t.base != null && t.base.isNup()) { t.home = t.base.file.getParentFile(); t.launch = t.base.file; }
             else {
                 String n = !t.base.name.isEmpty() ? t.base.name : catalogNames.getOrDefault(t.titleId, profiles.getOrDefault(t.titleId, t.titleId));
-                t.home = gameDir == null ? null : new File(gameDir, safeName(n));
+                File home = PeanutsPrefs.homeFor(ctx, t.base.file);   // the game folder that holds the file, else the first (issue #546)
+                t.home = home == null ? null : new File(home, safeName(n));
             }
             // the name
             t.name = t.base != null && !t.base.name.isEmpty() ? t.base.name : null;
@@ -299,11 +300,12 @@ final class LibraryScanner {
 
     // ---- The walk ----
 
-    /** A root's dump folders and game files (LibraryWalk: two levels deep, mods left out) */
-    private void walk(File root, List<Source> out) {
+    /** A root's dump folders and game files (LibraryWalk: two levels deep, mods left out); seen: the paths a root before took, which this one leaves */
+    private void walk(File root, List<Source> out, java.util.Set<String> seen) {
         LibraryWalk.walk(root, 0, new LibraryWalk.Sink() {
-            @Override public void dump(File d) { out.addAll(LibraryScanner.this.dump(d)); }
+            @Override public void dump(File d) { if (seen.add(d.getAbsolutePath())) out.addAll(LibraryScanner.this.dump(d)); }
             @Override public void file(File f) {
+                if (!seen.add(f.getAbsolutePath())) return;
                 String l = f.getName().toLowerCase(Locale.ROOT);
                 int dot = l.lastIndexOf('.');
                 if (dot > 0 && EXT.contains(l.substring(dot))) out.addAll(probe(f));

@@ -362,6 +362,21 @@ final class Job {
 
     synchronized String reasonDetail() { return o.optString("reason_detail"); }
 
+    // PEANUTS begin: heat pauses in this run of the job (PackService, #803): kept across states (state() does not clear it), read by the card (Prepare)
+    synchronized void heatPauses(int n) {
+        try {
+            o.put("heat_pauses", n);
+        } catch (JSONException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    synchronized int heatPauses() { return o.optInt("heat_pauses", 0); }
+
+    /** The phone keeps getting hot: Go on anyway comes first, with PackPolicy.HOT_AGAIN */
+    synchronized boolean hotAgain() { return heatPauses() >= PackPolicy.HOT_AGAIN_AT; }
+    // PEANUTS end
+
     /** A pause Go on anyway lifts: the service's heat pause below CRITICAL (PackPolicy.canOverride) */
     synchronized boolean canGoOn() { return "paused".equals(state()) && o.optBoolean("go_on", false); }
 
@@ -650,7 +665,7 @@ final class Job {
             case "failed": return PrepareText.failedText(STEP_TEXT[current()], error(), o.has("fix"));
             case "pending": return "Not started yet.";
             case "paused": return "Paused: " + reasonText(reason()) + ". " + stepText() + "." + (reasonDetail().isEmpty() ? "" : "\n" + capital(reasonDetail()) + ".")
-                    + (canGoOn() && serviceAlive ? "\nIf the phone does not feel hot, tap Go on anyway." : "");   // PEANUTS: build text in the player's words (0.1.8)
+                    + (canGoOn() && serviceAlive ? (hotAgain() ? "\n" + PackPolicy.HOT_AGAIN : "\nIf the phone does not feel hot, tap Go on anyway.") : "");   // PEANUTS: build text in the player's words (0.1.8); hotAgain (#803)
             case "running": return serviceAlive ? stepText() + step + quietText() + "."
                     : "Stopped at " + PrepareText.lower(stepText()) + ". Tap Resume to go on from there.";
             default: return s;
@@ -663,10 +678,12 @@ final class Job {
         switch (r) {
             case "user": return "by you";
             case "battery": return "the battery is below 20 %. Plug in the charger to go on";   // PEANUTS: build text in the player's words (0.1.8)
-            case "thermal": return "the phone is too hot. It goes on when it has cooled down";
+            case "thermal": return "the phone is too hot. It goes on from where it stopped when it has cooled down";   // PEANUTS: #803
             case "timeout": return "Android allows only so much background work a day. Open the app and tap Resume";
             case "refused": return "Android did not let it start in the background. Open the app and tap Resume";
             case "apk": return "the app was updated, so the shaders are made again";
+            case "hung": return "it made no progress, so it was stopped. Tap Resume to go on";   // PEANUTS: the build queue's watchdog (dev.peanuts.build.BuildWatch, Prepare.HUNG)
+            case "ended": return "its process ended and was not started again. Tap Resume to go on";   // PEANUTS: the same (Prepare.ENDED)
             default: return r.isEmpty() ? "stopped" : r;
         }
     }

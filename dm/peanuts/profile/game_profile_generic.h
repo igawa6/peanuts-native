@@ -81,6 +81,7 @@
 #define DM_GAME_LOW_RAM_PLACE_PART_MB (g_profile.low_ram_place_part_mb)
 #define DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB (g_profile.low_ram_img_cache_max_mb)
 #define DM_GAME_LOW_RAM_APP_POOL_MB (g_profile.low_ram_app_pool_mb)
+#define DM_GAME_PLACE_JOIN_MB (g_profile.place_join_mb)
 #define DM_GAME_RENDER_DEFAULT_OUT (g_profile.render_default_out)
 #define DM_GAME_NRENDER_CFG (g_profile.nrender_cfg)
 #define DM_GAME_NRT_POOL (g_profile.nrt_pool)

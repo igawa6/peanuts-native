@@ -17,16 +17,23 @@ public final class AdvancedTableJvmTest {
         check(rows.size() == meanings.size(), "one row for each env_switches row: " + rows.size() + " / " + meanings.size());
         for (AdvancedTable.Row r : rows) check(meanings.containsKey(r.name), r.name + " has a meaning");
 
-        AdvancedTable.Row q = AdvancedTable.find(rows, "DM_GFX_QUALITY");
+        // PEANUTS begin: no Peanuts profile has a render_cfg row (the Switch 2 profiles are not carried), so DM_GFX_QUALITY's real row is internal; a game-only
+        // friendly row of the same form, for one Switch 1 title ID, stands in for it
+        String head = "name\ttier\tarea\tlabel\ttry_if\ttype\tchoices\tdefault\tscope\twarn\towner\tprofile_key\tgames\tfixes\treason\n";
+        AdvancedTable.Row q = AdvancedTable.find(AdvancedTable.parse(head + "DM_GFX_QUALITY\tfriendly\tGraphics\tGraphics quality\tthe game looks too plain\tchoice\t"
+                + "Performance=performance;Quality=quality\tPerformance\tgame\t\t\trender_cfg\t01007EF00011E000\t\t\n"), "DM_GFX_QUALITY");
         check(q != null && q.tier.equals("friendly") && q.editable(), "DM_GFX_QUALITY is a friendly, editable row");
+        AdvancedTable.Row qr = AdvancedTable.find(rows, "DM_GFX_QUALITY");
+        check(qr != null && !qr.shown(), "the real DM_GFX_QUALITY row is internal, never shown");
+        // PEANUTS end
         check(q.accepts("quality") && q.accepts("performance") && !q.accepts("high") && !q.accepts(""), "choice values");
         check(q.optionLabel("quality").equals("Quality"), "option label");
-        check(!q.forGame(null) && q.forGame("04007EF01F8AE000") && !q.forGame("0400000000000000"), "a game-only row for its games: " + q.games);
+        check(!q.forGame(null) && q.forGame("01007EF00011E000") && !q.forGame("0100000000000000"), "a game-only row for its games: " + q.games);   // PEANUTS: a Switch 1 title ID
 
         AdvancedTable.Row n = AdvancedTable.find(rows, "DM_VK_IMG_LIMIT_MB");
         check(n != null && n.range()[0] == 512 && n.range()[1] == 8192 && n.unit().equals("MiB"), "number range and unit");
         check(n.accepts("1024") && !n.accepts("100") && !n.accepts("9000") && !n.accepts("x"), "number values");
-        check(n.forGame(null) && n.forGame("04007EF01F8AE000"), "a both-scope row is in the global list and a game's");
+        check(n.forGame(null) && n.forGame("01007EF00011E000"), "a both-scope row is in the global list and a game's");   // PEANUTS: a Switch 1 title ID
 
         AdvancedTable.Row o = AdvancedTable.find(rows, "DM_MEM_FILEBACK");
         check(o != null && o.owned() && !o.editable(), "an owned row is not editable");

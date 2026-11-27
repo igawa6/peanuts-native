@@ -93,9 +93,13 @@ public final class WhoPlaysActivity extends Activity {
     private Bottom bottom;
     private dev.nxnative.android.BananaBackgroundView bananas;
 
+    @SuppressWarnings("deprecation")   // the untyped overload, the only one before API 33
+    private Intent untypedGame() { return getIntent().getParcelableExtra(EXTRA_GAME); }
+
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
-        game = getIntent().getParcelableExtra(EXTRA_GAME, Intent.class);
+        if (android.os.Build.VERSION.SDK_INT >= 33) game = getIntent().getParcelableExtra(EXTRA_GAME, Intent.class);
+        else game = untypedGame();   // Android 12: the typed overload is API 33
         if (game != null) { tid = game.getStringExtra("title_id"); name = game.getStringExtra("name"); }
         picked = saved != null ? saved.getString("picked") : getIntent().getStringExtra(WhoPlays.EXTRA);
         users = UsersPort.list(this);

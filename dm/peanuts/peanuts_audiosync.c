@@ -41,7 +41,8 @@ enum { WS_S = 1440, WS_O = 384, WS_W = 480, WS_IN = 8192, WS_OUT = 8192 };
 static _Atomic uint64_t g_game_ns, g_last_frame_ns;   // present thread → render threads
 static _Atomic int g_on = -1;    // PN_AUDIO_FOLLOW: 0 off, 1 automatic, 2 always (cfg stores it last, after the taps and g_mark)
 static pthread_mutex_t g_cfg_mu = PTHREAD_MUTEX_INITIALIZER;   // cfg runs once; its first callers can be the render thread and the game's thread (pn_as_resync) at once
-static _Atomic int g_coupled;    // automatic: the game showed that it keeps its sound in step with its frames
+static _Atomic int g_coupled;    // the sound follows the game's pace in full: only with PN_AUDIO_FOLLOW=2 since 0.1.9 (#600)
+static _Atomic int g_told;       // automatic: the game looked as if it keeps its sound in step with its frames (logged once, nothing changes)
 static _Atomic uint64_t g_rs_t[1];   // the last resync seen while the game ran slow (pn_as_resync)
 static char g_mark[600];         // <DM_TEMP>/audio_follow: the finding, kept for the next starts
 static float g_h[PH + 1][TAPS];
@@ -95,10 +96,12 @@ static void cfg(void) {
     if (on < 0 || on > 2) on = 1;
     if (on) taps_init();
     const char *t = getenv("DM_TEMP");
-    if (t && *t) { snprintf(g_mark, sizeof g_mark, "%s/audio_follow", t); FILE *f = on == 1 ? fopen(g_mark, "r") : NULL; if (f) { fclose(f); atomic_store(&g_coupled, 1); } }
-    AS_LOG("peanuts: the sound follows the game's pace: %s", on == 0 ? "off (PN_AUDIO_FOLLOW=0)" : on == 2 ? "always (PN_AUDIO_FOLLOW=2)"
-           : atomic_load(&g_coupled) ? "yes, this game keeps its sound in step with its frames (found on an earlier start: <DM_TEMP>/audio_follow)"
-           : "within 1 % until the game shows that it keeps its sound in step with its frames (PN_AUDIO_FOLLOW=1; 0 off, 2 always)");
+    // PEANUTS (#600): a finding an earlier start kept in <DM_TEMP>/audio_follow no longer turns full following on. With a frame rate cap below the game's
+    // own rate the game itself runs slower, and following it in full slowed and stretched the sound (Breath of the Wild, Tears of the Kingdom at a 30 fps cap)
+    if (t && *t) snprintf(g_mark, sizeof g_mark, "%s/audio_follow", t);
+    if (on == 2) atomic_store(&g_coupled, 1);
+    AS_LOG("peanuts: the sound follows the game's pace: %s", on == 0 ? "off (PN_AUDIO_FOLLOW=0)" : on == 2 ? "in full (PN_AUDIO_FOLLOW=2)"
+           : "within 1 % (PN_AUDIO_FOLLOW=1; 2 follows in full, 0 off)");
     atomic_store_explicit(&g_on, on, memory_order_release);
     pthread_mutex_unlock(&g_cfg_mu);
 }
@@ -122,7 +125,7 @@ static void tempo_step(uint64_t now, double consumed_ns, int master) {
         g_q = dr ? (double)dg / (double)dr : 1.0;
         pace = g_q >= Q_LO && g_q <= Q_HI;
     } else g_q = 1.0;
-    int coupled = g_on == 2 || atomic_load_explicit(&g_coupled, memory_order_relaxed);
+    int coupled = g_on == 2;   // PEANUTS (#600): automatic keeps to the inaudible part, whatever the game shows
     if (coupled != was_coupled) { was_coupled = coupled; g_e = 0; }   // the lead built up while only the inaudible part followed is the game's to resync, not ours to take back
     if (master) {
         if (pace) { g_e += consumed_ns - (double)(game - g_prev_game); if (fabs(g_e) > LEAD_RESET_NS) g_e = 0; }
@@ -265,15 +268,14 @@ double pn_as_ratio(void) { uint64_t b = atomic_load_explicit(&g_t_bits, memory_o
 
 void pn_as_resync(uint64_t now_ns) {
     cfg();
-    if (g_on != 1 || atomic_load(&g_coupled)) return;
+    if (g_on != 1 || atomic_load(&g_told)) return;
     uint64_t qb = atomic_load_explicit(&g_qs_bits, memory_order_relaxed); double q; memcpy(&q, &qb, 8);
     if (!qb || !(q < 0.98)) return;   // the game ran at 98 % of its pace or more over the last 2 s: the inaudible part keeps up, a resync then has another reason
     uint64_t last = atomic_exchange(&g_rs_t[0], now_ns);
     if (!last || now_ns - last > 60000000000ull) return;
-    atomic_store(&g_coupled, 1);
-    if (g_mark[0]) { FILE *f = fopen(g_mark, "w"); if (f) { fputs("1\n", f); fclose(f); } }
-    AS_LOG("peanuts: the game paused and restarted its sound twice within %.1f s while it ran at %.3f of its pace: it keeps its sound in step with its frames, "
-           "so the sound follows the game's pace from now on (kept in %s)", (now_ns - last) / 1e9, q, g_mark[0] ? g_mark : "this run only");
+    atomic_store(&g_told, 1);   // PEANUTS (#600): only said, not acted on; the sound keeps its speed (a frame rate cap below the game's rate is the usual reason)
+    AS_LOG("peanuts: the game paused and restarted its sound twice within %.1f s while it ran at %.3f of its pace: it may keep its sound in step with its frames; "
+           "the sound keeps its speed (PN_AUDIO_FOLLOW=2 follows the game's pace in full)", (now_ns - last) / 1e9, q);
 }
 
 void pn_as_force(double t) { pthread_mutex_lock(&g_mu); g_force = t > 0 ? t : 0; pthread_mutex_unlock(&g_mu); }
@@ -281,7 +283,7 @@ void pn_as_force(double t) { pthread_mutex_lock(&g_mu); g_force = t > 0 ? t : 0;
 void pn_as_reset(void) {
     pthread_mutex_lock(&g_mu);
     for (int i = 0; i < AS_R; i++) { free(g_st[i]); g_st[i] = NULL; }
-    g_hn = g_hw = 0; g_last_sample = g_last_step = g_last_log = g_prev_game = 0; g_t = 1.0; g_q = 1.0; g_qs = 1.0; atomic_store(&g_qs_bits, 0); g_e = 0; g_force = 0; was_coupled = 0; g_on = -1; atomic_store(&g_coupled, 0); atomic_store(&g_rs_t[0], 0); g_mark[0] = 0;
+    g_hn = g_hw = 0; g_last_sample = g_last_step = g_last_log = g_prev_game = 0; g_t = 1.0; g_q = 1.0; g_qs = 1.0; atomic_store(&g_qs_bits, 0); g_e = 0; g_force = 0; was_coupled = 0; g_on = -1; atomic_store(&g_told, 0); atomic_store(&g_coupled, 0); atomic_store(&g_rs_t[0], 0); g_mark[0] = 0;
     atomic_store(&g_t_bits, 0); atomic_store(&g_game_ns, 0); atomic_store(&g_last_frame_ns, 0);
     pthread_mutex_unlock(&g_mu);
 }

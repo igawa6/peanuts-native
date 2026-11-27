@@ -1,0 +1,14 @@
+# Upstream paths Peanuts Native does not carry: peanuts/scripts/upstream-update.sh removes them after every rebase onto Banana Native,
+# resolves rebase conflicts on them as deletions, and its --check fails while any is tracked. One "pattern<TAB>reason" row each; the pattern
+# is a shell case pattern on the repo-relative path (`*` also matches `/`). See peanuts/docs/UPSTREAM.md "Dropped upstream content".
+dm/games/04*	Switch 2 game profiles (title IDs 04...): Peanuts Native supports Switch 1 games only (owner, 2026-11-26)
+dm/host/android/dkb_wide.c	Donkey Kong Bananza (Switch 2) aspect gates, OBS_DKB_WIDE
+dm/host/android/mkw_wide.c	Mario Kart World (Switch 2) aspect gates, OBS_MKW_WIDE
+dm/host/android/oot_wide.c	Ocarina of Time (Switch 2 profile 0400486024DEC000) aspect gates, OBS_OOT_WIDE
+dm/host/android/mtf_size.c	Mario Tennis Fever (Switch 2) scene size gate, OBS_MTF_SIZE
+dm/host/android/pkp_aspect.c	Pokopia (Switch 2) camera gates, OBS_PKP_*
+dm/host/tests/t_dkb_wide.c	test of dkb_wide.c
+dm/host/tests/t_mkw_wide.c	test of mkw_wide.c
+dm/host/tests/t_oot_wide.c	test of oot_wide.c
+dm/host/tests/t_mtf_size.c	test of mtf_size.c
+dm/host/tests/t_pkp_aspect.c	test of pkp_aspect.c

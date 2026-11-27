@@ -35,7 +35,7 @@ final class FrameRateCaps {
     // PEANUTS begin: which caps a game offers, from its profile alone (Prefs, GameSettings, SidePanel, the stats page and adb all ask here; fps cap audit 2026-11-24)
 
     /** The frame limit list (the host's limiter, DM_FPS_LIMIT): paced games, a profile's fps_limit, and opt-in present pacing (fps_limit_present with no fps_limit) */
-    static boolean limited(Profile p) { return p != null && (p.decoupled || p.fpsLimit > 0 || p.optInPresentRate()); }
+    static boolean limited(Profile p) { return p != null && (p.decoupled || p.fpsLimit > 0 || p.optInPresentRate() || p.ownedByDefault); }   // PEANUTS: fps_owned_default too, as a safety net (its Game owned default is a frame limit list choice; Hogwarts Legacy and Kirby are on the list through fps_limit_present and fps_limit)
     /** Which list a game was on before 0.1.8, when opt-in present pacing also needed fps_limit_max above 60: the list a saved cap with no list marker was written for (Prefs.migrateFpsCap) */
     static boolean legacyLimited(Profile p) { return p != null && (p.decoupled || p.fpsLimit > 0 || p.presentOnly && p.fpsLimit == 0 && p.fpsLimitMax > 60 && !p.decoupled); }
     /** A framework of whole steps a frame that Hold 60 fps keeps at one (fps_steps, or a frame step without an elapsed clock) */

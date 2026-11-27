@@ -9,6 +9,9 @@
 //   nximport_cli cat <file.nup> <entry path> <out file>
 // --keys defaults to $NX_KEYS, else ~/.switch/prod.keys.
 #define _POSIX_C_SOURCE 200809L
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE   // macOS hides struct rusage's ru_maxrss under _POSIX_C_SOURCE
+#endif
 #include "nximport.h"
 #include "nx_internal.h"
 #include <signal.h>
@@ -37,7 +40,12 @@ static void progress(void *u, const char *step, long long done, long long total)
 }
 static void peak(void) {   // the import's peak memory (resident), for measurements
 #ifndef _WIN32
-    struct rusage ru; if (!getrusage(RUSAGE_SELF, &ru)) printf("peak memory %.0f MiB\n", ru.ru_maxrss / 1024.0);
+    #ifdef __APPLE__
+    const double per_mib = 1048576.0;   // ru_maxrss is in bytes on macOS
+#else
+    const double per_mib = 1024.0;      // and in KiB on Linux and Android
+#endif
+    struct rusage ru; if (!getrusage(RUSAGE_SELF, &ru)) printf("peak memory %.0f MiB\n", ru.ru_maxrss / per_mib);
 #endif
 }
 

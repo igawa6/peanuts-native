@@ -502,7 +502,8 @@ class Launcher(unittest.TestCase):
         assert selected is not None   # PEANUTS(upstream-candidate): the fixture has shader_seen.tsv.
         self.assertEqual(','.join(selected), self.java('selection', d))
         seen = sorted(p.parent for p in (REPO / 'dm/games').glob('*/shader_seen.tsv') if (p.parent / 'shader_map.tsv').is_file())
-        self.assertTrue(seen, 'Pokopia (0400A3A01EE4C000) has a selected set')
+        # PEANUTS: upstream asserts Pokopia (0400A3A01EE4C000) has a selected set; that Switch 2 profile is not carried and no Switch 1 profile has one yet: the
+        # fixture above is the check then, and any profile with a shader_seen.tsv is checked below
         for p in seen:
             with self.subTest(profile=p.name):
                 selected = pack_android.selected_keys(p)
@@ -664,7 +665,13 @@ class RequireAll(unittest.TestCase):
 
     def test_mkw_manifest(self):
         """Mario Kart World's manifest: its one shader that builds nowhere is "-", so a phone build of that version is complete without it"""
-        m = delta.parse_manifest((REPO / 'dm/games/0400C3F00006E000/vk_delta.tsv').read_text())
+        # PEANUTS: the profile is a Switch 2 one Peanuts Native does not carry; its manifest (six lines) as it was
+        m = delta.parse_manifest("# The Android shader library delta manifest (dm/gfx/tools/vk_android_delta.py, android/SHADERS.md#delta-updates): the hash of every shader's library entry in\n"
+                                 '# the version below, from a full Mac build; "-" for a shader that did not build. Hashes only. "from" rows: shaders a phone with that older library translates\n'
+                                 'version\tc1eff1d2d8c1\n'
+                                 'game\t0400C3F00006E000\n'
+                                 'inputs\ta2e9850bf2ce\n'
+                                 '078997bf631992c5\t-\n')
         self.assertEqual(sorted(k for k, h in m['hashes'].items() if h == '-'), ['078997bf631992c5'])
 
 

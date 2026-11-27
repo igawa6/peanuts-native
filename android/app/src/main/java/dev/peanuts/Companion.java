@@ -562,6 +562,9 @@ public final class Companion {
         return builtIn != null && builtIn.isValid() ? builtIn : null;
     }
 
+    /** The second display for the game's in-game menu on the bottom screen (dev.nxnative.android.InGamePanel), as secondDisplay */
+    public static Display second(Activity game, DisplayManager dm) { return secondDisplay(game, dm); }
+
     /** Whether the device has a second screen of its own now (dev.peanuts.Screens; a TV or a cast does not count): what a title's companion settings default to
      * while the user has not chosen (CompanionSection.secondScreen, PeanutsPrefs.installCompanion). True when the displays cannot be read: the old default */
     public static boolean hasSecondDisplay(android.content.Context c) {

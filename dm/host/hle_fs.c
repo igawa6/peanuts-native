@@ -24,6 +24,7 @@
 
 #define RES_PATH_NOT_FOUND 0x202u      // fs module 2, description 1
 #define RES_PATH_EXISTS    0x402u      // fs module 2, description 2
+#define RES_MOUNT_NAME_EXISTS 0x7802u  // PEANUTS: fs module 2, description 60 (ResultMountNameAlreadyExists)
 #define RES_TARGET_NOT_FOUND 0x7D402u   // fs module 2, description 1002
 enum { MODE_READ = 1, MODE_WRITE = 2, MODE_APPEND = 4 };
 enum { ENT_DIR = 0, ENT_FILE = 1 };
@@ -40,10 +41,13 @@ _Static_assert(sizeof(DirectoryEntry) == 0x310, "DirectoryEntry layout");
 // RomFS image (dm/tools/romfs_image.py): DM_ROMFS may name one image file instead of a folder. Its index is read at mount; a file handle is then an entry of the image
 // (IMG_HANDLE, bit 58 set, never a valid fd), read with pread at its offset in the one descriptor kept open, and a directory lists its consecutive child entries.
 // One file instead of a few hundred thousand copies to an iPhone at full speed: a folder copy of Tears of the Kingdom's 304,000 files ran the phone's file service out of open files
-#define IMG_HANDLE(mi, k) ((1ull << 58) | ((uint64_t)(mi) << 32) | (uint64_t)(k))
+// PEANUTS begin: image handles encode (image slot, 16-bit generation, entry index) so handles stay valid across Unmount and stale/double-closed handles cannot touch a reused slot
+#define IMG_HANDLE(si, gen, k) ((1ull << 58) | (((uint64_t)(gen) & 0xffffull) << 42) | (((uint64_t)(si) & 0x3ffull) << 32) | (uint64_t)(k))
 #define IMG_H(h) (((h) >> 58) == 1)
-#define IMG_M(h) ((int)(((h) >> 32) & 0x3ffffff))
+#define IMG_M(h) ((int)(((h) >> 32) & 0x3ff))
+#define IMG_G(h) ((uint16_t)(((h) >> 42) & 0xffff))
 #define IMG_K(h) ((uint32_t)(h))
+// PEANUTS end
 // On Horizon a FileHandle is a pointer to the SDK's FileAccessor, a heap object, so its low bits are clear, and a game may use them: Metroid Prime 4's file device masks
 // them off (handle & ~7) before ReadFile, which read image entry 7 as entry 0 (another file, then a null pointer at boot). The guest sees the host's handle shifted
 // left by 4, 16-byte aligned as AArch64 heap blocks are (the image flag then lands on bit 62, as before): FH_OUT where a handle goes to the guest, FH_IN in each call that takes one
@@ -52,6 +56,10 @@ _Static_assert(sizeof(DirectoryEntry) == 0x310, "DirectoryEntry layout");
 typedef struct {
     char name[32]; char dir[1024]; char overlay[4096]; char commit[1024];
     romfs_img *img;                  // non-NULL: dir is a RomFS image file
+    // PEANUTS begin: detached image slot index and non-save mount refcount
+    int img_slot;                    // index in g_imgs[], or -1
+    int mount_refs;                  // duplicate mount count for non-save mounts
+    // PEANUTS end
     int ro;
     int txn_root;                    // canonical mount entry for this backing transaction, or -1
     int save;                        // mounted as save data (a transaction, or its read-only fallback): Unmount frees its name (h_fs_Unmount)
@@ -60,6 +68,21 @@ typedef struct {
 } mount_t;
 static mount_t g_mnt[MAX_MOUNT];   // commit non-empty = transactional save mount
 static int g_nmnt;
+// PEANUTS begin: detached image slots with per-slot lock, atomic refcount, generation, and closing state so ReadFile/GetFileSize/CloseFile never block on g_path_lock during save copies
+#define MAX_IMG_SLOTS 1024
+typedef struct {
+    romfs_img *img;
+    _Atomic int refs;
+    uint16_t gen;
+    uint8_t in_use;
+    uint8_t closing;                 // unmounted: close img when refs reaches 0
+} img_slot_t;
+static img_slot_t g_imgs[MAX_IMG_SLOTS];
+static pthread_mutex_t g_img_lock[MAX_IMG_SLOTS];
+static pthread_once_t g_img_lock_once = PTHREAD_ONCE_INIT;
+static void img_locks_init(void) { for (int i = 0; i < MAX_IMG_SLOTS; i++) pthread_mutex_init(&g_img_lock[i], NULL); }
+static void img_locks_ensure(void) { pthread_once(&g_img_lock_once, img_locks_init); }
+// PEANUTS end
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_path_lock = PTHREAD_MUTEX_INITIALIZER;
 static void path_unlock(pthread_mutex_t **m) { pthread_mutex_unlock(*m); }
@@ -108,19 +131,98 @@ static int save_txn_from_path(const char *hp) {
 __attribute__((weak)) void front_save_failed(int err) { LOG("front_save_failed(errno=%d): no front end attached (default weak implementation)", err); }
 // DM_FSLOG=<file>: each ReadFile logs one TSV line "seconds since boot\tguest path\toffset\tlength\tguest buffer address" (which bytes boot read, for offline reverse lookup against the manifest)
 static FILE *g_fslog; static char *g_fdpath[4096]; static pthread_mutex_t g_fslog_lock = PTHREAD_MUTEX_INITIALIZER;
-// PEANUTS begin: DM_FSLOG names files of an image mount (a .nup package, a RomFS image) too: their handles carry (mount, entry), not an fd, so the path
-// each entry was opened by is kept per mount while the log is on (it printed "?" for every read of a .nup game: a replay could not tell the files apart)
-static char **g_imgpath[MAX_MOUNT];
-static void fslog_img_open(int mi, int64_t k, const char *path) {
-    if (!g_fslog || mi < 0 || mi >= MAX_MOUNT || k < 0 || !g_mnt[mi].img || (uint64_t)k >= g_mnt[mi].img->n) return;
+// PEANUTS begin: DM_FSLOG names files of an image mount (a .nup package, a RomFS image) too: their handles carry (image slot, gen, entry), not an fd, so the path
+// each entry was opened by is kept per image slot while the log is on (it printed "?" for every read of a .nup game: a replay could not tell the files apart)
+static char **g_imgpath[MAX_IMG_SLOTS];
+static void fslog_img_open(int si, int64_t k, const char *path) {
+    if (!g_fslog || si < 0 || si >= MAX_IMG_SLOTS || k < 0 || !g_imgs[si].img || (uint64_t)k >= g_imgs[si].img->n) return;
     pthread_mutex_lock(&g_fslog_lock);
-    if (!g_imgpath[mi]) g_imgpath[mi] = calloc(g_mnt[mi].img->n, sizeof(char *));
-    if (g_imgpath[mi] && !g_imgpath[mi][k]) g_imgpath[mi][k] = strdup(path);
+    if (!g_imgpath[si]) g_imgpath[si] = calloc(g_imgs[si].img->n, sizeof(char *));
+    if (g_imgpath[si] && !g_imgpath[si][k]) g_imgpath[si][k] = strdup(path);
     pthread_mutex_unlock(&g_fslog_lock);
 }
 static const char *fslog_img_path(uint64_t h) {   // under g_fslog_lock
-    int mi = (int)((h >> 32) & 0x3ffffff); uint64_t k = h & 0xffffffffull;
-    return mi < MAX_MOUNT && g_imgpath[mi] && g_mnt[mi].img && k < g_mnt[mi].img->n && g_imgpath[mi][k] ? g_imgpath[mi][k] : "?";
+    int si = IMG_M(h); uint64_t k = IMG_K(h);
+    return si >= 0 && si < MAX_IMG_SLOTS && g_imgpath[si] && g_imgs[si].img && k < g_imgs[si].img->n && g_imgpath[si][k] ? g_imgpath[si][k] : "?";
+}
+static char **fslog_img_detach(int si) {
+    if (si < 0 || si >= MAX_IMG_SLOTS) return NULL;
+    pthread_mutex_lock(&g_fslog_lock);
+    char **p = g_imgpath[si];
+    g_imgpath[si] = NULL;
+    pthread_mutex_unlock(&g_fslog_lock);
+    return p;
+}
+static void fslog_img_free_detached(char **p, uint64_t n) {
+    if (!p) return;
+    for (uint64_t j = 0; j < n; j++) free(p[j]);
+    free(p);
+}
+static int img_slot_alloc(romfs_img *m) {
+    img_locks_ensure();
+    for (int si = 0; si < MAX_IMG_SLOTS; si++) {
+        pthread_mutex_lock(&g_img_lock[si]);
+        if (!g_imgs[si].in_use) {
+            g_imgs[si].in_use = 1;
+            g_imgs[si].closing = 0;
+            g_imgs[si].img = m;
+            atomic_store(&g_imgs[si].refs, 0);
+            g_imgs[si].gen++;
+            pthread_mutex_unlock(&g_img_lock[si]);
+            return si;
+        }
+        pthread_mutex_unlock(&g_img_lock[si]);
+    }
+    return -1;
+}
+static void img_slot_detach(int si) {   // called on Unmount: closes img immediately if refs == 0, else marks closing for the last img_put_ref
+    if (si < 0 || si >= MAX_IMG_SLOTS) return;
+    img_locks_ensure();
+    pthread_mutex_lock(&g_img_lock[si]);
+    romfs_img *to_close = NULL; char **imgpath = NULL;
+    if (atomic_load(&g_imgs[si].refs) == 0 && g_imgs[si].img) {
+        to_close = g_imgs[si].img;
+        g_imgs[si].img = NULL;
+        g_imgs[si].closing = 0;
+        g_imgs[si].in_use = 0;
+        imgpath = fslog_img_detach(si);
+    } else if (g_imgs[si].img) {
+        g_imgs[si].closing = 1;
+    }
+    pthread_mutex_unlock(&g_img_lock[si]);
+    if (to_close) { fslog_img_free_detached(imgpath, to_close->n); romfs_image_close(to_close); }
+}
+static void img_put_ref(int si) {
+    if (si < 0 || si >= MAX_IMG_SLOTS) return;
+    img_locks_ensure();
+    pthread_mutex_lock(&g_img_lock[si]);
+    romfs_img *to_close = NULL; char **imgpath = NULL;
+    int r = atomic_load(&g_imgs[si].refs);
+    if (r > 0) { r--; atomic_store(&g_imgs[si].refs, r); }
+    if (r == 0 && g_imgs[si].closing && g_imgs[si].img) {
+        to_close = g_imgs[si].img;
+        g_imgs[si].img = NULL;
+        g_imgs[si].closing = 0;
+        g_imgs[si].in_use = 0;
+        imgpath = fslog_img_detach(si);
+    }
+    pthread_mutex_unlock(&g_img_lock[si]);
+    if (to_close) { fslog_img_free_detached(imgpath, to_close->n); romfs_image_close(to_close); }
+}
+static int img_get_handle_ref(uint64_t h, int *si_out, uint32_t *k_out) {
+    int si = IMG_M(h); uint16_t gen = IMG_G(h); uint32_t k = IMG_K(h);
+    if (si < 0 || si >= MAX_IMG_SLOTS) return 0;
+    img_locks_ensure();
+    pthread_mutex_lock(&g_img_lock[si]);
+    romfs_img *m = g_imgs[si].img;
+    if (!m || !g_imgs[si].in_use || g_imgs[si].gen != gen || k >= m->n) {
+        pthread_mutex_unlock(&g_img_lock[si]);
+        return 0;
+    }
+    atomic_fetch_add(&g_imgs[si].refs, 1);
+    pthread_mutex_unlock(&g_img_lock[si]);
+    *si_out = si; *k_out = k;
+    return 1;
 }
 // PEANUTS end
 static void fslog_init(void) { static int done; if (done) return; done = 1; const char *e = getenv("DM_FSLOG"); if (e && !(g_fslog = fopen(e, "w"))) die("cannot open DM_FSLOG %s", e); if (g_fslog) setvbuf(g_fslog, NULL, _IOLBF, 0); }   // line-buffered: runs end at the time-limit alarm or a crash, which never flush stdio
@@ -215,7 +317,8 @@ static const char *fwd_slashes(const char *p, char *buf, size_t n) {
 static int norm_rest(const char *rest, char *out, size_t n);
 static int rom_overlay_path(const mount_t *m, const char *rest, char *out, size_t n);
 // A path on an image mount: returns 1 with the mount in *mi and the entry in *k (-1 with errno set when there is none); 0 for a path on any other mount, or one an overlay folder (DM_ROMFS_OVERLAY) has, which then opens as a host file
-static int img_path(const char *p, int *mi, int64_t *k) {
+// PEANUTS begin: img_path_ref acquires an image slot reference and returns (si, gen) so callers can use g_imgs[si].img safely after releasing PATH_LOCK()
+static int img_path_ex(const char *p, int *mi, int64_t *k, int hold_ref, int *si_out, uint16_t *gen_out) {
     PATH_LOCK(); char fwd[1024]; p = fwd_slashes(p, fwd, sizeof fwd); const char *c = p ? strchr(p, ':') : NULL; if (!c) return 0;
     size_t ln = c - p;
     for (int i = 0; i < g_nmnt; i++) {
@@ -224,33 +327,59 @@ static int img_path(const char *p, int *mi, int64_t *k) {
         char normed[1024]; const char *rest = c + 1; *mi = i;
         if (strstr(rest, "/.")) { if (!norm_rest(rest, normed, sizeof normed)) { *k = -1; return 1; } rest = normed; }
         char ov[1024]; if (g_mnt[i].overlay[0] && rom_overlay_path(&g_mnt[i], rest, ov, sizeof ov)) return 0;
-        *k = img_find(g_mnt[i].img, rest); return 1;
+        *k = img_find(g_mnt[i].img, rest);
+        if (hold_ref && *k >= 0) {
+            int si = g_mnt[i].img_slot;
+            img_locks_ensure();
+            pthread_mutex_lock(&g_img_lock[si]);
+            atomic_fetch_add(&g_imgs[si].refs, 1);
+            if (si_out) *si_out = si;
+            if (gen_out) *gen_out = g_imgs[si].gen;
+            pthread_mutex_unlock(&g_img_lock[si]);
+        }
+        return 1;
     }
     return 0;
 }
+static int img_path(const char *p, int *mi, int64_t *k) { return img_path_ex(p, mi, k, 0, NULL, NULL); }
+static int img_path_ref(const char *p, int *mi, int64_t *k, int *si, uint16_t *gen) { return img_path_ex(p, mi, k, 1, si, gen); }
+// PEANUTS end
 // soft: game files that cannot be opened answer "target not found" with a [RED] line instead of stopping the host (add-on content: the game runs without that DLC)
 static Result mount_ex(const char *name, const char *dir, int ro, int txn, int soft) {
     pthread_once(&g_txn_lock_once, txn_locks_init);
     PATH_LOCK(); pthread_mutex_lock(&g_lock);
     for (int i = 0; i < g_nmnt; i++)
         if (!strcmp(g_mnt[i].name, name)) {
+            // PEANUTS begin: duplicate non-save mounts of the same dir increment mount_refs so a single Unmount keeps them mounted; a different dir returns 0x7802 (MountNameAlreadyExists)
+            if (!g_mnt[i].save) {
+                if (!txn && !strcmp(g_mnt[i].dir, dir)) { g_mnt[i].mount_refs++; pthread_mutex_unlock(&g_lock); return RES_OK; }
+                LOG("[RED] fs mount %s: already mounted at %s, not %s (returning 0x7802)", name, g_mnt[i].dir, dir);
+                pthread_mutex_unlock(&g_lock); return RES_MOUNT_NAME_EXISTS;
+            }
+            // PEANUTS end
             // A save mounted under a name that already holds another user's save, with no Unmount between: on Horizon the mount fails (the name exists); here the name keeps
             // the save it has, which the game then reads as the other user's
             if (txn && g_mnt[i].save && g_mnt[i].commit[0] && strcmp(g_mnt[i].commit, dir)) LOG("[RED] fs mount %s: the name still holds the save %s, not %s (no Unmount before it)", name, g_mnt[i].commit, dir);
             pthread_mutex_unlock(&g_lock); return RES_OK;
         }
-    // A save takes an entry an Unmount freed (h_fs_Unmount: only save entries are ever freed), unless a mounted entry still shares that entry's transaction (txn_root):
-    // a game that mounts and unmounts its save again and again then keeps one entry instead of filling the table. Other mounts are never unmounted: they always append
+    // PEANUTS begin: take an entry an Unmount freed, unless a mounted entry still shares its transaction (txn_root) or save fds are still open on it:
+    // a game that mounts and unmounts its save or add-on content again and again then reuses entries instead of filling the table
     int s = g_nmnt;
-    for (int f = 0; txn && f < g_nmnt && s == g_nmnt; f++) {
+    for (int f = 0; f < g_nmnt && s == g_nmnt; f++) {
         if (g_mnt[f].name[0]) continue;
         int used = 0; for (int j = 0; j < g_nmnt && !used; j++) used = g_mnt[j].name[0] && g_mnt[j].txn_root == f;
+        if (!used && g_mnt[f].txn_root == f) {
+            uint16_t tok = (uint16_t)(f + 1);
+            for (int fk = 0; fk < 65536 && !used; fk++) used = atomic_load(&g_ftxn[fk]) == tok;
+        }
         if (!used) s = f;
     }
+    // PEANUTS end
     if (s == g_nmnt && g_nmnt >= MAX_MOUNT) die("mount table full");
     strlcpy(g_mnt[s].name, name, sizeof g_mnt[0].name);
     g_mnt[s].ro = ro; g_mnt[s].overlay[0] = 0; g_mnt[s].commit[0] = 0;
     g_mnt[s].txn_root = -1; g_mnt[s].save = txn;
+    g_mnt[s].img_slot = -1; g_mnt[s].mount_refs = txn ? 0 : 1;   // PEANUTS: non-save mount refcount and detached image slot
     atomic_store(&g_mnt[s].poison, 0);
     atomic_store(&g_mnt[s].first_write_ns, 0);
     if (!strcmp(name, "rom") && getenv("DM_ROMFS_OVERLAY"))
@@ -290,11 +419,27 @@ static Result mount_ex(const char *name, const char *dir, int ro, int txn, int s
         else if (stat(dir, &ist) || !(S_ISDIR(ist.st_mode) || S_ISREG(ist.st_mode))) bad = "are missing: neither a folder nor a RomFS image";
         else if (S_ISREG(ist.st_mode) && !(g_mnt[s].img = img_open(dir))) bad = "are not a complete RomFS image";
         if (bad && soft) {
+            // PEANUTS begin: clear tentative slot fields so a failed soft mount does not leak the slot
+            g_mnt[s].name[0] = 0; g_mnt[s].mount_refs = 0; g_mnt[s].overlay[0] = 0;
+            // PEANUTS end
             pthread_mutex_unlock(&g_lock);
             LOG("[RED] fs mount %s: the files %s %s: answered \"target not found\"", name, dir, bad);
             return RES_TARGET_NOT_FOUND;
         }
         if (bad) die("the game files %s (%s:) %s%s", dir, name, bad, strstr(bad, "missing") ? " (the rom mount is DM_ROMFS, or $DM_ROOT/romfs when DM_ROMFS is unset)" : "");
+        // PEANUTS begin: attach opened image to a detached image slot (g_imgs[])
+        if (g_mnt[s].img) {
+            int si = img_slot_alloc(g_mnt[s].img);
+            if (si < 0) {
+                romfs_image_close(g_mnt[s].img); g_mnt[s].img = NULL;
+                g_mnt[s].name[0] = 0; g_mnt[s].mount_refs = 0; g_mnt[s].overlay[0] = 0;
+                pthread_mutex_unlock(&g_lock);
+                if (soft) return RES_TARGET_NOT_FOUND;
+                die("image table full");
+            }
+            g_mnt[s].img_slot = si;
+        }
+        // PEANUTS end
     }
     int reused = s < g_nmnt; if (!reused) g_nmnt++;
     char shown[sizeof g_mnt[0].dir]; strlcpy(shown, txn ? g_mnt[s].dir : dir, sizeof shown); int ov = g_mnt[s].overlay[0] != 0;   // read under the lock: an Unmount and a later mount may take the entry again
@@ -876,19 +1021,33 @@ out:
 HLE_FORCE("_ZN2nn2fs6CommitEPKcRKNS0_12CommitOptionE", "fsp-srv; same as Commit (the option only clears the restore flag)", Result, h_fs_CommitOpt, const char *name, const void *opt) { (void)opt; return h_fs_Commit(name); }
 // SDK 11's old name: CommitSaveData(mount name) is the later Commit (Metroid Dread)
 HLE_FORCE("_ZN2nn2fs14CommitSaveDataEPKc", "fsp-srv; same as Commit (SDK 11's old name)", Result, h_fs_CommitSaveData, const char *name) { return h_fs_Commit(name); }
-// Unmount: a save's name is freed, so the next MountSaveData under it mounts that user's save (Super Mario Bros. Wonder unmounts "save" and mounts it again for the user
-// whose save file it opens: a permanent table kept the first user's save under the name, and every user's save file was the first user's). What was not committed is
-// dropped, as on Horizon. Other mounts (rom, add-on content, cache storage) stay: their table entries are permanent, as before. The freed entry is taken by the next save mount
-// (mount_ex), so a game that mounts and unmounts its save again and again does not fill the table.
-// Only with more than one user (dm_account_users): with one, every MountSaveData names the same save, so a kept name mounts the right one, and Unmount stays the no-op it
-// always was (a game that unmounts with writes not committed keeps them, as every earlier run did)
-HLE_FORCE("_ZN2nn2fs7UnmountEPKc", "fsp-srv; with more than one user a save's name is freed (its uncommitted writes dropped); other mounts, and every mount with one user, stay", void, h_fs_Unmount, const char *name) {
-    if (dm_account_users() < 2) return;
+// PEANUTS begin: Unmount frees a non-save mount when its mount_refs reaches 0 (detaching any image to g_imgs[] so the mount slot is immediately reusable while open handles stay valid);
+// with more than one user (dm_account_users >= 2), Unmount also frees a save's name (dropping uncommitted writes), while with one user save Unmount stays a no-op
+HLE_FORCE("_ZN2nn2fs7UnmountEPKc", "fsp-srv; frees a non-save mount (closing its image once open files close); with more than one user, frees a save's name (dropping uncommitted writes)", void, h_fs_Unmount, const char *name) {
+    if (!name || !*name) return;
     PATH_LOCK(); pthread_mutex_lock(&g_lock);
-    for (int i = 0; i < g_nmnt; i++)
-        if (g_mnt[i].save && !strcmp(g_mnt[i].name, name)) { LOG("fs unmount %s (save %s)", name, g_mnt[i].commit[0] ? g_mnt[i].commit : g_mnt[i].dir); g_mnt[i].name[0] = 0; }
+    int multi = dm_account_users() >= 2;
+    int detach_si = -1;
+    for (int i = 0; i < g_nmnt; i++) {
+        if (strcmp(g_mnt[i].name, name)) continue;
+        if (g_mnt[i].save) {
+            if (!multi) continue;
+            LOG("fs unmount %s (save %s)", name, g_mnt[i].commit[0] ? g_mnt[i].commit : g_mnt[i].dir);
+            g_mnt[i].name[0] = 0;
+        } else {
+            if (--g_mnt[i].mount_refs > 0) continue;
+            LOG("fs unmount %s (%s)", name, g_mnt[i].dir);
+            g_mnt[i].name[0] = 0;
+            g_mnt[i].overlay[0] = 0;
+            g_mnt[i].img = NULL;
+            detach_si = g_mnt[i].img_slot;
+            g_mnt[i].img_slot = -1;
+        }
+    }
     pthread_mutex_unlock(&g_lock);
+    if (detach_si >= 0) img_slot_detach(detach_si);
 }
+// PEANUTS end
 
 // ---------- Files ----------
 // With DM_FS: the host's time in open(2) and pread(2) for the game, one line every 2 s while it reads (how much of a load the files take; on Android's shared storage each
@@ -923,7 +1082,8 @@ void dm_fs_time(uint64_t *open_ns, uint64_t *read_ns, uint64_t *read_bytes) {
 #ifndef DM_GAME_ROMFS_SUBST
 #define DM_GAME_ROMFS_SUBST ""
 #endif
-static int64_t img_subst(mount_t *m, const char *path, const char **donor, int *dlen) {   // the substitute entry for a damaged path (-1: none named, or not in the image)
+// PEANUTS begin: img_subst / img_serve take romfs_img * directly so callers holding a detached image slot ref never touch g_mnt[] after releasing PATH_LOCK()
+static int64_t img_subst(romfs_img *img, const char *path, const char **donor, int *dlen) {   // the substitute entry for a damaged path (-1: none named, or not in the image)
     const char *c = strchr(path, ':'), *rest = c ? c + 1 : path, *s = getenv("DM_ROMFS_SUBST");
     while (*rest == '/') rest++;
     if (!s) s = DM_GAME_ROMFS_SUBST;
@@ -934,22 +1094,22 @@ static int64_t img_subst(mount_t *m, const char *path, const char **donor, int *
         if (eq && (size_t)(eq - s) == rl && !memcmp(s, rest, rl)) {
             char d[1024]; snprintf(d, sizeof d, "/%.*s", (int)(end - eq - 1), eq + 1);
             if (donor) { *donor = eq + 1; *dlen = (int)(end - eq - 1); }
-            int64_t k = img_find(m->img, d);
-            return k > 0 && m->img->e[k].type ? k : -1;
+            int64_t k = img_find(img, d);
+            return k > 0 && img->e[k].type ? k : -1;
         }
         s = end;
     }
     return -1;
 }
 // The entry to serve for entry k: k itself, a damaged file's substitute, or -1 (answered "not found")
-static int64_t img_serve(mount_t *m, int64_t k, const char *path) {
-    img_ent *ent = &m->img->e[k];
-    const char *nm = m->img->names + ent->name;
+static int64_t img_serve(romfs_img *img, int64_t k, const char *path) {
+    img_ent *ent = &img->e[k];
+    const char *nm = img->names + ent->name;
     if (!ent->type || ent->nlen <= 3 || memcmp(nm + ent->nlen - 3, ".zs", 3)) return k;   // other files keep their flags as they are
     uint8_t f = __atomic_load_n(&ent->flags, __ATOMIC_ACQUIRE);
-    if (f & IMG_ENT_ZCHECKED) return f & IMG_ENT_BADZSTD ? img_subst(m, path, NULL, NULL) : k;
+    if (f & IMG_ENT_ZCHECKED) return f & IMG_ENT_BADZSTD ? img_subst(img, path, NULL, NULL) : k;
     const char *d = NULL; int dl = 0;
-    int64_t sub = img_subst(m, path, &d, &dl);
+    int64_t sub = img_subst(img, path, &d, &dl);
     if (sub >= 0) {
         LOG("[RED] fs %s is a known damaged file: served as %.*s (romfs_substitute)", path, dl, d);
         __atomic_fetch_or(&ent->flags, (uint8_t)(IMG_ENT_ZCHECKED | IMG_ENT_BADZSTD), __ATOMIC_RELEASE);
@@ -960,24 +1120,24 @@ static int64_t img_serve(mount_t *m, int64_t k, const char *path) {
     if (on && ent->b >= 4) {
         uint8_t h[4];
         int got_header = 0;
-        if (m->img->aux && (ent->flags & IMG_ENT_ZSTD)) {
+        if (img->aux && (ent->flags & IMG_ENT_ZSTD)) {
             char why[200] = "";
-            const uint8_t *zbytes = nup_z_get(m->img, ent->a, why, sizeof why);
+            const uint8_t *zbytes = nup_z_get(img, ent->a, why, sizeof why);
             if (zbytes) {
                 memcpy(h, zbytes, 4);
-                nup_z_put(m->img, ent->a);
+                nup_z_put(img, ent->a);
                 got_header = 1;
             }
         } else if (ent->flags & IMG_ENT_NSP) {   // PEANUTS: a file of a dump image has no bytes at the image's descriptor (peanuts_nsp.h)
-            got_header = pn_nsp_read(m->img, ent, 0, h, 4);
+            got_header = pn_nsp_read(img, ent, 0, h, 4);
         } else {
-            got_header = romfs_image_read(m->img->fd, h, 4, (off_t)ent->a);
+            got_header = romfs_image_read(img->fd, h, 4, (off_t)ent->a);
         }
         if (got_header) {
             uint32_t mg = (uint32_t)h[0] | (uint32_t)h[1] << 8 | (uint32_t)h[2] << 16 | (uint32_t)h[3] << 24;
             bad = mg != 0xFD2FB528u && (mg & 0xFFFFFFF0u) != 0x184D2A50u;
             if (bad) {
-                d = NULL; dl = 0; r = img_subst(m, path, &d, &dl);
+                d = NULL; dl = 0; r = img_subst(img, path, &d, &dl);
                 if (r >= 0) LOG("[RED] fs %s is not a zstd stream (begins %02x %02x %02x %02x; damaged): served as %.*s (romfs_substitute)", path, h[0], h[1], h[2], h[3], dl, d);
                 else LOG("[RED] fs %s is not a zstd stream (begins %02x %02x %02x %02x; damaged): answered \"not found\"%s (DM_ROMFS_ZSTD_CHECK=0 serves it as stored)", path, h[0], h[1], h[2], h[3], d ? ", its substitute is not in the image" : "");
             }
@@ -986,29 +1146,34 @@ static int64_t img_serve(mount_t *m, int64_t k, const char *path) {
     __atomic_fetch_or(&ent->flags, (uint8_t)(IMG_ENT_ZCHECKED | (bad ? IMG_ENT_BADZSTD : 0)), __ATOMIC_RELEASE);
     return r;
 }
+// PEANUTS end
 // Xbox button labels (DM_XBOX_LABELS=1, below h_fs_GetFileOpenMode): a font archive the game opens is served patched from memory; -1 when it is not one or the patch did not apply
 static int labels_open(const char *path, int mode);
+// PEANUTS begin: use detached image slot (si, gen) and img_get_handle_ref without g_path_lock
+static void img_ref_cleanup(int *si) { if (*si >= 0) img_put_ref(*si); }
 HLE_FORCE("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci", "fsp-srv → open(2)", Result, h_fs_OpenFile, uint64_t *out, const char *path, int mode) { dm_thread_service_request();
-    int mi; int64_t k; uint64_t fst0 = now_ns();
+    int mi, si = -1; uint16_t gen = 0; int64_t k; uint64_t fst0 = now_ns();
     { int lf = labels_open(path, mode); if (lf >= 0) { g_fmode[lf] = (uint8_t)mode; *out = FH_OUT(lf); return RES_OK; } }
-    if (img_path(path, &mi, &k)) {
+    if (img_path_ref(path, &mi, &k, &si, &gen)) {
         if (k < 0) return err_res("open", path);
-        if (!g_mnt[mi].img->e[k].type) return RES_PATH_NOT_FOUND;
-        if (mode & (MODE_WRITE | MODE_APPEND)) { LOG("fs write to a read-only mount: %s", path); return RES_FAIL; }
-        img_ent *ent = &g_mnt[mi].img->e[k];   // a damaged file is named once, at its first open
+        romfs_img *m = g_imgs[si].img;
+        if (!m->e[k].type) { img_put_ref(si); return RES_PATH_NOT_FOUND; }
+        if (mode & (MODE_WRITE | MODE_APPEND)) { LOG("fs write to a read-only mount: %s", path); img_put_ref(si); return RES_FAIL; }
+        img_ent *ent = &m->e[k];   // a damaged file is named once, at its first open
         if ((ent->flags & IMG_ENT_DAMAGED) && !(__atomic_fetch_or(&ent->flags, IMG_ENT_REPORTED, __ATOMIC_RELAXED) & IMG_ENT_REPORTED))
             LOG("[RED] fs %s is marked damaged in its image (it failed a hash check when the image was made); its bytes may be wrong", path);
-        if ((k = img_serve(&g_mnt[mi], k, path)) < 0) return RES_PATH_NOT_FOUND;
-        ent = &g_mnt[mi].img->e[k];
+        if ((k = img_serve(m, k, path)) < 0) { img_put_ref(si); return RES_PATH_NOT_FOUND; }
+        ent = &m->e[k];
         if (ent->flags & IMG_ENT_ZSTD) {   // a compressed file of a NUP package: decompressed now, held until CloseFile
             char why[200] = "";
-            if (!nup_z_get(g_mnt[mi].img, ent->a, why, sizeof why)) { LOG("[RED] fs %s: cannot decompress it from %s: %s", path, ((nup_aux *)g_mnt[mi].img->aux)->what, why); return RES_FAIL; }
+            if (!nup_z_get(m, ent->a, why, sizeof why)) { LOG("[RED] fs %s: cannot decompress it from %s: %s", path, ((nup_aux *)m->aux)->what, why); img_put_ref(si); return RES_FAIL; }
         }
-        *out = FH_OUT(IMG_HANDLE(mi, k));
-        fslog_img_open(mi, k, path);   // PEANUTS: DM_FSLOG names image files (fslog_img_open above)
+        *out = FH_OUT(IMG_HANDLE(si, gen, k));
+        fslog_img_open(si, k, path);   // DM_FSLOG names image files (fslog_img_open above)
         if (g_flag.fs) LOG("fs open [%.2fs] %s mode=%d → image entry %lld", (now_ns() - g_t0_ns) / 1e9, path, mode, (long long)k);
         return RES_OK;
     }
+// PEANUTS end
     HP(path);
     if (mode & (MODE_WRITE | MODE_APPEND)) RW();
     int fd = open(hp, (mode & (MODE_WRITE | MODE_APPEND)) ? ((mode & MODE_READ) ? O_RDWR : O_WRONLY) : O_RDONLY);
@@ -1029,12 +1194,17 @@ HLE_FORCE("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci", "fsp-srv → open(2)", Re
 HLE_FORCE("_ZN2nn2fs8ReadFileEPmNS0_10FileHandleElPvm", "fsp-srv → pread(2)", Result, h_fs_ReadFile, size_t *out, uint64_t h, int64_t off, void *buf, size_t sz) { dm_thread_service_request(); h = FH_IN(h);
     if (!h) { *out = 0; return RES_FAIL; }   // a file handle is an fd; 0 is stdin and never a file the game opened: the null handle the game keeps using after a failed open
     size_t got = 0; int reprep = 0, fd = (int)h; int64_t base = 0;
+    int img_si __attribute__((cleanup(img_ref_cleanup))) = -1;   // PEANUTS: detached image slot ref
     if (IMG_H(h)) {   // an image entry: read the image's descriptor at the entry's offset, never past its end
-        const img_ent *x = &g_mnt[IMG_M(h)].img->e[IMG_K(h)];
-        fd = g_mnt[IMG_M(h)].img->fd; base = (int64_t)x->a;
+        // PEANUTS begin: use detached image slot g_imgs[img_si] without g_path_lock
+        uint32_t img_k = 0;
+        if (!img_get_handle_ref(h, &img_si, &img_k)) { *out = 0; return RES_FAIL; }
+        romfs_img *m = g_imgs[img_si].img;
+        const img_ent *x = &m->e[img_k];
+        fd = m->fd; base = (int64_t)x->a;
         sz = off < 0 || (uint64_t)off >= x->b ? 0 : (size_t)(x->b - off) < sz ? (size_t)(x->b - off) : sz;
         if (x->flags & IMG_ENT_ZSTD) {   // a compressed NUP file: its decompressed bytes, held by the open (one more reference for this read, in case the game reads a closed handle)
-            romfs_img *m = g_mnt[IMG_M(h)].img; char why[200] = ""; uint64_t f0 = now_ns();
+            char why[200] = ""; uint64_t f0 = now_ns();
             const uint8_t *src = nup_z_get(m, x->a, why, sizeof why);
             if (!src) { LOG("[RED] fs ReadFile: cannot decompress a file of %s: %s", ((nup_aux *)m->aux)->what, why); return RES_FAIL; }
             dm_guest_write_prepare(buf, sz);
@@ -1043,11 +1213,11 @@ HLE_FORCE("_ZN2nn2fs8ReadFileEPmNS0_10FileHandleElPvm", "fsp-srv → pread(2)", 
             *out = sz; fs_stat_note(1, f0, sz);
             return RES_OK;
         }
-        // PEANUTS begin: a file of a dump image (peanuts_nsp.h): its bytes come from the NCA section reader (decrypted, patched and decompressed as read), by any
+        // a file of a dump image (peanuts_nsp.h): its bytes come from the NCA section reader (decrypted, patched and decompressed as read), by any
         // number of threads at once. A read that fails (the dump gone, a damaged block) is a red line, the first eight times, and a failed read to the game.
         // A destination the graphics layer write-protected again during the read (EFAULT, as in the pread loop below) is prepared and read again
         if (x->flags & IMG_ENT_NSP) {
-            romfs_img *m = g_mnt[IMG_M(h)].img; uint64_t f0 = now_ns(); int again = 0;
+            uint64_t f0 = now_ns(); int again = 0;
             dm_guest_write_prepare(buf, sz);
             while (!pn_nsp_read(m, x, (uint64_t)off, buf, sz)) {
                 if (errno == EFAULT && again++ < 8) { dm_guest_write_prepare(buf, sz); continue; }
@@ -1119,7 +1289,13 @@ HLE_FORCE("_ZN2nn2fs9WriteFileENS0_10FileHandleElPKvmRKNS0_11WriteOptionE", "fsp
 }
 HLE_FORCE("_ZN2nn2fs11GetFileSizeEPlNS0_10FileHandleE", "fsp-srv → fstat(2)", Result, h_fs_GetFileSize, int64_t *out, uint64_t h) { dm_thread_service_request(); h = FH_IN(h);
     if (!h) return RES_FAIL;
-    if (IMG_H(h)) { *out = (int64_t)g_mnt[IMG_M(h)].img->e[IMG_K(h)].b; return RES_OK; }
+    // PEANUTS begin: use detached image slot g_imgs[si] without g_path_lock
+    if (IMG_H(h)) {
+        int si __attribute__((cleanup(img_ref_cleanup))) = -1; uint32_t k = 0;
+        if (!img_get_handle_ref(h, &si, &k)) return RES_FAIL;
+        *out = (int64_t)g_imgs[si].img->e[k].b; return RES_OK;
+    }
+    // PEANUTS end
     struct stat st; if (fstat((int)h, &st)) return err_res("fstat", "fd");
     *out = st.st_size; return RES_OK;
 }
@@ -1134,10 +1310,18 @@ HLE_FORCE("_ZN2nn2fs11SetFileSizeENS0_10FileHandleEl", "fsp-srv → ftruncate(2)
 }
 HLE_FORCE("_ZN2nn2fs9FlushFileENS0_10FileHandleE", "fsp-srv; host writes are already in the page cache, flushing is a no-op", Result, h_fs_FlushFile, uint64_t h) { dm_thread_service_request(); (void)h; return RES_OK; }
 HLE_FORCE("_ZN2nn2fs9CloseFileENS0_10FileHandleE", "fsp-srv → close(2)", void, h_fs_CloseFile, uint64_t h) { dm_thread_service_request(); h = FH_IN(h);
+    // PEANUTS begin: use detached image slot g_imgs[si] without g_path_lock
     if (h && IMG_H(h)) {   // an image entry holds no descriptor; a compressed NUP file gives back the bytes its open held
-        const img_ent *x = &g_mnt[IMG_M(h)].img->e[IMG_K(h)];
-        if (x->flags & IMG_ENT_ZSTD) nup_z_put(g_mnt[IMG_M(h)].img, x->a);
+        int si = -1; uint32_t k = 0;
+        if (img_get_handle_ref(h, &si, &k)) {
+            romfs_img *m = g_imgs[si].img;
+            const img_ent *x = &m->e[k];
+            if (x->flags & IMG_ENT_ZSTD) nup_z_put(m, x->a);
+            img_put_ref(si);   // temporary ref from img_get_handle_ref
+            img_put_ref(si);   // open-file ref from OpenFile
+        }
         return; }
+    // PEANUTS end
     if (!h) return;   // the null handle after a failed open (see ReadFile): do not touch fd 0
     g_fmode[(int)h & 0xffff] = 0; atomic_store(&g_ftxn[(int)h & 0xffff], 0);
     close((int)h); }
@@ -1408,8 +1592,16 @@ HLE_FORCE("_ZN2nn2fs10RenameFileEPKcS2_", "fsp-srv → rename(2)", Result, h_fs_
 // The Great Ace Attorney Chronicles (SDK 10) imports it; a directory carries its guest name the same way as a file
 HLE_FORCE("_ZN2nn2fs15RenameDirectoryEPKcS2_", "fsp-srv → rename(2) of a directory", Result, h_fs_RenameDir, const char *from, const char *to) { dm_thread_service_request(); return rename_entry(from, to); }
 HLE_FORCE("_ZN2nn2fs12GetEntryTypeEPNS0_18DirectoryEntryTypeEPKc", "fsp-srv → stat(2)", Result, h_fs_GetEntryType, int32_t *out, const char *path) { dm_thread_service_request();
-    int mi; int64_t k;
-    if (img_path(path, &mi, &k)) { if (k < 0) return err_res("stat", path); if (img_serve(&g_mnt[mi], k, path) < 0) return RES_PATH_NOT_FOUND; *out = g_mnt[mi].img->e[k].type ? ENT_FILE : ENT_DIR; return RES_OK; }   // a damaged .zs without a substitute is "not found" here too (img_serve)
+    // PEANUTS begin: hold image slot ref across img_serve / entry stat
+    int mi, si = -1; int64_t k;
+    if (img_path_ref(path, &mi, &k, &si, NULL)) {
+        if (k < 0) return err_res("stat", path);
+        int img_si __attribute__((cleanup(img_ref_cleanup))) = si;
+        romfs_img *m = g_imgs[img_si].img;
+        if (img_serve(m, k, path) < 0) return RES_PATH_NOT_FOUND;
+        *out = m->e[k].type ? ENT_FILE : ENT_DIR; return RES_OK;
+    }   // a damaged .zs without a substitute is "not found" here too (img_serve)
+    // PEANUTS end
     HP(path); struct stat st;
     if (stat(hp, &st)) return err_res("stat", hp);
     *out = S_ISDIR(st.st_mode) ? ENT_DIR : ENT_FILE; return RES_OK;
@@ -1464,11 +1656,15 @@ static void dir_snapshot(dirh_t *h, const mount_t *m, const char *rest) {
     free(resolved); free(rel); free(guest); free(parent); free(all); free(names); free(roots);
 }
 HLE_FORCE("_ZN2nn2fs13OpenDirectoryEPNS0_15DirectoryHandleEPKci", "fsp-srv → opendir(3)", Result, h_fs_OpenDirectory, uint64_t *out, const char *path, int mode) { dm_thread_service_request();
-    int mi; int64_t k;
-    if (img_path(path, &mi, &k)) {   // an image directory: its children are one run of entries, listed from a snapshot like the overlay's
-        if (k >= 0 && g_mnt[mi].img->e[k].type) errno = ENOTDIR, k = -1;
+    // PEANUTS begin: hold image slot ref while snapshotting directory entries
+    int mi, si = -1; int64_t k;
+    if (img_path_ref(path, &mi, &k, &si, NULL)) {   // an image directory: its children are one run of entries, listed from a snapshot like the overlay's
         if (k < 0) return err_res("opendir", path);
-        const romfs_img *m = g_mnt[mi].img; const img_ent *x = &m->e[k];
+        int img_si __attribute__((cleanup(img_ref_cleanup))) = si;
+        const romfs_img *m = g_imgs[img_si].img;
+        if (m->e[k].type) { errno = ENOTDIR; return err_res("opendir", path); }
+        const img_ent *x = &m->e[k];
+    // PEANUTS end
         dirh_t *h = calloc(1, sizeof *h); if (!h || !(h->snap = calloc(x->b ? x->b : 1, sizeof *h->snap))) die("RomFS image directory allocation failed");
         h->nsnap = (int64_t)x->b; h->mode = mode; strlcpy(h->path, path, sizeof h->path);
         for (uint64_t j = 0; j < x->b; j++) {

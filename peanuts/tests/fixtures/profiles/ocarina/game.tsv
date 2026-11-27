@@ -1,0 +1,37 @@
+# Test fixture (Peanuts): rows of upstream profile dm/games/0400486024DEC000 (The Legend of Zelda: Ocarina of Time), a Switch 2 profile Peanuts Native does not carry, kept for the
+# tests that need a profile with these features (cheats, Resolution presets, 3D scene rows, recommend rows, the DLSS stand-in): dm/tools/tests and
+# dm/host/tests/t_cheats.c load it by path. Only the rows those tests read; not a playable profile.
+title_id	0400486024DEC000
+program_id	0400486024DEC000
+name	The Legend of Zelda: Ocarina of Time
+build	v131072	v131072	main=e0f3ccfaf50065ae4ea01eb5aeb13b1a	subsdk0=b0110087a7b339ef74588d3bd0b4dd5d	sdk=1643a838814f9c10c696f930ed681e7f
+cheats	cheats/E0F3CCFAF50065AE.txt
+fps_limit	60
+skip_layers	5684f5e658eda176,47eb514f6d5e9faf
+fps_target	60
+scene_scale_palette	Pack/Bootup.Nin_Ounce_NVN2.pack.zs	ModelSceneExtensionParam	0.75,0.71112,0.66667,0.62223,0.58334,0.53334,0.5,0.4445,0.37223,0.33334
+scene_output	1920x1080	1920x1080	measured
+scene_output	1280x720	1280x720	measured
+res_preset	quality	1920x1080	default	Quality
+res_preset	medium	1920x1080	fixed:720	Balanced
+res_preset	performance	1280x720	fixed:540	Performance
+res_preset_from	balanced	medium
+res_preset_from	max-performance	performance
+recommend	driver.id=8,driver.version>=0x80320000	driver=system
+recommend	any	res_preset=performance	vegetation=off
+scene_scale	720p	0.6133	fixed	Fixed 0.6133
+scene_scale	720p-min	0.6133	floor	At least 0.6133 (dynamic)
+scene_scale	540p	0.46875	fixed	Fixed 0.46875
+scene_scale	480p	0.4166667	fixed	Fixed 0.4167
+scene_scale	360p	0.3125	fixed	Fixed 0.3125
+mesh_vegetation_cut	0c1ffecd02018fb0	eed1add7c89f5d34
+mesh_vegetation_cut	25c4a740753e7d7a	73dc0b90c4082e43
+mesh_vegetation_cut	101ecb327aafe9b1	17c8ab6419068d4b
+mesh_vegetation_cut	5b737961ae3e1b10	ecead5cd0569091f
+mesh_vegetation_cut	eebdb9347d09b344	604134a5262ff670
+mesh_vegetation_cut	d98076e4148db34f	fed302d791a4ba43
+mesh_vegetation_cut	839241636fce850a	4c7d6be5a7717c8d
+option	DM_OOT_MAX_RESOLUTION	Max resolution	Keeps the 3D scene at full size: sharper, more GPU work. Best with Resolution › Quality	restart	implies=DM_OOT_TEXTURE_POOL_X2	needs=OOT_PATCHES
+option	DM_OOT_TEXTURE_POOL_X2	Texture pool ×2	Twice the game's starting graphics memory. Max resolution needs it	restart	needs=OOT_PATCHES
+option	DM_OOT_FPS_UNLOCK	Unlocked frame rate	Game logic follows real time, so speed holds when fps changes. Does not raise fps	restart	needs=OOT_PATCHES
+option	DM_VK_OQ_SPLIT_PASS	Keep cave walls (Qualcomm)	Fixes walls and rocks that vanish on Death Mountain Trail with Qualcomm's driver. Costs GPU time on some phones, try it if you see holes. No effect on Turnip	restart

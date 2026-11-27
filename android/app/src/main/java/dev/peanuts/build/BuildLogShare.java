@@ -164,14 +164,13 @@ public final class BuildLogShare {
             w.add(new File(b, t + "-work"));
             where.add("a build folder: " + b);
         }
-        // a .nup the build imported beside the game (<game folder>/<name>/<name>.nup) before any of the above knew it: one level of the game folder
-        String gd = dev.peanuts.PeanutsPrefs.gameDir(c);
-        if (gd != null) {
+        // a .nup the build imported beside the game (<game folder>/<name>/<name>.nup) before any of the above knew it: one level of each game folder
+        for (String gd : dev.peanuts.PeanutsPrefs.gameDirs(c)) {
             File root = new File(gd);
             w.add(new File(root, t + "-work"));
             File[] sub = root.listFiles(File::isDirectory);
             if (sub != null) for (File s : sub) { File x = new File(s, t + "-work"); if (x.isDirectory()) w.add(x); }
-            where.add("the game folder and its folders: " + gd);
+            where.add("a game folder and its folders: " + gd);
         }
         return new ArrayList<>(w);
     }
@@ -368,8 +367,8 @@ public final class BuildLogShare {
         s.kv("plan", BuildMemory.plan(ram, avail, memLevel, Upstream.cpuWorkers()).why);
 
         s.head("Free space");
-        free(s, "game folder", dev.peanuts.PeanutsPrefs.gameDir(c));
-        free(s, "build folder", dev.peanuts.PeanutsPrefs.buildDir(c));
+        for (String d : dev.peanuts.PeanutsPrefs.gameDirs(c)) free(s, "game folder", d);
+        for (String d : dev.peanuts.PeanutsPrefs.buildDirs(c)) free(s, "build folder", d);
         File ext = c.getExternalFilesDir(null);
         free(s, "app storage", ext == null ? null : ext.getPath());
         free(s, "app private storage", c.getFilesDir().getPath());

@@ -63,7 +63,6 @@ DM_DIRTY_BLOCK_AT	developer	Game			text			both
 DM_DIRTY_BLOCK_KB	developer	Game			text			both						
 DM_DIRTY_FAULT_RUN_KB	developer	Game			text			both						
 DM_DISPLAY_NAME	internal	Game			text			both						Mac or iOS only
-DM_DKB_PANES	developer	Diagnostics			text			both						
 DM_DRS	developer	Graphics			text			both						
 DM_DRS_BACKOFF	developer	Graphics			text			both						
 DM_DRS_SLACK	developer	Graphics			text			both						
@@ -100,7 +99,7 @@ DM_GAMES_FIRST	developer	Game			text			both
 DM_GAME_ARGS_ADD	developer	Game			text			both						
 DM_GAME_ENV	developer	Game			text			both						
 DM_GFX_FIXTURE_OUT	internal	Diagnostics			text			both						test harness
-DM_GFX_QUALITY	friendly	Graphics	Graphics quality	the game looks too plain (Quality) or runs too slowly (Performance)	choice	Performance=performance;Quality=quality	Performance	game			render_cfg	04007EF01F8AE000		
+DM_GFX_QUALITY	internal	Graphics	Graphics quality	the game looks too plain (Quality) or runs too slowly (Performance)	choice	Performance=performance;Quality=quality	Performance	game						render_cfg profiles only; Peanuts has none [PEANUTS]
 DM_GLSLC_CAPTURE	developer	Diagnostics			text			both						
 DM_GL_CAPTURE	developer	Diagnostics			text			both						
 DM_GL_DRAWLOG	developer	Diagnostics			text			both						
@@ -293,7 +292,6 @@ DM_OODLE_SERVE	developer	Game			text			both
 DM_OOT_FPS_UNLOCK	developer	Performance			text			both						
 DM_OOT_MAX_RESOLUTION	developer	Game			text			both						
 DM_OOT_TEXTURE_POOL_X2	developer	Memory			text			both						
-DM_OOT_WIDE_KEEP	developer	Diagnostics			text			both						
 DM_OPMODE	developer	Game			text			both						
 DM_OPTION_PATCHES	developer	Game			text			both						
 DM_OPUS_DUMP	developer	Diagnostics			text			both						
@@ -308,7 +306,6 @@ DM_PAD_MOTION	developer	Input			text			both
 DM_PATCH_FRONT	developer	Game			text			both						
 DM_PATCH_VARIANT	developer	Game			text			both						
 DM_PHONE_MOTION	internal	Input			text			both						Mac or iOS only
-DM_PKP_ASPECT	developer	Diagnostics			text			both						
 DM_POSE_GET	developer	Diagnostics			text			both						
 DM_POSE_SET	developer	Diagnostics			text			both						
 DM_PREEMPT	developer	Game			text			both						
@@ -361,7 +358,7 @@ DM_QOS_EDGES	developer	Game			text			both
 DM_QOS_MAP	developer	Game			text			both						
 DM_REC	developer	Diagnostics			text			both						
 DM_REGIONS	developer	Diagnostics			text			both						
-DM_RENDER_PCT	friendly	Graphics	Render size	the picture is too soft (raise it) or the game is too slow (lower it)	choice	33 %=33;50 %=50;59 %=59;67 %=67;100 %=100	50 %	game			render_cfg	04007EF01F8AE000		
+DM_RENDER_PCT	internal	Graphics	Render size	the picture is too soft (raise it) or the game is too slow (lower it)	choice	33 %=33;50 %=50;59 %=59;67 %=67;100 %=100	50 %	game						render_cfg profiles only; Peanuts has none [PEANUTS]
 DM_RENDER_SCALE	developer	Graphics			text			both						
 DM_RENDER_UNCAPPED	developer	Diagnostics			text			both						
 DM_RESOURCE_AOC	internal	Diagnostics			text			both						Mac or iOS only
@@ -441,7 +438,7 @@ DM_TEST_SWKBD_LAG_MS	developer	Diagnostics			text			both
 DM_TEST_TRANSFORM_FEEDBACK	internal	Diagnostics			text			both						test harness
 DM_TEST_UP_LEAK	developer	Diagnostics			text			both						
 DM_TEST_UP_LOST	developer	Diagnostics			text			both						
-DM_THERMAL_CAP	internal	Game			text			both						Mac or iOS only
+DM_THERMAL_CAP	internal	Game			text			both						Mac, iOS; Android: a profile's thermal_cap [PEANUTS]
 DM_THR	developer	Diagnostics			text			both						
 DM_THRCPU	internal	Diagnostics			text			both						Mac or iOS only
 DM_TIME	developer	Game			text			both						
@@ -470,6 +467,7 @@ DM_VK_B2T_MIRROR	developer	Graphics			text			both
 DM_VK_BANDS	developer	Graphics			text			both						
 DM_VK_BAR_KEEP	developer	Diagnostics			text			both						
 DM_VK_BAR_NARROW	developer	Graphics			text			both						
+DM_VK_BAR_SCOPED	developer	Graphics			text			both						
 DM_VK_BC_RT	developer	Graphics			text			both						
 DM_VK_BIGIMG_MB	developer	Diagnostics			text			both						
 DM_VK_BIND_LOG	developer	Diagnostics			text			both						
@@ -509,7 +507,8 @@ DM_VK_DRIVER	advanced	Graphics	GPU driver		toggle			game		Settings > GPU driver
 DM_VK_DRV_MEMO	developer	Memory			text			both						
 DM_VK_DRV_STAMP	developer	Graphics			text			both						
 DM_VK_DS_FIRST_HERE	developer	Graphics			text			both						
-DM_VK_DYN_FILTER	developer	Diagnostics			text			both						
+DM_VK_DS_PASS	developer	Diagnostics			text			both						
+DM_VK_DYN_FILTER	developer	Diagnostics			text		On; 0 (off) with Qualcomm's driver before 512.800	both						
 DM_VK_EAGER_TEX	developer	Diagnostics			text			both						
 DM_VK_ENC	developer	Graphics			text			both						
 DM_VK_ENC_BATCH	developer	Graphics			text			both						
@@ -631,6 +630,7 @@ DM_VK_NANSCAN_STEP	developer	Diagnostics			text			both
 DM_VK_NDSR	developer	Graphics			text			both						
 DM_VK_NDSR_INPUT	developer	Graphics			text			both						
 DM_VK_NDSR_SHARP	developer	Graphics			text			both						
+DM_VK_NO_OCCLUSION	developer	Graphics			text			both						
 DM_VK_OCCLUSION	developer	Graphics			text			both						
 DM_VK_ONE_LANE	developer	Graphics			text		The game profile's one-lane shaders with Qualcomm's driver, none with others	both						
 DM_VK_ONE_LANE_BASE	developer	Graphics			text			both						
@@ -644,6 +644,7 @@ DM_VK_PASS_CLEARS	developer	Graphics			text			both
 DM_VK_PASS_KEEP	developer	Graphics			text			both						
 DM_VK_PCACHE	developer	Diagnostics			text			both						
 DM_VK_PCACHE_KEEP	developer	Memory			text			both						
+DM_VK_PCACHE_SAVE_BIG_S	developer	Memory			text			both						The large pipeline cache's save interval [PEANUTS]
 DM_VK_PCACHE_SAVE_S	developer	Memory			text			both						
 DM_VK_PCACHE_SAVE_SLOW_S	developer	Memory			text			both						
 DM_VK_PFB_SPV_DIR	internal	Diagnostics			text			both						test harness
@@ -691,7 +692,7 @@ DM_VK_PSO_PREP_MEM_MB	developer	Memory			text			both
 DM_VK_PSO_PREP_THREADS	developer	Performance			text			both						
 DM_VK_PSO_SLOTS	developer	Performance			text		1 with Turnip, 4 with other drivers	both						
 DM_VK_PUSH_DEDUP	developer	Graphics			text			both						
-DM_VK_PUSH_DELTA	developer	Diagnostics			text			both						
+DM_VK_PUSH_DELTA	developer	Diagnostics			text		1 on Turnip and Qualcomm, 0 on other drivers	both						
 DM_VK_QS_TRACE	developer	Diagnostics			text			both						
 DM_VK_QUAD_SHFL	developer	Graphics			text		1 with Turnip, 0 with other drivers	both						
 DM_VK_RANGE_WATCH	developer	Diagnostics			text			both						
@@ -735,6 +736,7 @@ DM_VK_SKIP_NDVE	developer	Diagnostics			text			both
 DM_VK_SKIP_WARN	advanced	Diagnostics	Skipped-work notice	the notice "Part of the picture is not drawn" appears and you want it off (0) or only for larger gaps	number	0..100 %|0,5,10,25	5 %	both						
 DM_VK_SPARSE_DENSE_MB	developer	Graphics			text			both						
 DM_VK_SPARSE_LEVELS	developer	Graphics			text			both						
+DM_VK_SPARSE_PLAIN_TRACK	developer	Graphics			text			both						
 DM_VK_SPARSE_RES	developer	Graphics			text			both						
 DM_VK_SPARSE_RES_MB	developer	Graphics			text			both						
 DM_VK_SPEC_FOLD	developer	Graphics			text			both						
@@ -774,9 +776,11 @@ DM_VK_TILED_WB	developer	Diagnostics			text			both						Rendered texture storage
 DM_VK_TL_HOST	developer	Graphics			text			both						
 DM_VK_TL_POLL	developer	Diagnostics			text			both						
 DM_VK_TS_LOG	developer	Diagnostics			text			both						
+DM_VK_TU_FLUSHALL	developer	Graphics			text			both						
 DM_VK_TU_UBWC_HINT	developer	Graphics			text			both						
 DM_VK_UBWC	developer	Graphics			text			both						
 DM_VK_UB_DEFER	developer	Graphics			text			both						
+DM_VK_UB_DEFER_OUTSIDE	developer	Graphics			text			both						
 DM_VK_UB_PEEK	developer	Diagnostics			text			both						
 DM_VK_UB_PEEK_AT	developer	Diagnostics			text			both						
 DM_VK_UB_PEEK_DONE	developer	Diagnostics			text			both						

@@ -171,7 +171,7 @@ final class PackZip {
         } else {
             try (ZipFile zf = new ZipFile(source)) {
                 ZipEntry e = zf.getEntry(prefix(zf) + "pack.tsv");
-                try (InputStream in = zf.getInputStream(e)) { tsv = in.readAllBytes(); }
+                try (InputStream in = zf.getInputStream(e)) { tsv = Streams.readAll(in); }   // PEANUTS: Android 12 (Streams: the same call from API 33)
             } catch (java.util.zip.ZipException e) {
                 throw new IOException(source.getName() + " is not a zip file (" + e.getMessage() + ")");
             }

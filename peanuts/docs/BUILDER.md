@@ -26,7 +26,7 @@ Set `NX_KEYS` to your `prod.keys`, or pass `--keys`. The default is `~/.switch/p
 
 ### Desktop shader translator
 
-Peanuts Native 0.1.8 builds its desktop shader translator from source the first time a pack needs a new shader library. Install the .NET **SDK 10.0.114** for that first build. If the packer environment contains only the runtime, set `PEANUTS_DOTNET_SDK` to the full path of the SDK’s `dotnet` executable. The launcher preserves an explicit `XLATE` selection. Later builds reuse the verified translator under `peanuts/.build/pc-translator/`. Cached shader libraries and code-only packs can be used without preparing a translator.
+Peanuts Native 0.1.9 builds its desktop shader translator from source the first time a pack needs a new shader library. Install the .NET **SDK 10.0.114** for that first build. If the packer environment contains only the runtime, set `PEANUTS_DOTNET_SDK` to the full path of the SDK’s `dotnet` executable. The launcher preserves an explicit `XLATE` selection. Later builds reuse the verified translator under `peanuts/.build/pc-translator/`. Cached shader libraries and code-only packs can be used without preparing a translator.
 
 For an offline build set `PEANUTS_NUGET_SOURCE` to a local NuGet feed containing the packages required by `dm/third_party/ryujinx/Directory.Packages.props` and their dependencies. A populated NuGet global-packages folder works as a local feed. To prepare explicitly and print the value for `XLATE`, run:
 

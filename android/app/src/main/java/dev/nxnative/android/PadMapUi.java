@@ -21,7 +21,7 @@ final class PadMapUi {
 
     /** Settings › Button mapping: the default of every game */
     static void forDefault(Activity a, Runnable done) {
-        edit(a, "Button mapping", "For every game without its own mapping, from its next start.", Prefs.padMap(a), Prefs.xboxButtons(a) == 2 ? 2 : 0,
+        edit(a, "Button mapping", "For every game without its own mapping, from its next start.", Prefs.padMap(a), 0,   // PEANUTS: 0, Xbox button label swap removed
                 spec -> { Prefs.padMapDefault(a, spec); done.run(); }, "Reset to default", () -> { Prefs.padMapReset(a); done.run(); });   // PEANUTS: padMapReset (was padMapDefault(a, ""))
     }
 
@@ -29,7 +29,7 @@ final class PadMapUi {
     static void forGame(Activity a, Game g, Runnable done) {
         String id = g.titleId;
         edit(a, "Button mapping · " + g.name, "For " + g.name + " only, from its next start. Reset: back to Settings' mapping.", Prefs.padMap(a, id),
-                Prefs.xboxButtons(a, id) == 2 ? 2 : 0, spec -> { Prefs.padMap(a, id, spec); done.run(); }, "Reset to default", () -> { Prefs.padMap(a, id, null); done.run(); });
+                0 /* PEANUTS: Xbox button label swap removed */, spec -> { Prefs.padMap(a, id, spec); done.run(); }, "Reset to default", () -> { Prefs.padMap(a, id, null); done.run(); });
     }
 
     /** The value a settings row shows */

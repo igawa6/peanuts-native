@@ -98,7 +98,8 @@ static void t_deny(void) {
 }
 
 // ---- The module scan: SPIR-V by hand ----
-typedef struct { uint32_t w[512]; size_t n; } mod;
+static unsigned SCAN(const uint32_t *w, size_t n, uint32_t b) { return vkrs_spv_scan(w, n, b, NULL); }   // PEANUTS: #734
+typedef struct { uint32_t w[1024]; size_t n; } mod;
 static void op(mod *m, uint32_t opc, int n, ...) {
     __builtin_va_list ap; __builtin_va_start(ap, n);
     m->w[m->n++] = (uint32_t)(n + 1) << 16 | opc;
@@ -127,39 +128,67 @@ static void fetch(mod *m, uint32_t ptr_ty, uint32_t var, uint32_t simg_ty, uint3
 }
 static void t_scan(void) {
     mod m; uint32_t f = FIRST_FREE;
-    CHECK(vkrs_spv_scan(NULL, 0, 0) == 0 && vkrs_spv_scan((const uint32_t[]){1, 2, 3, 4, 5, 6}, 6, 0) == 0, "no module");
-    base(&m, 130, 0); CHECK(vkrs_spv_scan(m.w, m.n, 130) == 0, "a module that reads nothing");
+    CHECK(SCAN(NULL, 0, 0) == 0 && SCAN((const uint32_t[]){1, 2, 3, 4, 5, 6}, 6, 0) == 0, "no module");   // PEANUTS: #734
+    base(&m, 130, 0); CHECK(SCAN(m.w, m.n, 130) == 0, "a module that reads nothing");
     base(&m, 130, 0); op(&m, 65, 5, (uint32_t)T_PF, f, (uint32_t)V_SUP, (uint32_t)C_5, (uint32_t)C_0);
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == VKRS_SPV_RT, "render_scale[0]: %u", vkrs_spv_scan(m.w, m.n, 130));
-    CHECK(vkrs_spv_scan(m.w, m.n, 131) == 0, "another binding is not the support buffer");
+    CHECK(SCAN(m.w, m.n, 130) == VKRS_SPV_RT, "render_scale[0]: %u", SCAN(m.w, m.n, 130));   // PEANUTS: #734
+    CHECK(SCAN(m.w, m.n, 131) == 0, "another binding is not the support buffer");
     base(&m, 130, 1); op(&m, 65, 5, (uint32_t)T_PF, f, (uint32_t)V_SUP, (uint32_t)C_5, (uint32_t)C_0);
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == 0, "the same binding in the pools' set is not the support buffer");
+    CHECK(SCAN(m.w, m.n, 130) == 0, "the same binding in the pools' set is not the support buffer");   // PEANUTS: #734
     base(&m, 130, 0); op(&m, 65, 5, (uint32_t)T_PF, f, (uint32_t)V_SUP, (uint32_t)C_5, (uint32_t)C_1);
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == VKRS_SPV_TEX, "render_scale[1]");
+    CHECK(SCAN(m.w, m.n, 130) == VKRS_SPV_TEX, "render_scale[1]");   // PEANUTS: #734
     base(&m, 130, 0); op(&m, 66, 5, (uint32_t)T_PF, f, (uint32_t)V_SUP, (uint32_t)C_5, f + 50);   // a computed index (the helper's 1 + samplerIndex)
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == VKRS_SPV_TEX, "render_scale[computed]");
+    CHECK(SCAN(m.w, m.n, 130) == VKRS_SPV_TEX, "render_scale[computed]");   // PEANUTS: #734
     base(&m, 130, 0); op(&m, 65, 5, (uint32_t)T_PF, f, (uint32_t)V_SUP, (uint32_t)C_0, (uint32_t)C_1);
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == 0, "another member (the alpha test's reference)");
+    CHECK(SCAN(m.w, m.n, 130) == 0, "another member (the alpha test's reference)");   // PEANUTS: #734
     base(&m, 130, 0); fetch(&m, T_PSIMG2D, V_TEX, T_SIMG2D, T_IMG2D, f);
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == VKRS_SPV_PIXEL, "a 2D fetch without a helper: %u", vkrs_spv_scan(m.w, m.n, 130));
+    CHECK(SCAN(m.w, m.n, 130) == VKRS_SPV_PIXEL, "a 2D fetch without a helper: %u", SCAN(m.w, m.n, 130));   // PEANUTS: #734
     base(&m, 130, 0); fetch(&m, T_PSIMG2D, V_TEX, T_SIMG2D, T_IMG2D, f); op(&m, 65, 5, (uint32_t)T_PF, f + 9, (uint32_t)V_SUP, (uint32_t)C_5, f + 50);
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == (VKRS_SPV_PIXEL | VKRS_SPV_TEX), "a 2D fetch with the helper");
+    CHECK(SCAN(m.w, m.n, 130) == (VKRS_SPV_PIXEL | VKRS_SPV_TEX), "a 2D fetch with the helper");   // PEANUTS: #734
     base(&m, 130, 0); fetch(&m, T_PSIMGBUF, V_TBUF, T_SIMGBUF, T_IMGBUF, f);
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == 0, "a buffer texture's fetch is no pixel fetch");
+    CHECK(SCAN(m.w, m.n, 130) == 0, "a buffer texture's fetch is no pixel fetch");   // PEANUTS: #734
     base(&m, 130, 0); op(&m, 65, 4, (uint32_t)T_PSIMG2D, f, (uint32_t)V_ARR, (uint32_t)C_1); fetch(&m, T_PSIMG2D, f, T_SIMG2D, T_IMG2D, f + 1);
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == VKRS_SPV_PIXEL, "a fetch from an array of 2D textures");
+    CHECK(SCAN(m.w, m.n, 130) == VKRS_SPV_PIXEL, "a fetch from an array of 2D textures");   // PEANUTS: #734
     base(&m, 130, 0); op(&m, 61, 3, (uint32_t)T_IMG3D, f, (uint32_t)V_IMG3D); op(&m, 98, 4, (uint32_t)T_FLOAT, f + 1, f, (uint32_t)C_0);
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == VKRS_SPV_PIXEL, "a 3D image read");
+    CHECK(SCAN(m.w, m.n, 130) == VKRS_SPV_PIXEL, "a 3D image read");   // PEANUTS: #734
     base(&m, 130, 0); op(&m, 61, 3, (uint32_t)T_SIMG2D, f, (uint32_t)V_TEX); op(&m, 100, 3, (uint32_t)T_IMG2D, f + 1, f); op(&m, 103, 4, (uint32_t)T_INT, f + 2, f + 1, (uint32_t)C_0);
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == VKRS_SPV_PIXEL, "a size query");
+    CHECK(SCAN(m.w, m.n, 130) == VKRS_SPV_PIXEL, "a size query");   // PEANUTS: #734
     base(&m, 130, 0); fetch(&m, T_PSIMG2D, V_TEX, T_SIMG2D, T_IMG2D, f); m.w[m.n - 5] = 0xffffu << 16 | 95;   // a word count past the module's end: the scan stops
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == 0, "a cut module");
+    CHECK(SCAN(m.w, m.n, 130) == 0, "a cut module");   // PEANUTS: #734
     base(&m, 130, 0); m.w[3] = 4; fetch(&m, T_PSIMG2D, V_TEX, T_SIMG2D, T_IMG2D, f);   // ids past the bound: ignored, not read out of range (the sanitizers check it)
-    CHECK(vkrs_spv_scan(m.w, m.n, 130) == 0, "ids past the bound");
+    CHECK(SCAN(m.w, m.n, 130) == 0, "ids past the bound");   // PEANUTS: #734
+}
+
+// The bindings a module fetches from or sizes by pixel (#703): a texture it only samples is not among them, so its scale does not have to match
+static void t_fetch_bindings(void) {
+    mod m; uint32_t f = FIRST_FREE; vkrs_fb fb;
+    base(&m, 130, 0); fetch(&m, T_PSIMG2D, V_TEX, T_SIMG2D, T_IMG2D, f);
+    vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(!fb.all && fb.n == 1 && fb.b[0] == 7 && vkrs_fb_has(&fb, 7) && !vkrs_fb_has(&fb, 8), "a 2D fetch names its binding: n %u all %u", fb.n, fb.all);
+    base(&m, 130, 0); fetch(&m, T_PSIMG2D, V_TEX, T_SIMG2D, T_IMG2D, f); fetch(&m, T_PSIMG2D, V_TEX, T_SIMG2D, T_IMG2D, f + 3);
+    vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(!fb.all && fb.n == 1, "two fetches of one binding name it once: n %u", fb.n);
+    base(&m, 130, 0); op(&m, 61, 3, (uint32_t)T_SIMG2D, f, (uint32_t)V_TEX); op(&m, 87, 4, (uint32_t)T_FLOAT, f + 1, f, (uint32_t)C_0);   // OpImageSampleImplicitLod
+    vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(!fb.all && fb.n == 0 && !vkrs_fb_has(&fb, 7), "a sample by normalized coordinates names nothing: n %u all %u", fb.n, fb.all);
+    base(&m, 130, 0); op(&m, 61, 3, (uint32_t)T_SIMG2D, f, (uint32_t)V_TEX); op(&m, 100, 3, (uint32_t)T_IMG2D, f + 1, f); op(&m, 103, 4, (uint32_t)T_INT, f + 2, f + 1, (uint32_t)C_0);
+    vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(!fb.all && fb.n == 1 && fb.b[0] == 7, "a size query names its binding");
+    base(&m, 130, 0); op(&m, 61, 3, (uint32_t)T_SIMG2D, f, (uint32_t)V_TEX); op(&m, 83, 3, (uint32_t)T_SIMG2D, f + 1, f); op(&m, 100, 3, (uint32_t)T_IMG2D, f + 2, f + 1); op(&m, 95, 4, (uint32_t)T_FLOAT, f + 3, f + 2, (uint32_t)C_0);
+    vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(!fb.all && fb.n == 1 && fb.b[0] == 7, "through OpCopyObject");
+    base(&m, 130, 0); op(&m, 71, 3, f + 20, 33u, 9u); op(&m, 59, 3, (uint32_t)T_PSIMG2D, f + 20, 0u); fetch(&m, T_PSIMG2D, V_TEX, T_SIMG2D, T_IMG2D, f); fetch(&m, T_PSIMG2D, f + 20, T_SIMG2D, T_IMG2D, f + 3);
+    vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(!fb.all && fb.n == 2 && vkrs_fb_has(&fb, 7) && vkrs_fb_has(&fb, 9), "two textures: n %u", fb.n);
+    base(&m, 130, 0); op(&m, 71, 3, f + 20, 33u, 9u); op(&m, 71, 3, f + 20, 34u, 1u); op(&m, 59, 3, (uint32_t)T_PSIMG2D, f + 20, 0u); fetch(&m, T_PSIMG2D, f + 20, T_SIMG2D, T_IMG2D, f);
+    vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(fb.all, "a texture of another set: every texture counts");
+    base(&m, 130, 0); op(&m, 65, 4, (uint32_t)T_PSIMG2D, f, (uint32_t)V_ARR, (uint32_t)C_1); fetch(&m, T_PSIMG2D, f, T_SIMG2D, T_IMG2D, f + 1);
+    vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(fb.all, "a fetch from a variable with no binding: every texture counts");
+    base(&m, 130, 0); op(&m, 100, 3, (uint32_t)T_IMG2D, f, f + 90); op(&m, 95, 4, (uint32_t)T_FLOAT, f + 1, f, (uint32_t)C_0);
+    vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(fb.all, "an image from no variable (a function parameter): every texture counts");
+    base(&m, 130, 0); fetch(&m, T_PSIMGBUF, V_TBUF, T_SIMGBUF, T_IMGBUF, f); op(&m, 61, 3, (uint32_t)T_IMG3D, f + 3, (uint32_t)V_IMG3D); op(&m, 98, 4, (uint32_t)T_FLOAT, f + 4, f + 3, (uint32_t)C_0);
+    vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(!fb.all && fb.n == 0, "a buffer texture's fetch and a 3D image read name nothing");
+    base(&m, 130, 0);
+    for (uint32_t k = 0; k <= VKRS_FB_MAX; k++) { uint32_t v = f + 100 + k * 4; op(&m, 71, 3, v, 33u, 20u + k); op(&m, 59, 3, (uint32_t)T_PSIMG2D, v, 0u); fetch(&m, T_PSIMG2D, v, T_SIMG2D, T_IMG2D, v + 1); }
+    m.w[3] = 400; vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(fb.all && fb.n == VKRS_FB_MAX, "more bindings than the list holds: every texture counts (n %u)", fb.n);
 }
 
 int main(void) {
-    t_parse(); t_dim(); t_px(); t_tile(); t_region(); t_deny(); t_scan();
+    t_parse(); t_dim(); t_px(); t_tile(); t_region(); t_deny(); t_scan(); t_fetch_bindings();   // PEANUTS: #734
     if (fails) { printf("t_android_resscale: %d FAILED\n", fails); return 1; }
     printf("t_android_resscale: ok\n");
     return 0;

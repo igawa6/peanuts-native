@@ -1,0 +1,12 @@
+# Test fixture (Peanuts): rows of upstream profile dm/games/04007EF01F8AE000 (Fire Emblem Fortune's Weave), a Switch 2 profile Peanuts Native does not carry, kept for the
+# tests that need a profile with these features (cheats, Resolution presets, 3D scene rows, recommend rows, the DLSS stand-in): dm/tools/tests and
+# dm/host/tests/t_cheats.c load it by path. Only the rows those tests read; not a playable profile.
+title_id	04007EF01F8AE000
+program_id	04007EF01F8AE000
+name	Fire Emblem Fortune's Weave
+build	v131072	v131072	main=db93b0125f4850601d61c3edde012f8e	subsdk2=7d73f8e808341683306a4425a4989ed5	sdk=5b1602f3a2965f44ab13124cadbdf148
+fps_target	30
+dlss_standin	1
+recommend	driver.id=8,driver.version&0xffc00000=0x80000000,driver.version&0x3ff000<0x320000	driver=18
+recommend	any	upscaler=fsr3
+cheats	cheats/DB93B0125F485060.txt

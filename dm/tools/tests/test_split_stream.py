@@ -14,7 +14,7 @@ from unittest import mock
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'dm/gfx/tools'))
-_had = os.environ.get('DM_GAME'); os.environ['DM_GAME'] = '0400A3A01EE4C000'   # shader_split loads a profile at import; other tests expect no default game
+_had = os.environ.get('DM_GAME'); os.environ['DM_GAME'] = '01007EF00011E000'   # shader_split loads a profile at import; other tests expect no default game. PEANUTS: a Switch 1 profile (upstream: Pokopia, not carried)
 import shader_split as ss
 if _had is None: del os.environ['DM_GAME']
 else: os.environ['DM_GAME'] = _had

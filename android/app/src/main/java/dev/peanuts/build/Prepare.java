@@ -1,5 +1,6 @@
 package dev.peanuts.build;
 
+import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.ServiceConnection;
@@ -11,6 +12,8 @@ import android.os.Message;
 import android.os.Messenger;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.system.Os;
+import android.system.OsConstants;
 import android.util.Log;
 
 import org.json.JSONObject;
@@ -20,7 +23,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -54,8 +59,11 @@ final class Prepare {
     private static final String MODS_AGAIN = "Try again from the game's Mods section: hold the cover, then open the Game tab.";
     /** A game version none of the app's list for the game names: the card's first line (the checker's own words go to Details) */
     private static final String UNTESTED = "This game version is untested. To try it anyway, open the game's sheet and tap Build anyway.";
-    /** How long a job may sit "running" with no job.json change and no service message before we call it stalled (the service writes at least every few seconds while it runs) */
-    private static final long STALL_MS = 10 * 60 * 1000;
+    /** The pause reasons the watchdog keeps a job with (BuildWatch): it hung and its processes were ended; its process ended, or it stalled, and nothing runs it */
+    static final String HUNG = "hung", ENDED = "ended";
+    /** Where the packer's processes are looked up (BuildWatch.pids, cpuTicks), and the clock ticks of their CPU times */
+    private static final File PROC = new File("/proc");
+    private static final long TICKS = ticks();
     /** How long Try anyway's restart waits for the failed run's end in the packer (its worker's last save and its end's message come moments after the failure) */
     private static final long RUN_END_MS = 30_000;
 
@@ -69,6 +77,10 @@ final class Prepare {
     private volatile File ownFile;
     private volatile boolean heard, otherRuns;
     private volatile String otherName = "";
+    // the other job the packer runs (waitForPacker): its file, state and the last time it changed (uptime), so one that hangs does not hold this build for good
+    private volatile File otherFile;
+    private volatile String otherJson, otherState = "";
+    private volatile long otherChangedAt;
     /** This run started the packer on its job (so a Stop may pause the packer: before, the packer runs another game's job) */
     private volatile boolean jobStarted;
 
@@ -100,6 +112,7 @@ final class Prepare {
             BuildLogShare.line(c, logId, "prepare: upstream reflection: " + e);
             throw new IOException("The build could not start because of a problem in the app. " + RETRY_SHARE);
         } finally {
+            BuildPipeline.heatPaused(null);   // #803
             unbind();
         }
     }
@@ -244,6 +257,7 @@ final class Prepare {
         bind();
         waitForPacker(p);
         long startedAt = System.currentTimeMillis();   // a pause job.json says was written before this start is the last run's (a Resume of a paused job)
+        final long hangMs = BuildService.hangMs(c);
         try {
             c.startForegroundService(Upstream.packStart(c, file));
             jobStarted = true;
@@ -255,6 +269,7 @@ final class Prepare {
         // 5. progress from job.json (and the service's messages while bound) until the job ends
         // Allow a temporary read failure at any point, not just during the first 30 seconds.
         long lastChange = SystemClock.elapsedRealtime(), lastReadable = lastChange;
+        BuildWatch.Watch w = new BuildWatch.Watch(SystemClock.uptimeMillis(), hangMs);   // the watchdog (watch below)
         String lastJson = null;
         while (!cancelled) {
             SystemClock.sleep(1000);
@@ -266,7 +281,7 @@ final class Prepare {
                 continue;
             }
             lastReadable = SystemClock.elapsedRealtime();
-            if (!json.equals(lastJson)) { lastJson = json; lastChange = lastReadable; }
+            if (!json.equals(lastJson)) { lastJson = json; lastChange = lastReadable; w.changed(SystemClock.uptimeMillis()); }
             JSONObject o;
             try { o = new JSONObject(json); } catch (org.json.JSONException e) { continue; }
             String state = o.optString("state"), reason = o.optString("reason"), step = o.optString("step");
@@ -317,31 +332,36 @@ final class Prepare {
                     fromService = null;
                     lastJson = null;
                     lastChange = SystemClock.elapsedRealtime();
+                    w.changed(SystemClock.uptimeMillis());
                     p.on(pct(si, done, total), "Trying anyway: " + STEP_TEXT[si]);
                     try { c.startForegroundService(Upstream.packStart(c, file)); } catch (RuntimeException e) { throw new BuildListener.Failure("Android did not let the build start again. Nothing is lost. Open " + appName() + " and tap Resume on the game's card.", BuildListener.CANCELLED); }
                     continue;
                 }
-                throw new BuildListener.Failure(dev.nxnative.android.PrepareText.failureSummary(STEP_TEXT[si], err, o.optString("error_detail")), BuildListener.TOOL_STOPPED);
+                String detail = o.optString("error_detail");
+                throw new BuildListener.Failure(dev.nxnative.android.PrepareText.failureSummary(STEP_TEXT[si], err, detail),
+                        BuildWatch.full(err, detail) ? BuildListener.OUT_OF_SPACE : BuildListener.TOOL_STOPPED);   // a full disk: the card's Free up space, then Retry
             }
             int pct = pct(si, done, total);
+            BuildPipeline.heatPaused(goOn(state, reason, o) ? logId : null);   // the card's Go on anyway (#803)
             if (state.equals("paused")) {
                 // the pause of the run before (its "updated" older than this start): the packer has not taken the job yet. A queue would take it for a pause
                 // of this run and hold all its games; after 30 s it counts, as before
                 boolean before = o.optLong("updated") < startedAt && System.currentTimeMillis() - startedAt < 30_000;
                 if (before) { p.on(pct, STEP_TEXT[si]); continue; }
-                if (reason.equals("user") || reason.equals("timeout") || reason.equals("refused") || reason.equals("apk")) {
+                if (stops(reason)) {
                     log("prepare: the job paused at " + step + " (" + reason + ")");
                     throw new BuildListener.Failure(pausedText(reason) + " Tap Resume on the game's card to go on.", BuildListener.CANCELLED);
                 }
-                p.on(pct, "Paused: " + reasonText(reason) + ". " + stepText(si, done, total, stage));
-                lastChange = SystemClock.elapsedRealtime();   // a heat or battery pause is not a stall
+                p.on(pct, pausedLine(reason, o) + " " + stepText(si, done, total, stage));   // a heat pause's words by how often it paused (#803)
+                // a heat or battery pause is not a stall while the packer holds the job; one whose packer went, or runs nothing, ends as a packer that ended
+                // (BuildWatch.Watch.paused): the card says to start again instead of "goes on when it has cooled down" for good
+                if (packerHolds()) lastChange = SystemClock.elapsedRealtime();
+                w.paused(SystemClock.uptimeMillis(), packerHolds());
+                watch(w, file, step, stage, startedAt, false);
                 continue;
             }
             p.on(pct, stepText(si, done, total, stage));
-            if (SystemClock.elapsedRealtime() - lastChange > STALL_MS && !(link != null && link.alive)) {
-                log("prepare: no change of the job for " + STALL_MS / 60000 + " min and the packer is not bound: stalled at " + step);
-                throw new BuildListener.Failure("The build stopped making progress. Tap Resume on the game's card to go on.", BuildListener.STALLED);
-            }
+            watch(w, file, step, stage, startedAt, false);
         }
         throw new BuildListener.Failure("Build cancelled. What it made so far is kept. Tap Resume on the game's card to go on.", BuildListener.CANCELLED);
     }
@@ -363,6 +383,7 @@ final class Prepare {
             BuildLogShare.line(c, logId, "modded prepare: upstream reflection: " + e);
             throw new IOException("The build with mods could not start because of a problem in the app. " + MODS_AGAIN);
         } finally {
+            BuildPipeline.heatPaused(null);   // #803
             unbind();
         }
     }
@@ -468,6 +489,8 @@ final class Prepare {
         ownFile = file;   // the service's messages of this job only (Link.onMessage)
         bind();
         waitForPacker(p);
+        long startedAt = System.currentTimeMillis();   // Android's record of the packer's end is looked up from here (watch)
+        final long hangMs = BuildService.hangMs(c);
         try {
             c.startForegroundService(Upstream.packStart(c, file));
             jobStarted = true;
@@ -477,6 +500,8 @@ final class Prepare {
         }
         p.on(1, STEP_TEXT[0]);
         long lastChange = SystemClock.elapsedRealtime(), lastReadable = lastChange;
+        // the same watchdog as a build's (watch): a build with mods that hangs held the queue for good, since the queue waits while one runs (issue #348 review)
+        BuildWatch.Watch w = new BuildWatch.Watch(SystemClock.uptimeMillis(), hangMs);
         String lastJson = null;
         while (!cancelled) {
             SystemClock.sleep(1000);
@@ -488,7 +513,7 @@ final class Prepare {
                 continue;
             }
             lastReadable = SystemClock.elapsedRealtime();
-            if (!json.equals(lastJson)) { lastJson = json; lastChange = lastReadable; }
+            if (!json.equals(lastJson)) { lastJson = json; lastChange = lastReadable; w.changed(SystemClock.uptimeMillis()); }
             JSONObject o;
             try { o = new JSONObject(json); } catch (org.json.JSONException e) { continue; }
             String state = o.optString("state"), reason = o.optString("reason"), step = o.optString("step");
@@ -505,20 +530,22 @@ final class Prepare {
                 return (File) Upstream.call(job.getClass(), job, "pack", new Class<?>[0]);
             }
             if (state.equals("failed")) {
-                throw new BuildListener.Failure(dev.nxnative.android.PrepareText.failureSummary(STEP_TEXT[si], o.optString("error"), o.optString("error_detail"))
-                        + "\n" + MODS_AGAIN, BuildListener.TOOL_STOPPED);
+                String err = o.optString("error"), detail = o.optString("error_detail");
+                throw new BuildListener.Failure(dev.nxnative.android.PrepareText.failureSummary(STEP_TEXT[si], err, detail) + "\n" + MODS_AGAIN,
+                        BuildWatch.full(err, detail) ? BuildListener.OUT_OF_SPACE : BuildListener.TOOL_STOPPED);   // a full disk, as a build's
             }
             int pct = pct(si, done, total);
+            BuildPipeline.heatPaused(goOn(state, reason, o) ? logId : null);   // the card's Go on anyway (#803)
             if (state.equals("paused")) {
-                if (reason.equals("user") || reason.equals("timeout") || reason.equals("refused") || reason.equals("apk"))
-                    throw new BuildListener.Failure(pausedText(reason) + " " + MODS_AGAIN, BuildListener.CANCELLED);
-                p.on(pct, "Paused: " + reasonText(reason) + ". " + stepText(si, done, total, stage));
-                lastChange = SystemClock.elapsedRealtime();
+                if (stops(reason)) throw new BuildListener.Failure(pausedText(reason) + " " + MODS_AGAIN, BuildListener.CANCELLED);
+                p.on(pct, pausedLine(reason, o) + " " + stepText(si, done, total, stage));   // #803
+                if (packerHolds()) lastChange = SystemClock.elapsedRealtime();
+                w.paused(SystemClock.uptimeMillis(), packerHolds());   // as a build's: a pause with no packer holding it ends the build
+                watch(w, file, step, stage, startedAt, true);
                 continue;
             }
             p.on(pct, stepText(si, done, total, stage));
-            if (SystemClock.elapsedRealtime() - lastChange > STALL_MS && !(link != null && link.alive))
-                throw new BuildListener.Failure("The build with mods stopped making progress. " + MODS_AGAIN, BuildListener.STALLED);
+            watch(w, file, step, stage, startedAt, true);
         }
         throw new BuildListener.Failure("Build cancelled.", BuildListener.CANCELLED);
     }
@@ -537,16 +564,50 @@ final class Prepare {
         return STEP_TEXT[si];
     }
 
+    /**
+     * Whether a pause ends the build (the rest are heat and battery pauses the packer waits out): the player's, Android's (the daily limit, a start it
+     * refused), an app update's, and the watchdog's, whose job nothing runs. The one list for a build and a build with mods: a reason missing here is waited
+     * for for good
+     */
+    private static boolean stops(String reason) {
+        switch (reason) {
+            case "user":
+            case "timeout":
+            case "refused":
+            case "apk":
+            case HUNG:
+            case ENDED: return true;
+            default: return false;
+        }
+    }
+
     /** A pause that ends the build, as the card's first sentence: "You paused the build.", "Paused: the app was updated, so the shaders are made again." */
     private static String pausedText(String r) {
         return r.equals("user") ? "You paused the build." : "Paused: " + reasonText(r) + ".";
     }
 
+    /** From this many heat pauses in one run of the job (job.json "heat_pauses", PackService) the card puts Go on anyway first: PackPolicy.HOT_AGAIN_AT (#803) */
+    static final int HOT_AGAIN_AT = 2;
+    /** The card's words then, as the packer's (PackPolicy.HOT_AGAIN) */
+    static final String HOT_AGAIN = "The phone keeps getting hot; building on a charger heats it more. Go on anyway builds without pausing.";
+
+    /** Whether job.json says the packer waits in a heat pause that Go on anyway lifts (PackPolicy.canOverride: not at CRITICAL or worse) */
+    static boolean goOn(String state, String reason, JSONObject o) { return state.equals("paused") && reason.equals("thermal") && o.optBoolean("go_on"); }
+
+    /** A pause the build waits out, as the card's first sentence(s): a heat pause offers Go on anyway (the card's button), and says why once it keeps coming back */
+    static String pausedLine(String reason, JSONObject o) {
+        String s = "Paused: " + reasonText(reason) + ".";
+        if (!goOn("paused", reason, o)) return s;
+        return s + (o.optInt("heat_pauses") >= HOT_AGAIN_AT ? " " + HOT_AGAIN : " If the phone does not feel hot, tap Go on anyway.");
+    }
+
     private static String reasonText(String r) {
         switch (r) {
+            case HUNG: return "it made no progress, so it was stopped";
+            case ENDED: return "its process ended and was not started again";
             case "user": return "you paused the build";
             case "battery": return "the battery is below 20 %. Plug in the charger to go on";
-            case "thermal": return "the phone is too hot. It goes on when it has cooled down. If the phone does not feel hot, tap Go on anyway in the build notification";
+            case "thermal": return "the phone is too hot. It goes on from where it stopped when it has cooled down";   // the rest by pausedLine (#803)
             case "timeout": return "Android allows only so much background work a day";
             case "refused": return "Android did not let it start in the background";
             case "apk": return "the app was updated, so the shaders are made again";
@@ -590,6 +651,102 @@ final class Prepare {
         }
     }
 
+    /** Android's record of the packer's process ending after `from` (wall clock, ms): its reason (ApplicationExitInfo.REASON_*), 0 when there is none */
+    private int packerEnd(long from) {
+        try {
+            ActivityManager am = c.getSystemService(ActivityManager.class);
+            String want = c.getPackageName() + ":pack";
+            if (am != null) for (android.app.ApplicationExitInfo e : am.getHistoricalProcessExitReasons(c.getPackageName(), 0, 16)) {
+                if (e.getTimestamp() < from) break;   // Android returns the newest end first
+                if (want.equals(e.getProcessName())) return e.getReason();
+            }
+        } catch (RuntimeException e) { Log.w(TAG, "prepare: Android's record of the packer's end: " + e); }
+        return 0;
+    }
+
+    /**
+     * The watchdog's look once a second while the packer has this run's job, the same for a build and a build with mods (BuildWatch.Watch, issue #348): a
+     * packer that ended and was not started again, one that hangs (no change of the job and no CPU time used for the hang time, or no change for the busy
+     * hang time), and one that does not run the job and has not changed it for STALL_MS. Each keeps the job as paused, so a packer Android starts later runs
+     * nothing behind the next game's back, and stops the build with what to do
+     */
+    private void watch(BuildWatch.Watch w, File file, String step, String stage, long startedAt, boolean mods) throws BuildListener.Failure {
+        long now = SystemClock.uptimeMillis();
+        Link l = link;
+        if (w.cpuDue(now)) w.cpu(now, BuildWatch.cpuTicks(PROC, packName()), TICKS);
+        int v = w.verdict(now, l != null && l.alive, l == null ? 0 : l.gone);
+        if (v == BuildWatch.NONE) return;
+        String what = mods ? "The build with mods" : "The build", goOn = mods ? MODS_AGAIN : "Tap Resume on the game's card to go on.";
+        String at = step + (stage.isEmpty() ? "" : " (" + stage + ")");
+        if (v == BuildWatch.GONE) {
+            int endReason = packerEnd(startedAt);
+            log("prepare: the packer's process ended at " + at + " and the job has not changed for " + BuildService.minutes(w.backMs) + " since ("
+                    + (endReason == 0 ? "Android has no record of why" : BuildLogBundle.reason(endReason)) + "): the job is kept as paused");
+            endPacker(file, ENDED, null, false);
+            String words = BuildWatch.endWords(endReason);
+            throw new BuildListener.Failure(what + " stopped because its process ended" + (words.isEmpty() ? "" : " (" + words + ")") + " and Android did not start it again. "
+                    + "What it made so far is kept. " + goOn, BuildListener.STALLED);
+        }
+        if (v == BuildWatch.HANG) {
+            String quiet = BuildService.minutes(w.quietMs(now));
+            log("prepare: no change of the job for " + quiet + (w.busy(now) ? " while the packer used CPU time" : " and no CPU time used by the packer") + ": it hangs at " + at
+                    + "; its processes are ended and the job is kept as paused");
+            endPacker(file, HUNG, "no progress for " + quiet, true);
+            throw new BuildListener.Failure(what + " made no progress for " + quiet + ", so it was stopped. What it made so far is kept. " + goOn, BuildListener.STALLED);
+        }
+        log("prepare: no change of the job for " + BuildService.minutes(w.stallMs) + " and the packer does not run it: stalled at " + at + "; the job is kept as paused");
+        endPacker(file, ENDED, null, false);
+        throw new BuildListener.Failure(what + " stopped making progress. " + goOn, BuildListener.STALLED);
+    }
+
+    /**
+     * Stops the packer's job for the watchdog (BuildWatch.end): kept as paused with reason (as its own Pause keeps it, so Resume goes on from there, and a
+     * packer Android starts again runs only a job that is still running) and, with kill, the packer's processes ended, since its tool does not answer the
+     * packer's own stop: the forked ones and the workers below them too (BuildWatch.running), the named ones first so none starts a worker again, then
+     * paused again once they are gone
+     */
+    private void endPacker(File jobFile, String reason, String detail, boolean kill) {
+        Map<Integer, Long> ended = new LinkedHashMap<>();
+        BuildWatch.end(new BuildWatch.Packer() {
+            @Override public void pause() { keepPaused(jobFile, reason, detail); }
+            @Override public void kill() {
+                ended.putAll(BuildWatch.running(PROC, packName()));
+                if (!ended.isEmpty()) log("prepare: ending the packer's processes " + ended.keySet());
+                for (int pid : ended.keySet()) android.os.Process.killProcess(pid);
+            }
+            @Override public boolean gone() { return !BuildWatch.anyLeft(PROC, ended); }
+        }, kill, SystemClock::uptimeMillis, 5000, () -> SystemClock.sleep(50));
+    }
+
+    /** Whether the packer says its worker holds this run's job (Link.alive): a heat or battery pause it waits out */
+    private boolean packerHolds() { Link l = link; return l != null && l.alive; }
+
+    /**
+     * A job.json that says running, or paused for heat or battery (a pause no packer holds any more: it would never go on), as paused for the watchdog's reason.
+     * Any other state is left: a job that ended meanwhile keeps its end, a pause that ends the build keeps its reason
+     */
+    private void keepPaused(File jobFile, String reason, String detail) {
+        if (jobFile == null) return;
+        try {
+            Object j = Upstream.jobRead(jobFile);
+            String st = Upstream.jobState(j);
+            String why = "paused".equals(st) ? Upstream.str(Upstream.call(j.getClass(), j, "reason", new Class<?>[0])) : "";
+            boolean waited = why.equals("thermal") || why.equals("battery");
+            if (!"running".equals(st) && !waited) return;
+            Upstream.call(j.getClass(), j, "state", new Class<?>[] {String.class, String.class, String.class}, "paused", reason, detail);
+            Upstream.jobSave(j);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            log("prepare: the job could not be kept as paused: " + e);
+        }
+    }
+
+    /** The packer's process name (the manifest's ":pack"), which its forked processes keep */
+    private String packName() { return c.getPackageName() + ":pack"; }
+
+    private static long ticks() {
+        try { return Os.sysconf(OsConstants._SC_CLK_TCK); } catch (RuntimeException e) { return 100; }   // Linux's USER_HZ on every Android
+    }
+
     private static String read(File f) {
         try { return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8); } catch (IOException e) { return null; }
     }
@@ -627,6 +784,10 @@ final class Prepare {
         volatile boolean alive;
         volatile boolean heard;   // a message of this build's job came: alive is then the packer's word (runEnded)
 
+        // when the packer's process last went (uptime), 0 until it does: the watchdog's (BuildWatch.Watch.verdict). Kept when Android binds a new one, which
+        // runs no job: a job that goes on changes, and that is what the rule looks at
+        volatile long gone;
+
         @Override public void onServiceConnected(ComponentName n, IBinder b) {
             service = new Messenger(b);
             Message m = Message.obtain(null, Upstream.MSG_REGISTER);
@@ -634,7 +795,7 @@ final class Prepare {
             try { service.send(m); } catch (RemoteException e) { service = null; }
         }
 
-        @Override public void onServiceDisconnected(ComponentName n) { service = null; alive = false; otherRuns = false; }
+        @Override public void onServiceDisconnected(ComponentName n) { service = null; alive = false; otherRuns = false; gone = SystemClock.uptimeMillis(); }
 
         boolean onMessage(Message m) {
             if (m.what != Upstream.MSG_STATE) return false;
@@ -646,9 +807,12 @@ final class Prepare {
             File own = ownFile;
             if (f != null && own != null && !new File(f).getAbsolutePath().equals(own.getAbsolutePath())) {
                 otherRuns = on;
-                String n = "";
-                try { n = j == null ? "" : new JSONObject(j).optString("name"); } catch (org.json.JSONException e) { /* no name: said without one */ }
+                String n = "", st = "";
+                try { if (j != null) { JSONObject oj = new JSONObject(j); n = oj.optString("name"); st = oj.optString("state"); } } catch (org.json.JSONException e) { /* no name: said without one */ }
                 otherName = n;
+                otherState = st;
+                otherFile = new File(f);
+                if (j == null || !j.equals(otherJson)) { otherJson = j; otherChangedAt = SystemClock.uptimeMillis(); }
                 return true;
             }
             otherRuns = false;
@@ -668,9 +832,23 @@ final class Prepare {
         long until = SystemClock.elapsedRealtime() + 3000;
         while (!heard && !cancelled && SystemClock.elapsedRealtime() < until) SystemClock.sleep(100);
         boolean said = false;
+        BuildWatch.Watch ow = new BuildWatch.Watch(SystemClock.uptimeMillis(), BuildService.hangMs(c));   // the other job's watch, as this run's own (watch)
         while (otherRuns && !cancelled && link != null) {
             if (!said) { log("prepare: the packer still runs another job (" + otherName + "): this one starts when it has ended"); said = true; }
             p.on(0, otherName.isEmpty() ? "Waiting for another game's build to finish" : "Waiting for " + otherName + " to finish building");
+            long now = SystemClock.uptimeMillis();
+            if (!"running".equals(otherState)) ow.changed(now);   // its heat or battery pause is no hang
+            else ow.changed(otherChangedAt);   // its last change, as its messages said
+            if (ow.cpuDue(now)) ow.cpu(now, BuildWatch.cpuTicks(PROC, packName()), TICKS);
+            if (ow.verdict(now, true, 0) == BuildWatch.HANG) {   // the other job hangs (the watchdog, BuildWatch): its processes ended, and it is kept as paused
+                log("prepare: the packer's other job (" + otherName + ") has not changed for " + BuildService.minutes(ow.quietMs(now)) + (ow.busy(now) ? "" : " and the packer used no CPU time")
+                        + ": it hangs; its processes are ended and it is kept as paused");
+                endPacker(otherFile, HUNG, "no progress for " + BuildService.minutes(ow.quietMs(now)), true);
+                long by = now + 10_000;
+                while (otherRuns && SystemClock.uptimeMillis() < by) SystemClock.sleep(100);   // the process's end clears it (Link.onServiceDisconnected)
+                otherRuns = false;
+                break;
+            }
             SystemClock.sleep(1000);
         }
         if (cancelled) throw new BuildListener.Failure("Build cancelled.", BuildListener.CANCELLED);

@@ -456,8 +456,7 @@ public final class GameSheet {
         // game folder's / the app's own storage
         String root = PeanutsPrefs.chosenBuildDir(a, title.titleId);
         File buildGameDir = root == null ? PeanutsPrefs.buildGameDir(a, title.titleId) : PeanutsPrefs.buildGameDir(root, title.titleId);
-        String gameDir = PeanutsPrefs.gameDir(a);
-        File importDest = buildGameDir != null ? buildGameDir : (gameDir == null ? null : new File(gameDir));
+        File importDest = buildGameDir != null ? buildGameDir : PeanutsPrefs.homeFor(a, title.base == null ? null : title.base.file);   // the game folder that holds it
         File packVolume = buildGameDir != null ? new File(buildGameDir, "pack") : a.getExternalFilesDir(null);
         String warn = SpaceEstimate.warning(importBytes + unpackBytes, packBasis, needsImport, importDest, packVolume);
         if (warn != null) PUi.add(box, PUi.warnChip(a, "Low disk space", "Low disk space", warn + SpaceEstimate.unpackSentence(unpackBytes) + " Build still works, but it may run out of space part way."), 14);
@@ -471,8 +470,8 @@ public final class GameSheet {
     private boolean readingBuiltWith;
 
     /**
-     * "Built with 0.1.7" (BuiltWith): a quiet line for this app version's shaders or ones the upgrade takes at the next start, a warning chip that points to
-     * Rebuild for older ones, nothing when the version is not known. The library headers are read once per sheet on a thread (a slow SD card must not hold the
+     * "Built with 0.1.7" (BuiltWith): a quiet line for this app version's shaders or ones the upgrade takes at the next start, the same line with a plain note
+     * for ones made again once while they play (BuiltWith.note), a warning chip that points to Rebuild for older ones, nothing when the version is not known. The library headers are read once per sheet on a thread (a slow SD card must not hold the
      * sheet, as the space line's walk); the sheet renders again when they say something
      */
     private void renderBuiltWith() {
@@ -482,7 +481,7 @@ public final class GameSheet {
             File pack = title.packDir;
             String titleId = title.titleId;
             new Thread(() -> {
-                BuiltWith.Result r = BuiltWith.of(pack, titleId, dev.nxnative.android.BuildConfig.NX_DMSH_VK_CHAIN);
+                BuiltWith.Result r = BuiltWith.of(pack, titleId, dev.nxnative.android.BuildConfig.NX_DMSH_VK_CHAIN, dev.nxnative.android.BuildConfig.NX_DMSH_CHAIN);
                 a.runOnUiThread(() -> {
                     builtWith = r;
                     if (r.kind != BuiltWith.Kind.UNKNOWN && current == this && dialog != null && dialog.isShowing()) render();
@@ -490,9 +489,9 @@ public final class GameSheet {
             }, "peanuts-built-with").start();
             return;
         }
-        String label = BuiltWith.label(builtWith), warning = BuiltWith.warning(builtWith);
+        String label = BuiltWith.label(builtWith), warning = BuiltWith.warning(builtWith), note = BuiltWith.note(builtWith);
         if (warning != null) PUi.add(box, PUi.warnChip(a, label, label, warning), 12);
-        else if (label != null) PUi.add(box, PUi.small(a, label), 12);
+        else if (label != null) PUi.add(box, PUi.small(a, note != null ? label + ". " + note : label), 12);
     }
 
     /** The state the pipeline gets, from the sheet as it is now */

@@ -89,7 +89,7 @@ void mtl_set_depth_zero(int on) { g_depth_zero = on != 0; }
 static void oq_stats(char *b, size_t n, double frames);   // (Occlusion queries)
 // Replay statistics every 300 frames (DM_VK_STATS=0: none): what a frame costs the GPU in passes and barriers (each pass loads and stores its attachments on a tiler), and the
 // CPU per draw (recording: mtl_sub_begin to vkEndCommandBuffer)
-extern uint64_t vka_n_rp, vka_n_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
+extern uint64_t vka_n_rp, vka_n_bar, vka_n_sbar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;   // PEANUTS: vka_n_sbar
 static _Atomic uint64_t g_fstart[64], g_fstart_f[64];   // when the replay began recording each frame's first submission (its number mod 64): the adaptive floor's spans
 static uint64_t g_job_frame; static int g_job_frame_set;   // the frame of the submission the worker replays (vka_exec_sub_frame)
 void vka_exec_sub_frame(uint64_t f) { g_job_frame = f; g_job_frame_set = 1; }
@@ -127,12 +127,12 @@ void mtl_set_frame(uint64_t f) {
     { if (atomic_load_explicit(&vka_synclog_n, memory_order_relaxed) > 0) VLOG("sync frame %llu begins at %.2f ms", (unsigned long long)f, (now_ns() % 1000000000000ull) / 1e6); }
     skipwarn_frame(f);
     warm_frame(f);   // PEANUTS
-    static uint64_t f0, d0, rp0, b0, ub0, s0, r0, o0, pc0, ch0;
+    static uint64_t f0, d0, rp0, b0, sb0, ub0, s0, r0, o0, pc0, ch0;   // PEANUTS: sb0
     int on = VKA_ENV("DM_VK_STATS", 1) != 0;
     if (on && f - f0 >= 300) {
         double n = (double)(f - f0);
-        if (f0) VLOG("replay up to frame %llu: per frame %.0f draws, %.0f render passes, %.0f clears / copies (%.0f in a pass), %.0f full barriers, %.0f inline uniform updates, %.1f submissions (%.1f parts); recording %.2f ms a frame (%.2f us a draw)",
-                     (unsigned long long)f, (g_stat_draws - d0) / n, (vka_n_rp - rp0) / n, (g_stat_ops - o0) / n, (g_n_pclear - pc0) / n, (vka_n_bar - b0) / n, (g_n_ub - ub0) / n, (g_n_sub - s0) / n, (g_n_sub - s0 + g_n_chunks - ch0) / n, (g_rec_ns - r0) / n / 1e6,
+        if (f0) VLOG("replay up to frame %llu: per frame %.0f draws, %.0f render passes, %.0f clears / copies (%.0f in a pass), %.0f barriers (%.0f full, %.0f scoped), %.0f inline uniform updates, %.1f submissions (%.1f parts); recording %.2f ms a frame (%.2f us a draw)",   // PEANUTS: report both full and scoped barriers
+                     (unsigned long long)f, (g_stat_draws - d0) / n, (vka_n_rp - rp0) / n, (g_stat_ops - o0) / n, (g_n_pclear - pc0) / n, (vka_n_bar + vka_n_sbar - b0 - sb0) / n, (vka_n_bar - b0) / n, (vka_n_sbar - sb0) / n, (g_n_ub - ub0) / n, (g_n_sub - s0) / n, (g_n_sub - s0 + g_n_chunks - ch0) / n, (g_rec_ns - r0) / n / 1e6,
                      g_stat_draws > d0 ? (g_rec_ns - r0) / 1e3 / (double)(g_stat_draws - d0) : 0.0);
         { char pb[600]; void vka_draw_prof(char *b, size_t n, double draws); vka_draw_prof(pb, sizeof pb, (double)(g_stat_draws - d0)); if (pb[0]) VLOG("draw path per draw (us): %s", pb);
           vka_enc_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb);
@@ -148,7 +148,7 @@ void mtl_set_frame(uint64_t f) {
           { void vka_draw_unplaced(char *b, size_t n); vka_draw_unplaced(pb, sizeof pb); if (pb[0]) VRED("%s", pb); } }   // PEANUTS: draws and buffers lost to memory that is not placed, while the counts move (vka_draw.c)
         { static uint64_t fc; if (f - fc >= 1800) { vka_disp_census(f); fc = f; } }   // (every 1,800 frames)
         vka_dobj_census(f);   // DM_VK_DISP_OBJ (its own interval)
-        f0 = f; d0 = g_stat_draws; rp0 = vka_n_rp; b0 = vka_n_bar; ub0 = g_n_ub; s0 = g_n_sub; r0 = g_rec_ns; o0 = g_stat_ops; pc0 = g_n_pclear; ch0 = g_n_chunks;
+        f0 = f; d0 = g_stat_draws; rp0 = vka_n_rp; b0 = vka_n_bar; sb0 = vka_n_sbar; ub0 = g_n_ub; s0 = g_n_sub; r0 = g_rec_ns; o0 = g_stat_ops; pc0 = g_n_pclear; ch0 = g_n_chunks;   // PEANUTS: sb0
     }
 }
 uint64_t vka_frame(void) { return g_frame; }
@@ -217,7 +217,8 @@ static uint64_t g_oqs_reset, g_oqs_rep, g_oqs_const, g_oqs_q, g_oqs_full, g_oqs_
 static int oq_on(void) {
     if (g_oq >= 0) return g_oq;
     g_oq = 0;
-    if (!VKA_ENV("DM_VK_OCCLUSION", 1)) { VLOG("occlusion queries: off (DM_VK_OCCLUSION=0): every samples-passed report writes 1"); return 0; }
+    // PEANUTS: DM_VK_NO_OCCLUSION=1 is DM_VK_OCCLUSION=0 for a game option (options give KEY=1 lines); DM_VK_OCCLUSION, when set, wins
+    if (!VKA_ENV("DM_VK_OCCLUSION", !VKA_ENV("DM_VK_NO_OCCLUSION", 0))) { VLOG("occlusion queries: off (DM_VK_OCCLUSION=0 or DM_VK_NO_OCCLUSION=1): every samples-passed report writes 1"); return 0; }
     if (!vka_ok()) { VRED("occlusion queries: no device: every samples-passed report writes 1"); return 0; }
     VkPhysicalDeviceVulkan12Features f12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     VkPhysicalDeviceFeatures2 f2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &f12};
@@ -646,6 +647,7 @@ static void chunk(void) {
     if (VKA_ENV("DM_VK_PARTLOG", 0)) { char zb[400]; vka_rp_zstats(zb, sizeof zb);
         VLOG("part %u of the submission of frame %llu ended at %.3f s: %llu draws%s", part, (unsigned long long)g_frame, now_ns() / 1e9, (unsigned long long)(g_stat_draws - g_chunk_d0), zb); }
     vka_gbar_settle(g_cb);   // a game barrier left pending (vka_gbar.c), in this part: it covers the parts after it
+    vka_ub_flush();          // PEANUTS: flush outside-pass deferred inline uniform updates before part submit
     vka_up_flush(); vka_up_throttle();   // the upload batch goes first: the part may use what it made (vka_dev.c "Upload batches")
     vka_tex_gw_part();   // PEANUTS(upstream-candidate): the part's GPU writes are on the queue from here (vka_tex.c gw_src_overwritten)
     // With the encoder the part's end, its submit and the next part's reset and begin are made on its thread, in order with the calls before: the replay thread goes on
@@ -730,6 +732,7 @@ static uint64_t sub_commit(uint64_t reserved, int has_sig, uint64_t signal) {
     ops = carry_take(fence, signal, ops, &n);
     if (!g_cb) { if (signal) vka_fence_cpu(signal, ops, n, post_run); else free(ops); return fence; }
     vka_rp_end();
+    vka_ub_flush();   // PEANUTS: flush outside-pass deferred inline uniform updates before submission end
     if (VKA_ENV("DM_VK_PARTLOG", 0) && g_nx) { char zb[400]; vka_rp_zstats(zb, sizeof zb); VLOG("last part of the submission of frame %llu: %llu draws%s", (unsigned long long)g_frame, (unsigned long long)(g_stat_draws - g_chunk_d0), zb); }
     vka_disp_settle(g_cb);   // the submission's last dispatches before the steps below and the next submission's (vka_draw.c "Dispatch order")
     vka_rw_point(g_cb, 'e', 0, 0, 0); vka_rw_commit(fence);   // DM_VK_RANGE_WATCH: the bytes at the submission's end, logged once it is done
@@ -897,7 +900,14 @@ void vka_clear_outside(const vka_pclear *c) {
         if (c->whole) { VkImageSubresourceRange rg = {c->asp, c->lv, 1, c->l0, c->nl}; vk.vkCmdClearDepthStencilImage(g_cb, im->img, VK_IMAGE_LAYOUT_GENERAL, &val.depthStencil, 1, &rg); }
         else clear_rect(im, im->f.vk, c->asp, c->lv, c->l0, c->nl, c->rc, &val);
     }
-    vka_barrier(g_cb);
+    // PEANUTS begin: scope clear-outside barrier to transfer or attachment writes
+    int whole = c->ci >= 0 ? (c->whole && c->fmt == im->f.vk && !(im->d.target == NVN_TEXTURE_TARGET_3D && (c->l0 || c->nl < vka_img_slices(im, c->lv)))) : c->whole;
+    if (whole) vka_barrier_stages(g_cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                                  VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
+    else vka_barrier_stages(g_cb, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
+    // PEANUTS end
 }
 static void clear_color(const p_clear_color *c) {
     vka_rp_prep_clear(&S.rt, S.has_rt);
@@ -1239,7 +1249,22 @@ static void copy_t2t(const p_copy_t2t *c) {
     VkImageSubresourceLayers ss = {sa, sl, s3 ? 0 : sz0 + (uint32_t)c->sr.zoffset, s3 ? 1 : (uint32_t)nz}, ds = {sa, dl, d3 ? 0 : dz0 + (uint32_t)c->dr.zoffset, d3 ? 1 : (uint32_t)nz};
     if (ss.baseArrayLayer + ss.layerCount > s->layers || ds.baseArrayLayer + ds.layerCount > d->layers) { VRED_ONCE("texture copy layers out of range"); return; }
     if (c->flags & DM_COPY_RESOLVE && s->samples > 1 && d->samples == 1) {
-        VkImageResolve r = {ss, {c->sr.xoffset, c->sr.yoffset, 0}, ds, {c->dr.xoffset, c->dr.yoffset, 0}, {(uint32_t)c->sr.width, (uint32_t)c->sr.height, 1}};
+        // PEANUTS(upstream-candidate): Downsample resolves the part both textures have: the extent is the smaller of the two rectangles, kept inside both images' levels. The recording names
+        // each whole texture (rec_downsample), and a game may resolve a larger multisample target into a smaller texture: Digimon Story Time Stranger keeps its 4x
+        // 1920x1080 scene target in handheld mode, draws a 1280x720 viewport into it and downsamples into 1280x720 textures. Resolved with the source's 1920x1080 extent,
+        // the region ran past the destination (invalid in Vulkan), and Adreno wrote the overflow into the image's own tiles: the left half of the picture in 16-pixel
+        // tiles (issue #552)
+        uint32_t sw, sh, dw, dh; level_size(s, sl, &sw, &sh); level_size(d, dl, &dw, &dh);
+        int64_t rw = c->sr.width < c->dr.width ? c->sr.width : c->dr.width, rh = c->sr.height < c->dr.height ? c->sr.height : c->dr.height;
+        if (rw > (int64_t)sw - c->sr.xoffset) rw = (int64_t)sw - c->sr.xoffset;
+        if (rw > (int64_t)dw - c->dr.xoffset) rw = (int64_t)dw - c->dr.xoffset;
+        if (rh > (int64_t)sh - c->sr.yoffset) rh = (int64_t)sh - c->sr.yoffset;
+        if (rh > (int64_t)dh - c->dr.yoffset) rh = (int64_t)dh - c->dr.yoffset;
+        if (rw <= 0 || rh <= 0 || c->sr.xoffset < 0 || c->sr.yoffset < 0 || c->dr.xoffset < 0 || c->dr.yoffset < 0) { VRED_ONCE("multisample resolve with no region inside both textures: not done"); return; }
+        if ((rw != c->sr.width || rh != c->sr.height)) { static _Atomic int n; if (!atomic_exchange(&n, 1))
+            VLOG("multisample resolve of %dx%d (serial %llu, %u samples) into %dx%d (serial %llu): the %lldx%lld both have", c->sr.width, c->sr.height, (unsigned long long)s->serial, s->samples,
+                 c->dr.width, c->dr.height, (unsigned long long)d->serial, (long long)rw, (long long)rh); }
+        VkImageResolve r = {ss, {c->sr.xoffset, c->sr.yoffset, 0}, ds, {c->dr.xoffset, c->dr.yoffset, 0}, {(uint32_t)rw, (uint32_t)rh, 1}};
         if (sa == VK_IMAGE_ASPECT_COLOR_BIT) vk.vkCmdResolveImage(g_cb, s->img, VK_IMAGE_LAYOUT_GENERAL, d->img, VK_IMAGE_LAYOUT_GENERAL, 1, &r);
         else VRED_ONCE("depth resolve is not on Vulkan yet");
     } else if (c->sr.width == c->dr.width && c->sr.height == c->dr.height && !(c->flags & (NVN_COPY_FLAGS_MIRROR_X_BIT | NVN_COPY_FLAGS_MIRROR_Y_BIT | NVN_COPY_FLAGS_MIRROR_Z_BIT))
@@ -1681,9 +1706,24 @@ static int exec(const uint8_t *p, int depth) {   // 1: parked at a wait (g_pk ho
         int bar_kept = 0;   // a game barrier taken inside the open pass (vka_rp_game_barrier): no pass end, no full barrier
         switch (h.op) {   // GPU work other than a dispatch: after the barrier the dispatches before it left pending (vka_draw.c "Dispatch order"), and before a part ends at a draw
         case OP_DRAW: case OP_DRAW_IDX: case OP_DRAW_TEX: case OP_CLEAR_COLOR: case OP_CLEAR_DS: case OP_CLEAR_TEX: case OP_CLEAR_BUF: case OP_COPY_B2B: case OP_COPY_B2T:
-        case OP_COPY_T2B: case OP_COPY_T2T: case OP_UPDATE_UB: case OP_REPORT_COUNTER: vka_disp_settle(g_cb); break;
+        case OP_COPY_T2B: case OP_COPY_T2T: case OP_REPORT_COUNTER: vka_disp_settle(g_cb); break;   // PEANUTS: OP_UPDATE_UB settles only on fallback / flush
         default: break;
         }
+        // PEANUTS begin: flush outside-pass deferred inline uniform updates before the next GPU consumer.
+        // OP_SIGNAL_EVENT / OP_FENCE_SYNC publish only on GPU completion (after sub_commit / submission end flush,
+        // and any waiter goes through OP_WAIT_EVENT / OP_WAIT_SYNC); OP_REPORT_COUNTER only writes queries or posts
+        // completion records; OP_RENDER_COND evaluates rc_known() on the CPU from completed report records.
+        if (h.op != OP_UPDATE_UB) {
+            switch (h.op) {
+            case OP_DRAW: case OP_DRAW_IDX: case OP_DRAW_TEX: case OP_CLEAR_COLOR: case OP_CLEAR_DS: case OP_CLEAR_TEX: case OP_CLEAR_BUF:
+            case OP_COPY_B2B: case OP_COPY_B2T: case OP_COPY_T2B: case OP_COPY_T2T: case OP_DISPATCH: case OP_DLSS: case OP_BARRIER:
+            case OP_WAIT_EVENT: case OP_WAIT_SYNC: case OP_TF_STATE:
+                if (!vka_rp_is_open()) vka_ub_flush();
+                break;
+            default: break;
+            }
+        }
+        // PEANUTS end
         if (h.op == OP_DRAW || h.op == OP_DRAW_IDX) chunk_check();   // before a draw that opens a new pass
         switch (h.op) {   // a render pass a draw opened stays open across draws and state; anything else closes it first
         case OP_END: case OP_BEGIN: case OP_JUMP: case OP_CALL: case OP_SIGNAL_EVENT: case OP_REPORT_COUNTER: case OP_FENCE_SYNC: case OP_RENDER_COND: case OP_RESET_COUNTER: case OP_WAIT_EVENT: case OP_WAIT_SYNC:
@@ -1734,7 +1774,7 @@ static int exec(const uint8_t *p, int depth) {   // 1: parked at a wait (g_pk ho
         case OP_RESET_COUNTER: { uint64_t t; memcpy(&t, a, 8); if (t == NVN_COUNTER_TYPE_SAMPLES_PASSED) oq_reset(); break; }
         case OP_CLEAR_BUF: mdx_write(); if (g_cb) { const p_clear_buf *cb = a; vka_rw_pre(g_cb); buf_fill(cb->addr, cb->size, cb->value); vka_barrier(g_cb); vka_rw_point(g_cb, 'f', 0, cb->value, cb->addr); } break;
         case OP_COPY_B2B: mdx_write(); if (g_cb) { uint64_t s_, d, n; memcpy(&s_, a, 8); memcpy(&d, (const uint8_t *)a + 8, 8); memcpy(&n, (const uint8_t *)a + 16, 8); vka_rw_pre(g_cb); buf_copy(s_, d, n); vka_barrier(g_cb); vka_rw_point(g_cb, 'c', 0, s_, d); } break;
-        case OP_UPDATE_UB: mdx_write(); g_n_ub++; if (g_cb) { uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8); if (!vka_rp_ub_defer(d, n, (const uint8_t *)a + 16)) { vka_rp_end(); vka_rw_pre(g_cb); buf_update((const uint8_t *)a + 16, d, n); vka_barrier(g_cb); vka_rw_point(g_cb, 'u', 0, n, d); } } break;
+        case OP_UPDATE_UB: mdx_write(); g_n_ub++; if (g_cb) { uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8); if (!vka_rp_ub_defer(d, n, (const uint8_t *)a + 16)) { vka_rp_end(); vka_ub_flush(); vka_disp_settle(g_cb); /* PEANUTS: flush outside-pass UBs and settle dispatches before fallback */ vka_rw_pre(g_cb); buf_update((const uint8_t *)a + 16, d, n); vka_barrier(g_cb); vka_rw_point(g_cb, 'u', 0, n, d); } } break;
         case OP_SET_RT: S.rt = *(const p_set_rt *)a; S.has_rt = 1; break;
         case OP_SCISSOR: S.sc = *(const p_scissor *)a; S.has_sc = 1; break;
         case OP_COPY_STRIDE: { const p_copy_stride *cs = a; if (cs->image) S.copy_img_stride = cs->stride; else S.copy_stride = cs->stride; break; }

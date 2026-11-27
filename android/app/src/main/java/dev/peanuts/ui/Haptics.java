@@ -120,7 +120,8 @@ final class Haptics {
                     .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.8f, 40).compose();
             else e = VibrationEffect.createPredefined(w == Word.HEAVY ? VibrationEffect.EFFECT_HEAVY_CLICK : w == Word.REJECT ? VibrationEffect.EFFECT_DOUBLE_CLICK
                     : w == Word.TICK || w == Word.EDGE ? VibrationEffect.EFFECT_TICK : VibrationEffect.EFFECT_CLICK);
-            vib.vibrate(e, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH));
+            if (Build.VERSION.SDK_INT >= 33) vib.vibrate(e, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH));
+            else vib.vibrate(e);   // Android 12: VibrationAttributes is API 33; the vibrator's default usage
         } catch (RuntimeException ignored) { /* no effect on this motor: silence */ }
     }
 

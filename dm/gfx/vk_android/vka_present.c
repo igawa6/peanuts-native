@@ -69,6 +69,7 @@ static VkImage g_simg[MAXIMG]; static VkSemaphore g_sdone[MAXIMG]; static uint32
 static struct { VkCommandBuffer cb; VkFence fence; VkSemaphore acq; vka_img *held; int used; } g_fr[NFRAME];
 static VkCommandPool g_ppool; static unsigned g_fi;
 static uint64_t g_refresh_ns, g_last_desired, g_drawable_ns;
+static uint64_t g_fg_acq_ns, g_fg_gpu_ns;   // PEANUTS(upstream-candidate): present-thread only: swapchain acquire and game GPU-fence waits over one game frame
 static int g_recreate;
 static struct { uint64_t n; double t; } g_pres[PRING];
 static VkSurfaceTransformFlagBitsKHR g_pre = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;   // the swapchain's preTransform
@@ -854,7 +855,9 @@ static int present_one(const pq_item *it) {
     if (g_fsr.mid[k] && !fsr_wanted()) fsr_free(k);   // FSR switched off live: frame k's fence is signalled, so its intermediate image is no longer read
     uint32_t idx; uint64_t t0 = now_ns();
     VkResult r = vk.vkAcquireNextImageKHR(V.dev, g_swap, 1000000000ull, g_fr[k].acq, VK_NULL_HANDLE, &idx);
-    g_drawable_ns += now_ns() - t0;
+    uint64_t acq_dt = now_ns() - t0;
+    g_drawable_ns += acq_dt;
+    g_fg_acq_ns += acq_dt;   // PEANUTS(upstream-candidate): per-game-frame swapchain acquire wait
     if (r == VK_ERROR_OUT_OF_DATE_KHR) { g_recreate = 1; vka_tex_drop(im); return 0; }
     if (r == VK_SUBOPTIMAL_KHR) suboptimal();   // presented this once; the next present recreates when the size or the rotation changed
     if (r && r != VK_SUBOPTIMAL_KHR) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("vkAcquireNextImageKHR %d", r); vka_tex_drop(im); return 0; }
@@ -959,7 +962,9 @@ static int present_one(const pq_item *it) {
     }
     int pw_env = VKA_ENV("DM_VK_PRESENT_PREWAIT", -1), pw = pw_env >= 0 ? pw_env : (prewait || g_fg_on);   // PEANUTS: the default is read live (frame generation can start after the first present); an explicit 0 / 1 wins
     if (it->fence && !vka_hung() && pw && it->fence <= __atomic_load_n(&V.tl_queued, __ATOMIC_ACQUIRE)) {
+        uint64_t gt0 = now_ns();
         VkResult vka_tl_wait(VkSemaphore s, uint64_t v, uint64_t timeout_ns); vka_tl_wait(V.tl, it->fence, vka_hang_ns());   // a timeout: the submission below waits as before, and the hang handling sees it
+        g_fg_gpu_ns += now_ns() - gt0;   // PEANUTS(upstream-candidate): game's GPU wait (excludes present's copy fence)
     }
     // No gate pending when the copy goes to the queue (vka_dev.c vka_gate_drain): on Turnip the driver would hold the copy back behind the gated work while Android
     // already shows the image. DM_VK_PRESENT_GATE_WAIT=<ms> (live; 30 on Turnip, 0 = off elsewhere): the longest wait, after which the present goes on as before
@@ -1049,21 +1054,27 @@ void vka_perf_thread(int nice); void vka_perf_frame(double period_s);   // vka_p
 static void *present_main(void *arg) {
     (void)arg; pthread_setname_np(pthread_self(), "vk-present"); vka_fp_host("vk-present"); vka_perf_thread(-8);
     pthread_mutex_lock(&g_pmu);
+    uint64_t prev_acq_ns = 0, prev_gpu_ns = 0;   // PEANUTS(upstream-candidate)
     for (;;) {
+        uint64_t pq_t0 = now_ns();
         while (g_pq_read == g_pq_fill && g_win_ack == g_win_gen) pthread_cond_wait(&g_pcv, &g_pmu);
-        if (g_win_ack != g_win_gen) { window_take(); continue; }
+        uint64_t pq_wait_ns = now_ns() - pq_t0;
+        if (g_win_ack != g_win_gen) { window_take(); prev_acq_ns = prev_gpu_ns = 0; continue; }
         pq_item it = g_pq[g_pq_read % PQ]; g_pq_read++;
         pthread_mutex_unlock(&g_pmu);
         vka_img *gen[VKA_FG_MAX]; double hold = 0, out_period = 0;   // frame generation: the images shown before this frame, each for hold seconds
         if (vka_rs_on()) pthread_mutex_lock(&vka_rs_mu);   // PEANUTS: DM_RES_SCALE: frame generation reads the window texture's size and handle too (present_one)
-        int ng = g_surf ? vka_fg_frame(it.t.serial, it.has_crop ? it.crop : NULL, it.period, it.fence, (int)it.t.d.format, gen, &hold, &out_period) : 0;
+        int ng = g_surf ? vka_fg_frame(it.t.serial, it.has_crop ? it.crop : NULL, it.period, it.fence, (int)it.t.d.format,
+                                       (double)prev_acq_ns / 1e9, (double)(pq_wait_ns + prev_gpu_ns) / 1e9, gen, &hold, &out_period) : 0;   // PEANUTS(upstream-candidate)
         if (vka_rs_on()) pthread_mutex_unlock(&vka_rs_mu);   // PEANUTS
         double game_period = it.period;
         g_fg_on = out_period > 0;
         if (out_period > 0) it.period = out_period;
+        g_fg_acq_ns = 0; g_fg_gpu_ns = 0;   // PEANUTS(upstream-candidate)
         for (int g = 0; g < ng; g++) { pq_item gi = it; gi.src = gen[g]; gi.has_crop = 0; gi.ticket = 0; gi.fence = 0; gi.hold = hold; vka_fps_note(present_one(&gi), 1); }
         it.hold = ng ? hold : game_period;
         int shown = present_one(&it);
+        prev_acq_ns = g_fg_acq_ns; prev_gpu_ns = g_fg_gpu_ns;   // PEANUTS(upstream-candidate)
         if (shown) { dm_guest_frame_tick(); if (peanuts_tick) peanuts_tick(); }   // PEANUTS: the companion's per-frame tick (dm/peanuts)
         if (!shown || !V.display_timing) pres_note(it.ticket, shown ? now_ns() / 1e9 : -1);
         vka_fps_note(shown, 0);

@@ -288,7 +288,7 @@ final class GameSettings {
         controls.add(new Ui.Setting(a, "📳", "Rumble", null).toggle(a, Prefs.rumble(a, id), (b, on) -> Prefs.rumble(a, id, on)).says("The controller, or the phone without one", "No rumble"));
         controls.add(new Ui.Setting(a, "🕹️", "Button mapping", v -> PadMapUi.forGame(a, g, again)).value(PadMapUi.label(a, id)).chevron(a));
         controls.add(new Ui.Setting(a, "🎯", "Motion sensitivity", v -> motionSens(a, g, again)).value(Prefs.MOTION_NAMES[Prefs.motionSens(a, id)]).note("How far the phone's gyro turns the aim; from the next start").chevron(a));
-        controls.add(new Ui.Setting(a, "🅰️", "Xbox button labels", v -> xbox(a, g, again)).value(Prefs.xboxLabel(Prefs.xboxButtons(a, id))).chevron(a));
+        // PEANUTS: the Xbox button labels row is removed (owner 2026-11-26; Prefs.dropXboxSwap)
 
         // ---- Advanced: for testers ----
         advanced.add(new Ui.Setting(a, "⏲️", "GPU timing", v -> gpuTiming(a, g, again)).value(gpuTsLabel(a, id)).note("What the game's GPU timestamps measure: per segment lets its dynamic resolution see the real GPU time").chevron(a));
@@ -755,18 +755,7 @@ final class GameSettings {
         }).setNegativeButton("Cancel", null).show();
     }
 
-    private static void xbox(MainActivity a, Game g, Runnable done) {   // Default first: the game follows Settings again
-        String[] labels = new String[Prefs.XBOX_NAMES.length + 1];
-        labels[0] = "Default (Settings: " + Prefs.xboxLabel(Prefs.xboxButtons(a)) + ")";
-        System.arraycopy(Prefs.XBOX_NAMES, 0, labels, 1, Prefs.XBOX_NAMES.length);
-        int checked = Prefs.ownXboxButtons(a, g.titleId) ? Prefs.xboxButtons(a, g.titleId) + 1 : 0;
-        new PadFocus.Builder(a).setTitle("Xbox button label swap · " + g.name).setSingleChoiceItems(labels, checked, (x, w) -> {
-            Prefs.xboxButtons(a, g.titleId, w == 0 ? null : w - 1);
-            x.dismiss();
-            done.run();
-        }).setNegativeButton("Cancel", null).show();
-    }
-
+    // PEANUTS: xbox(), the Xbox button labels picker, is removed (owner 2026-11-26)
     private static android.widget.ListAdapter capItems(MainActivity a, String[] labels, boolean[] enabled) {
         return new android.widget.ArrayAdapter<String>(a, android.R.layout.simple_list_item_single_choice, labels) {
             @Override public boolean areAllItemsEnabled() { return false; }

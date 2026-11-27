@@ -16,6 +16,12 @@ END = '<!-- end of gallery -->'
 PER_ROW = 3
 
 
+def _dropped(tid):   # PEANUTS: a profile Peanuts Native does not carry (peanuts/upstream-dropped.txt: the Switch 2 profiles)
+    sys.path.insert(0, str(REPO / 'peanuts/scripts'))
+    import dropped
+    return dropped.dropped_title(tid)
+
+
 def rows():
     out = []
     seen = {'image': {}, 'name': {}, 'title ID': {}}
@@ -26,7 +32,7 @@ def rows():
         image, name, note, tid = c
         if not (REPO / 'docs' / 'images' / image).is_file(): sys.exit(f'{TABLE.name}:{n}: no image docs/images/{image}')
         if not re.fullmatch(r'[0-9A-F]{16}', tid): sys.exit(f'{TABLE.name}:{n}: a title ID is 16 hex digits: {tid!r}')
-        if not (REPO / 'dm' / 'games' / tid / 'README.md').is_file(): sys.exit(f'{TABLE.name}:{n}: no game note dm/games/{tid}/README.md')
+        if not (REPO / 'dm' / 'games' / tid / 'README.md').is_file() and not _dropped(tid): sys.exit(f'{TABLE.name}:{n}: no game note dm/games/{tid}/README.md')   # PEANUTS: a Switch 2 game's row stays (upstream's gallery), its note is not carried
         # A union merge can retain two different captions for the same game, so check its image and title ID too.
         for field, value in (('image', image), ('name', name), ('title ID', tid)):
             if value in seen[field]:

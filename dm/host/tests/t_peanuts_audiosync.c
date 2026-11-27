@@ -81,12 +81,13 @@ int main(void) {
     start(0.85); play(500, 0.85);
     snprintf(what, sizeof what, "automatic, a game at 0.85 of its pace, no resync yet: tempo %.3f (the inaudible part only, 0.99)", pn_as_ratio());
     check(fabs(pn_as_ratio() - P_LO) < 0.002, what);
-    pn_as_resync(mono_ns()); play(100, 0.85); pn_as_resync(mono_ns()); play(500, 0.85);
-    snprintf(what, sizeof what, "after two resyncs within 60 s: tempo %.3f follows the game (0.85, within 5 %%), the finding is kept", pn_as_ratio());
-    check(pn_as_ratio() < 0.9 && pn_as_ratio() > 0.78 && access(mark, F_OK) == 0, what);
+    pn_as_resync(mono_ns()); play(100, 0.85); pn_as_resync(mono_ns()); play(500, 0.85);   // PEANUTS (#600)
+    snprintf(what, sizeof what, "after two resyncs within 60 s (a frame rate cap below the game's rate): tempo %.3f stays the inaudible part, nothing kept", pn_as_ratio());
+    check(fabs(pn_as_ratio() - P_LO) < 0.002 && access(mark, F_OK) != 0 && atomic_load(&g_told), what);
+    { FILE *f = fopen(mark, "w"); if (f) { fputs("1\n", f); fclose(f); } }   // a finding an earlier version kept
     start(0.85); play(500, 0.85);
-    snprintf(what, sizeof what, "the next start follows from the start: tempo %.3f", pn_as_ratio());
-    check(pn_as_ratio() < 0.9 && pn_as_ratio() > 0.78, what);
+    snprintf(what, sizeof what, "a finding kept by 0.1.8 does not turn full following on: tempo %.3f", pn_as_ratio());
+    check(fabs(pn_as_ratio() - P_LO) < 0.002, what);
     unlink(mark);
     start(1.0); play(500, 1.0); pn_as_resync(mono_ns()); play(100, 1.0); pn_as_resync(mono_ns()); play(100, 1.0);
     snprintf(what, sizeof what, "a game at its full pace: two resyncs are not taken as the game's (tempo %.3f, no finding kept)", pn_as_ratio());

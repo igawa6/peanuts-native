@@ -22,14 +22,16 @@ static void check_file(const char *host, const char *guest) {
     if (!f) { printf("  cannot open %s\n", host); nbad++; return; }
     uint64_t t0 = ns();
     if (h_fs_OpenFile(&h, guest, MODE_READ) != RES_OK || h_fs_GetFileSize(&sz, h) != RES_OK) { printf("  ✗ %s: does not open in the .nup\n", guest); nbad++; fclose(f); return; }
-    const img_ent *x = &g_mnt[IMG_M(FH_IN(h))].img->e[IMG_K(FH_IN(h))]; int z = !!(x->flags & IMG_ENT_ZSTD);
+    // PEANUTS begin: IMG_M indexes g_imgs[] (detached image slots), not g_mnt[]
+    const img_ent *x = &g_imgs[IMG_M(FH_IN(h))].img->e[IMG_K(FH_IN(h))]; int z = !!(x->flags & IMG_ENT_ZSTD);
     int64_t off = 0; int ok = 1;
     for (;;) {
         size_t want = fread(g_a, 1, sizeof g_a, f), got = 0;
         if (h_fs_ReadFile(&got, h, off, g_b, sizeof g_b) != RES_OK || got != want || memcmp(g_a, g_b, want)) { ok = 0; break; }
         off += (int64_t)got; if (!want) break;
     }
-    nup_aux *a = g_mnt[IMG_M(FH_IN(h))].img->aux; if (a->held > peak) peak = a->held;
+    nup_aux *a = g_imgs[IMG_M(FH_IN(h))].img->aux; if (a->held > peak) peak = a->held;
+    // PEANUTS end
     h_fs_CloseFile(h); fclose(f);
     uint64_t dt = ns() - t0;
     if (z) { nz_ns += dt; nz_files++; nz_bytes += (uint64_t)off; } else nraw_ns += dt;

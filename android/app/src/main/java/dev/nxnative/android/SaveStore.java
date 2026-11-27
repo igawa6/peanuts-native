@@ -350,8 +350,26 @@ final class SaveStore {
         }
     }
 
+    // PEANUTS begin: the recovery apart from the copy, so the game menu's Back up the save (InGamePanel) copies the running game's save without it (backupRunning)
     private static Backup backupLocked(File save, File backups, String name) throws IOException {
         recoverLocked(save);
+        return copyLocked(save, backups, name, false);
+    }
+
+    /**
+     * backupLocked for the save of the game running in this process (InGamePanel: the game menu's Back up the save, under the lock the game's start took). That
+     * start recovered the save already (GameActivity, and the host at its mount), so while the game runs a marker beside the save is the host's own swap at a
+     * Commit, still being written, never a stopped one. Recovering it here would run a second swap beside the host's: stage 1 would delete from the save what
+     * the host's stage 2 has just moved out of its .new. So nothing of the journal is touched, and a marker before the copy or after its second scan (a Commit
+     * in between) fails the copy as a changed save does, which the caller tries again
+     */
+    static Backup backupRunning(File save, File backups, String name) throws IOException {
+        return copyLocked(save, backups, name, true);
+    }
+
+    private static Backup copyLocked(File save, File backups, String name, boolean running) throws IOException {
+        if (running && pending(save)) throw new IOException("the save changed while it was copied (the game is saving it)");
+        // PEANUTS end
         Map<String, File> parts = parts(save);
         if (!save.isDirectory() && !parts.containsKey(DEVICE)) throw new IOException("there is no save folder at " + save);
         if (!save.isDirectory()) parts.remove(MAIN);
@@ -367,10 +385,12 @@ final class SaveStore {
             if (!tmp.mkdirs()) throw new IOException("cannot create " + tmp);
             for (Map.Entry<String, File> e : parts.entrySet()) copyTree(e.getValue(), new File(tmp, e.getKey()));
             String d = want.diff(scan(tmp));
+            if (d != null && running && want.diff(scanParts(parts)) != null) throw new IOException("the save changed while it was copied (" + d + ")");   // PEANUTS: a Commit, not a bad copy (backupRunning)
             if (d != null) throw new IOException("the copy does not match the save (" + d + ")");
             Manifest again = scanParts(parts);
             String changed = want.diff(again);
             if (changed != null) throw new IOException("the save changed while it was copied (" + changed + "): is the game running?");
+            if (running && pending(save)) throw new IOException("the save changed while it was copied (the game started saving it)");   // PEANUTS: a Commit began meanwhile (backupRunning)
             writeManifest(want, new File(backups, n + MANIFEST));
             if (!tmp.renameTo(dir)) { new File(backups, n + MANIFEST).delete(); throw new IOException("cannot name the backup " + dir); }
         } finally {
@@ -697,8 +717,47 @@ final class SaveStore {
     static String when(String name) {
         if (!name.matches("\\d{8}-\\d{6}.*")) return name;
         String d = name.substring(0, 4) + "-" + name.substring(4, 6) + "-" + name.substring(6, 8) + " " + name.substring(9, 11) + ":" + name.substring(11, 13) + ":" + name.substring(13, 15);
-        return d + (name.contains(BEFORE_RESTORE) ? " (automatic, before a restore)" : "");
+        return d + (name.contains(BEFORE_RESTORE) ? " (automatic, before a restore)" : name.contains(BEFORE_UPDATE) ? " (automatic, before the first start of a new build)" : "");   // PEANUTS: BEFORE_UPDATE
     }
+
+    // PEANUTS begin: a backup before the first start of a new build (issue #514). After an app update a game whose code mods' build was not made again started
+    // as the game without its mods, which read the modded game's save and wrote a new one over it at its start, before its first picture: nothing the player
+    // did could save it, and no backup of it was left. So the first start of another app version, another pack (with or without mods) or another save folder
+    // than the save's last start backs the save up first, as Back up saves does (checked file by file, a folder of its own, never deleted). GameActivity calls
+    // it under the save's lock, before the host has the save. start: what this start is (the app build, the pack's folder, the save's folder, a tab between
+    // them); stamp: the file that holds the last start's line, in the app's own storage. A save with no files gets no backup, and one that is the same as the
+    // newest backup made from it gets none either (a start of the same build again, without play between). Other users' saves beside it (others: their
+    // folders, each with its own lock) are backed up too. The stamp is written only when every backup was made, so a start that could not back up tries
+    // again the next time. Returns the backups made, none when this start is of the same build as the last one
+    static final String BEFORE_UPDATE = "-before-update";
+
+    static List<Backup> beforeNewBuild(File save, List<File> others, File backups, String name, File stamp, String start) throws IOException {
+        List<Backup> made = new ArrayList<>();
+        String last = null;
+        try { if (stamp.isFile()) last = new String(Files.readAllBytes(stamp.toPath()), StandardCharsets.UTF_8).trim(); } catch (IOException e) { /* backed up again */ }
+        if (start.trim().equals(last)) return made;
+        if (hasFiles(save) || hasFiles(device(save))) {
+            if (!sameAsNewest(save, backups)) made.add(backupLocked(save, backups, name + BEFORE_UPDATE));
+        }
+        for (File o : others) if (hasFiles(o) && !sameAsNewest(o, backups)) made.add(backup(o, backups, name + BEFORE_UPDATE));
+        File p = stamp.getParentFile();
+        if (p != null && !p.isDirectory() && !p.mkdirs()) throw new IOException("cannot create " + p);
+        File tmp = new File(stamp.getPath() + ".tmp");
+        writeSynced(tmp, (start.trim() + "\n").getBytes(StandardCharsets.UTF_8));
+        if (!tmp.renameTo(stamp)) throw new IOException("cannot write " + stamp);
+        return made;
+    }
+
+    /** Whether the newest backup made from this save (its manifest's source) holds what the save holds now */
+    private static boolean sameAsNewest(File save, File backups) throws IOException {
+        for (Backup b : list(backups)) {
+            if (!b.source.equals(save.getAbsolutePath())) continue;
+            Manifest m = readManifest(new File(backups, b.name + MANIFEST));
+            return m.layout >= 2 && scanParts(parts(save)).diff(m) == null;
+        }
+        return false;
+    }
+    // PEANUTS end
 
     // PEANUTS begin: whose save (issue #422). Each user has a save of their own (Users.saveDir: the first user's is the game's save folder, another user's is
     // <save>_user_<uid> beside it), and the device save (<save>_device) is the game's, every user's, as on the console: another user's save is their account

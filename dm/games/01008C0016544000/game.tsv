@@ -16,9 +16,12 @@ ipa	SeaOfStars.ipa
 app_category	public.app-category.games
 
 # ---- Versions ----
+# PEANUTS: add v0 (1.0.45861) and v983040 (3.0.60151) alongside upstream v786432 (2.0.59001). The shader tables are the v0 + v983040 union (v786432 shares the exact 3,898 keys of v983040); shader_optional.tsv lists the 1,543 v0-only keys.
+build	v0	1.0.45861	main=092cd60ef7c038ef934191dbb6011809	subsdk0=ff0149d0b5e882b87c2f06a981302b13	sdk=3053b22935e32ddf15ef81997603e5c2
 build	v786432	2.0.59001	main=1399a83376b1b1c2e5756fbdf7491956	subsdk0=ff0149d0b5e882b87c2f06a981302b13	sdk=3053b22935e32ddf15ef81997603e5c2
-package	v786432
-shader_versions	v786432
+build	v983040	3.0.60151	main=a98aed47b317106cce87c4a682916216	subsdk0=ff0149d0b5e882b87c2f06a981302b13	sdk=3053b22935e32ddf15ef81997603e5c2
+package	v983040
+shader_versions	v0 v983040
 
 # ---- Files ----
 # load order as on Horizon: main, subsdk*, sdk (subsdk0 = NintendoSDK_movie)
@@ -32,14 +35,27 @@ zip_store	.assets:.bnk:.bundle:.dat:.json:.mp4:.png:.ress:.wem:.xml:.metallib
 # Investigations Collection (256 MB in front + 4.375 GB alias region + 256 MB stack region + 128 MB heap region) with a 1.5 GB pool: StandardAllocator reserves 1.44 GB and commits about
 # 0.7 GB in the prologue (measured with a 64 GB alias region); Unity's own regions hold about 1.15 GB more. With the hardware pool (3.2 GB) Unity got no region within 6 minutes
 # (a write at NULL + 0x3fffe0); with the 1.5 GB pool and the cut the alias region's high-water mark stays at +3.0 GB over 20 minutes, 2.6 GB of it in live regions
+# PEANUTS begin: 16 GB alias region (mem_alias 0x400000000), 2 GB Horizon stack region (mem_stack 0x80000000), 18.375 GB reserve (mem_reserve 0x498000000), and hardware pool (app_pool 0xCD500000, 3.285 GB).
+# On Android: (1) app_pool 0x60000000 crashed at cutscene transition (1.43 GB mapped, MapPhysicalMemory ResultLimitReached -> SEGV_ACCERR main+0x48d0a0);
+# (2) app_pool 0xCD500000 with 4.375 GB mem_alias caused StandardAllocator (3.14 GB) to exhaust alias VA at +4.25 GB (SEGV_MAPERR addr=0x3fffe0 main+0x48d0a0);
+# (3) 16 GB mem_alias got past the cutscene, scripted battle, town, and second cutscene, then aborted exiting town at 450 s (`nn::diag abort: Result 0, call site sdk+0x136578`,
+#     `MapAliasStack` -> `StackGuardManager::MapAtRandomAddress`): 47 live stacks (113 MiB, 10 of them 8 MB) left no contiguous 8 MB+guard slot in the 256 MB stack region (`mem_stack 0x10000000`).
+# Horizon's 39-bit stack region is 2 GB (`0x80000000`, zero RAM overhead on Android via MAP_NORESERVE); mem_reserve 0x498000000 = 256 MB front + 16 GB alias + 2 GB stack + 128 MB heap.
 sys_resource	0x1000000
-mem_reserve	0x140000000
-mem_alias	0x118000000
-mem_stack	0x10000000
-app_pool	0x60000000
+mem_reserve	0x498000000
+mem_alias	0x400000000
+mem_stack	0x80000000
+app_pool	0xCD500000
+# PEANUTS end
 
 # ---- Input ----
 pad_layout	full
+
+# PEANUTS begin: prefer installed Turnip on Qualcomm drivers before 512.800 (driverID 8, major 512, minor < 800).
+# Measured on OnePlus 13R (Adreno 750, Qualcomm 512.762.41 / 0x802fa029): broken graphics from boot and VK_ERROR_DEVICE_LOST (-4) at submission 1039/1076
+# (including with DM_VK_ZSHARE=0; DM_VK_FD_ALIAS=0 is refused since placed maps are unsupported). Turnip T30 plays 20+ minutes at 60 fps; see README.md.
+recommend	driver.id=8,driver.version&0xffc00000=0x80000000,driver.version&0x3ff000<0x320000	driver=18
+# PEANUTS end
 
 # ---- Shader split (shader_split.py; Unity Shader objects, read by unityfs.py) ----
 # everything is under Data/: the player's serialized files and the StreamingAssets bundles

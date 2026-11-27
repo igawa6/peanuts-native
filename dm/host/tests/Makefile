@@ -34,12 +34,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_audio_spsc
 	$(B)/t_audio_stats
 	$(B)/t_fpslock
-	$(B)/t_oot_wide
-	$(B)/t_dkb_wide
-	$(B)/t_mkw_wide
-	$(B)/t_mtf_size
-	$(B)/t_pkp_aspect
-	$(B)/t_uecvar
+	$(B)/t_uecvar # PEANUTS: t_oot_wide, t_dkb_wide, t_mkw_wide, t_mtf_size and t_pkp_aspect (Switch 2 games' gates) removed: Switch 1 only
 	$(B)/t_ue_heap_alignment # PEANUTS: #236
 	$(B)/t_audren_work
 	$(B)/t_audren_layout
@@ -95,6 +90,8 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_psogate
 	$(B)/t_android_auto
 	$(B)/t_nvn_dpool
+# PEANUTS: #807, empty-pool command memory grants
+	$(B)/t_nvn_cmdarena
 	$(B)/t_android_t2tpath
 	$(B)/t_android_wbfollow
 	$(B)/t_nvn_levelof
@@ -450,6 +447,7 @@ $(B)/t_android_input: t_android_input.c ../android/input_map.c ../android/input_
 VKA = ../../gfx/vk_android
 $(B)/zstddeclib.o: ../../third_party/zstd/zstddeclib.c | $(B)
 	$(CLANG) -O2 -w -c -o $@ $<
+$(B)/t_android_shlib: $(VKA)/vka_treg.h ../../gfx/nvn/nvn_dpool.h   # PEANUTS(upstream-candidate): sparse descriptor pages.
 $(B)/t_android_shlib: t_android_shlib.c $(VKA)/vka_shlib.c $(VKA)/vka_shlib.h $(VKA)/vka_bind.c $(VKA)/vka_bind.h $(VKA)/vka_abi_compat.h $(VKA)/vka_gml.h ../../gfx/nvn/dmsh_abi_vk.h ../../gfx/nvn/dmsh_abi.h ../../gfx/nvn/dmsh_chain_vk.h $(B)/zstddeclib.o | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_shlib.c $(VKA)/vka_shlib.c $(VKA)/vka_bind.c $(B)/zstddeclib.o
 # The image memory blocks' extent allocator (vka_extents.h, vka_imgmem.c)
@@ -482,6 +480,10 @@ $(B)/t_android_mapbudget: t_android_mapbudget.c $(VKA)/vka_mapbudget.h | $(B)
 $(B)/t_nvn_dpool: t_nvn_dpool.c ../../gfx/nvn/nvn_dpool.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -I.. -o $@ t_nvn_dpool.c
 run: $(B)/t_nvn_dpool
+# PEANUTS: empty-pool command memory grants share a chunk per command buffer, each after the last recording (nvn_cmdarena.h; hle_nvn.c cmdarena_grant, #807)
+$(B)/t_nvn_cmdarena: t_nvn_cmdarena.c ../../gfx/nvn/nvn_cmdarena.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -I.. -o $@ t_nvn_cmdarena.c
+run: $(B)/t_nvn_cmdarena
 # A scaled texture copy is a blit only into a blit destination; a depth one into a format that is none is a draw (vka_t2tpath.h; vka_exec.c copy_t2t)
 $(B)/t_android_t2tpath: t_android_t2tpath.c $(VKA)/vka_t2tpath.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_t2tpath.c
@@ -545,6 +547,15 @@ $(B)/t_android_tf: t_android_tf.c $(VKA)/vka_tf_spv.c $(VKA)/vka_tf.h $(VKA)/vka
 .PHONY: android-tf
 android-tf: $(B)/t_android_tf
 	$(B)/t_android_tf
+# PEANUTS end
+# PEANUTS begin: frame-generation pacing loop (vka_fg_pace.h + lsfg/lsfg_pacer.c): closed-loop FIFO + display-timing recovery from temporary slowdowns.
+# Built with run; android-fgpace builds and runs it
+run: $(B)/t_android_fgpace
+$(B)/t_android_fgpace: t_android_fgpace.c $(VKA)/vka_fg_pace.h $(VKA)/lsfg/lsfg_pacer.c $(VKA)/lsfg/lsfg.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_fgpace.c $(VKA)/lsfg/lsfg_pacer.c -lm
+.PHONY: android-fgpace
+android-fgpace: $(B)/t_android_fgpace
+	$(B)/t_android_fgpace
 # PEANUTS end
 # PEANUTS begin: the panel's refresh grid (vka_panel.h): the period estimate from actual present times, a pacing period as whole refreshes, the chain of desired
 # present times (DM_VK_PACE_PANEL, DM_VK_PRESENT_GRID). Built with run; android-panel builds and runs it
@@ -679,24 +690,7 @@ ifneq ($(wildcard $(COOP_DIR)/coop.h),)
 run: net-coop
 endif
 
-run: $(B)/t_mkw_wide
-$(B)/t_mkw_wide: t_mkw_wide.c ../android/mkw_wide.c ../android/wide_shape.h ../hle.h ../dm.h $(GAME_H) | $(B)
-	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_mkw_wide.c -lm -pthread
-
-run: $(B)/t_mtf_size
-$(B)/t_mtf_size: t_mtf_size.c ../android/mtf_size.c ../hle.h ../dm.h $(GAME_H) | $(B)
-	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_mtf_size.c -lm -pthread
-
-run: $(B)/t_oot_wide
-$(B)/t_oot_wide: t_oot_wide.c ../android/oot_wide.c ../android/wide_shape.h ../hle.h ../dm.h $(GAME_H) | $(B)
-	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_oot_wide.c -lm -pthread
-
-run: $(B)/t_dkb_wide
-$(B)/t_dkb_wide: t_dkb_wide.c ../android/dkb_wide.c ../android/wide_shape.h ../hle.h ../dm.h $(GAME_H) | $(B)
-	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_dkb_wide.c -lm -pthread
-run: $(B)/t_pkp_aspect
-$(B)/t_pkp_aspect: t_pkp_aspect.c ../android/pkp_aspect.c ../hle.h ../dm.h $(GAME_H) | $(B)
-	$(CLANG) -O1 -g -Wno-unused-function -I.. $(GINC) -o $@ t_pkp_aspect.c -lm -pthread
+# PEANUTS: the Switch 2 games' gate tests (t_mkw_wide, t_mtf_size, t_oot_wide, t_dkb_wide, t_pkp_aspect) are gone with their host files (peanuts/upstream-dropped.txt)
 
 # PEANUTS begin: the host side of the companion runtime, on a Linux PC: make GAME=<id> peanuts-host (in `run` on a Linux host). The host's files are compiled as they
 # are, as if for Android (their declarations; what differs on a PC is replaced in each test). t_peanuts_stopworld: every game thread stopped (hle_thread.c
@@ -728,7 +722,7 @@ $(B)/t_peanuts_frametime: t_peanuts_frametime.c ../../peanuts/peanuts_frametime.
 $(B)/t_peanuts_graph: t_peanuts_graph.c ../../peanuts/peanuts_graph.c ../../peanuts/peanuts_graph.h ../../peanuts/peanuts_frametime.c ../../peanuts/peanuts_frametime.h | $(B)
 	$(CLANG) -O1 -g -Wall -Wno-unused-function -o $@ t_peanuts_graph.c -lpthread -lm
 # t_peanuts_audiosync: the sound following the game's pace (peanuts_audiosync.c, included): the stretch's length, pitch and continuity at fixed tempos, its exact
-# output at a tempo of 1, and the automatic mode (within 1 % until two resyncs while the game runs slow, then the game's pace, kept for the next start; none at full pace)
+# output at a tempo of 1, and the automatic mode (within 1 % only, also after two resyncs while the game runs slow and with an audio_follow file from 0.1.8: #600)   # PEANUTS: #600
 $(B)/t_peanuts_audiosync: t_peanuts_audiosync.c ../../peanuts/peanuts_audiosync.c ../../peanuts/peanuts_audiosync.h | $(B)
 	$(CLANG) -O2 -g -Wall -Wno-unused-function -o $@ t_peanuts_audiosync.c -lpthread -lm
 # t_peanuts_syncstress: a hunt for lost wake-ups in hle_thread.c's waits and signals with real threads (single cases, then a storm of SYNC_SECS seconds; with --stops the

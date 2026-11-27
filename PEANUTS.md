@@ -1,6 +1,7 @@
 # Peanuts Native
 
-A second-screen companion layer for Banana Native, the sibling of Eden Duo for Switch 2 titles. Upstream
+A second-screen companion layer for Banana Native, the sibling of Eden Duo, for Switch 1 games only: Banana Native's Switch 2
+profiles and their host gates are not carried (`peanuts/upstream-dropped.txt`, kept out on every sync). Upstream
 Banana Native ships several releases a day, so this fork is kept as a **thin overlay** that rebases cleanly.
 
 ## Rules that keep upstream updates cheap
@@ -23,6 +24,7 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
    - `android/host/CMakeLists.txt`, `android/app/src/main/cpp/CMakeLists.txt` — add the `dm/peanuts` sources.
    - `dm/gfx/vk_android/vka_present.c` — one call per presented frame (`peanuts_tick()`), beside `ovl_draw`; (2026-11-17) one weak declaration and one argument in `ovl_draw`'s `vko_place(...)`: `peanuts_ovl_corner(s, g_ocorner[s])` (the stats block's corner chosen in the launcher; the build tag steps aside from a top-left block).
    - `dm/host/hle_audren.c` — (2026-11-20, audio follows the game's pace) in `render_main`, a weak declaration of `pn_audio_follow` and two marked lines: the rendered frame goes through `pn_audio_follow` (`dm/peanuts/peanuts_audiosync.c`; the clock's next render moves by the frames it gave out), and a call that gives nothing out yet (the stretch filling its look-ahead) appends no block. `dm/peanuts/peanuts_audiovoice.c` takes over `nn::audio::SetVoicePlayState` with its own `HLE_FORCE` (calls the SDK's own first): if upstream ever takes that symbol over too, merge the two. `peanuts_tick` feeds the game's frames (`pn_as_frame`, `nvn_game_fps` weak). `PN_AUDIO_FOLLOW` 0 / 1 (automatic, default) / 2.
+   - `dm/host/hle_net.c` — (2026-11-24, issue #610) the socket Poll / Select waits (`efd_wait`, `sk_idle`, the co-op mixed poll's sleep) are native waits (`sk_sleep_ns`, `dm_thread_native_wait`), so a stop of all threads is not held up by a game thread that polls in a loop (FINAL FANTASY RESONANCE's HttpManagerThread kept its companion's load plan out). Tests: `t_net_eventfd.c` (two checks), `t_net_coop.c` (the stub). Upstream candidate. `peanuts/UPSTREAM-EDITS.md` "Socket waits are native waits".
    - `dm/gfx/vk_android/vka_dev.c` `vka_gpu_floor` — (2026-11-23, #113/#257) one weak call into `dm/peanuts/peanuts_gpufloor.c`: the KGSL clock floor's beat on kernels that apply the constraint only to flagged commands (`PN_GPU_FLOOR_BEAT`). `peanuts/UPSTREAM-EDITS.md` Round 62.
    - `dm/gfx/vk_android/vka_dev.c` `vka_cap_period_clamp`, `vka_perf.c` — (2026-11-24, 0.1.8 hardening) the active frame cap's period as the shortest, one function for the GPU floor's period and the ADPF target (`dm_fps_cap_get` / `nxhost_fps_limit_get`, weak). `peanuts/UPSTREAM-EDITS.md` "0.1.8 hardening".
    - `dm/gfx/vk_android/vka_tex.c` `vka_tex_b2t_mirror`, `vka_dlss.c` `dpass`, `vka_fsr3.c` `pass` — (2026-11-24, 0.1.8 hardening) one `vka_dyn_invalidate()` each after a compute pass recorded between the game's dispatches, so the next dispatch pushes its descriptors again (`vka_draw.c` `push_same`). `peanuts/UPSTREAM-EDITS.md` "0.1.8 hardening".
@@ -119,6 +121,29 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      `build`'s first line hands the page to `GamePagePort.build` on a window 600 dp wide or more; its `wide` and sections lines build the narrow column with every section while the port
      takes upstream's rows off its tabs (`GamePagePort.harvesting`); `stepTab` asks `GamePagePort.step` after Mods & Cheats' own line; `openOn` (Round 61's
      line) tells the port the tab, so Settings › Users opens the area Saves. `GamePagePort.java` is Peanuts' own file in upstream's package.
+   - `android/app/src/main/java/dev/nxnative/android/SidePanel.java`, `GameActivity.java`, `SaveStore.java` — (2026-11-24, the in-game menus, `InGamePanel`,
+     `dev.peanuts.ingame`) the one side panel becomes two menus. SidePanel is the quick menu: `TAB_CONTROLS` not final (Cheats and Mods come before it);
+     its constructor hands its sheet to `InGamePanel.frame` (a rail of the tabs at the left, a header with Back and the tab's name); `tabBar`'s first line
+     `InGamePanel.rail`; `showTab` keeps the focus on the rail (`InGamePanel.railFocused`); `open` and `close` slide through `InGamePanel.slideIn`/`slideOut`;
+     `padKey`'s back key is `InGamePanel.panelBack`; `look` ends with `InGamePanel.laid` (what moved to the game menu). GameActivity: `attach` in `onCreate`
+     (the game menu, a swipe in from the left edge), the combination through `InGamePanel.key` (Home held: the quick menu) and `InGamePanel.toggle` (Home
+     pressed, − and + held: the game menu), the controller's own Back through `InGamePanel.backKey` (pressed the game menu, held the quick menu: the
+     Thor's Home is Android's), `menuKey` and `menuMotion` (the game menu has the controller), Back through `InGamePanel.back`, and `runSave()`
+     (the save the game runs on). SaveStore: `backupRunning` (the game menu's Back up the save, under the running game's own lock: the copy without the
+     recovery, refused while the host's swap at a Commit has its marker beside the save).
+     (2026-11-24, one menu: Layout) SidePanel: `rows()` gives the panel's rows to a second panel, the one menu at the right or on the bottom screen
+     (`InGamePanel.openRight`, `openBottom`); `open()` starts with `InGamePanel.instead` (one menu at the right: the swipe and the controls' button open it).
+     (2026-11-24, the quick menu button) GameActivity: `dispatchKeyEvent` hands the player's own button to `InGamePanel.quickKey` (dev.peanuts.ui.QuickButton).
+     `peanuts/UPSTREAM-EDITS.md` "In-game menus".
+   - `GameActivity.java`, `MainActivity.java`, `SidePanel.java`, `Lsfg.java` — (2026-11-26, Smooth Experience
+     and Developer view, `dev.peanuts.smooth`; `peanuts/tests/test_smooth_experience.py` lists every line) Smooth Experience (Settings › App › Extras, off by
+     default, its parts right under it while it is on): `start()`'s first line puts up `dev.peanuts.ui.StartCover` (the game's cover and a breathing peanut in
+     place of the log's lines), `tail()` hands it what the log says (one line after the log view's visibility; its next look in 250 ms while the cover waits for
+     the first frame) and `dispatchKeyEvent` gives the pad to its failure card; the "Preparing graphics" block (#322) and `skipShow` write their log line
+     instead of the notice. The overlay keeps its own switches. Developer view (Settings › Developer, on for an app installed before, off for a new install):
+     the start's tester toasts (a switch nothing reads, `DevView.startToast`; environment lines not taken), the ignored adb command's toast, and the
+     in-game menu's tool words (`DevView.panel`, `DevView.frameGen`: SidePanel's two "DM_CTL is off" notes, the cap line, the frame generation state, Lsfg's
+     two lines). Every toast a player needs shows either way.
 3. **Settings go through upstream's own mechanisms**: `env.txt` keys named `PN_*`, `settings.tsv` rows, `DM_CTL` lines. No new settings UI inside upstream classes.
 4. **Never reformat or "fix" upstream files.** A general fix belongs upstream as a PR to Banana Native (its AGENTS.md prefers general changes), then it arrives by rebase.
 5. **Branches:** `upstream/android` is Banana Native; `peanuts` is this overlay, always a linear set of commits on top of a Banana Native tag. History is rewritten on every update (rebase, never merge).
@@ -428,3 +453,8 @@ The script fetches, rebases `peanuts` onto the target, then checks that every `P
   takes the corner's side margin on the right side (`Hud.margins`, one hook in `Overlay.Block.draw`). Players who never picked a style keep the table (igawa6, landing #538: the pill is a choice, not the default). The build tag is off by default under the pill (`Hud.tagOn`,
   used by `GameActivity` in two marked lines; a player's own switch wins, and only the Full preset turns it on there).
   Tests: `t_android_ovl`, `t_peanuts_graph`, `dm/tools/tests/test_android_hud.py` (`test_pill`).
+- 2026-11-26 (Switch 1 only, owner): the 19 Switch 2 profiles (`dm/games/04*`) and the host gates only they used (`dkb_wide.c`, `mkw_wide.c`,
+  `oot_wide.c`, `mtf_size.c`, `pkp_aspect.c`, their tests and `OBS_*` rows) are removed; `nxGames` (the default APK's games) is
+  `peanuts/release-titles.txt` with Breath of the Wild first. `upstream-update.sh` keeps them out on every sync (`peanuts/upstream-dropped.txt`,
+  [UPSTREAM.md](peanuts/docs/UPSTREAM.md#38-dropped-upstream-content-switch-2)). Tests that read those profiles use Switch 1 profiles or
+  `peanuts/tests/fixtures/profiles/`. The shared Switch 2 support in the host and the app (NVN2, Program-n, `Edition.java`) stays.

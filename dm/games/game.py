@@ -210,6 +210,8 @@ def header(g):
     lap = g.get('low_ram_app_pool_mb', '0')   # the total GetInfo reports, MiB, below the profile's app_pool, which stays the pool (hle_svc.c reported_total; DM_APP_POOL_MB overrides)
     if not lap.isdigit() or int(lap) and not 1024 <= int(lap) < g.int('app_pool') >> 20:
         sys.exit(f"{g.id}: low_ram_app_pool_mb must be 0 (not set) or 1024 MiB to below the profile's app_pool ({g.int('app_pool') >> 20} MiB): {lap}")
+    pjm = g.get('place_join_mb', '0')   # PEANUTS: Android, any device: the largest run of a pool's placed parts joined into one, MiB (vka_mem.c join_cap; elsewhere 256, DM_VK_PLACE_JOIN_MB overrides). 0 = not set
+    if not pjm.isdigit() or int(pjm) and not 64 <= int(pjm) <= 2048: sys.exit(f'{g.id}: place_join_mb must be 0 (not set) or 64 to 2048 MiB: {pjm}')   # PEANUTS
     vcr = g.get('vconv_range', 'off')   # vertex attributes converted on the CPU only over the vertices each draw reads (nvn_mtl.m vc_draw_range): on / off
     if vcr not in ('on', 'off'): sys.exit(f'{g.id}: vconv_range must be on or off: {vcr}')
     mml = g.get('mem_map_limit', 'on')   # MapPhysicalMemory refused beyond the application pool, as on Horizon (hle_svc.c): on / off
@@ -450,6 +452,7 @@ def header(g):
          f'#define DM_GAME_VCONV_RANGE {int(vcr == "on")}',
          f'#define DM_GAME_AV1_DAV1D {int(av1 == "dav1d")}',
          f'#define DM_GAME_LOW_RAM_PLACE_PART_MB {int(lpp)}', f'#define DM_GAME_LOW_RAM_IMG_CACHE_MAX_MB {int(lic)}', f'#define DM_GAME_LOW_RAM_APP_POOL_MB {int(lap)}',
+         f'#define DM_GAME_PLACE_JOIN_MB {int(pjm)}',   # PEANUTS: place_join_mb (0 = the host's 256)
          f'#define DM_GAME_ROMFS_SUBST {q(rsub)}',
          f'#define DM_GAME_WINDOW_FN {{{", ".join(wfn) or "{\"\", 0, 0, 0, 0}"}}}', f'#define DM_GAME_NWINDOW_FN {len(wfn)}',
          '#define DM_GAME_SUBGROUP_ONE_LANE {' + (', '.join(sol) or '0') + '}', f'#define DM_GAME_NSUBGROUP_ONE_LANE {len(sol)}',

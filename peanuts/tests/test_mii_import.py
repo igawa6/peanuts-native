@@ -10,7 +10,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 MII = REPO / 'android/app/src/main/java/dev/peanuts/mii'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/peanuts/mii/MiiImportJvmTest.java'
-SOURCES = [MII / n for n in ('MiiStore.java', 'MiiImport.java')]
+SOURCES = [MII / n for n in ('MiiStore.java', 'MiiImport.java')] + [MII.parents[1] / 'nxnative/android/Streams.java']   # MiiImport reads its head through Streams (Android 12)
 
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')

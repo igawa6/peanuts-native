@@ -25,8 +25,11 @@ public final class BuildConfig {
 '''
 
 
+OOT = str(REPO / 'peanuts/tests/fixtures/profiles/ocarina')   # PEANUTS: Ocarina of Time's rows, a fixture (its Switch 2 profile is not carried); no Switch 1 profile has presets
+
+
 def rows(game_id, key):
-    t = REPO / 'dm/games' / game_id / 'game.tsv'
+    t = (Path(game_id) if Path(game_id).is_absolute() else REPO / 'dm/games' / game_id) / 'game.tsv'   # PEANUTS: or a profile folder's path
     return [line.split('\t') for line in t.read_text(encoding='utf-8').splitlines() if line.startswith(key + '\t')]
 
 
@@ -54,7 +57,7 @@ class Wiring(unittest.TestCase):
         self.assertIn('p.presets = c.length > 22 ? c[22] : "";', (SRC / 'Profile.java').read_text(encoding='utf-8'))
 
     def test_oot_column(self):
-        self.assertEqual(presets_of('0400486024DEC000'), 'quality|Quality|1920x1080|default|0|1920|1080|measured;medium|Balanced|1920x1080|fixed|720|1920|1080|measured;'
+        self.assertEqual(presets_of(OOT), 'quality|Quality|1920x1080|default|0|1920|1080|measured;medium|Balanced|1920x1080|fixed|720|1920|1080|measured;'   # PEANUTS: the fixture
                          'performance|Performance|1280x720|fixed|540|1280|720|measured')
 
     def test_from_column(self):
@@ -65,13 +68,13 @@ class Wiring(unittest.TestCase):
         fields = re.split(r',\s*(?![^()]*\))', row)   # keep commas inside the column builders' arguments
         self.assertEqual(fields[26], 'presetFromOf(g)')
         self.assertIn('p.presetFrom = c.length > 26 ? c[26] : "";', (SRC / 'Profile.java').read_text(encoding='utf-8'))
-        self.assertEqual([c[1:3] for c in rows('0400486024DEC000', 'res_preset_from')], [['balanced', 'medium'], ['max-performance', 'performance']])
-        scene_res.res_presets(game.load('0400486024DEC000'))   # refuses a row naming a preset that is not there
+        self.assertEqual([c[1:3] for c in rows(OOT, 'res_preset_from')], [['balanced', 'medium'], ['max-performance', 'performance']])   # PEANUTS: the fixture
+        scene_res.res_presets(game.load(OOT))   # refuses a row naming a preset that is not there
 
     def test_column_matches_the_pack_step(self):
         """Every profile: the presets the launcher offers with a scene of their own are the overlays the pack step makes, at the scale the launcher labels"""
-        for g in game.all_games():
-            col = presets_of(g.id)
+        for g in list(game.all_games()) + [game.load(OOT)]:   # PEANUTS: and the fixture
+            col = presets_of(g.id if g.dir.parent == REPO / 'dm/games' else str(g.dir))
             if not col: continue
             launcher = {f[0]: int(f[4]) / int(f[6]) for f in (r.split('|') for r in col.split(';')) if f[3] != 'default'}
             tool = {p[0]: p[4] for p in scene_res.res_presets(g) if p[4] is not None}

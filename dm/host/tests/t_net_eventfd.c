@@ -2,7 +2,11 @@
 // poll and select readiness, a poll woken by a write from another thread, fcntl's O_NONBLOCK, close, and that other descriptors are offline sockets (a poll on one reports nothing ready).
 // gRPC's poller (The Legend of Zelda: Ocarina of Time) checks for an eventfd, then drains one with EAGAIN and EINTR handled as on Linux. Expected values are written by hand.
 #include "../hle_net.c"
-void dm_guest_sleep_ns(int64_t ns) { struct timespec t = {ns / 1000000000, ns % 1000000000}; nanosleep(&t, NULL); }
+// PEANUTS(upstream-candidate) begin: the native waits (hle_thread.c dm_thread_native_wait) a Poll's waits are bracketed with: entries, and the sleeps and eventfd waits made inside one
+static __thread int t_native; static _Atomic int g_native_in, g_slept_in, g_slept_out;
+void dm_thread_native_wait(int entering) { if (entering) { t_native++; g_native_in++; } else if (t_native > 0) t_native--; else abort(); }
+void dm_guest_sleep_ns(int64_t ns) { if (t_native) g_slept_in++; else g_slept_out++; struct timespec t = {ns / 1000000000, ns % 1000000000}; nanosleep(&t, NULL); }
+// PEANUTS(upstream-candidate) end
 static int g_errno;
 static int *errno_loc(void) { return &g_errno; }   // the guest's __errno_location
 void *guest_sym(const char *name) { return !strcmp(name, "__errno_location") ? (void *)errno_loc : NULL; }
@@ -47,6 +51,15 @@ int main(void) {
     CHECK(got == 1 && p[0].revents == SK_POLLIN && now_ms() - t0 < 1000, "a write from another thread wakes the poll");
     pthread_join(th, NULL);
     CHECK(h_sk_EventFdRead(fd, &v) == 0 && v == 3, "and its value is read");
+    // PEANUTS(upstream-candidate) begin: a Poll's waits are native waits, so a stop of all threads need not catch the poller in game code (FINAL FANTASY RESONANCE's
+    // HttpManagerThread, a Poll of its eventfd every 100 ms, kept a companion's load plan from being installed)
+    int in0 = g_native_in;
+    CHECK(dm_sk_poll(p, 2, 30) == 0 && g_native_in > in0 && t_native == 0, "an eventfd poll that waits: inside a native wait, and out of it again");
+    in0 = g_native_in; int slept0 = g_slept_in, out0 = g_slept_out;
+    sk_pollfd none = {-1, SK_POLLIN, 0};
+    CHECK(dm_sk_poll(&none, 1, 20) == 0 && g_native_in > in0 && g_slept_in > slept0 && g_slept_out == out0 && t_native == 0,
+          "a poll with nothing to wait on: its sleep is a native wait too");
+    // PEANUTS(upstream-candidate) end
 
     // select on the same descriptors
     uint64_t rset[16] = {0}, wset[16] = {0}; int64_t tv[2] = {0, 0};

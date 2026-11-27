@@ -45,7 +45,7 @@ final class SidePanel extends FrameLayout {
 
     // The tabs: each a builder of its own (build); Performance's rows refresh twice a second while it shows
     static String[] TAB_NAMES = {"Performance", "Display", "Controls", "General"};   // PEANUTS: not final, ModsPanel.opening puts Mods between Controls and General
-    private static final int TAB_PERF = 0, TAB_DISPLAY = 1, TAB_CONTROLS = 2; static int TAB_GENERAL = 3;   // PEANUTS: TAB_GENERAL not final, the last tab (4 while Mods shows: ModsPanel)
+    private static final int TAB_PERF = 0, TAB_DISPLAY = 1; static int TAB_CONTROLS = 2, TAB_GENERAL = 3;   // PEANUTS: TAB_CONTROLS and TAB_GENERAL not final: ModsPanel puts Cheats and Mods before Controls, General last
     private int tab = TAB_PERF;
     private static final int FOCUS = 0xFFFFD54F;   // the tab bar's selected tab and the focus frame: a banana yellow, dark text on it
 
@@ -91,7 +91,8 @@ final class SidePanel extends FrameLayout {
         sh.addView(scroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         addView(sh, new LayoutParams(PanelLook.widthPx(Prefs.panelSize(a), dp, a.getResources().getDisplayMetrics().widthPixels), LayoutParams.MATCH_PARENT, Gravity.END));
         sheet = sh;
-        getViewTreeObserver().addOnGlobalFocusChangeListener(this::focusMoved);
+        InGamePanel.frame(this, sh, tabs, scroll);   // PEANUTS: the quick menu, its tabs on a rail at the left with a header over the rows (dev.peanuts.ingame.Rail)
+        dev.peanuts.ingame.Look.focusListener(this, this::focusMoved);   // PEANUTS: kept from window to window (the bottom screen's menu gets a new window at each opening)
         setVisibility(GONE);
     }
 
@@ -99,12 +100,15 @@ final class SidePanel extends FrameLayout {
     void padButtons(int[] cb) { confirm = cb[0]; back = cb[1]; }
 
     boolean isOpen() { return open; }
+    @Override public boolean isInTouchMode() { return super.isInTouchMode() && !InGamePanel.keyDriven(this); }   // PEANUTS: the bottom screen's menu driven by keys: Android keeps that display in touch mode (InGamePanel.keyDriven)
+    Rows rows() { return rows; }   // PEANUTS: the bottom screen's menu builds the same rows (InGamePanel)
     void toggle() { if (open) close(); else open(); }
     /** Opened or closed by a controller (GameActivity: Home, or − and + held): opened, the focus on its first row, out of touch mode */
     void padToggle() { if (open) close(); else { open(); post(this::ensureFocus); } }
 
     void open() {
         if (open) return;
+        if (InGamePanel.instead(this)) return;   // PEANUTS: with one menu at the right, the swipe and the controls' button open that menu instead
         open = true;
         if (onOpen != null) onOpen.run();
         box.removeAllViews();
@@ -112,8 +116,7 @@ final class SidePanel extends FrameLayout {
         build();
         look();
         setVisibility(VISIBLE);
-        sheet.setTranslationX(sheet.getLayoutParams().width);
-        sheet.animate().translationX(0).setDuration(180).start();
+        InGamePanel.slideIn(this, sheet);   // PEANUTS: in from the right, decelerating, the scrim fading in (dev.peanuts.ingame.Look's motion)
         post(() -> { if (open && !isInTouchMode()) focusFirst(); });
         removeCallbacks(tick);
         refresh();
@@ -124,7 +127,7 @@ final class SidePanel extends FrameLayout {
         open = false;
         heldDir = stickHeld = PadPanel.NONE;
         removeCallbacks(repeat);
-        sheet.animate().translationX(sheet.getLayoutParams().width).setDuration(150).withEndAction(() -> { if (!open) setVisibility(GONE); }).start();
+        InGamePanel.slideOut(this, sheet, () -> { if (!open) setVisibility(GONE); });   // PEANUTS: out to the right, accelerating, the scrim fading
     }
 
     /**
@@ -140,7 +143,7 @@ final class SidePanel extends FrameLayout {
         if (!press) return true;
         if (ModsPanel.padKey(k, findFocus(), confirm)) return true;   // PEANUTS: Y (details) and X (All off) on the Mods tab
         boolean lost = findFocus() == null || isInTouchMode();
-        if (k == back) close();
+        if (k == back) InGamePanel.panelBack(this);   // PEANUTS: back to the game menu when that opened the quick menu, else to the game
         else if (k == KeyEvent.KEYCODE_BUTTON_L1 || k == KeyEvent.KEYCODE_BUTTON_R1) { if (lost) ensureFocus(); showTab(PadPanel.tab(tab, k == KeyEvent.KEYCODE_BUTTON_L1 ? -1 : 1, TAB_NAMES.length)); }
         else if (k == confirm || k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER) { if (lost) ensureFocus(); else activate(); }   // the first press only shows where the focus is
         return true;
@@ -262,6 +265,7 @@ final class SidePanel extends FrameLayout {
 
     /** The tab bar: one button per tab (the selected one filled), then ✕; large enough to tap (the panel's row height, 48 dp at least), named for TalkBack */
     private void tabBar() {
+        if (InGamePanel.rail(this, tab, this::showTab)) return;   // PEANUTS: the rail instead of the bar
         tabs.removeAllViews();
         float dp = getResources().getDisplayMetrics().density;
         int h = Math.max(Math.round(48 * dp), PanelLook.rowPx(Prefs.panelSize(act), dp)), pad = Math.round(4 * dp);
@@ -322,7 +326,7 @@ final class SidePanel extends FrameLayout {
         build();
         look();
         scroll.scrollTo(0, 0);
-        if (!isInTouchMode()) focusFirst();
+        if (!isInTouchMode() && !InGamePanel.railFocused()) focusFirst();   // PEANUTS: a tab switched from the rail keeps the focus there
         refresh();
     }
 
@@ -333,6 +337,7 @@ final class SidePanel extends FrameLayout {
         if (sheet.getLayoutParams().width != w) { sheet.getLayoutParams().width = w; sheet.requestLayout(); }
         look(box, PanelLook.textScale(Prefs.panelText(act)), PanelLook.rowPx(size, dp));
         dev.peanuts.ui.PanelPolish.apply(box);   // PEANUTS: the panel's segmented choices, headings, notes and buttons
+        InGamePanel.laid(this, box, tab);   // PEANUTS: what moved to the game menu (Pause, Stop, Back to the game, Button mapping); a new tab fades in
     }
     private static void look(View v, float text, int row) {
         if (v instanceof TextView) {
@@ -479,8 +484,8 @@ final class SidePanel extends FrameLayout {
         boolean simple = Prefs.simpleRes(act, game());   // a game with Resolution presets, tester rows off: no Upscaler or Dynamic resolution here (Settings › Help › Tester settings)
         if (!simple && (Prefs.dlssGame(game()) || GameUpscaler.shown(act, game()))) {   // right under the frame rate cap: the Upscaler (the game's own upscaler and the window's scaling to the screen), for games whose network it replaces; for a game on the DLSS stand-in (no network to replace), the stand-in's modes with Motion clarity / sharpness
             GameUpscaler.rows(act, game(), box);
-            note(act instanceof GameActivity && ((GameActivity) act).live() ? "Applies from the next frame, kept for this game (the same setting as Game settings › Upscaler)."
-                    : "Applies at the next start (this run takes no live changes: DM_CTL is off).");
+            note(dev.peanuts.smooth.DevView.panel(act, act instanceof GameActivity && ((GameActivity) act).live() ? "Applies from the next frame, kept for this game (the same setting as Game settings › Upscaler)."
+                    : "Applies at the next start (this run takes no live changes: DM_CTL is off)."));   // PEANUTS: Developer view off: player words (DevView.panel)
         }
         if (Prefs.drsGame(game()) && !simple) {
             TextView drsHead = head("Dynamic resolution");   // the render size's range (Prefs.DRS), applied at each step; the heading shows it
@@ -764,8 +769,8 @@ final class SidePanel extends FrameLayout {
         box.addView(ss);
         if (canFill) note("Fill makes the game draw for this screen's shape, so nothing is stretched and there are no bars: from the next start."
                 + (Profile.of(game()).aspectUntested ? " Untested on this game: it may look wrong or not start; pick Fit to go back." : ""));   // PEANUTS
-        note(live ? "Fit keeps the game's shape, Stretch fills the screen; below 100 % the picture is smaller, with black around it. Applies now, kept for this game."
-                : "Applies at the next start (this run takes no live changes: DM_CTL is off).");
+        note(dev.peanuts.smooth.DevView.panel(act, live ? "Fit keeps the game's shape, Stretch fills the screen; below 100 % the picture is smaller, with black around it. Applies now, kept for this game."
+                : "Applies at the next start (this run takes no live changes: DM_CTL is off)."));   // PEANUTS: Developer view off: player words (DevView.panel)
         rows.position(box);
     }
 
@@ -893,8 +898,10 @@ final class SidePanel extends FrameLayout {
             boolean startedOwned = act instanceof GameActivity && ((GameActivity)act).gameOwnedAtStart();
             boolean restart = act instanceof GameActivity ? ((GameActivity)act).fpsRestartRequired(chosen) : (chosen == FrameRateCaps.GAME_OWNED) != startedOwned;
             String runs = Prefs.screenRunsNote(act, game());   // PEANUTS: a stored 90 or 120 above the display's highest rate runs at that rate
-            fpsNow.setVisibility(restart || other || runs != null ? VISIBLE : GONE);
-            if (restart) fpsNow.setText("Restart the game to apply " + Prefs.paceLabel(chosen) + ".");
+            boolean heat = f.length > 4 && f[4].equals("1");   // PEANUTS: held for heat (the thermal cap; a profile's thermal_cap)
+            fpsNow.setVisibility(heat || restart || other || runs != null ? VISIBLE : GONE);   // PEANUTS: heat
+            if (heat) fpsNow.setText(Prefs.HEAT_TEXT);   // PEANUTS
+            else if (restart) fpsNow.setText("Restart the game to apply " + Prefs.paceLabel(chosen) + ".");
             else if (other) fpsNow.setText("This game moves in whole frames: " + chosen + " fps runs at " + held + " fps, at full game speed.");
             else if (runs != null) fpsNow.setText(runs);
         } else {
@@ -912,10 +919,10 @@ final class SidePanel extends FrameLayout {
             String s = cap < 0 ? "This build has no frame rate cap."
                     : now <= 0 ? "Starting…"
                     : own ? "This game picks its own frame rate."
-                    : "Now " + now + " fps" + (cap > 0 ? ", capped at " + cap : ", the game's own") + ".";
-            fpsNow.setText(s);
+                    : "Now " + now + " fps" + (cap > 0 ? ", capped at " + cap : ", the game's own") + "." + (f.length > 4 && f[4].equals("1") ? " " + Prefs.HEAT_TEXT : "");   // PEANUTS: held for heat
+            fpsNow.setText(dev.peanuts.smooth.DevView.panel(act, s));   // PEANUTS: Developer view off: player words
         }
-        if (lsfgNow != null) { String st = Native.frameGenStatus(); int sp = st.indexOf(' '); lsfgNow.setText("Now: " + (sp > 0 ? st.substring(sp + 1) : st)); }
+        if (lsfgNow != null) { String st = Native.frameGenStatus(); int sp = st.indexOf(' '); lsfgNow.setText(dev.peanuts.smooth.DevView.frameGen(act, st, "Now: " + (sp > 0 ? st.substring(sp + 1) : st))); }   // PEANUTS: Developer view off: the state in player words
         removeCallbacks(tick);   // a change calls refresh too: one loop, not one more per change
         postDelayed(tick, 500);
     }

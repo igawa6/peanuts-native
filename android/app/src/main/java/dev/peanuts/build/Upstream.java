@@ -185,6 +185,11 @@ final class Upstream {
 
     static Intent packBind(Context c) throws ClassNotFoundException { return new Intent(c, k("PackService")); }
 
+    /** The packer's Go on anyway (PackService.ACTION_GO_ON, EXTRA_FROM): its heat pause is lifted while it runs the job; from the build card (#803) */
+    static Intent packGoOn(Context c) throws ClassNotFoundException {
+        return new Intent(c, k("PackService")).setAction("dev.nxnative.android.pack.GO_ON").putExtra("from", "card");
+    }
+
     // ---- The game list (Ondevice.Panel.addGame, once a job is done) ----
 
     /** Whether the launcher's list has a game with this dump and pack */

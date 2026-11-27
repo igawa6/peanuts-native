@@ -38,7 +38,9 @@ import dev.peanuts.ui.LibrarySettings;
  * pack beside the normal one (ModStore.variantId: one per set of enabled code mods). A mod is on when it is installed, and that build starts by itself when a set of code mods
  * that is on has none ({@link #autoBuild}); the section's "Build with mods" is for a failed one and for a rebuild. The normal build is never
  * changed. Every start of the game (the page's Play, Home, a shortcut, a frontend: all go through MainActivity.launch) asks {@link #packToPlay} for the pack:
- * the variant's while code mods are on and their build is ready, else the normal one. So a mod that is on plays, and one that is off or deleted does not.
+ * the variant's while code mods are on and their build is ready, the normal one when no code mod is on. While code mods are on and their build is not ready,
+ * no start takes the normal pack: Play says when the build is ready and offers Play without mods only after a warning (issue #514: the game without its code
+ * mods wrote over the modded game's save at its start). So a mod that is on plays, and one that is off or deleted does not.
  * <p>
  * The page is built again after a choice of another row, and a pick, an import or a build outlives that: what is in progress is kept per process (PICK, IMPORT,
  * BUILD, FAILED), and whichever section shows now ({@link #current}) is the one told to render again.
@@ -53,6 +55,8 @@ public final class ModsSection {
     private static String importTitle, buildTitle, buildText;
     private static CharSequence importText;
     private static String buildVariant;   // the variant buildTitle is being built as: another set of the same game's code mods waits for it as another game's does
+    private static long buildSince;       // when that build started (SystemClock.elapsedRealtime) and how far it is, -1: no percent yet: Play's question says when it is ready (waitText)
+    private static int buildPct = -1;
     /** The one build with mods that waits to start by itself ({@link #autoBuild}): its game's section and its variant; null: none. Not kept over a restart of the app */
     private static ModsSection waiting;
     private static String waitingVariant;
@@ -124,7 +128,8 @@ public final class ModsSection {
 
     /**
      * The pack a start of this game uses (MainActivity.launch's PEANUTS hook): the variant's when code mods are on and their build is ready, else packDir as it
-     * is. With code mods on and no build of them yet the game starts without them, and notBuilt (may be null) is run to say so. Anything unreadable: packDir
+     * is. With code mods on and no build of them that can be played, notBuilt (may be null) is run: the launcher then does not start the game's own pack but
+     * asks ({@link #waitText}; issue #514: the game without its code mods wrote over the modded game's save at its start). Anything unreadable: packDir
      */
     public static String packToPlay(android.content.Context c, String titleId, String gameDir, String packDir, Runnable notBuilt) {
         try {
@@ -138,7 +143,10 @@ public final class ModsSection {
             String variantId = ModStore.variantId(titleId, codeMods);
             if (variantId == null) return packDir;
             File variantPack = dev.nxnative.android.AppStorage.pack(c, variantId);
-            if (variantProblem(c, titleId, p, variantPack) == null) return variantPack.getPath();
+            // a build of this very variant that is still running (its last module key is written before its shaders, game.tsv and mark): not ready, so Play
+            // waits for it instead of starting a pack that is still being written (#514, found on the Thor)
+            boolean running = variantId.equals(buildVariant);
+            if (!running && variantProblem(c, titleId, p, variantPack) == null) return variantPack.getPath();
             if (notBuilt != null) notBuilt.run();
         } catch (RuntimeException e) {
             android.util.Log.w("peanuts", "mods: the pack to play: " + e);
@@ -147,8 +155,36 @@ public final class ModsSection {
     }
 
     /**
+     * Whether a start of this game runs with code mods on (issue #514, owner 2026-11-26: only such games get the backup before the first start of a new build,
+     * SaveStore.beforeNewBuild): the pack is a build with mods, or code mods are enabled for the game (Play without mods starts its own pack). Unreadable: false
+     */
+    public static boolean codeModsOn(android.content.Context c, String titleId, File gameDir, File packDir) {
+        try {
+            if (packDir != null && ModdedBuild.isVariantPack(packDir)) return true;
+            File p = normalPack(c, titleId, packDir);
+            if (p == null) return false;
+            return !ModStore.enabledCodeMods(ModRuntime.mods(ModRuntime.home(c, titleId, gameDir, p.getParentFile()), titleId)).isEmpty();
+        } catch (RuntimeException e) {
+            android.util.Log.w("peanuts", "mods: code mods on: " + e);
+            return false;
+        }
+    }
+
+    /**
+     * Play's question while this game's code mods are on and their build with mods cannot be played (issue #514; ModdedBuild.waitText): how far the build is
+     * and when it should be ready, that it waits, or why it failed. stale: there is a build, of another version of the app or the game. Called after {@link #due},
+     * which starts the build when it is due, so a Play right after an app update starts the build that the game's page would have started
+     */
+    public static String waitText(String titleId, String name, boolean stale) {
+        String prefix = titleId.toUpperCase(java.util.Locale.ROOT) + "-mod-", failed = null;
+        for (Map.Entry<String, String> e : FAILED.entrySet()) if (e.getKey().startsWith(prefix)) failed = e.getValue();
+        boolean mine = titleId.equals(buildTitle), waits = waiting != null && titleId.equals(waiting.titleId);
+        return ModdedBuild.waitText(name, stale, mine ? Math.max(0, buildPct) : -1, mine ? android.os.SystemClock.elapsedRealtime() - buildSince : 0, waits, failed);
+    }
+
+    /**
      * Why a start cannot take the variant's pack, null when it can: there is none, its build did not finish (ModdedBuild.variantProblem), or its own profile
-     * is of another version of the app ({@link #staleProfile}). Play then starts the normal pack and says the mods are not built; "Build with mods" says why
+     * is of another version of the app ({@link #staleProfile}). Play then waits for the build with mods (waitText); "Build with mods" says why
      */
     private static String variantProblem(android.content.Context c, String titleId, File normalPack, File variantPack) {
         String why = ModdedBuild.variantProblem(variantPack);
@@ -527,8 +563,8 @@ public final class ModsSection {
                 : building ? "Another game is being built with mods. Wait for it to finish."
                 : failed != null ? "Failed: " + failed
                 : ready ? "Ready. Play starts the game with its code mods."
-                : built ? "The build with mods must be made again: " + v.problem + ". Until then Play starts the game without its code mods."
-                : "Code mods need a build of their own: until it is made, Play starts the game without them. The normal build is kept as it is.";
+                : built ? "The build with mods must be made again: " + v.problem + ". Until then Play waits for it."
+                : "Code mods need a build of their own: until it is made, Play waits for it. The normal build is kept as it is.";
         body.addView(ui.setting("🔨", "Build with mods", value, failed == null || mine || waits ? null : x -> message("Build with mods failed", failed)), SectionUi.lp(0, 0));
         if (mine) return;
         LinearLayout buttons = SectionUi.buttons(a);
@@ -553,13 +589,14 @@ public final class ModsSection {
         r.modArgs = ModdedBuild.rewriteArgvJoined(plan);
         FAILED.remove(variantId);
         buildTitle = titleId; buildVariant = variantId; buildText = "starting…";
+        buildSince = android.os.SystemClock.elapsedRealtime(); buildPct = 0;
         String name = gameName, id = titleId;
         File normal = pack;
         Activity act = a;
         ModBuildPipeline.start(a, r, new BuildListener() {   // a request that cannot be built comes back through done() too, with why
-            @Override public void progress(String step, int percent, String detail) { buildText = detail + " (" + percent + " %)"; renderCurrent(); }
+            @Override public void progress(String step, int percent, String detail) { buildText = detail + " (" + percent + " %)"; buildPct = percent; renderCurrent(); }
             @Override public void done(boolean ok, String message, String code) {
-                buildTitle = null; buildVariant = null; buildText = null;
+                buildTitle = null; buildVariant = null; buildText = null; buildPct = -1;
                 if (!ok) FAILED.put(variantId, message);   // also what keeps a failed or stopped build from starting again by itself (autoBuild)
                 String still = ok ? variantProblem(act, id, normal, variantPack) : null;   // ended well and cannot be played: said, and not built again and again
                 if (still != null) FAILED.put(variantId, "The build ended, but " + still + ".");

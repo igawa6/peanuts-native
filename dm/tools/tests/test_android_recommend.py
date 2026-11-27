@@ -18,8 +18,8 @@ SRC = REPO / 'android/app/src/main/java/dev/nxnative/android'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/RecommendJvmTest.java'
 FACTS = REPO / 'android/app/src/jvmtest/honor-pnm-n49.readiness.txt'
 GRADLE = REPO / 'android/app/build.gradle'
-FE = '04007EF01F8AE000'
-OOT = '0400486024DEC000'   # its rows: the driver on Qualcomm's own driver, the preset and vegetation on any Adreno (the no-stored-facts case)
+FE = str(REPO / 'peanuts/tests/fixtures/profiles/fortunes-weave')   # PEANUTS: Fire Emblem Fortune's Weave's and Ocarina of Time's rows, fixtures (their
+OOT = str(REPO / 'peanuts/tests/fixtures/profiles/ocarina')   # Switch 2 profiles are not carried); its rows: the driver on Qualcomm's own driver, the preset and vegetation on any Adreno (the no-stored-facts case)
 STUB = '''package dev.nxnative.android;
 public final class BuildConfig {
     public static final String NX_PROFILES = "";
@@ -102,7 +102,7 @@ class Rows(unittest.TestCase):
         self.assertEqual(recommend.column(game.load(FE)), 'driver.id=8,driver.version&0xffc00000=0x80000000,driver.version&0x3ff000<0x320000|driver=18;any|upscaler=fsr3')
 
     def test_refusals(self):
-        g = game.load('0400486024DEC000')   # Ocarina of Time: presets, options, vegetation, skip_layers, a frame step
+        g = game.load(OOT)   # Ocarina of Time: presets, options, vegetation, skip_layers, a frame step (PEANUTS: the fixture)
         ok = lambda *w: recommend.check_row(g, list(w))
         self.assertEqual(ok('any', 'res_preset=performance', 'upscaler=sgsr1', 'hold60=on'), 'any|res_preset=performance upscaler=sgsr1 hold60=on')
         self.assertTrue(ok('feature.meshShader=0', 'vegetation=off', 'skip_layers=on'))

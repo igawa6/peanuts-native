@@ -54,6 +54,10 @@ shader_note	Hogwarts Legacy shaders
 # PEANUTS: frame rate, FPSLocker Warehouse 0100F7E00C70E000/0C00FC37B0610FBD.yaml (1.0.5): r.DynamicRes.FrameTimeBudget, t.MaxFPS, r.VSync off. Unreal steps by elapsed time; marked experimental (README, Frame rate)
 fps_limit_present	1
 fps_limit_max	60
+# PEANUTS: Game owned (its own 30 fps, interval 2) until the player picks a limit. Since 0.1.8 fps_limit_present puts the game on the frame limit list, whose default is Game owned; this row is a safety net. In 0.1.7 the launcher passed the main screen's cap of 60 and FPSLocker interval 1 with no limit, an uncapped 24-37 fps that heated a Galaxy S24 Ultra into its GPU throttle (2026-11-24)
+fps_owned_default	1
+# PEANUTS: the thermal cap on Android (opt-in): a frame limit above 30 holds 30 while the phone is severe or worse (README, Frame rate)
+thermal_cap	1
 fpslocker	0c00fc37b0610fbdb2cf73aed0cc73e7	frame_ms_f32	0xa42c688/0x0	2	0
 fpslocker	0c00fc37b0610fbdb2cf73aed0cc73e7	target_f32	0xa4603a0/0x0	2	0
 fpslocker	0c00fc37b0610fbdb2cf73aed0cc73e7	zero_i32	0x9c0eed0/0x0	2	0

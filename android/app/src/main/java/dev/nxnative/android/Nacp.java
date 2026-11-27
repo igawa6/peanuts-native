@@ -28,6 +28,15 @@ final class Nacp {
         Control(String title, String publisher, String version, byte[] icon) { this.title = title; this.publisher = publisher; this.version = version; this.icon = icon; }
     }
 
+    /** The NACP's SupportedLanguageFlag (bit i: LANGUAGES[i]), 0 when the data is too short to have one */   // PEANUTS: #639
+    static int languages(byte[] nacp) { return nacp == null || nacp.length < 0x3030 ? 0 : (nacp[0x302C] & 0xff) | (nacp[0x302D] & 0xff) << 8 | (nacp[0x302E] & 0xff) << 16 | (nacp[0x302F] & 0xff) << 24; }
+
+    /** As languages(byte[]) for a control folder's control.nacp; 0 when there is none or it cannot be read */
+    static int languages(File control) {
+        try { return control == null ? 0 : languages(java.nio.file.Files.readAllBytes(new File(control, "control.nacp").toPath())); }
+        catch (java.io.IOException | RuntimeException e) { return 0; }
+    }
+
     /** The NACP language index for a language tag: the exact tag, else its language (fr-CA → fr, pt-PT → pt), else American English */
     static int language(String tag) {
         for (int i = 0; i < LANGUAGES.length; i++) if (LANGUAGES[i][0].equalsIgnoreCase(tag)) return i;

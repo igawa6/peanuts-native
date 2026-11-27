@@ -22,16 +22,43 @@ TOOL = REPO / 'dm/gfx/tools/vk_android_upgrade.py'
 def read(p): return p.read_text(encoding='utf-8')
 
 
-def releases():
+def table(name):
     src = read(BW)
-    table = src[src.index('RELEASES = {'):src.index('};', src.index('RELEASES = {'))]
-    return re.findall(r'\{"([0-9a-f]{12})", "([0-9.]+)"\}', table)
+    at = src.index(name + ' = {')
+    return src[at:src.index('};', at)]
+
+
+def releases():
+    """[(DMSH_VK_CHAIN, DMSH_CHAIN, version)], oldest first"""
+    return re.findall(r'\{"([0-9a-f]{12})", "([0-9a-f]{12})", "([0-9.]+)"\}', table('RELEASES'))
+
+
+def define(header, name):
+    return re.search(r'#define ' + name + r' "([0-9a-f]{12})"', read(REPO / 'dm/gfx/nvn' / header)).group(1)
+
+
+def tool_hops():
+    hops = read(TOOL)
+    return re.findall(r"\('([0-9a-f]{12})', '([0-9a-f]{12})'", hops[hops.index('HOPS = ['):hops.index('\n\n', hops.index('HOPS = ['))])
+
+
+def path_reaches(start, target, hops):
+    """Whether the hops lead from start to target, as vk_android_upgrade.py path_of walks them"""
+    nxt, v, seen = dict(hops), start, set()
+    while v != target:
+        if v not in nxt or v in seen: return False
+        seen.add(v); v = nxt[v]
+    return True
+
+
+def quick(vk, dmsh, cur_vk, cur_dmsh, hops):
+    return vk != cur_vk and dmsh == cur_dmsh and path_reaches(vk, cur_vk, hops)
 
 
 class Source(unittest.TestCase):
     def test_the_sheet_uses_it_off_the_main_thread(self):
         s = read(SHEET)
-        self.assertIn('BuiltWith.of(pack, titleId, dev.nxnative.android.BuildConfig.NX_DMSH_VK_CHAIN)', s)
+        self.assertIn('BuiltWith.of(pack, titleId, dev.nxnative.android.BuildConfig.NX_DMSH_VK_CHAIN, dev.nxnative.android.BuildConfig.NX_DMSH_CHAIN)', s)
         body = s[s.index('private void renderBuiltWith()'):]
         body = body[:body.index('\n    }\n')]
         self.assertLess(body.index('new Thread('), body.index('BuiltWith.of('))
@@ -44,31 +71,49 @@ class Source(unittest.TestCase):
         self.assertNotIn('RandomAccessFile', s)
 
     def test_the_build_names_this_version(self):
-        # this release's version is the build's, never written in the table
-        cur = re.search(r'#define DMSH_VK_CHAIN "([0-9a-f]{12})"', read(REPO / 'dm/gfx/nvn/dmsh_chain_vk.h')).group(1)
-        self.assertNotIn(cur, read(BW))
+        # this release's versions are the build's, never written in the table
+        src = read(BW)
+        self.assertNotIn(define('dmsh_chain_vk.h', 'DMSH_VK_CHAIN'), src)
+        self.assertIn('BuildConfig.NX_DMSH_CHAIN', read(SHEET))
 
     def test_table(self):
         r = releases()
-        self.assertEqual([v for _, v in r], ['0.1.0', '0.1.1', '0.1.3', '0.1.4', '0.1.5', '0.1.6', '0.1.7'])
-        self.assertEqual(len({c for c, _ in r}), len(r))
+        self.assertEqual([v for _, _, v in r], ['0.1.0', '0.1.1', '0.1.3', '0.1.4', '0.1.5', '0.1.6', '0.1.7', '0.1.8'])
+        self.assertEqual(len({c for c, _, _ in r}), len(r))
+        # the newest release's chains are the ones this tree moved from (#572: 0.1.8 to 0.1.9 moved both)
+        self.assertEqual(r[-1][:2], ('327c6383b614', 'cdcf140b1558'))
 
     @unittest.skipUnless(TOOL.is_file(), 'no upgrade tool')
-    def test_quick_releases_have_an_upgrade_path(self):
-        src = read(BW)
-        fast_from = re.search(r'FAST_FROM = "([0-9.]+)"', src).group(1)
-        cycle = re.findall(r'"([0-9a-f]{12})"', src[src.index('THIS_CYCLE = {'):src.index('};', src.index('THIS_CYCLE = {'))])
-        r = releases()
-        idx = [v for _, v in r].index(fast_from)
-        fast = [c for c, _ in r[idx:]] + cycle
-        hops = read(TOOL)
-        sources = set(re.findall(r"\('([0-9a-f]{12})', '[0-9a-f]{12}'", hops[hops.index('HOPS = ['):]))
-        for c in fast: self.assertIn(c, sources, c + ' reads as quick to upgrade, but the tool has no path from it')
-        for c, _ in r[:idx]: self.assertNotIn(c, sources, c + ' is upgradable: the sheet should not ask for a rebuild')
+    def test_hops_are_the_tools(self):
+        java = re.findall(r'\{"([0-9a-f]{12})", "([0-9a-f]{12})"\}', table('HOPS'))
+        self.assertEqual(java, tool_hops())
+
+    @unittest.skipUnless(TOOL.is_file(), 'no upgrade tool')
+    def test_quick_means_a_whole_path_to_this_version(self):
+        cur_vk, cur_dmsh, hops = define('dmsh_chain_vk.h', 'DMSH_VK_CHAIN'), define('dmsh_chain.h', 'DMSH_CHAIN'), tool_hops()
+        fast = [v for vk, dmsh, v in releases() if quick(vk, dmsh, cur_vk, cur_dmsh, hops)]
+        cycle = re.findall(r'\{"([0-9a-f]{12})", "([0-9a-f]{12})"\}', table('THIS_CYCLE'))
+        for vk, dmsh in cycle: self.assertTrue(quick(vk, dmsh, cur_vk, cur_dmsh, hops), vk + ' reads as this app version, but the tool has no whole path from it')
+        # 0.1.9: the translator rebuilt (#572) moved DMSH_CHAIN and DMSH_VK_CHAIN, and the hops end at 0.1.8's: no older library upgrades in place
+        if (cur_vk, cur_dmsh) == ('c1eff1d2d8c1', 'f36b2a1bcf19'):
+            self.assertEqual(fast, [])
+            self.assertEqual(cycle, [])
+        # the check itself: 0.1.8's hops reach 0.1.8 from 0.1.7, and not from 0.1.6 or past 0.1.8
+        self.assertTrue(quick('c679ddfbc5db', 'cdcf140b1558', '327c6383b614', 'cdcf140b1558', hops))
+        self.assertFalse(quick('c679ddfbc5db', 'cdcf140b1558', '327c6383b614', 'f36b2a1bcf19', hops), 'another DMSH_CHAIN')
+        self.assertFalse(quick('e084efc69b46', 'cdcf140b1558', '327c6383b614', 'cdcf140b1558', hops), 'no hop from 0.1.6')
+        self.assertFalse(quick('327c6383b614', 'cdcf140b1558', 'c1eff1d2d8c1', 'cdcf140b1558', hops), 'no hop past 0.1.8')
+
+    def test_remake_from_is_a_release(self):
+        remake = re.search(r'REMAKE_FROM = "([0-9.]+)"', read(BW)).group(1)
+        self.assertIn(remake, [v for _, _, v in releases()])
+        self.assertEqual(remake, '0.1.7')
 
     def test_voice(self):
         s = read(BW)
         self.assertNotIn('—', s)
+        note = s[s.index('public static String note('):]
+        self.assertNotIn('(', note[note.index('"'):note.index(';')].replace('" +', '').replace('+ "', ''))
 
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')

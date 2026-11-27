@@ -26,7 +26,7 @@ def nxsh(magic, stage):
     return bytes(h) + ctl + code
 
 
-def wide(files):
+def wide(files, de=16):   # PEANUTS: de=24, The Hundred Line's data entries (u64 offset, u64 length, u64 stored length)
     """A 64-bit MVGL archive of {'name.ext': (bytes, compress)}; the tree is a flat list (the reader walks every node, as the Patricia tree's order does not matter to it)"""
     names = sorted(files)
     nt = nn = len(names) + 1; nd = len(names)
@@ -38,8 +38,8 @@ def wide(files):
         stem, ext = n.rsplit('.', 1)
         tree += struct.pack('<IIII', i, i, 0, 0)
         nm += ext.encode().ljust(4, b'\0') + stem.encode().ljust(0x7c, b'\0')
-        data += struct.pack('<QII', len(blob), len(raw), len(stored)); blob += stored
-    start = 0x20 + nt * 16 + nn * 0x80 + nd * 16
+        data += struct.pack('<QII' if de == 16 else '<QQQ', len(blob), len(raw), len(stored)); blob += stored   # PEANUTS: de
+    start = 0x20 + nt * 16 + nn * 0x80 + nd * de   # PEANUTS: de
     return struct.pack('<4sIIIQQ', b'MDB1', nt, nn, nd, start, start + len(blob)) + tree + nm + data + blob
 
 
@@ -61,6 +61,18 @@ class WideMvgl(unittest.TestCase):
             self.assertEqual(a.read('shaders\\a_vp.shad'), self.vs)   # an LZ4 entry
             self.assertEqual(a.read('shaders\\a_fp.shad'), self.ps)   # a stored entry
             self.assertEqual(a.read('images\\b.img'), b'not a shader' * 40)
+
+    # PEANUTS begin: The Hundred Line's 24-byte data entries (mvgl.data_entry)
+    def test_reader_24(self):
+        arc = wide({'shaders\\a_vp.shad': (self.vs, True), 'shaders\\a_fp.shad': (self.ps, False)}, de=24)
+        self.assertTrue(mvgl.wide(arc[:0x20])); self.assertEqual(mvgl.data_entry(arc[:0x20]), 24); self.assertEqual(mvgl.data_entry(self.arc[:0x20]), 16)
+        with tempfile.TemporaryDirectory() as t:
+            a = mvgl.Archive(self.write(t, arc))
+            try:
+                self.assertEqual(a.read('shaders\\a_vp.shad'), self.vs)
+                self.assertEqual(a.read('shaders\\a_fp.shad'), self.ps)
+            finally: a.f.close()
+    # PEANUTS end
 
     def test_narrow_layout_is_not_wide(self):
         """The 32-bit layout (Cyber Sleuth): u16 counts, u32 start and size; its tables do not end at a 64-bit start"""

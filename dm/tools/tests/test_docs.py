@@ -16,6 +16,8 @@ sys.path.insert(0, str(REPO / 'dm/tools'))
 import docs_symptoms   # noqa: E402
 import docs_gallery   # noqa: E402
 import docs_patches   # noqa: E402
+sys.path.insert(0, str(REPO / 'peanuts/scripts'))   # PEANUTS: upstream docs may link to what Peanuts does not carry (peanuts/upstream-dropped.txt, the Switch 2 profiles)
+import dropped   # noqa: E402   PEANUTS
 
 SKIP = ('third_party', 'node_modules', 'wiki')   # wiki/ has its own link rules (page names, no .md): test_wiki.py
 AGENTS_WORDS, GUIDE_WORDS = 1500, 6000
@@ -65,6 +67,7 @@ class Links(unittest.TestCase):
                 file, _, anchor = t.partition('#')
                 dest = (p.parent / unquote(file)).resolve() if file else p
                 where = f'{p.relative_to(REPO)}:{n}: {t}'
+                if not dest.exists() and dropped.dropped(dest): continue   # PEANUTS: a link into a dropped Switch 2 profile or hook (upstream's note, left as it is)
                 if not dest.exists(): bad.append(f'{where} (no such file)'); continue
                 if anchor and dest.suffix == '.md' and unquote(anchor).lower() not in anchors(dest): bad.append(f'{where} (no such heading)')
         self.assertEqual(bad, [], '\n'.join(bad))
@@ -80,6 +83,7 @@ class GameNotes(unittest.TestCase):
             self.assertTrue((games / g / 'README.md').is_file(), f'dm/games/{g} has no README.md (its game note)')
             self.assertIn((g, g), rows, f'dm/games/{g} has no row in the games table of dm/games/README.md')
         for g, _ in rows:
+            if dropped.dropped_title(g): continue   # PEANUTS: upstream's table keeps its Switch 2 rows; Peanuts does not carry those profiles
             self.assertIn(g, profiles, f'the games table lists {g}, which has no profile')
 
 

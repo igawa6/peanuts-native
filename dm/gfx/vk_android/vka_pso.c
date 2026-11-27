@@ -160,6 +160,7 @@ static uint64_t g_pc_lib;   // the library this run's cache file is stamped with
 static vka_pck_stamp g_pck;   // the shaders the file was read with that this library has the same, and the stale estimate (the stamp's; written again with this run's)
 static uint64_t pck_hash_of(void *ctx, uint64_t key) { (void)ctx; return vka_shader_content(key); }
 static VkPipelineCache g_pc; static char g_pc_path[1024], g_pw_path[1100]; static uint64_t g_made, g_saved_at, g_save_ns; static double g_create_ms;
+static size_t g_pc_bytes;   // PEANUTS: the pipeline cache file's size at its last read or save (vka_pso_save)
 static uint64_t g_ngfx, g_ncs, g_nfail, g_ncs_over, g_create_ns, g_frame_made;   // all pipelines made (frame path, background and prewarm); g_frame_made / g_create_ns: on the frame path only
 static uint64_t g_probe_hit, g_probe_miss, g_probe_miss_ns;          // GPL: the cache-only try before a link (VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT)
 static _Atomic uint64_t g_save_ns_total, g_hy_draws, g_pw_wait_ns;
@@ -246,6 +247,7 @@ static void pc_open_once(void) {
     VkPipelineCacheCreateInfo ci = {VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, .initialDataSize = n, .pInitialData = n ? data : NULL};
     VkResult r = vk.vkCreatePipelineCache(V.dev, &ci, NULL, &g_pc);
     if (r && n) { ci.initialDataSize = 0; ci.pInitialData = NULL; r = vk.vkCreatePipelineCache(V.dev, &ci, NULL, &g_pc); vka_pck_free(&g_pck); n = 0; }   // (started empty after all)
+    if (!r) __atomic_store_n(&g_pc_bytes, n, __ATOMIC_RELAXED);   // PEANUTS: g_pc_bytes
     if (r) { g_pc = VK_NULL_HANDLE; VRED("vkCreatePipelineCache %d: pipelines are built without a cache", r); }
     else VLOG("pipeline cache %s: %zu bytes read (its stamp lists %zu shaders, %llu stale)", g_pc_path[0] ? g_pc_path : e && !strcmp(e, "0") ? "(none: DM_VK_PCACHE=0)" : vka_fp_guest() ? "(none: DM_VK_GUEST_FPCR=1)" : "(not kept: no DM_TEMP or HOME)", n,
               g_pck.n, (unsigned long long)g_pck.dead);
@@ -288,7 +290,7 @@ static void save_now(void) {
         if (d) {
             char tmp[1100]; snprintf(tmp, sizeof tmp, "%s.tmp", g_pc_path);
             if (pc_write_atomic(g_pc_path, tmp, d, n)) {   // PEANUTS(upstream-candidate): one close on every save path
-                g_saved_at = made;
+                g_saved_at = made; __atomic_store_n(&g_pc_bytes, n, __ATOMIC_RELAXED);   // PEANUTS: g_pc_bytes
                 // Its stamp after it: the shaders it was read with that this library keeps, and those this run made. Written whole or not at all (a stamp that
                 // cannot be written is removed, and the next run starts empty)
                 char sp[1100], st[1200]; snprintf(sp, sizeof sp, "%s.lib", g_pc_path); snprintf(st, sizeof st, "%s.lib.tmp", g_pc_path);
@@ -325,8 +327,18 @@ void vka_pso_save(int force) {
     if (!g_pc) return;
     uint64_t t = now_ns();
     if (force != 1) {
-        if (__atomic_load_n(&g_made, __ATOMIC_RELAXED) == g_saved_at && !atomic_load(&g_pcl_due)) return;   // PEANUTS: g_pcl_due (the shader parts' cache has something to save)
+        uint64_t made = __atomic_load_n(&g_made, __ATOMIC_RELAXED);   // PEANUTS: below
+        if (made == g_saved_at && !atomic_load(&g_pcl_due)) return;   // PEANUTS: g_pcl_due (the shader parts' cache has something to save)
+        // PEANUTS: a large cache (over PC_BIG_MB at its last read or save) with fewer than PC_FEW new pipelines since the last save waits DM_VK_PCACHE_SAVE_BIG_S (150 s; 0
+        // = no longer wait), or DM_VK_PCACHE_SAVE_S if longer. A save copies and writes the whole cache: Hogwarts Legacy's is 72 MB, and on a Galaxy S24 Ultra short of memory
+        // each save of 2 or 3 new pipelines took 4.5 s and stopped the game for 2.8 s while the player walked through Hogsmeade (2026-11-24). A save of the shader parts' cache
+        // alone (no new pipeline) and a small cache keep DM_VK_PCACHE_SAVE_S; the save at suspend (Home, another app) and at the end of the run stay forced, and a slow
+        // pipeline is saved within seconds (force 2)
+        enum { PC_FEW = 32, PC_BIG_MB = 32 };
         int s = force == 2 ? VKA_ENV("DM_VK_PCACHE_SAVE_SLOW_S", 3) : VKA_ENV("DM_VK_PCACHE_SAVE_S", 20); if (s < 1) s = 1;
+        if (force != 2 && made != g_saved_at && made - g_saved_at < PC_FEW && __atomic_load_n(&g_pc_bytes, __ATOMIC_RELAXED) > (size_t)PC_BIG_MB << 20) {   // PEANUTS: above
+            int big = VKA_ENV("DM_VK_PCACHE_SAVE_BIG_S", 150); if (big > s) s = big;
+        }
         if (t - g_save_ns < (uint64_t)s * 1000000000ull) return;
         g_save_ns = t;
         if (g_sv_up) { pthread_mutex_lock(&g_sv_mu); g_sv_want = 1; pthread_cond_signal(&g_sv_cv); pthread_mutex_unlock(&g_sv_mu); return; }

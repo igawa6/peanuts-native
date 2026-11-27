@@ -83,6 +83,9 @@ public final class GamePage {
     private static final android.os.Handler UI = new android.os.Handler(android.os.Looper.getMainLooper());
     private static final List<String> shown = new ArrayList<>();
     private static final Map<String, TextView> tileLines = new HashMap<>();   // the tiles' lines, for the ones that change while the page shows (Companion)
+    private static View shaderView;    // the optional shader update's line (shaderLine), null when there is none
+    private static CharSequence shaderWords;   // its card's words, for its sheet and the second screen
+    private static final Presses playPress = new Presses();   // Y's presses the page saw (playKey): the panel's and the pane's, a press on one may come up on the other
 
     // ---- Hooks ----
 
@@ -154,6 +157,8 @@ public final class GamePage {
         modsBody = null;
         panelView = null;
         explained = null;
+        shaderView = null;
+        shaderWords = null;
         Got got = new Got(a, f);
         GamePage.got = got;
         shown.clear();
@@ -240,6 +245,7 @@ public final class GamePage {
         } else if (f.missing != null) {
             PUi.add(p, PUi.small(a, f.missing), 12);
         }
+        if (got != null && got.shader != null) PUi.add(p, shaderLine(a, got.shader), 10);   // the optional shader update: one line under Play
         cover(a, f, cover, version, publisher, facts);
     }
 
@@ -307,6 +313,7 @@ public final class GamePage {
             pt.setMaxLines(2);
             PUi.add(side, pt, 6);
         }
+        if (got != null && got.shader != null) PUi.add(side, shaderLine(a, got.shader), 12);   // the optional shader update: one line, not a card over the tiles
         side.addView(new View(a), new LinearLayout.LayoutParams(1, 0, 1));
         if (f.play != null) {
             Button b = playButton(a, f);
@@ -421,10 +428,13 @@ public final class GamePage {
         @Override public boolean dispatchKeyEvent(KeyEvent e) { return playKey(e) || super.dispatchKeyEvent(e); }
     }
 
-    /** Y plays (its press and its release are taken; Play runs on the release); in Mods &amp; Cheats Y stays its rows' (their details) */
+    /**
+     * Y plays (its press and its release are taken; Play runs on the release of a press the page saw: Home opens the page at Y's press, and that press's
+     * release is not a Play, issue #599); in Mods &amp; Cheats Y stays its rows' (their details)
+     */
     private static boolean playKey(KeyEvent e) {
         if (e.getKeyCode() != KeyEvent.KEYCODE_BUTTON_Y || GameAreas.MODS.equals(area) || play == null || !play.isShown()) return false;
-        if (e.getAction() == KeyEvent.ACTION_UP && e.getRepeatCount() == 0) play.performClick();
+        if (playPress.released(e.getKeyCode(), e.getAction(), e.getRepeatCount(), e.getDownTime(), e.getFlags())) play.performClick();
         return true;
     }
 
@@ -466,10 +476,61 @@ public final class GamePage {
         return false;
     }
 
+    // ---- The optional shader update: one line, its words in a sheet ----
+
+    /**
+     * Upstream's optional shader update (GameSettings.shaderUpdateCard: its heading, its words and Update shaders) as one line of the game's: in the
+     * panel under the play time (wide), under Play on a phone. A or a tap opens the card's words in the app's sheet, with the card's own Update shaders;
+     * the second screen explains it while it has the focus. The card's text stays upstream's
+     */
+    private static View shaderLine(Activity a, View card) {
+        View update = null;   // upstream's Update shaders (Ui.Action: a row with its own click)
+        CharSequence words = null;
+        if (card instanceof ViewGroup) for (int i = 1; i < ((ViewGroup) card).getChildCount(); i++) {   // 0 is the heading
+            View v = ((ViewGroup) card).getChildAt(i);
+            if (v instanceof TextView && !(v instanceof Button)) { if (words == null) words = ((TextView) v).getText(); }
+            else if (update == null && v.hasOnClickListeners()) update = v;
+        }
+        LinearLayout t = PUi.row(a);
+        t.setGravity(Gravity.CENTER_VERTICAL);
+        t.setMinimumHeight(PUi.dp(a, 52));
+        t.setPadding(PUi.dp(a, 8), PUi.dp(a, 6), PUi.dp(a, 10), PUi.dp(a, 6));
+        t.setBackground(PUi.ripple(a, PUi.round(PUi.col(a, R.color.bn_card), PUi.dp(a, 14), PUi.col(a, R.color.bn_card_stroke), PUi.dp(a, 1))));
+        t.addView(rowTile(a, "update"), new LinearLayout.LayoutParams(PUi.dp(a, 36), PUi.dp(a, 36)));
+        LinearLayout col = new LinearLayout(a);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(PUi.dp(a, 10), 0, 0, 0);
+        TextView name = PUi.text(a, "Shader update", 14, R.color.bn_text, 600);
+        name.setSingleLine(true);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        col.addView(name);
+        TextView line = PUi.text(a, "Optional", 12, R.color.bn_text_2, 400);
+        line.setSingleLine(true);
+        col.addView(line);
+        t.addView(col, PUi.weight());
+        t.setFocusable(true);
+        t.setClickable(true);
+        t.setContentDescription("Shader update available. Optional");
+        View press = update;
+        CharSequence said = words;
+        t.setOnClickListener(Feel.row(v -> shaderSheet(a, said, press)));
+        shaderView = t;
+        shaderWords = words;
+        return t;
+    }
+
+    /** The shader update's words in the app's sheet: Update shaders (the card's own button, so upstream's action) or Later */
+    private static void shaderSheet(Activity a, CharSequence words, View update) {
+        android.app.AlertDialog.Builder b = PUi.sheet(a, "Shader update available", PUi.body(a, words == null ? "" : words)).setNegativeButton("Later", null);
+        if (update != null) b.setPositiveButton("Update shaders", (d, w) -> update.performClick());
+        android.app.AlertDialog d = b.create();
+        Feel.dialog(d);
+        d.show();
+    }
+
     // ---- The tiles ----
 
     private static void hub(Activity a, LinearLayout p, Got got, Facts f, boolean wide) {
-        if (got.shader != null) PUi.add(p, detach(got.shader), wide ? 0 : 14);
         int right = Math.min(a.getResources().getConfiguration().screenWidthDp, 1040) - 40 - (wide ? PANEL_DP + GAP_DP : 0);   // the page's right side, in dp
         int cols = right >= 700 ? 3 : 2;
         boolean upright = !wide;   // a phone: icon over name over two lines
@@ -477,7 +538,7 @@ public final class GamePage {
         int n = 0;
         for (String key : shown) {
             if (key.equals(GameAreas.ADVANCED)) continue;
-            if (n % cols == 0) { row = PUi.row(a); row.setBaselineAligned(false); PUi.add(p, row, n == 0 ? (got.shader != null ? 12 : wide ? 4 : 16) : 8); }
+            if (n % cols == 0) { row = PUi.row(a); row.setBaselineAligned(false); PUi.add(p, row, n == 0 ? (wide ? 4 : 16) : 8); }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
             if (n % cols > 0) lp.setMarginStart(PUi.dp(a, 8));
             row.addView(tile(a, GameAreas.area(key), got.line(key), false, upright), lp);
@@ -903,6 +964,7 @@ public final class GamePage {
             return true;
         }
         if (now == play) { explainPlay(); return true; }
+        if (now == shaderView) { explainShader(); return true; }
         for (View v = now; v != null && v != pane; v = v.getParent() instanceof View ? (View) v.getParent() : null) {
             if (v.getTag() instanceof Tile) { explainArea(((Tile) v.getTag()).key); return true; }
             String[] place = g.placeOf.get(v);
@@ -962,6 +1024,15 @@ public final class GamePage {
         if (e.rows.isEmpty()) e.rows.add(new CharSequence[] {ar.label, g.line(key)});
         e.keys = key.equals(area) ? keys(playKeyIf(), new String[] {"B", "Back"}, new String[] {"L", ""}, new String[] {"R", "Areas"})
                 : keys(new String[] {"A", "Open"}, playKeyIf(), new String[] {"B", "Home"});
+        show(e);
+    }
+
+    /** The optional shader update's line: the card's words */
+    private static void explainShader() {
+        Facts f = facts;
+        if (f == null) return;
+        BottomScreen.Explain e = start("shader", "update", "Shader update available", f.name, shaderWords == null ? "" : shaderWords.toString());
+        e.keys = keys(new String[] {"A", "Details"}, new String[] {"B", area == null ? "Home" : "Back"});
         show(e);
     }
 

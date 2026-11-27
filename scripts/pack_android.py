@@ -30,7 +30,7 @@
 # unfinished: the launcher refuses it, the next run rewrites it). Libraries of other versions in the pack's shaders/ are kept.
 # --code-only rewrites the modules and stops (pack.tsv, game.tsv and the shaders untouched); --keep-code packs without rewriting (the phone's two steps).
 # Usage: pack_android.py <game folder | .nup file> [--version N] [--out DIR] [-j N] [--shader-cache DIR] [--shader-pkg DIR] [--shader-python PY] [-J N] [--no-shaders] [--code-only | --keep-code] [--in-process]   (exit 1 on error)
-import argparse, hashlib, os, runpy, shutil, signal, struct, subprocess, sys, tempfile, time   # PEANUTS: struct (cross_module), tempfile (shader selection)
+import argparse, errno, hashlib, os, runpy, shutil, signal, struct, subprocess, sys, tempfile, time   # PEANUTS: struct (cross_module), tempfile (shader selection); PEANUTS(upstream-candidate): errno (copy_time, #495)
 from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'scripts')); sys.path.insert(0, str(REPO / 'dm/games'))
@@ -65,15 +65,30 @@ def stage(text, every=0.0):
     print(f'stage: {text}', flush=True)
 
 
+# PEANUTS(upstream-candidate) begin: copy_time, a copy's modification time without copystat, kept where the storage refuses it (#495)
+def copy_time(src, dst):
+    """dst takes src's modification time, by which a later pack sees that its copy is current (pack_shaders: the same size and time). Only the time: the
+    permission bits and flags shutil.copystat would also copy mean nothing on shared storage. A microSD card or a USB drive on Android refuses to set a file's
+    time (EPERM from os.utime, even for the app that wrote the file), which stopped the pack at its last step after the whole build (#495): there the copy is
+    kept without it, and the next pack copies the file again"""
+    st = os.stat(src)
+    try: os.utime(dst, ns=(st.st_atime_ns, st.st_mtime_ns))
+    except OSError as e:
+        if e.errno not in (errno.EPERM, errno.EACCES, errno.ENOTSUP, errno.ENOSYS): raise
+        print(f'{dst}: this storage does not keep a copied file\'s time ({errno.errorcode.get(e.errno, e.errno)}); a later pack copies it again', flush=True)
+# PEANUTS(upstream-candidate) end
+
+
 def copy_counted(src, dst, what):
-    """shutil.copy2 in 8 MiB pieces with 'stage: <what>: <n> of <m> MB' at most twice a second: the shader library (700 MB for Ocarina of Time) to shared storage"""
+    """A copy in 8 MiB pieces with 'stage: <what>: <n> of <m> MB' at most twice a second, and src's time where the storage keeps it (copy_time): the shader
+    library (700 MB for Ocarina of Time) to shared storage"""   # PEANUTS(upstream-candidate): src's time by copy_time (#495)
     total = os.path.getsize(src); done = 0
     stage(f'{what}: 0 of {total >> 20:,} MB')
     with open(src, 'rb') as i, open(dst, 'wb') as o:
         while b := i.read(8 << 20):
             o.write(b); done += len(b)
             stage(f'{what}: {done >> 20:,} of {total >> 20:,} MB', 0.5)
-    shutil.copystat(src, dst)
+    copy_time(src, dst)   # PEANUTS(upstream-candidate): not shutil.copystat, which stops on a microSD card (#495)
 
 
 def child_env(**kw):
@@ -508,10 +523,29 @@ def nso_zbic(path):   # whether the module's segments are ZBIC (NSO flag bit 7, 
     return b[:4] == b'NSO0' and bool(int.from_bytes(b[0xc:0x10], 'little') & 0x80)
 
 
+# PEANUTS begin: the app's heat pause holds the rewrite where it is (PackService.hold, GitHub #803). It ended the tool at each pause, and the code step began
+# again from 0 on the next start: 74 times in 4 hours on an AYN Odin 3 on its charger
+def held():
+    """Whether the app holds the step now: its PN_HOLD_FILE is there"""
+    h = os.environ.get('PN_HOLD_FILE')
+    return bool(h) and os.path.exists(h)
+
+
+def wait_while_held(out=None):
+    """Waits while the app holds the step (held), a stop (the app's interrupt) still ending it; True when it waited"""
+    if not held(): return False
+    if out: print('  held where it is (the phone is too hot): it goes on from here', file=out, flush=True)
+    while held(): time.sleep(0.5)
+    if out: print('  going on from where it was held', file=out, flush=True)
+    return True
+# PEANUTS end
+
+
 class ProgressTee:
     """A tool's output stream in run_in_process: everything to the file f; its "progress <done> <total> ..." lines also to out (this script's own output, the
-    step log Prepare reads), as "progress <n> 1000 code" with the tool's fraction placed in [base, base + width) of the step's 1000"""
-    def __init__(self, f, out, base, width): self.f, self.out, self.base, self.width, self.part = f, out, base, width, ''
+    step log Prepare reads), as "progress <n> 1000 code" with the tool's fraction placed in [base, base + width) of the step's 1000
+    PEANUTS: hold: the tool runs in this thread (run_in_process), so a hold (held) waits here, at its next progress line (#803)"""
+    def __init__(self, f, out, base, width, hold=False): self.f, self.out, self.base, self.width, self.part, self.hold = f, out, base, width, '', hold   # PEANUTS: hold
     def write(self, s):
         self.f.write(s)
         self.part += s
@@ -520,6 +554,7 @@ class ProgressTee:
             w = line.split()
             if len(w) >= 3 and w[0] == 'progress' and w[1].isdigit() and w[2].isdigit() and int(w[2]):
                 print(f'progress {self.base + self.width * min(int(w[1]), int(w[2])) // int(w[2])} 1000 code', file=self.out, flush=True)
+                if self.hold: wait_while_held(self.out)   # PEANUTS: #803
         return len(s)
     def flush(self): self.f.flush()
     def isatty(self): return False
@@ -543,7 +578,7 @@ def _run_in_process_once(script, args, env, log, progress, mode):   # PEANUTS: r
     saved = (sys.argv, list(sys.path), dict(os.environ), set(sys.modules), sys.stdout, sys.stderr, os.getcwd())
     code, rerun = 0, None
     with open(log, mode, buffering=1, encoding='utf-8', errors='backslashreplace') as f:
-        sys.stdout = sys.stderr = ProgressTee(f, saved[4], *progress) if progress else f
+        sys.stdout = sys.stderr = ProgressTee(f, saved[4], *progress, hold=True) if progress else f   # PEANUTS: hold (#803)
         try:
             os.environ.update(env); sys.argv = [str(script)] + [str(a) for a in args]; sys.path.insert(0, str(Path(script).parent))
             runpy.run_path(str(script), run_name='__main__')
@@ -622,7 +657,16 @@ def _rewrite_worker_once(cmd, script, args, env, log, progress, mode):   # pn_re
         reader = threading.Thread(target=pump, name='pn-rewrite-log', daemon=True)
         try:
             reader.start()
-            while reader.is_alive(): reader.join(0.5)
+            stopped = False   # PEANUTS: the worker and its forks stopped for the app's heat pause (held, #803): SIGSTOP, then SIGCONT, so it goes on where it was
+            while reader.is_alive():
+                reader.join(0.5)
+                # PEANUTS begin
+                if held() != stopped:
+                    stopped = not stopped
+                    try: os.killpg(p.pid, signal.SIGSTOP if stopped else signal.SIGCONT)
+                    except OSError: pass
+                    print('  held where it is (the phone is too hot): it goes on from here' if stopped else '  going on from where it was held', flush=True)
+                # PEANUTS end
             if failed: raise failed[0]
             code = p.wait()
             if code != REWRITE_RERUN or not last[0].startswith(RERUN_LINE): return code, None
@@ -854,6 +898,38 @@ def library_current(lib_dir, g):
     return (lib_dir / VK_LIB).is_file() and st.get('game') == g.id and st.get('inputs') == dmsh_chain.inputs(g)
 
 
+# PEANUTS: the split package a library was built from (#670). The library's own stamp (inputs.tsv) names the profile's inputs only, so a package that changed
+# under the same profile (shaders captured from a run added to it, a split of another dump) left a library that was called current and packed without them.
+# The package's digest goes in a file beside the library in the cache (not in the library, whose files are the chain's), and a library is taken only with it.
+PKG_STAMP = '.package'   # <cache>/<library name>.package
+
+
+def package_digest(pkg):
+    """Digest of a split package folder: every file under it, by its path in the folder and its bytes"""
+    h = hashlib.sha256()
+    for f in sorted(p for p in pkg.rglob('*') if p.is_file()):
+        h.update(f.relative_to(pkg).as_posix().encode() + b'\0' + str(f.stat().st_size).encode() + b'\0')
+        with f.open('rb') as fh:
+            for b in iter(lambda: fh.read(1 << 20), b''): h.update(b)
+    return h.hexdigest()[:16]
+
+
+def package_stamp(lib_dir):
+    return lib_dir.with_name(lib_dir.name + PKG_STAMP)
+
+
+def package_current(lib_dir, pkg):
+    """True when the library in lib_dir was built from the package in pkg, as far as can be told. No package folder: there is nothing to compare, the library is
+    what there is. A library from before its package was stamped: current when no file of the package is newer than the library (then stamped with the package)"""
+    if not pkg.is_dir(): return True
+    st, digest = package_stamp(lib_dir), package_digest(pkg)
+    if st.is_file(): return st.read_text(encoding='utf-8').strip() == digest
+    try: built = (lib_dir / VK_LIB).stat().st_mtime_ns
+    except OSError: return False
+    if any(p.is_file() and p.stat().st_mtime_ns > built for p in pkg.rglob('*')): return False
+    write_lf(st, digest + '\n'); return True
+
+
 def map_keys(path):
     """The keys of a shader_map.tsv (column 4 of its package rows)"""
     with open(path) as f: return {c[3] for c in (l.rstrip('\n').split('\t') for l in f) if len(c) > 4 and c[0].endswith('.bin')}
@@ -1027,9 +1103,12 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
     cache = (a.shader_cache or work / 'android-shaders' / 'lib').resolve(); lib = cache / name
     dst = out / 'shaders' / name
     stage('checking the saved shaders')  # PEANUTS: build text in the player's words (0.1.8)
-    if not library_current(lib, g):
+    pkg = (a.shader_pkg or work / 'android-shaders' / 'pkg').resolve()
+    current = library_current(lib, g)
+    if current and not package_current(lib, pkg):   # PEANUTS: the profile's inputs are the same, the package is not (#670)
+        print(f'shaders: {lib} was built from another shader package than {pkg}: building it again', flush=True); current = False
+    if not current:
         if a.in_process: raise Error(f'no current shader library {lib}: --in-process does not build one yet (vk_android_build.py starts the translator and spirv-val as programs); --no-shaders packs without')
-        pkg = (a.shader_pkg or work / 'android-shaders' / 'pkg').resolve()
         if not pkg.is_dir(): split_shaders(a, g, vdir, pkg, parts, aoc, collected_nros(work))   # also into a --shader-pkg folder that is not there yet
         py = shader_python(a.shader_python)
         print(f'shaders: building the Vulkan library {lib} from {pkg} with {py} (J={a.J}; about 10 minutes on DKB)', flush=True)
@@ -1058,6 +1137,7 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
             r = subprocess.run([py, str(VK_BUILD_WIN if WINDOWS or sys.platform.startswith('linux') else VK_BUILD), '--target', 'vulkan', str(pkg), str(cache), *args], env=env)   # PEANUTS: on Linux too, for the translator's start (the repository's apphost is the Mac's; vk_android_win.py starts the dlls with dotnet)
         if r.returncode: raise Error(f'vk_android_build.py exit code {r.returncode} (a package that lacks the profile\'s shaders stops it: delete {pkg} and the split runs again)')
         if not library_current(lib, g): raise Error(f'vk_android_build.py finished but {lib} is not a full library of {g.id} with the current inputs')
+        if pkg.is_dir(): write_lf(package_stamp(lib), package_digest(pkg) + '\n')   # PEANUTS: the package it was built from (#670)
     else: print(f'shaders: {lib} is current (game {g.id}, inputs {dmsh_chain.inputs(g)})')
     dst.mkdir(parents=True, exist_ok=True)
     if not (lib / dmsh_chain.STAMP).is_file():   # a library copied without its stamp: written from its header (library_current took it from there)
@@ -1068,7 +1148,7 @@ def pack_shaders(a, g, work, out, vdir, parts=None, aoc=()):
         if d_.is_file() and d_.stat().st_size == s_.stat().st_size and d_.stat().st_mtime_ns == s_.stat().st_mtime_ns: continue
         tmp = d_.with_name(f + '.partial')
         if f == VK_LIB: copy_counted(s_, tmp, 'copying the shaders into the build')  # PEANUTS: build text in the player's words (0.1.8)
-        else: shutil.copy2(s_, tmp)
+        else: shutil.copyfile(s_, tmp); copy_time(s_, tmp)   # PEANUTS(upstream-candidate): not copy2, whose copystat stops on a microSD card (copy_time, #495)
         os.replace(tmp, d_)   # replace: Windows' rename does not take an existing name
     others = sorted(o.name for o in (out / 'shaders').iterdir() if o.name != name and o.name.startswith(VK_PREFIX) and o.is_dir())
     if others:   # kept: another APK (the test and the play app, an older build) may load one of them from this pack; delete by hand to save the space

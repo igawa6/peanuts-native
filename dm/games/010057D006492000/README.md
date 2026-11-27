@@ -62,6 +62,18 @@ General changes first needed here; each applies to every game:
 - **NVN:** `nvnTextureBuilderGetSparseTileLayout` / `nvnTextureGetSparseTileLayout`: [The sparse tile layout of a texture](../../../docs/reference/nvn-objects.md#the-sparse-tile-layout-of-a-texture); every virtual pool with a range of its own until its first mapping decides: [Virtual pools of one texture each](../../../docs/reference/nvn-objects.md#virtual-pools-of-one-texture-each-mapped-before-and-after-the-texture); sparse textures' block height: [Sparse textures take the block height of their 64 KB tile](../../../docs/reference/rendering.md#sparse-textures-take-the-block-height-of-their-64-kb-tile).
 - **Audio:** the update lock without `SdkMutexType`: [No `SdkMutexType` in SDK 3](../../../docs/reference/audio.md#no-sdkmutextype-in-sdk-3).
 
+<!-- PEANUTS begin: Android results (#767), on the 0.1.9 release list -->
+## Android
+
+On the release list from 0.1.9 (`peanuts/release-titles.txt`, so in the default APK), with no readiness row. The results are the contributor's (pull request #767); the game has not been run on an AYN Thor.
+
+- 2026-11-26, OnePlus 13R (Snapdragon 8 Gen 3, Adreno 750, 11 GiB, Android 16), the test app; 1.0.5 built on the phone by the app (5,434 shaders, 8,678 SPIR-V modules). Played past the title, the character selection, the Atlasdam overworld, the Royal Academy and Library, saving and loading, and battles (Fireball, Icewind, Study Foe), with no crash and clean sound.
+- **Turnip** (Mr Purple T30): 30 fps, locked (p50 33.1 to 33.6 ms), 0 failed pipelines.
+- **Qualcomm's driver `512.762.41`:** scrambled diagonal blocks, flicker and speckles until `DM_VK_DYN_FILTER=0`, which the host now sets by itself on Qualcomm drivers before 512.800 (`[auto] DM_VK_DYN_FILTER=0`). With it: 30 fps, locked (p50 33.3 ms), 0 failed pipelines, and a small speckle on one entrance rug in the Royal Library.
+- On both drivers the Royal Library's entrance rug can show a texture glitch on the first entry after boot; leaving and entering again clears it.
+- Not checked: Qualcomm drivers from 512.800 on, a dual-screen handheld.
+<!-- PEANUTS end -->
+
 ## Open
 
 - A battle, the sound and the iPhone are not tested; the IPA (3.6 GB) is built but not run on a device.

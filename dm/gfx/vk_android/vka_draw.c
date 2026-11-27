@@ -157,6 +157,7 @@ static int statics(void) {
 enum { NSLOT = 8, MAXPOOLS = 64 };
 static VkDescriptorPool g_dp[NSLOT][MAXPOOLS]; static int g_ndp[NSLOT], g_cur_dp[NSLOT];
 void vka_dyn_invalidate(void);
+static void ds_forget(void);   // PEANUTS(upstream-candidate) (below)
 static void drv_memo_reset(void);
 static void rp_miss_reset(void);   // g_miss_n, below: a submission's draws start the render-area miss count again
 static void tbc_reset(void);   // PEANUTS: (below)
@@ -166,7 +167,7 @@ void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot) {
     { void vka_mem_rec_thread(void); vka_mem_rec_thread(); }   // the address lookups' cache outside TLS for the recording thread (vka_mem.c)
     drv_memo_reset();   // the last submission's scratch spans go with its fence
     tbc_reset();   // PEANUTS: so do the copies of read-only texel buffers (tbuf_view)
-    g_prof_all = VKA_ENV("DM_VK_PROF", 0) != 0; g_prof = g_prof_all; g_prof_every = VKA_ENV("DM_VK_PACE_LOG", 5000) > 0 ? VKA_ENV("DM_VK_PACE_PROF", 16) : 0; g_dyn_filter = VKA_ENV("DM_VK_DYN_FILTER", 1); g_pass_keep = VKA_ENV("DM_VK_PASS_KEEP", 1); g_vb_filter = VKA_ENV("DM_VK_VB_FILTER", 1); g_inst_on = VKA_ENV("DM_VK_INSTANCE", 0);   // live: from this submission
+    g_prof_all = VKA_ENV("DM_VK_PROF", 0) != 0; g_prof = g_prof_all; g_prof_every = VKA_ENV("DM_VK_PACE_LOG", 5000) > 0 ? VKA_ENV("DM_VK_PACE_PROF", 16) : 0; g_dyn_filter = VKA_ENV("DM_VK_DYN_FILTER", !V.qcom_old); g_pass_keep = VKA_ENV("DM_VK_PASS_KEEP", 1); g_vb_filter = VKA_ENV("DM_VK_VB_FILTER", 1); g_inst_on = VKA_ENV("DM_VK_INSTANCE", 0);   // live: from this submission; PEANUTS(upstream-candidate): !V.qcom_old
     g_vin_skip = VKA_ENV("DM_VK_VIN_SKIP", 1);
     g_vattr_clear = VKA_ENV("DM_VK_VATTR_CLEAR", 1);
     for (int i = 0; i < g_ndp[g_slot]; i++) vk.vkResetDescriptorPool(V.dev, g_dp[g_slot][i], 0);   // the slot's last submission is done (mtl_sub_begin waited for it)
@@ -239,10 +240,16 @@ static void ub_flush(void) {
     if (!UB.n) return;
     int n = UB.n; UB.n = 0; UB.m_valid = 0;
     uint64_t last_d = 0, last_n = 0;
+    // PEANUTS begin: stage-scoped barriers for inline uniform buffer copies
+    vka_barrier_stages(g_cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
     vka_rw_pre(g_cb);
     for (int i = 0; i < n; i++) {
         uint64_t dst = UB.e[i].dst, sz = UB.e[i].n; const uint8_t *data = UB.e[i].data;
-        for (int j = 0; j < i; j++) if (UB.e[j].dst < dst + sz && dst < UB.e[j].dst + UB.e[j].n) { vka_barrier(g_cb); break; }
+        for (int j = 0; j < i; j++) if (UB.e[j].dst < dst + sz && dst < UB.e[j].dst + UB.e[j].n) {   // PEANUTS: #503 #505 #562 #563
+            vka_barrier_stages(g_cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+            break;
+        }
         vka_span s; if (!sz || !vka_scratch(sz, 16, &s)) { VRED_ONCE("inline uniform update at %#llx (%llu bytes): no staging memory, the update is lost", (unsigned long long)dst, (unsigned long long)sz); continue; }
         memcpy(s.ptr, data, (size_t)sz);
         for (uint64_t done = 0; done < sz;) {
@@ -252,12 +259,16 @@ static void ub_flush(void) {
         }
         last_d = dst; last_n = sz;
     }
-    vka_barrier(g_cb);
+    vka_barrier_stages(g_cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,   // PEANUTS: #503 #505 #562 #563
+                       VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
+    // PEANUTS end
     if (last_n) vka_rw_point(g_cb, 'u', 0, last_n, last_d);
 }
+void vka_ub_flush(void) { if (!R.on && UB.n) { vka_disp_settle(g_cb); ub_flush(); } }   // PEANUTS: flush outside-pass deferred UBs
 static void inst_close(void);
 int vka_rp_ub_defer(uint64_t dst, uint64_t n, const void *data) {
-    if (!R.on || !n || n > 65536 || !VKA_ENV("DM_VK_UB_DEFER", 1)) return 0;
+    if (!g_cb || !n || n > 65536 || !VKA_ENV("DM_VK_UB_DEFER", 1)) return 0;   // PEANUTS: also allow outside a pass
+    if (!R.on && !VKA_ENV("DM_VK_UB_DEFER_OUTSIDE", 1)) return 0;   // PEANUTS: toggle just outside-pass deferral
     for (uint64_t done = 0; done < n;) {
         VkBuffer b; VkDeviceSize o; uint64_t k = vka_addr_run(dst + done, n - done, &b, &o);
         if (!k) return 0;
@@ -451,7 +462,13 @@ void vka_rp_end(void) {
     g_zlog_pass = 0;
     vka_oq_pass_end();   // an occlusion query active in the pass ends inside it
     if (R.classic) vk.vkCmdEndRenderPass(g_cb); else vk.vkCmdEndRendering(g_cb);
-    vka_barrier(g_cb);   // the pass's writes before whatever reads them next (copies, the present, the next pass's samples)
+    // PEANUTS begin: scope pass-end barrier to the stages that wrote in this pass
+    VkPipelineStageFlags src = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkAccessFlags acc = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    if (R.df || R.sf) { src |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT; acc |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT; }
+    if (R.swrite) { src |= VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT; acc |= VK_ACCESS_SHADER_WRITE_BIT; }
+    vka_barrier_stages(g_cb, src, acc, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
+    // PEANUTS end
     vka_xp_ts(g_cb, 1);
     bcrt_flush();        // block-compressed targets drawn through shadows: their blocks back (bcrt_attach)
     ub_flush();          // inline uniform updates deferred during the pass: copied into placed guest RAM
@@ -725,6 +742,7 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const p_scissor *sc, int has
     }
     if (!R.classic) vk.vkCmdBeginRendering(g_cb, &ri);
     R.on = 1; vka_n_rp++; if (g_dyn_filter == 2) vka_dyn_invalidate();   // DM_VK_DYN_FILTER=2: the dynamic state set again at each pass (bisect)
+    else if (VKA_ENV("DM_VK_DS_PASS", 1)) ds_forget();   // PEANUTS(upstream-candidate): the depth / stencil state set again in each pass (ds_forget)
     g_zdir = 0;
     if (dp) { g_zs.npb++; if (dp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) g_zs.nlc++; for (int k = 0; k < nlate; k++) if (late[k]->asp & VK_IMAGE_ASPECT_DEPTH_BIT) g_zs.ncl++; }
     g_rtl_pass = rtl_size(w, h); g_rtl_d = 0;
@@ -1290,12 +1308,12 @@ static struct { int valid, alpha; uint32_t ref; float rs0, v; vka_span s; } g_sm
 static int g_drv_memo = 1, g_drv_stamp = 1; static uint64_t g_dm_hit, g_dm_miss, g_dm_stamp;
 static void drv_memo_reset(void) { for (int st = 0; st < VKA_NSTAGE; st++) for (int b = 0; b < 3; b++) g_dm[st][b].valid = 0; g_gm.valid = 0; g_sm_ref.valid = 0; g_sm_rs.valid = 0; /* PEANUTS: g_sm_rs */ g_drv_memo = VKA_ENV("DM_VK_DRV_MEMO", 1); g_drv_stamp = VKA_ENV("DM_VK_DRV_STAMP", 1); }
 // What a graphics stage's segment is filled from (vka_bind.c vka_drv_fill), as stamps and values: c0 from the stage's storage buffers, the base instance and the sample
-// count; c2 from the stage's texture, sampler and image handles (and the pools' bases when the shader reads the pools); the push bank from the pushed constants. The same
+// PEANUTS(upstream-candidate): count; c2 from the stage's raw texture, sampler and image handles; the push bank from the pushed constants. The same
 // key as the memo's: the same bytes, so the draw binds the memo's span without filling the segment and comparing it (DM_VK_DRV_STAMP, live from the next submission,
 // default 1; 0: filled and compared every draw, as before). A c2 fill and compare is ~0.3 us a stage on the Mac (its 2.5 KB, 300 handle words)
 static void drv_key(const vka_dstate *d, int st, int bi_, int pool, uint64_t k[3]) {
     if (bi_ == 0) { k[0] = d->s_ssbo[st]; k[1] = d->b.base_instance; k[2] = d->b.samples; }
-    else if (bi_ == 1) { k[0] = d->s_tex[st]; k[1] = pool & VKA_POOL_READS ? (uint64_t)(uint32_t)d->b.tex_base | (uint64_t)(uint32_t)d->b.samp_base << 32 : 0; k[2] = (uint64_t)pool; }   // PEANUTS: pool bits (vka_bind.h)
+    else if (bi_ == 1) { k[0] = d->s_tex[st]; k[1] = (uint64_t)(pool & VKA_POOL_DYN); k[2] = 0; }   // PEANUTS: pool bits (vka_bind.h)
     else { k[0] = d->s_push; k[1] = k[2] = 0; }
 }
 static int drv_seg(const vka_dstate *d, int st, int bank, int pool, VkDescriptorBufferInfo *bi, c0_at *c0) {
@@ -1602,7 +1620,7 @@ static VkBufferView tbuf_view(const vka_shader *sh, int tid, const vka_res *r, i
 // PEANUTS begin: resolution scale: the translated shaders' own scale code (Ryujinx's, vka_resscale.inc) reads the support buffer. render_scale[0] divides gl_FragCoord.xy
 // in a pixel shader: the factor in a pass over scaled targets, so the shader goes on seeing the game's pixels. render_scale[1 + i] scales the integer coordinates of a
 // fetch from the stage's i-th plain 2D texture (and unscales its size query): the library does not say which binding i is, so every entry gets the factor when all the
-// stage's plain 2D textures are scaled images and stays 1 when none is (rs_fetch_fix makes it one or the other); negative in a pixel shader whose pass and textures are
+// stage's plain 2D textures it fetches from or sizes are scaled images (the entries of textures it only samples are not read) and stays 1 when none is (rs_fetch_fix makes it one or the other); negative in a pixel shader whose pass and textures are
 // one size, which makes the helper fetch the pixel's own texel instead of every other one. Only shaders that read those entries are looked at (vka_shader.rs_fetch)
 static struct { uint8_t tx; uint32_t w, h; } g_rsx[VKA_NSTAGE];   // per stage, from rs_fetch_fix: its fetched 2D textures are scaled images, and their size when they have one size
 static int rs_support(const vka_dstate *d, int st, const vka_shader *sh, VkDescriptorBufferInfo *bi) {   // 1 = *bi is a support buffer with the scale in it
@@ -1800,11 +1818,11 @@ static int push_same(VkPipelineBindPoint bp, VkPipelineLayout layout) {
     }
     int c = bp == VK_PIPELINE_BIND_POINT_COMPUTE;
     if (VKA_ENV("DM_VK_PUSH_DEDUP", 1) && g_pd[c].n == k && !memcmp(g_pd[c].w, buf, k * sizeof *buf)) { g_pd_skip++; g_pd_skip_all++; return 1; }
-    // DM_VK_PUSH_DELTA=1 (live, default 0 until phone-checked): the same layout and the same writes in the same order as the last push, some of them with other descriptors:
+    // DM_VK_PUSH_DELTA=0 (live, default 1 on Turnip and Qualcomm, 0 elsewhere): the same layout and the same writes in the same order as the last push, some of them with other descriptors:   // PEANUTS: #503 #505 #562 #563
     // only those are pushed. Vulkan lets push descriptors be updated incrementally; the others stay as the last push left them (until the set is disturbed: a new command
     // buffer or part, a set bound in its place, which forget g_pd)
     g_dwn = 0;
-    if (VKA_ENV("DM_VK_PUSH_DELTA", 0) && g_pd[c].n == k && g_pd[c].w[0] == buf[0] && g_pd[c].w[1] == buf[1]) {
+    if (VKA_ENV("DM_VK_PUSH_DELTA", V.driver_id == VK_DRIVER_ID_MESA_TURNIP || V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY) && g_pd[c].n == k && g_pd[c].w[0] == buf[0] && g_pd[c].w[1] == buf[1]) {   // PEANUTS: #503 #505 #562 #563
         int ok = 1;
         for (uint32_t i = 0; i < g_w.n && ok; i++) {
             const uint64_t *a = g_pd[c].w + 2 + 4 * (size_t)i, *b = buf + 2 + 4 * (size_t)i;
@@ -1889,7 +1907,8 @@ static int bind_sets(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], cons
     return sets_push(lay, bp, any_pool);
 }
 // PEANUTS begin: resolution scale: the stages of this draw or dispatch whose shader fetches by pixel (vka_shader.rs_fetch): their plain 2D textures (not arrays, not
-// multisampled) are all scaled images or none is, for rs_support's one factor. A mix scales the scaled ones down for good (RS_WHY_FETCH_MIX), outside any pass.
+// multisampled) that it fetches from or sizes by pixel (vka_shader.rs_fb; one it only samples reads right at any scale, #703) are all scaled images or none is, for
+// rs_support's one factor. A mix scales the scaled ones down for good (RS_WHY_FETCH_MIX), outside any pass.
 // After make_images (every image exists), from the walk
 static void rs_fetch_fix(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) {
     for (int st = 0; st < VKA_NSTAGE; st++) {
@@ -1900,6 +1919,7 @@ static void rs_fetch_fix(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) 
             for (int i = 0; i < n; i++) {
                 if (r[i].what != VKA_R_TEX || !r[i].tid || (r[i].dim & (DMSH_VK_DIM_MASK | DMSH_VK_DIM_ARRAY | DMSH_VK_DIM_MS)) != 1) continue;   // (SPIR-V Dim 2D)
                 if ((i && r[i - 1].binding == r[i].binding) || (i + 1 < n && r[i + 1].binding == r[i].binding)) continue;                       // an array of textures: read without the helper
+                if (!vkrs_fb_has(&s->rs_fb, r[i].binding)) continue;                                                                                // only sampled by normalized coordinates: right at any scale (#703)
                 vka_img *im = vka_tex_id_img(r[i].tid, g_cb); if (!im) continue;
                 if (pass && im->rsc) { vka_rs_st.ctx_key = s->key; if (!vka_tex_rs_down(im, g_cb, RS_WHY_FETCH_MIX)) vka_rs_st.skip++; vka_rs_st.ctx_key = 0; }
                 if (im->rsc) { ns++; if (w && (w != im->w || h != im->h)) same = 0; w = im->w; h = im->h; } else nu++;
@@ -1949,6 +1969,7 @@ static int draw_writes(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) {
     if (sh[2] && sh[2]->gs_fx > 0) return 1;
     for (int st = 0; st < VKA_NSTAGE; st++) {
         if (!sh[st] || (st == 1 && d->rast_discard)) continue;
+        if (g_wk.n[st] < 0) return 1;   // PEANUTS: failed resource walk may write
         const vka_res *r = g_wk.r[st];
         for (int i = 0; i < g_wk.n[st]; i++) if ((r[i].flags & DMSH_VK_BF_RW) || r[i].what == VKA_R_IMG || r[i].what == VKA_R_GMEM_LOG) return 1;
     }
@@ -2142,6 +2163,14 @@ static void ib_bind(VkBuffer b, VkDeviceSize o, VkDeviceSize size, VkIndexType t
 }
 static void inst_reset(void);
 static void fbl_pass_begin(void) { DY.fbl = ~0u; }   // PEANUTS: feedback loops: emitted again at the pass's first draw
+// PEANUTS(upstream-candidate): Qualcomm's driver (512.676.53, Adreno 740) does not carry the depth / stencil dynamic state into a new render pass (vkCmdBeginRendering):
+// a pass whose draws set none of it, because it equals what the pass before left, draws as if with other depth state (Pokémon: Let's Go's lab pass after its shadow pass,
+// both depth test, write, LESS: every lit pixel 0), while Vulkan keeps dynamic state for the life of the command buffer and Turnip draws it right. Setting any one of them
+// in the pass restores the whole frame. So at each pass begin these are forgotten and the pass's first draw sets them again (some 7 calls a pass). DM_VK_DS_PASS=0 (live): as before
+static void ds_forget(void) {
+    DY.dt = DY.dw = DY.dc = DY.dbt = DY.stt = 0xffffffffu;
+    memset(DY.sop, 0xff, sizeof DY.sop); memset(DY.smask, 0xff, sizeof DY.smask);
+}
 void vka_dyn_invalidate(void) { DY.valid = 0; VB.valid = 0; VBC.valid = 0; IB.valid = 0; g_pd[0].n = g_pd[1].n = 0; inst_reset(); }
 #define PT(i) do { if (g_prof) { uint64_t t_ = cntvct(); if ((i) > 0 && g_pt_ph == (i) - 1) g_pt[(i) > 0 ? (i) - 1 : 0] += t_ - g_pt_last; g_pt_last = t_; g_pt_ph = (i); } } while (0)
 // ---------- Instanced runs (DM_VK_INSTANCE) ----------
@@ -3417,7 +3446,9 @@ static uint64_t g_disp_settled, g_disp_saved;   // pending barriers recorded lat
 uint64_t vka_disp_cleared;   // pending barriers a full barrier settled (vka_barrier_at), vka_disp_settle's own included
 void vka_disp_settle(VkCommandBuffer cb) {
     if (!cb || atomic_load_explicit(&vka_disp_pend, memory_order_relaxed) != cb) return;
-    g_disp_settled++; vka_barrier(cb);   // (clears vka_disp_pend)
+    g_disp_settled++;   // PEANUTS: #503 #505 #562 #563
+    vka_barrier_stages(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,   // PEANUTS: scope dispatch settle to compute writes
+                       VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);   // (clears vka_disp_pend)
 }
 // The census: dispatches by shader key and the game's call site (p_dispatch.caller, a module offset), so a log says whose work a frame's dispatches are
 int vka_mod_off(uint64_t addr, const char **name, uint64_t *off);   // vka_mem.c

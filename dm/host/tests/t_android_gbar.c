@@ -111,6 +111,34 @@ int main(void) {
     vkgb_reset(&g); memset(&s, 0, sizeof s); CHECK(vkgb_game(&g, 0, 1, &s) == 0, "a barrier in a new command buffer before its first full barrier was taken");
     fresh(); cmd(VKGB_C_DISPATCH, &ind); CHECK(vkgb_game(&g, 0, 0, &s) == 0 && s.full == 1, "DM_VK_BAR_NARROW=0 took a barrier");
 
+    // PEANUTS begin: vka_gbar.c g_vkCmdPipelineBarrier() cases: COMPUTE->ALL (VKGB_C_FULL) avoids duplicate settle, and scoped->ALL resets since=VKGB_NONE
+    fresh(); cmd(VKGB_C_DISPATCH, &ind); CHECK(vkgb_game(&g, 0, 1, &s) == 1, "pending before COMPUTE->ALL");
+    CHECK(cmd(VKGB_C_FULL, &ind) == VKGB_B_NONE && s.settled == 0 && g.since == VKGB_NONE, "COMPUTE->ALL avoided duplicate settle");
+    fresh(); cmd(VKGB_C_DISPATCH, &ind); cmd(VKGB_C_WORK, &ind); g.since = VKGB_NONE;
+    cmd(VKGB_C_DISPATCH, &ind);
+    CHECK(vkgb_game(&g, 0, 1, &s) == 1 && s.full == 0, "next game barrier after scoped->ALL (since=VKGB_NONE) was taken");
+    // The host barrier's kind (vkgb_host_bar), scoped (DM_VK_BAR_SCOPED=1) and as before (0)
+    {
+        const uint32_t ALL = VKGB_STAGE_ALL, CS = VKGB_STAGE_COMPUTE, XFER = 0x1000, COLOR = 0x400, RW = VKGB_ACC_MEM_READ | VKGB_ACC_MEM_WRITE, XW = 0x1000, CW = 0x100;
+        CHECK(vkgb_host_bar(ALL, ALL, VKGB_ACC_MEM_WRITE, RW, 0, 1) == VKGB_H_FULL && vkgb_host_bar(ALL, ALL, VKGB_ACC_MEM_WRITE, RW, 0, 0) == VKGB_H_FULL, "the full barrier is full either way");
+        CHECK(vkgb_host_bar(CS, ALL, VKGB_ACC_SHADER_WRITE, RW, 0, 1) == VKGB_H_FULL, "COMPUTE->ALL from shader writes settles what is pending (scoped)");
+        CHECK(vkgb_host_bar(CS, ALL, VKGB_ACC_SHADER_WRITE, RW, 0, 0) == VKGB_H_WORK, "COMPUTE->ALL is work of its own with DM_VK_BAR_SCOPED=0");
+        CHECK(vkgb_host_bar(CS, ALL, VKGB_ACC_SHADER_WRITE, RW, 1, 1) == VKGB_H_FULL, "COMPUTE->ALL with an image barrier beside it still settles");
+        CHECK(vkgb_host_bar(XFER, ALL, XW, RW, 0, 1) == VKGB_H_SINCE_NONE && vkgb_host_bar(COLOR, ALL, CW, RW, 0, 1) == VKGB_H_SINCE_NONE, "a scoped barrier to ALL leaves since NONE");
+        CHECK(vkgb_host_bar(XFER, ALL, XW, RW, 0, 0) == VKGB_H_WORK && vkgb_host_bar(COLOR, ALL, CW, RW, 0, 0) == VKGB_H_WORK, "DM_VK_BAR_SCOPED=0: work of its own");
+        CHECK(vkgb_host_bar(XFER, ALL, XW, RW, 1, 1) == VKGB_H_WORK, "with buffer or image barriers: work of its own");
+        CHECK(vkgb_host_bar(ALL, XFER, RW, XW, 0, 1) == VKGB_H_WORK && vkgb_host_bar(XFER, XFER, XW, XW, 0, 1) == VKGB_H_WORK, "a barrier to a narrower stage is work");
+        CHECK(vkgb_host_bar(XFER, ALL, 0, RW, 0, 1) == VKGB_H_WORK && vkgb_host_bar(XFER, ALL, XW, VKGB_ACC_MEM_READ, 0, 1) == VKGB_H_WORK, "no source access, or not to every read and write: work");
+        // as vka_gbar.c applies it: a scoped COMPUTE->ALL settles a pending game barrier with nothing more recorded; with the switch off it is work, so the pending
+        // barrier is recorded before it (the settle), as before #505
+        fresh(); cmd(VKGB_C_DISPATCH, &ind); vkgb_game(&g, 0, 1, &s);
+        CHECK(cmd(vkgb_host_bar(CS, ALL, VKGB_ACC_SHADER_WRITE, RW, 0, 1) == VKGB_H_FULL ? VKGB_C_FULL : VKGB_C_WORK, &ind) == VKGB_B_NONE && s.settled == 0, "scoped: no settle before COMPUTE->ALL");
+        fresh(); cmd(VKGB_C_DISPATCH, &ind); vkgb_game(&g, 0, 1, &s);
+        CHECK(cmd(vkgb_host_bar(CS, ALL, VKGB_ACC_SHADER_WRITE, RW, 0, 0) == VKGB_H_FULL ? VKGB_C_FULL : VKGB_C_WORK, &ind) == VKGB_B_SETTLE && s.settled == 1 && g.since == VKGB_OTHER,
+              "DM_VK_BAR_SCOPED=0: the settle before COMPUTE->ALL, then other work");
+    }
+    // PEANUTS end
+
     // Every sequence of up to 8 commands, with the switch on and off
     int seq[8], total = 0;
     for (int n = 1; n <= 8 && fails < 5; n++) {

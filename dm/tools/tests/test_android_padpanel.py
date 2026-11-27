@@ -16,15 +16,19 @@ TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/PadPanelJvmTest
 class Wiring(unittest.TestCase):
     def test_activity(self):
         t = (JAVA / 'GameActivity.java').read_text()
-        self.assertIn('combo.key(', t)                  # every pad key goes through the combination first
+        self.assertIn('InGamePanel.key(this, combo,', t)   # every pad key goes through the combination first  # PEANUTS: through InGamePanel.key (Home held)
+        self.assertIn('combo.key(', (JAVA / 'InGamePanel.java').read_text())   # PEANUTS
         self.assertIn('panel.padMotion(e)', t)          # sticks and the hat move through the open panel, never the game
         self.assertIn('releaseGameInput', t)            # the game's held buttons are released when the panel opens
         self.assertIn('PadPanel.confirmBack(', t)       # confirm / back from the game's mapping
 
     def test_panel(self):
         t = (JAVA / 'SidePanel.java').read_text()
-        for s in ('boolean padKey(KeyEvent e)', 'boolean padMotion(MotionEvent e)', 'requestFocusFromTouch', 'OnGlobalFocusChangeListener', 'TAB_NAMES'):
+        for s in ('boolean padKey(KeyEvent e)', 'boolean padMotion(MotionEvent e)', 'requestFocusFromTouch', 'TAB_NAMES'):
             self.assertIn(s, t)
+        # PEANUTS: the focus frame's listener goes through dev.peanuts.ingame.Look.focusListener (kept from window to window)
+        self.assertIn('Look.focusListener(this, this::focusMoved)', t)   # PEANUTS
+        self.assertIn('OnGlobalFocusChangeListener', (JAVA.parents[1] / 'peanuts/ingame/Look.java').read_text())   # PEANUTS
 
     def test_settings(self):
         self.assertIn('PadPanel.OPEN_NAMES', (JAVA / 'MainActivity.java').read_text())

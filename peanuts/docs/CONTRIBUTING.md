@@ -239,7 +239,10 @@ Run both on the APK that is to be published, after it is built and signed:
 
 - `ANDROID_HOME=<the Android SDK> python3 peanuts/scripts/check-min-api.py <apk>` must print "nothing newer than API 33". It lists every platform method
   and field the app's code calls that is newer than the app's minimum Android version; the compiler does not say so, and such a call closes the app on
-  older phones (0.1.1 and 0.1.2 did, on Android 13).
+  older phones (0.1.1 and 0.1.2 did, on Android 13). It reads the code without its version checks, so it stays a check at API 33: the calls behind
+  an `SDK_INT >= 33` check would be listed at 31.
+- `ANDROID_HOME=<the Android SDK> python3 dm/tools/tests/test_android_api31.py` must pass. The app installs on Android 12 (minSdk 31): every API 32+
+  call needs an `if (Build.VERSION.SDK_INT >= 33)` check with the call unchanged inside it, and its lint gate requires 0 NewApi and 0 InlinedApi.
 - `python3 peanuts/scripts/check-apk-holes.py <apk>` must print "no holes". Updating an APK in place can leave a replaced entry in the file as dead bytes.
   Peanuts release-type builds recreate the final archive on every invocation and reuse the build outputs that feed it.
 

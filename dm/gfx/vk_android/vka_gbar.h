@@ -68,4 +68,19 @@ static inline int vkgb_cmd(vkgb *g, int kind, int *ind, vkgb_stats *s) {
     }
     }
 }
+// PEANUTS begin: a host pipeline barrier as vkgb_cmd's kind (vka_gbar.c g_vkCmdPipelineBarrier, the scoped barriers of #505/#562). Vulkan's bit values, mirrored so
+// this header stays free of Vulkan (vka_gbar.c checks them against the header). scoped: DM_VK_BAR_SCOPED (default 1). Old rule (scoped 0): only an ALL_COMMANDS to
+// ALL_COMMANDS barrier from every write to every read is full. Scoped rule: one to ALL_COMMANDS reads and writes is full also from compute shader writes (it settles what
+// is pending: compute writes are all a pending game barrier orders), and any other one to ALL_COMMANDS reads and writes, with no buffer or image barrier (others 0),
+// leaves nothing since it unordered: VKGB_H_SINCE_NONE, the caller sets since to VKGB_NONE after recording it. Anything else is work of its own
+enum { VKGB_STAGE_COMPUTE = 0x800, VKGB_STAGE_ALL = 0x10000, VKGB_ACC_SHADER_WRITE = 0x40, VKGB_ACC_MEM_READ = 0x8000, VKGB_ACC_MEM_WRITE = 0x10000 };
+enum { VKGB_H_WORK, VKGB_H_FULL, VKGB_H_SINCE_NONE };
+static inline int vkgb_host_bar(uint32_t s, uint32_t d, uint32_t src_acc, uint32_t dst_acc, int others, int scoped) {
+    const uint32_t rw = VKGB_ACC_MEM_READ | VKGB_ACC_MEM_WRITE;
+    if (!scoped) return s == VKGB_STAGE_ALL && d == VKGB_STAGE_ALL && (src_acc & VKGB_ACC_MEM_WRITE) && (dst_acc & rw) == rw ? VKGB_H_FULL : VKGB_H_WORK;
+    if (d != VKGB_STAGE_ALL || (dst_acc & rw) != rw || !src_acc) return VKGB_H_WORK;
+    if ((s == VKGB_STAGE_ALL && (src_acc & VKGB_ACC_MEM_WRITE)) || ((s & VKGB_STAGE_COMPUTE) && (src_acc & VKGB_ACC_SHADER_WRITE))) return VKGB_H_FULL;
+    return others ? VKGB_H_WORK : VKGB_H_SINCE_NONE;
+}
+// PEANUTS end
 #endif

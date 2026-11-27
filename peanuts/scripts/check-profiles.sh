@@ -13,9 +13,9 @@
 # highest version among its `build` rows. Prints one OK/MISMATCH line per title; exits non-zero if any title mismatches, has no `package` line, or has
 # no `build` rows.
 #
-# Found in review (round 4): the default used to be android/app/gradle.properties' `nxGames`, but that property holds Banana Native's own 5 Switch 2
+# Found in review (round 4): the default used to be android/app/gradle.properties' `nxGames`, which then held Banana Native's own Switch 2
 # defaults, not the titles the Peanuts APK is actually built with (those come from -PnxGames=... at build time, which this script has no way to read
-# without invoking Gradle). Checking every dm/games/<id> profile is both simpler and strictly more thorough -- it is what the round-3 run already did
+# without invoking Gradle; since 2026-11-26 `nxGames` is peanuts/release-titles.txt, Switch 1 only). Checking every dm/games/<id> profile is both simpler and strictly more thorough -- it is what the round-3 run already did
 # by hand (131 OK) -- and never misses a title just because it is not (yet, or ever) one of the ones a particular APK build happens to include.
 #
 # usage: check-profiles.sh [title ID ...]   -- with no arguments, checks every dm/games/<16 hex digit> directory

@@ -67,14 +67,25 @@ static inline int vkrs_deny_add(vkrs_deny *t, uint32_t w, uint32_t h, uint32_t f
 // render_scale; InstEmitAttribute.cs, TexturePass.cs, HelperFunctionManager.cs): VKRS_SPV_RT: it divides gl_FragCoord by render_scale[0]; VKRS_SPV_TEX: it reads
 // render_scale[1 + i] (the helpers of a fetch by integer coordinates from, or a size query of, a plain 2D texture); VKRS_SPV_PIXEL: it has a fetch, an image read or
 // a size query of an image that is no buffer or 1D texture (with VKRS_SPV_TEX unset: none of them goes through a helper, which is how the translator leaves texture
-// arrays, pool reads and other shapes). binding: the support buffer's binding in set 0 (UINT32_MAX: the module has none). 0 for words that are no module
+// arrays, pool reads and other shapes). binding: the support buffer's binding in set 0 (UINT32_MAX: the module has none). 0 for words that are no module.   // PEANUTS: #734
+// fb (may be NULL): the set 0 bindings of the plain 2D textures the module fetches from or sizes by pixel, the ones whose scale the helpers read; a texture it only
+// samples by normalized coordinates reads right at any scale (#703: Digimon Story Time Stranger's lighting pass samples a 512x512 asset beside its scaled G-buffer).
+// all: such a fetch or query whose image comes from no variable with a binding, or more bindings than b holds: every 2D texture of the stage counts
+#define VKRS_FB_MAX 24
+typedef struct { uint16_t b[VKRS_FB_MAX]; uint8_t n, all; } vkrs_fb;
+static inline int vkrs_fb_has(const vkrs_fb *f, uint32_t binding) {
+    if (f->all) return 1;
+    for (uint32_t i = 0; i < f->n; i++) if (f->b[i] == binding) return 1;
+    return 0;
+}
 enum { VKRS_SPV_RT = 1, VKRS_SPV_TEX = 2, VKRS_SPV_PIXEL = 4, VKRS_RENDER_SCALE_MEMBER = 5 };
-static inline unsigned vkrs_spv_scan(const uint32_t *w, size_t nw, uint32_t binding) {
+static inline unsigned vkrs_spv_scan(const uint32_t *w, size_t nw, uint32_t binding, vkrs_fb *fb) {   // PEANUTS: #734
     if (nw < 5 || w[0] != 0x07230203u) return 0;
     uint32_t bound = w[3]; if (!bound || bound > (1u << 22)) return 0;
-    typedef struct { uint32_t cv, bind; uint8_t isc, hasb, set1, dim1; } vkrs_id;   // a 32-bit constant's value; a variable's binding and set + 1; an image's Dim + 1 (types, pointers, values)
+    typedef struct { uint32_t cv, bind, src; uint8_t isc, hasb, set1, dim1; } vkrs_id;   // a 32-bit constant's value; a variable's binding and set + 1; an image's Dim + 1 (types, pointers, values); src: the variable a value comes from + 1   // PEANUTS: #734
     vkrs_id *id = (vkrs_id *)calloc(bound, sizeof *id); if (!id) return 0;
     unsigned out = 0;
+    if (fb) { fb->n = 0; fb->all = 0; }   // PEANUTS: #734
     #define VKRS_OK(x) ((x) < bound)
     for (size_t p = 5; p < nw;) {
         uint32_t op = w[p] & 0xffff, n = w[p] >> 16; const uint32_t *a = w + p + 1;
@@ -85,14 +96,22 @@ static inline unsigned vkrs_spv_scan(const uint32_t *w, size_t nw, uint32_t bind
         case 25: if (n >= 4 && VKRS_OK(a[0])) id[a[0]].dim1 = (uint8_t)(a[2] < 254 ? a[2] + 1 : 0); break;                                                                                   // OpTypeImage
         case 27: case 28: case 29: if (n >= 3 && VKRS_OK(a[0]) && VKRS_OK(a[1])) id[a[0]].dim1 = id[a[1]].dim1; break;                                                                        // OpTypeSampledImage, arrays of them
         case 32: if (n >= 4 && VKRS_OK(a[0]) && VKRS_OK(a[2])) id[a[0]].dim1 = id[a[2]].dim1; break;                                                                                          // OpTypePointer
-        case 59: case 61: case 83: case 86: case 100: if (n >= 3 && VKRS_OK(a[0]) && VKRS_OK(a[1])) id[a[1]].dim1 = id[a[0]].dim1; break;                                                     // OpVariable, OpLoad, OpCopyObject, OpSampledImage, OpImage: their type's
+        case 59: case 61: case 83: case 86: case 100: if (n >= 3 && VKRS_OK(a[0]) && VKRS_OK(a[1])) id[a[1]].dim1 = id[a[0]].dim1;                                                            // OpVariable, OpLoad, OpCopyObject, OpSampledImage, OpImage: their type's   // PEANUTS: #734
+            if (n >= 3 && VKRS_OK(a[1])) id[a[1]].src = op == 59 ? a[1] + 1 : n >= 4 && VKRS_OK(a[2]) ? id[a[2]].src : 0;                                                                    // the variable itself; the operand's
+            break;
         case 65: case 66:                                                                                                                                                                    // OpAccessChain, OpInBoundsAccessChain
             if (n >= 4 && VKRS_OK(a[0]) && VKRS_OK(a[1])) id[a[1]].dim1 = id[a[0]].dim1;
+            if (n >= 4 && VKRS_OK(a[1]) && VKRS_OK(a[2])) id[a[1]].src = id[a[2]].src;   // PEANUTS: #734
             if (n >= 5 && VKRS_OK(a[2]) && VKRS_OK(a[3]) && id[a[2]].hasb && id[a[2]].bind == binding && id[a[2]].set1 <= 1 && id[a[3]].isc && id[a[3]].cv == VKRS_RENDER_SCALE_MEMBER)
                 out |= n >= 6 && VKRS_OK(a[4]) && id[a[4]].isc && id[a[4]].cv == 0 ? VKRS_SPV_RT : VKRS_SPV_TEX;
             break;
         case 95: case 98: case 103: case 104:                                                                                                                                                // OpImageFetch, OpImageRead, OpImageQuerySizeLod, OpImageQuerySize
             if (n >= 4 && VKRS_OK(a[2]) && id[a[2]].dim1 >= 2 && id[a[2]].dim1 <= 5) out |= VKRS_SPV_PIXEL;   // Dim 2D, 3D, Cube, Rect
+            if (fb && op != 98 && n >= 4 && VKRS_OK(a[2]) && id[a[2]].dim1 == 2) {                          // a fetch or size query of a 2D image: its binding (the helpers' texture)   // PEANUTS: #734
+                uint32_t v = id[a[2]].src;
+                if (!v || !VKRS_OK(v - 1) || !id[v - 1].hasb || id[v - 1].set1 > 1) fb->all = 1;
+                else if (!vkrs_fb_has(fb, id[v - 1].bind)) { if (fb->n < VKRS_FB_MAX) fb->b[fb->n++] = (uint16_t)id[v - 1].bind; else fb->all = 1; }
+            }
             break;
         default: break;
         }

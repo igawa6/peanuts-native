@@ -1099,13 +1099,14 @@ static void parts_mark(pool_ent *p, uintptr_t lo, uintptr_t hi) {   // caller ho
 // parts bound granule by granule) needs sparseResidencyBuffer and queue binds ordered with the replay, which the drivers in use do not all have; copying the range into
 // scratch for each draw would need render passes broken for the copy and still leave storage buffers written across the parts.
 // Cost: a wait for the queue once per submission that has joins to make (they are rare: the parts are 16 MiB granules and most buffers are small), and for a moment the
-// joined bytes twice (the new allocation before the old ones are freed): at most DM_VK_PLACE_JOIN_MB (256) a join; a larger run stays in parts ([RED], as before;
+// joined bytes twice (the new allocation before the old ones are freed): at most DM_VK_PLACE_JOIN_MB (256, or the profile's place_join_mb: PEANUTS) a join; a larger run stays in parts ([RED], as before;
 // 0 = no joins). Only segments the pool alone holds are joined (a segment shared with another pool keeps its own memory). Pools placed whole after parts are not
 // joined either (a whole-pool ask: every range across the parts' ends; their bytes would be the whole pool twice)
 enum { NJOIN = 32 };
 static struct { uint64_t id; uintptr_t a, e; const char *why; } g_join[NJOIN];   // the asks across parts, by pool (under g_pmu)
 static int g_njoin; static _Atomic int g_join_n;   // (g_join_n: the count, read without the lock by vka_mem_join_due)
-static uint64_t join_cap(void) { static int64_t v = -1; if (v < 0) { v = (int64_t)VKA_ENV("DM_VK_PLACE_JOIN_MB", 256) << 20; if (v < 0) v = 0; if (!v) VLOG("DM_VK_PLACE_JOIN_MB=0: parts of a pool that a range given to the GPU lies across are not joined"); } return (uint64_t)v; }
+// PEANUTS: a profile's place_join_mb (dm/games/README.md; NieR:Automata 512, GitHub issues #394, #651) replaces the default 256; DM_VK_PLACE_JOIN_MB still wins
+static uint64_t join_cap(void) { static int64_t v = -1; if (v < 0) { v = (int64_t)VKA_ENV("DM_VK_PLACE_JOIN_MB", DM_GAME_PLACE_JOIN_MB ? DM_GAME_PLACE_JOIN_MB : 256) << 20; if (v < 0) v = 0; if (!v) VLOG("DM_VK_PLACE_JOIN_MB=0: parts of a pool that a range given to the GPU lies across are not joined"); } return (uint64_t)v; }   // PEANUTS: the profile's default
 static int join_queue(uint64_t id, uintptr_t a, uintptr_t e, const char *why) {   // caller holds g_pmu; 0 = not queued
     for (int j = 0; j < g_njoin; j++) if (g_join[j].id == id && g_join[j].a == a && g_join[j].e == e) return 1;   // (queued already)
     if (!join_cap() || g_njoin == NJOIN) return 0;

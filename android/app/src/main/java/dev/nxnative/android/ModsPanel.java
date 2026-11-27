@@ -22,7 +22,7 @@ import dev.peanuts.mods.ModsTab;
  * package-private. A Peanuts Native file in upstream's launcher package, as CheatsBridge.java. SidePanel's hooks:
  * <ul>
  * <li>open: {@link #opening} gives the tabs (Performance, Display, Controls, Mods, General; Mods only when the game has cheats or mods and neither Settings ›
- *     Controls › Mods tab nor the game's Show in the game hides it) and the tab to open on (the last one shown, by name, kept across runs);</li>
+ *     App › Mods tab nor the game's Show in the game hides it) and the tab to open on (the last one shown, by name, kept across runs);</li>   <!-- PEANUTS: #827 -->
  * <li>build: {@link #build} builds the Mods tab when it is the one shown, and keeps which tab shows;</li>
  * <li>General: its cheat switches only when there is no Mods tab ({@link #shows});</li>
  * <li>padKey: Y and X on the Mods tab ({@link #padKey});</li>
@@ -32,15 +32,25 @@ import dev.peanuts.mods.ModsTab;
 final class ModsPanel {
     private ModsPanel() {}
 
-    static final String MODS = "Mods";
-    private static final String[] BASE = {"Performance", "Display", "Controls", "General"}, WITH = {"Performance", "Display", "Controls", MODS, "General"};
-    private static boolean shows, opened;
+    static final String MODS = "Mods", CHEATS = "Cheats";
+    private static final String[] BASE = {"Performance", "Display", "Controls", "General"};
+    private static boolean shows, opened;   // shows: the Cheats tab shows (General's cheat switches go there)
 
     /** SidePanel.open: the tabs (SidePanel.TAB_NAMES, TAB_GENERAL) and the tab to open on; tab: the one the panel has now */
     static int opening(SidePanel p, Activity a, String titleId, int tab) {
         String was = SidePanel.TAB_NAMES[Math.min(tab, SidePanel.TAB_NAMES.length - 1)];
-        shows = ModsTab.wanted(a, titleId, a.getIntent().getStringExtra("game"), a.getIntent().getStringExtra("pack"));
-        SidePanel.TAB_NAMES = shows ? WITH : BASE;
+        // The quick menu's tabs (InGamePanel, dev.peanuts.ingame.Rail): Performance, Display, Cheats, Mods, Controls, General (the menu's own settings).
+        // Cheats and Mods each only when there is something to show (ModsTab.wanted, by half)
+        String g = a.getIntent().getStringExtra("game"), pk = a.getIntent().getStringExtra("pack");
+        shows = ModsTab.wanted(a, titleId, g, pk, ModsTab.CHEATS);
+        boolean mods = ModsTab.wanted(a, titleId, g, pk, ModsTab.MODS);
+        java.util.List<String> names = new java.util.ArrayList<>(java.util.Arrays.asList("Performance", "Display"));
+        if (shows) names.add(CHEATS);
+        if (mods) names.add(MODS);
+        names.add("Controls");
+        names.add("General");
+        SidePanel.TAB_NAMES = names.toArray(new String[0]);
+        SidePanel.TAB_CONTROLS = names.indexOf("Controls");
         SidePanel.TAB_GENERAL = SidePanel.TAB_NAMES.length - 1;
         String want = opened ? was : ModsTab.lastTab(a);   // the first opening of this run: the tab shown last, in this run or an earlier one
         opened = true;
@@ -52,11 +62,12 @@ final class ModsPanel {
     static boolean build(SidePanel p, Activity a, LinearLayout box, int tab) {
         String name = SidePanel.TAB_NAMES[Math.min(tab, SidePanel.TAB_NAMES.length - 1)];
         ModsTab.lastTab(a, name);
-        if (!MODS.equals(name)) { ModsTab.left(); return false; }
+        if (!MODS.equals(name) && !CHEATS.equals(name)) { ModsTab.left(); return false; }
         ModsTab.fill(a, box, new ModsTab.Host() {
             @Override public void close() { p.close(); }
             @Override public void style(View v) { ModsPanel.style(a, v); }
-        });
+            @Override public void action(String key, String label, Runnable run) { InGamePanel.action(p, key, label, run); }
+        }, CHEATS.equals(name) ? ModsTab.CHEATS : ModsTab.MODS);
         return true;
     }
 

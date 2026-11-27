@@ -168,7 +168,9 @@ class Check:
         if not keep_dirs: s.update({'game_dir': game_dir, 'update_dir': update_dir, 'dlc_dir': dlc_dir})
         # only this folder: the other Build folders (build_dirs_extra) and a game's own one (t.<ID>.build_dir) would be scanned too, and their .nup files hold
         # what the check leaves out (PeanutsPrefs.buildDirs, LibraryScanner roots)
-        self.put_settings({'peanuts.xml': prefs_with(self.saved['peanuts.xml'], s, drop=r'build_dirs_extra|t\..*\.build_dir'), 'games.xml': EMPTY_LIST})
+        # and with keep_dirs=False only these: the game and update/DLC folders added beside them (issue #546) are left out too
+        drop = r'build_dirs_extra|t\..*\.build_dir' + ('' if keep_dirs else r'|game_dirs_extra|addon_dirs_extra')
+        self.put_settings({'peanuts.xml': prefs_with(self.saved['peanuts.xml'], s, drop=drop), 'games.xml': EMPTY_LIST})
 
     def restore(self):
         """Every step tried, each on its own: one that fails is said, and the others still run"""

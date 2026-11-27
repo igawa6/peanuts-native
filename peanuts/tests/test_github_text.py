@@ -31,7 +31,7 @@ class Wiring(unittest.TestCase):
         self.assertIn('GitHubTextStyle.view(', src)
 
     def test_no_api_34_matcher_calls(self):
-        # Matcher.appendReplacement/appendTail(StringBuilder) and replaceAll(Function) are API 34; minSdk is 33 (UPSTREAM-EDITS round 12)
+        # Matcher.appendReplacement/appendTail(StringBuilder) and replaceAll(Function) are API 34; minSdk is 31 (UPSTREAM-EDITS round 12)
         for f in ('GitHubText.java', 'CompanionNotes.java'):
             src = (UI / f).read_text(encoding='utf-8')
             self.assertNotIn('new StringBuilder();\n        while (m.find())', src, f)

@@ -10,6 +10,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'dm/games'))
 import game  # noqa: E402
+# PEANUTS: the two profiles with cheat files (Ocarina of Time 0400486024DEC000, Fire Emblem Fortune's Weave 04007EF01F8AE000) are Switch 2 profiles, which
+# Peanuts Native does not carry; their game.tsv rows and cheat files are kept as fixtures, loaded by path
+FIXTURES = REPO / 'peanuts/tests/fixtures/profiles'
+OOT_PROFILE, FE_PROFILE = str(FIXTURES / 'ocarina'), str(FIXTURES / 'fortunes-weave')   # PEANUTS
 
 # opcode → its length in words, from the first word (docs/reference/cheats.md: the VM), for the opcodes these files may use
 def op_len(w, words):
@@ -55,7 +59,7 @@ def parse(text):
 class Files(unittest.TestCase):
     def test_every_profile(self):
         n = 0
-        for g in game.all_games():
+        for g in list(game.all_games()) + [game.load(OOT_PROFILE), game.load(FE_PROFILE)]:   # PEANUTS: and the fixtures
             for p in g.cheats():
                 n += 1
                 entries = parse(p.read_text(encoding='utf-8'))
@@ -74,7 +78,7 @@ class Files(unittest.TestCase):
         self.assertGreaterEqual(n, 2)
 
     def test_bad_names_refused(self):
-        g = game.load('0400486024DEC000')
+        g = game.load(OOT_PROFILE)   # PEANUTS: fixture
         g.rows.append(('cheats', ['cheats/1111111111111111.txt']))
         with self.assertRaisesRegex(ValueError, 'none of the profile'): g.cheats()
         g.rows[-1] = ('cheats', ['../game.tsv'])
@@ -90,7 +94,7 @@ class Ocarina(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        g = game.load('0400486024DEC000')
+        g = game.load(OOT_PROFILE)   # PEANUTS: fixture
         (cls.path,) = g.cheats()
         cls.main = next(b['main'] for b in g.builds().values())
         cls.entries = parse(cls.path.read_text(encoding='utf-8'))
@@ -129,7 +133,7 @@ class FortunesWeave(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        g = game.load('04007EF01F8AE000')
+        g = game.load(FE_PROFILE)   # PEANUTS: fixture
         (cls.path,) = g.cheats()
         cls.main = next(b['main'] for b in g.builds().values())
         cls.entries = parse(cls.path.read_text(encoding='utf-8'))

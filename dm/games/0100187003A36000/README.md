@@ -4,7 +4,7 @@
 
 Update 1.0.2 (`v131072`) over the base game, SDK 5.4.151. [Pokémon: Let's Go, Pikachu!](../010003F003A34000/README.md)'s twin: the same engine, and the same `sdk`, `subsdk0` (GLSLC) and `subsdk1` (movie) builds; only `main` is a build of its own. Everything in Pikachu's note about the engine, its files, shaders, controllers and memory holds here; this note gives only what differs or was checked again. The profile is Pikachu's with Eevee's title, name, IPA name, build row and shader tables.
 
-**Status (current): runs the new-game intro on Android with Turnip.** On an AYN Thor (Adreno 740, Android 13) with Turnip T30 (26.3.0) it plays the intro at 30 fps and draws its characters and Pokémon correctly; the log has build ID `5831EC64…`, `hid supported controller styles 0x5a` and no `[RED]` line beyond Pikachu's. Not run on Qualcomm's driver, where Pikachu draws its 3D scene black ([Pikachu, Found on this game](../010003F003A34000/README.md#found-on-this-game)); the same is expected here.
+**Status (current): runs the new-game intro on Android with Turnip.** On an AYN Thor (Adreno 740, Android 13) with Turnip T30 (26.3.0) it plays the intro at 30 fps and draws its characters and Pokémon correctly; the log has build ID `5831EC64…`, `hid supported controller styles 0x5a` and no `[RED]` line beyond Pikachu's. Not run on Qualcomm's driver, where Pikachu drew its 3D scene black until the host set the depth / stencil state again in each render pass ([Pikachu, Found on this game](../010003F003A34000/README.md#found-on-this-game)); the same engine build, so the fix is expected to hold here (not checked).
 
 ## Builds
 

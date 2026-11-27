@@ -118,7 +118,11 @@ static timg *img_make(const tb_t *t, int is2d) {   // (g_mu held)
         w = t->elems; h = 1;
         if (w > V.props.limits.maxImageDimension1D) { w = V.props.limits.maxImageDimension1D; VRED_ONCE("buffer texture of %u elements read as a 1D image: only its first %u (the device's 1D images)", t->elems, w); }
     }
-    VkImageCreateInfo ci = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = t->f.vk != t->f.view ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0, .imageType = is2d ? VK_IMAGE_TYPE_2D : VK_IMAGE_TYPE_1D,
+    int mut = t->f.vk != t->f.view;   // PEANUTS: #503
+    VkFormat fls[2] = {t->f.vk, t->f.view};
+    VkImageFormatListCreateInfo fli = {VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO, .viewFormatCount = 2, .pViewFormats = fls};
+    VkImageCreateInfo ci = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .pNext = mut && VKA_ENV("DM_VK_UBWC", 1) ? &fli : NULL,
+                            .flags = mut ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0, .imageType = is2d ? VK_IMAGE_TYPE_2D : VK_IMAGE_TYPE_1D,
                             .format = t->f.vk, .extent = {w, h, 1}, .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
                             .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, .sharingMode = VK_SHARING_MODE_EXCLUSIVE, .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
     timg x = {t->addr, t->bytes, 0, 0, t->elems, w, h, t->format, is2d, 0, 1, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};

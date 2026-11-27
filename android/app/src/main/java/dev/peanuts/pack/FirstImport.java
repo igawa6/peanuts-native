@@ -165,7 +165,7 @@ public final class FirstImport {
     }
 
     /** A game of the title is running: the pack folder may be in use */
-    public static String running(Game g) { return g.name + " is running: stop it first (its in-game panel, Stop the game)."; }
+    public static String running(Game g) { return g.name + " is running: stop it first (its game menu, Stop the game)."; }
 
     /** Another import or export of the game's pack is working */
     public static String busy(Game g) { return "An export or import of " + g.name + "'s pack is still working."; }

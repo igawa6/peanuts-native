@@ -58,8 +58,7 @@ public interface BuildPort {
                 Object r = request.getDeclaredConstructor().newInstance();
                 set(r, "titleId", s.titleId); set(r, "name", s.name); set(r, "base", s.base); set(r, "update", s.update);
                 set(r, "dlcs", new java.util.ArrayList<>(s.dlcs));
-                String root = dev.peanuts.PeanutsPrefs.gameDir(c);
-                set(r, "gameDir", root == null ? null : new java.io.File(root));
+                set(r, "gameDir", dev.peanuts.PeanutsPrefs.homeFor(c, s.base));   // the game folder that holds the game's file, else the first (issue #546)
                 set(r, "companionPackage", s.installCompanion ? s.companionPackage : null);
                 Object proxy = java.lang.reflect.Proxy.newProxyInstance(listener.getClassLoader(), new Class<?>[] {listener}, (p, m, a) -> {
                     switch (m.getName()) {

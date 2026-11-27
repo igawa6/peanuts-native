@@ -1,0 +1,12 @@
+# Test fixture (Peanuts): rows of upstream profile dm/games/0400E88025B1A000 (Star Fox), a Switch 2 profile Peanuts Native does not carry, kept for the
+# tests that need a profile with these features (cheats, Resolution presets, 3D scene rows, recommend rows, the DLSS stand-in): dm/tools/tests and
+# dm/host/tests/t_cheats.c load it by path. Only the rows those tests read; not a playable profile.
+title_id	0400E88025B1A000
+program_id	0400E88025B1A000
+name	Star Fox
+build	v131072	v131072	main=a7730d0f74d168d90422354c8317f76f	subsdk0=593524e167fecd3c7a42a184c9da3963	subsdk3=973102ab6bb2be3dc4f0c3a4c9e7e1c4	sdk=41d4de4a3b78214ad20c896960df0e5e
+dlss_standin	1
+scene_arg	s060	0.6	-render_resolution_scale_console={s} -render_resolution_scale_handheld={s}	60%: 3D up to 1152x648
+scene_arg	s075	0.75	-render_resolution_scale_console={s} -render_resolution_scale_handheld={s}	75%: 3D up to 1440x810
+scene_arg	s100	1.0	-render_resolution_scale_console={s} -render_resolution_scale_handheld={s}	100%: 3D up to 1920x1080
+scene_arg	nodynres	-	-no_render_dynres_enabled	The game's 50%, no dynamic resolution: 3D 960x540

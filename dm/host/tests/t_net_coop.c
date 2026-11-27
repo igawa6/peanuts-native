@@ -30,6 +30,7 @@ static uint64_t current_binding = 1;
 static int signals, checks, failures;
 void *guest_sym(const char *name) { (void)name; return NULL; }
 void dm_guest_sleep_ns(int64_t ns) { struct timespec t = {ns / 1000000000, ns % 1000000000}; nanosleep(&t, NULL); }
+void dm_thread_native_wait(int entering) { (void)entering; }   // PEANUTS(upstream-candidate): hle_thread.c's, which hle_net.c's waits now enter
 uint64_t hle_system_event_binding(void *g) { return g ? current_binding : 0; }
 int hle_signal_system_event_binding(uint64_t binding) { if (binding != current_binding) return 0; signals++; return 1; }
 #define CHECK(c, text) do { checks++; if (!(c)) { failures++; fprintf(stderr, "FAIL: %s\n", text); } } while (0)

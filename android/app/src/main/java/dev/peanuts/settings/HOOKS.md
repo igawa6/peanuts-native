@@ -26,7 +26,10 @@ Mods shows above Companion in the Game tab:
 `ModsSection` lists the game's mods (a switch and a bin each), installs one from a folder or a zip (`dev.peanuts.mods.ModImportUi`; the pickers' results come
 back through `MainActivity.onActivityResult` → `dev.peanuts.ui.LibrarySettings.result`, requests 69 and 70 → `ModsSection.pickedFolder` / `pickedZip`), and for
 code mods starts the build with mods (`dev.peanuts.build.ModBuildPipeline`) and shows its state. A second hook, at the top of
-`MainActivity.launch`, asks `ModsSection.packToPlay` for the pack of every start: the variant's while code mods are on and built, else the normal one.
+`MainActivity.launch`, asks `ModsSection.packToPlay` for the pack of every start: the variant's while code mods are on and built, the normal one when no
+code mod is on. While code mods are on and their build is not ready, the start does not happen: `MainActivity.modsNotReady` starts the build when it is due
+(`ModsSection.due`), says how far it is (`ModsSection.waitText`) and offers Play without mods after a warning (issue #514). `FrontendLaunch.play` hands such a
+game to Home's Play.
 A game without a pack gets one row, "Build the game first". Both sections draw upstream's rows through `SectionUi` (reflection onto `Ui`).
 
 ## 2. AndroidManifest.xml — the build service (one element)

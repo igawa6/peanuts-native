@@ -69,3 +69,28 @@ General changes first needed here; each applies to every game:
 
 - The engine region's gate (2.81 GB instead of the 2 GB `game_args` gave) has not been run on this game yet: the `[mem] Unreal's engine region` line in a boot's log shows it.
 - **A rare crash at the title** on a task graph thread (`main+0x1d8054`, 2 of 87 Mac boots). The game's CRI cue sheet loader runs one task per cue sheet (`main+0x1e356c`, each under its own manager's mutex at manager+0xe0; the GameThread takes it too) and copied record 2 of a cue sheet's 73 (manager+0x70, 0x70 bytes each, copy assignment `main+0x1d7ddc`) while the record's TArray at +0x60 held count 1 and no data, the state of a TArray between `CopyToEmpty`'s count and its allocation; both crashes stopped at the same record. Probes showed two such tasks at once on two task graph threads, each with its own manager, and no thread holding another's lock; eight boots with `MallocScribble=1` did not crash, which argues against reading freed memory. Which thread writes the record is not found yet.
+
+## Android
+
+PEANUTS: this profile is Banana Native's, taken as it is: no `game.tsv` key, shader table or code changed. Packed on macOS from update 1.1.1 (v131072) over the base game with its DLC (a licence only): the shader split gave 13,980 shaders whose keys are exactly the profile's `shader_map.tsv`, and the Vulkan library has 24,616 modules, every one valid for spirv-val `--target-env vulkan1.3` (217.6 MB; the pack is 340 MiB). The builder logs six red lines for Oodle- or LZ5-compressed pak files it cannot read (three effect `.uasset` and three level `.umap`, "their shaders are left out"); none of them is the first source of any shader in the profile's map and the key sets are equal, so no shader is lost.
+
+- **Current (2026-11-24), AYN Thor (Adreno 740), Turnip 27.0.0-R2:** all eight travelers, each from an empty pipeline cache (the shader parts prepared first) to the end of the opening and the first battle, 60 fps (frame time p50 16.7 to 16.9 ms, p95 18.7 to 21.1 ms in the last 300-frame window of nine runs, GPU about 6 to 13 ms a frame), 2.4 to 3.0 GB of game memory on the overlay, no crash, no red line other than the `mtl_*` statistics stubs. The engine region gate ran: `[mem] Unreal's engine region: 62.00 GB asked, 2.81 GB of address space, what the alias region has room for`.
+- **Open: a first launch with no pipeline cache draws Hikari's opening bright green and white** from the "Are you praying, Hikari?" scene on (reproduced twice; on Turnip, one cold run with `DM_VK_PSO_ASYNC=0` and every run with a warm cache or a prewarm seed were clean). The cold run skipped 9,691 draws waiting for pipelines and made 26 on the frame path. This is the case of [A draw skipped for its pipeline left a result the game kept](../../../docs/reference/rendering.md#a-draw-skipped-for-its-pipeline-left-a-result-the-game-kept-android); the profile has no `vk_prewarm.bin`. A seed of 918 keys made with `dm/tools/vk_prewarm.py seed` from these runs (Turnip) is not part of this change, because the contributing rules keep prewarm seeds out of commits; it is offered on issue #515. With that seed, from an empty cache:
+
+| Run | Seed keys | Draws skipped waiting | Pipelines made on the frame path |
+|---|---|---|---|
+| Hikari | 566 | 156 | 0 |
+| Castti | 566 | 5,253 | 14 |
+| Throné | 683 | 310 | 8 |
+| Ochette | 714 | 267 | 7 |
+| Osvald | 762 | 1,493 | 4 |
+| Temenos | 819 | 230 | 2 |
+| Partitio | 851 | 129 | 1 |
+| Agnea | 873 | 95 | 3 |
+| Temenos again | 896 | 50 | 6 |
+| Hikari again | 918 | 62 | 0 |
+
+  Every picture was clean. A run along a route already in the seed still adds new keys (22 for Temenos again, with his own 32 in the seed), so a first launch still makes a few pipelines on the frame path.
+- **Open: Qualcomm's system driver (676.53) loses the device after New Game**, in 4 of 4 runs: `[RED] vk: GPU hang: … returned -4 (the device is lost)` at frames 1,731 to 4,516, with an empty cache, with a warm cache, with and without the seed, and with `DM_VK_ZSHARE=0` (no zero-shared image at all in that run). The driver reports no fault details (`VK_EXT_device_fault` is not on this device). The cause is not found; the app itself recommends Turnip when the system driver is picked.
+- **Open: stalls.** Every cold run has one frame of about 2.1 to 2.3 s at frame 4, and 8 to 15 frames over 100 ms in a session of 3 to 10 minutes (up to about 300 ms), in each of nine runs read. None of those frames made a pipeline (0 new pipelines and 0 shader libraries in each) and their GPU times were 29 ms at most, so they are not pipeline compiles; the cause was not looked for.
+- **Not checked:** anything past each traveler's first battle; sound, saves and controls beyond what the first scenes showed; the system driver beyond the hang above; a companion (there is none).

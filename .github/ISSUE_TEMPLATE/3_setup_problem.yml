@@ -103,10 +103,10 @@ body:
       label: "Peanuts Native version"
       description: "Settings › About shows it. In an older version, please try the newest first: many problems are fixed there."
       options:
-        - "0.1.8 (the newest)"
+        - "0.1.9 (the newest)"
+        - "0.1.8"
         - "0.1.7"
-        - "0.1.6"
-        - "0.1.5 or older"
+        - "0.1.6 or older"
         - "A test or development build (say which in \"Anything else\")"
     validations:
       required: true
@@ -176,13 +176,14 @@ body:
     attributes:
       label: "Android version"
       options:
+        - "Android 12 or 12L"
         - "Android 13"
         - "Android 14"
         - "Android 15"
         - "Android 16"
         - "Android 17"
         - "Newer than Android 17"
-        - "Older than Android 13"
+        - "Older than Android 12"
     validations:
       required: true
   - type: dropdown

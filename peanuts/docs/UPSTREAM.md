@@ -276,7 +276,7 @@ filesystem count, 6, since that's what any new sync needs to check against).
 6. For the runtime (only with a cycle steward's approval for a runtime bump):
    peanuts/scripts/upstream/sync-rt.sh                       # --apply stages to /tmp only, never the worktree
 7. peanuts/scripts/upstream-update.sh --check                # run the hunk-marker check now, before rebasing, and fix/allow-list anything it flags
-   peanuts/scripts/upstream-update.sh                        # the real rebase; the same hunk-marker check runs again after it
+   peanuts/scripts/upstream-update.sh                        # the real rebase; drops Switch 2 content (section 3.8); the same hunk-marker check runs again after it
 8. the owner updates peanuts/.upstream-sync (optional) and reviews peanuts/UPSTREAM-EDITS.md for any new unmarked hunks the rebase introduced
 ```
 
@@ -285,6 +285,31 @@ checkouts of files Peanuts has never locally edited and has no uncommitted chang
 the runtime) a copy into `/tmp` only. Step 7's second invocation is the one that touches git
 history, and the owner runs it, not an agent acting on its own; the `--check` form is read-only
 and safe for anyone to run anytime.
+
+### 3.8 Dropped upstream content (Switch 2)
+
+Peanuts Native supports Switch 1 games only (owner, 2026-11-26), so it does not carry Banana Native's Switch 2 profiles
+(`dm/games/04*`, the title IDs that start with `04`) or the host gates only those games use (`dm/host/android/dkb_wide.c`,
+`mkw_wide.c`, `oot_wide.c`, `mtf_size.c`, `pkp_aspect.c` and their `dm/host/tests/t_*.c`). The list is
+**`peanuts/upstream-dropped.txt`** (`pattern<TAB>reason`, the pattern a shell `case` pattern on the repo path). The shared
+Switch 2 support in the host and the app (NVN2, Program-n / the Switch 2 dump layout, `Edition.java`, the `Switch2/` storage
+folder) stays: it is upstream's and is not tied to a profile.
+
+`upstream-update.sh` keeps them out on every sync:
+
+- our deletion commit is an ordinary overlay commit, replayed by the rebase like any other;
+- a rebase stop where every unmerged path is a dropped one (upstream edited a profile we deleted: modify/delete) is resolved as
+  a deletion and the rebase continues; any other stop is left to a human as before;
+- a dropped path the rebase brings in (a new Switch 2 profile upstream added) is removed after the rebase in a commit of its own,
+  "Upstream sync: drop content Peanuts Native does not carry";
+- `--check` fails while any tracked path matches the list. The hunk check accepts a deleted upstream file as it is (it has no
+  hunks), so the deletions need no marker; the edits that go with them (the `OBS_*` rows in `dm/host/dm.h`, the test runner in
+  `dm/host/tests/Makefile`, the tests repointed to Switch 1 profiles) are marked hunks like any other, listed in
+  `peanuts/UPSTREAM-EDITS.md`.
+
+`peanuts/tests/test_upstream_check.py` covers the three cases in a throwaway repository. Upstream's own notes (`docs/reference`,
+`docs/agents`, the per-game READMEs of Switch 1 profiles, `dm/games/README.md`) may still cite the Switch 2 profiles; they are left
+as they are, so a sync does not conflict on them.
 
 ## 4. Nice to have / not yet done
 

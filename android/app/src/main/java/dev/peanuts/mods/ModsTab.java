@@ -59,6 +59,8 @@ public final class ModsTab {
         void close();
         /** The panel's look over views added after the tab was built */
         void style(View v);
+        /** A tab's own action in the menu's header, beside its name, with the controller's button for it (the quick menu's rail: InGamePanel) */
+        default void action(String key, String label, Runnable run) {}
     }
 
     private static final int YELLOW = 0xFFFFD54F, ROW = 0xFF2D2E31, CHIP = 0xFF3A3B3E, TEXT = 0xFFE8EAED, QUIET = 0xFFB0B3B8, BAD_TEXT = 0xFFFF9670, BAD = 0xFF3D2016;
@@ -105,12 +107,18 @@ public final class ModsTab {
 
     // ---- Whether there is a tab, and which tab shows last ----
 
-    /** Whether the panel has a Mods tab for this game: Settings › Controls › Mods tab on, the game's Show in the game on, and cheats or mods to show */
-    public static boolean wanted(Context c, String titleId, String gameDir, String packDir) {
+    /** What a tab of the quick menu shows (dev.nxnative.android.ModsPanel): both halves (one Mods tab, as before the quick menu), the cheats, the mods */
+    public static final int BOTH = 0, CHEATS = 1, MODS = 2;
+
+    /** Whether the panel has a Mods tab for this game: Settings › App › Mods tab on, the game's Show in the game on, and cheats or mods to show */
+    public static boolean wanted(Context c, String titleId, String gameDir, String packDir) { return wanted(c, titleId, gameDir, packDir, BOTH); }
+
+    /** The same for one half (CHEATS: cheats to show, MODS: mods to show) */
+    public static boolean wanted(Context c, String titleId, String gameDir, String packDir, int part) {
         if (!PeanutsPrefs.modsTabAll(c) || !PeanutsPrefs.modsTab(c, titleId)) return false;
         try {
-            if (!model(c, titleId, gameDir, packDir).isEmpty()) return true;
-            return !mods(c, titleId, gameDir, packDir).isEmpty();
+            if (part != MODS && !model(c, titleId, gameDir, packDir).isEmpty()) return true;
+            return part != CHEATS && !mods(c, titleId, gameDir, packDir).isEmpty();
         } catch (RuntimeException e) {
             android.util.Log.w("peanuts", "mods tab: " + e);
             return false;
@@ -173,7 +181,10 @@ public final class ModsTab {
     // ---- The tab ----
 
     /** Builds the tab into the panel's box (ModsPanel.build) */
-    public static void fill(Activity a, LinearLayout box, Host host) {
+    public static void fill(Activity a, LinearLayout box, Host host) { fill(a, box, host, BOTH); }
+
+    /** The same for one half: the quick menu's Cheats tab (the search, All off and the cheats) or its Mods tab (the mods and Restart) */
+    public static void fill(Activity a, LinearLayout box, Host host, int part) {
         left();
         Shown s = new Shown();
         s.a = a; s.host = host; s.box = box;
@@ -188,6 +199,8 @@ public final class ModsTab {
             android.util.Log.w("peanuts", "mods tab: " + e);
             groups = new ArrayList<>(); mods = new ArrayList<>();
         }
+        if (part == MODS) groups = new ArrayList<>();
+        if (part == CHEATS) mods = new ArrayList<>();
         Set<String> on = CheatsBridge.on(a, s.titleId);
         s.folder = CheatsBridge.folder(a, s.titleId);
         Set<String> builds = CheatsBridge.builds(s.titleId, packDir);
@@ -196,7 +209,7 @@ public final class ModsTab {
         int cheats = 0;
         for (Group g : groups) cheats += g.binds.size();
 
-        // The top: search (from 15 cheats on) and All off
+        // The top: search (from 15 cheats on); All off is in the header, beside the tab's name (X)
         LinearLayout top = new LinearLayout(a);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
@@ -226,15 +239,9 @@ public final class ModsTab {
             });
             search.setOnFocusChangeListener(toFirstRow);
             top.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        } else top.addView(new View(a), new LinearLayout.LayoutParams(0, 1, 1));
-        if (cheats > 0) {
-            Button all = new Button(a);
-            all.setText("All off");
-            all.setOnClickListener(v -> allOff(s));
-            all.setOnFocusChangeListener(toFirstRow);
-            top.addView(all);
         }
-        box.addView(top);
+        if (part != MODS && cheats > 0) host.action("X", "All off", () -> allOff(s));
+        if (part != MODS && search != null) box.addView(top);
 
         // The cheats, by group
         s.list = new LinearLayout(a);
@@ -248,12 +255,13 @@ public final class ModsTab {
                 s.binds.add(b);
             }
         }
-        if (cheats == 0) box.addView(note(a, "No cheats for this game: add them on the game's page, Mods & Cheats."));
+        if (part == MODS) { /* the cheats are the Cheats tab's */ }
+        else if (cheats == 0) box.addView(note(a, "No cheats for this game: add them on the game's page, Mods & Cheats."));
         else box.addView(note(a, "A switch acts at once and is kept for the next start. Cheated values are stored when the game saves."));
 
         // The mods
         if (!mods.isEmpty()) {
-            box.addView(head(a, "Mods"));
+            if (part != MODS) box.addView(head(a, "Mods"));   // the Mods tab has its name in the header
             for (ModStore.Mod m : mods) {
                 View r = modRow(s, m, gameDir, packDir);
                 if (s.firstMod == null) s.firstMod = r;
@@ -262,7 +270,7 @@ public final class ModsTab {
         }
         s.restart = restartBar(s);
         s.restart.setVisibility(modsChanged ? View.VISIBLE : View.GONE);
-        box.addView(s.restart);
+        if (part != CHEATS) box.addView(s.restart);
         box.addView(keys(a, cheats > 0));
 
         if (search != null) {
@@ -336,7 +344,7 @@ public final class ModsTab {
         b.sw.setOnCheckedChangeListener((v, x) -> { if (!s.updating) switched(s, b, x); });
         r.setOnClickListener(v -> { if (b.sw.isEnabled()) b.sw.toggle(); else details(s, b); });
         r.setOnLongClickListener(v -> { details(s, b); return true; });
-        r.setOnFocusChangeListener((v, has) -> { b.desc.setText(line(b)); b.desc.setVisibility(has ? View.VISIBLE : View.GONE); });
+        r.setOnFocusChangeListener((v, has) -> { b.desc.setText(line(b)); b.desc.setVisibility(has ? View.VISIBLE : View.GONE); if (has) inView(v); });
         show(b);
         return r;
     }
@@ -489,7 +497,7 @@ public final class ModsTab {
         b.field.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         b.field.setGravity(Gravity.CENTER);
         b.field.setMaxLines(1);   // not setSingleLine: its horizontal scrolling moves the foreground (the focus frame) out of sight
-        b.field.setMinWidth(Math.round(112 * dp));
+        b.field.setMinWidth(Math.round(72 * dp));
         b.field.setMinHeight(Math.round(36 * dp));
         b.field.setPadding(Math.round(14 * dp), 0, Math.round(14 * dp), 0);
         GradientDrawable fb = new GradientDrawable();
@@ -510,23 +518,34 @@ public final class ModsTab {
         b.field.setOnFocusChangeListener((v, has) -> {
             b.desc.setText(has ? FIELD_LINE : line(b));
             b.desc.setVisibility(has || b.row.isFocused() ? View.VISIBLE : View.GONE);
+            if (has) inView(v);
         });
         b.apply = () -> applyNumber(s, b);
         shownNumber(b);
         bar.addView(stepper(c, "−", v -> step(s, b, -1)));
-        LinearLayout.LayoutParams fl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        // The number takes the room between − and + (in a narrow menu it gets narrower, so + is never cut off); the file's own number goes under them
+        LinearLayout.LayoutParams fl = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
         fl.leftMargin = fl.rightMargin = Math.round(8 * dp);
         bar.addView(b.field, fl);
         bar.addView(stepper(c, "+", v -> step(s, b, 1)));
+        LinearLayout box = new LinearLayout(c);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.addView(bar);
         b.mark = new TextView(c);   // the marker of a set number: the file's own beside it (Reset in the details brings it back)
         b.mark.setTextSize(11);
         b.mark.setTextColor(QUIET);
         b.mark.setMaxLines(1);
         b.mark.setEllipsize(TextUtils.TruncateAt.END);
-        b.mark.setPadding(Math.round(10 * dp), 0, 0, 0);
-        bar.addView(b.mark, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        b.mark.setGravity(Gravity.CENTER_HORIZONTAL);
+        b.mark.setPadding(0, Math.round(2 * dp), 0, 0);
+        box.addView(b.mark, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         shownNumber(b);
-        return bar;
+        return box;
+    }
+
+    /** The focused row or number whole on the screen once its line under the name has opened (the scroll to the focus ran before, on the shorter row) */
+    private static void inView(View v) {
+        v.post(() -> v.requestRectangleOnScreen(new android.graphics.Rect(0, 0, v.getWidth(), v.getHeight()), false));
     }
 
     /** Whether the number differs from the file's own (the player set it in the tab) */

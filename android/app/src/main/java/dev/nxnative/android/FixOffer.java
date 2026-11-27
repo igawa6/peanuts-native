@@ -25,7 +25,7 @@ final class FixOffer {
 
     static synchronized List<FixFinder.Fix> fixes(Context c) {
         if (cache == null) {
-            try (InputStream in = c.getAssets().open(FixFinder.ASSET)) { cache = FixFinder.parse(new String(in.readAllBytes(), StandardCharsets.UTF_8)); }
+            try (InputStream in = c.getAssets().open(FixFinder.ASSET)) { cache = FixFinder.parse(new String(Streams.readAll(in), StandardCharsets.UTF_8)); }   // PEANUTS: Android 12 (Streams: the same call from API 33)
             catch (IOException e) { cache = new ArrayList<>(); }
         }
         return cache;

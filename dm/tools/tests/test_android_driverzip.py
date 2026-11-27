@@ -18,7 +18,7 @@ class DriverZipJvm(unittest.TestCase):
     def test_install(self):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
-            r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-d', str(d / 'classes'), str(SRC / 'DriverZip.java'), str(TEST)], capture_output=True, text=True)
+            r = subprocess.run(['javac', '-Xlint:all,-try', '-Werror', '-d', str(d / 'classes'), str(SRC / 'DriverZip.java'), str(SRC / 'Streams.java'), str(TEST)], capture_output=True, text=True)   # PEANUTS: Streams.java (Android 12: the stream helpers)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             (d / 'run').mkdir()
             r = subprocess.run(['java', '-cp', str(d / 'classes'), 'dev.nxnative.android.DriverZipJvmTest', str(d / 'run')], capture_output=True, text=True)

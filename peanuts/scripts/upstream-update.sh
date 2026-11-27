@@ -26,6 +26,38 @@ if [ -z "$branch" ]; then   # a detached HEAD: --check reads HEAD itself; a reba
     branch="HEAD"
 fi
 allowlist="peanuts/upstream-unmarked.txt"
+dropped="peanuts/upstream-dropped.txt"
+
+# peanuts/upstream-dropped.txt: upstream paths Peanuts Native does not carry (today: every Switch 2 profile, dm/games/04*, and the
+# Switch 2 games' host gates and their tests; Peanuts Native supports Switch 1 games only, owner 2026-11-26). One "pattern<TAB>reason"
+# row each, the pattern a shell `case` pattern on the repo-relative path. The rebase keeps our deletion commit; when upstream edits a
+# dropped file, the stop that causes (modify/delete) is resolved as a deletion; when upstream adds one (a new Switch 2 profile), it is
+# removed in a commit of its own after the rebase. --check fails while any tracked path matches.
+is_dropped() {
+    [ -f "$dropped" ] || return 1
+    while IFS="$(printf '\t')" read -r pat _reason; do
+        case "$pat" in ''|'#'*) continue ;; esac
+        # shellcheck disable=SC2254   # the pattern is meant to glob
+        case "$1" in $pat) return 0 ;; esac
+    done < "$dropped"
+    return 1
+}
+tracked_dropped() {   # the tracked paths that match a dropped pattern, one per line (a git pathspec's `*` also matches `/`, as `case` does)
+    [ -f "$dropped" ] || return 0
+    pats=$(awk -F'\t' '$1 != "" && $1 !~ /^#/ { print $1 }' "$dropped")
+    [ -n "$pats" ] || return 0
+    # shellcheck disable=SC2086   # one pathspec per pattern
+    (set -f; git ls-files -- $pats)
+}
+# A rebase stop whose every unmerged path is a dropped one: delete them and let the rebase go on. Any other stop is left to a human.
+resolve_dropped_stop() {
+    unmerged=$(git diff --name-only --diff-filter=U)
+    [ -n "$unmerged" ] || return 1
+    for f in $unmerged; do is_dropped "$f" || return 1; done
+    for f in $unmerged; do git rm -q --ignore-unmatch -- "$f" >/dev/null 2>&1 || git rm -q --cached --ignore-unmatch -- "$f"; done
+    echo "rebase: resolved as deletions (dropped upstream content, $dropped): $(echo "$unmerged" | tr '\n' ' ')"
+    return 0
+}
 
 if [ "$mode" = "rebase" ]; then git fetch -q upstream --tags; fi
 git rev-parse -q --verify "$target^{commit}" >/dev/null || { echo "no such ref: $target"; exit 1; }
@@ -53,7 +85,21 @@ if [ "$mode" = "check" ]; then
 else
     [ -z "$(git status --porcelain)" ] || { echo "working tree not clean; commit first"; exit 1; }
     echo "rebasing $branch onto $target ($(git rev-parse --short "$target"))"
-    git rebase -q --rebase-merges "$target" || { echo "rebase stopped: resolve, 'git rebase --continue', then re-run"; exit 1; }   # keeps merge commits: other branches base on them
+    if ! git rebase -q --rebase-merges "$target"; then   # keeps merge commits: other branches base on them
+        while resolve_dropped_stop; do
+            if GIT_EDITOR=true git rebase --continue; then break; fi
+        done
+        if [ -d "$(git rev-parse --git-path rebase-merge)" ] || [ -d "$(git rev-parse --git-path rebase-apply)" ]; then
+            echo "rebase stopped: resolve, 'git rebase --continue', then re-run"; exit 1
+        fi
+    fi
+    # Upstream content Peanuts does not carry that the rebase brought in (a new Switch 2 profile): removed in a commit of its own
+    gone=$(tracked_dropped)
+    if [ -n "$gone" ]; then
+        echo "$gone" | while IFS= read -r f; do git rm -q -- "$f"; done
+        git commit -q -m "Upstream sync: drop content Peanuts Native does not carry ($dropped)"
+        echo "dropped after the rebase ($dropped): $(echo "$gone" | wc -l) file(s)"
+    fi
     base="$target"
 fi
 
@@ -103,9 +149,14 @@ check_hunks_marked() {
         /PEANUTS(\(upstream-candidate\))? begin/ { b = NR }
         /PEANUTS(\(upstream-candidate\))? end/   { if (b) { print b":"NR; b = 0 } }
     ')
-    git diff -U1 "$base" "$branch" -- "$f" | awk -v spans="$spans" '
+    # The spans go through the environment, not `awk -v`: with two or more spans the value holds
+    # newlines, which macOS's awk (the one-true-awk) rejects ("newline in string"), exiting
+    # non-zero, so a fully marked file was reported as unmarked. ENVIRON is POSIX and reads the
+    # same in gawk and mawk.
+    git diff -U1 "$base" "$branch" -- "$f" | PN_SPANS="$spans" awk '
         BEGIN {
             in_hunk = 0; has_marker = 1; bad = 0
+            spans = ENVIRON["PN_SPANS"]
             nspans = split(spans, lines, "\n")
             for (i = 1; i <= nspans; i++) { split(lines[i], se, ":"); sb[i] = se[1]; sendv[i] = se[2] }
         }
@@ -137,7 +188,7 @@ for f in $touched; do
         echo "exception ($allowlist): $f -- $(allowlist_reason "$f")"
         continue
     fi
-    [ -f "$f" ] || continue   # deleted files have no hunks to check
+    [ -f "$f" ] || continue   # deleted files have no hunks to check (a deleted upstream file is accepted as it is; the dropped ones are listed in $dropped)
     if git diff --no-color "$base" "$branch" -- "$f" | grep -q '^Binary files'; then
         echo "binary diff in upstream file $f -- cannot hunk-check; review by hand"
         fail=1
@@ -149,13 +200,19 @@ for f in $touched; do
     fi
 done
 
+left=$(tracked_dropped)
+if [ -n "$left" ]; then
+    echo "$(echo "$left" | wc -l) tracked file(s) match $dropped (Peanuts Native does not carry them), e.g. $(echo "$left" | head -n 1): git rm them"
+    fail=1
+fi
+
 if [ "$fail" != 0 ]; then
     echo "fix the hunks above (mark with PEANUTS, wrap in PEANUTS begin/end, or add to $allowlist with a reason), then re-run"
     exit 1
 fi
 
 if [ "$mode" = "check" ]; then
-    echo "check passed: every touched-upstream-file hunk is marked, spanned, or allow-listed."
+    echo "check passed: every touched-upstream-file hunk is marked, spanned, or allow-listed; no dropped upstream path ($dropped) is tracked."
     exit 0
 fi
 

@@ -54,9 +54,13 @@ static uint32_t align_of(size_t n, uint32_t a) {
     if (ue4_page_allocations && (a > 16 || n > 128 * 1024) && a < 4096) return 4096;
     return a > 16 ? a : 16;
 }
+// The size asked of the platform's malloc for a 16-byte-aligned block. C requires malloc's alignment only for the types that fit in the size, and jemalloc (some Android
+// builds use it instead of Scudo) keeps an 8-byte size class at 8-byte alignment; Unreal's FMemory promises 16 for every size, and PhysX's foundation allocator refuses a
+// pointer that is not 16-aligned (returns null). Every size class from 16 up is a multiple of 16 in both allocators, so a size of at least 16 gets 16-aligned memory
+static size_t malloc16_size(size_t n) { return n < 16 ? 16 : n; }   // PEANUTS(upstream-candidate): #455
 static void *alloc(size_t n, uint32_t a) {
     a = align_of(n, a);   // PEANUTS: #236
-    void *p = a == 16 ? plat_zone_malloc(g_zone, n ? n : 1) : plat_zone_memalign(g_zone, a, n ? n : 1);
+    void *p = a == 16 ? plat_zone_malloc(g_zone, malloc16_size(n)) : plat_zone_memalign(g_zone, a, n ? n : 1);   // PEANUTS(upstream-candidate): #455
     if (p) used((int64_t)plat_malloc_size(p));
     return p;
 }
@@ -77,7 +81,7 @@ static void *realloc_aligned(void *p, size_t n, uint32_t a) {
     size_t old = plat_malloc_size(p);
     if (free_check()) check_freed(p, "reallocated");
     a = align_of(n, a);   // PEANUTS: #236
-    if (a == 16) { void *q = plat_zone_realloc(g_zone, p, n); if (q) used((int64_t)plat_malloc_size(q) - (int64_t)old); return q; }
+    if (a == 16) { void *q = plat_zone_realloc(g_zone, p, malloc16_size(n)); if (q) used((int64_t)plat_malloc_size(q) - (int64_t)old); return q; }   // PEANUTS(upstream-candidate): #455
     if (!((uintptr_t)p & (a - 1)) && old >= n) return p;
     void *q = alloc(n, a); if (!q) return NULL;
     memcpy(q, p, old < n ? old : n); release(p); return q;

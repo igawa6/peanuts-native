@@ -36,6 +36,9 @@ mem_reserve	0x140000000
 mem_alias	0x118000000
 mem_stack	0x10000000
 app_pool	0x40000000
+# PEANUTS: Unity maps past the 1 GB pool (at most 1.75 GB mapped in the Mac runs of README.md#memory, measured before the map limit came on for every game, 2026-10-28);
+# with the limit its 4 MB map at 0.93 GB was refused and the game crashed 45 s after boot (main+0x6f86ec, AYN Thor, 2026-11-25); a 1.5 GB pool only moved it to 1.43 GB, 66 s
+mem_map_limit	off
 
 # ---- Graphics ----
 # The game calls nvnDeviceSetDepthMode(near = 0), so its vertex shaders use the main0_z entries; the pipeline bases made before it runs are made for that mode

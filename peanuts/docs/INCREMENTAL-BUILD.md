@@ -6,7 +6,7 @@ The shaders step is most of a Build's time (Animal Crossing: New Horizons on an 
 shaders, pack 8 s; a profile of 60,000 to 80,000 shaders takes 15 to 25 minutes there).
 
 Upstream already keeps an older library's entries, but only with a manifest of the build in the game's profile (`vk_delta.tsv`, from a full Mac build:
-[android/SHADERS.md, Delta updates](../../android/SHADERS.md#delta-updates)). 7 of 160 profiles have one, all of them Switch 2 titles.
+[android/SHADERS.md, Delta updates](../../android/SHADERS.md#delta-updates)). No Peanuts profile has one: upstream's 7 were all Switch 2 titles, which Peanuts Native does not carry.
 
 On a computer (the builder, `scripts/pack_android.py` without the app) none of this keeps anything: there is no `PN_REUSE_DIR`, so every build makes
 every part again as before. The builder gets two parts of this all the same, as they make every build faster with the same outputs: the walk of a `.nup` by

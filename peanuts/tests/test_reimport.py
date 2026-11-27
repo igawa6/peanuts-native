@@ -308,8 +308,8 @@ class Wiring(unittest.TestCase):
         self.assertIn('PackNote.without(title.packDir)', sheet)
         lib = (JAVA / 'main/java/dev/peanuts/ui/Library.java').read_text(encoding='utf-8')
         card = lib[lib.index('case BuildListener.ADDON_MISSING: {'):lib.index('case BuildListener.FILE_MISSING:')]
-        self.assertIn('"Set the DLC folder"', card)
-        self.assertIn('LibrarySettings.extraFolders(a)', card)
+        self.assertIn('"Add a DLC folder"', card)
+        self.assertIn('LibraryFolders.pick(a, dev.peanuts.folders.FolderKinds.ADDONS, false)', card, 'the picker of an update and DLC folder (#546)')
         self.assertIn('"Import again with DLC"', card)
         self.assertIn('PUi.confirmDanger(a, "Try anyway?"', card, 'Try anyway stays a choice, asked once')
         self.assertIn('r.replaceNup = s.replaceNup; r.deleteOldFirst = s.deleteOldFirst;', lib)

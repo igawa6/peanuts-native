@@ -7,10 +7,10 @@ Banana Native can apply cheat files in the Atmosphère format to a running game.
 ## Turn cheats on
 
 1. Open the game's page (the **...** on its card), tab **Game**, section **Game options**.
-2. Turn on **Cheats**. The row says "Cheat list in the in-game panel (General). Cheated values are stored when the game saves."
-3. Start the game. Open the in-game panel (see [The in-game panel](Side-Panel-In-Game)), tab **General**: the cheats are listed under a **Cheats** heading, grouped by section, one switch each. Each switch is live.
+2. Turn on **Cheats**. The row says "Cheat list in the quick menu (Cheats tab). Cheated values are stored when the game saves."
+3. Start the game. Open the quick menu (see [The in-game menus](Side-Panel-In-Game)), tab **Cheats**: the cheats are grouped by section, one switch each. Each switch is live, and **X All off** in the tab's header turns them all off. <!-- PEANUTS: in-game menus -->
 
-With **Cheats** off, nothing is passed to the game and the panel shows no cheat list. A game without a cheat file has no Cheats row.
+With **Cheats** off, nothing is passed to the game and the quick menu has no Cheats tab. A game without a cheat file has no Cheats row. <!-- PEANUTS: in-game menus -->
 
 **Warning:** a cheated value is written into the game's memory, and the game stores it when it saves. A cheat turned off leaves the last value in place, and the game's next save keeps it. If you care about a save, keep a copy ([Saves and storage](Saves-and-Storage)).
 
@@ -36,7 +36,7 @@ Values are written again on every pass while a cheat is on, and they ignore the 
 
 ## If a cheat does nothing
 
-- Check that **Cheats** is on in the game's page and that the cheat's switch is on in the panel.
+- Check that **Cheats** is on in the game's page and that the cheat's switch is on in the quick menu's Cheats tab. <!-- PEANUTS: in-game menus -->
 - A cheat may write nothing for a short while at the start, until the game has created the data it needs. It stays on and writes once the data exists.
 - Open an issue ([Troubleshooting](Troubleshooting)) with the log from **Share log**, the game's version and the cheat's name.
 

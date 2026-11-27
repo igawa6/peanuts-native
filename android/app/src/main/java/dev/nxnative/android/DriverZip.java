@@ -62,7 +62,7 @@ final class DriverZip {
 
     static byte[] readMeta(File f) {
         if (!f.isFile() || f.length() > MAX_META) return null;
-        try (InputStream in = new FileInputStream(f)) { return in.readAllBytes(); }
+        try (InputStream in = new FileInputStream(f)) { return Streams.readAll(in); }   // PEANUTS: Android 12 (Streams: the same call from API 33)
         catch (IOException | SecurityException e) { return null; }
     }
 

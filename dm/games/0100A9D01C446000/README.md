@@ -2,7 +2,11 @@
 
 Update 1.2.0 (v131072) over the base game, SDK 19.3.1. Square Enix / HEXA DRIVE, Unreal Engine 4.27 (PhysX 3.4, so UE4; the source paths say `UEngine/4.27-source`): IoStore containers beside one pak, the desktop renderer with forward shading, NVN, CRIWARE sound (a 6-channel AudioOut) and Sofdec movies (VP9 through the SDK's movie decoder, mode 1, NV12). Modules `main`, `subsdk0` (the movie module, which Sofdec feeds its VP9 video to) and `sdk`. Plays on the iPhone at 30 fps; 60 fps (30 on the Switch) on the Mac by the host's writes of Unreal's frame limits.
 
+The profile also identifies code for 1.0.0 and 1.1.0. Those releases share the same three module build IDs (1.2.0 changes `main`), so the host, which takes the display version from `main`'s build ID, reports 1.1.0 for both. The shader tables and gameplay results below are for 1.2.0. <!-- PEANUTS: #575 -->
+
 Status: brought up on the Mac: the logos and opening movie with sound, the title, a new adventure log (name entry, settings), the opening cutscene (the well, the night scene with Maribel by the boat) into play at Pilchard Bay with the controls tutorial, and a saved log continued, at 30 fps with saves; the opening cutscene into the first free play (the hero's house) again at 60 fps (`fps_target 60`). No red line at run time apart from the geometry shaders below; about 2.6 GB resident (1.1 GB of Metal allocations) in the cutscene. Playable on an iPhone at 30 fps; 60 fps on an iPhone is not tested yet.
+
+<!-- PEANUTS: Android, on the 0.1.9 release list (2026-11-27) --> **Android: not run on a phone yet.** The game is on the release list from 0.1.9 (`peanuts/release-titles.txt`, so in the default APK), with no readiness row. #575 ran no phone either; on an earlier tree (#234's head), strict shader preparation of 1.1.0 stopped on one compute shader, `4c587d2ed1d5f5b0` (a bindless image handle spilled through shared memory; 1.2.0's map lists the same key), and whether the current translator takes it has not been checked. A first Android run, its build and its driver results are open.
 
 ## What it needs
 

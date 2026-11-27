@@ -14,7 +14,8 @@ A new version may come with new shaders. What you see depends on what changed:
 
 - **No shader changes:** the pack's shaders are taken over at once.
 - **Some shaders changed:** the card says **Ready · updating shaders ...** with the count and time left. Only the changed shaders are translated, in the background, from your dump on the phone, and you can keep playing with the old shaders meanwhile.
-- **The app cannot update them itself:** the card says **Ready · update** and the game plays as before. Open the game's page: a **Shader update available** card at the top has an **Update shaders** button (or its button reads **Prepare shaders**, or **Storage > Prepare again**). The update is optional. A pack made on a computer can be made again there and imported instead ([First start and Prepare](First-Start-and-Prepare)).
+- **The app cannot update them itself:** the game plays as before. Open the game's page: the line **Shader update · Optional** beside the game opens **Shader update available** with an **Update shaders** button that opens the build sheet, where **Rebuild** makes them (or its button reads **Prepare shaders**, or **Storage > Prepare again**). The update is optional. A pack made on a computer can be made again there and imported instead ([First start and Prepare](First-Start-and-Prepare)).
+  <!-- PEANUTS: Update shaders opens the build sheet; no Ready · update label on Peanuts' Home -->
 
 Shader updates can take a long time on a phone for games with many shaders (for example all 8,161 of Pokémon Pokopia `0400A3A01EE4C000` in the worst case); keep the phone charged.
 

@@ -38,7 +38,7 @@ public final class MiiImport {
         BufferedInputStream b = new BufferedInputStream(in, 1 << 16);
         b.mark(4);
         byte[] head = new byte[4];
-        int n = b.readNBytes(head, 0, 4);
+        int n = dev.nxnative.android.Streams.readInto(b, head, 0, 4);   // b.readNBytes from API 33, a loop on Android 12
         b.reset();
         if (n == 4 && head[0] == 'P' && head[1] == 'K' && head[2] == 3 && head[3] == 4) return fromZip(b);
         byte[] all = readAtMost(b, ENTRY_MAX);

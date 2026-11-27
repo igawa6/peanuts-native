@@ -10,7 +10,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/CheatsJvmTest.java'
-OOT = REPO / 'dm/games/0400486024DEC000/cheats/E0F3CCFAF50065AE.txt'
+OOT = REPO / 'peanuts/tests/fixtures/profiles/ocarina/cheats/E0F3CCFAF50065AE.txt'   # PEANUTS: Ocarina of Time's file, kept as a fixture (its Switch 2 profile is not carried)
 
 
 class Wiring(unittest.TestCase):

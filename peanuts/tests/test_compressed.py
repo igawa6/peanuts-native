@@ -85,6 +85,12 @@ class Logic(unittest.TestCase):
             'Game.nsz: abc.ncz was compressed with a zstd window larger than 128 MiB, more than an import can hold': 'Game.nsz was compressed with settings the app cannot read, so Kart was not imported. Nothing was changed. Compress it again with nsz\'s default settings, or build from the uncompressed file.',
             'Game.nsz: abc.ncz uses a newer NCZ layout (NCZSECT2) that cannot be read here': 'Game.nsz was compressed with settings the app cannot read, so Kart was not imported. Nothing was changed. Compress it again with nsz\'s default settings, or build from the uncompressed file.',
         }
+        cut = ' is cut off, so Kart was not imported. Nothing was changed. The file is shorter than its own contents say, so it was not copied or downloaded completely. Copy the file again, then build the game again.'
+        cases.update({   # any game file cut off when it was copied, not only a compressed one (nx_nca.c; issues #488, #674)
+            'Game.nsp: 641047dca2089c06cfe65619af39c180.cnmt.nca lies outside its file (114848 + 4096 > 105632 bytes): the file is cut off': 'Game.nsp' + cut,
+            'Game [DLC].xci: abc.nca lies outside its file (1576726 + 128254464 > 100663296 bytes): the file is cut off': 'Game [DLC].xci' + cut,
+            'abc.nca: lies outside its file (1 + 2 > 2): a cut-off dump?': 'A game file' + cut,   # the message before the file's name was in it
+        })
         for msg, words in cases.items():
             self.assertEqual(self.java('fail', msg, 'Kart', 1), words, msg)
         self.assertEqual(self.java('fail', 'Game.nsz: abc.ncz does not match its checksum', 'Kart', 0),

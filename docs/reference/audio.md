@@ -379,9 +379,17 @@ For a replaced DSP renderer the size query keeps the service's work-buffer contr
 
 - **Symptom:** short dropouts in cutscenes and heavy scenes, 85–115 ms of exact zeros every few seconds (every 0.5 s at 47 fps), each with a one-frame volume ramp down before and up after; the output has no underruns and every rendered frame sounds.
 - **Cause:** the game's timeline counts frames, while its sound plays in real time. Below its frame rate (a panel slower than 60 Hz: the AYN Thor's measures 59.84 Hz; dropped frames) the timeline falls behind the sound, and the game resyncs: it sets the volume of a synced stream's voices to 0, pauses them (`nn::audio::SetVoicePlayState`) and starts them again about 70 ms later, each time the sound is about 100 ms ahead.
-- **Fix:** the host plays the renderer's output at the game's pace (presented frames / the game's frame rate, against real time, and the sound's lead): within 1 % for every game (a resampler, inaudible), and fully (a WSOLA time-stretch, pitch kept) for a game seen pausing and restarting a group of voices within 300 ms twice within 60 s while it runs slow; the finding is kept in `<DM_TEMP>/audio_follow`. A game whose world runs in real time keeps real-time sound. `PN_AUDIO_FOLLOW=0` off, `1` automatic (default), `2` always.
+- **Fix:** the host plays the renderer's output at the game's pace (presented frames / the game's frame rate, against real time, and the sound's lead): within 1 % for every game (a resampler, inaudible), which is the default (`PN_AUDIO_FOLLOW=1`). Following fully (a WSOLA time-stretch, pitch kept) is `PN_AUDIO_FOLLOW=2` only: 0.1.8 also turned it on for a game seen pausing and restarting a group of voices within 300 ms twice within 60 s while it ran slow, kept in `<DM_TEMP>/audio_follow`, which slowed the sound under a frame rate cap (below). `PN_AUDIO_FOLLOW=0` off.
 - **Found on:** [Super Mario Odyssey](../../dm/games/0100000000010000/README.md) 1.4.1 on the AYN Thor.
 - **Check:** `t_peanuts_audiosync` (`make -C dm/host/tests GAME=<id> peanuts-host`); on the phone the log's `peanuts: the sound follows the game's pace` lines give the pace, the lead and the tempo, and a `DM_AUDIO_DUMP` shows no runs of exact zeros inside the sound.
+
+### Sound slowed and stretched under a frame rate cap (0.1.8)
+
+- **Symptom:** with a frame rate cap below the game's own rate (Breath of the Wild or Tears of the Kingdom with the 60 fps rows at a 30 to 45 fps cap), the sound plays slower than normal, stretched, with an echo or crackling; at the game's full rate it is normal. `PN_AUDIO_FOLLOW=0` brings it back. Since 0.1.8; GitHub issue #600 (and #592, #627, #730, #768).
+- **Cause:** under the cap the game runs slower than real time and resyncs its sound, which the automatic mode of [the section above](#a-game-that-keeps-its-sound-in-step-with-its-frames) took as a game that keeps its sound in step with its frames: it then followed the game's pace in full, down to 0.5, and kept that finding for every later start in `<DM_TEMP>/audio_follow`.
+- **Fix:** the automatic mode keeps to the inaudible 1 % (the finding is logged once, `the sound keeps its speed`); an `audio_follow` file from 0.1.8 is ignored; full following is `PN_AUDIO_FOLLOW=2` only (`peanuts_audiosync.c`).
+- **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) and [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), several phones.
+- **Check:** `t_peanuts_audiosync`: a game at 0.85 of its pace with two resyncs stays at the inaudible tempo, and an old finding does not turn full following on.
 <!-- PEANUTS end -->
 
 ### No virtual audio input devices (SDK 22)

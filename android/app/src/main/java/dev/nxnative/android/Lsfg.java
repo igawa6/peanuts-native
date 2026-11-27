@@ -125,7 +125,7 @@ final class Lsfg {
         head.setText("Frame generation (Lossless Scaling, your own Lossless.dll)");
         head.setPadding(0, 24, 0, 0);
         box.addView(head);
-        if (!BuildConfig.NX_LSFG) { TextView t = new TextView(c); t.setText("Not in this build (built with -PnxLsfg=false)."); box.addView(t); return null; }
+        if (!BuildConfig.NX_LSFG) { TextView t = new TextView(c); t.setText(dev.peanuts.smooth.DevView.panel(c, "Not in this build (built with -PnxLsfg=false)."));   /* PEANUTS: Developer view off: player words */ box.addView(t); return null; }
         // The options only where they apply: everything below the switch only with frame generation on; the frames per game frame only with a fixed rate (with a
         // target the multiplier follows the target)
         LinearLayout opts = new LinearLayout(c), fixed = new LinearLayout(c);
@@ -148,7 +148,7 @@ final class Lsfg {
         TextView l3 = new TextView(c); l3.setText("Motion estimation resolution (lower is faster)"); opts.addView(l3);
         opts.addView(choice(c, FLOWS, flow(c), new String[]{"25%", "50%", "75%", "100%"}, v -> { prefs(c).edit().putInt("lsfg_flow", v).commit(); apply.run(); }));
         TextView mode = new TextView(c);   // Eden ports only the performance shader set (lossless_dll.h PerformanceShader); the quality set would need its own chain
-        mode.setText("Mode: performance (the only shader set Eden's LSFG uses)");
+        mode.setText(dev.peanuts.smooth.DevView.panel(c, "Mode: performance (the only shader set Eden's LSFG uses)"));   // PEANUTS: Developer view off: player words
         mode.setTextSize(12);
         opts.addView(mode);
         box.addView(opts);

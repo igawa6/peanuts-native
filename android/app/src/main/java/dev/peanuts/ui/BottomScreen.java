@@ -406,8 +406,9 @@ public final class BottomScreen {
         if (owner != a) { if (owner != null) dismiss(); owner = a; started = resumed = a.hasWindowFocus(); }
         if (watching) return;
         watching = true;
-        a.getApplicationContext().registerReceiver(companionState, new IntentFilter(Companion.STATE), Context.RECEIVER_NOT_EXPORTED);
-        a.getApplicationContext().registerReceiver(pageState, new IntentFilter(AppScreens.STATE), Context.RECEIVER_NOT_EXPORTED);
+        // From API 33 not exported; on Android 12 the senders need the app's signature permission (Companion and AppScreens send from this app, package set)
+        dev.peanuts.InternalBroadcast.register(a.getApplicationContext(), companionState, new IntentFilter(Companion.STATE));
+        dev.peanuts.InternalBroadcast.register(a.getApplicationContext(), pageState, new IntentFilter(AppScreens.STATE));
         Context app = a.getApplicationContext();
         Pads.watch(app, () -> { if (panel != null) panel.setPad(Pads.connected(app)); });
         a.getApplication().registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {

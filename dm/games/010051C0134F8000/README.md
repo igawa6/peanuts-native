@@ -35,13 +35,15 @@ sweep, and the remaining DLC story checks are open.
 - The title backdrop's color cast reproduced on Turnip v26.2.0 R5 and
   v27.0.0 R2. A temporary direct HDR tone map changed the sky and outfit
   colors, while the vegetation remained unusually green.
-- In the forest, Gohan and some foliage showed block corruption. The
-  corruption was visible in the scene's material attachments before
-  grading and persisted with full render barriers. Several 256×256 BC1
-  material inputs already contained scrambled blocks when read back from
-  Vulkan, including inputs sampled by fragment shaders `ea4e877840869475`
-  and `7c7b1b7eacb6940f`. Both inputs use sparse NVN storage without a
-  packaged block height. The guest page contents and upload layout still
-  need to be compared to identify where the blocks are corrupted.
+- In the forest, Gohan and some foliage showed block corruption, and Raditz
+  was noise in the pod cutscene (GitHub issue #298). The 256×256 BC1 inputs of
+  fragment shaders `ea4e877840869475` and `7c7b1b7eacb6940f` are SPARSE (flag
+  0x20) textures in plain 4 MB CPU_UNCACHED pools (flags 0xe2), not in virtual
+  pools. Their guest bytes read right at the automatic block height, but the
+  Vulkan image of one held float data from the storage's earlier occupant: the
+  game streams the levels in after the first sample, and the SPARSE flag kept
+  these textures out of every tracked arm of `vka_tex.c` `storage_mode`, so the
+  image was filled once. Tracking SPARSE compressed textures outside sparse
+  pools from their first use fixed Raditz and Gohan on Thor (Turnip v27.0.0 R2).
 
 <!-- PEANUTS end -->

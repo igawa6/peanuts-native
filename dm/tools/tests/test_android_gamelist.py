@@ -123,12 +123,16 @@ class DumpLayouts(unittest.TestCase):
 class ProfileRows(unittest.TestCase):
     """The profiles' romfs_check rows, as build.gradle romfsChecksOf gives them; with NX_TEST_MKW_ROMFS set to a Mario Kart World 1.8.0 RomFS folder, its file holds
     the profile's main build ID on that line (read only; skipped otherwise)"""
-    def rows(self, game):
-        return ['|'.join(c.strip() for c in l.split('\t')[1:4]) for l in (REPO / f'dm/games/{game}/game.tsv').read_text().splitlines() if l.startswith('romfs_check\t')]
+    def rows(self, game):   # PEANUTS begin: a folder path is read like a title ID (the fixture below)
+        d = Path(game) if Path(game).is_absolute() else REPO / f'dm/games/{game}'
+        return ['|'.join(c.strip() for c in l.split('\t')[1:4]) for l in (d / 'game.tsv').read_text().splitlines() if l.startswith('romfs_check\t')]
 
-    def test_rows(self):
-        self.assertEqual(self.rows('040074A01BF12000'), [CHECK])
-        self.assertEqual(self.rows('0400C3F00006E000'), [CHECK])
+    def test_rows(self):   # no Switch 1 profile has a romfs_check row and the two that had one (Donkey Kong Bananza, Mario Kart World) are Switch 2 profiles
+        # Peanuts Native does not carry: their row, in a game.tsv of its own, gives the same column; any profile's rows give that form too
+        with tempfile.TemporaryDirectory() as t:
+            (Path(t) / 'game.tsv').write_text('title_id\t0100000000AD0000\nromfs_check\tSystem/RegionLangMask.txt\t4\tmain\n')
+            self.assertEqual(self.rows(t), [CHECK])
+        self.assertEqual([g for g in (p.parent.name for p in (REPO / 'dm/games').glob('*/game.tsv')) if self.rows(g) and self.rows(g) != [CHECK]], [])   # PEANUTS end
 
     @unittest.skipUnless(os.environ.get('NX_TEST_MKW_ROMFS'), 'NX_TEST_MKW_ROMFS not set')
     def test_mkw_dump(self):

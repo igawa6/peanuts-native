@@ -1,0 +1,51 @@
+# Game profile of The Hundred Line -Last Defense Academy- (Switch, update 1.2.1 = v589824, no add-on content). PEANUTS: a Peanuts Native profile (Banana Native has none for this title).
+# Format: see dm/games/README.md
+# Media.Vision's engine (MVGL) on NVN, SDK 18.3.2, CRIWARE sound and movies; the game files are in MVGL archives (*.nx64.mvgl, the 64-bit layout with 24-byte data entries:
+# mvgl.py data_entry) and seven CRI CPK archives. The shaders are the archives' 'shad' entries, NXVS / NXFS containers (shader_split.py mvgl_jobs), and 179 more in main.
+# Provisional profile (dm/games/profile_guess.py, from the survey): the memory keys are the survey's guess, not measured
+
+# ---- Identity ----
+title_id	010093C0215B4000
+program_id	010093C0215B4000
+
+# ---- App ----
+name	The Hundred Line -Last Defense Academy-
+ipa	TheHundredLine.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v589824	1.2.1	main=d4a7205845845bca707f9b2f60a7096b	subsdk0=14765b1d77b12d8654ea87a61c65e2b1	sdk=f118ae1c2e7728471aaf1a0d58484968
+package	v589824
+shader_versions	v589824
+
+# ---- Files ----
+# every module main imports from (subsdk0 is NintendoSDK_movie)
+modules	main subsdk0 sdk
+# the largest MVGL archive (as Digimon Story Time Stranger); app_0_movie.nx64.cpk, the survey's pick, holds the movies only
+romfs_marker	app_0.nx64.mvgl
+zip_store	.cpk:.mvgl:.metallib
+
+# ---- Memory ----
+# the NPDM declares 128 MB of system resource (virtual address memory) and main never sets a heap: a 5 GB block with a 4.375 GB alias region, where the game maps its memory itself
+mem_reserve	0x140000000
+mem_alias	0x118000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 128 MB of system resource
+sys_resource	0x8000000
+
+# ---- Shader split ----
+shader_groups	/=romfs
+shader_note	The Hundred Line -Last Defense Academy- shaders
+
+# ---- Frame rate ----
+# PEANUTS: the game holds itself to 30 fps with its own limiter (present interval 1): main+0x6a8310 sets the frame rate (main+0xc97ce4, i32, 60 in the image, 30 set at start by
+# main+0x4533ec) and main+0x6c7ef0 the frame time in us (main+0xc97d18, round(1000000 / fps)); the main loop (main+0x6c7c50) sleeps the frame time less the frame's elapsed time.
+# The game has a 30 / 60 'FPS' debug item (main+0x3e0c74) and per-frame code that checks for 60 (main+0x41549c, +0x487354); its game clock steps by the measured time, at most 1/30 s
+# (main+0x506e7c). Reviewed rows of our own (no FPSLocker Warehouse config for this build), main 1.2.1 only: the host's frame limit picks the rate, 30 by default (what the game
+# sets itself), 60 the launcher's choice; Game owned applies none. 45 / 40 / 20 are not offered: the per-frame code checks for exactly 60, and the clock caps a step at 1/30 s
+fps_limit	30
+fps_limit_min	30
+fps_modes	30,60
+fpslocker	d4a7205845845bca707f9b2f60a7096b	target_i32	@0xc97ce4	1	0
+fpslocker	d4a7205845845bca707f9b2f60a7096b	step_ticks_u32	@0xc97d18	1	1000000:1

@@ -532,7 +532,7 @@ public final class DriverActivity extends Activity {
     static List<Release> releases(String repo) throws Exception {
         HttpsURLConnection c = open("https://api.github.com/repos/" + repo + "/releases?per_page=30", "application/vnd.github+json");
         String body;
-        try (InputStream in = c.getInputStream()) { body = new String(in.readAllBytes(), StandardCharsets.UTF_8); }
+        try (InputStream in = c.getInputStream()) { body = new String(dev.nxnative.android.Streams.readAll(in), StandardCharsets.UTF_8); }
         finally { c.disconnect(); }
         List<Release> out = new ArrayList<>();
         JSONArray rel = new JSONArray(body);

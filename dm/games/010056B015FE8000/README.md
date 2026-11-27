@@ -15,6 +15,7 @@ Update 1.0.3 (v131072) over the base cartridge dump. PlatinumGames' engine, SDK 
 | `present_interval display` | `game.tsv` | replaces the game's interval-two presentation target with 60 Hz; the native clock already measures elapsed time |
 | `fps_target 60` | `game.tsv`, `hle_fpslock.c` | initializes the verified build's engine interval at 60 fps; the launcher can select 30 fps independently of resolution policy |
 | `gpu_timestamps segment` | `game.tsv` | the renderer subtracts two raw timestamp reports; one timestamp for the whole submission makes its measured GPU cost zero |
+| `place_join_mb 512` | `game.tsv`, `vka_mem.c` `join_cap` (Android) | buffers in the game's 1.3 GiB pool (`0x405e200000+0x53840000`) lie across two of its placed parts that join to 288 to 368 MiB, past the 256 MiB default: they were not joined and their draws were skipped (missing textures, a black box; GitHub issues #394, #651). With 512 a player's 6 GB phone joined every range (24 joins, the largest 192 MiB in 123 ms). A `DM_VK_PLACE_JOIN_MB` line in Extra environment still overrides it <!-- PEANUTS --> |
 | Four dynamic-resolution threshold cuts | [`patches.py`](patches.py) | the verified 1.0.3 main build uses 22.5 / 16.005 / 15 ms thresholds for a 60 fps budget |
 
 ## Files and shaders
@@ -87,6 +88,7 @@ The objects in `data000.cpk/shader.dat` decode as follows:
 - [Mapped-range flushes taken as uploads](../../../docs/reference/nvn-objects.md#mapped-range-flushes-taken-as-uploads-tex_flush_upload).
 - [Geometry reader viewport masks](../../../docs/reference/shaders.md#geometry-reader-viewport-masks).
 - [Geometry-stage storage-buffer table](../../../docs/reference/shaders.md#geometry-stage-storage-buffer-table).
+- [A range given to the GPU across two placed parts of a pool](../../../docs/reference/memory.md#a-range-given-to-the-gpu-across-two-placed-parts-of-a-pool-android): the profile's `place_join_mb` (Android). <!-- PEANUTS: GitHub issues #394, #651 -->
 - [Storage-buffer write flag in translation metadata](../../../docs/reference/shaders.md#storage-buffer-write-flag-in-translation-metadata).
 - [Passthrough geometry output bounds follow input topology](../../../docs/reference/shaders.md#passthrough-geometry-output-bounds-follow-input-topology).
 - [Passthrough geometry kernels lose raster vertices](../../../docs/reference/shaders.md#passthrough-geometry-kernels-lose-raster-vertices).

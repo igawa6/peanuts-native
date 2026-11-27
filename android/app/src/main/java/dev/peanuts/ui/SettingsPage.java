@@ -719,17 +719,7 @@ public final class SettingsPage {
             focusWatched = a;
             a.getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((was, now) -> focused(now));
         }
-        for (View row : places.keySet()) {
-            TextView v = value(row);
-            if (v != null) v.addTextChangedListener(new android.text.TextWatcher() {
-                @Override public void beforeTextChanged(CharSequence x, int st, int c, int af) {}
-                @Override public void onTextChanged(CharSequence x, int st, int b, int c) {}
-                @Override public void afterTextChanged(android.text.Editable x) { rowIcon(row); if (explained == row) explainRow(row); }
-            });
-            android.widget.Switch sw = toggle(row);
-            if (sw != null && SettingsSections.followsValue(places.get(row).title)) sw.setForeground(new Watch(() -> rowIcon(row)));   // a switch changes no text
-            row.setOnTouchListener((x, e) -> { if (e.getActionMasked() == android.view.MotionEvent.ACTION_UP) explainRow(row); return false; });
-        }
+        for (View row : places.keySet()) watch(row);
         content.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
             @Override public void onViewAttachedToWindow(View v) {}
             @Override public void onViewDetachedFromWindow(View v) {
@@ -740,6 +730,40 @@ public final class SettingsPage {
             }
         });
         content.post(() -> { if (pane == content && !focusedRow(a.getCurrentFocus())) explainSection(current); });
+    }
+
+    /** A row's value line and switch change its icon and its explanation while it is explained; a tap explains it */
+    private static void watch(View row) {
+        TextView v = value(row);
+        if (v != null) v.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence x, int st, int c, int af) {}
+            @Override public void onTextChanged(CharSequence x, int st, int b, int c) {}
+            @Override public void afterTextChanged(android.text.Editable x) { rowIcon(row); if (explained == row) explainRow(row); }
+        });
+        android.widget.Switch sw = toggle(row);
+        if (sw != null && SettingsSections.followsValue(places.get(row).title)) sw.setForeground(new Watch(() -> rowIcon(row)));   // a switch changes no text
+        row.setOnTouchListener((x, e) -> { if (e.getActionMasked() == android.view.MotionEvent.ACTION_UP) explainRow(row); return false; });
+    }
+
+    /**
+     * A row made after Settings was laid out (Library's folder rows, one for each folder: LibraryFolders), put by its caller into the card its siblings are in:
+     * the measures of the rows beside it, its tile's icon, and its explanation on the second display, as every row of lay() has. Nothing while Settings is not
+     * laid out (the next lay() takes it as it takes every row)
+     */
+    static void adopt(View row, String title) {
+        if (pane == null || owner == null || owner != row.getContext()) return;
+        SettingsSections.Place p = SettingsSections.place(title, "Library");
+        likeUpstream(row);
+        places.put(row, new Explained(title, p));
+        rowIcon(row);
+        watch(row);
+    }
+
+    /** A row that was taken out of Settings (a folder removed from the list): no longer explained */
+    static void drop(View row) {
+        places.remove(row);
+        rowIcons.remove(row);
+        if (explained == row) { explained = null; if (owner != null) explainSection(current); }
     }
 
     /**

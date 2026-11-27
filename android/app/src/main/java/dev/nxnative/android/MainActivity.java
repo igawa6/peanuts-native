@@ -63,6 +63,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        Prefs.dropXboxSwap(this);   // PEANUTS: Xbox button label swap removed
         if (saved != null) settingsPage = saved.getBoolean("settings");
         if (saved != null && saved.getString("game_settings") != null)   // a fold or unfold makes the activity again: the game's settings page stays open
             for (Game g : Game.load(this)) if (g.gameDir.equals(saved.getString("game_settings"))) { settingsGame = g; break; }
@@ -381,12 +382,7 @@ public final class MainActivity extends Activity {
                 .value("On the controller, or the phone without one").view);
         perf.addView(new Ui.Setting(this, "🚀", "Use fast cores", null).toggle(this, Prefs.pinThreads(this), (b, on) -> Prefs.pinThreadsDefault(this, on))
                 .value("Keeps the busiest threads off the small cores").view);
-        Ui.Setting xbox = new Ui.Setting(this, "🅰️", "Xbox button label swap", null).chevron(this);
-        xbox.view.setOnClickListener(v -> new PadFocus.Builder(this).setTitle("Xbox button label swap")
-                .setSingleChoiceItems(Prefs.XBOX_NAMES, Prefs.xboxButtons(this), (d, w) -> { Prefs.xboxButtonsDefault(this, w); xbox.value(Prefs.xboxLabel(w)); d.dismiss(); })
-                .setNegativeButton("Cancel", null).show());
-        xbox.value(Prefs.xboxLabel(Prefs.xboxButtons(this)));
-        ctl.addView(xbox.view);
+        // PEANUTS: the Xbox button label swap row is removed (owner 2026-11-26; Prefs.dropXboxSwap)
         Ui.Setting padMap = new Ui.Setting(this, "🕹️", "Button mapping", null).chevron(this);
         padMap.view.setOnClickListener(v -> PadMapUi.forDefault(this, () -> padMap.value(PadMapUi.label(this, null))));
         padMap.value(PadMapUi.label(this, null));
@@ -542,7 +538,7 @@ public final class MainActivity extends Activity {
         List<String> asked = AdbControl.asked(i::hasExtra);
         if (asked.isEmpty()) return i;
         android.util.Log.w("nxnative", "launcher intent from " + getReferrer() + " with " + asked + " ignored: ADB control is off (Settings › Help › ADB control)");
-        Toast.makeText(this, "A command from another app was ignored (Settings › ADB control is off)", Toast.LENGTH_LONG).show();
+        if (!dev.peanuts.smooth.DevView.plain(this)) Toast.makeText(this, "A command from another app was ignored (Settings › ADB control is off)", Toast.LENGTH_LONG).show();   // PEANUTS: Developer view off: the log only (the line above)
         Intent out = new Intent(i);
         for (String k : asked) out.removeExtra(k);
         return out;
@@ -1415,6 +1411,7 @@ public final class MainActivity extends Activity {
     }
 
     void launch(Game card) {
+        final Game asked = card;   // PEANUTS: the card as asked for, before its edition switch: what Play without mods starts again (modsNotReady)
         if (needAccess(new File(card.gameDir))) return;
         if (Edition.on(this, card.titleId) && Edition.offered(card)) {   // the card's edition switch: program 1 of its set, as a game of its own (Edition.forPlay)
             Game e = Edition.forPlay(this, card);
@@ -1427,12 +1424,16 @@ public final class MainActivity extends Activity {
             card = e;
         }
         Game g0 = Folders.repack(this, card);   // a remembered pack folder that is gone: the usual search instead
-        // PEANUTS: code mods that are on play from their own build's pack (dev.peanuts.settings.ModsSection), whatever started the game; off, deleted or not built yet: the normal pack
-        String modPack = dev.peanuts.settings.ModsSection.packToPlay(this, g0.titleId, g0.gameDir, g0.packDir,
-                () -> Toast.makeText(this, "Code mods are on but their build is not ready: the game starts without them (hold the cover › Game › Mods shows the build)", Toast.LENGTH_LONG).show());
-        // PEANUTS begin: ...unless the launcher's own check would refuse that pack (a variant built before the game was updated or rebuilt): then the normal pack
-        // plays and a line says why, in place of the "pack cannot start" dialog, whose Prepare again makes the normal pack and never the variant
+        // PEANUTS begin: code mods that are on play from their own build's pack (dev.peanuts.settings.ModsSection), whatever started the game; off or deleted: the
+        // normal pack. On and their build not ready (not made yet, or made by another version of the app): no start at all (issue #514: the game without its code
+        // mods read the modded game's save and wrote over it at its start, before the first picture), but a question that says when the build is ready and offers
+        // Play without mods after a warning (withoutMods: that one start of the normal pack)
+        boolean plain = withoutMods.remove(g0.gameDir), notBuilt[] = {false};
+        String modPack = dev.peanuts.settings.ModsSection.packToPlay(this, g0.titleId, g0.gameDir, g0.packDir, plain ? null : () -> notBuilt[0] = true);
+        // ...and the same when the launcher's own check would refuse that pack (a variant built before the game was updated or rebuilt), in place of the "pack cannot
+        // start" dialog, whose Prepare again makes the normal pack and never the variant
         Game gm = modPack == null || modPack.equals(g0.packDir) ? g0 : new Game(g0.titleId, g0.name, g0.gameDir, modPack, g0.used);
+        boolean stale = false;
         if (gm != g0) {
             boolean refuse;
             boolean toVariant = dev.peanuts.build.ModdedBuild.isVariantPack(new File(gm.packDir));   // (not: the list named a variant and the Mods code gave the game's own pack back)
@@ -1440,9 +1441,10 @@ public final class MainActivity extends Activity {
             if (!refuse && toVariant && Pack.libraryProblem(new File(gm.packDir), gm.titleId) != null) refuse = true;   // no shader update of the game on a variant's folder (Ondevice.autoUpdate below): the Mods section rebuilds it
             if (refuse && toVariant) {
                 gm = g0;
-                Toast.makeText(this, "The build with mods no longer fits this game: it starts without its code mods (hold the cover › Game › Mods › Rebuild with mods)", Toast.LENGTH_LONG).show();
+                stale = !plain;
             }
         }
+        if (notBuilt[0] || stale) { modsNotReady(asked, gm, stale); return; }
         final Game g = gm;
         // PEANUTS end
         File saveGone = Folders.goneSave(this, g);
@@ -1532,6 +1534,22 @@ public final class MainActivity extends Activity {
 
     /** The games Play anyway was chosen for in this process (an untested game version): asked once per launcher start, not at every Play */
     private static final java.util.Set<String> playAnyway = new java.util.HashSet<>();
+
+    // PEANUTS begin: Play while code mods are on and their build with mods is not ready (issue #514). The build is started when it is due (ModsSection.due, as
+    // the game's page does), and the question says how far it is (ModsSection.waitText). Play without mods asks again, with the warning, and then starts the
+    // normal pack once (withoutMods, by game folder: taken by that one start)
+    private static final java.util.Set<String> withoutMods = new java.util.HashSet<>();
+
+    private void modsNotReady(Game card, Game g, boolean stale) {
+        dev.peanuts.settings.ModsSection.due(this, g.titleId, g.name, g.gameDir, g.packDir);
+        new PadFocus.Builder(this).setTitle("The build with mods is not ready")
+                .setMessage(dev.peanuts.settings.ModsSection.waitText(g.titleId, g.name, stale))
+                .setPositiveButton("OK", null)
+                .setNeutralButton("Play without mods", (d, w) -> Ui.confirmDanger(this, "Play without mods?", dev.peanuts.build.ModdedBuild.withoutModsWarning(g.name),
+                        "Play without mods", () -> { withoutMods.add(g.gameDir); launch(card); withoutMods.remove(g.gameDir); }))   // removed again: a launch that stopped earlier (an access question) leaves no plain start for later
+                .show();
+    }
+    // PEANUTS end
 
     /** A pack that cannot run with this game folder: why (its technical part in Details), then Prepare again from the dump (the default), or another pack folder */
     private void packProblem(Game g, String why, String detail, Runnable pickPack) {
@@ -1681,7 +1699,7 @@ public final class MainActivity extends Activity {
     void error(String msg) { new PadFocus.Builder(this).setMessage(msg).setPositiveButton("OK", null).show(); }
 
     private static String padPanelLabel(int v) {
-        return PadPanel.OPEN_NAMES[v] + ". By touch: swipe in from the right edge, or Back";
+        return PadPanel.OPEN_NAMES[v] + ". By touch: swipe in from the left edge, or the right edge for the quick menu, or Back";   // PEANUTS: the in-game menus (InGamePanel)
     }
     private static String touchLabel(int m) { return m == TouchControls.MODE_AUTO ? "Auto: hidden while a controller is connected" : TouchControls.MODE_NAMES[m]; }
     private static String rotationLabel(boolean auto) { return auto ? "Automatic: the game follows the phone's rotation, portrait too" : "Landscape: the game window stays horizontal on a phone"; }

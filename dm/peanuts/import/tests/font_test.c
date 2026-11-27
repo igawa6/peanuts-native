@@ -1,5 +1,8 @@
 // Firmware font import with synthetic NCAs and made-up keys: a missing key generation is not a missing font archive.
 #define _POSIX_C_SOURCE 200809L
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE   // macOS hides mkdtemp under _POSIX_C_SOURCE
+#endif
 #include "nximport.h"
 #include "nsp_fixture.h"
 #include <sys/stat.h>

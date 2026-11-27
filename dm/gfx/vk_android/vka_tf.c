@@ -182,6 +182,9 @@ void vka_tf_end(VkCommandBuffer cb) {
 }
 void vka_tf_flush(VkCommandBuffer cb) {
     if (!g_npend) return;
+    // PEANUTS: order transform feedback writes before transfer reads (pass-end barrier no longer drains ALL_COMMANDS)
+    vka_barrier_stages(cb, VK_PIPELINE_STAGE_TRANSFORM_FEEDBACK_BIT_EXT, VK_ACCESS_TRANSFORM_FEEDBACK_WRITE_BIT_EXT,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
     for (int i = 0; i < g_npend; i++) {
         for (uint64_t done = 0; done < g_pend[i].len;) {
             VkBuffer b; VkDeviceSize o; uint64_t k = vka_addr_run(g_pend[i].dst + done, g_pend[i].len - done, &b, &o);

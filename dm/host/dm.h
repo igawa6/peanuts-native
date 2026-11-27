@@ -116,12 +116,9 @@ enum { OBS_UE_MALLOC = 21,                                       // Unreal's FMa
        OBS_STDALLOC_INIT = 25,                                         // StandardAllocator::Initialize's entry, the same way: its callback writes the size (hle_svc.c)
        OBS_UE_REGION = 26,                                             // the store of Unreal's engine region size before nninitStartup reserves it: the register its upper bits name (dm/tools/ue_region.py, hle_svc.c)
        OBS_SEAD_RATE = 27,                                             // sead's frame-rate controller's sdiv of 60 by its interval: dividend, divisor and controller registers in its upper bits (dm/tools/nso_code.py sead_find, hle_fpslock.c)
-       OBS_PKP_CAM_SUBMIT = 28, OBS_PKP_PROJ_BUILD = 29, OBS_PKP_PROJ_DONE = 30, // Pokopia exact-build opt-in camera observation gates (android/pkp_aspect.c)
-       OBS_OOT_WIDE = 31,                                               // Ocarina of Time (main v131072): 3D camera projections about to be read (register in the parameter bits 0-4) and the 2D layer sites (kind in bits 5 up: HUD, movie, save picture) (android/oot_wide.c)
-       OBS_DKB_WIDE = 32,                                               // Donkey Kong Bananza (main v458752): the scene camera's updater about to be read (register in the parameter bits 0-4) and, by the kind in bits 5 up, the UI projection copies, a pane just sized and a layout just built (android/dkb_wide.c)
-       OBS_MKW_WIDE = 33,                                               // Mario Kart World (main 1.8.0): camera aspect stores (register in the parameter bits 0-4) and the 2D layer's projection reads (kind in bits 5 up) (android/mkw_wide.c)
-       OBS_MTF_SIZE = 34,                                               // Mario Tennis Fever (nro0 1.1.1): its scenes' size just computed from the graphics scale (android/mtf_size.c)
-       OBS_MAX = 35 };   // 28-30 are Pokopia's camera gates on its own branch (android/pkp_aspect.c)
+       // PEANUTS: 28-34 were Switch 2 games' gates (Pokopia, Ocarina of Time, Donkey Kong Bananza, Mario Kart World, Mario Tennis Fever), removed with
+       // their profiles and host files (Switch 1 only; peanuts/upstream-dropped.txt). The numbers stay taken: a rewritten module may still name them
+       OBS_MAX = 35 };   // PEANUTS: 28-34 have no callback here (the Switch 2 games' gates, above)
 // A gate number's bits from 8 up are a parameter for its callback (OBS_REGION_GOT: the register that holds the address). Callbacks read the registers; a write to x0–x29 takes
 // effect when the gate returns (entry.S restores them from the frame), which OBS_STDALLOC_INIT and OBS_UE_REGION do
 void gate_obs_set(int id, void (*fn)(uint64_t *regs, int param));

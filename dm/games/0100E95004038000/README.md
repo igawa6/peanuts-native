@@ -21,6 +21,24 @@ System → Save and a restart into Argentum were exercised during bring-up;
 the save was created with the isolated winding diagnostic and reloaded with
 the production path. The final fixed host also loads it and walks in Argentum.
 
+
+<!-- PEANUTS: #645, tapionallanaire -->
+## Android (AYN Thor, Turnip v27.0.0-R1, 2026-11-25)
+
+The profile works on Android as it is: no host or profile change was needed. Built
+with the app's own import from base, the 2.1.0 update (`v983040`) and seven DLC
+(Torna included), New Game (Normal) → opening → King Crustip: Rex draws his weapon,
+fights (HP 280 → 238) and wins, and the event after the fight plays. No rendering
+glitches. 30 fps: SurfaceFlinger present times over two minutes of the fight average
+30.09 fps with no frame over 42.4 ms (58 of 3,721 stayed five refreshes of the 117.84 Hz
+panel instead of four, the game's own 33.2 ms timer against the panel). The first run
+also had a 136 ms frame at the victory effects (pipelines made on the frame path, kept
+for later runs).
+
+- **Prepare:** 2,834 of the 15,572 shaders (the DLC-only keys above, such as
+  `aoc1.ard › map › ma40a.wismda`) were not found in the supplied DLC, so Prepare stopped and
+  went on with "Try anyway" (12,738 base/update shaders). The base game is unaffected;
+  DLC content on Android is unvalidated, as on the Mac.
 ## Profile and memory
 
 The NPDM declares no system resource. Startup sets a `0xC9400000`-byte heap

@@ -86,7 +86,8 @@ static void update_limit(lsfg_pacer *p, double now, float base_rate, float targe
     p->probe_until = now + PROBE_DURATION; p->deficit_since = 0; p->output_credit = 0;
 }
 
-lsfg_plan lsfg_pacer_plan(lsfg_pacer *p, size_t capacity, int multiplier, int target_rate, double now) {
+// PEANUTS(upstream-candidate): accept sample_interval override when display/FIFO backpressure throttles arrival
+lsfg_plan lsfg_pacer_plan_paced(lsfg_pacer *p, size_t capacity, int multiplier, int target_rate, double now, float sample_interval) {
     lsfg_plan none = {0, 0};
     if (multiplier < 2) multiplier = 2;
     if (multiplier > 4) multiplier = 4;
@@ -95,16 +96,23 @@ lsfg_plan lsfg_pacer_plan(lsfg_pacer *p, size_t capacity, int multiplier, int ta
     if (!ceiling) { lsfg_pacer_reset(p); return none; }
     size_t previous_generations = p->issued; p->issued = 0;
     if (!p->last_frame) { p->last_frame = now; return none; }
-    float interval = (float)(now - p->last_frame);
+    float raw_interval = (float)(now - p->last_frame);   // PEANUTS(upstream-candidate): wall-clock arrival vs paced sample_interval
     p->last_frame = now;
-    if (interval <= 0) { stabilize(p, now); return none; }
+    if (raw_interval <= 0) { stabilize(p, now); return none; }
     float target = (float)target_rate;
+    float min_interval = 0.0f;
     if (p->smoothed_interval > 0) {
         float burst = BURST_CADENCE_RATIO / p->smoothed_interval;
         if (target > 0 && target * BURST_TARGET_RATIO > burst) burst = target * BURST_TARGET_RATIO;
-        if (1.0f / interval > burst) { defer_evaluations(p, interval); p->output_credit = 0; return none; }
+        // PEANUTS(upstream-candidate): reject short drained-queue bursts (< 5 frames) while allowing sustained rate recoveries, clamped to the burst bound
+        if (1.0f / raw_interval > burst) {
+            if (++p->burst_streak < 5) { defer_evaluations(p, raw_interval); p->output_credit = 0; return none; }
+            min_interval = 1.0f / burst;
+        }
     }
-    if (interval > 1.0f / MINIMUM_BASE_RATE) { stabilize(p, now); return none; }
+    p->burst_streak = 0;
+    if (raw_interval > 1.0f / MINIMUM_BASE_RATE) { stabilize(p, now); return none; }
+    float interval = sample_interval > 0 ? sample_interval : (min_interval > raw_interval ? min_interval : raw_interval);
     p->smoothed_interval = p->smoothed_interval > 0 ? p->smoothed_interval + (interval - p->smoothed_interval) * INTERVAL_SMOOTHING : interval;
     if (!previous_generations) {
         float measured = 1.0f / p->smoothed_interval;
@@ -131,4 +139,9 @@ lsfg_plan lsfg_pacer_plan(lsfg_pacer *p, size_t capacity, int multiplier, int ta
     else if (generations == allowed && p->output_credit >= 1.0f) p->output_credit = fmodf(p->output_credit, 1.0f);
     p->issued = generations;
     return (lsfg_plan){generations, 1};
+}
+
+// PEANUTS(upstream-candidate): preserve existing signature for callers without backpressure sensing
+lsfg_plan lsfg_pacer_plan(lsfg_pacer *p, size_t capacity, int multiplier, int target_rate, double now) {
+    return lsfg_pacer_plan_paced(p, capacity, multiplier, target_rate, now, 0.0f);
 }

@@ -14,7 +14,7 @@ What to expect while it prepares:
 
 - It runs in the background with a notification. **Pause** and **Resume** on the game's card stop and continue it.
 - Keep the phone on the charger. If the screen going off stops it, turn on Settings > **Keep the screen on while preparing**.
-- A hot phone pauses Prepare ("Paused: the phone is too hot") and it goes on when the phone has cooled.
+- A hot phone pauses Prepare ("Paused: the phone is too hot") and it goes on from where it stopped when the phone has cooled. If it keeps pausing, **Go on anyway** on the build card builds without pausing. <!-- PEANUTS -->
 - **How long:** the project's pages disagree and it depends on the game: "about an hour per game" (getting-started guide) and "about 20-45 minutes, mostly translating shaders" for the first Prepare (main page). Mario Tennis Fever (`0400D4201C6EA000`) has 35,045 shaders and takes much longer. Not measured on a range of phones yet.
 - Prepare is incremental: later runs reuse existing shaders and only rewrite code when its key changes (a few minutes).
 - If it stops, the card says why and offers **Retry**. Close other apps if memory ran out; free space if storage is full.

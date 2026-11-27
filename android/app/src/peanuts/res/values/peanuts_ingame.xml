@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The in-game menus' solid icons (drawable/pis_*.xml, design/peanuts-native/icons SOLID): a solid shell and a kernel in the accent.
+         dev.peanuts.ingame.Look applies one of the styles below to a copy of the theme and draws the icon with it -->
+    <attr name="pnSolidBase" format="color" />
+    <attr name="pnSolidAccent" format="color" />
+
+    <!-- The quick menu's rail at rest: a muted grey with a muted banana -->
+    <style name="PeanutsSolidRest">
+        <item name="pnSolidBase">#FFAEB3BA</item>
+        <item name="pnSolidAccent">#FFD9B45A</item>
+    </style>
+    <!-- The selected tab, on the peanut-brown block: peanut cream with banana yellow -->
+    <style name="PeanutsSolidSelected">
+        <item name="pnSolidBase">#FFFFF1D2</item>
+        <item name="pnSolidAccent">#FFFFD54F</item>
+    </style>
+    <!-- The game menu's rows and the quick menu's back button: the panel's text colour with banana yellow -->
+    <style name="PeanutsSolidMenu">
+        <item name="pnSolidBase">#FFE8EAED</item>
+        <item name="pnSolidAccent">#FFFFD54F</item>
+    </style>
+    <!-- The game page's Cheats row (upstream's strings.xml): the cheats are the quick menu's Cheats tab now (InGamePanel) -->
+    <string name="cheats_on">Cheat list in the quick menu (Cheats tab). Cheated values are stored when the game saves</string>
+</resources>
