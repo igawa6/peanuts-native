@@ -37,3 +37,10 @@ sys_resource	0x0
 # ---- Shader split ----
 shader_groups	/gamedata/=gamedata /filesizetables/=filesizetables
 shader_note	FINAL FANTASY XII THE ZODIAC AGE shaders (provisional profile)
+
+# ---- Graphics ----
+# PEANUTS: igawa6#920. The game times its GPU from the end of its frame's first timer query to the end of its last (main+0x7a35c). Its dynamic resolution (main+0xa2bb0) steps the scale down by 25/1000 while that averages over 32.5 ms, to the map's minimum (here 960 of the 1536x864 targets), and back up below the map's limit (here 28 ms).
+# With one time per submission (the default) the two ends are equal and the game falls back to the previous frame's first query, so it reads a whole frame: read live on the phone (Turnip 27.0.0, 2026-11-27) as 32.5-34.2 ms, scale 0.625, the scene drawn at 960x540.
+# With this key it reads 17.5-18.7 ms at the same spot, the scale stays 1.0 and the scene fills 1536x864. A heavy scene can still lower it: that is the game's own dynamic resolution.
+gpu_timestamps	segment
+
