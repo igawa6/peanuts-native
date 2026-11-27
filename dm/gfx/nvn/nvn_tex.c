@@ -6,6 +6,7 @@
 // Linear storage counts pixel rows, also for block-compressed formats. The block depth nibble and the pixel rows were found by digitalhivehub against the original
 // NVN driver (nxnative PR #11) and taken from MacNativeGames 3c482a7, with the shapes of t_tex_layout.
 #include "nvn_tex.h"
+#include <stdlib.h>   // PEANUTS: getenv (sparse3d_std_on)
 
 typedef struct { uint8_t bpb, bw, bh; } fmt_t;   // Bytes per block, block width, block height (for uncompressed formats block width and height = 1)
 
@@ -81,6 +82,19 @@ static int sparse_of(const nvn_texdesc *d) { return (d->flags & 0x20) && !(d->fl
 // height: Yoshi's Crafted World's 192×160 DXT5 loading icon (12 × 5 GOBs) is laid out in 4 GOBs, its 384×384 DXT1 textures (12 GOBs wide, 96 block rows) in 16; read with 8, the icon lost
 // its right half and bottom to the padding
 static int sparse_tile_h(unsigned bpb) { return bpb == 1 ? 5 : bpb == 2 || bpb == 4 ? 4 : bpb == 8 || bpb == 16 ? 3 : -1; }
+// PEANUTS begin: a sparse 3D texture's 64 KB tile is the standard 3D block shape (Vulkan's residencyStandard3DBlockShape, which NVIDIA's GPUs take natively): 64x32x32 / 32x32x32 /
+// 32x32x16 / 32x16x16 / 16x16x16 blocks for 1 / 2 / 4 / 8 / 16 bytes per block, i.e. GOB blocks 4 / 4 / 4 / 2 / 2 high (log2 2 / 2 / 2 / 1 / 1) and 32 / 32 / 16 / 16 / 16 deep
+// (log2 5 / 5 / 4 / 4 / 4). Laid out with the automatic 1-GOB block height instead (128x32x16-texel tiles of BC6H), Metroid Prime Remastered's 512x256x368 BC6H / DXT1 light
+// volumes, whose tiles the game maps from pages it filled in the standard shape, were deswizzled scattered over the volume: the volumetric fog and the arm came out unlit.
+// Sizes are unchanged for whole tiles (t_tex S3). DM_SPARSE3D_STD=0 keeps the automatic layout (the comparison switch)
+static int sparse3d_std_on(void) { static int on = -1; if (on < 0) { const char *e = getenv("DM_SPARSE3D_STD"); on = !e || atoi(e) != 0; } return on; }   // DM_SPARSE3D_STD=0: the old layout
+static int sparse3d_tile(unsigned bpb, unsigned *th, unsigned *td) {
+    if (bpb == 1 || bpb == 2) { *th = 2; *td = 5; return 1; }
+    if (bpb == 4) { *th = 2; *td = 4; return 1; }
+    if (bpb == 8 || bpb == 16) { *th = 1; *td = 4; return 1; }
+    return 0;
+}
+// PEANUTS end
 // The block height that shapes a sparse texture's 64 KB tiles: the standard one for its block size, or its own when it has a packaged layout or another block size
 static unsigned tile_shape_h(const nvn_texdesc *d, unsigned dpl, fmt_t t, unsigned tileH) {
     return dpl == 2 && !d->pkg_block_h && sparse_tile_h(t.bpb) >= 0 ? (unsigned)sparse_tile_h(t.bpb) : tileH;
@@ -152,7 +166,9 @@ void nvn_tex_layout(const nvn_texdesc *d, nvn_texlayout *o) {
     } else if (dpl == 2 && sparse_of(d) && sparse_tile_h(t.bpb) >= 0 && blk(w * sx, t.bw) * t.bpb >= (128u >> sparse_tile_h(t.bpb)) * 64
                && blk(h * sy, t.bh) >= 8u << sparse_tile_h(t.bpb)) tileH = (unsigned)sparse_tile_h(t.bpb);
     else if (dpl == 2) { uint32_t ah = blk(h * sy, t.bh); tileH = pick_tile(ah * 3 / 16); }
-    else if (dpl == 3) tileD = pick_tile(z + z / 2);
+    else if (dpl == 3 && sparse_of(d) && sparse3d_std_on() && sparse3d_tile(t.bpb, &tileH, &tileD) && blk(w, t.bw) * t.bpb >= (128u >> (tileH + tileD)) * 64
+             && blk(h, t.bh) >= 8u << tileH && z >= 1u << tileD) {}   // PEANUTS: the standard 3D tile shape (sparse3d_tile)
+    else if (dpl == 3) { tileH = 0; tileD = pick_tile(z + z / 2); }   // PEANUTS: tileH reset (sparse3d_tile may have set it)
     uint64_t ls = layer_bytes(d, dpl, layered, w, h, z, tileH, tileD, t);
     // MINIMAL_LAYOUT (0x200): the driver keeps the automatic block height and depth only when the whole layer (every level, the layer alignment) is no larger than with 1-GOB blocks,
     // else it takes 1-GOB blocks (digitalhivehub's driver sweep, nxnative PR #11: no difference left outside SPARSE). A packaged layout and a sparse texture's tiles keep their own.
