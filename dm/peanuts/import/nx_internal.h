@@ -105,6 +105,7 @@ int nx_sec_share(NxNca *n, int sec);
 #ifdef NX_TEST_HOOKS   // the tests only (defined for the test programs in CMakeLists.txt): not in the importer's library nor in the host
 void nx_shcache_budget(size_t bytes);   // another size (entries held beyond it go as their shards are next written)
 void nx_shcache_stats(uint64_t *hits, uint64_t *misses, uint64_t *held, uint64_t *entries);   // any pointer may be NULL
+void nx_ncz_test_unlinked_refuses(int on);   // a solid NCZ's body file behaves as on storage that refuses writes to a file unlinked while open (issue #829)
 #endif
 // Chunking a read of [off, want_end) of a section (want_end <= limit): an end at or after want_end that does not split an LZ4 entry when one can be found
 // before limit (so parallel readers never decompress one entry twice), else want_end. A plain section: want_end.

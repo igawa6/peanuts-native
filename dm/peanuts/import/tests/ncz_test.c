@@ -151,6 +151,13 @@ int main(void) {
       const char *in[] = { p[B_SOLID], p[U_SOLID], a.path }; same("unpacked into NXIMPORT_TMPDIR", ref, in, 3, TID);
       DIR *d = opendir(tmpd); int left = 0; struct dirent *e; while (d && (e = readdir(d))) left += e->d_name[0] != '.'; if (d) closedir(d);
       CHECK(exists(tmpd) && !left, "  that folder stays, empty"); unsetenv("NXIMPORT_TMPDIR"); }
+    { nx_ncz_test_unlinked_refuses(1);   // issue #829: storage that refuses every write to a file unlinked while open (Android's FUSE on some phones)
+      const char *in[] = { p[B_SOLID], p[U_SOLID], a.path }; same("solid NSZs where a file unlinked while open cannot be written", ref, in, 3, TID);
+      char tmpd[700]; snprintf(tmpd, sizeof tmpd, "%s/elsewhere", dir); setenv("NXIMPORT_TMPDIR", tmpd, 1);
+      same("  and unpacked into NXIMPORT_TMPDIR", ref, in, 3, TID);
+      DIR *d = opendir(tmpd); int left = 0; struct dirent *e; while (d && (e = readdir(d))) left += e->d_name[0] != '.'; if (d) closedir(d);
+      CHECK(exists(tmpd) && !left, "  that folder stays, empty: the bodies kept their names until the end and went then"); unsetenv("NXIMPORT_TMPDIR");
+      nx_ncz_test_unlinked_refuses(0); }
     { char out[700]; Prog q; memset(&q, 0, sizeof q); snprintf(out, sizeof out, "%s/case.nup", dir); const char *in[] = { p[B_SOLID], p[U_B14], a.path };
       run(out, in, 3, TID, &q);
       CHECK(!strcmp(q.first_prep, "unpack/base-solid.nsz") && q.prep_total > 0, "the progress names the step and the file (\"%s\", %lld bytes before the write)", q.first_prep, q.prep_total); }

@@ -79,6 +79,7 @@ else()
     target_include_directories(ncz_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(ncz_test PRIVATE Threads::Threads ZLIB::ZLIB ${CMAKE_DL_LIBS})
     target_compile_options(ncz_test PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation)
+    target_compile_definitions(ncz_test PRIVATE NX_TEST_HOOKS)   # nx_ncz_test_unlinked_refuses (issue #829)
     add_test(NAME ncz_test COMMAND ncz_test)
     # A game card's XCI with update, normal, secure and logo partitions (GitHub issue #280): the game is taken from secure only; no game data
     add_executable(xci_test ${CMAKE_CURRENT_SOURCE_DIR}/tests/xci_test.c ${NXIMPORT_SOURCES})
