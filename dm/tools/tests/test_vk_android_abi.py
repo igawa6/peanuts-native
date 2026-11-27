@@ -282,6 +282,46 @@ OpFunctionEnd
 '''
 
 
+# PEANUTS(upstream-candidate): a vertex shader as the translator writes one that indexes its generic attributes at run time: one vec4[16] Input at location 0, read at a
+# computed index (here the vertex index) and at a constant one
+VS_ARRAY = '''OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main" %in %pos %vid
+OpDecorate %in Location 0
+OpDecorate %pos BuiltIn Position
+OpDecorate %vid BuiltIn VertexIndex
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%i32 = OpTypeInt 32 1
+%u32 = OpTypeInt 32 0
+%v4 = OpTypeVector %f32 4
+%c16 = OpConstant %u32 16
+%c5 = OpConstant %i32 5
+%c15 = OpConstant %i32 15
+%arr = OpTypeArray %v4 %c16
+%pin = OpTypePointer Input %arr
+%pinv = OpTypePointer Input %v4
+%pini = OpTypePointer Input %i32
+%pout = OpTypePointer Output %v4
+%in = OpVariable %pin Input
+%pos = OpVariable %pout Output
+%vid = OpVariable %pini Input
+%main = OpFunction %void None %fn
+%l = OpLabel
+%id = OpLoad %i32 %vid
+%k = OpBitwiseAnd %i32 %id %c15
+%pa = OpAccessChain %pinv %in %k
+%a = OpLoad %v4 %pa
+%pb = OpAccessChain %pinv %in %c5
+%b = OpLoad %v4 %pb
+%s = OpFAdd %v4 %a %b
+OpStore %pos %s
+OpReturn
+OpFunctionEnd
+'''
+
+
 @unittest.skipUnless(shutil.which('spirv-as') and shutil.which('spirv-val'), 'SPIRV-Tools not installed')
 class Rewrites(unittest.TestCase):
     def module(self, text, env='spv1.3'):   # PEANUTS(upstream-candidate): env for the SPIR-V 1.4 case
@@ -355,6 +395,29 @@ class Rewrites(unittest.TestCase):
         m3 = self.module(FS_DUAL, 'spv1.4')   # from SPIR-V 1.4 the interface lists every global: the Private copy stays in it, the new output joins
         self.assertTrue(spv.dual_source(m3))
         self.valid(m3)
+
+    def test_split_input_arrays(self):   # PEANUTS(upstream-candidate)
+        # The reflection sees such an array as location 0 alone (m.io); it covers 16 (vk_android_build.py io_locations spreads it with strip_arrays). The split gives one
+        # Input vec4 per location, which the replay's vertex input retype (vka_spvpatch.c) can take one by one, and the computed index reads a Private copy filled first
+        m = self.module(VS_ARRAY)
+        ins = m.io(spv.SC_INPUT)
+        self.assertEqual(sorted(ins), [0])
+        self.assertEqual(m.strip_arrays(ins[0][1]), (m.find_type(spv.OP_TYPE_VECTOR, m.find_type(22, 32), 4), 16))
+        self.assertEqual(spv.split_input_arrays(m), list(range(16)))
+        self.assertEqual(sorted(m.io(spv.SC_INPUT)), list(range(16)))
+        self.assertTrue(all(m.op(t) == spv.OP_TYPE_VECTOR for _, t in m.io(spv.SC_INPUT).values()))
+        text = self.valid(m)
+        if text:
+            self.assertIn('Private', text)
+            self.assertEqual(text.count('OpCompositeConstruct %_arr'), 1)
+        self.assertEqual(spv.split_input_arrays(m), [])   # nothing left to split
+        f = self.module(FS)   # not a vertex shader: untouched
+        before = f.data()
+        self.assertEqual(spv.split_input_arrays(f), [])
+        self.assertEqual(f.data(), before)
+        m4 = self.module(VS_ARRAY, 'spv1.4')   # from SPIR-V 1.4 the Private copy stays in the interface
+        self.assertEqual(len(spv.split_input_arrays(m4)), 16)
+        self.valid(m4)
 
     def test_per_primitive_inputs(self):
         # a pixel shader of a mesh program: input 0 per primitive; its storage buffer (Uniform + BufferBlock in SPIR-V 1.3) becomes StorageBuffer + Block in 1.4
