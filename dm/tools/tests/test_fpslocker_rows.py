@@ -226,7 +226,16 @@ int main(void) {
     memcpy(&count,mem+0x120,4);assert(count==3 && fabsf(val(0x620)-.21f)<.00001f);
     assert(fpw_apply(&r,base,40,read_guest,write_guest)==0 && fabsf(val(0x620)-.21f)<.00001f);
     assert(fpw_apply(&r,base,60,read_guest,write_guest)==3 && fabsf(val(0x620)-.07f)<.00001f);
-    const char *clock = "9fe60a212cff9b9a3656ab63d4f882e5,time_ratio_f32,%0x0,1,30:2;"
+    // PEANUTS: vsync_index_u32, 60 / fps - 1 (Kirby Star Allies' interval index: 0 at 60, 1 at 30, 3 at 15); no factors, whole vsync divisors only
+    const char *allies = "9fe60a212cff9b9a3656ab63d4f882e5,vsync_index_u32,0x100/0x0,1,0";
+    memset(mem,0,sizeof mem);bind(0x100,0x200);
+    assert(fpw_parse(allies,bid,&r)==1 && fpw_rate_ok(&r,15) && fpw_rate_ok(&r,60) && !fpw_rate_ok(&r,45) && !fpw_rate_ok(&r,120));
+    assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,vsync_index_u32,0x100/0x0,1,1:1",bid,&r)==-1);
+    assert(fpw_parse(allies,bid,&r)==1);
+    assert(fpw_apply(&r,base,15,read_guest,write_guest)==1);memcpy(&count,mem+0x200,4);assert(count==3);
+    assert(fpw_apply(&r,base,30,read_guest,write_guest)==1);memcpy(&count,mem+0x200,4);assert(count==1);
+    assert(fpw_apply(&r,base,60,read_guest,write_guest)==1);memcpy(&count,mem+0x200,4);assert(count==0);
+    const char *clock ="9fe60a212cff9b9a3656ab63d4f882e5,time_ratio_f32,%0x0,1,30:2;"
                         "9fe60a212cff9b9a3656ab63d4f882e5,target_scaled_f32,%0x8,1,30:100;"
                         "9fe60a212cff9b9a3656ab63d4f882e5,flag_cap_u8,%0x10,1,0:30";
     assert(fpw_parse(clock,bid,&r)==3);mem[0x810]=1;
