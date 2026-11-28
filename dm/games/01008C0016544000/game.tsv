@@ -67,3 +67,10 @@ push_desc_qcom_old	off
 # everything is under Data/: the player's serialized files and the StreamingAssets bundles
 shader_groups	/Data/=data
 shader_note	Sea of Stars shaders
+
+# PEANUTS begin: 30/40/45/60/90/120 fps support on Android (Unity delta-time)
+present_interval	display
+fps_limit	60
+fps_limit_min	30
+fps_limit_max	120
+# PEANUTS end

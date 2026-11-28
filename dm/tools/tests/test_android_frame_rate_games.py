@@ -274,7 +274,7 @@ EXPECTED = {
     '0100C5000F294000': ('Battle Brothers', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '010093C0215B4000': ('The Hundred Line -Last Defense Academy-', 'limit', '-', 'own,60,30', 'own,60,30', 'own,60,30', '-', '-'),
     '0100A9D01C446000': ('DRAGON QUEST VII Reimagined', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', 'profile 60', '-'),
-    '01008C0016544000': ('Sea of Stars', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
+    '01008C0016544000': ('Sea of Stars', 'limit', '-', 'own,60,45,40,30', 'own,90,60,45,40,30', 'own,120,90,60,45,40,30', '-', 'high'),  # PEANUTS: 30/40/45/60/90/120 fps via fps_limit
     '01001BB01E8E2000': ('FANTASIAN Neo Dimension', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '01004BC0166CC000': ('CRISIS CORE –FINAL FANTASY VII– REUNION', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '0100ACD0163D0000': ('Batman: Arkham Knight', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
