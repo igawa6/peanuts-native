@@ -707,6 +707,17 @@ HLE_FORCE("_ZN2nn5audio25GetReleasedAudioOutBufferEPNS0_8AudioOutE", "get a play
     pthread_mutex_unlock(&a->m);
     return b;
 }
+// PEANUTS(upstream-candidate): Devil May Cry 3 Special Edition (SDK 8.2.0) calls FlushAudioOutBuffers right after StopAudioOut; without this hook the SDK reads a null audout session (sdk+0x9a3e4).
+HLE_FORCE("_ZN2nn5audio20FlushAudioOutBuffersEPNS0_8AudioOutE", "flush appended buffers to the released queue when stopped", unsigned, h_au_Flush, void *g) {
+    aout *a = ao(g);
+    void *lr = __builtin_return_address(0);
+    pthread_mutex_lock(&g_aos_lock);
+    int playing = atomic_load_explicit(&a->state, memory_order_acquire) == STATE_STARTED;
+    au_note(a, playing ? "Flush (playing)" : "Flush", lr);
+    if (!playing) au_release_pending(a);
+    pthread_mutex_unlock(&g_aos_lock);
+    return !playing;
+}
 
 // Audio input (a microphone): the host has none. SDL3's Switch audio driver lists the input devices when its audio starts (Absolum); the SDK's versions reach the audin service.
 // No device is listed and an open fails, so the calls that need an open AudioIn are never reached; they still answer without touching the guest object, in case a game ignores the open's result.
