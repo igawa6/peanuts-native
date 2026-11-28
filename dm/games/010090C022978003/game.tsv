@@ -1,0 +1,22 @@
+# PEANUTS: new profile, program 3 of the collection 010090C022978000 (Kingdom Hearts HD 1.5+2.5 ReMIX), base v0. See README.md.
+# PEANUTS: the game draws with Vulkan and its own SPIR-V; guest_spirv is read by the guest Vulkan presentation path (a separate pull request).
+title_id	010090C022978003
+program_id	010090C022978003
+name	Kingdom Hearts II Final Mix
+ipa	010090c022978003.ipa
+app_category	public.app-category.games
+build	v0	1.0.0	main=e1bced80ffd14436980f7490b1d3c3e7	subsdk1=99e21f98a397434b534c1459fc38a2b8	sdk=bc204aae7319bab274894f1cc3f5da92
+package	v0
+modules	main subsdk1 sdk
+romfs_marker	kh2_first.pkg
+zip_store	.mp4:.pkg
+# Not measured on a device: mem_reserve, mem_alias, mem_stack, app_pool.
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# The rounded image charge for main, subsdk1 and sdk is 66 MiB.
+mem_used	0x4200000
+sys_resource	0x0
+guest_spirv	e1bced80ffd14436980f7490b1d3c3e7	41b79c	31e14	cf241a21f5a3f005976ac4ad6f08e65bac776adca22d0905802109b4bd7c5677
+shader_note	Native Vulkan; shader modules come from the verified SPIR-V bank in main.
