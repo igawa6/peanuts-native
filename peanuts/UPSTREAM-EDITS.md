@@ -3481,3 +3481,15 @@ NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS draws its UI with OpenGL throug
 | `dm/host/hle.h` | 1 | `HLE_FORCE_BIG`'s comment: two stack slots carried over | `PEANUTS` |
 | `dm/host/tests/t_bigstack.c` | 4 | a ten-argument take-over through the switch and on the direct path; the call helpers use `PLAT_ASM_SYM` (ELF too) | `PEANUTS` |
 | `docs/reference/memory.md` | 1 | "Host calls on small guest stacks": the two stack slots | `PEANUTS` |
+
+## Qualcomm driver before 512.800: auto-disable DM_VK_PUSH_DESC (2026-11-27)
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_pso.c` | 1 | Gate `L->push` on `VKA_ENV("DM_VK_PUSH_DESC", !V.qcom_old)` for draw/compute pipeline layouts | `PEANUTS(upstream-candidate)` |
+| `dm/gfx/vk_android/vka_auto.h` | 1 | Add `DM_VK_PUSH_DESC=0` auto rule when `qcom_old` is set | `PEANUTS(upstream-candidate)` |
+| `dm/host/tests/t_android_auto.c` | 3 | Check `DM_VK_PUSH_DESC` is `0` for `qcom_old` and unset for Turnip and Qualcomm 512.800+ | `PEANUTS(upstream-candidate)` |
+
+Qualcomm driver 512.762.41 (Adreno 750, OnePlus 13R) mis-handles `vkCmdPushDescriptorSetKHR` UBO updates inside an open render pass when `DM_VK_UB_DEFER=1` swaps UBO bindings to `vka_scratch` shadows, causing disappearing terrain/geometry and flickering in *Untitled Goose Game* (`010082400BCC6000`) and overworld whiteout in *Sea of Stars* (`01008C0016544000`, #888). Disabling `DM_VK_UB_DEFER` fixes it at ~3x render-pass cost (67-114 passes/frame), whereas disabling `L->push` via `DM_VK_PUSH_DESC=0` fixes rendering completely while keeping `DM_VK_UB_DEFER=1` (~18-24 passes/frame, locked 60 fps) and leaving internal B2T mirroring push descriptors active.
+
+Upstream candidate: yes, a general fix with no Peanuts dependency.

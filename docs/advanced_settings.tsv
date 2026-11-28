@@ -697,6 +697,7 @@ DM_VK_PSO_PREP_THREADS	developer	Performance			text			both
 DM_VK_PSO_SLOTS	developer	Performance			text		1 with Turnip, 4 with other drivers	both						
 DM_VK_PUSH_DEDUP	developer	Graphics			text			both						
 DM_VK_PUSH_DELTA	developer	Diagnostics			text		1 on Turnip and Qualcomm, 0 on other drivers	both						
+DM_VK_PUSH_DESC	developer	Diagnostics			text		On; 0 (off) with Qualcomm's driver before 512.800	both						
 DM_VK_QS_TRACE	developer	Diagnostics			text			both						
 DM_VK_QUAD_SHFL	developer	Graphics			text		1 with Turnip, 0 with other drivers	both						
 DM_VK_RANGE_WATCH	developer	Diagnostics			text			both						

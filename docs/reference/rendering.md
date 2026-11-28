@@ -754,6 +754,15 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Found on:** [Pokémon: Let's Go, Pikachu!](../../dm/games/010003F003A34000/README.md) (title screen, new-game intro, Oak's lab), AYN Thor, 2026-11-20; Turnip T30 was not affected.
 <!-- PEANUTS(upstream-candidate) end -->
 
+<!-- PEANUTS(upstream-candidate) begin: push descriptors off on Qualcomm before 512.800 -->
+### Push descriptors corrupt deferred UBO updates inside a render pass on Qualcomm's driver (Android)
+
+- **Symptom:** (PEANUTS, Android, Qualcomm's driver 512.762.41 on an Adreno 750) terrain and hill meshes flicker and disappear as the camera moves (Untitled Goose Game), or the overworld whites out in pixel shader `4dcce9647508810e` (`SOS/VFX/MistMesh-V4`, Sea of Stars, #888), while Turnip T30 renders cleanly. No `[RED]` line, no failed pipeline. Turning off deferred UBO updates (`DM_VK_UB_DEFER=0`) stops the flickering at the cost of tripling render passes (67–114/frame vs 20–32) and recording time; turning off only outside-pass deferral (`DM_VK_UB_DEFER_OUTSIDE=0`) leaves the flickering intact.
+- **Cause:** inside an open render pass, `DM_VK_UB_DEFER=1` swaps UBO bindings to `vka_scratch` shadow ranges and updates them via `vkCmdPushDescriptorSetKHR`. Qualcomm drivers before 512.800 mis-handle those push-descriptor UBO updates inside a render pass. Switching draw/compute pipeline layouts off push descriptors (`DM_VK_PUSH_DESC=0`) fixes the rendering at the same render-pass count (20–32/frame) while leaving internal B2T mirroring and FSR push descriptors enabled.
+- **Fix:** general, in the host (`vka_pso.c` `L->push`, `vka_auto.h`): add `DM_VK_PUSH_DESC` (default `1`; auto-disabled to `0` on Qualcomm drivers before 512.800 via `qcom_old`). Turnip and Qualcomm 512.800+ keep push descriptors enabled.
+- **Found on:** Untitled Goose Game (`010082400BCC6000`, v458752) and [Sea of Stars](../../dm/games/01008C0016544000/README.md) (`01008C0016544000`, v983040, #888), OnePlus 13R (Snapdragon 8 Gen 3, Adreno 750), 2026-11-27; Turnip Mr. Purple T30 was not affected.
+<!-- PEANUTS(upstream-candidate) end -->
+
 ## Vertex input and draws
 
 ### Integer vertex inputs
