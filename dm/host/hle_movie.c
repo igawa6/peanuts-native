@@ -886,6 +886,8 @@ static void md_format(mdec_t *d, void *md) {
     // every chroma row was read from the first one (a grey movie with vertical bands). The picture size again, as the SDK's DecoderImpl::GetOutputBufferFormatFromDecoder
     // (SDK 19 subsdk0+0x121f50) also sets it
     G.set_i32(md, "nv12-uv-stride", stride); G.set_i32(md, "nv12-width", w); G.set_i32(md, "nv12-height", h);
+    // PEANUTS: Devil May Cry 3 SE (v0 010bcee6, v65536 258d8ba5) skips its NV12->RGB pixel shader unless nv12-colorspace == 2 (verified on SM-X800: 3 still renders red). Scoped by main build so other games are untouched.
+    { const char *bid = dm_main_build(); if (bid && (!strncmp(bid, "258d8ba5", 8) || !strncmp(bid, "010bcee6", 8))) G.set_i32(md, "nv12-colorspace", 2); }
 }
 HLE_FORCE("_ZN5movie7Decoder15GetOutputFormatEPNS_9MediaDataE", "movie decoder: output format (NV12)", int, h_movie_OutFmt, void **self, void *md) {
     mdec_t *d = md_of(self); if (!d) return 0x1000;

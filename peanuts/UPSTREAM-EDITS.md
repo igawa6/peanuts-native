@@ -163,6 +163,8 @@ not edited (see table above).
 | `dm/games/01007A3024D10000/` (new: `game.tsv`, `README.md`, and the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for THE HOUSE OF THE DEAD 2: Remake |
 | `dm/tools/patch_nso.py` (`check_before_copy` table-base `adrp`/`add`) + `dm/tools/tests/test_jump_copies.py` | marked (`PEANUTS(upstream-candidate)`); `dm/tools/rewriter_equiv/patch_nso.py.aa0f78aee5ab` (the file after #654) allow-listed in `peanuts/upstream-unmarked.txt` | **yes** — fallback-only jump-table recognition fix (Crash Bandicoot N. Sane Trilogy) |
 
+| `dm/host/hle_movie.c` (`nv12-colorspace=2` for DMC3 builds) | marked (`// PEANUTS`) | scoped to Devil May Cry 3 SE main builds (`258d8ba5`, `010bcee6`) so other games are untouched |
+
 ## Generic host runtime-profile sites
 
 Behind `-PnxGenericHost=true` only (`DM_RUNTIME_PROFILE`, defined by `dm/peanuts/profile/game_profile_generic.h`); the default per-title build and the
