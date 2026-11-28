@@ -3751,3 +3751,34 @@ Two profiles of the game that the OpenGL UI and no-colour draw sections above we
 | `dm/games/01005A20190A6000/shader_map.tsv`, `shader_facts.tsv`, `shader_pairs.tsv`, `shader_files.tsv`, and the same four in `dm/games/0100D2D0190A4000/` | new | the generated tables (the US ones copies of the EU ones) | allow-listed in `peanuts/upstream-unmarked.txt` |
 | `dm/games/README.md` | 2 | the two table rows | `<!-- PEANUTS: ... -->` in the row's last cell |
 | `docs/reference/rendering.md` | 3 | the Found on lines of the BGR5A1, no-colour draw and OpenGL UI entries link the EU profile | `<!-- PEANUTS -->` at the line's end |
+
+### Smoother next start: what a game's runs used is made before the next start (2026-11-24, the Peanuts tab's contract `dev.peanuts.shaders.ShaderWatch`; off by default)
+
+The host already learns while a game runs: every pipeline it makes goes into the game's prewarm list (`vk_pipelines.keys`), and the next start makes the
+list ahead. On Qualcomm's driver before 512.800 (the AYN Thor's own, 512.676) that is off by default, because the driver keeps about 6 MB outside the process
+for each pipeline and the whole list made ahead ran games out of memory; every start there made its pipelines again while it played and skipped their draws
+meanwhile (2,300-2,700 draws in each of eight runs of Tomodachi Life: Living the Dream with the pipeline cache warm). The Peanuts tab's switch, Learn shaders
+while playing, turns on for one game (`PN_SHADERWATCH=1`, `dev.peanuts.shaders.HostWatch.env`): each run keeps the list's records it used, made while it
+played or made ahead and then used, in a file of the game and the driver beside the list (`<list>.<driver tag or system>.hot`, `dm/peanuts/peanuts_swhot.h`:
+hashes and the runs since each was used, at most 4,096 entries and 64 KB, an entry unused for 8 runs dropped). The next start makes those first and waits for
+them before the game starts, behind Preparing shaders; the rest of the list follows in the background where the driver prewarms it, and where it does not only
+those are made, by two threads that stop when less than `DM_VK_PREWARM_MEM_MB` is available. A record a game update or another shader library no longer has,
+or another driver's, matches nothing and ages out. Transform feedback capture pipelines, which the list never holds (their variant's modules carry the layout
+the game's program declares while it runs), are kept apart with that layout (`<list>.<driver>.tf`, `dm/peanuts/peanuts_swtf.h`, at most 64, aged out with the
+`.hot` file) and made first too (`vka_tf_learned`); a draw's first use checks this run's layout. Off, nothing of it is read or written, and an explicit `DM_VK_PREWARM=0` still turns every prewarm off. The
+tab's numbers come from the list (`vka_pso_watch`, `Bridge.shaderWatch`); turning the switch while the game runs takes effect at once for what this run keeps
+(`Bridge.shaderWatchLearn`). [Pipelines made again while playing at every start (Android)](../docs/reference/rendering.md#pipelines-made-again-while-playing-at-every-start-android).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_pso.c` | 3 blocks, a span in `pw_start`, one-line hooks | the `sw_*` block (after `pw_mark_bad`, with `sw_tf_*`), `vka_pso_watch` and `sw_tf_make` (before `pw_main`); the includes of `peanuts_swhot.h` and `peanuts_swtf.h`; the declarations; `sw_path` and `sw_load` in `pc_open_once`, the list read flag after `pw_start`; `sw_save` in `save_now`; `g_sw_dirty` in `vka_pso_save`'s early return; `vka_pso_prepare_launch` enters the startup phase for learning on too (no seed needed; on Qualcomm's driver before 512.800 too) and waits for those records only (`sw_wait_hot`); `nxhost_prewarm_progress` counts them; `pw_note` notes the record this run made, and hands a capture variant's pipeline to `sw_tf_note`; `pw_main` counts the records done (`sw_step`; the start's progress only while the start waits for the threads, `g_pw_counting`, so `pp_prepare`'s count after it is its own), stops every thread below the memory floor where the driver does not prewarm before the old wait for memory (which it skips there: it waited for a thread that had stopped), and hands the record it makes to the entry (`t_sw_h`), and takes the capture pipelines first (`sw_tf_make`); `pw_start` orders every record before the cap (`sw_order`), two threads where the driver does not prewarm, joinable while the start waits; `gfx_obtain` and `cs_obtain` note a first use of an entry made ahead (`sw_used`, one field test) and keep the record in a new entry; `gval.swh` | `PEANUTS`; a `PEANUTS begin`/`PEANUTS end` block |
+| `android/app/src/main/java/dev/nxnative/android/GameActivity.java` | 1 | `settingsEnv`: `HostWatch.env` after `Companion.env` | `// PEANUTS` |
+| `android/host/CMakeLists.txt` | 1 | `dm/peanuts/peanuts_shaderwatch.c` in the host | `# PEANUTS` |
+| `dm/host/tests/Makefile` | 1 | `peanuts-swhot`, `peanuts-swtf` (in the Peanuts block) | inside `# PEANUTS begin` / `end` |
+| `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1 each | the entry and its symptom line | `<!-- PEANUTS: an entry of this fork. -->`; generated |
+| `dm/games/0100F43008C44000/README.md` | 1 | the Found on this game line | `PEANUTS` |
+
+Peanuts-owned: `dev.peanuts.shaders.HostWatch`, `HostCounts`, `dev.peanuts.Bridge.shaderWatch` / `shaderWatchLearn`, `dm/peanuts/peanuts_shaderwatch.c`,
+`dm/peanuts/peanuts_swhot.h`, `dm/peanuts/peanuts_swtf.h`, `dm/gfx/vk_android/vka_tf.c` and `vka_tf.h` (Peanuts' transform feedback: `vka_tf_learned`,
+`vka_tf_layout_of`, `vka_tf_is_variant`, the first-draw check `learned_holds` through `peanuts_swtf.h` `pn_swtf_holds`), the Found on line of `dm/games/010051F0207B2000/README.md`. Tests:
+`peanuts/tests/test_shader_watch.py` (with `HostCountsJvmTest`, `dm/host/tests/t_peanuts_swhot.c` and `t_peanuts_swtf.c`).

@@ -131,6 +131,7 @@ One shared 40-profile dev APK was used for all device runs. Its per-title test e
 
 General host changes first needed here; each applies to every game:
 
+- **Pipelines made again while playing at every start** on Qualcomm's driver before 512.800 (Smoother next start, `vka_pso.c` `sw_*`; PEANUTS): [Pipelines made again while playing at every start](../../../docs/reference/rendering.md#pipelines-made-again-while-playing-at-every-start-android).
 - **Shader extraction reuse after translation-only updates:** [Shader extraction reruns after translation-only updates](../../../docs/reference/shaders.md#shader-extraction-reruns-after-translation-only-updates).
 - **Offline pipeline archive reuse across chains:** [Offline pipeline archive rebuilt after a chain-only update](../../../docs/reference/shaders.md#offline-pipeline-archive-rebuilt-after-a-chain-only-update).
 - **The pool enforced as on Horizon** (`mem_map_limit`, `hle_svc.c`): [the profile keys](../README.md#keys), [Maps past the application pool fail as on Horizon](../../../docs/reference/memory.md#maps-past-the-application-pool-fail-as-on-horizon).

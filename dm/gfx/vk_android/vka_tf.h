@@ -26,4 +26,9 @@ void vka_tf_end(VkCommandBuffer cb);     // after the draw call
 void vka_tf_flush(VkCommandBuffer cb);   // vka_rp_end, outside the pass: what the pass's draws captured is copied into the game's buffers
 void vka_tf_state(const p_tf_state *s, VkCommandBuffer cb);   // vka_exec.c at OP_TF_STATE (the replayed one, not a look-ahead)
 void vka_tf_prep(uint64_t key, uint32_t **w, size_t *nb);     // vka_shader.c prep_words: a capture variant's words made to capture
+// Smoother next start (vka_pso.c sw_tf_*, learning on): whether v is a capture variant; the layout capture variant v was made with (0: none); the capture variant of
+// library vertex shader s made ahead on a prewarm thread with layout L an earlier run noted (NULL: refused; a draw's first use of it checks this run's layout)
+int vka_tf_is_variant(const vka_shader *v);
+int vka_tf_layout_of(const vka_shader *v, vka_tf_layout *L);
+vka_shader *vka_tf_learned(vka_shader *s, const vka_tf_layout *L);
 #endif

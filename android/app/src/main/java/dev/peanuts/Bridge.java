@@ -44,6 +44,16 @@ public final class Bridge {
     /** opMode(), or -1 when the host does not have it (an older libnxhost), is not loaded, or the game has not shown a frame yet (asking earlier would fix the mode) */
     public static int opModeSafe() { try { return opMode(); } catch (UnsatisfiedLinkError e) { return -1; } }
 
+    /** The host's prewarm list for Smoother next start (dm/peanuts/peanuts_shaderwatch.c, vka_pso.c vka_pso_watch) into out[0..3]: the list (1 kept, 0 none, -1 not read
+     *  yet), the pipelines new to it this run, those the next start makes ahead on this driver, its records in all; false when the host cannot say */
+    public static native boolean shaderWatch(int[] out);
+    /** shaderWatch(out), false when the host does not have it (an older libnxhost) or is not loaded */
+    public static boolean shaderWatchSafe(int[] out) { try { return shaderWatch(out); } catch (UnsatisfiedLinkError e) { return false; } }
+    /** Smoother next start's learning turned on or off while the game runs (the start reads PN_SHADERWATCH): false when the host cannot */
+    public static native boolean shaderWatchLearn(boolean on);
+    /** shaderWatchLearn(on), false when the host does not have it or is not loaded */
+    public static boolean shaderWatchLearnSafe(boolean on) { try { return shaderWatchLearn(on); } catch (UnsatisfiedLinkError e) { return false; } }
+
     public static final int RT_PENDING = 0, RT_LOADED = 1, RT_NONE = 2, RT_FAILED = 3;
 
     /** Core::Mods::HapticKind (dm/peanuts/peanuts.h): what raised a pulse. */

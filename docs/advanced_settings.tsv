@@ -844,3 +844,4 @@ NX_DEBUG	developer	Diagnostics			text			both
 PN_BUILD_ID	developer	Diagnostics			text			both						
 PN_GPU_FLOOR_BEAT	developer	Graphics			text			both						
 PN_GPU_FLOOR_BEAT_MS	developer	Graphics			text			both						
+PN_SHADERWATCH	developer	Graphics			text		off	both						

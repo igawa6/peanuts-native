@@ -53,6 +53,7 @@ On the Thor with the issue's save, the boot crashed in eight of fifteen starts, 
 
 General host changes first needed here; each applies to every game:
 
+- **Pipelines made again while playing at every start** on Qualcomm's driver before 512.800 (Smoother next start, `vka_pso.c` `sw_*`): [Pipelines made again while playing at every start](../../../docs/reference/rendering.md#pipelines-made-again-while-playing-at-every-start-android).
 - **The steady clock runs through sleep and restarts:** [The steady clock runs through sleep and restarts](../../../docs/reference/services.md#the-steady-clock-runs-through-sleep-and-restarts).
 - **Two threads of one core in a font engine:** [Two threads of one core in a font engine](../../../docs/reference/threads.md#two-threads-of-one-core-in-a-font-engine): the boot crash below.
 <!-- PEANUTS end -->

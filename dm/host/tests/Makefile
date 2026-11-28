@@ -806,4 +806,20 @@ peanuts-audren-svc: $(B)/t_peanuts_audren_svc
 peanuts-host: peanuts-audren-svc
 $(B)/t_peanuts_audren_svc: t_peanuts_audren_svc.c ../hle_audren_svc.c ../hle_sf.c ../hle.h ../dm.h $(GAME_H) | $(B)
 	$(CLANG) -O1 -g -Wall -Wno-unused-function -fsanitize=address,undefined $(PN_ASIF) -D_GNU_SOURCE -I.. $(GINC) -o $@ t_peanuts_audren_svc.c -lpthread -lm
+# t_peanuts_swhot: Smoother next start's file of the pipelines a game's runs used (dm/peanuts/peanuts_swhot.h, vka_pso.c sw_*): the set, the file's check, the save's
+# merge (this run first, the runs before by age, aged out, at most PN_SW_MAX) and the prewarm's order (the runs' records first, mesh records in front)
+.PHONY: peanuts-swhot
+peanuts-swhot: $(B)/t_peanuts_swhot
+	$(B)/t_peanuts_swhot
+peanuts-host: peanuts-swhot
+$(B)/t_peanuts_swhot: t_peanuts_swhot.c ../../peanuts/peanuts_swhot.h | $(B)
+	$(CLANG) -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -o $@ t_peanuts_swhot.c
+# t_peanuts_swtf: its file of the transform feedback capture pipelines (dm/peanuts/peanuts_swtf.h, vka_pso.c sw_tf_*): an entry's check, the file's, the run's table,
+# the save's choice (the entries the .hot file keeps) and a variant made ahead checked at its first use against the layout of this run's control section (vka_tf_spv.c)
+.PHONY: peanuts-swtf
+peanuts-swtf: $(B)/t_peanuts_swtf
+	$(B)/t_peanuts_swtf
+peanuts-host: peanuts-swtf
+$(B)/t_peanuts_swtf: t_peanuts_swtf.c ../../peanuts/peanuts_swtf.h ../../peanuts/peanuts_swhot.h $(VKA)/vka_pwlist.h $(VKA)/vka_gkey.h $(VKA)/vka_tf.h $(VKA)/vka_tf_spv.c | $(B)
+	$(CLANG) -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wno-unused-function -fsanitize=address,undefined -o $@ t_peanuts_swtf.c $(VKA)/vka_tf_spv.c
 # PEANUTS end

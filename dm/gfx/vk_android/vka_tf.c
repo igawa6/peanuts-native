@@ -16,6 +16,7 @@
 // as before this file: skipped under rasterizer discard, else drawn without capture
 #if defined(__ANDROID__)
 #include "vka_tf.h"
+#include "../../peanuts/peanuts_swtf.h"   // Smoother next start: pn_swtf_holds, a variant made ahead checked at its first use (learned_holds)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,10 +26,13 @@ static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 // Capture layouts by library key, noted at nvnProgramSetShaders (the game's threads); st: 1 read, -1 a form not known
 typedef struct { uint64_t key; int st; vka_tf_layout L; } lay_ent;
 static lay_ent *g_lay; static int g_nlay, g_clay;
-// The variants made, by base shader (v NULL: refused, logged); the replay thread makes them, a module-making thread reads L by v's key (vka_tf_prep)
+// The variants made, by base shader (v NULL: refused, logged); the replay thread makes them, a module-making thread reads L by v's key (vka_tf_prep). Smoother next
+// start (learning on, vka_pso.c sw_tf_*) also makes one ahead on a prewarm thread with the layout an earlier run noted (learned: vka_tf_learned); its first use by a draw
+// checks that this run's program noted the same layout (checked), else it is dead and the draw makes its own as before. Appended under g_mu, g_nvar published last
 enum { NVAR = 256 };
-static struct { vka_shader *s, *v; vka_tf_layout L; } g_var[NVAR]; static _Atomic int g_nvar;
+static struct { vka_shader *s, *v; vka_tf_layout L; uint8_t learned, checked, dead; } g_var[NVAR]; static _Atomic int g_nvar;
 static uint32_t g_max_loc, g_max_stride, g_max_bufs; static VkDeviceSize g_max_size;
+static pthread_once_t g_caps_once = PTHREAD_ONCE_INIT;   // (caps: the replay thread and the prewarm's)
 
 void nvn_tf_ctl_note(const uint8_t key[8], const void *control) {   // hle_nvn.c, for each stage of a program whose key was made (the section is readable for 0x760 bytes there)
     lay_ent e; e.st = vka_tf_layout_read(control, 0x760, &e.L);
@@ -42,8 +46,7 @@ void nvn_tf_ctl_note(const uint8_t key[8], const void *control) {   // hle_nvn.c
     }
     pthread_mutex_unlock(&g_mu);
 }
-static void caps(void) {
-    if (g_max_loc) return;
+static void caps_read(void) {
     VkPhysicalDeviceTransformFeedbackPropertiesEXT tp = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_PROPERTIES_EXT};
     VkPhysicalDeviceProperties2 p2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &tp};
     vk.vkGetPhysicalDeviceProperties2(V.pd, &p2);
@@ -51,10 +54,42 @@ static void caps(void) {
     uint32_t l = p2.properties.limits.maxVertexOutputComponents / 4; g_max_loc = l < 1 ? 1 : l > 32 ? 32 : l;
     VLOG("transform feedback: VK_EXT_transform_feedback, %u buffers of at most %llu bytes, stride at most %u, %u vertex output locations", g_max_bufs, (unsigned long long)g_max_size, g_max_stride, g_max_loc);
 }
+static void caps(void) { pthread_once(&g_caps_once, caps_read); }
+// The capture variant of library vertex shader s for layout lay, tried here so a draw only takes a variant whose modules will capture; NULL with the reason in err
+static vka_shader *make_variant(vka_shader *s, const vka_tf_layout *lay, char *err, size_t errn) {
+    vka_shader *v = NULL;
+    if (vka_shader_is_variant(s) || (s->e->flags & DMSH_VK_F_SUBGROUP)) { snprintf(err, errn, "it is a variant already, or has subgroup operations"); return NULL; }
+    for (uint32_t b = 0; b < 4 && !err[0]; b++) if (lay->stride[b] && (b >= g_max_bufs || lay->stride[b] > g_max_stride))
+        snprintf(err, errn, "buffer %u of stride %u is past the device's %u buffers of stride %u", b, lay->stride[b], g_max_bufs, g_max_stride);
+    size_t nb = 0, on = 0; uint32_t *w = err[0] ? NULL : vka_shader_memu_words(s, &nb, err, errn);   // (the base module's words, as the library has them)
+    uint32_t *o = w ? vka_spv_xfb(w, nb / 4, lay, g_max_loc, &on, err, errn) : NULL;
+    int ok = o != NULL; free(w); free(o);
+    if (ok && (v = calloc(1, sizeof *v))) {
+        *v = *s; memset(v->mods, 0, sizeof v->mods); memset(v->frz, 0, sizeof v->frz); v->vin = v->fout = NULL; v->img = NULL; v->tex = NULL; v->gslink = NULL;
+        v->gs_claim = VK_NULL_HANDLE; v->memu_d = NULL; v->key = s->key ^ VKA_TF_KEY_XOR;
+    } else if (ok) snprintf(err, errn, "no memory");
+    return v;
+}
+// A variant made ahead (learned), at its first use by a draw (the replay thread): kept when this run's program noted the layout it was made with, else dead (its
+// pipelines are never used again) and the draw makes its own as before
+static int learned_holds(int i) {
+    vka_tf_layout lay; int st = 0;
+    pthread_mutex_lock(&g_mu);
+    for (int j = 0; j < g_nlay; j++) if (g_lay[j].key == g_var[i].s->key) { st = g_lay[j].st; lay = g_lay[j].L; break; }
+    int ok = pn_swtf_holds(st, &lay, &g_var[i].L);   // (dm/peanuts/peanuts_swtf.h; t_peanuts_swtf.c has layouts that differ)
+    if (ok) g_var[i].checked = 1; else g_var[i].dead = 1;
+    pthread_mutex_unlock(&g_mu);
+    if (ok) VLOG("transform feedback: vertex shader %016llx draws with the capture variant Smoother next start made ahead", (unsigned long long)g_var[i].s->key);
+    else VRED("transform feedback: vertex shader %016llx's capture variant made ahead has another layout than this run's program notes (or none): made again", (unsigned long long)g_var[i].s->key);
+    return ok;
+}
 // The capture variant of vertex shader s and its layout; NULL = it cannot capture (logged when first asked)
 static vka_shader *variant(vka_shader *s, const vka_tf_layout **L) {
     int nv = atomic_load(&g_nvar);
-    for (int i = 0; i < nv; i++) if (g_var[i].s == s) { *L = &g_var[i].L; return g_var[i].v; }
+    for (int i = 0; i < nv; i++) if (g_var[i].s == s && !g_var[i].dead) {
+        if (g_var[i].learned && !g_var[i].checked && !learned_holds(i)) continue;
+        *L = &g_var[i].L; return g_var[i].v;
+    }
     if (nv == NVAR) { VRED_ONCE("transform feedback: more than %d capturing vertex shaders: the rest are not captured", NVAR); return NULL; }
     caps();
     vka_shader *v = NULL; vka_tf_layout lay = {0}; int st = 0; char err[256] = "";   // (lay is kept with a refused shader too: never left unset)
@@ -63,35 +98,61 @@ static vka_shader *variant(vka_shader *s, const vka_tf_layout **L) {
     pthread_mutex_unlock(&g_mu);
     if (!st) snprintf(err, sizeof err, "no capture layout was noted for it (its control section declares none, or its program came from a capture file)");
     else if (st < 0) snprintf(err, sizeof err, "its control section's capture layout has a form not known");
-    else if (vka_shader_is_variant(s) || (s->e->flags & DMSH_VK_F_SUBGROUP)) snprintf(err, sizeof err, "it is a variant already, or has subgroup operations");
-    else {
-        for (uint32_t b = 0; b < 4 && !err[0]; b++) if (lay.stride[b] && (b >= g_max_bufs || lay.stride[b] > g_max_stride))
-            snprintf(err, sizeof err, "buffer %u of stride %u is past the device's %u buffers of stride %u", b, lay.stride[b], g_max_bufs, g_max_stride);
-        size_t nb = 0, on = 0; uint32_t *w = err[0] ? NULL : vka_shader_memu_words(s, &nb, err, sizeof err);   // (the base module's words, as the library has them)
-        uint32_t *o = w ? vka_spv_xfb(w, nb / 4, &lay, g_max_loc, &on, err, sizeof err) : NULL;   // tried here, so a draw only takes a variant whose modules will capture
-        int ok = o != NULL; free(w); free(o);
-        if (ok && (v = calloc(1, sizeof *v))) {
-            *v = *s; memset(v->mods, 0, sizeof v->mods); memset(v->frz, 0, sizeof v->frz); v->vin = v->fout = NULL; v->img = NULL; v->tex = NULL; v->gslink = NULL;
-            v->gs_claim = VK_NULL_HANDLE; v->memu_d = NULL; v->key = s->key ^ VKA_TF_KEY_XOR;
-        } else if (ok) snprintf(err, sizeof err, "no memory");
-    }
+    else v = make_variant(s, &lay, err, sizeof err);
     if (v) VLOG("transform feedback: vertex shader %016llx captures %u + %u + %u + %u outputs into buffers of stride %u / %u / %u / %u", (unsigned long long)s->key,
                 lay.n[0], lay.n[1], lay.n[2], lay.n[3], lay.stride[0], lay.stride[1], lay.stride[2], lay.stride[3]);
     else VRED("transform feedback: vertex shader %016llx is not captured: %s", (unsigned long long)s->key, err);
     pthread_mutex_lock(&g_mu);
-    g_var[nv].s = s; g_var[nv].v = v; g_var[nv].L = lay; atomic_store(&g_nvar, nv + 1);
+    int k = atomic_load(&g_nvar);   // (a prewarm thread may have added entries meanwhile: one for s is dead, this run's layout is the one)
+    for (int i = nv; i < k; i++) if (g_var[i].s == s) g_var[i].dead = 1;
+    if (k == NVAR) { pthread_mutex_unlock(&g_mu); free(v); VRED_ONCE("transform feedback: more than %d capturing vertex shaders: the rest are not captured", NVAR); return NULL; }
+    g_var[k].s = s; g_var[k].v = v; g_var[k].L = lay; g_var[k].learned = g_var[k].checked = g_var[k].dead = 0; atomic_store(&g_nvar, k + 1);
     pthread_mutex_unlock(&g_mu);
-    *L = &g_var[nv].L;
+    *L = &g_var[k].L;
     return v;
 }
 void vka_tf_prep(uint64_t key, uint32_t **w, size_t *nb) {
     int nv = atomic_load(&g_nvar), i = 0;
     if (!nv) return;   // (no capture variant was made: every game without transform feedback)
-    while (i < nv && !(g_var[i].v && g_var[i].v->key == key)) i++;
+    vka_tf_layout L = {0};
+    pthread_mutex_lock(&g_mu);   // (a variant's entry can turn dead: vka_tf_learned, learned_holds)
+    while (i < nv && !(g_var[i].v && g_var[i].v->key == key && !g_var[i].dead)) i++;
+    if (i < nv) L = g_var[i].L;
+    pthread_mutex_unlock(&g_mu);
     if (i == nv) return;
-    size_t on = 0; char err[256]; uint32_t *o = vka_spv_xfb(*w, *nb / 4, &g_var[i].L, g_max_loc, &on, err, sizeof err);
+    caps();
+    size_t on = 0; char err[256]; uint32_t *o = vka_spv_xfb(*w, *nb / 4, &L, g_max_loc, &on, err, sizeof err);
     if (!o) { VRED("transform feedback: module of vertex shader %016llx not made to capture: %s", (unsigned long long)(key ^ VKA_TF_KEY_XOR), err); return; }   // (it was, when the variant was made)
     free(*w); *w = o; *nb = on * 4;
+}
+// Smoother next start (vka_pso.c sw_tf_*): whether v is a capture variant, the layout it was made with (pw_note: what the next start needs to make it ahead), and a
+// variant made ahead on a prewarm thread with the layout an earlier run noted, the same checks as a draw's (NULL: refused, the reason logged for the first few)
+int vka_tf_is_variant(const vka_shader *v) { return v && v->e && !v->inst_bind && v->key == (v->e->key ^ VKA_TF_KEY_XOR); }
+int vka_tf_layout_of(const vka_shader *v, vka_tf_layout *L) {
+    int nv = atomic_load(&g_nvar), ok = 0;
+    pthread_mutex_lock(&g_mu);
+    for (int i = 0; i < nv && !ok; i++) if (g_var[i].v == v) { *L = g_var[i].L; ok = 1; }
+    pthread_mutex_unlock(&g_mu);
+    return ok;
+}
+vka_shader *vka_tf_learned(vka_shader *s, const vka_tf_layout *lay) {
+    if (!V.xfb || !s || !s->e) return NULL;
+    vka_shader *v = NULL, *r = NULL; int known = 0;
+    pthread_mutex_lock(&g_mu);
+    int nv = atomic_load(&g_nvar);
+    for (int i = 0; i < nv && !known; i++) if (g_var[i].s == s && !g_var[i].dead) { known = 1; r = g_var[i].v && !memcmp(&g_var[i].L, lay, sizeof *lay) ? g_var[i].v : NULL; }
+    pthread_mutex_unlock(&g_mu);
+    if (known) return r;
+    caps();
+    char err[256] = ""; v = make_variant(s, lay, err, sizeof err);
+    if (!v) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VLOG("Smoother next start: the capture variant of vertex shader %016llx is not made ahead: %s", (unsigned long long)s->key, err); return NULL; }
+    pthread_mutex_lock(&g_mu);
+    nv = atomic_load(&g_nvar);
+    for (int i = 0; i < nv && !known; i++) if (g_var[i].s == s && !g_var[i].dead) { known = 1; r = g_var[i].v && !memcmp(&g_var[i].L, lay, sizeof *lay) ? g_var[i].v : NULL; }
+    if (!known && nv < NVAR) { g_var[nv].s = s; g_var[nv].v = v; g_var[nv].L = *lay; g_var[nv].learned = 1; g_var[nv].checked = g_var[nv].dead = 0; atomic_store(&g_nvar, nv + 1); r = v; v = NULL; }
+    pthread_mutex_unlock(&g_mu);
+    free(v);
+    return r;
 }
 
 // ---------- Staging memory: what a pass's draws capture, until the pass ends ----------

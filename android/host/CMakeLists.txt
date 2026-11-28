@@ -79,6 +79,7 @@ list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_frametime.c)   # PEANUTS: the time
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_audiosync.c)   # PEANUTS: the audio renderer's output follows the game's pace (peanuts_audiosync.h)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_audiovoice.c)   # PEANUTS: the game's voice play-state changes for the audio follower (peanuts_audiovoice.c)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_gpufloor.c)   # PEANUTS: the GPU clock floor on "highest only" KGSL kernels and an earlier first part (peanuts_gpufloor.c)
+list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_shaderwatch.c)   # PEANUTS: Smoother next start: the prewarm list's counts for the Peanuts tab (Bridge.shaderWatch)
 # PEANUTS begin: the RomFS read straight from the player's dumps (DM_ROMFS=nsp:..., dm/peanuts/peanuts_nsp.h, DM_NSP_DIRECT below): the image over the dumps and
 # the three files of the importer that read them (keys, containers, NCA sections, AES, LZ4; dm/peanuts/import). Their AES and SHA paths for arm64 are picked at
 # run time and carry their own target attributes, so no file needs a flag for them; -O2 as the importer's own build (the cipher and the decoder are the cost of a read)
