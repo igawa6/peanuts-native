@@ -12,6 +12,43 @@ the opening battle take about 33 ms. The unsigned 1.1.2 IPA builds successfully
 (13.2 GiB), with all 15,129 shader libraries and a complete CRC check. Further
 story progression, saving / reloading and iPhone validation remain open.
 
+
+## Android (AYN Thor, Turnip v27.0.0-R1, 2026-11-25)
+
+New Game → Sword Valley prologue (Mechon M72, the M82 boss) → Colony 9: Shulk and Reyn's
+first fights, the road into Colony 9 and the Commercial District, day to evening, save and load.
+
+- **Resolved: the Colony 9 roads drew black, then in black and grey blocks.** Four shaders
+  (`48b8ea8fad25398d`, `fe993ca274dfde1c`, `5119ea2c4c0a2211`, `efa9a20a7f820920`) read the
+  1280x720 A2B10G10R10 targets (NVN format `0x3d`) as uint shader images: their raw 32-bit
+  words. The replay had no uint view of that packed format, so the images read as unbound
+  (`[RED] ... has no view of shape 0x81 (storage)`): black roads. `class_twin` (`vka_tex.c`) now
+  gives packed 4-byte formats R32_UINT / R32_SINT twins. With the view, the roads came out in
+  blocks: Turnip on a7xx keeps UBWC for an image whatever its view formats
+  (`ubwc_all_formats_compatible`), and the R32_UINT view read compressed data. An image whose
+  format list holds a view of another texel layout (not its sRGB / raw UNORM twin) is now made
+  with `VK_IMAGE_COMPRESSION_DISABLED_EXT` (`VK_EXT_image_compression_control`, `vka_dev.c`;
+  `DM_VK_UBWC_RAWVIEW=0` turns it off). `TU_DEBUG=noubwc` drew the roads right; `sysmem`,
+  `nolrz`, `DM_VK_UBWC=0` and `DM_VK_ZSHARE=0` did not.
+- **Frame pacing:** the game times its own 30 fps (33.23 ms a frame) and presents at interval 1,
+  which beats against the Thor's 117.84 Hz panel (four refreshes are 33.94 ms): in SurfaceFlinger
+  about one frame in seven stayed five refreshes. `fps_limit 30` makes the host's limiter tick in
+  whole panel refreshes: 10,809 of 10,809 frames on screen for exactly four refreshes over six
+  minutes of Colony 9 (SurfaceFlinger `--latency` present times).
+- **Resolved: about one boot in four crashed 1–4 s into `nnMain`** on a corrupt heap: `memset`
+  (`sdk+0xc9e24`) of a size read from a resource block's footer (`main+0x71e7b8` → `main+0x70a620`),
+  null `+0x68` at `main+0x721d88`, wild pointers at `main+0x6f248c` (the heap's free-list walk, the
+  same wild value `0x8082848b9197a1` in several boots) and `main+0x721728`. With or without a save
+  (3 of 12 with an empty save folder). Not changed by `core_preempt on`, a barrier after file reads,
+  `DM_SPIN=0`, `DM_AUDIO=0`, `DM_VK_WORKER=0`; one CPU (`taskset`): 6 of 12. The game takes two of
+  a core's threads (core 0: `main`, `resource_creater`, `WorkerThread0`) never to run at the same
+  moment, as on Horizon. `core_preempt lock` (`DM_CORE_LOCK`, `hle_thread.c`): a core's threads take
+  turns, a lock held in guest code and given up at SVCs, for the first 20 s (`DM_CORE_LOCK_SECS`).
+  0 of 60 boots crashed (24 with the lock for good, 36 with the boot window). Held for good it cost
+  2–3 hitches of 70–100 ms in 5 min of Colony 9 (`resource_creater` ran 100 ms in guest code while
+  the main thread waited for core 0); with the 20 s window, 9,026 of 9,026 frames at four refreshes
+  over the same 5 min route.
+- **Open: save thumbnails are black.** `bfsgame00.tmb` (240x180 RGBA) holds 12 non-zero bytes.
 ## Memory
 
 The NPDM declares no system resource. The 4 GB guest reservation,
