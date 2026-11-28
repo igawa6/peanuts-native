@@ -207,9 +207,22 @@ static int guest_page_mapped(uintptr_t p) {   // p: a guest address (page aligne
     return 1;
 }
 uint64_t dm_guest_unmapped(uintptr_t a, size_t n) {
-    uint64_t c = 0; if (!n) return 0;
-    for (uintptr_t p = a & ~(uintptr_t)0xFFF; p < a + n; p += 0x1000) c += !guest_page_mapped(p);
-    return c;
+    if (!n) return 0;
+    uintptr_t first = a >> 12, last = ((a + n - 1) >> 12) + 1;   // PEANUTS(upstream-candidate): Count unmapped pages by region.
+    uintptr_t alias = (uintptr_t)g_alias >> 12, heap = (uintptr_t)g_heap >> 12;
+    uintptr_t lo = first > alias ? first : alias;
+    uintptr_t hi = alias + (g_alias_cap >> 12);
+    if (hi > last) hi = last;
+    uint64_t count = g_alias && hi > lo ? alias_unmapped((lo - alias) << 12, (hi - lo) << 12) : 0;
+
+    if (g_heap && last > heap && first < heap + (g_heap_cap >> 12)) {
+        uintptr_t opened = heap + ((atomic_load(&g_heap_cur) + 0xfff) >> 12);
+        lo = first > opened ? first : opened;
+        hi = heap + (g_heap_cap >> 12);
+        if (hi > last) hi = last;
+        if (hi > lo) count += hi - lo;
+    }
+    return count;
 }
 // Copy n bytes of our own memory that may become inaccessible meanwhile: the bytes copied before the first inaccessible one (a system call reads them, so an inaccessible page
 // is an error, not a signal). If the system refuses the call itself (a seccomp filter: not seen on Android), a plain copy, with a red line once

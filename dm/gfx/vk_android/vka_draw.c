@@ -1414,16 +1414,21 @@ static int tex_peek_any(void) {
 }
 static int g_class_nlog;
 static void class_note(const vka_shader *sh, int st, const vka_res *r, int tid, int storage) {
-    static uint64_t seen[4096];
+    static uint64_t seen[4096], logged[64];    // PEANUTS(upstream-candidate): bound the diagnostic lookup.
+    if (g_class_nlog >= 64) return;
     int want = r->dim & DMSH_VK_DIM_SINT ? 2 : r->dim & DMSH_VK_DIM_UINT ? 1 : 0;
     uint64_t h = (sh->key ^ (uint64_t)st << 56 ^ (uint64_t)r->binding << 40 ^ (uint64_t)want << 38) | 1;
     uint32_t s = (uint32_t)(h * 0x9e3779b97f4a7c15ull >> 52);
-    for (uint32_t n = 0; n < 4096; n++, s = (s + 1) & 4095) { if (seen[s] == h) return; if (!seen[s]) break; }
-    if (g_class_nlog >= 64) return;
+    // A full diagnostic table must not scan thousands of slots per descriptor.
+    for (unsigned probe = 0; probe < 8; probe++, s = (s + 1) & 4095) {
+        if (seen[s] == h) return;
+        if (!seen[s]) break;
+    }
     seen[s] = h;
     int have = vka_tex_id_class_rec(tid);
     if (have == want) return;
-    g_class_nlog++;
+    for (int i = 0; i < g_class_nlog; i++) if (logged[i] == h) return;
+    logged[g_class_nlog++] = h;
     static const char *cn[3] = {"float", "uint", "sint"}; char why[320]; vka_tex_id_desc(tid, why, sizeof why);
     VLOG("class: shader %016llx stage %d binding %u declares a %s %s, texture ID %d is %s (%s)", (unsigned long long)sh->key, st, r->binding, cn[want], storage ? "image" : "texture", tid, cn[have], why);
 }

@@ -186,6 +186,21 @@ static void alias_lifecycle(void) {
     assert(pages(1, alias + g_alias_cap - P, 2 * P) == BAD);
 }
 
+static void unmapped_counts(void) {   // PEANUTS(upstream-candidate): Exercise guest-page counts across boundaries.
+    // Include the edges of both regions and an alias bitmap word boundary.
+    assert(!pages(1, alias + 63 * P, 2 * P));
+    assert(!resize(2 * 1024 * 1024));
+    assert(dm_guest_unmapped(alias - 1, 2) == 1);
+    assert(dm_guest_unmapped(alias + 63 * P - 1, 2 * P + 2) == 2);
+    assert(dm_guest_unmapped(alias + g_alias_cap - 1, 2) == 1);
+    uintptr_t heap_end = (uintptr_t)g_heap + g_heap_cur;
+    assert(dm_guest_unmapped(heap_end - 1, 2) == 1);
+    assert(dm_guest_unmapped((uintptr_t)g_heap + g_heap_cap - 1, 2) == 1);
+    assert(dm_guest_unmapped(alias, 0) == 0);
+    assert(!pages(0, alias + 63 * P, 2 * P));
+    assert(!resize(0));
+}
+
 static void ownership(void) {
     assert(!pages(1, alias, 16 * P));
     memset((void *)alias, 0x34, 16 * P);
@@ -212,7 +227,9 @@ static void ownership(void) {
     assert(!pages(0, alias, P) && !pages(1, alias, P));
     assert(*(uint8_t *)(alias + P) == 0x34);
     memset((void *)(stack + P), 0x76, 2 * P);
-    readonly_base = alias; readonly_size = memory_getpagesize();
+    // Protect the host page that contains the start of the copyback source.
+    readonly_size = memory_getpagesize();   // PEANUTS(upstream-candidate): Exercise guest-page counts across boundaries.
+    readonly_base = (alias + P) & ~(uintptr_t)(readonly_size - 1);
     assert(!mprotect((void *)readonly_base, readonly_size, PROT_READ));
     assert(!unmap(stack + P, alias + P, 2 * P) && !readonly_size);
     for (size_t i = P; i < 3 * P; ++i) assert(((uint8_t *)alias)[i] == 0x76);
@@ -549,7 +566,7 @@ int main(int argc, char **argv) {
     for (unsigned i = 0; i < 8; ++i) assert(!pthread_create(&threads[i], NULL, init_worker, &addresses[i]));
     for (unsigned i = 0; i < 8; ++i) { assert(!pthread_join(threads[i], NULL)); assert(addresses[i] == addresses[0]); }
     alias = addresses[0]; stack = info(I_StackAddr); heap = info(I_HeapAddr);
-    lazy_commit(); alias_lifecycle(); ownership(); module_sources(); module_back_patch(); failures(); release_fallback(); concurrency(); fragmented_queries();
+    lazy_commit(); alias_lifecycle(); unmapped_counts(); ownership(); module_sources(); module_back_patch(); failures(); release_fallback(); concurrency(); fragmented_queries();   // PEANUTS(upstream-candidate): Exercise guest-page counts across boundaries.
     guest_helper(); read_mapped_race();
     if (!DM_GAME_MEM_MAP_LIMIT) metadata_limit();
     else reported_lower();

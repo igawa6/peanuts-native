@@ -64,16 +64,23 @@ int main(void) {
     for (int i = 0; i < NMANY; i++) { many[i] = page_map(); nvn_dirty_add_range(many[i], 4096); }
     void *last = many[NMANY - 1];
     EXPECT("5000 live pools: the last one is tracked", 1, nvn_dirty_tracked(last, 4096));
-    nvn_dirty_protect(last, 4096);
+    const void *span = nvn_dirty_span(last, 4096);   // PEANUTS(upstream-candidate): Cover cached-span reuse on this host.
+    nvn_dirty_protect_span(span, last, 4096);
     stamp = nvn_dirty_now();
     EXPECT("pool 5000 not written after protect: clean", 0, nvn_dirty_since(last, 4096, stamp));
     ((volatile uint8_t *)last)[0] = 5;
     EXPECT("pool 5000 written by the game: dirty", 1, nvn_dirty_since(last, 4096, stamp));
+    nvn_dirty_remove_range(last);   // PEANUTS(upstream-candidate): Cover cached-span reuse on this host.
+    nvn_dirty_protect_span(span, many[0], 4096);
+    stamp = nvn_dirty_now();
+    ((volatile uint8_t *)many[0])[0] = 6;
+    EXPECT("a retired span falls back to the live range", 1, nvn_dirty_since(many[0], 4096, stamp));
     for (int i = 0; i < NMANY; i++) { nvn_dirty_remove_range(many[i]); munmap(many[i], 4096); }
     free(many);
 
     // Adjacent pools sharing a host page (pools are 4 KB aligned, host pages 16 KB): the first page of SMBW's ASTC texture pool is shared with a small preceding pool, and was judged untracked and re-uploaded on every use
     size_t pg = (size_t)getpagesize();
+    if (pg <= 4096) { puts("4 KiB-aligned adjacent pools cannot share a host page here"); return g_fail != 0; }   // PEANUTS(upstream-candidate): Cover cached-span reuse on this host.
     uint8_t *blk = mmap(NULL, 4 * pg, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
     if (blk == MAP_FAILED) { perror("mmap"); exit(2); }
     uint8_t *pa = blk, *pb = blk + pg - 0x1000;           // pool A covers the start of page 0, pool B starts in the last 4 KB of page 0

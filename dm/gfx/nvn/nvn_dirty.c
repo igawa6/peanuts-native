@@ -274,17 +274,25 @@ void nvn_dirty_remove_range(const void *mem) {
     if (r) { prep_write((void *)r->base, r->end - r->base); atomic_store_explicit(&r->live, 0, memory_order_release); atomic_fetch_sub(&g_live, 1); }
     pthread_mutex_unlock(&g_slot_mu);
 }
+// A cached slot can have retired or been reused. Check that it still
+// covers the requested span before skipping the range table lookup.
+static range_t *resolve_span(const void *span, uintptr_t addr, size_t len) {   // PEANUTS(upstream-candidate): Reuse the validated dirty span.
+    range_t *r = (range_t *)span;
+    if (r && atomic_load_explicit(&r->live, memory_order_acquire) &&
+        addr >= r->base && addr + len <= r->end) return r;
+    return find_span(addr, len);
+}
 int nvn_dirty_tracked(const void *addr, size_t len) {
     return find_span((uintptr_t)addr, len) != NULL;
 }
 // The tracked range holding [addr, addr+len), as a handle a caller keeps (packaged textures: the scan over every range ran twice per texture lookup). NULL = untracked
 const void *nvn_dirty_span(const void *addr, size_t len) { return len ? find_span((uintptr_t)addr, len) : NULL; }
 // Set read-only: mark the pages BUSY first and mark them PROT only after mprotect has landed (for the order and the invariant see the state notes at the top of the file)
-void nvn_dirty_protect(const void *addr, size_t len) {
+void nvn_dirty_protect_span(const void *span, const void *addr, size_t len) {   // PEANUTS(upstream-candidate): Reuse the validated dirty span.
     // Keep this descriptor live through the last mprotect. Retirement restores
     // RW under this same mutex; it must not finish between lookup and PG_BUSY.
     pthread_mutex_lock(&g_slot_mu);
-    range_t *r = len ? find_span((uintptr_t)addr, len) : NULL;
+    range_t *r = len ? resolve_span(span, (uintptr_t)addr, len) : NULL;   // PEANUTS(upstream-candidate): Reuse the validated dirty span.
     if (!r) { pthread_mutex_unlock(&g_slot_mu); return; }
     uintptr_t a = (uintptr_t)addr, p = (a - r->base) >> g_shift, q = (a + len - 1 - r->base) >> g_shift;
     if (g_bmask) block_bounds(r, &p, &q);
@@ -337,6 +345,7 @@ void nvn_dirty_protect(const void *addr, size_t len) {
             nstuck ? "; some could not be made writable again and stay protected (their first write faults and unprotects them)" : "");
     }
 }
+void nvn_dirty_protect(const void *addr, size_t len) { nvn_dirty_protect_span(NULL, addr, len); }   // PEANUTS(upstream-candidate): Reuse the validated dirty span.
 // A swap of guest pages under the tracker (the Vulkan replay placing a pool whose textures it already tracks, vka_mem.c place): the swap reads the range's protections,
 // copies the pages and puts the protections back on the new ones, so a page this module protected or unprotected meanwhile would come out with the wrong protection for
 // its state (read-only and NONE: a writer spins forever; writable and PROT: its writes are missed). So the swap holds the tracker: every protected page of the range is
@@ -373,8 +382,8 @@ void nvn_dirty_release_all(void) {
 uint64_t nvn_dirty_now(void) { return atomic_load(&g_now); }
 int nvn_dirty_since_span(const void *span, const void *addr, size_t len, uint64_t stamp) {
     if (!len) return 0;
-    range_t *r = (range_t *)span; uintptr_t a0 = (uintptr_t)addr;   // the kept handle still holds the span (a slot reused by another pool over the same memory is as good): no scan
-    if (!r || !atomic_load_explicit(&r->live, memory_order_acquire) || a0 < r->base || a0 + len > r->end) r = find_span(a0, len);
+    // PEANUTS(upstream-candidate): reuse the validated dirty span.
+    range_t *r = resolve_span(span, (uintptr_t)addr, len);
     if (!r) return 1;   // When untracked, conservatively treat as dirty: better to upload more than to show stale content
     if (stamp < atomic_load_explicit(&r->born, memory_order_relaxed)) return 1;   // PEANUTS: checked before this pool was registered over the memory (born)
     uintptr_t a = (uintptr_t)addr, p = (a - r->base) >> g_shift, q = (a + len - 1 - r->base) >> g_shift;
@@ -385,8 +394,9 @@ int nvn_dirty_since_span(const void *span, const void *addr, size_t len, uint64_
 int nvn_dirty_bounds_since(const void *span, const void *addr, size_t len, uint64_t stamp, size_t *lo, size_t *hi) {
     *lo = 0; *hi = len;
     if (!len) return 0;
-    range_t *r = (range_t *)span; uintptr_t a = (uintptr_t)addr;
-    if (!r || !atomic_load_explicit(&r->live, memory_order_acquire) || a < r->base || a + len > r->end) r = find_span(a, len);
+    uintptr_t a = (uintptr_t)addr;
+    // PEANUTS(upstream-candidate): reuse the validated dirty span.
+    range_t *r = resolve_span(span, a, len);
     if (!r) return 1;
     if (stamp < atomic_load_explicit(&r->born, memory_order_relaxed)) return 1;   // PEANUTS: every page counts (born); *lo, *hi are the whole of it already
     uintptr_t p = (a - r->base) >> g_shift, q = (a + len - 1 - r->base) >> g_shift, f = UINTPTR_MAX, l = 0;

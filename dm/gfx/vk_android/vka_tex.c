@@ -1130,32 +1130,33 @@ static void img_edges_take(vka_img *im) {
     if (ie <= ia) { r[0][0] = a; r[0][1] = e; r[1][0] = r[1][1] = 0; }
     else { r[0][0] = a; r[0][1] = ia; r[1][0] = ie; r[1][1] = e; }
     for (int i = 0; i < 2; i++) im->edge_h[i] = r[i][1] > r[i][0] ? ft_hash(r[i][0], r[i][1]) : 0;
+    im->edge_block = pg;   // PEANUTS(upstream-candidate): Reuse validated texture tracking state.
     im->edged = !nvn_dirty_since_span(im->span, im->mem, im->L.size, im->stamp);
 }
 static int img_edges_clean(vka_img *im) {
     if (!im || !im->edged || im->vpool || !im->span || !im->mem) return 0;
-    if (dm_guest_unmapped((uintptr_t)im->mem, im->L.size)) return 0;
     uintptr_t pg = nvn_dirty_block_bytes(); if (!pg) pg = (uintptr_t)getpagesize();
+    if (pg != im->edge_block || dm_guest_unmapped((uintptr_t)im->mem, im->L.size)) return 0;   // PEANUTS(upstream-candidate): revalidate when the tracking block changes.
     uintptr_t r[2][2], ia, ie;
     uintptr_t a = (uintptr_t)im->mem, e = a + im->L.size;
     ia = (a + pg - 1) & ~(pg - 1); ie = e & ~(pg - 1);
     if (ie <= ia) { r[0][0] = a; r[0][1] = e; r[1][0] = r[1][1] = 0; ia = ie = 0; }
     else { r[0][0] = a; r[0][1] = ia; r[1][0] = ie; r[1][1] = e; }
     uint64_t st = nvn_dirty_now();
-    nvn_dirty_protect(im->mem, im->L.size);
-    int in_dirty = (ie > ia && nvn_dirty_since_span(im->span, (const void *)ia, ie - ia, im->stamp));
-    int h0_bad = (r[0][1] > r[0][0] && ft_hash(r[0][0], r[0][1]) != im->edge_h[0]);
-    int h1_bad = (r[1][1] > r[1][0] && ft_hash(r[1][0], r[1][1]) != im->edge_h[1]);
-    if (in_dirty || h0_bad || h1_bad) return 0;
+    nvn_dirty_protect_span(im->span, im->mem, im->L.size);   // PEANUTS(upstream-candidate): Reuse validated texture tracking state.
+    if (ie > ia && nvn_dirty_since_span(im->span, (const void *)ia, ie - ia, im->stamp)) return 0;
+    for (int i = 0; i < 2; i++)
+        if (r[i][1] > r[i][0] && ft_hash(r[i][0], r[i][1]) != im->edge_h[i]) return 0;
+    // The hashes still describe the GPU copy. Writes during validation
+    // must remain newer than the stamp for the next prepare.
     im->stamp = st;
-    img_edges_take(im);
     static uint64_t g_edge_skips;
     if (++g_edge_skips <= 8) VLOG("texture serial %llu %ux%u format %#x: only shared pages written beside it, re-upload skipped (%llu so far)",
                                   (unsigned long long)im->serial, im->w, im->h, im->d.format, (unsigned long long)g_edge_skips);
     return 1;
 }
 static void upload_tracked(vka_img *im, const tex_t *t, VkCommandBuffer cb) {   // stamp, protect, then read (nvn_mtl.m pkg_upload): a write during the copy is seen at the next check
-    im->stamp = nvn_dirty_now(); nvn_dirty_protect(t->mem, t->L.size);
+    im->stamp = nvn_dirty_now(); nvn_dirty_protect_span(im->span, t->mem, t->L.size);   // PEANUTS(upstream-candidate): protect the tracked texture.
     img_edges_take(im);
     if (vka_nan_on()) im->hash = mem_hash(t->mem, t->L.size);
     uint8_t *c = im->vpool ? NULL : gw_content(t->mem, t->L.size, &im->gw_seen);   // (a sparse pool's storage is read through its page table: upload_)
@@ -1200,7 +1201,7 @@ static int upload_rows_tracked(vka_img *im, const tex_t *t, VkCommandBuffer cb, 
     if (st < pitch) return 0;
     uint32_t r0 = (uint32_t)(lo / st), r1 = (uint32_t)((hi + st - 1) / st); if (r1 > by) r1 = by;
     if (r0 >= r1) r0 = 0, r1 = by;
-    im->stamp = nvn_dirty_now(); nvn_dirty_protect(t->mem, t->L.size);   // stamp, protect, then read (upload_tracked)
+    im->stamp = nvn_dirty_now(); nvn_dirty_protect_span(im->span, t->mem, t->L.size);   // PEANUTS(upstream-candidate): stamp, protect, then read (upload_tracked)
     img_edges_take(im);
     if (tbuf) { tbuf_rows_copy(im, t, cb, r0, r1, &g_rows_up); return 1; }   // PEANUTS: tbuf (see above)
     vka_span s; if (!vka_scratch(pitch * (r1 - r0), 16, &s)) return 1;
@@ -1223,7 +1224,7 @@ static int upload_bands_tracked(vka_img *im, const tex_t *t, VkCommandBuffer cb,
     if (c) { free(c); return 0; }
     if ((c = unmapped_content(t))) { free(c); return 0; }
     im->gw_seen = seen;
-    im->stamp = nvn_dirty_now(); nvn_dirty_protect(t->mem, t->L.size);   // stamp, protect, then read (upload_tracked)
+    im->stamp = nvn_dirty_now(); nvn_dirty_protect_span(im->span, t->mem, t->L.size);   // PEANUTS(upstream-candidate): stamp, protect, then read (upload_tracked)
     img_edges_take(im);
     uint64_t up = 0;
     uint8_t *bst = NULL; uint32_t bst_cap = 0;

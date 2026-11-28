@@ -7,6 +7,7 @@ void nvn_dirty_add_range(const void *mem, size_t size);           // Register a 
 void nvn_dirty_stat(int *live, int *peak, int *cap);                // number of registered memory pools, peak, tracking table capacity (for the memory readout line)
 void nvn_dirty_remove_range(const void *mem);                     // Pool destruction: restore protected pages to writable and mark invalid
 int nvn_dirty_tracked(const void *addr, size_t len);
+void nvn_dirty_protect_span(const void *span, const void *addr, size_t len); // Reuse a span from nvn_dirty_span if it still covers the range   // PEANUTS(upstream-candidate): Expose cached-span protection.
 void nvn_dirty_protect(const void *addr, size_t len);              // Set the covered pages read-only
 void nvn_dirty_hold(const void *addr, size_t len);                 // Unprotect (and stamp) every protected page of [addr, addr+len) and protect nothing more until nvn_dirty_unhold
 void nvn_dirty_unhold(void);                                      // (a placement swapping those pages, vka_mem.c place: the tracker's protections must not change under it)

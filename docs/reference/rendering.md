@@ -1871,3 +1871,10 @@ On the Retroid Pocket Flip 2, PurpleVK T30 (`git-62ac221a33`) reports a 33.11 ns
 - **Cause:** `nvnCommandBufferDownsample` is recorded as a texture copy whose rectangles are the two whole textures (`rec_downsample`, `hle_nvn.c`), and the Vulkan replay resolved with the source's extent (`copy_t2t`, `vka_exec.c`). A game that resolves its 4x 1920x1080 scene target into a 1280x720 texture got a `vkCmdResolveImage` region that ran 640x360 past the destination, which Vulkan does not allow; Adreno wrote the overflow into the destination's own tiles.
 - **Fix:** the resolve takes the part both textures have: the smaller of the two rectangles, kept inside both images' levels (the top-left 1280x720 the game drew). The log says it once: `multisample resolve of 1920x1080 (serial …, 4 samples) into 1280x720 (serial …): the 1280x720 both have`.
 - **Found on:** [Digimon Story Time Stranger](../../dm/games/010062E01FE0C000/README.md#found-on-this-game) in handheld mode (issue #552), Turnip on the AYN Thor and on a Snapdragon 7 series phone.
+<!-- PEANUTS(upstream-candidate) -->
+### Image descriptor diagnostics and dirty texture checks can dominate replay time
+
+- **Symptom:** `pace cost` reports high image descriptor and texture preparation time even when the encoder's descriptor pushes and texture uploads are short.
+- **Cause:** The image-class diagnostic searched its table even after exhausting its message budget. The probe could scan the whole table at high occupancy. Tracked texture refreshes also repeated range searches for protection, counted unmapped guest pages individually, and hashed unchanged edges twice when skipping an upload.
+- **Fix:** Stop the class diagnostic at its budget and bound its probe. Reuse the dirty span under the tracker mutex, count alias pages by bitmap word and heap pages by interval, and retain validated edge hashes with their block size. A block size change forces the usual refresh on the next dirty hit. Concurrent writes keep a generation newer than the stamp taken before validation.
+- **Found on:** World War Z (`010099F013898000`).
