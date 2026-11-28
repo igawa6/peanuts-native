@@ -113,7 +113,8 @@ public final class RecommendJvmTest {
               "the changed marker: the player's own value, other than the recommended one");
         check(Recommend.prefKeys("upscaler", true).equals(List.of("dlss_mode")) && Recommend.prefKeys("upscaler", false).equals(List.of("ndsr_choice2"))
               && Recommend.prefKeys("res_preset", false).equals(Arrays.asList("res_preset", "window", "scene_res")) && Recommend.prefKeys("option.DM_X", false).equals(List.of("opt_DM_X"))
-              && Recommend.prefKeys("driver", false).equals(List.of("gpu_driver")) && Recommend.prefKeys("nope", false).isEmpty(), "the keys Back to recommended clears");
+              && Recommend.prefKeys("driver", false).equals(List.of("gpu_driver")) && Recommend.prefKeys("pso_async", false).equals(List.of("vk_pso_async")) && Recommend.prefKeys("nope", false).isEmpty(), "the keys Back to recommended clears");   // PEANUTS(upstream-candidate)
+        check("Background pipelines".equals(Recommend.label(Recommend.PSO_ASYNC)) && Recommend.values(Recommend.parse("any|pso_async=off"), null).equals(Map.of(Recommend.PSO_ASYNC, "off")), "pso_async");   // PEANUTS(upstream-candidate)
 
         // The log line and Game settings' note
         List<Recommend.State> st = Arrays.asList(new Recommend.State("driver", "GPU driver", "b-turnip", false, "b-turnip"),

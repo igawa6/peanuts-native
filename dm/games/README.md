@@ -379,6 +379,7 @@ One row per profile; the notes are each profile's `README.md`.
   | `drs` | `off`, `80` … `30` (a game with `drs_ctl`) | Dynamic resolution |
   | `vegetation` | `on`, `off` (a game with `mesh_vegetation_cut`) | Full vegetation |
   | `skip_layers` | `on`, `off` (a game with `skip_layers`) | Speedhack |
+  | `pso_async` | `on`, `off` | Background pipelines <!-- PEANUTS(upstream-candidate) --> |
   | `option.<ENV>` | `on`, `off` (a profile `option` row) | the option's row |
 
 ### Readiness rows

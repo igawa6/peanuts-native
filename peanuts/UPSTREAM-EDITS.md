@@ -3546,3 +3546,21 @@ NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS draws its UI with OpenGL throug
 | `dm/host/hle.h` | 1 | `HLE_FORCE_BIG`'s comment: two stack slots carried over | `PEANUTS` |
 | `dm/host/tests/t_bigstack.c` | 4 | a ten-argument take-over through the switch and on the direct path; the call helpers use `PLAT_ASM_SYM` (ELF too) | `PEANUTS` |
 | `docs/reference/memory.md` | 1 | "Host calls on small guest stacks": the two stack slots | `PEANUTS` |
+
+## Recommend `pso_async` (Background pipelines) per game or driver (2026-11-28)
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/tools/recommend.py` | 1 | Accept `pso_async` (`on` / `off`) in `recommend` rows | `PEANUTS(upstream-candidate)` |
+| `android/app/build.gradle` | 1 | Accept `pso_async` (`on` / `off`) in `recommendOf` | `PEANUTS(upstream-candidate)` |
+| `android/app/src/main/java/dev/nxnative/android/Recommend.java` | 3 | Add `PSO_ASYNC` setting, `vk_pso_async` pref key, and `"Background pipelines"` label | `PEANUTS(upstream-candidate)` |
+| `android/app/src/main/java/dev/nxnative/android/Prefs.java` | 2 | Include `PSO_ASYNC` in `recStates` and default `psoAsync()` to the recommendation | `PEANUTS(upstream-candidate)` |
+| `android/app/src/main/java/dev/nxnative/android/GameSettings.java` | 1 | Track Background pipelines row in `recRows` and refresh recommendation tags on toggle | `PEANUTS(upstream-candidate)` |
+| `android/app/src/jvmtest/java/dev/nxnative/android/RecommendJvmTest.java` | 1 | Test `pso_async` parsing, label, and `prefKeys` | `PEANUTS(upstream-candidate)` |
+| `dm/tools/tests/test_android_recommend.py` | 4 | Verify `PSO_ASYNC` wiring across `Prefs`, `GameSettings`, `recommend.py`, and refusals | `PEANUTS(upstream-candidate)` |
+| `dm/games/README.md` | 1 | Document `pso_async` in Recommended settings table | `PEANUTS(upstream-candidate)` |
+| `android/README.md` | 1 | List Background pipelines among recommended settings | `PEANUTS(upstream-candidate)` |
+
+Allows game profiles (such as UE4 titles affected by skipped-draw exposure washout on cold start or Qualcomm drivers before `512.800` where `DM_VK_PREWARM=0` is forced) to recommend `pso_async=off` (`DM_VK_PSO_ASYNC=0`) per game or per driver while still letting players override it in Game settings.
+
+Upstream candidate: yes, general launcher `recommend` support with no Peanuts dependency.

@@ -22,8 +22,8 @@ final class Recommend {
 
     /** The settings a row can set, in the order the log and the summary list them; "option.&lt;ENV&gt;" (a profile option row) comes after them */
     static final String RES_PRESET = "res_preset", DRIVER = "driver", UPSCALER = "upscaler", HOLD60 = "hold60", FPS_CAP = "fps_cap", DRS = "drs",
-            VEGETATION = "vegetation", SKIP_LAYERS = "skip_layers", OPTION = "option.";
-    static final List<String> SETTINGS = Collections.unmodifiableList(Arrays.asList(RES_PRESET, DRIVER, UPSCALER, HOLD60, FPS_CAP, DRS, VEGETATION, SKIP_LAYERS));
+            VEGETATION = "vegetation", SKIP_LAYERS = "skip_layers", PSO_ASYNC = "pso_async", OPTION = "option.";   // PEANUTS(upstream-candidate)
+    static final List<String> SETTINGS = Collections.unmodifiableList(Arrays.asList(RES_PRESET, DRIVER, UPSCALER, HOLD60, FPS_CAP, DRS, VEGETATION, SKIP_LAYERS, PSO_ASYNC));   // PEANUTS(upstream-candidate)
 
     /** The values, each list in the order of the launcher's own (GameUpscaler.MODES, DlssTune.MODE_NAMES, Prefs.DRS_NAMES, Prefs.FPS_CAPS, Prefs.PACE_CAPS): the index is the stored value */
     static final String[] UPSCALERS = {"nearest", "bilinear", "fsr1", "native", "sgsr1"};
@@ -223,6 +223,7 @@ final class Recommend {
             case DRS: return Collections.singletonList("drs2");
             case VEGETATION: return Collections.singletonList("full_vegetation");
             case SKIP_LAYERS: return Collections.singletonList("vk_skip_layers");
+            case PSO_ASYNC: return Collections.singletonList("vk_pso_async");   // PEANUTS(upstream-candidate)
             default: return setting.startsWith(OPTION) ? Collections.singletonList("opt_" + setting.substring(OPTION.length())) : Collections.emptyList();
         }
     }
@@ -238,6 +239,7 @@ final class Recommend {
             case DRS: return "Dynamic resolution";
             case VEGETATION: return "Full vegetation";
             case SKIP_LAYERS: return "Speedhack";
+            case PSO_ASYNC: return "Background pipelines";   // PEANUTS(upstream-candidate)
             default: return setting;
         }
     }

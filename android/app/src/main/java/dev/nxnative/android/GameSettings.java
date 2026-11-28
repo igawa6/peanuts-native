@@ -307,8 +307,9 @@ final class GameSettings {
                 .says("Repeated meshes drawn as one", "One draw per mesh"));
         advanced.add(new Ui.Setting(a, "🧱", "Classic render passes", null).toggle(a, Prefs.classicPasses(a, id), (b, on) -> Prefs.classicPasses(a, id, on))
                 .says("Less CPU a pass on Qualcomm's driver", "Dynamic rendering"));
-        advanced.add(new Ui.Setting(a, "🧵", "Background pipelines", null).toggle(a, Prefs.psoAsync(a, id), (b, on) -> Prefs.psoAsync(a, id, on))
-                .says("A short pop-in, not a stutter", "Made when first drawn: may stutter"));
+        Ui.Setting pso = new Ui.Setting(a, "🧵", "Background pipelines", null).toggle(a, Prefs.psoAsync(a, id), (b, on) -> { Prefs.psoAsync(a, id, on); refresh[0].run(); })   // PEANUTS(upstream-candidate)
+                .says("A short pop-in, not a stutter", "Made when first drawn: may stutter");
+        advanced.add(track(recRows, Recommend.PSO_ASYNC, pso));   // PEANUTS(upstream-candidate)
         advanced.add(new Ui.Setting(a, "💾", "RAM saver", null).toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on))
                 .says("Texture data in a file: needs GBs free", "Texture data in compressed RAM"));
         advanced.add(new Ui.Setting(a, "⚡", "Use fast cores", null).toggle(a, Prefs.pinThreads(a, id), (b, on) -> Prefs.pinThreads(a, id, on))

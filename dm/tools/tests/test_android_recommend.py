@@ -64,7 +64,7 @@ class Wiring(unittest.TestCase):
 
     def test_settings_and_start(self):
         prefs = (SRC / 'Prefs.java').read_text(encoding='utf-8')
-        for getter in ('Recommend.VEGETATION), true)', 'Recommend.OPTION + env), false)', 'Recommend.HOLD60), false)', 'Recommend.SKIP_LAYERS), false)',
+        for getter in ('Recommend.VEGETATION), true)', 'Recommend.OPTION + env), false)', 'Recommend.HOLD60), false)', 'Recommend.SKIP_LAYERS), false)', 'Recommend.PSO_ASYNC), true)',   # PEANUTS(upstream-candidate)
                        'Integer r = recCap(c, titleId);', 'rec(c, titleId, Recommend.DRS)', 'rec(c, titleId, Recommend.RES_PRESET)'):
             self.assertIn(getter, prefs, 'a getter whose default is the recommendation')
         self.assertIn('Recommend.UPSCALERS, Prefs.rec(c, titleId, Recommend.UPSCALER)', (SRC / 'GameUpscaler.java').read_text(encoding='utf-8'))
@@ -86,9 +86,9 @@ class Wiring(unittest.TestCase):
         self.assertNotIn('Default · ', gs, 'rows show their value alone')
         self.assertNotIn('Recommended · ', gs)
         self.assertIn('"Default (Settings: "', gs, "a list's first choice still says Default")
-        for s in ('RES_PRESET', 'DRIVER', 'UPSCALER', 'HOLD60', 'FPS_CAP', 'DRS', 'VEGETATION', 'SKIP_LAYERS'):
+        for s in ('RES_PRESET', 'DRIVER', 'UPSCALER', 'HOLD60', 'FPS_CAP', 'DRS', 'VEGETATION', 'SKIP_LAYERS', 'PSO_ASYNC'):   # PEANUTS(upstream-candidate)
             self.assertIn(f'track(recRows, Recommend.{s}, ', gs, f'{s}: its row carries the tag')
-        for t in ('fullVegetation', 'skipLayers', 'hold60'): self.assertIn(f'Prefs.{t}(a, id, on); refresh[0].run();', gs, f'{t}: the tag follows a toggle')
+        for t in ('fullVegetation', 'skipLayers', 'hold60', 'psoAsync'): self.assertIn(f'Prefs.{t}(a, id, on); refresh[0].run();', gs, f'{t}: the tag follows a toggle')   # PEANUTS(upstream-candidate)
         ui = (SRC / 'Ui.java').read_text(encoding='utf-8')
         self.assertIn('static TextView tag(Context c, CharSequence s, boolean warn)', ui)
         self.assertIn('R.color.bn_warn_tint', ui)
@@ -105,11 +105,11 @@ class Rows(unittest.TestCase):
         g = game.load(OOT)   # Ocarina of Time: presets, options, vegetation, skip_layers, a frame step (PEANUTS: the fixture)
         ok = lambda *w: recommend.check_row(g, list(w))
         self.assertEqual(ok('any', 'res_preset=performance', 'upscaler=sgsr1', 'hold60=on'), 'any|res_preset=performance upscaler=sgsr1 hold60=on')
-        self.assertTrue(ok('feature.meshShader=0', 'vegetation=off', 'skip_layers=on'))
+        self.assertTrue(ok('feature.meshShader=0', 'vegetation=off', 'skip_layers=on', 'pso_async=off'))   # PEANUTS(upstream-candidate)
         self.assertTrue(ok('gpu.device&0xff000000=0x44000000,vk.api>=1.3', 'fps_cap=30'))
         for bad in (('any',), ('any', 'upscalr=sgsr1'), ('any', 'upscaler=gsr2'), ('any', 'res_preset=ultra'), ('any', 'hold60=yes'), ('any', 'drs=40'),
                     ('driver.name=Turnip', 'upscaler=sgsr1'), ('gpu.name=Adreno', 'upscaler=sgsr1'), ('driver.id==8', 'upscaler=sgsr1'), ('any', 'driver=turnip'),
-                    ('any', 'driver=18', 'upscaler=sgsr1'), ('any', 'option.DM_NOPE=on'), ('any', 'upscaler')):
+                    ('any', 'driver=18', 'upscaler=sgsr1'), ('any', 'option.DM_NOPE=on'), ('any', 'pso_async=2'), ('any', 'upscaler')):   # PEANUTS(upstream-candidate)
             with self.assertRaises(recommend.Error, msg=bad): ok(*bad)
         fe = game.load(FE)   # the DLSS stand-in's modes, no presets
         self.assertTrue(recommend.check_row(fe, ['any', 'upscaler=gsr2']))

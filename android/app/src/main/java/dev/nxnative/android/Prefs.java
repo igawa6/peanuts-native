@@ -328,6 +328,7 @@ final class Prefs {
         if (drsGame(titleId)) out.add(state(Recommend.DRS, Recommend.DRS_VALUES[drs(c, titleId)], ownDrs(c, titleId), r));
         if (p.vegetationDetail) out.add(state(Recommend.VEGETATION, Recommend.onOff(fullVegetation(c, titleId)), own(c, "full_vegetation", titleId), r));
         if (skipLayersGame(titleId)) out.add(state(Recommend.SKIP_LAYERS, Recommend.onOff(skipLayers(c, titleId)), own(c, "vk_skip_layers", titleId), r));
+        out.add(state(Recommend.PSO_ASYNC, Recommend.onOff(psoAsync(c, titleId)), own(c, "vk_pso_async", titleId), r));   // PEANUTS(upstream-candidate)
         for (Profile.Option o : p.options) {
             String k = Recommend.OPTION + o.env;
             out.add(new Recommend.State(k, o.label, Recommend.onOff(gameOption(c, titleId, o.env)), own(c, "opt_" + o.env, titleId), r.get(k)));
@@ -588,7 +589,7 @@ final class Prefs {
     static void instancedDraws(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vk_instance", titleId), on).commit(); }
     /** Game settings › Background pipelines (DM_VK_PSO_ASYNC): a pipeline the cache doesn't have yet is made on two background threads instead of on the frame,
      *  so a cold cache gives a short pop-in instead of a freeze (Bananza's heaviest area with an empty cache: worst frame 8.1 s → 3.7 s). On by default */
-    static boolean psoAsync(Context c, String titleId) { return of(c).getBoolean(gameKey("vk_pso_async", titleId), true); }
+    static boolean psoAsync(Context c, String titleId) { return of(c).getBoolean(gameKey("vk_pso_async", titleId), Recommend.bool(rec(c, titleId, Recommend.PSO_ASYNC), true)); }   // PEANUTS(upstream-candidate)
     static void psoAsync(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vk_pso_async", titleId), on).commit(); }
     /**
      * RAM saver (per game, off by default; from Anka Native, NOTICE.md): DM_MEM_FILEBACK=1 with DM_MEM_FILEBACK_KINDS=shader,texture for the host (shader-code pools are

@@ -76,8 +76,9 @@ def check_row(g, words, o=None):
         elif k == 'drs': take(DRS, o['drs'])
         elif k == 'vegetation': take(ON_OFF, o['vegetation'])
         elif k == 'skip_layers': take(ON_OFF, o['skip_layers'])
+        elif k == 'pso_async': take(ON_OFF, True)   # PEANUTS(upstream-candidate): Background pipelines (DM_VK_PSO_ASYNC)
         elif k.startswith('option.'): take(ON_OFF, k[7:] in o['options'])
-        else: raise Error(f'{where}: unknown setting {k} (res_preset, driver, upscaler, hold60, fps_cap, drs, vegetation, skip_layers, option.<ENV>)')
+        else: raise Error(f'{where}: unknown setting {k} (res_preset, driver, upscaler, hold60, fps_cap, drs, vegetation, skip_layers, pso_async, option.<ENV>)')   # PEANUTS(upstream-candidate)
     return match + '|' + ' '.join(sets)
 
 
