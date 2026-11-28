@@ -195,8 +195,14 @@ public final class PeanutsPrefs {
     /** The stats page's items (dev.peanuts.ui.StatsConfig.format; null: never set, every item) and its burn-in guards (StatsConfig.GUARDS, each on by default), for every game */
     public static String statsShown(Context c) { return of(c).getString("stats_shown", null); }
     public static void statsShown(Context c, String items) { of(c).edit().putString("stats_shown", items).apply(); }
-    public static boolean statsGuard(Context c, String guard) { return of(c).getBoolean("stats_guard_" + guard, true); }
+    public static boolean statsGuard(Context c, String guard) { return of(c).getBoolean("stats_guard_" + guard, !"black".equals(guard)); }   // all on but the black page: the default is the top screen side panel's grey
     public static void statsGuard(Context c, String guard, boolean on) { of(c).edit().putBoolean("stats_guard_" + guard, on).apply(); }
+    /** The stats page's graph opens live (true) or on the last 30 s (false, default); a tap on it still switches */
+    public static boolean statsGraphLive(Context c) { return of(c).getBoolean("stats_graph_live", false); }
+    public static void statsGraphLive(Context c, boolean on) { of(c).edit().putBoolean("stats_graph_live", on).apply(); }
+    /** The stats page's brightness, 30..100 % (default 100): a black veil over the page, the system brightness and the top screen untouched */
+    public static int statsBrightness(Context c) { return Math.max(30, Math.min(100, of(c).getInt("stats_brightness", 100))); }
+    public static void statsBrightness(Context c, int pct) { of(c).edit().putInt("stats_brightness", pct).apply(); }
 
     /** Settings > Library > Haptics: false (default) = the launcher's haptics follow the system's touch feedback setting, true = none at all */
     public static boolean hapticsOff(Context c) { return of(c).getBoolean("haptics_off", false); }
