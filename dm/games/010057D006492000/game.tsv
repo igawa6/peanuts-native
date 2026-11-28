@@ -47,3 +47,10 @@ tex_dirty_upload	on
 # zlib-compressed, inside legacy paks whose blocks are zlib-compressed too (shader_split.py ue_legacy_jobs)
 shader_groups	GlobalShaderCache=global #Engine/=engine #Kingship/=game
 shader_note	OCTOPATH TRAVELER shaders
+
+# PEANUTS begin: 30/40/45/60 fps support on Android (UE 4.18 delta-time; FPSLocker Warehouse 67DACC049CEEE858)
+present_interval	display
+fps_limit	60
+fps_limit_max	60
+fpslocker	67dacc049ceee8585b1583336c565b43	target_f32	0x50b5698	2	0
+# PEANUTS end

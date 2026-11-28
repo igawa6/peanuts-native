@@ -278,7 +278,7 @@ EXPECTED = {
     '01001BB01E8E2000': ('FANTASIAN Neo Dimension', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '01004BC0166CC000': ('CRISIS CORE –FINAL FANTASY VII– REUNION', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '0100ACD0163D0000': ('Batman: Arkham Knight', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
-    '010057D006492000': ('OCTOPATH TRAVELER', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
+    '010057D006492000': ('OCTOPATH TRAVELER', 'limit', '-', 'own,60,45,40,30,20', 'own,60,45,40,30,20', 'own,60,45,40,30,20', '-', '-'),  # PEANUTS: 30/40/45/60 fps via fpslocker
     # PEANUTS: Xenoblade Chronicles 2 and 3 on the 0.1.10 release list (2026-11-27)
     '0100E95004038000': ('Xenoblade Chronicles 2', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '010074F013262000': ('Xenoblade Chronicles 3', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
