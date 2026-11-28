@@ -1,0 +1,4 @@
+# Additional profiles selected by -PnxGameSet=custom.
+# Android compatibility varies by title.
+0100A9D01C446000
+0100633007D48000

@@ -148,6 +148,13 @@ final class Prepare {
         // Version row got the player's explicit "Build anyway" for this request (consent); a resumed job that was already marked tryAnyway (anyBuild from the
         // existing job.json) still resumes as it was, since that choice was already made once
         Object r = Upstream.dumpCheck(dump, fresh, anyBuild);
+        if ("01006D0017F7A000".equalsIgnoreCase(id)
+                && (Boolean.TRUE.equals(Upstream.get(r, "otherBuild"))
+                    || (Upstream.get(r, "error") == null
+                        && ((Number) Upstream.get(r, "version")).longValue() != 65536L))) {
+            throw new BuildListener.Failure("Mario & Luigi: Brothership requires update 1.0.1. Add that update and build again.",
+                    BuildListener.WRONG_VERSION);
+        }
         String error = (String) Upstream.get(r, "error");
         if (error != null && !anyBuild && Boolean.TRUE.equals(Upstream.get(r, "otherBuild"))) {
             if (!consent && !had) {

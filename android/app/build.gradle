@@ -8,6 +8,23 @@ plugins {
 // own, libnxhost_<title ID>.so with its libnxlaunch_<title ID>.so (src/main/cpp/CMakeLists.txt): the host has its profile compiled in, as dm/host/Makefile's GAME, so a game
 // runs only in an APK built with its profile. The first is the default (the graphics self-test loads its host)
 def nxGames = (providers.gradleProperty('nxGames').getOrElse('') ?: providers.gradleProperty('nxGame').getOrElse('')).split(',').collect { it.trim() }.findAll { it }.unique()
+// Custom builds can select the release catalog plus the added games, or every source profile.
+def nxGameSet = providers.gradleProperty('nxGameSet').getOrElse('')
+if (nxGameSet) {
+    def root = rootProject.projectDir.parentFile.parentFile
+    if (nxGameSet == 'custom') {
+        nxGames = ['peanuts/release-titles.txt', 'peanuts/custom-titles.txt'].collectMany {
+            new File(root, it).readLines('UTF-8').collect { line -> line.trim() }
+                .findAll { line -> line && !line.startsWith('#') }
+        }.unique()
+    } else if (nxGameSet == 'all') {
+        nxGames = new File(root, 'dm/games').listFiles()
+            .findAll { it.isDirectory() && it.name ==~ /[0-9A-F]{16}/ && new File(it, 'game.tsv').isFile() }
+            .collect { it.name }.sort()
+    } else {
+        throw new GradleException("nxGameSet must be custom or all, not $nxGameSet")
+    }
+}
 if (!nxGames) throw new GradleException('nxGames: no game (gradle.properties names every supported one; -PnxGames=<title ID>,... builds fewer)')
 nxGames.each { g ->
     if (!(g ==~ /[0-9A-F]{16}/)) throw new GradleException("nxGames: each game must be a title ID (16 upper-case hex digits), not $g")
