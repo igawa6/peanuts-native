@@ -1421,15 +1421,24 @@ VZIP = b'VZIP'   # Star Fox's data.zip: a zip archive behind the engine's own 18
 VIPER_GLSLC = b'\x91\x68\x86\x19'
 VIPER_CHUNK = 0x10000
 
-def viper_zip_member(z, info):
+# PEANUTS begin(upstream-candidate): share the raw stored-member read with the ZIP padding probe.
+def zip_stored_bytes(z, info):
+    z.fp.seek(info.header_offset); h = z.fp.read(30)
+    if len(h) != 30 or h[:4] != ZIP: red(f'{z.filename or "zip"}/{info.filename}: no local header at {info.header_offset:#x}')
+    nlen, xlen = struct.unpack_from('<HH', h, 26)
+    z.fp.seek(info.header_offset + 30 + nlen + xlen)
+    data = z.fp.read(info.compress_size)
+    if len(data) != info.compress_size: red(f'{info.filename}: truncated stored ZIP member')
+    return data
+# PEANUTS end(upstream-candidate)
+
+
+def viper_zip_member(d, info):   # PEANUTS(upstream-candidate): its caller supplies the stored bytes.
     """A member of Star Fox's data.zip (its engine's vfs.zip.c): the central directory calls it stored, but a member whose size on disk differs from its file size is a chain of 64 KB chunks,
     each a u32 length and an LZ4 block of that length, compressed against the previous chunk's output as its dictionary (a chunk whose length equals what is left is stored raw).
     The CRC the directory keeps is the decoded data's, so zipfile's own read stops on it; 114,154 members, 33 GB, all check"""
     import lz4.block
-    z.fp.seek(info.header_offset); h = z.fp.read(30)
-    if h[:4] != ZIP: red(f'{z.filename or "zip"}/{info.filename}: no local header at {info.header_offset:#x}')
-    nlen, xlen = struct.unpack_from('<HH', h, 26)
-    z.fp.seek(info.header_offset + 30 + nlen + xlen); d = z.fp.read(info.compress_size); u = info.file_size
+    u = info.file_size   # PEANUTS(upstream-candidate): Decode the bytes already read by the caller.
     out, off = bytearray(), 0
     while off + 4 <= len(d) and len(out) < u:
         n = struct.unpack_from('<I', d, off)[0]; off += 4; want = min(VIPER_CHUNK, u - len(out))
@@ -1443,11 +1452,20 @@ def viper_zip_member(z, info):
     if zlib.crc32(out) & 0xFFFFFFFF != info.CRC: red(f'{info.filename}: CRC mismatch after the LZ4 chunks')
     return bytes(out)
 
+# PEANUTS begin(upstream-candidate): stored ZIP members can have alignment padding.
 def zip_member(z, name):
-    """A zip member's data: zipfile's, or viper_zip_member's for a member the directory calls stored at another size than its file size (Star Fox)"""
+    """Read a standard member, a padded stored member, or a Viper LZ4 chain."""
     info = z.getinfo(name)
-    if info.compress_type == 0 and info.compress_size != info.file_size: return viper_zip_member(z, info)
+    if info.compress_type == 0 and info.compress_size != info.file_size:
+        raw = zip_stored_bytes(z, info)
+        if info.compress_size > info.file_size:
+            prefix = memoryview(raw)[:info.file_size]
+            if zlib.crc32(prefix) == info.CRC:
+                return bytes(prefix)
+        return viper_zip_member(raw, info)
     return z.read(name)
+# PEANUTS end(upstream-candidate)
+
 
 def viper_shader(d, label):
     """Star Fox's shader binaries (its engine's _vrender_shader_binary_t, one per data.zip member): the GLSLC output magic, u32 code length, u32 control length, u32 0, a 64-bit hash, then the
