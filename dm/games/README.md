@@ -147,6 +147,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Monster Hunter Rise](0100B04011742000/README.md) | `0100B04011742000` | 16.0.2 | 11.4.3 | Capcom's RE Engine | NVN |
 | [Monster Sanctuary](0100A0F00DA68000/README.md) | `0100A0F00DA68000` | 2.1.0 (provisional, packed on a PC, not run on a device) | 9.4.1 | Unity 2018.4.23f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile, provisional --> |
 | [Monster Train 2](010051701FB46000/README.md) | `010051701FB46000` | 1.1.1 | 18.3.5 | Unity 2022.3.54f1 IL2CPP | NVN |
+| [MotoGP 25](01006C7021024000/README.md) | `01006C7021024000` | 1.0.4 (`v262144`) | 18 | Unreal Engine 5 | NVN <!-- PEANUTS: Switch 1; observed on Android on one device with one custom driver --> |
 | [My Time at Sandrock](0100B63016916000/README.md) | `0100B63016916000` | 1.4.2.0 (provisional, packed on a PC, not run on a device) | 16.2.0 | Unity 2021.3.26f1 IL2CPP, Wwise | NVN <!-- PEANUTS: Peanuts-only profile, provisional --> |
 | [NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS](01005A20190A6000/README.md) | `01005A20190A6000` | 1.70 (Android bring-up) | 14.3.0 | CyberConnect2 NUCC, Scaleform GFx on OpenGL | NVN, OpenGL UI <!-- PEANUTS: Peanuts-only profile --> |
 | [NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS, US release](0100D2D0190A4000/README.md) | `0100D2D0190A4000` | 1.70 (Android bring-up) | 14.3.0 | CyberConnect2 NUCC, Scaleform GFx on OpenGL | NVN, OpenGL UI <!-- PEANUTS: Peanuts-only profile --> |
