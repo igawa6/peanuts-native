@@ -634,10 +634,17 @@ int nximport_write_nup(const char *out_nup, const char **inputs, int n_inputs, c
             NxNca *pn = job_nca(j, t, t->program, t->program_sha, t->program_size); if (!pn) goto out;
             int ex = nx_nca_find_section(pn, NX_FS_PFS0), ro = nx_nca_find_section(pn, NX_FS_ROMFS);
             if (ro >= 0 && pn->sec[ro].crypt_type == 4) {
-                if (!base_prog || base_rom < 0) NX_FAIL("the update v%u patches the base game's RomFS: the base %s must be among the inputs", t->version, base_title_id);
-                if (nx_nca_set_base(pn, ro, base_prog, base_rom)) goto out;
+                if (!base_prog) NX_FAIL("the update v%u patches the base game's RomFS: the base %s must be among the inputs", t->version, base_title_id);
+                // PEANUTS: a base whose program NCA has no RomFS section (Batman: Arkham Knight's 7 MB base, only ExeFS and a logo) gives the patch no base: its
+                // relocations must then all point into the update's own data. One that points into the base is refused here, before the check below would
+                // read it and call the update damaged
+                if (nx_nca_set_base(pn, ro, base_rom >= 0 ? base_prog : NULL, base_rom)) goto out;
+                if (base_rom < 0) { const NxBktr *b = pn->sec[ro].bktr;   // PEANUTS
+                    for (uint32_t r = 0; r < b->nr; r++) if (!b->r[r].patch && b->r[r].end > b->r[r].virt)
+                        NX_FAIL("the update v%u reads parts of the base game's RomFS, and the base %s has no RomFS: the base is not the one this update was made for", t->version, base_title_id); }
                 // the patched image against the update's own hash levels (an NCZ was checked whole already): what the update carries and what it maps from the
                 // base, as the writer reads it. The base's bytes are checked against the base's levels on the way (bktr_read), so each file is named for its own
+                // PEANUTS: over a base with no RomFS every byte it checks is the update's own
                 if (!j->ncz[j->nncas - 1]) { char what[320]; title_what(t, what, sizeof what); if (nx_sec_verify(pn, ro, what)) goto out; }
             }
             NxNode *exefs = ex >= 0 ? nx_pfs0_tree(pn, ex) : NULL; if (ex >= 0 && !exefs) goto out;

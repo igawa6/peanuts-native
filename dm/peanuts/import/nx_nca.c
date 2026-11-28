@@ -645,6 +645,7 @@ uint64_t nx_sec_chunk_end(NxNca *n, int s, uint64_t off, uint64_t want_end, uint
 }
 int nx_bktr_maps_to_base(const NxNca *n, int s, uint64_t off, uint64_t size, uint64_t *base_off) {
     const NxSection *S = &n->sec[s]; if (S->crypt_type != 4 || !S->bktr || !size) return 0;
+    if (!S->base) return 0;   // PEANUTS: a patch over a base with no RomFS reads only its own data (nximport.c)
     if (S->compressed || S->base->sec[S->base_sec].compressed) return 0;   // the relocations map compressed bytes, not the files' (which the reader decompresses)
     const NxReloc *r = find_reloc(S->bktr, off); if (!r || r->patch) return 0;
     uint64_t p0 = r->phys + (off - r->virt), end = off + size, cur = off;

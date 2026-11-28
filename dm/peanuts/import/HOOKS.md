@@ -74,6 +74,9 @@ writer reads it, below the decompression (the hashes cover a compressed section'
 that covers a block only in part reads the rest of it with `nx_sec_read_unchecked`. A patch reads its base's bytes through the base's own `nx_sec_read_raw`,
 so the base's damage is named as the base's. A section with a hash type or a layout this reader does not know, and a sparse base (its update's check covers
 what is read of it), is not checked: the import goes on as before. NCZs are not checked again (`nx_ncz_prepare` hashes them whole).
+A base with no RomFS section (a stub base: Batman: Arkham Knight's has only an ExeFS and a logo) gives its update's patch no base: a patch that carries its
+whole RomFS is checked against its own levels as any patch is, and one with a relocation into the base is refused before the check would read that range
+and call the update damaged (`the update v<n> reads parts of the base game's RomFS, and the base <id> has no RomFS`). <!-- PEANUTS -->
 
 Messages: `<file>: the base game|the update v<n>|the DLC <id> is damaged: <why>` (`title_what`). A container cut short is `nx_nca.c`'s own
 `<file>: <nca> lies outside its file (…): the file is cut off` (#697). `dev.peanuts.build.Compressed.failure` makes the card's words of both, one
@@ -84,7 +87,8 @@ Tests: `verify_test` (off Windows; ctest). The fixture's NCAs carry real hash la
 LZ4 base with their updates and an add-on import, with and without the base's own package, and reading every file of the patched RomFS and the ExeFS checks
 every block. Then a file cut short (`nx_nca.c`'s message, #697), a container entry shorter than its NCA, and a byte flipped in a base file the update reads, in a base file the update
 replaced (never read: the import goes through), in the update's RomFS header, in the last byte of a file the update carries, in its main, in the base's first
-hash level, in its fs header, in an LZ4 base's stored bytes and in an add-on: each refused with the file and its role, no `.nup`. `nsp_test`, `ncz_test`,
+hash level, in its fs header, in an LZ4 base's stored bytes and in an add-on: each refused with the file and its role, no `.nup`. Over a base with no RomFS, every block of
+the update's RomFS is checked and a byte flipped in a file it carries is refused as the update's. <!-- PEANUTS --> `nsp_test`, `ncz_test`,
 `xci_test` and `nup_meta_test` (whose NCA has no hash layers this reader knows) pass as before.
 
 Cost, on an AYN Thor (2026-11-25, `nximport_cli nup` from internal storage, each run after `sync` and a pause): Pokémon Legends: Z-A, the base (4.3 GB),
