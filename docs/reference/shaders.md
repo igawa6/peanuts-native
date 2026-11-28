@@ -2020,3 +2020,19 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Cause:** keeping the last pool and adding coarse hints does not index smaller placed ranges. This is software address translation, not a measurement of hardware GMEM cache misses.
 - **Fix (opt-in experiment):** `vk_android_mesh.py cache --page-index <keys>` replaces only the generated cold hint lookup with a 4 KiB page-to-pool candidate, preserving the hot helper path, all word loads/stores and the complete search. The host tables (switch DM_VK_PIDX) are not in this tree: without them the cache keeps the exact search. Missing/partial/out-of-window pages, invalid candidates and unavailable snapshots retain exact search. Candidates are range-checked; unordered or overlapping host intervals produce no candidates. Snapshots stay immutable until all recording and submitted uses retire. The four snapshot buffers do not add frames to the queue; pressure falls back without waiting. The mesh chain includes both the shader rewrite and host header contract, so sidecars require the matching APK. The design reference is [Anka Native](https://github.com/EddizEge/AnkaNative/blob/main/CHANGELOG_ANKA_NATIVE.md) (MIT); no implementation was copied. Its in-place reuse of a recording snapshot is unsuitable for this backend's partial submissions and is not used.
 - **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md), three heavy mesh modules on Adreno 830 / Qualcomm 891.14. Synthetic SPIR-V differential tests compare every output word and physical store against the original lookup, including fallback and boundary addresses; host tests cover page windows, overlap rejection and open/fence reuse under ASan/UBSan. Performance acceptance is recorded in the game note; default remains off.
+
+<!-- PEANUTS(upstream-candidate) -->
+### Stored ZIP shader members with trailing alignment padding
+
+- **Symptom:** a stored ZIP member fails to open during shader splitting because the member's sizes differ.
+- **Cause:** the stored extent includes alignment bytes beyond the declared size. A size mismatch can also signal a Viper LZ4 member.
+- **Fix:** accept the declared-size prefix when its CRC matches the directory entry. Otherwise pass the stored bytes to the Viper decoder.
+- **Found on:** World War Z (`010099F013898000`).
+
+<!-- PEANUTS(upstream-candidate) -->
+### Saber Swarm SDC shader caches
+
+- **Symptom:** shader splitting misses NVN shaders packed in Saber Swarm caches.
+- **Cause:** the files index compressed blocks and shader records. Scanning for shader magic in the compressed data misses the records.
+- **Fix:** detect the index and zlib streams from the bytes, bound each record by its index, and read the NVN control and code spans. Probe loose files and nested archive members.
+- **Found on:** World War Z (`010099F013898000`).
