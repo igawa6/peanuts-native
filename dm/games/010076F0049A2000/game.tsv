@@ -42,3 +42,6 @@ mem_used	0x6600000
 # ---- Shader split (shader_split.py; the BNSH files in data00.cpk) ----
 shader_groups	/shader.dat/=core
 shader_note	Bayonetta shaders
+
+# PEANUTS: Android rendering; depends on PR #970.
+option	DM_VK_CUBE_VIEW_FIX	Character rendering fix	Recovers six-face cubemap views to fix black character rendering. Restart the game to apply.	restart

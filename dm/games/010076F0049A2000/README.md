@@ -36,3 +36,69 @@ Nothing new: the CPK reader and the two rendering fixes made for [Bayonetta 2](.
 ## Open
 
 - Nothing known.
+
+## Android
+
+### Status
+
+- Bayonetta 1.1 runs on Android through the opening and
+  Prologue combat tutorial.
+- The black character rendering issue is resolved by the
+  experimental Vulkan cube view recovery (PR #970).
+- Character rendering fix is exposed as a per-game option
+  and requires a restart. The option was verified through
+  the Android game settings.
+- The game retains its original pacing. No game code or
+  FPSLocker patches are added.
+
+### Tested on
+
+POCO Pad X1, Snapdragon 7+ Gen 3, 8 GB RAM, Android 16
+(API 36).
+
+| Driver | Frames | Median | Slowest | Average FPS |
+| --- | ---: | ---: | ---: | ---: |
+| Qualcomm System | 100 | 16.86 ms | 32.47 ms | 60.18 |
+| TurnipZ 0.3.0 | 100 | 16.87 ms | 35.63 ms | 60.32 |
+
+Both drivers passed readiness checks and rendered the
+character correctly with cube view recovery enabled.
+
+Qualcomm System:
+- Vulkan 1.3.128
+- Driver version: 0x802fa001
+- Driver build: a0053eb399, I31b05c049d
+- Compiler: E031.45.02.25
+
+TurnipZ 0.3.0:
+- Vulkan 1.4.363
+- Mesa 27.0.0-devel (git-bc775a5c79)
+- Driver version: 0x6863063
+
+Frame captures used DM_FPS_TARGET=0 and
+DM_VK_CUBE_VIEW_FIX=1 through Extra Environment.
+
+### Builds
+
+- Game version: 1.1 (v65536)
+- Title ID: 010076F0049A2000
+- Main build: 1f4a4708615f76f7cad4f12b5c417806
+- Android host: 4ba6f3840b6f
+- Validation APK: peanuts-native-0.1.9-dev
+- CI run: codetz7/peanuts-native/actions/runs/46103601357
+- Depends on Vulkan renderer PR #970.
+
+### Open
+
+- Full-game progression has not been tested.
+- Gameplay appears normal, but simulation speed has not
+  been measured quantitatively.
+- Game owned was tested using Extra Environment because
+  the launcher still reported a 60 FPS target when the
+  UI displayed Game owned.
+- Longer device runs and peak memory measurements remain
+  outstanding.
+- Testing on an Adreno device with at least 12 GB RAM
+  remains outstanding.
+- Source-only contribution; release-list inclusion is
+  left to the maintainers.
