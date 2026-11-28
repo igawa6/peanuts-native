@@ -37,7 +37,7 @@ public final class LibrarySettings {
     public static final int REQ_MOD_FOLDER = 69, REQ_MOD_ZIP = 70;
     private static final Handler UI = new Handler(Looper.getMainLooper());
     private static String fontsState;   // "Reading the firmware…" and what came of it, while the rows show
-    private static PUi.Setting keysRow, fontsRow, companionsRow, hapticsRow, motionRow, swapRow, tvRow, bottomRow, gamesRow, smoothRow, devRow;
+    private static PUi.Setting keysRow, fontsRow, companionsRow, hapticsRow, motionRow, soundsRow, swapRow, tvRow, bottomRow, gamesRow, smoothRow, devRow;
     private static Activity rowsOf;
 
     private LibrarySettings() {}
@@ -77,6 +77,14 @@ public final class LibrarySettings {
             refreshRows();
         });
         card.addView(motionRow.view);
+        // Sounds: the app's feedback sounds (Sounds), the same switch as the in-game menu's Menu sounds
+        soundsRow = new PUi.Setting(a, "", "Sounds", v -> {   // no emoji: its tile is Peanuts' "sound" icon (SettingsSections)
+            Sounds.on(a, !Sounds.on(a));
+            Haptics.refresh(a);
+            Haptics.play(v, Haptics.Word.CLICK);   // heard when it turns on, nothing when it turns off
+            refreshRows();
+        });
+        card.addView(soundsRow.view);
         // Swap screens: only where there is a second display to swap with (dev.peanuts.Screens)
         swapRow = null;
         if (dev.peanuts.Companion.hasSecondDisplay(a)) {
@@ -192,6 +200,8 @@ public final class LibrarySettings {
                 : "System: follows Android's touch feedback setting. Tap to turn the app's own haptics off.");
         if (motionRow != null) motionRow.value(PeanutsPrefs.motionReduced(a) ? "Reduced: fades and progress only. Tap to follow the system's animation setting again."
                 : "System: follows Android's animation setting. Tap for reduced motion (fades and progress only).");
+        if (soundsRow != null) soundsRow.value(Sounds.on(a) ? "On: soft sounds for each step, choice and Play. Silent when Android's touch sounds are off or the phone is on silent."
+                : "Off. Tap for the app's sounds again.");
         if (smoothRow != null) {
             boolean on = dev.peanuts.smooth.Smooth.on(a);
             smoothRow.value(dev.peanuts.smooth.SmoothItems.rowLine(on, dev.peanuts.smooth.Smooth.picked(a)));

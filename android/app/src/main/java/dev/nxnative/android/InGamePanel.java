@@ -670,7 +670,7 @@ public final class InGamePanel {
         shownTab = tab;
     }
 
-    /** The menu's feel in its own settings, at the end of its Menu section: Vibrate on each step (on), Menu sounds (off) (dev.peanuts.ui.MenuFeel) */
+    /** The menu's feel in its own settings, at the end of its Menu section: Vibrate on each step (on), Menu sounds (on: the app's Sounds switch) (dev.peanuts.ui.MenuFeel) */
     private static void feelSwitches(SidePanel p, LinearLayout box) {
         android.content.Context c = p.getContext();
         int at = box.getChildCount();

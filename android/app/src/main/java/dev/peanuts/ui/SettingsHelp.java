@@ -73,6 +73,7 @@ public final class SettingsHelp {
         // App
         put(m, "Haptics", "The app's touch feedback. System follows Android's setting, Off turns the app's own feedback off.", "System");
         put(m, "Motion", "The app's animations. System follows Android's setting, Reduced keeps fades and progress only.", "System");
+        put(m, "Sounds", "Soft sounds for each step, choice and Play, in the app and in the in-game menus. Silent when Android's touch sounds are off or the phone is on silent.", "On");
         put(m, "Mods tab", "The quick menu's Cheats and Mods tabs: the game's cheats and mods while it runs, each tab when the game has some. A game's own Mods & Cheats page can hide them for that game.", "On");
         put(m, "Check for updates", "Looks for a newer version of the app on GitHub.", null);
         put(m, "Smooth Experience", "A game starts and plays without technical details: a peanut and the game's cover instead of log lines, and no notices about graphics work over the game. The parts show under it while it is on. The logs keep every detail.", "Off");

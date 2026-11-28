@@ -134,8 +134,8 @@ class Feel(unittest.TestCase):
     def test_the_menus_feel(self):
         f = (APP / 'main/java/dev/peanuts/ui/MenuFeel.java').read_text(encoding='utf-8')
         self.assertIn('getBoolean("menu_haptics", true)', f, 'the tick is on by default')
-        self.assertIn('getBoolean("menu_sounds", false)', f, 'the sounds are off by default')
-        self.assertIn('Haptics.play(v, Haptics.Word.TICK)', f, "the launcher's haptics: its gaps and the system's setting")
+        self.assertIn('public static boolean sounds(Context c) { return Sounds.on(c); }', f, "Menu sounds is the app's Sounds switch (test_ui_sounds: on by default)")
+        self.assertIn('Haptics.buzz(v, Haptics.Word.TICK)', f, "the launcher's haptics: its gaps and the system's setting")
         b = (LAUNCHER / 'InGamePanel.java').read_text(encoding='utf-8')
         for line in ('"Vibrate on each step"', '"Menu sounds"', 'MenuFeel.move(now)', 'MenuFeel.open(sheet)', 'MenuFeel.tab(box)'):
             self.assertIn(line, b)

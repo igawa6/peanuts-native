@@ -19,7 +19,7 @@ import android.view.accessibility.AccessibilityManager;
 import dev.peanuts.PeanutsPrefs;
 
 /**
- * The launcher's haptics: six words, used by the library, the game sheet and Settings > Library, and through {@link Feel} by the pages upstream draws (a game's page), and nothing outside them. A word is played with the view's
+ * The launcher's feedback: six words, each felt and heard (its tone is {@link Sounds}', the app's one place for sounds), used by the library, the game sheet and Settings > Library, and through {@link Feel} by the pages upstream draws (a game's page), and nothing outside them. A word is played with the view's
  * own haptic constant first (tuned by the device maker, follows the system's touch feedback setting, needs no permission) and with the vibrator's composition
  * primitives or a predefined effect when the view declines (USAGE_TOUCH, so the system's setting gates that path too). Every word has a minimum gap, a focus
  * tick is dropped right after a stronger word (one haptic per action) and while a direction is held (a buzz at the key repeat rate), and nothing is ever
@@ -54,6 +54,7 @@ final class Haptics {
                 vibrator = m == null ? null : m.getDefaultVibrator();
             } catch (RuntimeException e) { vibrator = null; }
         }
+        Sounds.refresh(c);   // the words' sounds: their setting, Android's Touch sounds, the ringer
     }
 
     /** Battery saver, a thermal status of SEVERE or worse, or a screen reader that speaks the focus itself: the light words and the decorative motion go */
@@ -72,12 +73,16 @@ final class Haptics {
     /** No TICK and no EDGE for this long: the focus is about to be moved by code (after a rebuild, a filter step, a dialog opening) */
     static void quiet(long ms) { quietUntil = Math.max(quietUntil, SystemClock.uptimeMillis() + ms); }
 
-    static void play(View v, Word w) { play(v, w, constant(w)); }
+    /** The word, felt and heard: its vibration (the app's Haptics row, Android's touch feedback) and its tone (Sounds: their own setting and Android's) */
+    static void play(View v, Word w) { play(v, w, constant(w), true); }
+
+    /** The word's vibration alone: the in-game menus, which have their own Vibrate switch and play their own tones (MenuFeel) */
+    static void buzz(View v, Word w) { play(v, w, constant(w), false); }
 
     /** A switch: CLICK when it turns on, TICK when it turns off (the platform's own toggle constants from API 34) */
     static void toggle(View v, boolean on) {
         Word w = on ? Word.CLICK : Word.TICK;
-        play(v, w, Build.VERSION.SDK_INT >= 34 ? (on ? HapticFeedbackConstants.TOGGLE_ON : HapticFeedbackConstants.TOGGLE_OFF) : constant(w));
+        play(v, w, Build.VERSION.SDK_INT >= 34 ? (on ? HapticFeedbackConstants.TOGGLE_ON : HapticFeedbackConstants.TOGGLE_OFF) : constant(w), true);
     }
 
     private static int constant(Word w) {
@@ -91,15 +96,17 @@ final class Haptics {
         }
     }
 
-    private static void play(View v, Word w, int viewConstant) {
-        if (off || systemOff || v == null || Looper.myLooper() != Looper.getMainLooper()) return;
+    private static void play(View v, Word w, int viewConstant, boolean sound) {
+        if (v == null || Looper.myLooper() != Looper.getMainLooper()) return;
         boolean lightWord = w == Word.TICK || w == Word.EDGE;
         long now = SystemClock.uptimeMillis();
-        if (lightWord && (light || now < quietUntil || now - lastStrongAt < AFTER_STRONG_MS)) return;
+        if (lightWord && (now < quietUntil || now - lastStrongAt < AFTER_STRONG_MS)) return;   // one word an action, heard and felt alike
         int i = w.ordinal();
         if (now - lastAt[i] < GAP_MS[i]) return;
         lastAt[i] = now;
         if (!lightWord) lastStrongAt = now;
+        if (sound) Sounds.play(v.getContext(), Sounds.of(w));
+        if (off || systemOff || (lightWord && light)) return;
         // never FLAG_IGNORE_GLOBAL_SETTING: the user's system setting wins
         if (v.isHapticFeedbackEnabled() && v.performHapticFeedback(viewConstant)) return;
         fallback(w);
