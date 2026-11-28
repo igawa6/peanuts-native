@@ -65,7 +65,7 @@ class Keep(unittest.TestCase):
     def test_pickers_keep_their_request_codes(self):
         kinds = (FOLDERS / 'FolderKinds.java').read_text(encoding='utf-8')
         codes = dict(re.findall(r'new FolderKind\("(\w+)",[^;]*?"Pick [^"]+", (\d+),', kinds, re.S))
-        self.assertEqual(codes, {'games': '61', 'addons': '62', 'builds': '68'})
+        self.assertEqual(codes, {'games': '61', 'addons': '62', 'builds': '68', 'frontend': '74'})
         lib = src('ui/LibrarySettings.java')
         self.assertIn('FolderKinds.ofRequest(request)', lib)
         self.assertNotRegex(lib, r'\bREQ_(GAME|UPDATE_DIR|DLC_DIR|BUILD_DIR)\b')

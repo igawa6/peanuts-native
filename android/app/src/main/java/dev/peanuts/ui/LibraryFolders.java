@@ -234,7 +234,7 @@ final class LibraryFolders {
         k.hooks.added(a, FolderList.clean(path), () -> {
             changed(a);
             if (sheet) reopen(a);
-            else if (!Environment.isExternalStorageManager()) LibrarySettings.askAccess(a, "The app needs All files access to read " + path + ". Allow it, then come back.");
+            else if (!Environment.isExternalStorageManager()) LibrarySettings.askAccess(a, k.hooks.accessNeed(FolderList.clean(path)).toString());
         });
     }
 

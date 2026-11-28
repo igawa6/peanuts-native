@@ -144,6 +144,10 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      the start's tester toasts (a switch nothing reads, `DevView.startToast`; environment lines not taken), the ignored adb command's toast, and the
      in-game menu's tool words (`DevView.panel`, `DevView.frameGen`: SidePanel's two "DM_CTL is off" notes, the cap line, the frame generation state, Lsfg's
      two lines). Every toast a player needs shows either way.
+   - `android/app/src/main/java/dev/nxnative/android/FrontendLaunch.java` — (2026-11-24, the Frontend folder, GitHub issue #475) one line in `onCreate` after
+     the extra `title_id`: `dev.peanuts.launch.FrontendFolder.titleIdOf(this, i)` reads the title ID of an entry a frontend sends (`<name> [<title ID>].nutshell`,
+     by the extra `game` or the data's URI), so the entry starts as its title ID does, as a home screen shortcut; anything else goes on as before.
+     `peanuts/docs/LAUNCHERS.md` "Frontend folder", `peanuts/UPSTREAM-EDITS.md` Round 70.
 3. **Settings go through upstream's own mechanisms**: `env.txt` keys named `PN_*`, `settings.tsv` rows, `DM_CTL` lines. No new settings UI inside upstream classes.
 4. **Never reformat or "fix" upstream files.** A general fix belongs upstream as a PR to Banana Native (its AGENTS.md prefers general changes), then it arrives by rebase.
 5. **Branches:** `upstream/android` is Banana Native; `peanuts` is this overlay, always a linear set of commits on top of a Banana Native tag. History is rewritten on every update (rebase, never merge).

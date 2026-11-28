@@ -35,6 +35,41 @@ shortcut can only ever point at a title this device actually started.
 
 Code: `android/app/src/main/java/dev/peanuts/launch/RecentGames.java`.
 
+## Frontend folder
+
+A frontend lists files, and a game Peanuts built may have no file of its own to list (a dump folder, a `.nup` in the app's
+storage), so one pinned shortcut per game used to be the only way into a frontend's list. **Settings › Library › Add folder
+› Frontend** fixes that: pick a folder, and the app keeps one small entry file there per game that is ready to play. Point the
+frontend's Switch platform at the folder too, and every game you build shows up on its next rescan. The folder is one kind of
+Library's folder list (`FolderKinds.FRONTEND`), with one folder at most: its row shows the folder and how many games it holds.
+
+- **The name:** `<game name> [<title ID>].nutshell`, for example `Pokémon Legends Z-A [0100F43008C44000].nutshell`. The
+  frontend's scraper finds the cover and the game's details by the name, as for a dump named the common way (the
+  characters a file name cannot hold are left out). The bracket carries the title ID.
+- **The text:** two lines, `Peanuts Native <application ID>` and the title ID. The first line is how the app knows the file
+  is its own; the second starts the game even when someone renamed the file.
+- **When it changes:** a game gets its entry once its build is finished and it is ready to play. The entry goes when the game
+  leaves Home, and is renamed when the game's name changes. Picking the folder adds every game at once. The entry stays while
+  the game is on Home, even when the game needs something again (shaders after an app update), so the frontend keeps its
+  entry and its play time; starting it then opens Home with the game.
+- **What it never touches:** any file that is not one of this app's entries (another app's, another Peanuts app's, a file
+  of the same name), and anything in a subfolder. **Turn off** in the Frontend folder row's sheet takes the app's entries out
+  of the folder; **Pick another** moves them.
+
+Starting an entry is a title-ID launch: `FrontendLaunch` reads the title ID from the file's name (else from its text) and then
+does exactly what a home screen shortcut does, looked up again against Home's list. The frontend sends the entry like any game
+file, by the extra `game` with its path or as `ACTION_VIEW` with its URI:
+
+```bash
+adb shell am start -n dev.nxnative.android.peanuts/dev.nxnative.android.peanuts.Launch -e game "/storage/emulated/0/ROMs/switch/Pokémon Legends Z-A [0100F43008C44000].nutshell"
+```
+
+The app writes the entries by their path, so it needs All files access (as it does for the games); the row says when it is
+waiting for it. A frontend's player for Peanuts Native lists `nutshell` beside `nup` among its file extensions.
+
+Code: `android/app/src/main/java/dev/peanuts/launch/FrontendFolder.java` (the folder, the launch's title ID) and
+`FrontendEntry.java` (names and texts, checked on the JVM by `peanuts/tests/test_frontend_folder.py`).
+
 ## The launch contract, for emulator frontends
 
 The app exposes two exported components that both run the same code (`FrontendLaunch`), so a frontend can
@@ -90,7 +125,7 @@ use `dev.nxnative.android.peanuts`.
         <name>peanutsnative</name>
         <fullname>Peanuts Native</fullname>
         <path>%ROMPATH%/peanutsnative</path>
-        <extension>.nup .NUP</extension>
+        <extension>.nup .NUP .nutshell .NUTSHELL</extension>
         <command label="Peanuts Native">%EMULATOR_PEANUTS-NATIVE% %ACTION%=android.intent.action.VIEW %DATA%=%ROMSAF%</command>
         <command label="Peanuts Native (path)">%EMULATOR_PEANUTS-NATIVE% %EXTRA_game%=%ROM%</command>
         <platform>switch</platform>
@@ -111,8 +146,8 @@ Daijisho imports a platform file; this adds Peanuts Native to the Switch platfor
 {
   "name": "switch - Peanuts Native",
   "uniqueId": "switch.dev.peanuts.native",
-  "description": "Supported extensions: nup.",
-  "acceptedFilenameRegex": "^(.*)\\.(?:nup)$",
+  "description": "Supported extensions: nup, nutshell.",
+  "acceptedFilenameRegex": "^(.*)\\.(?:nup|nutshell)$",
   "amStartArguments": "-n dev.nxnative.android.peanuts/dev.peanuts.launch.LaunchActivity\n -e game {file.path}",
   "killPackageProcesses": false,
   "killPackageProcessesWarning": false,
@@ -150,7 +185,8 @@ adb shell am start -n dev.nxnative.android.peanuts/dev.peanuts.launch.LaunchActi
 ## What is Peanuts-specific here, and what is upstream's
 
 - `dev.peanuts.launch.GameShortcuts`, `dev.peanuts.launch.RecentGames`, the **Add to home screen** button
-  in `GameSheet`, and the `dev.peanuts.launch.LaunchActivity` alias are Peanuts additions.
+  in `GameSheet`, the `dev.peanuts.launch.LaunchActivity` alias and the Frontend folder (`FrontendFolder`,
+  `FrontendEntry`, one marked line in `FrontendLaunch.onCreate`) are Peanuts additions.
 - `FrontendLaunch`, the resolution logic (`ready`, `byTitleId`, `pickedGame`, the URI/path handling), the
   `<applicationId>.Launch` and `<applicationId>.Open` aliases, and the whole "what happens" behaviour are
   upstream's (`android/FRONTENDS.md`, `android/app/src/main/java/dev/nxnative/android/FrontendLaunch.java`,

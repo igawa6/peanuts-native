@@ -118,6 +118,18 @@ public final class PeanutsPrefs {
         e.putString("build_dirs_extra", extra.toString()).apply();
     }
 
+    /** Settings › Library's Frontend folder (FolderKinds.FRONTEND): null (default) = off. A folder the user picked, where every game ready to play gets its
+     *  entry for frontends (dev.peanuts.launch.FrontendFolder) */
+    public static String frontendDir(Context c) { return of(c).getString("frontend_dir", null); }
+    public static void frontendDir(Context c, String p) { put(c, "frontend_dir", p); }
+    /** Folders that were the Frontend folder and still hold the app's entries (turned off or swapped while they could not be cleared): cleared on a later run */
+    public static List<String> frontendClear(Context c) {
+        List<String> out = new ArrayList<>();
+        for (String p : of(c).getString("frontend_clear", "").split("\n")) if (!p.isEmpty() && !out.contains(p)) out.add(p);
+        return out;
+    }
+    public static void frontendClear(Context c, List<String> dirs) { put(c, "frontend_clear", android.text.TextUtils.join("\n", dirs)); }
+
     public static String chosenBuildDir(Context c, String titleId) {
         String dir = of(c).getString(key(titleId, "build_dir"), null);
         return dir != null && buildDirs(c).contains(dir) ? dir : null;

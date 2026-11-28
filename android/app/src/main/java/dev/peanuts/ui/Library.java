@@ -349,6 +349,7 @@ public final class Library {
         BuildPipeline.followPacker(a);
         l.takeRunning();
         Haptics.refresh(a); Motion.refresh(a);
+        dev.peanuts.launch.FrontendFolder.watch(a);   // Settings › Library › Frontend folder follows Home's list from now on
         LibrarySettings.addMissingFonts(a);   // a firmware added before the Chinese and Korean fonts were read
         watch(a);
         l.render();
@@ -430,6 +431,7 @@ public final class Library {
             UI.post(() -> {
                 lastTitles = t; everScanned = true;
                 dev.peanuts.ctl.Ctl.libraryChanged();
+                dev.peanuts.launch.FrontendFolder.changed(a);   // a Rescan brings the Frontend folder up to date too
                 if (current != this) return;
                 titles = t; gen++; scanning = false; companions.clear();
                 if (box != null && box.isAttachedToWindow()) refresh.run(); else render();   // upstream's list again too (Prepare and the add above put games into it)

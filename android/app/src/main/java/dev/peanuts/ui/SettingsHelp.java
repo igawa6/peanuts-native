@@ -29,7 +29,8 @@ public final class SettingsHelp {
         put(m, "Game folder", "A folder the app looks in for your games: NSP, NSZ, XCI and XCZ files, .nup files and dump folders. Everything inside shows on Home. Open it to remove it from the list; its files stay where they are.", null);
         put(m, "Update and DLC folder", "A folder with game updates and DLC as NSP or NSZ files, matched to their games by title ID. Open it to remove it from the list; its files stay where they are.", null);
         put(m, "Build folder", "Where new builds are written, on the phone or on an SD card. The first folder is the default, and a game's sheet can pick another.", null);
-        put(m, "Add folder", "Adds a folder with games, with updates and DLC, or for builds: it asks what is in it, then opens the folder picker. Add several in a row, on the phone and on an SD card.", null);
+        put(m, "Frontend folder", "A folder for frontends such as Cocoon. Each game ready to play gets a small file here, named after the game, that starts it. The app keeps the files current and changes only its own. Open it to turn it off.", null);
+        put(m, "Add folder", "Adds a folder with games, with updates and DLC, for builds, or for a frontend: it asks what is in it, then opens the folder picker. Add several in a row, on the phone and on an SD card.", null);
         put(m, "Folders", "One game's folders: where its game files, its pack and its saves are. With more than one game, it asks which game first.", null);
         put(m, "Rescan", "Reads the folders again, for games you added or removed while the app was open.", null);
         put(m, "Free up space", "Deletes the original dump of a game that is built already. The game keeps playing from its build. Keep the original while a later update may come: an update needs it.", null);

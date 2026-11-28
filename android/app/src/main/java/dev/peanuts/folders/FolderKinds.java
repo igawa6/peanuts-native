@@ -1,7 +1,13 @@
 package dev.peanuts.folders;
 
-import dev.peanuts.PeanutsPrefs;
+import android.app.Activity;
+import android.content.Context;
 
+import dev.peanuts.PeanutsPrefs;
+import dev.peanuts.launch.FrontendFolder;
+import dev.peanuts.ui.PUi;
+
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -40,7 +46,39 @@ public final class FolderKinds {
                 @Override public void write(android.content.Context c, List<String> dirs) { PeanutsPrefs.buildDirs(c, dirs); }
             }, null);
 
-    public static final List<FolderKind> ALL = Collections.unmodifiableList(Arrays.asList(GAMES, ADDONS, BUILDS));
+    /**
+     * The Frontend folder (issue #475, FrontendFolder): one folder where the app keeps a small entry file per game that is ready to play, which frontends
+     * such as Cocoon list and start. Its store is FrontendFolder.set, so the entries move with Pick another and leave with Turn off (later, when that cannot
+     * be done now); the row's line is what the last run did, and it follows each run.
+     */
+    public static final FolderKind FRONTEND = new FolderKind("frontend", "Frontend folder", "Frontend", "external",
+            "Each game ready to play gets a small file here that frontends such as Cocoon list and start.",
+            "Each game ready to play has a small file here, named after the game. Frontends such as Cocoon list these files as games and start them in this app. The app keeps the files current and changes only the ones it wrote.",
+            "Pick a folder your frontend lists games from", 74, 1, false,
+            new FolderKind.Store() {
+                @Override public List<String> read(Context c) {
+                    String d = PeanutsPrefs.frontendDir(c);
+                    List<String> dirs = new ArrayList<>();
+                    if (d != null) dirs.add(d);
+                    return dirs;
+                }
+                @Override public void write(Context c, List<String> dirs) { FrontendFolder.set(c, dirs.isEmpty() ? null : dirs.get(0), null); }
+            },
+            new FolderKind.Hooks() {
+                @Override public void removing(Activity a, String path, Runnable remove) {
+                    PUi.confirmDanger(a, "Turn off the frontend folder?", "The app removes the files it wrote in " + path + ", so frontends no longer list these games after their next rescan. Your games, builds and saves stay.",
+                            "Turn off", remove);
+                }
+                @Override public CharSequence state(Context c, String path) { return FrontendFolder.state(c); }
+                @Override public String removeLabel() { return "Turn off"; }
+                @Override public CharSequence removeNote() { return "Turn off takes the files the app wrote out of this folder. Your games, builds and saves stay."; }
+                @Override public CharSequence sheetLine(Context c, String path) { return FRONTEND.about; }   // not what the library found in it
+                @Override public void rows(Activity a, Runnable refresh) { FrontendFolder.onRun(refresh); }
+                @Override public void resumed(Activity a) { FrontendFolder.resumed(a); }
+                @Override public CharSequence accessNeed(String path) { return "The app needs All files access to write the games' files into " + path + ". Allow it, then come back."; }
+            });
+
+    public static final List<FolderKind> ALL = Collections.unmodifiableList(Arrays.asList(GAMES, ADDONS, BUILDS, FRONTEND));
 
     /** The kind of this key, else null */
     public static FolderKind of(String key) {

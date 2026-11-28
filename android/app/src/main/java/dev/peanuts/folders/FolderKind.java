@@ -35,6 +35,8 @@ public final class FolderKind {
         default void rows(Activity a, Runnable refresh) {}
         /** The launcher is in front again (LibrarySettings.resume: back from Android's All files access page, say) */
         default void resumed(Activity a) {}
+        /** Why the app asks for All files access after the folder was picked without it */
+        default CharSequence accessNeed(String path) { return "The app needs All files access to read " + path + ". Allow it, then come back."; }
     }
 
     /** No hooks: the list is all there is */

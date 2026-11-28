@@ -309,8 +309,7 @@ public final class LibrarySettings {
         if (PackImportUi.result(a, request, result, data)) return true;   // the game sheet's Import pack… (72, 73)
         if (dev.peanuts.mods.CheatImportUi.result(a, request, result, data)) return true;   // Mods & Cheats' Add (83, 84 when it started the pick)
         if (dev.nxnative.android.CheatsBridge.result(a, request, result, data)) return true;   // Game settings › Cheat files: a cheat file, a folder, an export (83 to 86)
-        if (request < REQ_KEYS || request > REQ_MOD_ZIP) return false;
-        dev.peanuts.folders.FolderKind kind = dev.peanuts.folders.FolderKinds.ofRequest(request);   // a game, update and DLC or build folder (LibraryFolders)
+        dev.peanuts.folders.FolderKind kind = dev.peanuts.folders.FolderKinds.ofRequest(request);   // a game, update and DLC, build or Frontend folder (LibraryFolders)
         if (kind != null) {
             boolean none = result != Activity.RESULT_OK || data == null || data.getData() == null;
             String p = none ? null : Upstream.treeToPath(data.getData());
@@ -320,6 +319,7 @@ public final class LibrarySettings {
             if (sheet && p != null && GameSheet.current != null) GameSheet.current.chooseBuildFolder(dev.peanuts.folders.FolderList.clean(p));
             return true;
         }
+        if (request < REQ_KEYS || request > REQ_MOD_ZIP) return false;
         if (result != Activity.RESULT_OK || data == null || data.getData() == null) return true;
         Uri u = data.getData();
         if (request == REQ_KEYS) { copyKeys(a, u); return true; }

@@ -639,6 +639,7 @@ public final class BuildService extends Service {
             progress("done", 100, message);
             dev.peanuts.ui.CrackedCount.never(() -> cracked(r, dump, startedAt), e -> Log.w(TAG, "peanuts cracked: the build is not counted: " + e));   // after done; a failure in it is logged, never the build's
             startCheck(r, dump);
+            dev.peanuts.launch.FrontendFolder.changed(this);   // the game is on Home now: its entry in the Frontend folder
         } catch (IOException e) {
             message = e.getMessage() == null ? e.toString() : e.getMessage();
             code = category(e);

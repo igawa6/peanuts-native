@@ -27,6 +27,7 @@ public final class FrontendLaunch extends Activity {
         if (saved != null) { finish(); return; }   // recreated after it handed the game on
         Intent i = getIntent();
         String tid = Frontend.titleId(i.getStringExtra("title_id"));
+        if (tid == null) tid = dev.peanuts.launch.FrontendFolder.titleIdOf(this, i);   // PEANUTS: an entry of the Frontend folder (<name> [<title ID>].nutshell) starts as its title ID, as a shortcut (#475)
         Game pg = tid == null ? pickedGame(i) : null;   // a .nup used where it is, named by its document or by a path the app cannot open
         if (pg != null) { byGame(pg); return; }
         if (!Environment.isExternalStorageManager() && !copiedGame(tid)) {   // a game copied into the app (GameCopy) needs no All files access

@@ -53,8 +53,8 @@ public final class SettingsSections {
 
     public static final List<Section> ALL = Collections.unmodifiableList(java.util.Arrays.asList(
             new Section("library", "Library", "library", "Where the app finds your games, the space they take and the time you played.",
-                    new Group("Folders", r("Game folder", "folder"), r("Update and DLC folder", "update"), r("Build folder", "build"), r("Add folder", "add"),
-                            r("Folders", "folder"), r("Rescan", "search")),
+                    new Group("Folders", r("Game folder", "folder"), r("Update and DLC folder", "update"), r("Build folder", "build"), r("Frontend folder", "external"),
+                            r("Add folder", "add"), r("Folders", "folder"), r("Rescan", "search")),
                     new Group("Space", r("Free up space", "trash"), r("Storage", "storage")),
                     new Group("Play time", r("Played", "clock"))),
             new Section("console", "Console", "console", "What games find on a console of their own: its keys, its firmware and its clock.",

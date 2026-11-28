@@ -3684,6 +3684,27 @@ names ooz), `dm/third_party/ooz/` (`build.sh`, `unoodle.cpp`, `README.md`), `dm/
 command, no wait on the ooz path, the markers, the fallback and its memory, the PC path, the phone's wiring), `peanuts/tests/test_unoodle.py` (the library form
 through the same tests, the source digest), `peanuts/docs/INCREMENTAL-BUILD.md`. Upstream candidate: no (upstream has no ooz).
 
+### Round 70, the Frontend folder: built games show up in frontends such as Cocoon (2026-11-24, GitHub issue #475)
+
+Settings › Library › Add folder › Frontend: a folder the player picks, where the app keeps one small entry per game that is ready to play,
+`<game name> [<title ID>].nutshell` (`dev.peanuts.launch.FrontendFolder`, the names and texts in `FrontendEntry`). A frontend lists the entries as games on its next
+rescan and starts one through the launch alias with the extra `game` (its path) or its URI. The app writes an entry once a build has made the game ready to
+play, removes it when the game leaves Home and renames it when the game's name changes; it only ever changes the files whose text carries its own marker.
+Starting an entry is the title ID's launch, so it behaves as a home screen shortcut: a ready game starts at once, anything else opens Home with the game.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/FrontendLaunch.java` | 1 | `onCreate`: when the intent carries no `title_id`, `FrontendFolder.titleIdOf(this, i)` gives the title ID of an entry (null for anything else) | trailing `// PEANUTS: ...` |
+
+The rest is Peanuts' own: the folder is a kind of Library › Folders' folder list, `FolderKinds.FRONTEND` (request 74, one folder, its line, sheet and Turn off;
+`LibrarySettings.result` asks `FolderKinds.ofRequest` before its own range, and `FolderKind.Hooks.accessNeed` gives the All files access line), its place in
+`SettingsSections` and its explanation in `SettingsHelp`, `PeanutsPrefs.frontendDir`, and the calls that bring the folder up to date in `Library` (Home drawn,
+a scan) and `BuildService` (a build done). Home's list is upstream's `Game` list, read by reflection; the folder follows every save of it through its
+preferences (`games`).
+
+Tests: `peanuts/tests/test_frontend_folder.py` (`FrontendEntryJvmTest`, the hook's place, the upstream names it reads, the places that run it).
+Upstream candidate: no (it serves Peanuts' own library and Settings).
+
 ## Qualcomm driver before 512.800: auto-disable DM_VK_PUSH_DESC (2026-11-27)
 
 | File | Hunks | Change | Marker |
