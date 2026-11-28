@@ -3647,6 +3647,51 @@ def iga_shaders(path, rel, found):
             d = iga_member(f, sector, off, length, blocks)
             if b'\x91\x68\x86\x19' in d: found += glslc_shaders(d, f'/{rel}/{name}', need=False)
 
+# PEANUTS(upstream-candidate): PH3's archive layout: https://github.com/ph3at/p3a-format/blob/master/p3a.h
+def p3a_shaders(path, rel, out):
+    """Read the member index even in non-shader P3As: an update can put an NVN member in z_patch.p3a.
+    Seek to just those members, never materialize the model, image or audio archives."""
+    total = os.path.getsize(path)
+    with open(path, 'rb') as f:
+        header = f.read(0x30)
+        flags, version, count = field(header, '<IIQ', 8, rel)
+        if version != 1200 or flags & ~1: red(f'{rel}: unsupported P3A version {version}, flags {flags:#x}')
+        extra, stride = field(header, '<II', 0x28, rel)
+        start = 0x20 + extra
+        end = start + count * stride
+        if extra < 16 or stride < 0x130 or end > total or count * stride > 128 << 20:
+            red(f'{rel}: invalid P3A file index')
+        f.seek(start); table = f.read(count * stride)
+        if len(table) != count * stride: red(f'{rel}: truncated P3A file index')
+        dictionary = None
+        if flags & 1:
+            magic, length = field(f.read(16), '<8sQ', 0, rel)
+            if magic != b'P3ADICT\0' or length > min(total - end - 16, 16 << 20):
+                red(f'{rel}: invalid P3A zstd dictionary')
+            dictionary = zstd_mod().ZstdDict(f.read(length))
+            end += 16 + length
+        for pos in range(0, len(table), stride):
+            name = table[pos:pos + 256].split(b'\0', 1)[0]
+            if not name.lower().endswith(b'.nvn'): continue
+            label = f'/{rel}/{name.decode("utf-8")}'
+            codec, stored, size, off = struct.unpack_from('<4Q', table, pos + 256)
+            if off < end or stored > total - off or max(stored, size) > 64 << 20:
+                red(f'{label}: invalid P3A shader extent')
+            f.seek(off); data = f.read(stored)
+            if len(data) != stored: red(f'{label}: truncated P3A member')
+            if codec == 1:
+                import lz4.block
+                data = lz4.block.decompress(data, uncompressed_size=size)
+            elif codec in (2, 3):
+                if codec == 3 and dictionary is None: red(f'{label}: missing P3A zstd dictionary')
+                dec = zstd_mod().ZstdDecompressor(zstd_dict=dictionary if codec == 3 else None)
+                data = dec.decompress(data, size + 1)
+                if not dec.eof or dec.unused_data: red(f'{label}: invalid P3A zstd frame')
+            elif codec != 0: red(f'{label}: unsupported P3A compression {codec}')
+            if len(data) != size: red(f'{label}: incorrect P3A member size')
+            # A named shader that fails the GLSLC layout checks is an unreadable file, not zero shaders.
+            out.extend(glslc_shaders(data, label))
+
 UE_TAG ={'SV': 'vs', 'SH': 'hs', 'SD': 'ds', 'SG': 'gs', 'SP': 'ps', 'SC': 'cs'}
 def main_imports(img):   # the names main imports (its dynamic symbols)
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../tools')); import nso_syms
@@ -3901,6 +3946,9 @@ def scan_file_in(args):
         return rel, uniq_keys(found), var_pairs(found), trees
     if head[:4] == BND2:   # a Criterion Bundle 2 (Need for Speed: Hot Pursuit Remastered's SHADERS.BNDL): GLSLC outputs in its zlib resources (bnd2_shaders)
         found += bnd2_shaders(open(path, 'rb').read(), '/' + rel)
+        return rel, uniq_keys(found), var_pairs(found), trees
+    if head[:8] == b'PH3ARCV\0':   # PEANUTS(upstream-candidate): read only indexed NVN shader members
+        p3a_shaders(path, rel, found)
         return rel, uniq_keys(found), var_pairs(found), trees
     if head[:4] == IGA:   # PEANUTS(upstream-candidate): an Alchemy igArchive (Crash Team Racing Nitro-Fueled's .pak files): GLSLC outputs in its LZMA files (iga_shaders)
         iga_shaders(path, rel, found)

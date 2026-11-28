@@ -206,6 +206,15 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Fix:** `shader_split.py` lists a file that starts with `IGA\x1a` by its own tables (`iga_entries`), decodes every file in it (`iga_member`) and takes the GLSLC outputs of those that hold the magic (`iga_shaders`). Which blocks are compressed comes from the block table alone: a stored block can begin with bytes that read as a small length (65 files of this game have one). Each output is one stage, so the vertex shaders get the pixel input cover ([Single-stage programs paired with a cover](#single-stage-programs-paired-with-a-cover)).
 - **Found on:** [Crash Team Racing Nitro-Fueled](../../dm/games/0100F9F00C696000/README.md): 401 archives, 74,311 files, 2,582 outputs in the 86 shader files of `shaders_nx.pak`, 1,933 unique shaders; none in the other 400.
 
+### GLSLC outputs in PH3 archives
+
+<!-- PEANUTS(upstream-candidate): the P3A reader, first met on Trails beyond the Horizon -->
+
+- **Symptom:** the split finds only the GLSLC outputs in `main` (Trails beyond the Horizon 1.0.6: 18, `sources main 18`), and the RomFS is, beside its movies, `.p3a` files that start with `PH3ARCV\0` (16 in that game), one of them named for shaders (`asset_shader.p3a`).
+- **Cause:** the game keeps its files in [PH3 archives](https://github.com/ph3at/p3a-format) (`p3a.h`; version 1200 here). The header gives the flags (+0x08, bit 0: a zstd dictionary follows the index), the version (+0x0c) and the member count (+0x10); +0x28 gives the extended header's size and +0x2c the entry size (0x130). The index starts at 0x20 plus the extended header's size. An entry is a 256-byte name, then the codec (0 stored, 1 LZ4 block, 2 zstd, 3 zstd with the archive's `P3ADICT` dictionary), the stored size, the decoded size and the offset, as u64. The shader members (`asset/nx/shader/*.nvn`) hold whole GLSLC outputs, but they are LZ4-compressed, so their magic is in no stored byte of the archive.
+- **Fix:** `shader_split.py` reads a file that starts with `PH3ARCV\0` by its index (`p3a_shaders`), decodes only the members whose name ends in `.nvn`, and takes their GLSLC outputs; the other members (models, textures, voices) are not read. The reader believes no size in the file: the index (at most 128 MiB) and each member (at most 64 MiB, after the index and the dictionary) must lie inside the file, the decoded size must be the declared one, and a zstd frame must end exactly. A named member that fails is an unreadable file, like any file no reader can read (`scan_file`). `dm/tools/tests/test_split_p3a.py` covers an LZ4 member and a truncated one with synthetic bytes.
+- **Found on:** Trails beyond the Horizon 1.0.6 (`01007B102141A000`): `asset_shader.p3a` is 456,902,689 bytes, 37,619 LZ4 members named `.nvn`; 18 → 10,320 shaders (8,796 pixel, 1,488 vertex, 36 compute), of which 10,302 come from the archive.
+
 ### BNSH files in TT Games' DAT archives
 
 <!-- PEANUTS(upstream-candidate): the TT Games DAT reader, first met on LEGO CITY UNDERCOVER -->
