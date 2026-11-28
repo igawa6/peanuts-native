@@ -7,7 +7,8 @@
 //     becomes the ES 3 bit, the context's desktop profile mask goes); a context the game makes current with no surface gets a 1x1 pbuffer (eglMakeCurrent below)
 //   GL: one wrapper per function the game calls, run on the thread's big host stack (hle_bigstack.c: glTexImage2D has nine arguments) with the host's FPCR (the driver's shader
 //     compiler runs inside these calls: vka_fpenv.h); every other name the system has goes to its function as it is, through a stub on the big host stack
-//     with the host's FPCR too (one with more than ten integer arguments gets a null pointer instead: fwd_wide)
+//     with the host's FPCR too (one with more than ten integer arguments gets a null pointer instead: fwd_wide), and the three ES 3.2 functions with more get wrappers that read
+//     the game's stack arguments (vka_glwide.h)   // PEANUTS
 //   the shared image (nvn_gl_tex_desc): the GL texture an NVN texture names is given an AHardwareBuffer: a GL texture over it (an EGLImage) takes the game's texture name in the
 //     calls that take one (glBindTexture, glFramebufferTexture2D, glDeleteTextures), with the game's current content copied in once, and the replay imports the same buffer as
 //     the NVN texture's image (vka_tex.c img_create_gl). No copy per frame
@@ -15,6 +16,7 @@
 //   NVN -> GL (nvn_gl_sync_to_gl): a GLsync of this layer's own; glWaitSync / glClientWaitSync on it wait for the NVN fence on the CPU (mtl_wait)
 #include "vka.h"
 #include "vka_glattr.h"
+#include "vka_glwide.h"   // PEANUTS: the wrappers with more than two stack-passed arguments
 #include "../nvn/nvn_mtl.h"
 #include "../../host/hle.h"
 #include <EGL/egl.h>
@@ -432,6 +434,30 @@ HOOK(glCompressedTexImage2D, void, GLenum target, GLint level, GLenum fmt, GLsiz
     }
 }
 
+// PEANUTS: the ES 3.2 functions with more than two stack-passed arguments (vka_glwide.h): the stub hands the wrapper the game's stack arguments, the wrapper passes all of them on
+_Static_assert(__builtin_types_compatible_p(__typeof__(&glTexSubImage3D), vkg_tex_sub_image_3d_fn) &&
+               __builtin_types_compatible_p(__typeof__(&glCompressedTexSubImage3D), vkg_compressed_tex_sub_image_3d_fn) &&
+               __builtin_types_compatible_p(__typeof__(&glCopyImageSubData), vkg_copy_image_sub_data_fn), "vka_glwide.h has gl32.h's prototypes");
+#define HOOK_STK(name, ...)                                                                        \
+    static void h_##name(__VA_ARGS__, const uint64_t *stk) __attribute__((used));                 \
+    VKG_STK_STUB(h_##name);                                                                        \
+    PLAT_TABLE(swhle) static const hle_ent e_##name = {#name, (void *)h_##name##_bs};            \
+    static void h_##name(__VA_ARGS__, const uint64_t *stk)
+HOOK_STK(glTexSubImage3D, GLenum t, GLint l, GLint x, GLint y, GLint z, GLsizei w, GLsizei h, GLsizei d) {
+    REAL(glTexSubImage3D); if (!r_) { GRED("glTexSubImage3D: not in the system's OpenGL ES"); return; }
+    FP_IN; vkg_tex_sub_image_3d(r_, t, l, x, y, z, w, h, d, stk); FP_OUT;
+}
+HOOK_STK(glCompressedTexSubImage3D, GLenum t, GLint l, GLint x, GLint y, GLint z, GLsizei w, GLsizei h, GLsizei d) {
+    REAL(glCompressedTexSubImage3D); if (!r_) { GRED("glCompressedTexSubImage3D: not in the system's OpenGL ES"); return; }
+    FP_IN; vkg_compressed_tex_sub_image_3d(r_, t, l, x, y, z, w, h, d, stk); FP_OUT;
+}
+// Texture names as glBindTexture takes them (a shared texture's game name is ours); renderbuffer names are another namespace and pass as they are
+HOOK_STK(glCopyImageSubData, GLuint sn, GLenum st, GLint sl, GLint sx, GLint sy, GLint sz, GLuint dn, GLenum dt) {
+    REAL(glCopyImageSubData); if (!r_) { GRED("glCopyImageSubData: not in the system's OpenGL ES"); return; }
+    GLuint s = st == GL_RENDERBUFFER ? sn : remap(sn), d = dt == GL_RENDERBUFFER ? dn : remap(dn);
+    FP_IN; vkg_copy_image_sub_data(r_, s, st, sl, sx, sy, sz, d, dt, stk); FP_OUT;
+}
+
 // The rest of the functions the game calls, forwarded as they are
 FWDV(glActiveTexture, (GLenum t), (t))
 FWDV(glAttachShader, (GLuint p, GLuint s), (p, s))
@@ -540,7 +566,7 @@ __asm__(".text\n.p2align 2\n" PLAT_ASM_SYM(vka_gl_fwd_entry) ":\n"
         ".set vka_gl_fwd_k, 0\n.rept 512\n    mov x9, #vka_gl_fwd_k\n    b " PLAT_ASM_SYM(vka_gl_fwd_entry) "\n.set vka_gl_fwd_k, vka_gl_fwd_k + 1\n.endr\n");
 // The OpenGL ES 3.2 functions and extensions (the NDK's gl32.h and gl2ext.h) with more than two stack-passed arguments, which the stub cannot carry (AAPCS64: integers and
 // pointers in x0-x7, floats in s0-s7 apart; glDrawVkImageNV's ninth float is one stack slot and fits). Their 11th and later integer arguments would be garbage, so they get a null
-// pointer unless wrapped above
+// pointer unless wrapped above (the three ES 3.2 names are: HOOK_STK)   // PEANUTS
 static const char *const g_fwd_wide[] = {
     "glTexSubImage3D", "glTexSubImage3DOES",                             // 11
     "glCompressedTexSubImage3D", "glCompressedTexSubImage3DOES",         // 11

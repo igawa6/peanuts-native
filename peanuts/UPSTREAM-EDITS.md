@@ -3751,3 +3751,15 @@ Two profiles of the game that the OpenGL UI and no-colour draw sections above we
 | `dm/games/01005A20190A6000/shader_map.tsv`, `shader_facts.tsv`, `shader_pairs.tsv`, `shader_files.tsv`, and the same four in `dm/games/0100D2D0190A4000/` | new | the generated tables (the US ones copies of the EU ones) | allow-listed in `peanuts/upstream-unmarked.txt` |
 | `dm/games/README.md` | 2 | the two table rows | `<!-- PEANUTS: ... -->` in the row's last cell |
 | `docs/reference/rendering.md` | 3 | the Found on lines of the BGR5A1, no-colour draw and OpenGL UI entries link the EU profile | `<!-- PEANUTS -->` at the line's end |
+
+## GL functions with more than two stack-passed arguments on Android (2026-11-28)
+
+Follow-up to #847: the plain GL forward carries x0-x7 and two stack slots, so the ES 3.2 functions with 11 and 15 arguments were refused. They get typed wrappers that read the game's stack arguments. Every game that imports EGL; no switch.
+
+| File | Hunks | What | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_glwide.h` | new file | `VKG_STK_STUB` (a big-stack stub that hands the implementation the caller's stack arguments as a 9th argument) and the typed calls of `glTexSubImage3D`, `glCompressedTexSubImage3D`, `glCopyImageSubData` | `PEANUTS` |
+| `dm/gfx/vk_android/vka_gl.c` | 3 | `HOOK_STK` and the three wrappers (host FPCR, `glCopyImageSubData` texture names remapped as `glBindTexture` does), a static check of their types against `gl32.h`, comments | `PEANUTS` (file) |
+| `dm/host/tests/t_bigstack.c` | 3 | the three wrappers with distinct values in every argument, through the switch and on the direct path | `PEANUTS` |
+| `dm/host/tests/Makefile` | 1 | `t_bigstack` depends on `vka_glwide.h` | `PEANUTS` |
+| `docs/reference/rendering.md` | 1 | "Plain forwards" in the entry "An NVN game whose UI draws with OpenGL through EGL (Android)" | `PEANUTS` |

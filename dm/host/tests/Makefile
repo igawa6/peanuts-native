@@ -652,6 +652,8 @@ $(B)/t_android_fpenv: t_android_fpenv.c $(VKA)/vka_fpenv.h | $(B)
 # PEANUTS: the EGL attribute lists of the Android GL layer (vka_glattr.h; vka_gl.c)
 $(B)/t_android_glattr: t_android_glattr.c $(VKA)/vka_glattr.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_glattr.c
+# PEANUTS: t_bigstack also checks the GL layer's wrappers of the functions with more than two stack-passed arguments
+$(B)/t_bigstack: $(VKA)/vka_glwide.h
 # GPU waits across NVN queues on the Android replay (dm/gfx/vk_android/vka_qsched.h): parks, producers, the SDK's predicates, syncs, timeline signals, safety valves
 $(B)/t_android_qsched: t_android_qsched.c $(VKA)/vka_qsched.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_qsched.c
