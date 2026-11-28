@@ -36,13 +36,13 @@ sys_resource	0x0
 
 # ---- Frame rate ----
 # PEANUTS: the game paces itself in whole vsyncs: an interval index at [main+0x54c5b0]+0 picks the vsyncs a frame from the table at main+0x3b5ac8 (1, 2, 3, 4, 5, 6),
-# so 60, 30, 20 and 15 fps; no index gives half a vsync, so nothing above 60. Reviewed from the FPSLocker Warehouse config for this build (01007E3006DDA000/D55608916FA56C18.yaml,
+# so 60, 30, 20 (and 15, not offered) fps; no index gives half a vsync, so nothing above 60. Reviewed from the FPSLocker Warehouse config for this build (01007E3006DDA000/D55608916FA56C18.yaml,
 # v4; interval offsets found by Kirby567Fan): the index is 60 / fps - 1 (vsync_index_u32), and the game's own setter (main+0x5a4c, str w1, [x0]) is a NOP so it cannot put
 # it back. The config's "remove double buffer" writes are not taken: the host presents the game's frames itself. Game owned (the default) is the game's own 60
-# PEANUTS: the default cap is 60, measured on Turnip 27.0.0-R2 (README.md, Status); 30, 20 and 15 are experimental (Open)
+# PEANUTS: the default cap is 60, measured on Turnip 27.0.0-R2 (README.md, Status); 30 and 20 are experimental (Open)
 fps_limit	60
 fps_limit_present	1
-fps_modes	15,20,30,60
+fps_modes	20,30,60
 fpslocker	d55608916fa56c184f2a8fe80da0427c	vsync_index_u32	0x54c5b0/0x0	1	0
 fpslocker_plan	d55608916fa56c184f2a8fe80da0427c	m0x5a4c	010000b9	1f2003d5
 
