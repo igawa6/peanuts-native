@@ -3411,3 +3411,17 @@ NCA through the check too), `CMakeLists.txt`, `HOOKS.md`, `tests/nsp_fixture.h` 
 `test_compressed.py` (the damaged cases beside #697's cut-off ones), `test_nup_icon.py` (its build of `nup_meta_test` takes `nx_verify.c`).
 The host's copy of `nx_nca.c` never sets a check (`nx_verify.c` is not in `android/host/CMakeLists.txt`'s `NSP_C`). Upstream candidate: the split's bounds
 checks (general: any FlatBuffers index); the rest is Peanuts' importer.
+
+### `nv12-colorspace`: a movie player's YUV to RGB matrix (2026-11-28)
+
+Kirby Star Allies' opening movie drew black while its sound played. The game's movie player reads `nv12-colorspace` from the decoder's output format and indexes
+its YUV to RGB matrices by it (1 BT.601 limited, 2 BT.601 full, 3 BT.709 limited, 4 BT.709 full); the host never set the key, `FindInt32` left 0 and the player took
+its default matrix, all zeros. `md_format` now sets the key from the colour space the decoder declares (libvpx's picture, Android's MediaCodec through `mavc_colour`),
+and from the host's own rule for its RGBA conversion when none is declared (BT.709 from 720 lines up, else BT.601, limited range).
+[Reference](../docs/reference/movies.md#nv12-colorspace-a-players-yuv-to-rgb-matrix). Upstream candidate: yes (general: only adds a key every player may read).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/hle_movie.c` | 6 | `md_colorspace` and the `nv12-colorspace` key in `md_format`; the decoder's declared colour space kept from libvpx and the Android H.264 decoder, cleared at `Configure` | `PEANUTS(upstream-candidate)` / `PEANUTS` |
+| `dm/host/hle_movie_avc.h`, `dm/host/plat/movie_avc_android.c` | 1 each | `mavc_colour` (Android only; VideoToolbox's callers keep the default) | `PEANUTS(upstream-candidate)` |
+| `docs/reference/movies.md`, `docs/agents/symptoms.md` | 1 each | the entry and its symptom line | `PEANUTS begin(upstream-candidate)`/`end`, generated |

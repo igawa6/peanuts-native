@@ -33,6 +33,15 @@ The SDK's movie library (`movie::Decoder`, `movie::Extractor`), which the host t
 - **Fix:** the host now sets everything the SDK's `DecoderImpl::GetOutputBufferFormatFromDecoder` (SDK 19 `subsdk0+0x121f50`) does: also `nv12-uv-stride`, the luma (Y) stride as for any NV12 picture, `nv12-width` and `nv12-height` (`md_format` in `hle_movie.c`).
 - **Found on:** [DRAGON QUEST VII Reimagined](../../dm/games/0100A9D01C446000/README.md) (the grey picture); [Catherine: Full Body](../../dm/games/0100BF00112C0000/README.md) (SDK 8.2.1, CRI middleware; one boot: the crash).
 
+<!-- PEANUTS begin(upstream-candidate) -->
+### `nv12-colorspace`: a player's YUV to RGB matrix
+
+- **Symptom:** a movie draws black while its sound plays and the game keeps presenting frames; the log shows the H.264 decoder's pictures (`[movie] AVC output: …`) and `GetOutputBuffer` handing them out, and no red line.
+- **Cause:** the player reads `nv12-colorspace` from the output format (`FindInt32`) and indexes its matrices by the key minus 1: 1 BT.601 limited range, 2 BT.601 full, 3 BT.709 limited, 4 BT.709 full. The host never set the key, so `FindInt32` left 0 and the player took its default matrix, all zeros (Kirby Star Allies 4.0.0a, `main+0x1529d8`, its matrices at `main+0x3b99f0`).
+- **Fix:** `md_format` sets the key (`md_colorspace` in `hle_movie.c`) from the colour space and range the decoder declares (libvpx's picture, Android's MediaCodec output format through `mavc_colour`); when none is declared, the host's own rule for its RGBA conversion: BT.709 from 720 lines up, else BT.601, limited range. A `Configure` clears it for the new stream.
+- **Found on:** Kirby Star Allies (`01007E3006DDA000`, profile in a pull request of its own; SDK 4.4.1, the opening movie, 1080p H.264).
+<!-- PEANUTS end -->
+
 ### SDK 4's `movie::Decoder` constructor without a priority
 
 - **Symptom:** a call through a null pointer in the host's `movie::Decoder::Configure` right after `nnMain` starts the logos.

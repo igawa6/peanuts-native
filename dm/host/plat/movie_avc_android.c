@@ -33,6 +33,7 @@ void mavc_drop(mavc *a) {
 void mavc_free(mavc *a) { if (!a) return; mavc_drop(a); close_codec(a); free(a->au); free(a); }
 int mavc_queued(const mavc *a) { return a->nq; }
 void mavc_set_rgba(mavc *a) { if (a) a->rgba = 1; }   // converted at mavc_take: the decoder stays as it is
+int mavc_colour(const mavc *a, int *bt709, int *full) { if (!a || !a->c) return 0; *bt709 = a->bt709; *full = a->full; return 1; }   // PEANUTS(upstream-candidate): hle_movie.c's nv12-colorspace
 
 static void keep_ps(mavc *a, const uint8_t *nal, size_t n) {
     int t = nal[0] & 31; uint8_t *dst = t == 7 ? a->sps : a->pps; int *dn = t == 7 ? &a->nsps : &a->npps;
