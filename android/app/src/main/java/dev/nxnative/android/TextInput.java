@@ -66,6 +66,7 @@ final class TextInput {
 
     private static void finish(Request r, String result) {   // UI thread
         if (r.dialog != null) { r.dialog.setOnDismissListener(null); r.dialog.dismiss(); r.dialog = null; }
+        dev.peanuts.Companion.keyboardOpen(false);   // PEANUTS: restore second screen after text entry
         synchronized (TextInput.class) { if (pending == r) pending = null; }
         synchronized (r) { r.result = result; r.done = true; r.notifyAll(); }
     }
@@ -154,6 +155,7 @@ final class TextInput {
         });
         if (d.getWindow() != null) d.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
         r.dialog = d;
+        dev.peanuts.Companion.keyboardOpen(true);   // PEANUTS: release second screen so Android IME can show
         d.show();
     }
 }

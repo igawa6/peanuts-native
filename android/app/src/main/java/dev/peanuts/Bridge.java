@@ -16,6 +16,12 @@ public final class Bridge {
     public static native boolean frame(ByteBuffer out, int w, int h);
     /** The next {@link #frame} writes the frame there is even when it was handed out before: for a page window made again, which has no pixels yet. */
     public static native void frameAgain();
+    /** Whether direct 4-RTT dual-screen Vulkan presentation is enabled (PN_DUAL_RTT=1, dm/peanuts/peanuts_dual.c). */
+    public static native boolean dualWanted();
+    /** Second display Surface for the host's auxiliary Vulkan swapchain (null on surfaceDestroyed). */
+    public static native void setAuxSurface(android.view.Surface surface);
+    /** Touch on the second display's 4:3 active area, normalized [0,1) x [0,1). */
+    public static native void dualTouch(int id, float u, float v, boolean down);
     /** A touch on the page, in page pixels. */
     public static native void touch(int id, float x, float y, boolean down);
     /** The page's window is shown or gone: the runtime's presence; gone releases held fingers (dm/peanuts/peanuts.c nxhost_peanuts_present) */

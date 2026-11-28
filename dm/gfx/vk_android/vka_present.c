@@ -31,6 +31,7 @@
 __attribute__((weak)) void dm_guest_frame_tick(void) {}
 __attribute__((weak)) void peanuts_tick(void);   // PEANUTS: absent in a build without dm/peanuts
 __attribute__((weak)) int peanuts_ovl_corner(int slot, int dflt);   // PEANUTS: the stats block's corner chosen in the launcher (dm/peanuts/peanuts_graph.c); absent in a build without dm/peanuts
+#include "../../peanuts/peanuts_dual.h"   // PEANUTS: PN_DUAL_RTT=1, direct 4-RTT dual-screen present (dm/peanuts/peanuts_dual.c)
 
 // ---------- The window ----------
 static pthread_mutex_t g_pmu = PTHREAD_MUTEX_INITIALIZER;
@@ -657,6 +658,7 @@ static void swap_destroy(int surface_too) {
     vka_queue_idle();
     if (surface_too) for (unsigned k = 0; k < NFRAME; k++) fsr_free(k);   // the window is gone (the queue is idle); a new one makes them at its own size
     for (int i = 0; i < NFRAME; i++) if (g_fr[i].held) { vka_tex_drop(g_fr[i].held); g_fr[i].held = NULL; }
+    pn_dual_slot_drop_all();   // PEANUTS: drop held 4-RTT refs on swapchain teardown
     for (uint32_t i = 0; i < g_nimg; i++) {
         vk.vkDestroySemaphore(V.dev, g_sdone[i], NULL); g_sdone[i] = VK_NULL_HANDLE;
         if (g_sview[i]) { vk.vkDestroyImageView(V.dev, g_sview[i], NULL); g_sview[i] = VK_NULL_HANDLE; }
@@ -852,6 +854,7 @@ static int present_one(const pq_item *it) {
     int rb = atomic_load_explicit(&vka_rb_on, memory_order_relaxed);
     if (rb) vka_rb_poll(g_fr[k].fence, rb_fw);
     if (g_fr[k].held) { vka_tex_drop(g_fr[k].held); g_fr[k].held = NULL; }
+    pn_dual_slot_done(k);   // PEANUTS: release previous 4-RTT refs for slot k
     if (g_fsr.mid[k] && !fsr_wanted()) fsr_free(k);   // FSR switched off live: frame k's fence is signalled, so its intermediate image is no longer read
     uint32_t idx; uint64_t t0 = now_ns();
     VkResult r = vk.vkAcquireNextImageKHR(V.dev, g_swap, 1000000000ull, g_fr[k].acq, VK_NULL_HANDLE, &idx);
@@ -902,7 +905,10 @@ static int present_one(const pq_item *it) {
               && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) && g_sview[idx];
     if (crt_mode() && im && !crt) { static int told; if (!told++) VLOG("CRT wanted but not used: usage %#x, linear filter %d, attachment view %d", (unsigned)im->usage,
                                                                         (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0, g_sview[idx] != VK_NULL_HANDLE); }
-    if (crt && crt_ready(g_swap_fmt) && crt_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh)) {
+    int dual_top = pn_dual_take(it->ticket, k) && g_sview[idx] && pn_dual_draw_top(cb, g_simg[idx], g_sview[idx], g_swap_fmt, g_ext, g_pre, k);   // PEANUTS: direct 4-RTT top composite
+    if (dual_top) {
+        blit = -1;
+    } else if (crt && crt_ready(g_swap_fmt) && crt_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh)) {
         blit = -1;
     } else if (fsr && fsr_ready(g_swap_fmt) && fsr_mid(k, (uint32_t)dw, (uint32_t)dh) && fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh)) {
         blit = -1;
@@ -1041,6 +1047,7 @@ static int present_one(const pq_item *it) {
     g_fr[k].held = im;
     if (!r) vka_ctl_shot_done(g_fr[k].fence);
     if (rb) vka_rb_submitted(g_fr[k].fence, !r);   // PEANUTS: texture readback: the copies recorded above are done when this fence signals
+    if (!r) pn_dual_present_aux(it->fence, k);   // PEANUTS: present bottom 4-RTT pair to companion display swapchain
     if (r == VK_ERROR_DEVICE_LOST || pr == VK_ERROR_DEVICE_LOST) vka_device_lost(r ? "the present's submission" : "vkQueuePresentKHR");
     if (r) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("present submission %d", r); return 0; }
     if (pr == VK_ERROR_OUT_OF_DATE_KHR) g_recreate = 1;
@@ -1115,6 +1122,7 @@ void vka_present_fill(uint64_t tk, const tex_t *t, double period_s, const int cr
     if (res > it->fence && !vka_worker_on()) { static _Atomic uint64_t n; uint64_t k = atomic_fetch_add(&n, 1) + 1;
         if (k <= 3 || !(k & (k - 1))) VLOG("present ticket %llu came while fence %llu was still being recorded (%llu queued): the present waits for %llu (%llu such presents)",
                                            (unsigned long long)tk, (unsigned long long)res, (unsigned long long)it->fence, (unsigned long long)it->fence, (unsigned long long)k); }
+    pn_dual_frame_fill(tk);   // PEANUTS: latch this frame's 4-RTT refs for present thread
     g_pq_fill = tk;
     pthread_cond_broadcast(&g_pcv);
     pthread_mutex_unlock(&g_pmu);

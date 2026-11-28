@@ -1,7 +1,9 @@
 // Peanuts Native: the companion page's JNI (dev.peanuts.Bridge), built into libnxlaunch_<title ID>.so beside nxlaunch.c (android/app/src/main/cpp/CMakeLists.txt).
 // The host's entry points are weak, as the launcher interface's are: a host without Peanuts gives an empty snapshot and no page.
 #include <jni.h>
+#include <android/native_window_jni.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #pragma weak nxhost_peanuts_snapshot
 size_t nxhost_peanuts_snapshot(char *out, size_t n);
@@ -85,4 +87,25 @@ JNIEXPORT jint JNICALL Java_dev_peanuts_Bridge_haptic(JNIEnv *env, jclass cls) {
     if (ms < 1) ms = 1; if (ms > 65535) ms = 65535;
     if (kind < 0) kind = 0; if (kind > 15) kind = 15;
     return (kind << 25) | (respect ? (1 << 24) : 0) | (amp8 << 16) | ms;
+}
+
+__attribute__((weak)) int nxhost_peanuts_dual_wanted(void);
+__attribute__((weak)) void nxhost_peanuts_aux_window(ANativeWindow *w);
+__attribute__((weak)) void nxhost_peanuts_dual_touch(int id, float u, float v, int down);
+
+JNIEXPORT jboolean JNICALL Java_dev_peanuts_Bridge_dualWanted(JNIEnv *env, jclass cls) {
+    (void)env; (void)cls;
+    return nxhost_peanuts_dual_wanted && nxhost_peanuts_dual_wanted() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL Java_dev_peanuts_Bridge_setAuxSurface(JNIEnv *env, jclass cls, jobject surface) {
+    (void)cls;
+    ANativeWindow *w = surface ? ANativeWindow_fromSurface(env, surface) : NULL;
+    if (nxhost_peanuts_aux_window) nxhost_peanuts_aux_window(w);
+    if (w) ANativeWindow_release(w);
+}
+
+JNIEXPORT void JNICALL Java_dev_peanuts_Bridge_dualTouch(JNIEnv *env, jclass cls, jint id, jfloat u, jfloat v, jboolean down) {
+    (void)env; (void)cls;
+    if (nxhost_peanuts_dual_touch) nxhost_peanuts_dual_touch(id, u, v, down ? 1 : 0);
 }

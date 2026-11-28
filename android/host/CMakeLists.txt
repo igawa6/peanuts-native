@@ -76,6 +76,7 @@ list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_nup.c)   # PEANUTS: the companion 
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_services.c)   # PEANUTS: the host's side of the companion runtime's battery, frame totals and add-on content (rt/shim/shim_services.cpp)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_graph.c)   # PEANUTS: the overlay graph's bars painted by the host on every game frame (Bridge.graphRect)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_frametime.c)   # PEANUTS: the time between the game's presented frames, for the launcher's frame-time graph (Bridge.frameTimes)
+list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_dual.c)   # PEANUTS: PN_DUAL_RTT=1, direct 4-RTT dual-screen capture and second Vulkan swapchain (peanuts_dual.h)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_audiosync.c)   # PEANUTS: the audio renderer's output follows the game's pace (peanuts_audiosync.h)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_audiovoice.c)   # PEANUTS: the game's voice play-state changes for the audio follower (peanuts_audiovoice.c)
 list(APPEND HOST_C ${ROOT}/dm/peanuts/peanuts_gpufloor.c)   # PEANUTS: the GPU clock floor on "highest only" KGSL kernels and an earlier first part (peanuts_gpufloor.c)

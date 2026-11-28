@@ -41,6 +41,8 @@ public final class Companion {
     /** The player hid the second display's companion or page with a four-finger tap on the game ({@link #toggleScreen}): Android's own screen there until the
      *  next one (or the next run). Nothing shows it again meanwhile: not the game's return to the front, a display that comes, or the companion loading late */
     private static boolean hidden;
+    /** Temporarily hidden while Switch TextInput (swkbd) is open so Android's soft keyboard can appear on the bottom display. */
+    private static boolean keyboardHidden;
     /** Peanuts' page on the second display meanwhile (GameScreen.LOADING / PLAYING), -1 none */
     private static int wanted = -1;
     private static final long LOADING_MAX_MS = 60000;
@@ -117,6 +119,25 @@ public final class Companion {
 
     private static String titleId(Activity game) { return String.valueOf(game.getIntent().getStringExtra("title_id")); }
 
+    /** Whether PN_DUAL_RTT is enabled in the run's env.txt or env-&lt;title ID&gt;.txt (read before Native.start hands env lines to the host). */
+    private static boolean dualInEnv(Activity game) {
+        for (java.io.File f : new java.io.File[] { new java.io.File(game.getExternalFilesDir(null), "env.txt"),
+                                                   new java.io.File(game.getExternalFilesDir(null), "env-" + titleId(game) + ".txt") }) {
+            try {
+                if (!f.isFile()) continue;
+                for (String line : java.nio.file.Files.readAllLines(f.toPath())) {
+                    int eq = line.indexOf('=');
+                    if (eq <= 0) continue;
+                    if (line.substring(0, eq).trim().equals("PN_DUAL_RTT")) {
+                        String v = line.substring(eq + 1).trim();
+                        if (!v.isEmpty() && !v.chars().allMatch(c -> c == '0')) return true;
+                    }
+                }
+            } catch (Exception ignored) { }
+        }
+        return false;
+    }
+
     /** The game left the foreground (GameActivity.onStop): the companion's window is taken off the second display until {@link #back}. */
     public static void away() {
         away = true;
@@ -124,9 +145,16 @@ public final class Companion {
         if (screenUp) { screenUp = false; CompanionScreen.close(); Log.i(TAG, "the game left the foreground: the companion's screen is closed until it is back"); }
         GameScreen.away();
         if (shown != null) {
-            // Hidden, not dismissed: a window made again came back black until the companion drew something new (its page is only sent when it changes)
-            try { shown.hide(); } catch (RuntimeException ignored) {}
-            try { Bridge.present(false); } catch (UnsatisfiedLinkError ignored) {}   // hide() runs no onStop: the runtime is told here, and held fingers are released
+            boolean dual = false;
+            try { dual = Bridge.dualWanted(); } catch (UnsatisfiedLinkError ignored) {}
+            if (dual) {
+                // Direct Vulkan SurfaceView must be dismissed so Android removes its SurfaceFlinger layer cleanly
+                closeWindows();
+            } else {
+                // Hidden, not dismissed: a window made again came back black until the companion drew something new (its page is only sent when it changes)
+                try { shown.hide(); } catch (RuntimeException ignored) {}
+                try { Bridge.present(false); } catch (UnsatisfiedLinkError ignored) {}   // hide() runs no onStop: the runtime is told here, and held fingers are released
+            }
             Log.i(TAG, "the game left the foreground: the companion is off the second display until it is back");
         }
     }
@@ -197,6 +225,7 @@ public final class Companion {
                 return;
             case ScreenPlace.SHOW:
                 if (hidden) return;   // a four-finger tap hid it (toggleScreen)
+                if (keyboardHidden) return;   // TextInput soft keyboard is open
                 if (shown != null) {
                     if (shown.isShowing()) return;
                     try { shown.show(); try { Bridge.present(true); } catch (UnsatisfiedLinkError ignored) {} return; }
@@ -398,8 +427,13 @@ public final class Companion {
                 hidden = true;
                 GameScreen.away();
                 if (shown != null) {
-                    try { shown.hide(); } catch (RuntimeException ignored) {}
-                    try { Bridge.present(false); } catch (UnsatisfiedLinkError ignored) {}   // as away(): the runtime is told, held fingers are released
+                    boolean dual = false;
+                    try { dual = Bridge.dualWanted(); } catch (UnsatisfiedLinkError ignored) {}
+                    if (dual) closeWindows();
+                    else {
+                        try { shown.hide(); } catch (RuntimeException ignored) {}
+                        try { Bridge.present(false); } catch (UnsatisfiedLinkError ignored) {}   // as away(): the runtime is told, held fingers are released
+                    }
                 }
                 if (screenUp && screenPage) { screenUp = false; screenPage = false; CompanionScreen.close(); }   // the companion on the built-in display (Swap screens, the TV)
                 tell(game, "none");
@@ -421,6 +455,24 @@ public final class Companion {
     /** Whether the second display shows the companion or Peanuts' page now (what {@link #toggleScreen} would hide); null when toggleScreen could do nothing. The adb control's game command */
     public static Boolean screenShown(Activity game) { return canToggle(game) ? !hidden && screenIsUp() : null; }
 
+    /** Temporarily release the second display while Switch TextInput (swkbd) is open so Android's soft keyboard can show there. */
+    public static void keyboardOpen(boolean open) {
+        if (open) {
+            keyboardHidden = true;
+            if (shown != null) {
+                Log.i(TAG, "keyboard open: dismissing second-screen Presentation so IME can show");
+                closeWindows();
+                tell(decidingGame, "none");
+            }
+        } else if (keyboardHidden) {
+            keyboardHidden = false;
+            if (!hidden && !away && !stopped && allowed && decidingGame != null) {
+                Log.i(TAG, "keyboard closed: restoring second-screen Presentation");
+                place(decidingGame);
+            }
+        }
+    }
+
     /** Starts the game hold and, once the host has decided whether a companion loaded, shows it (or leaves the display alone). Keeps trying as displays come and go. */
     public static void start(Activity game, String gameName) {
         if (listener != null) return;
@@ -432,6 +484,8 @@ public final class Companion {
         allowed = false;
         away = false;
         hidden = false;
+        keyboardHidden = false;
+        showTries = 0;
         screenUp = false;
         screenPage = false;
         tvRun = game.getIntent().getBooleanExtra(Screens.TV, false);
@@ -494,7 +548,9 @@ public final class Companion {
         if (game == null || stopped || game.isFinishing() || game.isDestroyed()) return;
         int state = Bridge.rtStateSafe();
         boolean developerReadout = PeanutsPrefs.developerReadout(game);
-        if (state == Bridge.RT_PENDING && !developerReadout) {
+        boolean dual = dualInEnv(game);
+        try { dual |= Bridge.dualWanted(); } catch (UnsatisfiedLinkError ignored) { }
+        if (state == Bridge.RT_PENDING && !developerReadout && !dual) {
             ui.postDelayed(() -> decide(dm), DECIDE_POLL_MS);
             return;
         }
@@ -503,11 +559,12 @@ public final class Companion {
             settle(game);
             return;
         }
-        if (state != Bridge.RT_LOADED && !developerReadout) {
+        if (state != Bridge.RT_LOADED && !developerReadout && !dual) {
             Log.i(TAG, "no companion loaded for this title (state=" + state + "): the second display is left to Android, not taken over");
             settle(game);
             return;
         }
+        if (state != Bridge.RT_LOADED && dual && !developerReadout) Log.i(TAG, "direct dual-screen Vulkan presentation enabled (PN_DUAL_RTT=1)");
         if (state == Bridge.RT_FAILED) Log.w(TAG, "a companion package was found but the runtime refused it (see earlier \"peanuts\" logs); " +
                 (developerReadout ? "showing the developer readout instead" : "second display left to Android"));
         allowed = true;
@@ -515,7 +572,7 @@ public final class Companion {
     }
 
     private static void show(Activity game, String gameName, DisplayManager dm) {
-        if (shown != null || screenUp && screenPage || away || hidden || game.isFinishing() || game.isDestroyed()) return;   // away: shown again by back(); hidden: by toggleScreen
+        if (shown != null || screenUp && screenPage || away || hidden || keyboardHidden || game.isFinishing() || game.isDestroyed()) return;   // away: shown again by back(); hidden: by toggleScreen/keyboard
         Display d = secondDisplay(game, dm);
         if (d == null) { Log.i(TAG, "no second display: companion not shown"); tell(game, "none"); return; }
         if (d.getDisplayId() == Display.DEFAULT_DISPLAY) {   // Swap screens or the TV: Android takes no Presentation there, the page gets an activity (CompanionScreen)
@@ -544,12 +601,18 @@ public final class Companion {
             wanted = -1;
             GameScreen.closeSoon();
             tell(game, "shown");
-        } catch (RuntimeException e) {   // the display refuses app windows, or went away between the query and show()
-            Log.w(TAG, "companion not shown on display " + d.getDisplayId() + ": " + e);
+        } catch (RuntimeException e) {   // the display refuses app windows, or went away between the query and show(); an activity not started yet gets no token: try again
             shown = null;
+            if (++showTries <= 10) {
+                Log.w(TAG, "companion not shown on display " + d.getDisplayId() + " yet (" + e + "): trying again");
+                ui.postDelayed(() -> { if (allowed && !stopped && !away && !hidden && !keyboardHidden && shown == null) show(game, gameName, dm); }, 500);
+                return;
+            }
+            Log.w(TAG, "companion not shown on display " + d.getDisplayId() + ": " + e);
             settle(game);
         }
     }
+    private static int showTries;
 
     /** The companion's display: one of the device's own screens that the game is not on, never a TV (dev.peanuts.Screens, #358). With the game on the built-in,
      *  default display: the device's second screen (the Thor's Screen-2). With the game elsewhere (on the TV, or the other screen with Swap screens): the device's

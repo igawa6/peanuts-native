@@ -19,6 +19,7 @@ static void fbl_pass_begin(void);   // PEANUTS: feedback loops (below, beside DY
 #include "vka_memu_abi.h"
 #include "vka_prepass.h"
 #include "vka_psosync.h"   // PEANUTS: which draws are not skipped while their pipeline is made in the background (draw_body)
+#include "../../peanuts/peanuts_dual.h"   // PEANUTS: PN_DUAL_RTT=1, direct 4-RTT dual-screen capture
 #include "vka_tbuf.h"   // PEANUTS: how a texel buffer is read: in place, through the CPU's copy or through a copy the GPU makes (tbuf_view)
 #include "vka_wbfollow.h"
 #include <math.h>
@@ -2839,6 +2840,19 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
         vka_nan_inputs(g_cb, ims, bs, ts, m, tstats);
     }
     if (!rp_begin(rt, has_rt, sc, has_sc, d)) { g_skipped++; return; }
+    // PEANUTS begin: observe 4 pre-composite DS screen RTTs for direct dual-screen presentation (peanuts_dual.c)
+    if (pn_dual_wanted() && R.ncolor == 1 && R.cim[0] && sh[1]) {
+        vka_img *dt = NULL;
+        for (int i = 0; i < g_wk.n[1]; i++) {
+            const vka_res *x = &g_wk.r[1][i];
+            if (x->what == VKA_R_TEX && x->tid) {
+                vka_img *ti = vka_tex_id_img(x->tid, g_cb);
+                if (ti && (!dt || (ti->w == 256 && ti->h == 192) || (ti->w == 512 && ti->h == 384) || (ti->w == 1440 && ti->h == 1080))) dt = ti;
+            }
+        }
+        pn_dual_observe_draw(R.cim[0], R.cf[0], R.cext[0].width, R.cext[0].height, dt, (d->color.blend_en & 1) != 0, (int)d->blend[0].src_rgb, (int)d->blend[0].dst_rgb);
+    }
+    // PEANUTS end
     if ((R.df || R.sf) && !R.dread && depth_sampled(sh, d)) R.dread = 1;
     if (!R.swrite && draw_writes(sh, d)) R.swrite = 1;   // (a game barrier in this pass from now on ends it: vka_rp_game_barrier)
     d->b.samples = R.samples;

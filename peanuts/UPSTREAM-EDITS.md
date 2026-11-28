@@ -3672,3 +3672,16 @@ Peanuts' own files, no marker: `dm/gfx/tools/ooz_split.py` (new), `dm/gfx/tools/
 names ooz), `dm/third_party/ooz/` (`build.sh`, `unoodle.cpp`, `README.md`), `dm/third_party/README.md`, `dm/tools/tests/test_ooz_split.py` (new: the worker's
 command, no wait on the ooz path, the markers, the fallback and its memory, the PC path, the phone's wiring), `peanuts/tests/test_unoodle.py` (the library form
 through the same tests, the source digest), `peanuts/docs/INCREMENTAL-BUILD.md`. Upstream candidate: no (upstream has no ooz).
+### Direct 4-RTT dual-screen Vulkan presentation (`PN_DUAL_RTT=1`, 2026-11-27)
+
+Zero-readback dual-screen presentation for RE Engine DS collections (Mega Man Star Force Legacy Collection): latches the four pre-composite DS render targets (`RTOMain`/`RTOMainUI` and `RTOSub`/`RTOSubUI`), composites the top pair at 4:3 onto the main swapchain, composites the bottom pair at 4:3 onto an auxiliary Vulkan swapchain owned by `CompanionPage`'s `SurfaceView`, forwards bottom-screen touches, preserves post-process battle-encounter transitions, supports `PN_DUAL_SWAP_BTN` (default ZL/L2) screen swap, and temporarily releases the bottom display while Switch `TextInput` is open. Switches: `PN_DUAL_RTT`, `PN_DUAL_SWAP`, `PN_DUAL_SWAP_BTN`, `PN_DUAL_BLEND`, `PN_DUAL_3D_SRGB`, `PN_DUAL_TRANSITION_FX`, `PN_DUAL_TRANSITION_UV`, `PN_DUAL_TOUCH_RECT`.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/host/CMakeLists.txt` | 1 | add `dm/peanuts/peanuts_dual.c` | `# PEANUTS:` |
+| `dm/gfx/vk_android/vka_draw.c` | 2 | `#include "peanuts_dual.h"` and `pn_dual_observe_draw` in `draw_body` | `// PEANUTS` / `PEANUTS begin` / `end` |
+| `dm/gfx/vk_android/vka_present.c` | 6 | `#include "peanuts_dual.h"` and `pn_dual_*` lifecycle/top/aux hooks | `// PEANUTS:` |
+| `dm/host/hle_hid.c` | 2 | weak `pn_dual_pad_note` / `pn_dual_pad_mask` hooks in `shake_note` and `fill` | `// PEANUTS:` |
+| `android/app/src/main/java/dev/nxnative/android/TextInput.java` | 2 | `Companion.keyboardOpen(true/false)` around dialog show/finish | `// PEANUTS:` |
+
+Peanuts' own files, no marker: `dm/peanuts/peanuts_dual.h`, `dm/peanuts/peanuts_dual.c`, `dm/peanuts/peanuts_jni.c`, `android/app/src/main/java/dev/peanuts/Bridge.java`, `Companion.java`, `CompanionPage.java`, `PEANUTS.md`.

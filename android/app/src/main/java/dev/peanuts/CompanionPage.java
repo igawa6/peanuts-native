@@ -15,6 +15,8 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -37,8 +39,11 @@ final class CompanionPage {
     private static final int TEXT_POLL_MS = 250;  // the text view
     private final String gameName;
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private final Runnable poller = this::poll;
     private TextView values;
     private ImageView page;
+    private SurfaceView auxSurface;
+    private boolean dualSurface;
     private LinearLayout textRoot;
     private Bitmap bitmap;
     private ByteBuffer pixels;
@@ -91,13 +96,27 @@ final class CompanionPage {
         values.setGravity(Gravity.START);
         textRoot.addView(values);
         root.addView(textRoot, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        auxSurface = new SurfaceView(getContext());
+        auxSurface.setVisibility(View.GONE);
+        auxSurface.setOnTouchListener(this::onDualTouch);
+        auxSurface.getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override public void surfaceCreated(SurfaceHolder h) { try { Bridge.setAuxSurface(h.getSurface()); } catch (UnsatisfiedLinkError ignored) { } }
+            @Override public void surfaceChanged(SurfaceHolder h, int f, int w, int ht) { try { Bridge.setAuxSurface(h.getSurface()); } catch (UnsatisfiedLinkError ignored) { } }
+            @Override public void surfaceDestroyed(SurfaceHolder h) { try { Bridge.setAuxSurface(null); } catch (UnsatisfiedLinkError ignored) { } }
+        });
+        root.addView(auxSurface, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         return root;
     }
 
-    void start() { try { Bridge.present(true); } catch (UnsatisfiedLinkError ignored) { } poll(); }
+    void start() {
+        try { Bridge.present(true); } catch (UnsatisfiedLinkError ignored) { }
+        ui.removeCallbacks(poller);
+        poll();
+    }
     void stop() {
+        if (dualSurface) { try { Bridge.setAuxSurface(null); } catch (UnsatisfiedLinkError ignored) { } }
         try { Bridge.present(false); } catch (UnsatisfiedLinkError ignored) { }
-        ui.removeCallbacksAndMessages(null);
+        ui.removeCallbacks(poller);
         if (brightnessObserver != null) { try { getContext().getContentResolver().unregisterContentObserver(brightnessObserver); } catch (RuntimeException ignored) { } brightnessObserver = null; }
     }
 
@@ -129,7 +148,47 @@ final class CompanionPage {
         if (p.screenBrightness != value) { p.screenBrightness = value; getWindow().setAttributes(p); }
     }
 
+    private boolean onDualTouch(View v, MotionEvent e) {
+        int vw = v.getWidth(), vh = v.getHeight();
+        if (vw <= 0 || vh <= 0) return false;
+        // Active 4:3 picture rect centered inside the SurfaceView (matches vka_fit_rect(ew, eh, 1440, 1080))
+        float rw = vw, rh = vh;
+        if (vw * 3 > vh * 4) rw = vh * 4.0f / 3.0f; else rh = vw * 3.0f / 4.0f;
+        float ox = (vw - rw) * 0.5f, oy = (vh - rh) * 0.5f;
+        int action = e.getActionMasked();
+        boolean down = action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_MOVE;
+        boolean up = action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_CANCEL;
+        if (!down && !up) return true;
+        int idx = action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_POINTER_UP ? e.getActionIndex() : -1;
+        for (int i = 0; i < e.getPointerCount(); i++) {
+            if (idx >= 0 && i != idx) continue;
+            float u = (e.getX(i) - ox) / rw, vv = (e.getY(i) - oy) / rh;
+            if (down && (u < 0f || u >= 1f || vv < 0f || vv >= 1f)) continue;
+            try { Bridge.dualTouch(e.getPointerId(i), Math.max(0f, Math.min(0.9999f, u)), Math.max(0f, Math.min(0.9999f, vv)), down); }
+            catch (UnsatisfiedLinkError ignored) { }
+        }
+        return true;
+    }
+
     private void poll() {
+        boolean wantDual = false;
+        try { wantDual = Bridge.dualWanted(); } catch (UnsatisfiedLinkError ignored) { }
+        if (wantDual) {
+            if (!dualSurface) {
+                dualSurface = true;
+                page.setVisibility(View.GONE);
+                textRoot.setVisibility(View.GONE);
+                auxSurface.setVisibility(View.VISIBLE);
+                android.util.Log.i("peanuts", "page: switched to direct Vulkan aux SurfaceView (PN_DUAL_RTT=1)");
+            }
+            ui.postDelayed(poller, TEXT_POLL_MS);
+            return;
+        } else if (dualSurface) {
+            dualSurface = false;
+            try { Bridge.setAuxSurface(null); } catch (UnsatisfiedLinkError ignored) { }
+            auxSurface.setVisibility(View.GONE);
+            textRoot.setVisibility(View.VISIBLE);
+        }
         tellPanel(); tellBattery();
         int w = Bridge.pageWidth(), h = Bridge.pageHeight();
         if (w > 0 && h > 0) {
@@ -147,7 +206,7 @@ final class CompanionPage {
             if (fresh) { pixels.rewind(); bitmap.copyPixelsFromBuffer(pixels); page.invalidate(); }
             if (page.getVisibility() != View.VISIBLE) { page.setVisibility(View.VISIBLE); textRoot.setVisibility(View.GONE); }
             pollHaptic();
-            ui.postDelayed(this::poll, POLL_MS);
+            ui.postDelayed(poller, POLL_MS);
             return;
         }
         if (++pollTick % (TEXT_POLL_MS / POLL_MS) == 0 || values.length() == 0) {
@@ -157,7 +216,7 @@ final class CompanionPage {
             for (Map.Entry<String, String> e : v.entrySet()) sb.append(String.format("%-12s %s\n", e.getKey(), e.getValue()));
             values.setText(sb.toString());
         }
-        ui.postDelayed(this::poll, POLL_MS);
+        ui.postDelayed(poller, POLL_MS);
     }
 
     /** The runtime's panel is the page view: told once the native library is there (the game process loads it after this window is made) and again on a new size */

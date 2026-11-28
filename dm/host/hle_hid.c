@@ -42,8 +42,12 @@ static uint64_t pack(int32_t lx, int32_t ly, int32_t rx, int32_t ry) {
 static const uint64_t SHAKE_CYCLE_NS = (uint64_t)(1e9 / SHAKE_HZ);
 static _Atomic uint64_t g_shake_t0, g_shake_end;   // the current shake's start and end; end = UINT64_MAX while held
 static _Atomic int g_shake_on;
+__attribute__((weak)) void pn_dual_pad_note(uint64_t raw_b);   // PEANUTS: PN_DUAL_RTT=1 L2/ZL swap toggle (dm/peanuts/peanuts_dual.c)
+__attribute__((weak)) uint64_t pn_dual_pad_mask(uint64_t b);   // PEANUTS: mask L2/ZL from game during dual-screen gameplay
 static void shake_note(void) {
-    int on = ((atomic_load(&g_btn) | atomic_load(&g_sc_btn) | atomic_load(&g_pad_btn[0])) & DM_BTN_SHAKE) != 0;
+    uint64_t p1 = atomic_load(&g_btn) | atomic_load(&g_sc_btn) | atomic_load(&g_pad_btn[0]);
+    if (pn_dual_pad_note) pn_dual_pad_note(p1);   // PEANUTS: L2/ZL screen-swap toggle
+    int on = (p1 & DM_BTN_SHAKE) != 0;
     if (atomic_exchange(&g_shake_on, on) == on) return;
     uint64_t t = guest_ns();
     if (on) { if (t >= atomic_load(&g_shake_end)) atomic_store(&g_shake_t0, t); atomic_store(&g_shake_end, UINT64_MAX); }
@@ -497,6 +501,7 @@ static void fill(NpadState *s, uint32_t id, uint32_t style) {
     }
     s->lx = a[0]; s->ly = a[1]; s->rx = a[2]; s->ry = a[3];
     b &= 0xffffull;
+    if (!pl && pn_dual_pad_mask) b = pn_dual_pad_mask(b);   // PEANUTS: hide L2/ZL from game during dual-screen gameplay
     if (s->lx < -STICK_THRESH) b |= 1u << 16;
     if (s->ly > STICK_THRESH) b |= 1u << 17;
     if (s->lx > STICK_THRESH) b |= 1u << 18;
