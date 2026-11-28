@@ -148,7 +148,7 @@ class Wiring(unittest.TestCase):
         self.assertIn('BuildPipeline.resume(a);', lib)
         self.assertIn('"Queued, " + p', lib)
         self.assertIn('"Up next"', lib)
-        self.assertIn('"Build all…"', lib)
+        self.assertIn('"Build all", "Build all that need it", null, v -> act(a, Library::buildAllAsk)', lib, 'Build all in the header (the dock on a phone)')
         self.assertIn('"Dismiss"', lib)
         sheet = read(APP / 'main/java/dev/peanuts/ui/GameSheet.java')
         self.assertIn('"Add to queue"', sheet)

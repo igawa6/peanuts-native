@@ -461,11 +461,11 @@ public final class Ctl {
         String to = r.word("to", java.util.Arrays.asList("home", "settings", "game"));
         if (to.equals("home")) {
             home(a);
-            String filter = r.word("filter", Request.FILTERS), find = r.str("find");
+            String filter = r.word("filter", Request.FILTERS), find = r.str("find"), homeView = r.word("view", Request.VIEWS);
             if (r.on("find_clear")) find = "";
-            String now = CtlPort.view(a, filter, find);
+            String now = CtlPort.view(a, filter, find, homeView);
             if (filter != null && !filter.equals(now)) throw new Request.Bad("filter_unavailable", "Home has no " + filter + " filter now (it shows only while something builds). It shows " + now + ".");
-            res.ok(null).put("page", "home").put("filter", now);
+            res.ok(null).put("page", "home").put("filter", now).put("view", CtlPort.homeView(a));
         } else if (to.equals("settings")) {
             Up.page(a, true);
             String section = r.str("section");

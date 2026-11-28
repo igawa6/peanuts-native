@@ -2957,6 +2957,27 @@ frontend or a shortcut hands the game to Home's Play. The first start of another
 | `android/app/src/jvmtest/java/dev/nxnative/android/LauncherJvmTest.java` | 2 | `beforeNewBuild` case | `// PEANUTS:` and `PEANUTS begin` / `end` |
 | `docs/guides/saves.md`, `README.md` | 1 each | the backup before a new build; Play waits for the build with mods | `<!-- PEANUTS: issue #514 -->` |
 
+### Home's views (2026-11-26, igawa6/peanuts-native#839)
+
+Home shows the library in one of five views (`dev.peanuts.ui.HomeViews`): Grid, Row, Compact, Carousel and Covers, chosen with a View button beside Sort
+(each press the next view, its name for a moment; held: all five at once) or in Settings › App › Look › Home view (`PeanutsPrefs.homeView`). Find,
+Sort, View and Build all move into the header's row of buttons; on a phone held upright they sit in a dock at the bottom (`HomeDock`: it slides away
+while the page scrolls down, Find turns it into a search field above the keyboard that filters as one types, the tabs stay pinned at the top). The
+tabs are words over the accent's bar, as a game's page's. Row and Carousel are one strip of covers (`HomeShelf`: keys, swipes with a fling that
+settles on a game and never wraps, a tap on another cover chooses it, TalkBack scrolls it); where no bottom screen shows the chosen game's card (a
+phone, a tablet, the Thor with its second screen off, a TV: `BottomScreen.twoScreens`) its play time and its buttons stand at the large cover, and
+Covers names the game a controller is on in a slim bar. Each cover's state is a round mark (`CoverMarks`), a build that runs the yellow pill with
+the heavy hammer (`Hammer`) and its percent, a game without a profile the NO SUPPORT tape. One upstream line:
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 1 line (in the Peanuts block of `buildHome`) | `trailing.addView(dev.peanuts.ui.Library.headerTools(this))` | `PEANUTS begin` / `end` |
+
+Peanuts-owned: `HomeViews`, `HomeShelf`, `HomeDock`, `CoverMarks`, `Hammer` (new), `Library`, `BottomScreen` (`twoScreens`, the change of it draws
+Home again), `LibrarySettings` (the Home view row), `SettingsSections` (App › Look), `SettingsHelp`, `CtlPort` and `dev.peanuts.ctl` (`nav view=`,
+`screen.home.view` and `chosen`), `PeanutsPrefs.homeView`, the icons `view_row`, `view_carousel`, `view_covers`, `stop` (`peanuts/scripts/icons.py`).
+Tests: `HomeViewsJvmTest`, `peanuts/tests/test_home_views.py`; `test_home_filters.py` finds Find, Sort and Build all in the header's tools now.
+
 ### Switch 1 only: the Switch 2 profiles removed (2026-11-26, owner)
 
 Peanuts Native supports Switch 1 games only. The 19 Switch 2 profiles (`dm/games/04*`; none shipped in `peanuts/release-titles.txt`) and the

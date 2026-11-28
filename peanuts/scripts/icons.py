@@ -59,6 +59,17 @@ ICONS = {
     "library": [("s", rrect(3.5, 3.5, 7.5, 7.5, 2)), ("k", rrect(5.75, 5.75, 3, 3, 0.8)), ("s", rrect(13, 3.5, 7.5, 7.5, 2)),
                 ("s", rrect(3.5, 13, 7.5, 7.5, 2)), ("s", rrect(13, 13, 7.5, 7.5, 2))],
     "list": [("s", "M10 6.5H20M10 12H20M10 17.5H20"), ("k", circle(5.5, 6.5, 1.7)), ("k", circle(5.5, 12, 1.7)), ("k", circle(5.5, 17.5, 1.7))],
+    # Home's views (the View button, Settings › App › Look): Grid is "library", Compact is "list"
+    # Row: the chosen cover large at the left, the next ones smaller beside it
+    "view_row": [("s", rrect(2.5, 5, 11, 14, 2.5)), ("k", rrect(5.5, 8, 5, 5, 1.2)), ("s", rrect(16, 7, 2.5, 10, 1.25)), ("s", "M21.5 8.5V15.5")],
+    # Carousel: the chosen cover in the middle, its neighbours at the edges
+    "view_carousel": [("s", rrect(7, 4, 10, 16, 2.5)), ("k", rrect(9.75, 7, 4.5, 4.5, 1.2)), ("s", "M3 7.5V16.5M21 7.5V16.5")],
+    # Covers: many small covers, no names
+    "view_covers": [("s", rrect(3, 3, 4.75, 4.75, 1.3)), ("k", rrect(4.4, 4.4, 1.95, 1.95, 0.5)), ("s", rrect(9.625, 3, 4.75, 4.75, 1.3)), ("s", rrect(16.25, 3, 4.75, 4.75, 1.3)),
+                    ("s", rrect(3, 9.625, 4.75, 4.75, 1.3)), ("s", rrect(9.625, 9.625, 4.75, 4.75, 1.3)), ("s", rrect(16.25, 9.625, 4.75, 4.75, 1.3)),
+                    ("s", rrect(3, 16.25, 4.75, 4.75, 1.3)), ("s", rrect(9.625, 16.25, 4.75, 4.75, 1.3)), ("s", rrect(16.25, 16.25, 4.75, 4.75, 1.3))],
+    # a build the queue or the player stopped (a cover's mark)
+    "stop": [("s", rrect(6, 6, 12, 12, 3)), ("k", rrect(9.25, 9.25, 5.5, 5.5, 1.2))],
     "search": [("s", circle(10.5, 10.5, 6)), ("s", "M15 15l5 5"), ("k", circle(10.5, 10.5, 2.4))],
     "game": [("s", rrect(5.5, 3.5, 13, 17, 2.5)), ("k", rrect(8.5, 6.75, 7, 6.5, 1.2)), ("s", "M9.5 17h5")],
     "folder": [("s", "M3.5 7a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"), ("k", rrect(6.5, 11, 11, 5, 1.2))],

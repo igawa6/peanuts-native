@@ -286,10 +286,12 @@ public final class MainActivity extends Activity {
 
     private void buildHome(LinearLayout content) {
         overlayRow = null;
-        // PEANUTS begin: "Screens off" left of upstream's header buttons (the wiki, Settings), shown only while a build runs (dev.peanuts.ui.Library.screensOffButton)
+        // PEANUTS begin: "Screens off" left of upstream's header buttons (the wiki, Settings), shown only while a build runs (dev.peanuts.ui.Library.screensOffButton);
+        // before them the library's Find, Sort, View and Build all (dev.peanuts.ui.Library.headerTools; on a phone held upright they are the dock's)
         LinearLayout trailing = new LinearLayout(this);
         trailing.setOrientation(LinearLayout.HORIZONTAL);
         trailing.setGravity(android.view.Gravity.TOP);   // as headerButtons' own row: the wiki's label hangs below its button
+        trailing.addView(dev.peanuts.ui.Library.headerTools(this));
         LinearLayout.LayoutParams sop = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         sop.setMarginEnd(Ui.dp(this, 12));
         trailing.addView(dev.peanuts.ui.Library.screensOffButton(this), sop);

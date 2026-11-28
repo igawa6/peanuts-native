@@ -71,6 +71,7 @@ public final class SettingsHelp {
         put(m, "Users", "The console's users, each with saves of their own, and the one games start with.", "Player");
         put(m, "Miis", "Make Miis of your own. Games that ask for a Mii list them as the console's.", null);
         // App
+        put(m, "Home view", "How Home shows your games: Grid, Row, Compact, Carousel or Covers. The View button on Home switches it too; hold it to choose.", "Grid");
         put(m, "Haptics", "The app's touch feedback. System follows Android's setting, Off turns the app's own feedback off.", "System");
         put(m, "Motion", "The app's animations. System follows Android's setting, Reduced keeps fades and progress only.", "System");
         put(m, "Mods tab", "The quick menu's Cheats and Mods tabs: the game's cheats and mods while it runs, each tab when the game has some. A game's own Mods & Cheats page can hide them for that game.", "On");

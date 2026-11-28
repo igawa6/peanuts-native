@@ -93,7 +93,7 @@ class Hooks(unittest.TestCase):
     def test_bottom_screen_card_shows_it_and_reads_it_again_at_resume(self):
         lib = (JAVA / 'dev/peanuts/ui/Library.java').read_text(encoding='utf-8')
         self.assertIn('k.play = play(r.id());', lib)
-        cell = lib.split('private View coverCell(Row r, int cellDp) {', 1)[1].split('return cell;', 1)[0]
+        cell = lib.split('private View coverCell(Row r, int cellDp, boolean named) {', 1)[1].split('return cell;', 1)[0]
         self.assertNotIn('PlayLedger', cell)                         # the covers stay as they were: the total is on the bottom screen
         resumed = lib.split('public void onActivityResumed(Activity x) {', 1)[1].split('String id = played;', 1)[0]
         self.assertIn('l.playTimesAgain();', resumed)                # in place, before the focus-landing early returns

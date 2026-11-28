@@ -220,6 +220,9 @@ public final class PeanutsPrefs {
     /** Home's Sort: true (default) = Ready, Build needed and Not supported yet stay apart in All, the order applies inside each; false = one list */
     public static boolean librarySortGrouped(Context c) { return of(c).getBoolean("library_sort_grouped", true); }
     public static void librarySortGrouped(Context c, boolean on) { of(c).edit().putBoolean("library_sort_grouped", on).apply(); }
+    /** Home's view (the View button, Settings › App › Look › Home view): "grid" (default), "row", "compact", "carousel" or "covers" (dev.peanuts.ui.HomeViews) */
+    public static String homeView(Context c) { return of(c).getString("home_view", "grid"); }
+    public static void homeView(Context c, String key) { of(c).edit().putString("home_view", key).apply(); }
 
     /** Settings › TV and monitors (dev.peanuts.Screens, #358): true a game plays on a connected TV or monitor; false (the default) the system decides what the TV
      *  shows (Android mirrors the screen, a handheld's firmware may turn its own screens off), and Peanuts only keeps its pages off the TV */

@@ -189,6 +189,19 @@ public final class BottomScreen {
 
     static boolean showing() { return panel != null && panel.isShowing(); }
 
+    /**
+     * Whether Home has a bottom screen for the chosen game's card: Bottom screen on, the device's own second screen there and on, and no game on it. Without
+     * one (a phone, a tablet, the Thor with its second screen off, or a TV) Row and Carousel show the game's facts at its cover (Library, the one-screen rule)
+     */
+    static boolean twoScreens(Activity a) {
+        if (a == null || !PeanutsPrefs.bottomScreen(a)) return false;
+        Display d = secondDisplay(a);
+        return d != null && on(d) && d.getDisplayId() != activeGameDisplay;
+    }
+
+    /** Home is drawn again when the answer of twoScreens may have changed (its render skips what did not change) */
+    private static void screensChanged() { UI.post(Library::screensChanged); }
+
     static boolean settings() {
         if (!showing() || openSettings == null || launch != null || setup) return false;
         openSettings.run();
@@ -326,7 +339,7 @@ public final class BottomScreen {
             int previous = activeGameDisplay;
             activeGameDisplay = "stopped".equals(state) || "away".equals(state)
                     ? Display.INVALID_DISPLAY : i.getIntExtra("game_display", Display.INVALID_DISPLAY);
-            if (previous != activeGameDisplay) show();
+            if (previous != activeGameDisplay) { show(); screensChanged(); }
             Launch l = launch;
             if (l == null) return;
             l.said = state;
@@ -390,6 +403,7 @@ public final class BottomScreen {
     static void settingChanged() {
         if (owner == null) return;
         if (PeanutsPrefs.bottomScreen(owner)) show(); else dismiss();
+        screensChanged();
     }
 
     /** The device's own second screen (the Thor's Screen-2), never a TV, a monitor or a cast (dev.peanuts.Screens, #358: a phone mirroring to a TV showed this page there) */
@@ -458,10 +472,11 @@ public final class BottomScreen {
         if (dm == null) return;
         dev.peanuts.Screens.log(a, "the launcher starts");   // which display is which, for a report
         displays = new DisplayManager.DisplayListener() {
-            @Override public void onDisplayAdded(int id) { if (owner != null) dev.peanuts.Screens.log(owner, "display " + id + " came"); show(); }
-            @Override public void onDisplayRemoved(int id) { if (panel != null && panel.getDisplay() != null && panel.getDisplay().getDisplayId() == id) dismiss(); show(); }
+            @Override public void onDisplayAdded(int id) { if (owner != null) dev.peanuts.Screens.log(owner, "display " + id + " came"); show(); screensChanged(); }
+            @Override public void onDisplayRemoved(int id) { if (panel != null && panel.getDisplay() != null && panel.getDisplay().getDisplayId() == id) dismiss(); show(); screensChanged(); }
             @Override public void onDisplayChanged(int id) {
                 BackgroundFlow.stale();
+                screensChanged();   // the second screen turned off or on: Row and Carousel take the facts to the cover, or give them back
                 Display d = panel != null ? panel.getDisplay() : null;
                 if (d == null || d.getDisplayId() != id) return;
                 if (!panel.fits()) { dismiss(); show(); return; }

@@ -29,7 +29,7 @@ class Wiring(unittest.TestCase):
         # UI-RULES 1: no separator glyph between values (the cover's mark and the second screen's card had a middle dot before "later")
         lib = (APP / 'main/java/dev/peanuts/ui/Library.java').read_text(encoding='utf-8')
         self.assertNotIn('· later', lib)
-        self.assertIn('"Update later"', lib)
+        self.assertIn('(k.askFound ? "" : ", for later")', lib)   # the cover's words (its mark is the round update arrow, quieter when seen)
         self.assertIn('", for later"', lib)
 
     def test_the_cover_knows_the_profiles_updates(self):

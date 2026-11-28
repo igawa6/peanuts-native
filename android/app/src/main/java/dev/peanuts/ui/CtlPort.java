@@ -28,6 +28,8 @@ public final class CtlPort {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("filter", l.filterName());
         m.put("find", l.findText());
+        m.put("view", l.viewName());
+        m.put("chosen", l.chosenTitle());
         m.put("show_hidden", l.hiddenShown());
         m.put("scanning", l.scanningNow());
         return m;
@@ -42,12 +44,19 @@ public final class CtlPort {
     public static boolean hasHome(Activity a) { return Library.of(a) != null; }
 
     /** Home's filter chip and Find text set as a tap would (null: left as it is); returns the filter Home shows afterwards */
-    public static String view(Activity a, String filter, String find) {
+    public static String view(Activity a, String filter, String find) { return view(a, filter, find, null); }
+
+    /** The same, and Home's view (grid, row, compact, carousel, covers; null: left as it is), as the View button would */
+    public static String view(Activity a, String filter, String find, String homeView) {
         Library l = Library.of(a);
         if (l == null) return null;
+        if (homeView != null) dev.peanuts.PeanutsPrefs.homeView(a, homeView);
         l.view(filter, find);
         return l.filterName();
     }
+
+    /** Home's view as it is now */
+    public static String homeView(Activity a) { return HomeViews.KEYS[HomeViews.of(dev.peanuts.PeanutsPrefs.homeView(a))]; }
 
     /** Settings › Library › Rescan; false when this activity's Home was never drawn */
     public static boolean rescan(Activity a) {

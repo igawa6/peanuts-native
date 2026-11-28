@@ -109,6 +109,9 @@ Banana Native ships several releases a day, so this fork is kept as a **thin ove
      line in it; too much for a one-line hook, as `pack_android.py`'s, so block-marked. `peanuts/UPSTREAM-EDITS.md` Round 49.
    - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-21, Home's first focus) `buildHome`'s header line (the rebrand's):
      `dev.peanuts.ui.Library.homeHeader` makes the build line plain text, so a controller's first focus is the first cover. Round 53.
+   - `android/app/src/main/java/dev/nxnative/android/MainActivity.java` — (2026-11-26, Home's views, igawa6/peanuts-native#839) one line in `buildHome`'s
+     Peanuts block: `trailing.addView(dev.peanuts.ui.Library.headerTools(this))`, the library's Find, Sort, View and Build all before Screens off, FAQ and
+     Settings (`dev.peanuts.ui.HomeViews`; on a phone held upright they are the dock's, `HomeDock`). `peanuts/UPSTREAM-EDITS.md` "Home's views".
    - `android/app/src/main/java/dev/nxnative/android/SaveUi.java`, `SaveStore.java`, `MainActivity.java` (`gameTab`), `GameActivity.java` (`saveDir`) — (2026-11-23,
      saves for each user, #422) the Saves tab works on the save of the user picked on it: `UserSaves` (a Peanuts file in this package, as `ResScale`) draws
      the user cards above the rows and Copy to another user; SaveUi takes `UserSaves.save` for `Folders.save`, names the user in its dialogs and runs another

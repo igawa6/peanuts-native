@@ -23,6 +23,9 @@ call `Haptics` themselves, and both would play.
 
 ## Pieces
 
+- `HomeViews`, `HomeShelf`, `HomeDock`, `CoverMarks`, `Hammer` — Home's five views (Grid, Row, Compact, Carousel, Covers), Row's and Carousel's strip, the
+  phone's dock (Find's field, the pinned tabs, the view's name, Covers' name bar), the covers' marks (the building pill with the hammer, the NO SUPPORT
+  tape). `MainActivity.buildHome`'s Peanuts block adds `Library.headerTools` (Find, Sort, View, Build all) before Screens off.
 - `Library` — Home's game box (SPEC3): the filter row (All · Building · Ready · Build needed · Not Supported Yet, Find; Building only while a build or
   upstream's Prepare runs, its count in banana), then one cover grid (PUi.tile at cell size with the NACP icon, four columns on a handheld, the state on the cover,
   the name under it; Building → Ready by last played → Build needed A–Z → Not Supported Yet A–Z, no sections). Tap = Play (`Upstream.launch`, Banana's

@@ -64,18 +64,20 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
- * Banana's Home is the library (SPEC.md, SPEC3.md): {@link #fill} is the one call MainActivity.refresh makes for its game box. It lays out the filter row (All ·
- * Building · Ready · Build needed · Not Supported Yet, Find), then one cover grid (Eden's shape in Banana's clothes: PUi.tile at cell size with the NACP icon,
- * the name under it, the state on the cover, four columns on a handheld), ordered Building → Ready by last played → Build needed A–Z → Not Supported Yet A–Z,
- * no sections. A tap plays a ready game (Banana's launch) or opens the game sheet; a long press (or Y) opens Banana's Manage sheet for a listed game. The Building
+ * Banana's Home is the library (SPEC.md, SPEC3.md): {@link #fill} is the one call MainActivity.refresh makes for its game box. It lays out the tabs (All ·
+ * Building · Ready · Build needed · Not Supported Yet: words with the accent's bar, as a game's page; a tab only for a state with games, no tabs when one
+ * state has them all: HomeFilters), then the games in the view the player chose (HomeViews: Grid, Row, Compact, Carousel or Covers; the View button and
+ * Settings › App › Look), ordered Building → Ready by last played → Build needed A–Z → Not Supported Yet A–Z, no sections. Find, Sort, View and Build all
+ * are buttons in the header beside FAQ and Settings ({@link #headerTools}), or on a phone held upright in the dock at the bottom (HomeDock). Each cover
+ * carries its state as a mark (CoverMarks: a round mark top right, the yellow pill with the hammer while it builds, the NO SUPPORT tape); the words are in
+ * the bottom screen's card, in Compact, at Row's and Carousel's large cover, and in the cover's description. A tap plays a ready game (Banana's launch) or opens the game sheet; a long press (or Y) opens Banana's Manage sheet for a listed game. The Building
  * filter exists only while something runs and holds the full cards: the build card (Ondevice's shape: status, a sentence, the bar, Stop/Retry and a disabled Play)
  * and upstream's progress card (Ondevice); everywhere else the building game is a cover with a progress strip and a "Building · N %" chip that opens that filter.
  * The games come from {@link LibraryScanner} (every NSP/XCI/.nup/dump in the game folder) merged with upstream's own list: a scanned game that is ready is put
  * into upstream's list so Play and Manage are Banana's. With no game folder set, the first-run card (emptyCard's shape with three Setting rows) is Home's one card.
  */
 public final class Library {
-    private static final int ALL = 0, BUILDING = 1, READY = 2, BUILD = 3, NO_PROFILE = 4;
-    private static final int[] FILTERS = {ALL, BUILDING, READY, BUILD, NO_PROFILE};
+    private static final int ALL = HomeFilters.ALL, BUILDING = HomeFilters.BUILDING, READY = HomeFilters.READY, BUILD = HomeFilters.BUILD, NO_PROFILE = HomeFilters.NO_PROFILE;
     private static final int REQ_NOTIFY = 71;   // the notification permission's request (nobody reads the answer: the next notification shows or does not)
     private static final String GOES_ON = " The build goes on if you leave the app.";
 
@@ -146,6 +148,7 @@ public final class Library {
     private boolean scanning;
     private boolean staleChecking;   // one in flight at a time; staleTick skips a tick rather than piling up background threads
     private int filter = ALL;
+    private int[] stateCounts = new int[3];   // the last render's Ready, Build needed and Not Supported Yet counts: which chips L/R step through
     private String find = "";
     private boolean showHidden;   // the "Hidden: N missing games · Show/Hide" toggle (found in review): off by default, so a hidden card needs an explicit tap to reveal
     private final Map<String, TextView> tiles = new HashMap<>();   // the tiles of the covers showing, by title ID (icons land while they show)
@@ -154,11 +157,25 @@ public final class Library {
     private TextView buildStatus, buildBody, buildPct;
     private Button buildGoOn;   // the build card's Go on anyway, shown while the packer waits in a heat pause it lifts (BuildPipeline.goOnOffered, GitHub #803)
     private ProgressBar buildBar;
-    // the building game's cover marks (null when the Building filter shows the card instead)
-    private TextView coverChip;
-    private ProgressBar coverStrip;
+    // the building game's cover parts (null when they do not show: the Building filter shows the card instead)
+    private CoverMarks.BuildPill coverPill;   // the running build's pill: its percent is written in place
+    private View coverMark;                   // the building cover's mark, whatever it is (it shakes when the build stops)
+    private TextView coverWords;              // Compact's words for it
+    private TextView factsBuild;              // the large cover's line for it (Row, Carousel)
+    private int pillGrown;                    // the build whose pill grew from the round mark already (once, when it starts)
     private View firstCover;   // the grid's first cover of this render (focused after a shoulder-button filter change)
     private boolean focusGrid;
+    // ---- Home's views (HomeViews) ----
+    private int view = HomeViews.GRID;   // the view this render drew
+    private boolean dual;                // a bottom screen shows the chosen game's card (BottomScreen.twoScreens); else the one-screen rule holds
+    private String chosenId;             // the chosen game: the strip's, or the cover a controller was on last; kept across views, tabs and rebuilds
+    private HomeShelf shelf;             // Row's and Carousel's strip, null in the other views
+    private List<Cover> shelfCovers = Collections.emptyList();
+    private LinearLayout facts;          // the chosen game's facts at the large cover
+    private LinearLayout stage;          // Row and Carousel: the strip and its facts, between the tabs and the key bar (stageBox)
+    private LinearLayout keyBar;         // Row and Carousel on a wide screen with a controller: what A and Y do, at the bottom as on a console's home
+    private View tint;                   // Row and Carousel: the page tinted with the chosen cover's colour (in the page's frame, under the column)
+    private int tintColor;
     // ---- What a rebuild keeps (the grid is torn down and built again by every render that changes something) ----
     private String shown;   // the signature of what the box shows now (see render); null: build it again whatever it would be
     private final Map<String, View> keyed = new HashMap<>();   // the library's own focusable views by a key that outlives a rebuild ("cover:<title ID>", "chip:<filter>", "find", "hidden")
@@ -189,7 +206,7 @@ public final class Library {
             if (b == null || b.id != id) return;
             boolean stepChanged = !step.equals(b.step);
             b.step = step; b.percent = percent; b.detail = detail == null ? "" : detail;
-            if (stepChanged || (buildStatus == null && coverChip == null) || box == null) render(); else updateBuildCard(b, false);
+            if (stepChanged || (buildStatus == null && coverPill == null && coverWords == null && factsBuild == null) || box == null) render(); else updateBuildCard(b, false);
             pushBuild();
         }
         @Override public void done(boolean ok, String message, String code) {
@@ -200,12 +217,14 @@ public final class Library {
                 Toast.makeText(a, b.name + " is ready to play.", Toast.LENGTH_LONG).show();
                 if (inFront) { Haptics.play(anchor(), Haptics.Word.DONE); popReady = b.titleId; popReadyAt = android.os.SystemClock.uptimeMillis(); }
                 TextView tile = tiles.get(b.titleId);
-                if (inFront && Motion.on() && tile != null && coverChip != null && coverChip.isAttachedToWindow()) {
-                    // the building cover is on screen: it says Ready and pops, and the rescan that moves it among the Ready games waits until that was seen
-                    coverChip.setText("Ready");
-                    coverChip.setTextColor(PUi.col(a, R.color.bn_leaf));
-                    if (coverStrip != null && !coverStrip.isIndeterminate()) Motion.progress(coverStrip, 100, false);
-                    Motion.pop(tile);
+                CoverMarks.BuildPill pill = coverPill;
+                boolean seen = pill != null && pill.isAttachedToWindow() || coverWords != null && coverWords.isAttachedToWindow();
+                if (inFront && Motion.on() && tile != null && seen) {
+                    // the building cover is on screen: its pill shrinks back to the green check and the cover pops, and the rescan that moves it among the
+                    // Ready games waits until that was seen
+                    if (coverWords != null) { coverWords.setText("Ready"); coverWords.setTextColor(PUi.col(a, R.color.bn_leaf)); }
+                    if (factsBuild != null) { factsBuild.setText("Ready"); factsBuild.setTextColor(PUi.col(a, R.color.bn_leaf)); }
+                    if (pill != null) { pill.percent(100); pill.finish(() -> Motion.pop(tile)); } else Motion.pop(tile);
                     UI.postDelayed(() -> { if (build == b) build = null; companions.clear(); if (current == Library.this) scan(); }, 400);
                 } else {
                     build = null; companions.clear();
@@ -216,7 +235,7 @@ public final class Library {
                 render();
                 if (b.reimport && !scanning) scan();   // an import again that stopped may have left another base than the one the titles name (the old .nup deleted first): read again
                 // a build the user stopped is not a refusal: the press on Stop was its feedback
-                if (inFront && !BuildListener.CANCELLED.equals(b.code)) { Haptics.play(anchor(), Haptics.Word.REJECT); if (coverChip != null) Motion.shake(coverChip); }
+                if (inFront && !BuildListener.CANCELLED.equals(b.code)) { Haptics.play(anchor(), Haptics.Word.REJECT); if (coverMark != null) Motion.shake(coverMark); }
             }
             pushBuild();
         }
@@ -252,6 +271,9 @@ public final class Library {
                 played = null;
                 View cover = l.keyed.get("cover:" + id);
                 TextView tile = l.tiles.get(id);
+                if (cover == null && l.shelf != null) {   // Row, Carousel: the strip chooses it
+                    for (int i = 0; i < l.shelfCovers.size(); i++) if (l.shelfCovers.get(i).r.id().equalsIgnoreCase(id)) { l.shelf.choose(i, false, false); cover = l.shelf; break; }
+                }
                 if (cover == null || tile == null || cover.isInTouchMode()) return;
                 Haptics.quiet(200);
                 l.restoring = true;
@@ -306,6 +328,71 @@ public final class Library {
                 Haptics.on(Haptics.Word.CLICK, v -> ScreensOff.show(a)));
         screensOffB.setVisibility(View.GONE);
         return screensOffB;
+    }
+
+    // ---- Find, Sort, View, Build all (Home's header, left of the Screens off, FAQ and Settings buttons; on a phone held upright the dock's) ----
+
+    /** One set of the library's buttons: the header's or the dock's, each an icon above its caption */
+    private static final class Tools {
+        final LinearLayout row;
+        final View find, sort, view, buildAll;
+        final TextView findCaption;
+        final ImageView viewIcon;
+
+        Tools(Activity a, boolean dock) {
+            row = new LinearLayout(a);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.TOP);
+            find = headerAction(a, R.drawable.ic_search, "Find", "Find a game", null, Haptics.on(Haptics.Word.CLICK, v -> act(a, l -> l.findPressed(dock))));
+            sort = headerAction(a, R.drawable.ic_sort, "Sort", "Sort", null, Haptics.on(Haptics.Word.CLICK, v -> act(a, Library::sortDialog)));
+            view = headerAction(a, R.drawable.ic_sort, "View", "View", null, Haptics.on(Haptics.Word.CLICK, v -> act(a, l -> l.nextView((View) v.getParent()))));   // the name shows under the button and its word
+            buildAll = headerAction(a, R.drawable.ic_build, "Build all", "Build all that need it", null, v -> act(a, Library::buildAllAsk));
+            findCaption = (TextView) ((ViewGroup) find).getChildAt(1);
+            findCaption.setMaxWidth(PUi.dp(a, 88));
+            findCaption.setEllipsize(TextUtils.TruncateAt.END);
+            viewIcon = (ImageView) ((ViewGroup) view).getChildAt(0);
+            viewIcon.setOnLongClickListener(v -> { chooseView(a, () -> act(a, l -> { l.animateNext = true; l.render(); })); return true; });   // all five at once
+            for (View t : new View[] {find, sort, view, buildAll}) {
+                View b = ((ViewGroup) t).getChildAt(0);
+                b.setOnKeyListener((v, code, ev) -> { Library l = current; return l != null && l.a == a && l.shoulders.onKey(v, code, ev); });
+                if (!dock) {
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    if (row.getChildCount() > 0) lp.setMarginStart(PUi.dp(a, 10));
+                    row.addView(t, lp);
+                }
+            }
+        }
+
+        /** What the buttons say now: Find its words, View the view's icon, Build all only while something can be built */
+        void show(Activity a, String findText, int homeView, boolean canBuildAll) {
+            findCaption.setText(findText.isEmpty() ? "Find" : findText);
+            ((ViewGroup) find).getChildAt(0).setContentDescription(findText.isEmpty() ? "Find a game" : "Find: " + findText);
+            Drawable d = CoverMarks.icon(a, HomeViews.ICONS[homeView], PUi.col(a, R.color.bn_text));
+            if (d != null) viewIcon.setImageDrawable(d);
+            viewIcon.setContentDescription("View: " + HomeViews.NAMES[homeView] + ". Press for the next view, hold to choose");
+            buildAll.setVisibility(canBuildAll ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private static Tools headerTools;
+
+    /** Runs on the library of this activity, when it has one */
+    private static void act(Activity a, Consumer<Library> what) {
+        Library l = current;
+        if (l != null && l.a == a) what.accept(l);
+    }
+
+    /**
+     * MainActivity.buildHome (PEANUTS hook): Find, Sort, View and Build all, in the header's row of buttons before Screens off, FAQ and Settings. render()
+     * says what they show; on a phone held upright, or with no game in the library, they are hidden (the dock has them, or there is nothing to find)
+     */
+    public static View headerTools(Activity a) {
+        headerTools = new Tools(a, false);
+        headerTools.row.setVisibility(View.GONE);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMarginEnd(PUi.dp(a, 22));
+        headerTools.row.setLayoutParams(lp);
+        return headerTools.row;
     }
 
     /**
@@ -713,6 +800,8 @@ public final class Library {
     static List<CompanionPort.Item> catalogNow() { return catalog; }
     String filterName() { return FILTER_NAMES[filter]; }
     String findText() { return find; }
+    String viewName() { return HomeViews.KEYS[view]; }
+    String chosenTitle() { return chosenId; }
     boolean hiddenShown() { return showHidden; }
     boolean scanningNow() { return scanning; }
     LibraryScanner.Title title(String titleId) { return titleFor(titleId); }
@@ -1078,7 +1167,7 @@ public final class Library {
         int building = (pc != null ? 1 : 0) + (buildCard ? 1 : 0) + waiting.size() + stoppedQ.size();
         if (building == 0 && filter == BUILDING) filter = ALL;   // the last job finished: the filter goes away
         if (building == 0) ScreensOff.hide();   // nothing builds any more: the screens come back by themselves
-        if (screensOffB != null) screensOffB.setVisibility(building > 0 ? View.VISIBLE : View.GONE);   // Home's header shows it only while something builds
+        if (screensOffB != null) screensOffB.setVisibility(building > 0 && !docked() ? View.VISIBLE : View.GONE);   // Home's header shows it only while something builds (a phone upright: on the build card)
         int all = rows.size(), ready = 0, toBuild = 0, noProfile = 0;
         List<Row> bl = new ArrayList<>(), rd = new ArrayList<>(), bd = new ArrayList<>(), np = new ArrayList<>();
         for (Row r : rows) {
@@ -1090,6 +1179,9 @@ public final class Library {
                 default: noProfile++; if (shown) np.add(r);
             }
         }
+        boolean[] chipsOn = HomeFilters.chips(building, ready, toBuild, noProfile);   // no "Build needed 0", and no "All 12" beside "Ready 12"
+        stateCounts = new int[] {ready, toBuild, noProfile};
+        filter = HomeFilters.shown(filter, chipsOn);   // a chosen filter whose last game left it goes back to All, as Building does
         Collections.sort(bl, (x, y) -> Integer.compare(buildRank(x), buildRank(y)));   // upstream's Prepare first, like its card, then the build, the queue in its order, what stopped
         playTimes = dev.peanuts.launch.PlayTime.all(a);   // once per render: Sort by play time and the bottom screen's card of a focused cover
         noteAdded(rows);
@@ -1105,7 +1197,9 @@ public final class Library {
             default: show.addAll(allRows);
         }
         int hidden = hiddenGameCount();
-        int cols = coverColumns();
+        view = HomeViews.of(PeanutsPrefs.homeView(a));
+        dual = BottomScreen.twoScreens(a);
+        int cols = HomeViews.shelf(view) ? Math.max(1, show.size()) : HomeViews.columns(view, widthDp());   // the bottom screen slides the way the D-pad went: a strip is one row
         gridPos.clear();
         for (int i = 0; i < show.size(); i++) gridPos.put(show.get(i).id(), i);
         gridCols = Math.max(1, cols);
@@ -1133,26 +1227,29 @@ public final class Library {
         box.removeAllViews();
         tiles.clear(); keyed.clear();
         lostKey = null; restoreKey = null;   // the removal above is not a focus lost to restore at the next rebuild
-        buildStatus = null; buildBody = null; buildPct = null; buildBar = null; buildGoOn = null; coverChip = null; coverStrip = null; firstCover = null;
+        buildStatus = null; buildBody = null; buildPct = null; buildBar = null; buildGoOn = null; coverPill = null; coverMark = null; coverWords = null; factsBuild = null;
+        firstCover = null;
+        shelf = null; shelfCovers = Collections.emptyList(); facts = null; stage = null; keyBar = null;
+        stageBox(false);   // shelf() takes the window's height for Row and Carousel again
+        HomeDock.nameBar(frame(), null, null, null);
         if (ondeviceCard != null && ondeviceCard.getParent() instanceof ViewGroup) ((ViewGroup) ondeviceCard.getParent()).removeView(ondeviceCard);
         shown = sig;
         if (setup) PUi.add(box, setupCard(), 0);
         if (bare) { lastCells = 0; hadNote = false; return; }
 
-        // the filter row
-        LinearLayout top = PUi.row(a);
-        HorizontalScrollView chips = new HorizontalScrollView(a);
-        chips.setHorizontalScrollBarEnabled(false);
+        // the library's buttons (the header's, or the dock's on a phone upright) and the tabs
+        boolean any = !setup && !rows.isEmpty();
+        tools(any, any && offersBuildAll(rows));
         LinearLayout chipRow = PUi.row(a);
-        chip(chipRow, "All " + all, ALL);
+        if (chipsOn[ALL]) chip(chipRow, "All " + all, ALL);
         if (building > 0) {
             SpannableString s = new SpannableString("Building " + building);
             if (filter != BUILDING) s.setSpan(new ForegroundColorSpan(PUi.col(a, R.color.bn_banana)), 9, s.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);   // the count in banana: something runs
             chip(chipRow, s, BUILDING);
         }
-        chip(chipRow, "Ready " + ready, READY);
-        chip(chipRow, "Build needed " + toBuild, BUILD);
-        chip(chipRow, a.getString(R.string.not_supported_yet) + " " + noProfile, NO_PROFILE);
+        if (chipsOn[READY]) chip(chipRow, "Ready " + ready, READY);
+        if (chipsOn[BUILD]) chip(chipRow, "Build needed " + toBuild, BUILD);
+        if (chipsOn[NO_PROFILE]) chip(chipRow, a.getString(R.string.not_supported_yet) + " " + noProfile, NO_PROFILE);
         if (hidden > 0) {
             // Found in review: lets the player see and remove a confirmed-missing (or currently unreachable) game themselves, through upstream's
             // own "Game file gone → Remove" dialog, instead of this code ever deleting the record on its own
@@ -1162,40 +1259,25 @@ public final class Library {
             focusRing(hideB, Color.TRANSPARENT);
             track(hideB, "hidden", null);
             LinearLayout.LayoutParams hlp = PUi.wrap();
-            hlp.leftMargin = PUi.dp(a, 8);
+            hlp.gravity = Gravity.CENTER_VERTICAL;
+            if (chipRow.getChildCount() > 0) hlp.leftMargin = PUi.dp(a, 8);
             chipRow.addView(hideB, hlp);
         }
-        chips.addView(chipRow, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        top.addView(chips, PUi.weight());
-        if (!setup && offersBuildAll(rows)) {   // Build all that need it (issue #348): it asks first and names the games
-            Button allB = PUi.button(a, "Build all…", PUi.Kind.QUIET, v -> buildAllAsk());
-            allB.setCompoundDrawablesRelativeWithIntrinsicBounds(PUi.icon(a, R.drawable.ic_build, R.color.bn_accent), null, null, null);
-            allB.setCompoundDrawablePadding(PUi.dp(a, 6));
-            allB.setOnKeyListener(shoulders);
-            focusRing(allB, Color.TRANSPARENT);
-            track(allB, "build_all", null);
-            LinearLayout.LayoutParams alp = PUi.wrap(); alp.leftMargin = PUi.dp(a, 8);
-            top.addView(allB, alp);
+        if (chipRow.getChildCount() == 0) { HomeDock dk = HomeDock.of(frame()); if (dk != null) dk.pinTabs(null, null); }
+        if (chipRow.getChildCount() > 0) {   // no tabs when one state has every game: the games move up
+            HorizontalScrollView chips = new HorizontalScrollView(a);
+            chips.setHorizontalScrollBarEnabled(false);
+            chips.setOverScrollMode(View.OVER_SCROLL_NEVER);
+            chips.setClipToPadding(false);
+            chips.addView(chipRow, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams clp = PUi.fill();
+            clp.leftMargin = -PUi.dp(a, 4);   // the first tab's words line up with the covers
+            PUi.add(box, chips, setup ? 16 : 0, clp);
+            HomeDock dk = HomeDock.of(frame());
+            if (dk != null && dk.getVisibility() == View.VISIBLE) dk.pinTabs(chips, pinnedTabs(all, building, ready, toBuild, noProfile, chipsOn));   // a phone upright: the tabs stay at the top
+            View on = keyed.get("chip:" + filter);
+            if (on != null) chips.post(() -> { if (on.getRight() > chips.getWidth() + chips.getScrollX() || on.getLeft() < chips.getScrollX()) chips.smoothScrollTo(Math.max(0, on.getLeft() - PUi.dp(a, 16)), 0); });   // large type: the chosen tab stays in sight
         }
-        // icon only: a label would push the filter chips off a handheld's row; the sheet shows the order in use
-        android.widget.ImageView sortB = PUi.iconButton(a, R.drawable.ic_sort, "Sort: " + LibrarySort.label(sort),
-                PUi.Kind.QUIET, Haptics.on(Haptics.Word.CLICK, v -> sortDialog()));
-        sortB.setImageDrawable(PUi.icon(a, R.drawable.ic_sort, R.color.bn_accent));
-        sortB.setOnKeyListener(shoulders);
-        focusRing(sortB, Color.TRANSPARENT);
-        track(sortB, "sort", null);
-        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(PUi.dp(a, 44), PUi.dp(a, 44)); slp.leftMargin = PUi.dp(a, 4);
-        slp.gravity = android.view.Gravity.CENTER_VERTICAL;
-        top.addView(sortB, slp);
-        Button findB = PUi.button(a, find.isEmpty() ? "Find" : PUi.joined("Find", find), PUi.Kind.QUIET, Haptics.on(Haptics.Word.CLICK, v -> findDialog()));
-        findB.setCompoundDrawablesRelativeWithIntrinsicBounds(PUi.icon(a, R.drawable.ic_search, R.color.bn_accent), null, null, null);
-        findB.setCompoundDrawablePadding(PUi.dp(a, 6));
-        findB.setOnKeyListener(shoulders);
-        focusRing(findB, Color.TRANSPARENT);
-        track(findB, "find", null);
-        LinearLayout.LayoutParams flp = PUi.wrap(); flp.leftMargin = PUi.dp(a, 8);
-        top.addView(findB, flp);
-        PUi.add(box, top, setup ? 16 : 2);
         TextView note = null;   // the scan's line, or the empty library's: it fades in when the last rebuild did not have it
         if (scanning) {
             int n = PeanutsPrefs.roots(a).size();
@@ -1208,6 +1290,7 @@ public final class Library {
         if (note != null && !hadNote) Motion.fadeIn(note);
         hadNote = note != null;
         int firstRow = box.getChildCount();   // the grid's first row in the box (Motion.enterRows)
+        if (filter == BUILDING || !HomeViews.shelf(view) || show.isEmpty()) untint();
 
         // the Building filter: the full cards, two per row
         if (filter == BUILDING) {
@@ -1219,18 +1302,30 @@ public final class Library {
             if (buildCard) full.add(buildCard(b));
             if (!waiting.isEmpty()) full.add(queueCard(waiting));
             full.addAll(stoppedCards);
-            grid(full, fullColumns(), PUi.GAP);
+            grid(full, fullColumns(), PUi.GAP, PUi.GAP);
             PUi.add(box, PUi.small(a, "When a build finishes, its game moves to Ready and this filter goes away."), 10);
+            dockRoom(any);
             afterRender(chipRow, keep, page, scrollY, user, firstRow);
             return;
         }
 
-        int cell = (Math.min(widthDp(), 900) - 40 - PUi.GAP * (cols - 1)) / cols;   // Banana's 20 dp gutters and 12 dp gaps
-        List<View> cells = new ArrayList<>();
-        for (Row r : show) cells.add(coverCell(r, cell));
-        grid(cells, cols, 16);
-        boolean first = lastCells == 0 && !cells.isEmpty();   // the grid shows after an empty one (the first scan ended): it enters as after a filter change
-        lastCells = cells.size();
+        if (show.isEmpty() && !find.isEmpty()) noHit();   // Find matched nothing: a sentence and Clear, not an empty page
+        else if (HomeViews.shelf(view)) shelf(show);
+        else if (view == HomeViews.COMPACT) {
+            List<View> cells = new ArrayList<>();
+            for (Row r : show) cells.add(compactCell(r));
+            grid(cells, cols, 10, PUi.GAP);
+        } else {
+            boolean named = view != HomeViews.COVERS;   // Covers: many small covers without names (the bottom screen, a long press or the name bar names them)
+            int gap = named ? PUi.GAP : 10;
+            int cell = (Math.min(widthDp(), 900) - 40 - gap * (cols - 1)) / cols;   // Banana's 20 dp gutters
+            List<View> cells = new ArrayList<>();
+            for (Row r : show) cells.add(coverCell(r, cell, named));
+            grid(cells, cols, named ? 16 : gap, gap);
+        }
+        dockRoom(any);
+        boolean first = lastCells == 0 && !show.isEmpty();   // the games show after an empty library (the first scan ended): they enter as after a filter change
+        lastCells = show.size();
         afterRender(chipRow, keep, page, scrollY, user || first, firstRow);
     }
 
@@ -1243,6 +1338,7 @@ public final class Library {
     private String signature(List<Row> show, View pc, Build b, boolean buildCard, int building, int all, int ready, int toBuild, int noProfile, int hidden, int cols) {
         StringBuilder s = new StringBuilder(64 + show.size() * 48);
         s.append(gen).append('|').append(filter).append('|').append(find).append('|').append(showHidden).append('|').append(hidden).append('|').append(cols).append('|').append(widthDp())
+                .append('|').append(view).append(dual).append(docked()).append(a.getResources().getConfiguration().screenHeightDp)
                 .append('|').append(PeanutsPrefs.librarySort(a)).append(PeanutsPrefs.librarySortGrouped(a))
                 .append('|').append(all).append(',').append(ready).append(',').append(toBuild).append(',').append(noProfile).append(',').append(building)
                 .append('|').append(scanning ? PeanutsPrefs.roots(a).size() : -1).append('|').append(PeanutsPrefs.gameDirs(a))
@@ -1267,6 +1363,8 @@ public final class Library {
         boolean placed = focusGrid;
         focusAfterRender(chipRow);
         View v = placed || keep == null ? null : keyed.get(keep);
+        if (v == null && !placed && keep != null && keep.startsWith("cover:") && keyed.containsKey("shelf")) v = keyed.get("shelf");   // a strip has one focusable
+        if (v == null && !placed && keep != null && keep.startsWith("chip:")) v = keyed.containsKey("chip:" + filter) ? keyed.get("chip:" + filter) : firstCover;   // its chip went with its last game: the chosen chip, else the first game
         if (v != null && !box.isInTouchMode()) {
             Haptics.quiet(200);
             restoring = true;
@@ -1275,9 +1373,10 @@ public final class Library {
         }
         if (!placed && !enter && page != null && scrollY > 0) {
             android.widget.ScrollView sv = page;
-            sv.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+            android.view.ViewTreeObserver vto = sv.getViewTreeObserver();   // removed from the observer it was added to, also when the page was built anew before the layout
+            vto.addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
                 @Override public void onGlobalLayout() {
-                    sv.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                    if (vto.isAlive()) vto.removeOnGlobalLayoutListener(this);
                     if (sv.getScrollY() != scrollY) sv.scrollTo(0, scrollY);
                 }
             });
@@ -1317,16 +1416,70 @@ public final class Library {
         else { lostKey = key; lostAt = android.os.SystemClock.uptimeMillis(); }
     }
 
-    private void chip(LinearLayout row, CharSequence label, int which) {
+    /** The tabs again, for the top of a phone's page while it scrolls (HomeDock.pinTabs): a finger's, the controller has L and R */
+    private View pinnedTabs(int all, int building, int ready, int toBuild, int noProfile, boolean[] chipsOn) {
+        LinearLayout row = PUi.row(a);
+        int[] which = {ALL, BUILDING, READY, BUILD, NO_PROFILE};
+        CharSequence[] words = {"All " + all, "Building " + building, "Ready " + ready, "Build needed " + toBuild, a.getString(R.string.not_supported_yet) + " " + noProfile};
+        for (int i = 0; i < which.length; i++) {
+            boolean shows = which[i] == BUILDING ? building > 0 : chipsOn[which[i]];
+            if (!shows) continue;
+            int f = which[i];
+            View t = tab(words[i], f);
+            t.setFocusable(false);
+            t.setOnClickListener(v -> {
+                if (filter == f) return;
+                Haptics.play(v, Haptics.Word.CLICK);
+                filter = f; animateNext = true;
+                android.widget.ScrollView s = page();
+                if (s != null) s.scrollTo(0, 0);   // the tab's games from their start
+                render();
+            });
+            LinearLayout.LayoutParams lp = PUi.wrap();
+            if (row.getChildCount() > 0) lp.leftMargin = PUi.dp(a, 14);
+            row.addView(t, lp);
+        }
+        HorizontalScrollView hs = new HorizontalScrollView(a);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        hs.addView(row);
+        return hs;
+    }
+
+    /** A tab's look: its words (the accent and bold when chosen) over a short bar in the accent, as a game's page's tabs */
+    private LinearLayout tab(CharSequence label, int which) {
         boolean on = filter == which;
-        Button c = PUi.button(a, label, on ? PUi.Kind.PRIMARY : PUi.Kind.TONAL, v -> { Haptics.play(v, Haptics.Word.CLICK); filter = which; animateNext = true; render(); });
-        c.setSelected(on);
-        c.setOnKeyListener(shoulders);
-        focusRing(c, PUi.col(a, on ? R.color.bn_banana : R.color.bn_tint));
-        track(c, "chip:" + which, null);
+        LinearLayout tab = new LinearLayout(a);
+        tab.setOrientation(LinearLayout.VERTICAL);
+        TextView t = PUi.text(a, label, 16, on ? R.color.bn_accent : R.color.bn_text_2, on ? 700 : 600);
+        t.setSingleLine(true);
+        t.setPadding(PUi.dp(a, 6), PUi.dp(a, 10), PUi.dp(a, 6), PUi.dp(a, 6));
+        tab.addView(t);
+        View bar = new View(a);
+        bar.setBackground(PUi.round(PUi.col(a, R.color.bn_accent), PUi.dp(a, 2), 0, 0));
+        bar.setVisibility(on ? View.VISIBLE : View.INVISIBLE);
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PUi.dp(a, 3));
+        bl.leftMargin = bl.rightMargin = PUi.dp(a, 6);
+        bl.bottomMargin = PUi.dp(a, 6);
+        tab.addView(bar, bl);
+        tab.setBackground(PUi.ripple(a, PUi.round(Color.TRANSPARENT, PUi.dp(a, 12), 0, 0)));
+        tab.setClickable(true);
+        tab.setSelected(on);
+        tab.setContentDescription(label + (on ? ", tab, selected" : ", tab"));
+        return tab;
+    }
+
+    /** A tab: its words (the accent and bold when chosen) over a short bar in the accent, as a game's page's tabs; L and R step through them */
+    private void chip(LinearLayout row, CharSequence label, int which) {
+        LinearLayout tab = tab(label, which);
+        tab.setFocusable(true);
+        tab.setOnClickListener(v -> { if (filter == which) return; Haptics.play(v, Haptics.Word.CLICK); filter = which; animateNext = true; render(); });
+        tab.setOnKeyListener(shoulders);
+        focusRing(tab, Color.TRANSPARENT);
+        track(tab, "chip:" + which, null);
         LinearLayout.LayoutParams lp = PUi.wrap();
-        if (row.getChildCount() > 0) lp.leftMargin = PUi.dp(a, 8);
-        row.addView(c, lp);
+        if (row.getChildCount() > 0) lp.leftMargin = PUi.dp(a, 14);
+        row.addView(tab, lp);
     }
 
     /** The covers' focus ring on a filter-row button, at its edge; a filled button's fill steps inside it */
@@ -1346,20 +1499,21 @@ public final class Library {
     private final View.OnKeyListener shoulders = (v, code, ev) -> {
         Haptics.focusKey(v, ev);
         if (ev.getAction() != KeyEvent.ACTION_DOWN || ev.getRepeatCount() != 0) return false;
-        if (code == KeyEvent.KEYCODE_BUTTON_L1) { Haptics.play(v, Haptics.Word.CLICK); stepFilter(-1); return true; }
-        if (code == KeyEvent.KEYCODE_BUTTON_R1) { Haptics.play(v, Haptics.Word.CLICK); stepFilter(1); return true; }
+        if (code == KeyEvent.KEYCODE_BUTTON_L1) { stepFilter(v, -1); return true; }
+        if (code == KeyEvent.KEYCODE_BUTTON_R1) { stepFilter(v, 1); return true; }
         return false;
     };
 
-    private void stepFilter(int d) {
+    /** L/R: the previous/next chip there is; with no other chip nothing happens, not even the click */
+    private void stepFilter(View v, int d) {
         Build b = build;
         boolean pcShows = ondeviceCard != null && !(b != null && b.failed && b.step.equals("prepare"));   // as render(): a build stopped in Prepare shows its own card only
         boolean buildCard = b != null && !(b.step.equals("prepare") && pcShows && !b.failed);
         boolean hasBuilding = pcShows || buildCard || !queueWaiting().isEmpty() || !queueStopped().isEmpty();
-        List<Integer> avail = new ArrayList<>();
-        for (int f : FILTERS) if (f != BUILDING || hasBuilding) avail.add(f);
-        int i = Math.max(0, avail.indexOf(filter));
-        filter = avail.get(((i + d) % avail.size() + avail.size()) % avail.size());
+        int next = HomeFilters.step(filter, HomeFilters.chips(hasBuilding ? 1 : 0, stateCounts[0], stateCounts[1], stateCounts[2]), d);
+        if (next == filter) return;
+        Haptics.play(v, Haptics.Word.CLICK);
+        filter = next;
         focusGrid = true;
         animateNext = true;
         render();
@@ -1447,17 +1601,23 @@ public final class Library {
 
     private int widthDp() { Configuration c = a.getResources().getConfiguration(); return c.screenWidthDp; }
     private int fullColumns() { return widthDp() >= 700 ? 2 : 1; }
-    private int coverColumns() { return widthDp() >= 700 ? 4 : widthDp() >= 540 ? 3 : 2; }
 
-    /** Views in rows of cols weighted cells, 12 dp apart, rowGap dp between rows; an odd last cell keeps its width (empty cells fill the rest) */
-    private void grid(List<View> cards, int cols, int rowGap) {
+    /** Views in rows of cols weighted cells, colGap dp apart, rowGap dp between rows; an odd last cell keeps its width (empty cells fill the rest) */
+    private void grid(List<View> cards, int cols, int rowGap, int colGap) {
         for (int i = 0; i < cards.size(); i += cols) {
             LinearLayout r = new LinearLayout(a);
             r.setOrientation(LinearLayout.HORIZONTAL);
             for (int k = 0; k < cols; k++) {
-                View v = i + k < cards.size() ? cards.get(i + k) : new View(a);
+                // a filler measures 0 high by itself: a plain View asked to match a row of unknown height takes all the height it is offered, and the
+                // row with it (a last Compact row or build card stood as tall as the rest of the page). It still matches the row, so the row takes its
+                // height from the other cells
+                View v = i + k < cards.size() ? cards.get(i + k) : new View(a) {
+                    @Override protected void onMeasure(int w, int h) {
+                        setMeasuredDimension(getDefaultSize(0, w), MeasureSpec.getMode(h) == MeasureSpec.EXACTLY ? MeasureSpec.getSize(h) : 0);
+                    }
+                };
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
-                if (k > 0) lp.leftMargin = PUi.dp(a, PUi.GAP);
+                if (k > 0) lp.leftMargin = PUi.dp(a, colGap);
                 r.addView(v, lp);
             }
             PUi.add(box, r, i == 0 ? 10 : rowGap);
@@ -1487,44 +1647,191 @@ public final class Library {
         return e == null || e.ms <= 0 ? null : e;
     }
 
+    // ---- One game's cover, as every view draws it ----
+
+    /** One game's cover: its tile at a size with its mark, its state in words, and what a tap, a long press and Y do */
+    private final class Cover {
+        Row r;
+        FrameLayout frame;
+        TextView tile;
+        String name;
+        CharSequence state;   // the state in words: the description, Compact, the large cover's line, the name bar
+        int stateColor;
+        boolean plays, building, ownBuild, stopped, queued, queueStopped, companion, askFound;
+        boolean letter;   // no picture: the letter tile, banana yellow like the yellow marks
+        UpdateFound.Found found;
+        BuildQueue.Item qi;
+        Runnable tap, hold;
+
+        String description() { return name + ", " + state + (companion ? ", companion installed" : ""); }
+
+        /** Y: Stop on a running build, Remove from queue on a waiting one, while the bottom screen offers them; else the long press */
+        Runnable second() {
+            Runnable stop = ownBuild && !stopped && BottomScreen.showing() ? stopAsk(name) : queued && BottomScreen.showing() ? () -> removeAsk(qi) : null;
+            return stop != null ? stop : hold;
+        }
+
+        /** A, as the bottom screen's card says it; null when the game has none (listed, not supported: Game page is its Y) */
+        String primaryLabel() {
+            int st = r.status();
+            if (building) return "Build card";
+            if (st == READY) return askFound ? "Update…" : r.game != null ? "Play" : "Open";
+            if (st == BUILD) return "Build…";
+            return r.game != null ? null : "Details";
+        }
+
+        int primaryIcon() {
+            int st = r.status();
+            return !building && st == READY && r.game != null && !askFound ? R.drawable.ic_play : !building && (st == BUILD || askFound) ? R.drawable.ic_build : 0;
+        }
+
+        /** Y's words on one screen (where it is the long press, or Stop), null when it is the same as A */
+        String secondLabel() {
+            if (ownBuild && !stopped) return "Stop";
+            if (queued) return "Remove from queue";
+            if (r.status() == BUILD) return null;
+            return r.game != null ? "Game page" : null;
+        }
+
+        Runnable secondAction() { return ownBuild && !stopped ? stopAsk(name) : queued ? () -> removeAsk(qi) : hold; }
+    }
+
     /**
-     * One cell of the grid: the cover (PUi's tile at cell size, the NACP icon once it has landed) with the state on it, the name under it. The cover is the focusable,
-     * clickable thing: a tap plays a ready game, opens the Building filter for a building one, the sheet or Manage otherwise; a long press (or Y) opens Manage
-     * (listed) or the sheet (scanned); a 3 dp banana ring and a banana name show the focus
+     * One game's cover at coverDp (padDp around it: a grid cell's room for the focus ring), with its mark (marks: Compact's small one has none, its row says
+     * it), the NO SUPPORT tape on a game without a profile, the companion badge; and its tap (plays a ready game, opens the Building filter for a building
+     * one, the sheet or Manage otherwise) and long press (Manage when listed, the sheet when scanned)
      */
-    private View coverCell(Row r, int cellDp) {
+    private Cover cover(Row r, int coverDp, int padDp, boolean marks) {
+        Cover k = new Cover();
+        k.r = r;
         int st = r.status();
         Build b = build;
-        boolean building = isBuilding(r);
-        boolean ownBuild = building && b != null && r.id().equalsIgnoreCase(b.titleId);   // the Peanuts build's game (else upstream's Prepare: no percent to show)
-        boolean stopped = ownBuild && b.failed;
+        k.building = isBuilding(r);
+        k.ownBuild = k.building && b != null && r.id().equalsIgnoreCase(b.titleId);   // the Peanuts build's game (else upstream's Prepare: no percent to show)
+        k.stopped = k.ownBuild && b.failed;
         // the build queue's other games (issue #348): waiting with its place, or stopped by the queue while it built on
-        BuildQueue.Item qi = building && !ownBuild && !(r.game != null && shows.test(r.game)) ? queueItem(r.id()) : null;
-        boolean queued = qi != null && qi.waiting(), queueStopped = qi != null && qi.stopped();
-        String name = r.name();
-        boolean companion = companionInstalled(r);
+        k.qi = k.building && !k.ownBuild && !(r.game != null && shows.test(r.game)) ? queueItem(r.id()) : null;
+        k.queued = k.qi != null && k.qi.waiting();
+        k.queueStopped = k.qi != null && k.qi.stopped();
+        k.name = r.name();
+        k.companion = companionInstalled(r);
         // P1 (version truth): a "Build needed" cover splits into "File gone" and "Wrong version" when the scan knows enough (r.title set); a listed-only row
         // (r.title == null) keeps today's plain "Build needed" since LibraryScanner never looked at it
         LibraryScanner.VersionState vs = r.title == null ? LibraryScanner.VersionState.UNKNOWN : r.title.versionState;
         boolean fileGone = vs == LibraryScanner.VersionState.FILE_GONE, wrongVersion = vs == LibraryScanner.VersionState.UNSUPPORTED;
         String buildWords = fileGone ? "File gone" : wrongVersion ? "Wrong version" : "Build needed";
-        CharSequence state = building ? (stopped || queueStopped ? "Build stopped" : queued ? queuedWords(qi) : PUi.joined("Building", ownBuild ? b.percent + " %" : "in progress"))
+        k.state = k.building ? (k.stopped || k.queueStopped ? "Build stopped" : k.queued ? queuedWords(k.qi) : PUi.joined("Building", k.ownBuild ? b.percent + " %" : "in progress"))
                 : st == READY ? "Ready" : st == BUILD ? buildWords : a.getString(R.string.not_supported_yet);
+        k.stateColor = k.building ? (k.stopped || k.queueStopped ? R.color.bn_danger : k.queued ? R.color.bn_text_2 : R.color.bn_accent)
+                : st == READY ? R.color.bn_text : st == BUILD ? (fileGone || wrongVersion ? R.color.bn_danger : R.color.bn_accent) : R.color.bn_danger;   // Ready reads by its green check
         // a newer update or new add-ons beside a built game's .nup (issue #120): the cover says so, and a tap asks before it takes them in ("Not now" asks no more for these)
-        UpdateFound.Found found = !building && st == READY ? found(r) : null;
-        boolean askFound = found != null && !found.key().equals(PeanutsPrefs.foundSeen(a, r.id()));
-        if (found != null) state = PUi.joined(state, UpdateFound.what(found, updateName(r, found)));
+        k.found = !k.building && st == READY ? found(r) : null;
+        k.askFound = k.found != null && !k.found.key().equals(PeanutsPrefs.foundSeen(a, r.id()));
+        if (k.found != null) k.state = PUi.joined(k.state, UpdateFound.what(k.found, updateName(r, k.found)) + (k.askFound ? "" : ", for later"));   // as the bottom screen's card
 
-        LinearLayout cell = new LinearLayout(a);
-        cell.setOrientation(LinearLayout.VERTICAL);
         FrameLayout cover = new FrameLayout(a);
-        int p4 = PUi.dp(a, 4), p8 = PUi.dp(a, 8);
-        cover.setPadding(p4, p4, p4, p4);
-        cover.setClipToPadding(false);   // the focused tile grows into the 4 dp around it (Motion.focus)
+        int pad = PUi.dp(a, padDp);
+        cover.setPadding(pad, pad, pad, pad);
+        cover.setClipToPadding(false);   // the focused tile grows into the room around it (Motion.focus)
+        TextView tile = PUi.tile(a, k.name, coverDp);
+        tile.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PUi.dp(a, coverDp)));
+        Bitmap bm = icons.get(r.id());
+        if (bm != null) PUi.tileIcon(tile, bm);
+        k.letter = bm == null;
+        tiles.put(r.id(), tile);
+        cover.addView(tile);
+        k.tile = tile;
+        if (!k.building && st == NO_PROFILE) {   // no profile: the cover greyed under the NO SUPPORT tape (peanuts only on a small one)
+            CoverMarks.greyed(tile);
+            cover.addView(new CoverMarks.Tape(a, PUi.dp(a, 16)), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PUi.dp(a, coverDp)));
+        } else if (marks) {
+            View m = mark(k, CoverMarks.size(coverDp));
+            if (m != null) cover.addView(m);
+        }
+        if (k.companion && marks) cover.addView(companionBadge(false));
+
+        Runnable manageOrSheet = r.game != null ? () -> manage.accept(r.game) : () -> sheet(r.title);
+        k.plays = !k.building && st == READY && r.game != null;
+        if (k.building) { k.tap = () -> { filter = BUILDING; focusGrid = true; animateNext = true; render(); }; k.hold = manageOrSheet; }   // a queued game's sheet says its place and has Remove from queue
+        else if (st == READY) { UpdateFound.Found f = k.found; k.tap = k.askFound ? () -> askFound(r, f) : k.plays ? () -> play(r) : () -> sheet(r.title); k.hold = manageOrSheet; }
+        else if (st == BUILD) { k.tap = () -> sheet(r.title); k.hold = k.tap; }
+        else { k.tap = manageOrSheet; k.hold = manageOrSheet; }   // listed: Banana's Manage (the sentence, Remove from list); scanned: the sheet (Profile.missing's sentence)
+        k.frame = cover;
+        return k;
+    }
+
+    /**
+     * The cover's one mark, top right (CoverMarks): only one state shows, a build before an update before Ready. On a letter tile (no picture yet, or none:
+     * an app without keys) the yellow marks get an edge in the letter's colour, or yellow on yellow would leave only their icon; a picture that comes later
+     * keeps the edge until Home is drawn again
+     */
+    private View mark(Cover k, int markDp) {
+        Build b = build;
+        int st = k.r.status();
+        int edge = k.letter ? R.color.bn_on_banana : 0;
+        View m;
+        if (k.queued) m = CoverMarks.queued(a, markDp, BuildPipeline.queueNow() == null ? 0 : BuildPipeline.queueNow().place(k.qi));
+        else if (k.stopped || k.queueStopped) m = round(markDp, R.color.bn_danger_tint, R.color.bn_danger, "stop", R.color.bn_danger);
+        else if (k.building) {
+            CoverMarks.BuildPill pill = new CoverMarks.BuildPill(a, markDp, k.ownBuild ? Math.max(0, b.percent) : -1, k.letter);
+            if (k.ownBuild) { coverPill = pill; if (pillGrown != b.id) { pillGrown = b.id; pill.grow(); } }   // it grows from the round mark once, when the build starts
+            m = pill;
+        } else if (st == READY && k.found != null) m = k.askFound ? round(markDp, R.color.bn_banana, edge, "update", R.color.bn_on_banana) : round(markDp, R.color.bn_tint, 0, "update", R.color.bn_accent);
+        else if (st == READY) {
+            m = round(markDp, R.color.bn_leaf, 0, "check", R.color.bn_on_leaf);
+            if (popReady != null && popReady.equalsIgnoreCase(k.r.id())) {   // its build ended a moment ago, in front of the user: the check is new
+                if (android.os.SystemClock.uptimeMillis() - popReadyAt < 60_000L) Motion.popIn(m);
+                popReady = null;
+            }
+        } else if (st == BUILD) {
+            LibraryScanner.VersionState vs = k.r.title == null ? LibraryScanner.VersionState.UNKNOWN : k.r.title.versionState;
+            if (vs == LibraryScanner.VersionState.FILE_GONE) m = round(markDp, R.color.bn_danger_tint, R.color.bn_danger, "folder", R.color.bn_danger);
+            else if (vs == LibraryScanner.VersionState.UNSUPPORTED) m = round(markDp, R.color.bn_danger_tint, R.color.bn_danger, "layers", R.color.bn_danger);
+            else m = round(markDp, R.color.bn_banana, edge, "build", R.color.bn_on_banana);
+        } else return null;
+        FrameLayout.LayoutParams lp = CoverMarks.place(a, markDp);
+        if (m instanceof ImageView) lp.width = PUi.dp(a, markDp);
+        m.setLayoutParams(lp);
+        if (k.ownBuild) coverMark = m;
+        return m;
+    }
+
+    private ImageView round(int markDp, int fill, int stroke, String icon, int ink) {
+        return CoverMarks.round(a, markDp, PUi.col(a, fill), stroke == 0 ? 0 : PUi.col(a, stroke), icon, PUi.col(a, ink));
+    }
+
+    /** A tap or A, a long press, and Y (and L/R) on a cover or a row; tile: the one that dips at the press */
+    private void bind(View v, Cover k, View tile) {
+        // a tap or A: Play is the weighty word, at the press, whatever dialog may come first; the tile dips while the launch or the sheet goes on
+        v.setOnClickListener(x -> {
+            Haptics.play(x, k.plays ? Haptics.Word.HEAVY : Haptics.Word.CLICK);
+            if (!k.building && tile != null) Motion.press(tile);
+            k.tap.run();
+        });
+        v.setOnLongClickListener(x -> { k.hold.run(); return true; });   // the system plays its own long-press haptic for a true: nothing added, or it plays twice
+        v.setOnKeyListener((x, code, ev) -> {
+            if (ev.getAction() == KeyEvent.ACTION_DOWN && ev.getRepeatCount() == 0 && code == KeyEvent.KEYCODE_BUTTON_Y) {
+                Haptics.play(x, Haptics.Word.HEAVY);
+                k.second().run();
+                return true;
+            }
+            return shoulders.onKey(x, code, ev);
+        });
+    }
+
+    /**
+     * One cell of Grid (named) or Covers: the cover in a cell with room for the focus ring, the name under it in Grid. The cover is the focusable, clickable
+     * thing; a 3 dp banana ring and a banana name show the focus, and the bottom screen shows the focused game's card (on one screen, Covers names it in a bar)
+     */
+    private View coverCell(Row r, int cellDp, boolean named) {
+        Cover k = cover(r, cellDp - 8, 4, true);   // the cell less the 4 dp the focus ring needs on each side: the cover stays square
+        FrameLayout cover = k.frame;
+        TextView tile = k.tile;
+        int p4 = PUi.dp(a, 4);
         cover.setHapticFeedbackEnabled(Haptics.enabled());   // the system's own long-press haptic follows the app's setting too
         cover.setClickable(true);
         cover.setFocusable(true);
-        cover.setContentDescription(name + ", " + state + (companion ? ", companion installed" : ""));
+        cover.setContentDescription(k.description());
         // the ripple under the cover (masked to its 16 dp corners) and the focus ring, 3 dp outside the cover's edge
         StateListDrawable ring = new StateListDrawable();
         ring.addState(new int[] {android.R.attr.state_focused}, PUi.round(Color.TRANSPARENT, PUi.dp(a, 20), PUi.col(a, R.color.bn_banana), PUi.dp(a, 3)));
@@ -1532,98 +1839,658 @@ public final class Library {
         RippleDrawable ripple = new RippleDrawable(ColorStateList.valueOf(0x336B4423), null, new InsetDrawable(PUi.round(Color.BLACK, PUi.dp(a, 16), 0, 0), p4));
         cover.setForeground(new LayerDrawable(new Drawable[] {ripple, ring}));
 
-        int coverDp = cellDp - 8;   // the cell less the 4 dp the focus ring needs on each side: the cover stays square
-        TextView tile = PUi.tile(a, name, coverDp);
-        tile.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PUi.dp(a, coverDp)));
-        Bitmap bm = icons.get(r.id());
-        if (bm != null) PUi.tileIcon(tile, bm);
-        if (!building && st == NO_PROFILE) tile.setAlpha(0.45f);
-        tiles.put(r.id(), tile);
-        cover.addView(tile);
-
-        // the state on the cover
-        if (queued || queueStopped) {   // not the build's own cover: its chip and strip are the running build's (updateBuildCard)
-            cover.addView(mark(state, PUi.col(a, R.color.bn_card), queueStopped ? R.color.bn_danger : R.color.bn_text_2, true, Gravity.TOP | Gravity.START));
-        } else if (building) {
-            coverChip = mark(state, PUi.col(a, R.color.bn_card), stopped ? R.color.bn_danger : R.color.bn_accent, true, Gravity.TOP | Gravity.START);
-            cover.addView(coverChip);
-            coverStrip = strip(!ownBuild);
-            if (stopped) coverStrip.setVisibility(View.GONE); else if (ownBuild) coverStrip.setProgress(Math.max(0, Math.min(100, b.percent)));
-            cover.addView(coverStrip);
-        } else if (st == READY) {
-            TextView ok = PUi.text(a, "✓", 12, R.color.bn_on_leaf, 700);
-            if (popReady != null && popReady.equalsIgnoreCase(r.id())) {   // its build ended a moment ago, in front of the user: the check is new
-                if (android.os.SystemClock.uptimeMillis() - popReadyAt < 60_000L) Motion.popIn(ok);
-                popReady = null;
-            }
-            ok.setGravity(Gravity.CENTER);
-            ok.setIncludeFontPadding(false);
-            ok.setBackground(PUi.round(PUi.col(a, R.color.bn_leaf), PUi.dp(a, 999), 0, 0));
-            ok.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(PUi.dp(a, 22), PUi.dp(a, 22), Gravity.TOP | Gravity.END);
-            lp.setMargins(p8, p8, p8, p8);
-            cover.addView(ok, lp);
-            if (found != null) cover.addView(mark(askFound ? "Update" : "Update later", PUi.col(a, R.color.bn_banana), R.color.bn_on_banana, false, Gravity.TOP | Gravity.START));
-        } else if (st == BUILD) {
-            String pill = fileGone ? "File gone" : wrongVersion ? "Wrong version" : "Build";
-            int fill = fileGone || wrongVersion ? R.color.bn_danger_tint : R.color.bn_banana;
-            int text = fileGone || wrongVersion ? R.color.bn_danger : R.color.bn_on_banana;
-            cover.addView(mark(pill, PUi.col(a, fill), text, false, Gravity.TOP | Gravity.START));
-        } else {
-            cover.addView(mark(a.getString(R.string.not_supported_yet), PUi.col(a, R.color.bn_danger_tint), R.color.bn_danger, false, Gravity.TOP | Gravity.START));
+        int nameColor = !k.building && r.status() == NO_PROFILE ? R.color.bn_text_2 : R.color.bn_text;
+        TextView n = null;
+        if (named) {
+            n = PUi.text(a, k.name, 14, nameColor, 600);
+            n.setMaxLines(2);
+            n.setEllipsize(TextUtils.TruncateAt.END);
+            n.setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE);
+            n.setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE);
+            n.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
-        if (companion) cover.addView(companionBadge(building && !stopped && !queued && !queueStopped));
-
-        // the name
-        int nameColor = !building && st == NO_PROFILE ? R.color.bn_text_2 : R.color.bn_text;
-        TextView n = PUi.text(a, name, 14, nameColor, 600);
-        n.setMaxLines(2);
-        n.setEllipsize(TextUtils.TruncateAt.END);
-        n.setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE);
-        n.setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE);
-        n.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        LinearLayout.LayoutParams nlp = PUi.fill();
-        nlp.setMargins(p4, p4, p4, 0);
+        TextView nameView = n;
         String key = "cover:" + r.id();
         cover.setOnFocusChangeListener((v, f) -> {
-            n.setTextColor(PUi.col(a, f ? R.color.bn_banana : nameColor));   // at once: a colour animation would redraw the text every frame
+            if (nameView != null) nameView.setTextColor(PUi.col(a, f ? R.color.bn_banana : nameColor));   // at once: a colour animation would redraw the text every frame
             noteFocus(key, f);
             Motion.focus(tile, f, restoring);
+            if (f) { chosenId = r.id(); bottom(r, k.tap, k.hold); }
+            nameBar(k, f);
         });
         track(cover, key, tile);
+        bind(cover, k, tile);
 
-        // tap, long press, Y, shoulders
-        Runnable tap, hold;
-        Runnable manageOrSheet = r.game != null ? () -> manage.accept(r.game) : () -> sheet(r.title);
-        boolean plays = !building && st == READY && r.game != null;
-        if (building) { tap = () -> { filter = BUILDING; focusGrid = true; animateNext = true; render(); }; hold = manageOrSheet; }   // a queued game's sheet says its place and has Remove from queue
-        else if (st == READY) { tap = askFound ? () -> askFound(r, found) : plays ? () -> play(r) : () -> sheet(r.title); hold = manageOrSheet; }
-        else if (st == BUILD) { tap = () -> sheet(r.title); hold = tap; }
-        else { tap = manageOrSheet; hold = manageOrSheet; }   // listed: Banana's Manage (the sentence, Remove from list); scanned: the sheet (Profile.missing's sentence)
-        // a tap or A: Play is the weighty word, at the press, whatever dialog may come first; the tile dips while the launch or the sheet goes on
-        cover.setOnClickListener(v -> {
-            Haptics.play(v, plays ? Haptics.Word.HEAVY : Haptics.Word.CLICK);
-            if (!building) Motion.press(tile);
-            tap.run();
+        LinearLayout cell = new LinearLayout(a);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        cell.addView(cover, PUi.fill());
+        if (n != null) {
+            LinearLayout.LayoutParams nlp = PUi.fill();
+            nlp.setMargins(p4, p4, p4, 0);
+            cell.addView(n, nlp);
+        }
+        if (firstCover == null) { firstCover = cover; cover.setFocusedByDefault(true); }   // a controller's first focus on Home: the first game (homeHeader)
+        return cell;
+    }
+
+    /** Covers on one screen with a controller: the slim bar names the cover it is on (its cover carries no name); it goes when the focus leaves the covers */
+    private void nameBar(Cover k, boolean on) {
+        if (view != HomeViews.COVERS || dual) return;
+        FrameLayout f = frame();
+        if (on) {
+            if (box != null && box.isInTouchMode()) return;
+            String p = k.primaryLabel(), q = k.secondLabel();
+            HomeDock.nameBar(f, k.name, k.state, PUi.joined(p == null ? null : "A " + p, q == null ? null : "Y " + q));
+            return;
+        }
+        UI.post(() -> {
+            View now = box == null ? null : box.findFocus();
+            for (Map.Entry<String, View> e : keyed.entrySet()) if (e.getValue() == now && e.getKey().startsWith("cover:")) return;   // on another cover: it named that one
+            HomeDock.nameBar(f, null, null, null);
         });
-        cover.setOnLongClickListener(v -> { hold.run(); return true; });   // the system plays its own long-press haptic for a true: nothing added, or it plays twice
-        // Y: second action; Stop on a running build while the bottom screen shows
-        cover.setOnKeyListener((v, code, ev) -> {
+    }
+
+    // ---- Compact ----
+
+    /**
+     * One row of Compact: a small cover (the tape has only peanuts there), the name on one line, the state in words, the play time at the right ("Not played"
+     * quieter). For big libraries: the names and states read without scrolling. The row is the focusable thing, with the covers' ring
+     */
+    private View compactCell(Row r) {
+        boolean phone = docked();
+        int thumb = phone ? 52 : 48;
+        Cover k = cover(r, thumb, 0, false);
+        LinearLayout row = new LinearLayout(a);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(PUi.dp(a, phone ? 70 : 64));
+        row.setPadding(PUi.dp(a, 9), PUi.dp(a, 8), PUi.dp(a, 16), PUi.dp(a, 8));
+        row.setBackground(PUi.ripple(a, PUi.round(PUi.col(a, R.color.bn_card), PUi.dp(a, 18), PUi.col(a, R.color.bn_card_stroke), Math.max(1, PUi.dp(a, 1)))));
+        focusRing(row, PUi.col(a, R.color.bn_card));
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setHapticFeedbackEnabled(Haptics.enabled());
+        row.setContentDescription(k.description());
+        row.addView(k.frame, new LinearLayout.LayoutParams(PUi.dp(a, thumb), PUi.dp(a, thumb)));
+
+        LinearLayout words = new LinearLayout(a);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(PUi.dp(a, 14), 0, PUi.dp(a, 10), 0);
+        TextView n = PUi.text(a, k.name, 16, !k.building && r.status() == NO_PROFILE ? R.color.bn_text_2 : R.color.bn_text, 600);
+        n.setSingleLine(true);
+        n.setEllipsize(TextUtils.TruncateAt.END);
+        words.addView(n);
+        LinearLayout line = PUi.row(a);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        if (!k.building && r.status() == READY && k.found == null) {
+            ImageView ok = round(16, R.color.bn_leaf, 0, "check", R.color.bn_on_leaf);
+            LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(PUi.dp(a, 16), PUi.dp(a, 16));
+            olp.rightMargin = PUi.dp(a, 6);
+            ok.setLayoutParams(olp);
+            ok.setElevation(0);
+            line.addView(ok);
+        }
+        TextView st = PUi.text(a, k.state, 14, k.stateColor, 600);
+        st.setSingleLine(true);
+        st.setEllipsize(TextUtils.TruncateAt.END);
+        line.addView(st, PUi.wrap());
+        if (k.ownBuild) { coverWords = st; coverMark = st; }
+        LinearLayout.LayoutParams llp = PUi.fill();
+        llp.topMargin = PUi.dp(a, 2);
+        words.addView(line, llp);
+        row.addView(words, PUi.weight());
+
+        dev.peanuts.launch.PlayLedger.Entry e = playTimes.get(r.id().toUpperCase(Locale.ROOT));
+        long ms = e == null ? 0 : e.ms;
+        LinearLayout time = PUi.row(a);
+        time.setGravity(Gravity.CENTER_VERTICAL);
+        Drawable clock = CoverMarks.icon(a, "clock", PUi.col(a, R.color.bn_text_2));
+        if (clock != null) {
+            ImageView c = new ImageView(a);
+            c.setImageDrawable(clock);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(PUi.dp(a, 16), PUi.dp(a, 16));
+            clp.rightMargin = PUi.dp(a, 6);
+            time.addView(c, clp);
+        }
+        TextView t = PUi.text(a, HomeViews.playShort(ms), 14, ms > 0 ? R.color.bn_text : R.color.bn_text_2, ms > 0 ? 600 : 400);
+        t.setSingleLine(true);
+        if (ms <= 0) time.setAlpha(0.75f);
+        time.addView(t);
+        time.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(time, PUi.wrap());
+
+        String key = "cover:" + r.id();
+        row.setOnFocusChangeListener((v, f) -> {
+            noteFocus(key, f);
+            if (f) { chosenId = r.id(); bottom(r, k.tap, k.hold); }
+        });
+        track(row, key, k.tile);
+        bind(row, k, k.tile);
+        if (firstCover == null) { firstCover = row; row.setFocusedByDefault(true); }
+        return row;
+    }
+
+    // ---- Row and Carousel: the strip, and the chosen game's facts at its large cover ----
+
+    private LinearLayout factsKeys;   // where the facts' buttons go: under the facts, or under the large cover when the facts stand beside it
+
+    /**
+     * Row and Carousel (HomeShelf): every game's cover in one strip, the chosen one large. The chosen game's name and state stand at its large cover; on one
+     * screen (no bottom screen for its card: a phone, a tablet, the Thor with its second screen off, a TV) its play time and its buttons too, nothing copied
+     * from the bottom screen. Row on one wide screen puts them beside the large cover, over the small ones; the buttons go under it
+     */
+    private void shelf(List<Row> show) {
+        if (show.isEmpty()) return;
+        boolean carousel = view == HomeViews.CAROUSEL, upright = heightDp() > widthDp(), beside = !upright && !carousel;   // Row on a wide screen: the name over the small covers
+        int content = Math.min(widthDp(), 900) - 40;
+        int big = HomeViews.bigCover(view, content, heightDp(), upright, HomeViews.below(view, dual)), small = Math.round(smallFor(PUi.dp(a, big), beside) / a.getResources().getDisplayMetrics().density);
+        List<Cover> ks = new ArrayList<>();
+        List<View> views = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+        for (Row r : show) {
+            Cover k = cover(r, big, 0, true);
+            for (int i = 0; i < k.frame.getChildCount(); i++) {   // the tile and the tape fill the cover, whatever size fit() gives it
+                View c = k.frame.getChildAt(i);
+                if (c == k.tile || c instanceof CoverMarks.Tape) c.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+            ks.add(k); views.add(k.frame); ids.add(r.id());
+        }
+        shelfCovers = ks;
+        int at = HomeViews.indexOf(ids, chosenId);
+        HomeShelf[] made = new HomeShelf[1];
+        HomeShelf sh = new HomeShelf(a, carousel, new HomeShelf.Listener() {
+            @Override public void chosen(int i, boolean byUser) {
+                if (shelf != made[0] || i < 0 || i >= ks.size()) return;
+                Cover k = ks.get(i);
+                chosenId = k.r.id();
+                fillFacts(k);
+                if (made[0].isFocused() || byUser) bottom(k.r, k.tap, k.hold);
+                tint(k.r);
+            }
+            @Override public void tap(int i) {
+                if (i < 0 || i >= ks.size()) return;
+                Cover k = ks.get(i);
+                Haptics.play(made[0], k.plays ? Haptics.Word.HEAVY : Haptics.Word.CLICK);
+                k.tap.run();
+            }
+            @Override public void hold(int i) { if (i >= 0 && i < ks.size()) ks.get(i).hold.run(); }
+            @Override public CharSequence describe(int i) { return i >= 0 && i < ks.size() ? ks.get(i).description() : ""; }
+        });
+        made[0] = sh;
+        shelf = sh;
+        sh.set(views, at, PUi.dp(a, big), PUi.dp(a, small), PUi.dp(a, carousel ? 16 : 14));
+        chosenId = ids.get(at);
+        sh.setFocusedByDefault(true);   // a controller's first focus on Home: the strip (homeHeader)
+        if (firstCover == null) firstCover = sh;
+        track(sh, "shelf", null);
+        sh.setOnKeyListener((v, code, ev) -> {
             if (ev.getAction() == KeyEvent.ACTION_DOWN && ev.getRepeatCount() == 0 && code == KeyEvent.KEYCODE_BUTTON_Y) {
                 Haptics.play(v, Haptics.Word.HEAVY);
-                Runnable stop = ownBuild && !stopped && BottomScreen.showing() ? stopAsk(name) : queued && BottomScreen.showing() ? () -> removeAsk(qi) : null;   // a queued game's Y: Remove from queue
-                (stop != null ? stop : hold).run();
+                ks.get(sh.chosen()).second().run();
                 return true;
             }
             return shoulders.onKey(v, code, ev);
         });
-        View.OnFocusChangeListener focusWas = cover.getOnFocusChangeListener();
-        cover.setOnFocusChangeListener((v, f) -> { focusWas.onFocusChange(v, f); if (f) bottom(r, tap, hold); });
+        facts = new LinearLayout(a);
+        facts.setOrientation(LinearLayout.VERTICAL);
+        stageBox(true);
+        stage = new LinearLayout(a);   // the strip and its facts in the middle of the room the tabs and the key bar leave
+        stage.setOrientation(LinearLayout.VERTICAL);
+        stage.setGravity(Gravity.CENTER_VERTICAL);
+        stage.setClipChildren(false);
+        LinearLayout.LayoutParams stl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        if (box.getChildCount() > 0) stl.topMargin = PUi.dp(a, 8);
+        box.addView(stage, stl);
+        if (beside) {
+            FrameLayout f = new FrameLayout(a);
+            f.setClipChildren(false);
+            f.addView(sh, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(PUi.dp(a, 48), PUi.dp(a, big - small - 10)));
+            lp.leftMargin = PUi.dp(a, big + 18);
+            f.addView(facts, lp);
+            PUi.add(stage, f, 0);
+            factsKeys = PUi.row(a);
+            PUi.add(stage, factsKeys, 10);
+        } else {
+            PUi.add(stage, sh, 0);
+            PUi.add(stage, facts, 12);
+            factsKeys = facts;
+        }
+        if (!docked() && Pads.connected(a)) {   // a wide screen with a controller: what the keys do, at the bottom, as a console's home says it
+            keyBar = new LinearLayout(a);
+            keyBar.setOrientation(LinearLayout.HORIZONTAL);
+            keyBar.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+            keyBar.setMinimumHeight(PUi.dp(a, 40));
+            keyBar.setBackground(keyBarLine());
+            LinearLayout.LayoutParams klp = PUi.fill();
+            klp.topMargin = PUi.dp(a, 8);
+            box.addView(keyBar, klp);
+        }
+        unclip(sh);
+        fillFacts(ks.get(at));
+        tint(show.get(at));
+        fit(sh, view, beside, upright ? big : Math.round(content * (carousel ? 0.34f : 0.36f)));
+    }
 
-        cell.addView(cover, PUi.fill());
-        cell.addView(n, nlp);
-        if (firstCover == null) { firstCover = cover; cover.setFocusedByDefault(true); }   // a controller's first focus on Home: the first game (homeHeader)
-        return cell;
+    /**
+     * Once laid out, the large cover takes the stage's height (the room the window leaves between the tabs and the key bar: a status bar, a navigation
+     * bar, the header's height and large type all differ), less what stands under it, up to widest; HomeViews guessed it first, and the strip is laid out
+     * again only when the guess was off by more than a hair. Nothing stands out of the window, so the page has nothing to scroll and a focus moves nothing
+     */
+    private void fit(HomeShelf sh, int forView, boolean beside, int widest) {
+        LinearLayout st = stage;
+        android.view.ViewTreeObserver vto = sh.getViewTreeObserver();   // the window's, while the strip is attached: removed from it, not from a detached strip's own
+        vto.addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override public void onGlobalLayout() {
+                if (vto.isAlive()) vto.removeOnGlobalLayoutListener(this);
+                if (shelf != sh || stage != st || st == null || view != forView || facts == null || sh.count() == 0 || st.getHeight() == 0) return;
+                int under = beside ? (factsKeys == null || factsKeys.getChildCount() == 0 ? 0 : factsKeys.getHeight() + PUi.dp(a, 10)) : facts.getHeight() + PUi.dp(a, 12);
+                int room = st.getHeight() - under - PUi.dp(a, 12);   // a little air above and below the strip (its focus frame grows into it)
+                int big = HomeViews.stageCover(room, PUi.dp(a, widest), PUi.dp(a, 96));
+                android.widget.ScrollView pg = page();
+                if (pg != null && pg.getScrollY() != 0) pg.scrollTo(0, 0);   // a focus before this layout may have moved it
+                if (Math.abs(big - sh.getHeight()) <= PUi.dp(a, 4)) return;
+                int small = smallFor(big, beside);
+                sh.resize(big, small);
+                if (beside && facts.getLayoutParams() instanceof FrameLayout.LayoutParams) {
+                    FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) facts.getLayoutParams();
+                    lp.leftMargin = big + PUi.dp(a, 18);
+                    lp.height = Math.max(PUi.dp(a, 48), big - small - PUi.dp(a, 10));
+                    facts.setLayoutParams(lp);
+                }
+            }
+        });
+    }
+
+    /**
+     * Row and Carousel hold still, as a console's home does: Home's box takes exactly the room upstream's page leaves under the header (the page fills
+     * its window), the stage in its middle grows into it and the key bar sits at its bottom, so nothing is left to scroll and a focus never pushes the
+     * header off. Every other view gives the box back its own height
+     */
+    private void stageBox(boolean on) {
+        if (box == null || !(box.getLayoutParams() instanceof LinearLayout.LayoutParams)) return;
+        android.widget.ScrollView pg = page();
+        if (pg != null && !docked()) {   // a wide screen: the page stays at its top (a rounding's pixel, a swipe on the strip); upright the dock follows the scroll (HomeDock.follow)
+            if (on) { pg.setOnScrollChangeListener((v, x, y, ox, oy) -> { if (y != 0) v.scrollTo(0, 0); }); pg.scrollTo(0, 0); }
+            else pg.setOnScrollChangeListener(null);
+        }
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) box.getLayoutParams();
+        int h = on ? 0 : ViewGroup.LayoutParams.WRAP_CONTENT;
+        float w = on ? 1f : 0f;
+        if (lp.height == h && lp.weight == w) return;
+        lp.height = h;
+        lp.weight = w;
+        box.setLayoutParams(lp);
+    }
+
+    /** The key bar's hairline at its top, across the page as a console's footer */
+    private Drawable keyBarLine() {
+        int c = (PUi.col(a, R.color.bn_text_2) & 0x00FFFFFF) | 0x40000000;
+        GradientDrawable line = new GradientDrawable();
+        line.setColor(c);
+        android.graphics.drawable.LayerDrawable d = new android.graphics.drawable.LayerDrawable(new Drawable[] {line});
+        d.setLayerGravity(0, Gravity.TOP | Gravity.FILL_HORIZONTAL);
+        d.setLayerHeight(0, Math.max(1, PUi.dp(a, 1)));
+        return d;
+    }
+
+    /** The key bar: a key's glyph and its word, the way a console's footer names them; a finger can tap it too */
+    private void keyHint(String key, String word, Runnable r, boolean heavy) {
+        if (keyBar == null || word == null || r == null) return;
+        LinearLayout h = PUi.row(a);
+        h.setGravity(Gravity.CENTER_VERTICAL);
+        h.setPadding(PUi.dp(a, 10), PUi.dp(a, 6), PUi.dp(a, 10), PUi.dp(a, 6));
+        ImageView g = new ImageView(a);
+        g.setImageDrawable(BottomScreen.keyGlyph(a, key, 22));
+        h.addView(g, new LinearLayout.LayoutParams(PUi.dp(a, 22), PUi.dp(a, 22)));
+        TextView t = PUi.text(a, word, 15, R.color.bn_text, 600);
+        t.setSingleLine(true);
+        LinearLayout.LayoutParams tl = PUi.wrap();
+        tl.leftMargin = PUi.dp(a, 8);
+        h.addView(t, tl);
+        h.setOnClickListener(v -> { Haptics.play(v, heavy ? Haptics.Word.HEAVY : Haptics.Word.CLICK); r.run(); });
+        h.setFocusable(false);   // the strip has the controller: these are its keys
+        h.setContentDescription(word);
+        keyBar.addView(h, PUi.wrap());
+    }
+
+    /** The strip's covers show to the window's edges: its parents up to the page's scroll view do not cut them at the gutter */
+    private static void unclip(View v) {
+        for (android.view.ViewParent p = v.getParent(); p instanceof ViewGroup; p = p.getParent()) {
+            ((ViewGroup) p).setClipChildren(false);
+            if (p instanceof android.widget.ScrollView) break;
+        }
+    }
+
+    /**
+     * The chosen game's facts at its large cover: its name, its state with when it was last played; on one screen also its play time as one quiet line ("3 h
+     * 43 min played, 7 min last time") and its buttons: Play and Game page under it on a phone upright, A and Y with their words on a wide screen
+     */
+    private void fillFacts(Cover k) {
+        if (facts == null || k == null) return;
+        facts.removeAllViews();
+        if (factsKeys != null && factsKeys != facts) factsKeys.removeAllViews();
+        factsBuild = null;
+        boolean carousel = view == HomeViews.CAROUSEL, upright = heightDp() > widthDp();
+        int along = carousel ? Gravity.CENTER_HORIZONTAL : Gravity.START;
+        facts.setGravity(along);
+        String p = k.primaryLabel(), q = k.secondLabel();
+        Runnable primary = k.tap, second = k.secondAction();
+        if (keyBar != null) {   // the console's footer: what A and Y do for this game
+            keyBar.removeAllViews();
+            keyHint("A", p, primary, k.plays);
+            keyHint("Y", q, second, false);
+        }
+        TextView n = PUi.text(a, k.name, upright ? 24 : dual ? 18 : 21, R.color.bn_text, 800);
+        n.setMaxLines(upright ? 2 : 1);   // a wide screen's stage keeps its height whatever the name
+        n.setEllipsize(TextUtils.TruncateAt.END);
+        n.setGravity(along);
+        n.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);   // the strip says it
+        facts.addView(n, PUi.wrap());
+
+        LinearLayout line = PUi.row(a);
+        line.setGravity(Gravity.CENTER_VERTICAL | along);
+        int st = k.r.status();
+        if (!k.building && st == READY && k.found == null) {
+            ImageView ok = round(20, R.color.bn_leaf, 0, "check", R.color.bn_on_leaf);
+            LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(PUi.dp(a, 20), PUi.dp(a, 20));
+            olp.rightMargin = PUi.dp(a, 8);
+            ok.setElevation(0);
+            line.addView(ok, olp);
+        }
+        TextView sw = PUi.text(a, k.state, 15, k.stateColor, 600);
+        sw.setSingleLine(true);
+        sw.setEllipsize(TextUtils.TruncateAt.END);
+        line.addView(sw, PUi.wrap());
+        if (k.ownBuild) factsBuild = sw;
+        dev.peanuts.launch.PlayLedger.Entry e = playTimes.get(k.r.id().toUpperCase(Locale.ROOT));
+        if (!k.building && st == READY && k.r.game != null) {
+            long last = e != null && e.last > 0 ? e.last : k.r.used();
+            TextView when = PUi.text(a, HomeViews.played(last, System.currentTimeMillis()), 15, R.color.bn_text_2, 400);
+            when.setSingleLine(true);
+            LinearLayout.LayoutParams wl = PUi.wrap();
+            wl.leftMargin = PUi.dp(a, 12);
+            line.addView(when, wl);
+        }
+        line.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams lineLp = PUi.wrap();
+        lineLp.topMargin = PUi.dp(a, 4);
+        facts.addView(line, lineLp);
+        if (dual) return;   // the bottom screen's card has the rest
+
+        if (e != null && e.ms > 0) {   // the play time, the numbers bold: its own line upright, on the state's line on a wide screen (room is in height there)
+            TextView pt = playText(e);
+            if (upright) {
+                pt.setGravity(along);
+                LinearLayout.LayoutParams plp = PUi.wrap();
+                plp.topMargin = PUi.dp(a, 4);
+                facts.addView(pt, plp);
+            } else {
+                pt.setSingleLine(true);
+                pt.setEllipsize(TextUtils.TruncateAt.END);
+                LinearLayout.LayoutParams plp = PUi.wrap();
+                plp.leftMargin = PUi.dp(a, 16);
+                line.addView(pt, plp);
+            }
+        }
+
+        if (p == null && q == null) return;
+        if (upright) {   // a phone upright: Play and Game page under the facts, as large buttons
+            View pb = null, qb = null;
+            if (p != null) {
+                PUi.Action act = PUi.action(a, k.primaryIcon(), p, PUi.Kind.PRIMARY, v -> { Haptics.play(v, k.plays ? Haptics.Word.HEAVY : Haptics.Word.CLICK); primary.run(); });
+                pb = act;
+            }
+            if (q != null) qb = PUi.button(a, q, PUi.Kind.TONAL, Haptics.on(Haptics.Word.CLICK, v -> second.run()));
+            LinearLayout.LayoutParams blp = PUi.fill();
+            blp.topMargin = PUi.dp(a, 16);
+            if (pb != null && qb != null) {
+                qb.setMinimumHeight(PUi.dp(a, 56));
+                ((Button) qb).setMinHeight(PUi.dp(a, 56));
+                facts.addView(PUi.pair(a, pb, qb), blp);
+            } else facts.addView(pb != null ? pb : qb, blp);
+            return;
+        }
+        // a wide screen on its own without a controller: Play and Game page as buttons, under the large cover in Row (its facts stand beside it), on the
+        // state's line in Carousel; with a controller the key bar says them
+        if (keyBar != null) return;
+        boolean pad = Pads.connected(a);
+        LinearLayout keys = factsKeys != null && factsKeys != facts ? factsKeys : line;
+        LinearLayout row = keys;
+        row.setGravity(Gravity.CENTER_VERTICAL | along);
+        if (row == line) {
+            View gap = new View(a);
+            row.addView(gap, new LinearLayout.LayoutParams(PUi.dp(a, 18), 1));
+        }
+        if (p != null) row.addView(keyButton(pad ? "A" : null, p, primary, k.plays, true, k.primaryIcon()), PUi.wrap());
+        if (q != null) {
+            LinearLayout.LayoutParams ql = PUi.wrap();
+            if (p != null) ql.leftMargin = PUi.dp(a, 12);
+            row.addView(keyButton(pad ? "Y" : null, q, second, false, false, 0), ql);
+        }
+    }
+
+    /** "3 h 43 min played    7 min last time", the numbers bold */
+    private TextView playText(dev.peanuts.launch.PlayLedger.Entry e) {
+        String[] pl = HomeViews.playLine(e.ms, e.lastRun);
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+        for (int i = 0; i < 4; i++) {
+            if (pl[i].isEmpty()) continue;
+            if (i == 2) sb.append("    ");
+            int from = sb.length();
+            sb.append(pl[i]);
+            sb.setSpan(new ForegroundColorSpan(PUi.col(a, i % 2 == 0 ? R.color.bn_text : R.color.bn_text_2)), from, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            if (i % 2 == 0) sb.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), from, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return PUi.text(a, sb, 15, R.color.bn_text_2, 400);
+    }
+
+    /** The small covers beside the large one; where the facts stand beside it (Row on one wide screen) they leave those facts two lines of room above them */
+    private int smallFor(int big, boolean beside) {
+        int small = Math.round(big * (view == HomeViews.CAROUSEL ? 0.69f : 0.67f));
+        return beside ? Math.max(Math.round(big * 0.45f), Math.min(small, big - PUi.dp(a, 70))) : small;
+    }
+
+    /**
+     * The large cover's A and Y on a wide screen: with a controller its key's glyph before the words, quiet (the keys are the way, the buttons are there for
+     * a finger too); without one a real button, Play in yellow with its icon, the other one tonal
+     */
+    private Button keyButton(String key, String label, Runnable r, boolean heavy, boolean first, int icon) {
+        View.OnClickListener l = v -> { Haptics.play(v, heavy ? Haptics.Word.HEAVY : Haptics.Word.CLICK); r.run(); };
+        Button b;
+        if (key != null) {
+            b = PUi.button(a, label, PUi.Kind.QUIET, l);
+            b.setTextColor(PUi.col(a, R.color.bn_text));
+            b.setTextSize(17);
+            b.setCompoundDrawablesRelativeWithIntrinsicBounds(BottomScreen.keyGlyph(a, key, 26), null, null, null);
+            b.setCompoundDrawablePadding(PUi.dp(a, 8));
+        } else {
+            PUi.Kind kind = first ? PUi.Kind.PRIMARY : PUi.Kind.TONAL;
+            b = PUi.button(a, label, kind, l);
+            if (icon != 0) {
+                b.setCompoundDrawablesRelativeWithIntrinsicBounds(PUi.icon(a, icon, first ? R.color.bn_on_banana : R.color.bn_text), null, null, null);
+                b.setCompoundDrawablePadding(PUi.dp(a, 8));
+            }
+        }
+        b.setFocusable(false);   // the strip has the controller: A and Y are its keys
+        return b;
+    }
+
+    // ---- Carousel: the page tinted with the chosen cover ----
+
+    private final Map<String, Integer> coverColors = new HashMap<>();
+    private android.animation.ValueAnimator tintAnim;
+
+    /** The page's backdrop takes the chosen cover's colour (its average, mixed into the page's own colour so text reads), crossfading in 300 ms */
+    private void tint(Row r) {
+        android.widget.ScrollView page = page();
+        if (page == null) return;
+        int bg = PUi.col(a, R.color.bn_bg);
+        Bitmap bm = icons.get(r.id());
+        Integer avg = coverColors.get(r.id());
+        if (avg == null && bm != null) {
+            Bitmap one = Bitmap.createScaledBitmap(bm, 1, 1, true);
+            avg = one.getPixel(0, 0);
+            coverColors.put(r.id(), avg);
+        }
+        int to = avg == null ? bg : mix(bg, avg, 0.3f);
+        if (tint != page) { tint = page; tintColor = bg; }
+        int from = tintColor;
+        tintColor = to;
+        if (!Motion.on() || from == to) { page.setBackground(backdrop(to, bg)); return; }
+        if (tintAnim != null) tintAnim.cancel();   // the D-pad held: one crossfade at a time
+        android.animation.ValueAnimator x = android.animation.ValueAnimator.ofArgb(from, to);
+        tintAnim = x;
+        x.setDuration(300);
+        x.addUpdateListener(v -> { if (tint == page) page.setBackground(backdrop((int) v.getAnimatedValue(), bg)); });
+        x.start();
+    }
+
+    /** The tint at the top, the page's own colour at the bottom; a little see-through, so the drifting peanuts still show */
+    private static Drawable backdrop(int top, int bg) {
+        return new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[] {(top & 0x00FFFFFF) | 0xC8000000, (bg & 0x00FFFFFF) | 0x60000000});
+    }
+
+    private void untint() {
+        if (tint instanceof android.widget.ScrollView) tint.setBackground(null);
+        tint = null;
+    }
+
+    private static int mix(int x, int y, float t) {
+        int r = Math.round(((x >> 16) & 255) + (((y >> 16) & 255) - ((x >> 16) & 255)) * t);
+        int g = Math.round(((x >> 8) & 255) + (((y >> 8) & 255) - ((x >> 8) & 255)) * t);
+        int b = Math.round((x & 255) + ((y & 255) - (x & 255)) * t);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
+    // ---- The view, the buttons, the dock ----
+
+    /** The page's scroll view (MainActivity's page) and its frame, where the dock, the name bar and the view's name float */
+    private android.widget.ScrollView page() {
+        for (android.view.ViewParent p = box == null ? null : box.getParent(); p != null; p = p.getParent()) if (p instanceof android.widget.ScrollView) return (android.widget.ScrollView) p;
+        return null;
+    }
+
+    private FrameLayout frame() {
+        android.widget.ScrollView s = page();
+        return s != null && s.getParent() instanceof FrameLayout ? (FrameLayout) s.getParent() : null;
+    }
+
+    /** A phone held upright: the library's buttons are the dock's */
+    private boolean docked() { Configuration c = a.getResources().getConfiguration(); return HomeViews.dock(c.screenWidthDp, c.screenHeightDp, c.smallestScreenWidthDp); }
+
+    private int heightDp() { return a.getResources().getConfiguration().screenHeightDp; }
+
+    private Tools dockTools;
+    private HomeDock dockOwner;
+
+    /** The header's buttons, or the dock's: what they say, and whether they show (a library with games; on a phone upright the dock, else the header) */
+    private void tools(boolean any, boolean canBuildAll) {
+        boolean docked = docked();
+        if (headerTools != null) {
+            headerTools.row.setVisibility(any && !docked ? View.VISIBLE : View.GONE);
+            headerTools.show(a, find, view, canBuildAll);
+        }
+        FrameLayout f = frame();
+        HomeDock d = docked && any && f != null ? HomeDock.in(f) : HomeDock.of(f);
+        if (d == null) return;
+        if (d != dockOwner) {   // a new page, a new dock: its own buttons
+            dockOwner = d;
+            dockTools = new Tools(a, true);
+            d.buttons(dockTools.find, dockTools.sort, dockTools.view, dockTools.buildAll);
+        }
+        d.shown(docked && any);
+        if (docked && any) { dockTools.show(a, find, view, canBuildAll); d.follow(page()); }
+    }
+
+    /** A phone upright: room under the last row for the dock, so nothing stays under it */
+    private void dockRoom(boolean any) {
+        HomeDock d = HomeDock.of(frame());
+        if (!any || d == null || d.getVisibility() != View.VISIBLE) return;
+        View room = new View(a);
+        box.addView(room, new LinearLayout.LayoutParams(1, d.room()));
+    }
+
+    /** Find matched nothing: a sentence and Clear instead of an empty page */
+    private void noHit() {
+        LinearLayout c = new LinearLayout(a);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setGravity(Gravity.CENTER_HORIZONTAL);
+        TextView t = PUi.body(a, "No game's name has “" + find + "”.");
+        t.setGravity(Gravity.CENTER);
+        c.addView(t, PUi.fill());
+        Button clear = PUi.button(a, "Clear", PUi.Kind.TONAL, v -> {
+            Haptics.play(v, Haptics.Word.CLICK);
+            find = "";
+            HomeDock d = HomeDock.of(frame());
+            if (d != null) d.close();
+            animateNext = true;
+            render();
+        });
+        clear.setOnKeyListener(shoulders);
+        focusRing(clear, PUi.col(a, R.color.bn_tint));
+        track(clear, "find_clear", null);
+        PUi.add(c, clear, 12, PUi.wrap());
+        PUi.add(box, c, 32);
+        if (firstCover == null) firstCover = clear;
+    }
+
+    /** Find: the dock's search field on a phone upright (it filters as one types), else the Find dialog */
+    private void findPressed(boolean fromDock) {
+        HomeDock d = HomeDock.of(frame());
+        if (fromDock && d != null) {
+            d.find(find, text -> { if (text.equals(find)) return; find = text; render(); }, this::render);
+            return;
+        }
+        findDialog();
+    }
+
+    /** The View button: the next view; its name shows for a moment under the button (above the dock on a phone) */
+    private void nextView(View anchor) {
+        int next = HomeViews.next(HomeViews.of(PeanutsPrefs.homeView(a)));
+        PeanutsPrefs.homeView(a, HomeViews.KEYS[next]);
+        animateNext = true;
+        render();
+        HomeDock.toast(frame(), anchor, HomeViews.NAMES[next]);
+    }
+
+    /**
+     * The five views at once (the View button held, Settings › App › Look › Home view): the one in use is ticked; a choice is kept and Home shows it at once.
+     * after: once a view was chosen (Settings writes its row again)
+     */
+    static void chooseView(Activity a, Runnable after) {
+        int cur = HomeViews.of(PeanutsPrefs.homeView(a));
+        LinearLayout wrap = new LinearLayout(a);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        android.widget.RadioGroup g = new android.widget.RadioGroup(a);
+        for (int i = 0; i < HomeViews.COUNT; i++) {
+            android.widget.RadioButton rb = new android.widget.RadioButton(a);
+            rb.setId(View.generateViewId());
+            rb.setText(HomeViews.NAMES[i]);
+            rb.setMinHeight(PUi.dp(a, 48));
+            rb.setTag(i);
+            Drawable d = CoverMarks.icon(a, HomeViews.ICONS[i], PUi.col(a, R.color.bn_text));
+            if (d != null) { rb.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, d, null); rb.setCompoundDrawablePadding(PUi.dp(a, 12)); }
+            g.addView(rb, new android.widget.RadioGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            if (i == cur) rb.setChecked(true);
+        }
+        wrap.addView(g, PUi.fill());
+        AlertDialog[] dlg = new AlertDialog[1];
+        g.setOnCheckedChangeListener((x, id) -> {
+            View v = g.findViewById(id);
+            if (v == null) return;
+            Haptics.play(v, Haptics.Word.CLICK);
+            PeanutsPrefs.homeView(a, HomeViews.KEYS[(Integer) v.getTag()]);
+            if (after != null) after.run();
+            if (dlg[0] != null) v.postDelayed(dlg[0]::dismiss, 160);
+        });
+        dlg[0] = PUi.sheet(a, "Home view", wrap).setNegativeButton("Cancel", null).show();
+    }
+
+    /** The answer of BottomScreen.twoScreens may have changed (Bottom screen in Settings, the second screen off or on): Home is drawn again if it changed */
+    static void screensChanged() {
+        Library l = current;
+        if (l != null && l.box != null && l.box.isAttachedToWindow()) l.render();
     }
 
     /** Play for a listed, ready game: Banana's own launch (the pack search, the checks, its dialogs); its Manage sheet if that cannot be reached */
@@ -1662,33 +2529,6 @@ public final class Library {
             if (Upstream.launch(a, r.game)) Motion.launched(a);
             else { BottomScreen.launchCancelled(); Haptics.play(anchor(), Haptics.Word.REJECT); manage.accept(r.game); }
         });
-    }
-
-    /** A pill on the cover, 8 dp in from its corner: 12 sp 700, a 1 dp shadow so it reads on any art */
-    private TextView mark(CharSequence s, int fill, int textRes, boolean stroke, int gravity) {
-        TextView t = PUi.text(a, s, 12, textRes, 700);
-        t.setSingleLine(true);
-        t.setBackground(PUi.round(fill, PUi.dp(a, 999), stroke ? PUi.col(a, R.color.bn_card_stroke) : 0, stroke ? Math.max(1, PUi.dp(a, 1)) : 0));
-        t.setPadding(PUi.dp(a, 10), PUi.dp(a, 5), PUi.dp(a, 10), PUi.dp(a, 5));
-        t.setElevation(PUi.dp(a, 1));
-        t.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, gravity);
-        int p8 = PUi.dp(a, 8);
-        lp.setMargins(p8, p8, p8, p8);
-        t.setLayoutParams(lp);
-        return t;
-    }
-
-    /** The building cover's 6 dp progress strip along the bottom edge, 8 dp inset: banana deep on 70 % of the screen's colour; indeterminate for upstream's Prepare */
-    private ProgressBar strip(boolean indeterminate) {
-        ProgressBar p = Strip.of(a, (PUi.col(a, R.color.bn_bg) & 0x00FFFFFF) | 0xB3000000, indeterminate);
-        p.setMax(100);
-        p.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PUi.dp(a, 6), Gravity.BOTTOM);
-        int p8 = PUi.dp(a, 8);
-        lp.setMargins(p8, 0, p8, p8);
-        p.setLayoutParams(lp);
-        return p;
     }
 
     /** The green two-screen badge, bottom-right of a cover whose game has a companion installed (above the strip while it builds) */
@@ -1989,6 +2829,12 @@ public final class Library {
             buildGoOn.setVisibility(View.GONE);
             PUi.add(c, buildGoOn, 10);
         }
+        if (!b.failed && docked()) {   // a phone upright has no Screens off in its header: it is here
+            Button off = PUi.button(a, "Screens off", PUi.Kind.QUIET, Haptics.on(Haptics.Word.CLICK, v -> ScreensOff.show(a)));
+            off.setCompoundDrawablesRelativeWithIntrinsicBounds(PUi.icon(a, R.drawable.ic_screens_off, R.color.bn_accent), null, null, null);
+            off.setCompoundDrawablePadding(PUi.dp(a, 6));
+            PUi.add(c, off, 8, PUi.wrap());
+        }
         // a build that stopped or failed: its build log, or its newest game run when it has one too (BuildLogUi.shareLog asks which)
         if (b.failed) {
             LinearLayout quiet = PUi.row(a);
@@ -2013,10 +2859,11 @@ public final class Library {
 
     /** The build's state into the card and the cover that show it; fresh: the views were just built (a bar shows its value as it is, later values animate their fill) */
     private void updateBuildCard(Build b, boolean fresh) {
-        if (coverChip != null) {   // the building cover's chip and strip (the Building filter not chosen)
-            coverChip.setText(b.failed ? "Build stopped" : PUi.joined("Building", b.percent + " %"));
-            coverChip.setTextColor(PUi.col(a, b.failed ? R.color.bn_danger : R.color.bn_accent));
-            if (coverStrip != null) { coverStrip.setVisibility(b.failed ? View.GONE : View.VISIBLE); if (!coverStrip.isIndeterminate()) Motion.progress(coverStrip, b.percent, fresh); }
+        if (coverPill != null && !b.failed) coverPill.percent(b.percent);   // the building cover's pill, Compact's words and the large cover's line (the Building filter not chosen)
+        for (TextView w : new TextView[] {coverWords, factsBuild}) {
+            if (w == null) continue;
+            w.setText(b.failed ? "Build stopped" : PUi.joined("Building", b.percent + " %"));
+            w.setTextColor(PUi.col(a, b.failed ? R.color.bn_danger : R.color.bn_accent));
         }
         if (buildStatus == null) return;
         PUi.status(buildStatus, stepWords(b), b.failed ? R.color.bn_danger : b.step.equals("done") ? R.color.bn_leaf : R.color.bn_accent);

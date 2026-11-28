@@ -37,7 +37,7 @@ public final class LibrarySettings {
     public static final int REQ_MOD_FOLDER = 69, REQ_MOD_ZIP = 70;
     private static final Handler UI = new Handler(Looper.getMainLooper());
     private static String fontsState;   // "Reading the firmware…" and what came of it, while the rows show
-    private static PUi.Setting keysRow, fontsRow, companionsRow, hapticsRow, motionRow, swapRow, tvRow, bottomRow, gamesRow, smoothRow, devRow;
+    private static PUi.Setting keysRow, fontsRow, companionsRow, hapticsRow, motionRow, swapRow, tvRow, bottomRow, gamesRow, smoothRow, devRow, homeViewRow;
     private static Activity rowsOf;
 
     private LibrarySettings() {}
@@ -61,6 +61,9 @@ public final class LibrarySettings {
                 .value("Delete original dumps of games already built").chevron(a).view);
         String played = dev.peanuts.launch.PlayTime.totalLine(a);   // the total play time of every game (dev.peanuts.launch.PlayTime), once one was played
         if (played != null) { PUi.Setting pr = new PUi.Setting(a, "⏱️", "Played", null).value(played); pr.view.setClickable(false); pr.view.setFocusable(false); card.addView(pr.view); }
+        // Home view (Settings › App › Look): how Home shows the games; the five at once, as the View button held on Home (Library.chooseView)
+        homeViewRow = new PUi.Setting(a, "", "Home view", Haptics.on(Haptics.Word.TICK, v -> Library.chooseView(a, LibrarySettings::refreshRows))).chevron(a);   // no emoji: its tile is the "library" icon (SettingsSections)
+        card.addView(homeViewRow.view);
         // Haptics and Motion: each row is its own switch between two values, System (the default: what Android's settings say) and the quieter one
         hapticsRow = new PUi.Setting(a, "📳", "Haptics", v -> {
             boolean off = !PeanutsPrefs.hapticsOff(a);
@@ -188,6 +191,7 @@ public final class LibrarySettings {
         keysRow.value(keysValue(a));
         fontsRow.value(fontsValue(a, "Used by games and companions. Missing characters in Android's fonts can prevent a game from starting."));
         if (companionsRow != null) companionsRow.value(companionsValue(a));
+        if (homeViewRow != null) homeViewRow.value(HomeViews.NAMES[HomeViews.of(PeanutsPrefs.homeView(a))]);
         if (hapticsRow != null) hapticsRow.value(PeanutsPrefs.hapticsOff(a) ? "Off. Tap to follow the system's touch feedback setting again."
                 : "System: follows Android's touch feedback setting. Tap to turn the app's own haptics off.");
         if (motionRow != null) motionRow.value(PeanutsPrefs.motionReduced(a) ? "Reduced: fades and progress only. Tap to follow the system's animation setting again."

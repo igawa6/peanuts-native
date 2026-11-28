@@ -21,6 +21,8 @@ public final class Request {
 
     public static final List<String> COMMANDS = Arrays.asList("status", "list", "scan", "nav", "build", "reimport", "prepare", "job", "play", "game", "screens_off", "set", "companion", "share_build_log", "import_pack");
     static final List<String> FILTERS = Arrays.asList("all", "building", "ready", "build", "not_in_app");
+    /** Home's views (dev.peanuts.ui.HomeViews.KEYS) */
+    static final List<String> VIEWS = Arrays.asList("grid", "row", "compact", "carousel", "covers");
     static final List<String> COMPANION_ACTIONS = Arrays.asList("list", "install", "update", "remove");
     static final List<String> TABS = Arrays.asList("performance", "game", "saves", "storage");
     /** game's do: stop, ctl (one raw line into the game's control file), then the live controls of the running game (GameLive.ACTIONS) */
@@ -119,6 +121,7 @@ public final class Request {
                 need("to");
                 String to = word("to", Arrays.asList("home", "settings", "game"));
                 word("filter", FILTERS);
+                word("view", VIEWS);
                 word("tab", TABS);
                 if (to.equals("game")) titleId(true);
                 break;
