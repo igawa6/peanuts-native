@@ -70,6 +70,8 @@ public final class SettingsHelp {
         // Users
         put(m, "Users", "The console's users, each with saves of their own, and the one games start with.", "Player");
         put(m, "Miis", "Make Miis of your own. Games that ask for a Mii list them as the console's.", null);
+        put(m, "amiibo", "Lets games find your amiibo on Peanuts' own stand, no figure or keys needed. Off, a game finds no amiibo, as before. A game's own amiibo switch in its Game options comes first. From the next start.", "Off");
+        put(m, "amiibo pictures", "Turning this on downloads each amiibo's picture from AmiiboAPI on GitHub (raw.githubusercontent.com) when a page shows it, while amiibo is on, and keeps it on this device. Off, the app downloads nothing for amiibo and shows its own card.", "Off");
         // App
         put(m, "Haptics", "The app's touch feedback. System follows Android's setting, Off turns the app's own feedback off.", "System");
         put(m, "Motion", "The app's animations. System follows Android's setting, Reduced keeps fades and progress only.", "System");

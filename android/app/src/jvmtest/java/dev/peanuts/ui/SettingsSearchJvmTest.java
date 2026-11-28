@@ -50,7 +50,7 @@ public final class SettingsSearchJvmTest {
         eq("[Console mode, Keys, Firmware, Time of day, Users, Miis]", find("console"));   // a title first, then the section Console, then what the rows do
         eq("[GPU driver, Graphics driver notice, Readiness check, Graphics self-test, ADB control (debug)]", find("driver"));   // PEANUTS: Smooth Experience's part (a title)
         eq("[Free up space, Storage]", find("space"));
-        eq("[Miis, Firmware]", find("mii"));   // the firmware brings the Mii parts
+        eq("[Miis, amiibo, amiibo pictures, Firmware]", find("mii"));   // the firmware brings the Mii parts; amiibo has the letters too
         eq("[Upscaler]", find("sgsr"));   // its default
         eq("[]", find("nothing like this"));
         eq("[Rumble]", find("RUMBLE controller"));

@@ -18,7 +18,7 @@ public final class GameAreasJvmTest {
     private static void yes(boolean b, String what) { n++; if (!b) throw new AssertionError(what); }
 
     public static void main(String[] a) {
-        // the nine areas, in the tiles' order, each with its icon and its line
+        // the ten areas, in the tiles' order, each with its icon and its line (amiibo only shows for a game that uses amiibo)
         List<String> labels = new ArrayList<>();
         Set<String> icons = new HashSet<>();
         for (GameAreas.Area ar : GameAreas.ALL) {
@@ -29,7 +29,7 @@ public final class GameAreasJvmTest {
             yes(!ar.line.contains("·") && !ar.line.contains("—") && !ar.line.contains("–"), ar.key + "'s line has no separator glyph or dash");
             eq(ar, GameAreas.area(ar.key));
         }
-        eq("[Graphics, Mods & Cheats, Saves, Game options, Controls, Companion, Files, Help, Advanced]", labels);
+        eq("[Graphics, Mods & Cheats, Saves, Game options, Controls, amiibo, Companion, Files, Help, Advanced]", labels);
         eq(null, GameAreas.area("nope"));
 
         // L1 / R1: round, among the areas the page has

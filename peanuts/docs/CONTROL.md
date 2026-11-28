@@ -94,7 +94,7 @@ rest of the file.
 
 ### `game`: the running game's controls
 
-`fps_cap`, `console_mode`, `second_screen` and `controls` work on the game that runs now, through the same
+`fps_cap`, `console_mode`, `second_screen`, `controls` and `amiibo` work on the game that runs now, through the same
 calls as the stats page on the second screen and the in-game panel. The game runs in a process of its own,
 so the app asks it and waits for its answer: `last_result` is `pending` for a moment, then the answer. A
 `title_id` is optional; when it is given and another game runs, the command is refused with `other_game`.
@@ -107,6 +107,8 @@ adb shell am start -n dev.nxnative.android.peanutsdev/dev.peanuts.ctl.Command -e
 adb shell am start -n dev.nxnative.android.peanutsdev/dev.peanuts.ctl.Command -e cmd game -e do console_mode -e value docked -e id x4
 adb shell am start -n dev.nxnative.android.peanutsdev/dev.peanuts.ctl.Command -e cmd game -e do second_screen -e value toggle -e id x5
 adb shell am start -n dev.nxnative.android.peanutsdev/dev.peanuts.ctl.Command -e cmd game -e do controls -e id x6
+adb shell am start -n dev.nxnative.android.peanutsdev/dev.peanuts.ctl.Command -e cmd game -e do amiibo -e value status -e id x7
+adb shell am start -n dev.nxnative.android.peanutsdev/dev.peanuts.ctl.Command -e cmd game -e do amiibo -e value 0000000003710102 -e id x8
 ```
 
 `fps_cap` takes only a cap the game offers. A cap the stats page shows greyed out, or one it does not show,
@@ -133,12 +135,20 @@ keeps no choice of its own. For a game that started Game owned before 0.1.8 (opt
 `running`, `running_label`, `caps` (every cap of the menu: `value`, `label`, `offered`) and
 `second_screen` (`on`, `off`, or null when there is no second display or the game is not in front).
 
+`amiibo` works the game's amiibo stand (dm/peanuts/peanuts_amiibo.c), in a game started with amiibo on (`peanuts/docs/AMIIBO.md`; in any other the
+answer is `not_for_this_game`): `status` answers it, `off` takes the amiibo off, an ID of
+16 hex digits places that amiibo of the app's list (the player's own copy of it, made the first time) and `own:<key>` one of the player's
+own (`<ID>-<UID>`, the folder's name under `files/amiibo/own`). `data.placed` is `found` when the game was searching and took it at once,
+`ready` when the game takes it at its next search. Every answer carries the stand as `amiibo_enabled` (1), `amiibo_lib`, `amiibo_state` (0 initialized,
+1 searching, 2 found, 3 taken off, 4 read by the game), `amiibo_search` (searches so far), `amiibo_searching_ms`, `amiibo_on`,
+`amiibo_ready`, `amiibo_reads` and `amiibo_access` (the game's area last opened). No animation and no card: this is the stand alone.
+
 | Code | Meaning |
 |---|---|
 | `not_running` | No game runs |
 | `other_game` | `title_id` names another game than the one that runs |
-| `not_offered` | `fps_cap`: the game does not offer that cap. `data.offered` lists the ones it does |
-| `not_for_this_game` | `console_mode`: the game's Resolution sets the console mode |
+| `not_offered` | `fps_cap`: the game does not offer that cap. `data.offered` lists the ones it does. `amiibo`: no such amiibo |
+| `not_for_this_game` | `console_mode`: the game's Resolution sets the console mode. `amiibo`: amiibo is off for this game, or the host has no stand |
 | `no_second_screen` | `second_screen`: there is no second display, or the game is not in front |
 | `not_ready` | The game's screen is still starting and has no controls yet |
 | `no_answer` | The game did not answer within 4 s (its screen is starting or stopping) |

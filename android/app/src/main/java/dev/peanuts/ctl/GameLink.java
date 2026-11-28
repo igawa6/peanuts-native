@@ -82,6 +82,15 @@ public final class GameLink {
             }
             @Override public Boolean screenShown() { return Companion.screenShown(game); }
             @Override public Boolean toggleScreen() { return Companion.toggleScreen(game); }
+            @Override public String amiiboStatus() { return dev.peanuts.Bridge.amiiboStatusSafe(); }
+            @Override public int amiiboPlace(String what) {
+                if (what.startsWith("own:")) {
+                    dev.peanuts.amiibo.AmiiboStore.Own o = dev.peanuts.amiibo.AmiiboStore.find(game.getFilesDir(), what.substring(4));
+                    return o == null ? 0 : dev.peanuts.amiibo.AmiiboStand.place(game, o, id);
+                }
+                return dev.peanuts.amiibo.AmiiboStand.db(game).get(what).known ? dev.peanuts.amiibo.AmiiboStand.placeFromList(game, what, id) : 0;
+            }
+            @Override public void amiiboOff() { dev.peanuts.amiibo.AmiiboStand.remove(); }
         };
     }
 }

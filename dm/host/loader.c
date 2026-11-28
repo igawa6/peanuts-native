@@ -210,6 +210,9 @@ static void force_init(void) {
         }
 }
 static void *force_lookup(const char *name) {
+#ifdef PN_AMIIBO   // PEANUTS: a game the player turned amiibo on for (PN_AMIIBO=1) gets dm/peanuts/peanuts_amiibo.c's nfc and nfp in place of hle_sdk16.c's; NULL for any other
+    { void *peanuts_amiibo_force(const char *), *hlecount_wrap(const char *, const char *, void *); void *p = peanuts_amiibo_force(name); if (p) return hlecount_wrap("FORCE", name, p); }
+#endif
     if (!g_fmask) return NULL;
     for (unsigned j = sym_hash(name) & g_fmask; g_fidx[j]; j = (j + 1) & g_fmask) {
         unsigned i = g_fidx[j] - 1;

@@ -396,6 +396,9 @@ class CtlTest(unittest.TestCase):
         for v in ('toggle', 'on', 'off'):
             self.assertEqual(self.request('cmd=game', 'do=second_screen', 'value=' + v), 'ok game null false null')
         self.assertEqual(self.request('cmd=game', 'do=controls'), 'ok game null false null')
+        for v in ('status', 'off', '0000000003710102', 'own:0000000003710102-04a1b2c3d4e5f6'):   # every live control of GameLive.ACTIONS is taken (amiibo)
+            self.assertEqual(self.request('cmd=game', 'do=amiibo', 'value=' + v), 'ok game null false null')
+        self.assertEqual(self.request('cmd=game', 'do=amiibo', 'value=mario'), 'bad bad_args')
         self.assertEqual(self.request('cmd=game', 'line=A~0.5'), 'ok game null false null')   # a raw line alone is do=ctl, as before
         self.assertEqual(self.request('cmd=game', 'do=fps_cap'), 'bad bad_args')
         self.assertEqual(self.request('cmd=game', 'do=fps_cap', 'value=fast'), 'bad bad_args')

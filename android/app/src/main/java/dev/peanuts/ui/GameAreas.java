@@ -18,7 +18,7 @@ public final class GameAreas {
     private GameAreas() {}
 
     public static final String GRAPHICS = "graphics", MODS = "mods", SAVES = "saves", OPTIONS = "options", CONTROLS = "controls", COMPANION = "companion",
-            FILES = "files", HELP = "help", ADVANCED = "advanced";
+            FILES = "files", HELP = "help", ADVANCED = "advanced", AMIIBO = "amiibo";
     public static final String MORE = "More";
 
     /** One area: its key, its label on its tile and over its page, its Peanuts icon, and the line the bottom screen and a phone's page show under its name */
@@ -34,6 +34,7 @@ public final class GameAreas {
             new Area(SAVES, "Saves", "saves", "The game's saves: back one up, bring one back, or give it to another user."),
             new Area(OPTIONS, "Game options", "game", "The game's own switches and its language. Most apply from the next start."),
             new Area(CONTROLS, "Controls", "controller", "Rumble, buttons and motion for this game. What is not set here follows Settings."),
+            new Area(AMIIBO, "amiibo", "amiibo", "Your amiibo and every one this game uses: what each does here, the game's data on it, and Import."),
             new Area(COMPANION, "Companion", "companion", "The second screen's page made for this game, and what that screen shows while it runs."),
             new Area(FILES, "Files", "storage", "The game's files, its build, its pack, its folders and its shortcut."),
             new Area(HELP, "Help", "info", "Your play time, the newest log for a bug report, and the game's details."),
@@ -75,7 +76,7 @@ public final class GameAreas {
                 "Temporal sharpness", "contrast", "FSR sharpness", "contrast", "Display", "display", "Aspect ratio", "aspect");
         group(GRAPHICS, "Speed", "Frame rate cap", "gauge", "Hold 60 fps", "lock", "Full game speed", "fast-forward", "Dynamic resolution", "dynamic");
         group(OPTIONS, "Game options", "Switch 2 Edition", "cartridge", "Full vegetation", "leaf", "Hidden layers off", "layers", "Cheats", "mods",
-                "Cheat files", "folder", "Link Play", "link", "Game language", "language", "Time of day", "sun");
+                "Cheat files", "folder", "Link Play", "link", "Game language", "language", "Time of day", "sun", "amiibo", "amiibo");
         group(CONTROLS, "Controls", "Rumble", "rumble", "Button mapping", "buttons", "Motion sensitivity", "aim");
         group(COMPANION, "Companion", "Companion", "companion", "Second screen", "screens-cover");
         group(SAVES, "Saves", "Back up saves", "save-up", "Restore saves", "history", "Import save", "save-down", "Copy to another user", "users",
