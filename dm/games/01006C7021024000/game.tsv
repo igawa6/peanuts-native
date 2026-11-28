@@ -1,3 +1,4 @@
+# PEANUTS: MotoGP 25; Unreal Engine 5, NVN.
 # MotoGP 25, base 1.0.4 (build v262144). The Android device run is named in README.md.
 # 01006C7021024000, SDK 18
 
@@ -19,10 +20,10 @@ shader_versions	v262144
 # every module main imports from
 modules	main subsdk0 sdk
 romfs_marker	motogp25/Content/Paks/pakchunk0-Switch.ucas
-zip_store	.mp4:.pak:.ttf:.txt:.ucas:.metallib
+zip_store	.mp4:.pak:.ttf:.txt:.ucas
 
 # ---- Memory ----
-# Unreal's virtual-address and alias-region settings for this build; profile values, not device measurements.
+# PEANUTS: Unreal's virtual-address and alias-region settings for this build; profile values, not device measurements.
 mem_reserve	0x1028000000
 mem_alias	0x1000000000
 mem_stack	0x10000000
@@ -31,6 +32,6 @@ app_pool	0xCD500000
 sys_resource	0x2000000
 
 # ---- Shader split ----
-# the decoded shader code archives: the engine's global shaders and the game's material shaders
+# PEANUTS: the decoded shader code archives: the engine's global shaders and the game's material shaders
 shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
 shader_note	MotoGP 25 shaders
