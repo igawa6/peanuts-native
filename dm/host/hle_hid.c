@@ -1023,6 +1023,8 @@ TOUCH(1) TOUCH(2) TOUCH(3) TOUCH(4) TOUCH(5) TOUCH(6) TOUCH(7) TOUCH(8) TOUCH(9)
 // Gestures: recognized from the same touch points (hle_touch.c gesture_fill), so only in handheld mode too
 int gesture_fill(void *out, int n, uint64_t now_ns);
 HLE_FORCE("_ZN2nn3hid17InitializeGestureEv", "connect to the hid gesture recognizer; the host recognizes gestures from the touch points", void, h_hid_InitGesture, void) {}
+// PEANUTS: two-argument overload (SDK 20.5.15, Mega Man Star Force LC): the SDK's 0-arg form calls this with 1280 and 720, and the SDK version calls sm::Initialize and aborts with Result 0xe15; another size is ignored (gesture_fill works in 1280x720)
+HLE_FORCE("_ZN2nn3hid17InitializeGestureEii", "connect to the hid gesture recognizer (two-argument version; width and height ignored, gesture_fill works in 1280x720)", void, h_hid_InitGesture2, int width, int height) { (void)width; (void)height; }
 HLE_FORCE("_ZN2nn3hid16GetGestureStatesEPNS0_12GestureStateEi", "gesture states, newest first (handheld mode: recognized from the touch points; console mode: none)", int, h_hid_Gestures, void *out, int n) {
     keys_sync();
     return dm_opmode() == 0 ? gesture_fill(out, n, now_ns()) : 0;

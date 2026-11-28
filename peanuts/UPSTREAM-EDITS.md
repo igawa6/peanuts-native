@@ -3751,3 +3751,14 @@ Two profiles of the game that the OpenGL UI and no-colour draw sections above we
 | `dm/games/01005A20190A6000/shader_map.tsv`, `shader_facts.tsv`, `shader_pairs.tsv`, `shader_files.tsv`, and the same four in `dm/games/0100D2D0190A4000/` | new | the generated tables (the US ones copies of the EU ones) | allow-listed in `peanuts/upstream-unmarked.txt` |
 | `dm/games/README.md` | 2 | the two table rows | `<!-- PEANUTS: ... -->` in the row's last cell |
 | `docs/reference/rendering.md` | 3 | the Found on lines of the BGR5A1, no-colour draw and OpenGL UI entries link the EU profile | `<!-- PEANUTS -->` at the line's end |
+
+### SDK 20.5.15 HLE: 2-arg InitializeGesture and per-user IsSaveDataExisting log (2026-11-27)
+
+Hooks the two-argument SDK 20.5.15 `nn::hid::InitializeGesture(int width, int height)` overload (called by the SDK's 0-arg form with 1280 and 720, which otherwise calls `sm::Initialize` and aborts with Result `0xe15` on Mega Man Star Force Legacy Collection; other sizes are ignored since `gesture_fill` works in 1280x720) and adds a `LOG` line to the per-user `nn::fs::IsSaveDataExisting(const Uid&)` hook matching the `ApplicationId` overload.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/hle_hid.c` | 1 | `HLE_FORCE` for `_ZN2nn3hid17InitializeGestureEii` (`width`, `height` ignored; `gesture_fill` works in 1280x720) | `// PEANUTS:` |
+| `dm/host/hle_fs.c` | 1 | log per-user `IsSaveDataExisting` result | `// PEANUTS begin` / `end` |
+
+Upstream candidate: yes (`hle_hid.c`, `hle_fs.c`).

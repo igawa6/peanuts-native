@@ -1734,7 +1734,13 @@ HLE_FORCE("_ZN2nn2fs22GetDirectoryEntryCountEPlNS0_15DirectoryHandleE", "fsp-srv
 }
 // Whether the user's save data exists: the first user's directory is created at mount time, so from the game's point of view it always exists; another user's once
 // EnsureSaveData made it. A game asks before it offers to make one (Super Mario Bros. Wonder keeps a save file per user)
-HLE_FORCE("_ZN2nn2fs18IsSaveDataExistingERKNS_7account3UidE", "fsp-srv; save data exists: the first user's always, another user's once made (returns bool)", unsigned, h_fs_SaveExists, const void *uid) { return (unsigned)user_save_exists(uid); }
+// PEANUTS begin: log per-user IsSaveDataExisting like the ApplicationId overload
+HLE_FORCE("_ZN2nn2fs18IsSaveDataExistingERKNS_7account3UidE", "fsp-srv; save data exists: the first user's always, another user's once made (returns bool)", unsigned, h_fs_SaveExists, const void *uid) {
+    unsigned r = (unsigned)user_save_exists(uid);
+    LOG("fs asks whether save data exists (user): %s", r ? "yes" : "no");
+    return r;
+}
+// PEANUTS end
 // File system access log and thread priority: on the real device both ask fsp-srv (the access log switch lives in the service); the host has no access log and priority does not affect pread
 HLE_FORCE("_ZN2nn2fs26SetPriorityOnCurrentThreadENS0_8PriorityE", "fsp-srv; file read priority, ignored by the host", void, h_fs_SetPrio, int prio) { (void)prio; }
 HLE_FORCE("_ZN2nn2fs6detail18IsEnabledAccessLogEj", "fsp-srv; access log always off (returns bool)", unsigned, h_fs_AccessLogMask, unsigned mask) { (void)mask; return 0; }
