@@ -452,3 +452,11 @@ dm/games/010082400BCC6000/shader_pairs.tsv	Generated vertex and pixel key pairs.
 dm/games/010082400BCC6000/pso_pairs.tsv	Generated supplemental pipeline key pairs.
 dm/games/010082400BCC6000/pso_manifest.tsv	Generated pipeline seed list.
 dm/games/010082400BCC6000/bf_want.tsv	Generated shader auxiliary table.
+dm/games/01007B600D5BC000/bf_want.tsv	Devil May Cry 3 Special Edition's generated table (shader_split.py), new in Peanuts Native (Banana Native has no profile for 01007B600D5BC000); a marker comment would change the profile's shader inputs digest
+dm/games/01007B600D5BC000/pso_manifest.tsv	Devil May Cry 3 Special Edition's generated table (shader_split.py), new in Peanuts Native (Banana Native has no profile for 01007B600D5BC000); a marker comment would change the profile's shader inputs digest
+dm/games/01007B600D5BC000/pso_pairs.tsv	Devil May Cry 3 Special Edition's generated table (shader_split.py), new in Peanuts Native (Banana Native has no profile for 01007B600D5BC000); a marker comment would change the profile's shader inputs digest
+dm/games/01007B600D5BC000/shader_facts.tsv	Devil May Cry 3 Special Edition's generated table (shader_split.py), new in Peanuts Native (Banana Native has no profile for 01007B600D5BC000); a marker comment would change the profile's shader inputs digest
+dm/games/01007B600D5BC000/shader_map.tsv	Devil May Cry 3 Special Edition's generated table (shader_split.py), new in Peanuts Native (Banana Native has no profile for 01007B600D5BC000); a marker comment would change the profile's shader inputs digest
+dm/games/01007B600D5BC000/shader_map.tsv.conflicts.tsv	Devil May Cry 3 Special Edition's generated table (shader_split.py), new in Peanuts Native (Banana Native has no profile for 01007B600D5BC000); a marker comment would change the profile's shader inputs digest
+dm/games/01007B600D5BC000/shader_pairs.tsv	Devil May Cry 3 Special Edition's generated table (shader_split.py), new in Peanuts Native (Banana Native has no profile for 01007B600D5BC000); a marker comment would change the profile's shader inputs digest
+dm/games/01007B600D5BC000/shader_files.tsv	Devil May Cry 3 Special Edition's generated table (shader_split.py with DM_SPLIT_FILES), new in Peanuts Native; a marker comment would be stripped or alter the tool output

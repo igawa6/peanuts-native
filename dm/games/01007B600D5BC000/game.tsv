@@ -1,0 +1,50 @@
+# Game profile of Devil May Cry 3 Special Edition (Switch, base v0 + update 1.0.1 = v65536)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Capcom's MT Framework-derived port on SDK 8.2.0, NVN, FMOD, NintendoSDK_movie (subsdk0).
+# Shaders: 74 BNSH shaders (32 vertex, 42 pixel) embedded in main; no GLSLC in runtime and no BNSH/BAHS in RomFS (dmc3-0.nbz is a ZIP of .pac/.pack/.dds/.txt).
+
+# ---- Identity ----
+title_id	01007B600D5BC000
+program_id	01007B600D5BC000
+
+# ---- App ----
+name	Devil May Cry 3 Special Edition
+ipa	DevilMayCry3SpecialEdition.ipa
+app_category	public.app-category.action-games
+
+# ---- Versions ----
+build	v0	1.0.0	main=010bcee657eafedfbe822470e3e02749	subsdk0=8df876f80ce4ceee62360b31405c452f	sdk=3ae34e689d7a35f13cbf42bfd672af8b
+build	v65536	1.0.1	main=258d8ba560cfa34c3f2250230d8d8483	subsdk0=8df876f80ce4ceee62360b31405c452f	sdk=3ae34e689d7a35f13cbf42bfd672af8b
+package	v65536
+shader_versions	v65536
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	data/dmc3/dmc3-0.nbz
+zip_store	.bank:.mp4:.nbz:.ogg
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: nn::os::SetMemoryHeapSize(0xC0000000) = 3072 MB
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon
+sys_resource	0x0
+
+# ---- Graphics ----
+# nvnDeviceSetDepthMode(dev, 1) at 0x43aee8 in v65536/main (NVN_DEPTH_MODE_NEAR_IS_ZERO)
+depth_mode	zero
+# PEANUTS: game logic/physics step per frame at 60 Hz (running at 120 Hz doubles game speed); use LSFG 2x for 120 FPS output.
+fps_target	60
+fps_limit	60
+fps_limit_max	60
+fps_modes	60
+# PEANUTS: see Tested on in README.md (Qualcomm system driver on SM-X800 only exposes Vulkan 1.1; recommend Mesa Turnip)
+recommend	driver.id=8	driver=18
+
+# ---- Shader split ----
+shader_groups	/data/=data
+shader_note	Devil May Cry 3 Special Edition shaders

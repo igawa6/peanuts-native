@@ -86,6 +86,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Cuphead](0100A5C00D162000/README.md) | `0100A5C00D162000` | 1.3.7 | 5.5.0 | Unity 2017.4.9f1 IL2CPP | NVN |
 | [DARK SOULS: REMASTERED](01004AB00A260000/README.md) | `01004AB00A260000` | 1.0.3 | 4.5.0 | FromSoftware's engine | NVN |
 | [DAVE THE DIVER](010097F018538000/README.md) | `010097F018538000` | 1.0.6.1267 | 20.5.29 | Unity 6000.0.52f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
+| [Devil May Cry 3 Special Edition](01007B600D5BC000/README.md) | `01007B600D5BC000` | 1.0.0, 1.0.1 | 8.2.0 | Capcom MT Framework, FMOD, NintendoSDK_movie | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Dead Cells](0100646009FBE000/README.md) | `0100646009FBE000` | 1.25.0 | 13.3.5 | Heaps / HashLink (HL/C) | NVN |
 | [Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2](0100AD80208A8000/README.md) | `0100AD80208A8000` | 1.80 | 16.2.3 | Unreal Engine 5.3.2 | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Diablo III: Eternal Collection](01001B300B9BE000/README.md) | `01001B300B9BE000` | 2.7.7.92380 | 8.2.0 | Blizzard's engine, FMOD | NVN |
