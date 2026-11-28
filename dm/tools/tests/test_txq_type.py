@@ -9,12 +9,17 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil  # PEANUTS(upstream-candidate): locate the SPIR-V validators.
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / 'dm/gfx/tools'))
+from tool_lock import xlate_command  # PEANUTS(upstream-candidate): use the platform translator command.
+
 TABLE = (ROOT / 'dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Decoders/InstTable.cs').read_text()
 TEXTURE_2D, TEXTURE_3D, TEXTURE_CUBE, ARRAY = 3, 4, 5, 1 << 8   # SamplerType
 DIM_2D, DIM_2D_ARRAY, DIM_3D, DIM_CUBE = 2, 3, 4, 6             # TexDim
@@ -65,16 +70,52 @@ def shader(*parts):
 
 @unittest.skipUnless(os.environ.get('DMSH_TEST_XLATE'), 'set DMSH_TEST_XLATE to the offline translator')
 class QueryType(unittest.TestCase):
-    def translate(self, code, tex=None):
-        """The texture bindings as (type, c[2] sampler word's offset), and the translator's notes"""
+    # PEANUTS(upstream-candidate): validate the generated module as well as its reflection.
+    def translate_module(self, code, tex=None, **answers):
         with tempfile.TemporaryDirectory(prefix='txq_type_') as d:
             work = Path(d); (work / 'k.bin').write_bytes(code)
-            job = dict(key='k', stage='cs', code=str(work / 'k.bin'), tex=tex or {}, img={'0': dict(type='2d', fmt='R32Uint')}, local=[1, 1, 1], debug=True)
+            job = dict(key='k', stage='cs', code=str(work / 'k.bin'), tex=tex or {}, img={'0': dict(type='2d', fmt='R32Uint')}, local=[1, 1, 1], debug=True, **answers)
             (work / 'jobs.json').write_text(json.dumps([job]))
-            r = subprocess.run([os.environ['DMSH_TEST_XLATE'], str(work / 'jobs.json'), d], capture_output=True, text=True)
+            command = xlate_command(os.environ['DMSH_TEST_XLATE'])
+            r = subprocess.run([*command, str(work / 'jobs.json'), d], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            res = json.loads((work / 'k.res.json').read_text())
-            return {((t['handle'] & 0x3fff) * 4, ((t['handle'] >> 14) & 0x3fff) * 4): t['type'] & (0xff | ARRAY) for t in res['textures']}, res['notes']
+            return json.loads((work / 'k.res.json').read_text()), (work / 'k.spv').read_bytes()
+
+    def translate(self, code, tex=None):
+        """The texture bindings as (type, c[2] sampler word's offset), and the translator's notes"""
+        res, _ = self.translate_module(code, tex)
+        return {((t['handle'] & 0x3fff) * 4, ((t['handle'] >> 14) & 0x3fff) * 4): t['type'] & (0xff | ARRAY) for t in res['textures']}, res['notes']
+
+    @unittest.skipUnless(shutil.which('spirv-val') and shutil.which('spirv-dis'), 'requires SPIRV-Tools')
+    def test_size_query_loads_the_image_from_a_separate_descriptor(self):
+        # A literal handle cannot be resolved to a constant-buffer binding. The gather uses the
+        # separate pools. The gather-bias query has only the texture index, while TXQ
+        # has both texture and sampler indices before the LOD.
+        gather = base('Tld4B') | (1 << 31) | (DIM_2D << 28) | (6 << 20) | (7 << 16) | 8
+        txq = base('TxqB') | (1 << 31) | (1 << 22) | (7 << 16) | (4 << 8) | 8
+        cases = (
+            ('gather bias', shader(mov(6, 7 << 20 | 42), gather, keep(8)), 0, True),
+            ('pooled TXQ', shader(mov(4, 7 << 20 | 42), mov(5, 2), txq, keep(8)), 2, True),
+            ('combined TXQ', shader(query(8, SLOT_128), keep(8)), 0, False),
+        )
+        for name, code, lod, separate in cases:
+            with self.subTest(name=name):
+                _, module = self.translate_module(code, gather_bias=8, ssbo_align=64)
+                validation = subprocess.run(['spirv-val', '--target-env', 'vulkan1.3', '-'], input=module, capture_output=True)
+                self.assertEqual(validation.returncode, 0, validation.stderr.decode())
+                disassembly = subprocess.check_output(['spirv-dis', '-'], input=module).decode()
+                definitions = dict(re.findall(r'(%\S+) = (Op\S+[^\n]*)', disassembly))
+                queries = re.findall(r'OpImageQuerySizeLod %\S+ (%\S+) (%\S+)', disassembly)
+                self.assertTrue(queries, disassembly)
+                for image_id, lod_id in queries:
+                    image = definitions[image_id].split()
+                    self.assertEqual(image[0], 'OpLoad' if separate else 'OpImage')
+                    self.assertTrue(definitions[image[1]].startswith('OpTypeImage '))
+                    if separate:
+                        pointer = definitions[image[2]].split()
+                        self.assertEqual(pointer[0], 'OpAccessChain')
+                        self.assertEqual(definitions[pointer[-1]].split()[-1], '42')
+                    self.assertEqual(definitions[lod_id].split()[-1], str(lod))
 
     def test_query_takes_the_type_of_the_sample(self):
         for dim, want in ((DIM_3D, TEXTURE_3D), (DIM_CUBE, TEXTURE_CUBE), (DIM_2D_ARRAY, TEXTURE_2D | ARRAY)):
