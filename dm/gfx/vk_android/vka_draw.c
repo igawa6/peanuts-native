@@ -1443,7 +1443,7 @@ static tbv_ent g_tbv[512]; static uint64_t g_tbv_gen;
 static unsigned g_tbv_n;   // PEANUTS: views in g_tbv now
 // PEANUTS: the copies of read-only texel buffers made in the submission being recorded (tbuf_view, VKTB_CPU), and the counts the replay's per-frame line reports
 typedef struct { uint64_t addr, n, fence, seq; VkFormat f; VkBufferView v; } tbc_ent;
-static tbc_ent g_tbc[64]; static uint64_t g_tbc_copies, g_tbc_hits, g_tbc_bytes, g_tbv_made, g_tbv_restarts;
+static tbc_ent g_tbc[512]; static uint64_t g_tbc_copies, g_tbc_hits, g_tbc_bytes, g_tbv_made, g_tbv_restarts;
 void vka_tbuf_stats(char *b, size_t n, double frames) {   // since the last line
     static uint64_t c0, h0, b0, m0, r0;
     snprintf(b, n, "texel buffers per frame: %.1f views made in place (table started again %.2f times), %.1f copies of the CPU's bytes (%.2f MB), %.1f bindings of a copy made earlier in the submission",
@@ -1553,9 +1553,18 @@ static VkBufferView tbuf_view(const vka_shader *sh, int tid, const vka_res *r, i
         // DM_VK_TBUF_COPY=0 7.8 ms and 30 fps. The bytes are the CPU's at the first binding of the submission instead of at each binding: the GPU, which runs the
         // submission after it is recorded, would have seen one state of them for all its draws on the console too
         uint64_t fence = vka_fence_last() + 1;
-        uint32_t ch = (uint32_t)(((addr ^ (n << 20) ^ ((uint64_t)f << 44)) * 0x9e3779b97f4a7c15ull) >> 58);
-        tbc_ent *c = &g_tbc[ch];
-        if (c->v && vka_tbuf_copy_live(c->fence, g_tbc_sub) /* PEANUTS: was c->fence == fence */ && c->addr == addr && c->n == n && c->f == f && !vka_tex_gw_since(addr, n, c->seq)) { g_tbc_hits++; return c->v; }
+        uint32_t ch0 = (uint32_t)(((addr ^ (n << 20) ^ ((uint64_t)f << 44)) * 0x9e3779b97f4a7c15ull) >> 55), ch = ch0;
+        tbc_ent *c = NULL;
+        for (uint32_t k = 0; k < 16; k++, ch = (ch + 1) & 511) {
+            tbc_ent *e = &g_tbc[ch];
+            if (!e->v) { if (!c) c = e; break; }
+            if (!vka_tbuf_copy_live(e->fence, g_tbc_sub)) { if (!c) c = e; continue; }
+            if (e->addr == addr && e->n == n && e->f == f) {
+                if (!vka_tex_gw_since(addr, n, e->seq)) { g_tbc_hits++; return e->v; }
+                e->addr = 0; if (!c) c = e; continue;
+            }
+        }
+        if (!c) { memset(g_tbc, 0, sizeof g_tbc); c = &g_tbc[ch0]; }
         uint64_t seq = vka_tex_gw_seq();
         // (its bytes as the GPU will have them at this point of the submission: guest memory with the buffer copies, fills and inline updates recorded so far, vka_tex_gw_read.
         // Unreal Engine fills its particle buffers with buffer copies from a staging buffer: read as the CPU has them at recording, they were the frame before's or what the

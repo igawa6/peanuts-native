@@ -703,7 +703,7 @@ static void unplace(const seg_t *sp) {
     // PEANUTS end
     swap_begin(s.lo, s.hi);
     prot_readonly(pr, npr);
-    uint8_t *t = mmap(NULL, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    uint8_t *t = mmap(NULL, n, PROT_READ | PROT_WRITE, PLAT_GUEST_MAP, -1, 0);
     if (t != MAP_FAILED)
         for (int k = 0; k < npr; k++) {
             if (pr[k].prot < 0 || !(pr[k].prot & PROT_READ)) continue;
@@ -729,13 +729,20 @@ static void unplace(const seg_t *sp) {
         VRED_ONCE("giving back pool memory %#lx+%#zx: no anonymous pages with its bytes: they are lost", (unsigned long)s.lo, n);
         sw_mmap_fixed(s.lo, n);
     } else {
-        void *dst = sw_mmap_fixed(s.lo, n);
-        if (dst == MAP_FAILED) {
-            VRED_ONCE("giving back pool memory %#lx+%#zx: fixed map failed (errno %d)", (unsigned long)s.lo, n, errno);
+        long mr = syscall(__NR_mremap, t, n, n, MREMAP_MAYMOVE | MREMAP_FIXED, s.lo);
+        if (mr == (long)s.lo) {
+            plat_mem_name_guest((void *)s.lo, n);
         } else {
-            memcpy(dst, t, n);
+            if (errno != EINVAL)
+                VRED_ONCE("giving back pool memory %#lx+%#zx: mremap failed (errno %d), falling back to copy", (unsigned long)s.lo, n, errno);
+            void *dst = sw_mmap_fixed(s.lo, n);
+            if (dst == MAP_FAILED) {
+                VRED_ONCE("giving back pool memory %#lx+%#zx: fixed map failed (errno %d)", (unsigned long)s.lo, n, errno);
+            } else {
+                memcpy(dst, t, n);
+            }
+            munmap(t, n);
         }
-        munmap(t, n);
     }
     if (s.fd_alias) seg_free(&s, waited, fence);
     if (elsewhere) {
