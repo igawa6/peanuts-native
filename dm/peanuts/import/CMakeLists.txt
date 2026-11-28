@@ -80,6 +80,7 @@ else()
     target_include_directories(ncz_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(ncz_test PRIVATE Threads::Threads ZLIB::ZLIB ${CMAKE_DL_LIBS})
     target_compile_options(ncz_test PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation)
+    target_compile_definitions(ncz_test PRIVATE NX_TEST_HOOKS)   # nx_ncz_test_unlinked_refuses (issue #829)
     add_test(NAME ncz_test COMMAND ncz_test)
     # A plain NCA checked against its own hash layers (nx_verify.c, GitHub issue #561): the fixture's dumps with IVFC and PFS0 hash layers import, every block
     # of the patched RomFS is checked, and damaged copies (cut short, a byte flipped in the base, the update, a hash level, an fs header) are refused; no game data

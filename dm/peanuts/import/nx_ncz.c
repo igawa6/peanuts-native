@@ -300,6 +300,24 @@ static void *un_hasher(void *arg) {
     return NULL;
 }
 
+#ifdef NX_TEST_HOOKS
+static int t_unlinked_refuses;
+void nx_ncz_test_unlinked_refuses(int on) { t_unlinked_refuses = on; }
+#endif
+// A write to the body file just unlinked: 1 when it goes through. Android's FUSE for shared storage on some phones refuses every write to a file unlinked while open
+// (ENOENT at the first write: a Retroid Pocket 5 on Android 13, issue #829, where every solid .nsz stopped the import at once)
+static int unlinked_writes(int fd) {
+#ifdef NX_TEST_HOOKS
+    if (t_unlinked_refuses) { errno = ENOENT; return 0; }
+#endif
+    for (;;) {
+        ssize_t k = pwrite(fd, "", 1, 0);   // the body's first byte, written over by the body
+        if (k == 1) return 1;
+        if (k < 0 && errno == EINTR) continue;
+        return 0;
+    }
+}
+
 static int unpack(NxNcz *z, const char *tmp_dir, uint8_t sha[32], void (*tick)(void *, uint64_t), void *user) {
     Un *u = calloc(1, sizeof *u); uint8_t *in = NULL; ZSTD_DCtx *d = NULL; int rc = -1, up = 0, fd = -1; pthread_t th;
     if (!u) { nx_err("out of memory"); return -1; }
@@ -312,7 +330,15 @@ static int unpack(NxNcz *z, const char *tmp_dir, uint8_t sha[32], void (*tick)(v
         snprintf(z->tmp_path, sizeof z->tmp_path, "%s/%.40s.body", tmp_dir, z->name);
         if ((fd = open(z->tmp_path, O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, 0600)) < 0) { z->tmp_path[0] = 0; ZFAIL("cannot unpack %s into %s: %s", z->src, tmp_dir, strerror(errno)); }
 #ifndef _WIN32
-        if (!unlink(z->tmp_path)) z->tmp_path[0] = 0;   // gone from the folder already: its space comes back when it is closed, even if the app is killed
+        // gone from the folder already: its space comes back when it is closed, even if the app is killed. Where a file unlinked while open cannot be written
+        // (unlinked_writes), it is made again and keeps its name: nx_ncz_close deletes it, and the app the folder an import it did not live to finish left
+        if (!unlink(z->tmp_path)) {
+            if (unlinked_writes(fd)) z->tmp_path[0] = 0;
+            else {
+                close(fd);
+                if ((fd = open(z->tmp_path, O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, 0600)) < 0) { z->tmp_path[0] = 0; ZFAIL("cannot unpack %s into %s: %s", z->src, tmp_dir, strerror(errno)); }
+            }
+        }
 #endif
     }
     // the NCA's first bytes, then the body
