@@ -129,7 +129,7 @@ static void t_layout(void) {
     CHECK(nxin_touch_set_layout(&t, NULL, 0, &kept) == 3 && kept == 13 && ctl(&t, DM_BTN_A) >= 0, "the default layout back: %d", kept);
     nxin_touch_pad(&t, &b, &lx, &ly, &rx, &ry); CHECK(b == 0 && rx == 0 && ry == 0, "and nothing held");
 }
-// PEANUTS begin：验证任意落点、多指优先级、取消和关闭触屏控件后的行为。
+// PEANUTS begin: Check the origin, multi-touch priority, cancellation and disabled controls.
 static void t_float_stick(void) {
     nxin_touch t;
     nxin_touch_init(&t);

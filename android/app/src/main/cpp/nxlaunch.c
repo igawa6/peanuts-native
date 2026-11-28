@@ -401,7 +401,7 @@ JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_touchControlsSet(JNIEnv 
     jfloat f[NXT_MAX * 6]; nxhost_touch_control t[NXT_MAX]; memset(t, 0, sizeof t);
     if (n > 0) (*env)->GetFloatArrayRegion(env, a, 0, n * 6, f);
     for (int i = 0; i < n; i++) { const jfloat *o = f + 6 * i; t[i].kind = (int)o[0]; t[i].buttons = (uint64_t)o[1]; t[i].stick = (int)o[2]; t[i].x = o[3]; t[i].y = o[4]; t[i].r = o[5]; }
-    // PEANUTS：旧 Host 只接受固定摇杆，返回值区分布局成功和浮动功能可用。
+    // PEANUTS: Older hosts accept fixed sticks. The return value tells the view which layout was installed.
     int fixed = 0;
     if (!nxhost_touch_controls_snapshot) {
         for (int i = 0; i < n; i++) if (t[i].kind == NXT_FLOAT_STICK) { t[i].kind = NXT_STICK; fixed = 1; }

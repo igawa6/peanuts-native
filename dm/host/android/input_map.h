@@ -56,7 +56,7 @@ void nxin_stick(float x, float y, float deadzone, int32_t *ox, int32_t *oy);   /
 enum { NXT_BUTTON = 0, NXT_STICK = 1, NXT_DPAD = 2, NXT_FLOAT_STICK = 3 }; // PEANUTS
 #define NXT_MAX 24
 typedef struct { int kind; uint64_t buttons; int stick; float x, y, r; char label[8]; } nxhost_touch_control;   // stick: 0 left, 1 right (NXT_STICK only)
-typedef struct { int id, ctl, slot; float x, y, down_x, down_y; } nxin_pointer;   // PEANUTS：浮动摇杆用落点作圆心。
+typedef struct { int id, ctl, slot; float x, y, down_x, down_y; } nxin_pointer;   // PEANUTS: The initial touch is the floating stick center.
 typedef struct {
     nxhost_touch_control c[NXT_MAX]; int n;
     int enabled;                    // 0: the controls are hidden and every touch goes to the game's touchscreen
@@ -74,7 +74,7 @@ int nxin_touch_set_layout(nxin_touch *t, const nxhost_touch_control *c, int n, i
 // One pointer event: action is MotionEvent's (masked), id its pointer id, x / y normalized screen coordinates. Returns bit 1 when the pad state changed, bit 2 when the touchscreen did
 int nxin_touch_event(nxin_touch *t, int action, int id, float x, float y);
 void nxin_touch_pad(const nxin_touch *t, uint64_t *buttons, int32_t *lx, int32_t *ly, int32_t *rx, int32_t *ry);
-void nxin_touch_float_origin(const nxin_touch *t, float out[2]); // PEANUTS：输出归一化的落点，未按住时为 (-1, -1)。
+void nxin_touch_float_origin(const nxin_touch *t, float out[2]); // PEANUTS: Return a normalized origin, or (-1, -1) when idle.
 typedef struct { uint32_t id; float x, y; } nxin_finger;   // the same layout as front.h's dm_touch
 int nxin_touch_fingers(const nxin_touch *t, nxin_finger *out, int max);   // touchscreen fingers in the picture's normalized coordinates
 

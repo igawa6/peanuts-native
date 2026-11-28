@@ -163,7 +163,7 @@ static int hit(const nxin_touch *t, float x, float y) {
     int best = -1; float bd = 0;
     int floating = -1; // PEANUTS
     for (int i = 0; i < t->n; i++) {
-        // PEANUTS：右半屏的浮动摇杆只接管未命中实体控件的触点。
+        // PEANUTS: The floating stick only gets right-side touches that miss the existing controls.
         if (t->c[i].kind == NXT_FLOAT_STICK) {
             if (x >= 0.5f) floating = i;
             continue;
@@ -186,7 +186,7 @@ static void drive(nxin_touch *t, nxin_pointer *p) {   // a pointer on a control:
     if (c->kind == NXT_BUTTON) t->pressed[p->ctl] = c->buttons;
     else if (c->kind == NXT_DPAD) t->pressed[p->ctl] = dpad_dir(dx, dy, c->r);
     else {
-        // PEANUTS：用同一套死区、满量程和径向限幅，只有圆心改用当前手指的落点。
+        // PEANUTS: Reuse the fixed stick's dead zone, saturation and radial clamp with the initial touch as the center.
         if (c->kind == NXT_FLOAT_STICK) {
             dx = (p->x - p->down_x) * (t->sw / t->sh);
             dy = p->y - p->down_y;
@@ -234,7 +234,7 @@ void nxin_touch_pad(const nxin_touch *t, uint64_t *buttons, int32_t *lx, int32_t
     uint64_t b = 0; for (int i = 0; i < t->n; i++) b |= t->pressed[i];
     *buttons = b; *lx = axis(t->sx[0]); *ly = axis(t->sy[0]); *rx = axis(t->sx[1]); *ry = axis(t->sy[1]);
 }
-// PEANUTS begin：绘制直接读取 Host 持有的手指落点，避免渲染与输入的命中规则不一致。
+// PEANUTS begin: Draw from the host's captured origin so rendering follows the input hit test.
 void nxin_touch_float_origin(const nxin_touch *t, float out[2]) {
     out[0] = out[1] = -1;
     for (int i = 0; i < t->np; i++) {

@@ -18,6 +18,8 @@ import android.widget.RadioGroup;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
+import dev.peanuts.ingame.FloatingStickSetting; // PEANUTS
+
 import java.util.Arrays;
 
 /**
@@ -47,10 +49,9 @@ final class TouchControls extends View {
     private int mode = MODE_AUTO;   // the "On-screen controls" setting (setMode)
     private float opacity, scale;
     private boolean haptics;
-    // PEANUTS begin：所有游戏共用这个开关，默认保留固定右摇杆。
+    // PEANUTS begin: fixed right stick remains the default for all games.
     private boolean floatRight, floatRightActive;
     private static final int FLOAT_STICK = 3; // input_map.h NXT_FLOAT_STICK
-    private static final String FLOAT_RIGHT_KEY = "float_right_stick";
     // PEANUTS end
 
     // The layout in pixels, as the host has it
@@ -91,7 +92,7 @@ final class TouchControls extends View {
     private static final String[] TOOL = {"Top", "Centre", "Bottom", "Reset", "Done"};
 
     private final long[] pressed = new long[MAX], prev = new long[MAX];
-    private final float[] sticks = {0, 0, 0, 0, -1, -1}; // PEANUTS：末两项为 Host 返回的浮动摇杆圆心。
+    private final float[] sticks = {0, 0, 0, 0, -1, -1}; // PEANUTS: The last two entries hold the floating stick center from the host.
     private int toggleId = -1;
     private boolean toggleLong;
     private final Runnable longPress = () -> { toggleLong = true; performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); settings(); };
@@ -106,7 +107,7 @@ final class TouchControls extends View {
         opacity = prefs().getFloat("opacity", 0.6f);
         scale = prefs().getFloat("scale", 1f);
         haptics = prefs().getBoolean("haptics", true);
-        floatRight = prefs().getBoolean(FLOAT_RIGHT_KEY, false); // PEANUTS
+        floatRight = FloatingStickSetting.enabled(prefs()); // PEANUTS
         shown = prefs().getBoolean("shown", true);
         line.setStyle(Paint.Style.STROKE);
         text.setTextAlign(Paint.Align.CENTER);
@@ -158,7 +159,7 @@ final class TouchControls extends View {
     private void apply() {
         if (input) Native.touchControlsEnable(active() && !editing);   // off: every touch in the picture is the game's touchscreen
         Arrays.fill(pressed, 0); Arrays.fill(prev, 0); Arrays.fill(sticks, 0);
-        sticks[4] = sticks[5] = -1; // PEANUTS：切换模式或重排时清掉画面上旧的圆心。
+        sticks[4] = sticks[5] = -1; // PEANUTS: Clear the previous center after changing the mode or layout.
         invalidate();
     }
 
@@ -254,7 +255,7 @@ final class TouchControls extends View {
         int kept = input ? Native.touchControlsSet(f) : -1;
         boolean was = available;
         floatRightActive = floatRight && kept == n; // PEANUTS
-        available = kept == n || floatRight && kept == -2 - n; // PEANUTS：旧 Host 仍可绘制和使用固定摇杆。
+        available = kept == n || floatRight && kept == -2 - n; // PEANUTS: Older hosts still draw and handle the fixed stick.
         if (!available && was != available) Native.note("on-screen controls: this host takes no layout (" + kept + "): not drawn");
         if (!editing) Native.note(String.format(java.util.Locale.ROOT, "on-screen controls: %d in a %dx%d view (%.1f dp high, %.2f px a unit, band from y %.0f, screen %s%s), picture x %.3f y %.3f, size %.2f, opacity %.2f, %s",
                 n, w, h, h / dp, u, y0, prof, custom() ? ", the user's layout" : "", picX, picY, scale, opacity, active() ? "shown" : "hidden")
@@ -498,7 +499,7 @@ final class TouchControls extends View {
         float x = sticks[4], y = sticks[5]; // PEANUTS
         Native.touchControlsState(pressed, sticks);
         boolean changed = s0 != sticks[0] || s1 != sticks[1] || s2 != sticks[2] || s3 != sticks[3], tick = false;
-        changed |= x != sticks[4] || y != sticks[5]; // PEANUTS：即使摇杆轴值是零，落下或抬起时也要重绘。
+        changed |= x != sticks[4] || y != sticks[5]; // PEANUTS: Redraw on press or release even when the axes are centered.
         for (int i = 0; i < n; i++) {
             if (pressed[i] != prev[i]) changed = true;
             if ((pressed[i] & ~prev[i]) != 0) tick = true;
@@ -591,7 +592,7 @@ final class TouchControls extends View {
     }
 
     private void drawStick(Canvas c, int i) {
-        // PEANUTS begin：布局编辑器仍用固定位置调整摇杆组，游戏里则只在手指按住时显示。
+        // PEANUTS begin: The editor shows the fixed group. In play, the floating stick appears while held.
         float x = cx[i], y = cy[i];
         if (floatRightActive && stick[i] == 1 && !editing) {
             if (sticks[4] < 0) return;
@@ -676,18 +677,9 @@ final class TouchControls extends View {
         android.widget.Button reset = new android.widget.Button(ctx);
         reset.setText("Reset the controls");
         reset.setOnClickListener(v -> { os.setProgress(50); ss.setProgress(40); hb.setChecked(true); });   // 60 % opacity, 100 % size, the tick on
-        box.addView(ol); box.addView(os); box.addView(sl); box.addView(ss); box.addView(hb); box.addView(lb); box.addView(tb); box.addView(reset);
-        // PEANUTS begin：开关立即替换送给 Host 的布局，并保存给下一次启动。
-        CheckBox floating = new CheckBox(ctx);
-        floating.setText("Floating right stick");
-        floating.setChecked(floatRight);
-        floating.setOnCheckedChangeListener((b, on) -> {
-            floatRight = on;
-            prefs().edit().putBoolean(FLOAT_RIGHT_KEY, on).commit();
-            relayout();
-        });
-        box.addView(floating, box.indexOfChild(reset));
-        // PEANUTS end
+        box.addView(ol); box.addView(os); box.addView(sl); box.addView(ss); box.addView(hb); box.addView(lb); box.addView(tb); // PEANUTS
+        FloatingStickSetting.addRow(ctx, box, prefs(), this::setFloatingRightStick); // PEANUTS
+        box.addView(reset); // PEANUTS
         android.widget.Button ed = new android.widget.Button(ctx);   // the layout editor (runs onEditStart); the picture's position is in the panel's Picture rows (positionRows)
         ed.setText("Edit the controls layout…");
         ed.setOnClickListener(v -> startEditLayout());
@@ -696,6 +688,13 @@ final class TouchControls extends View {
 
     /** Whether GameActivity keeps the newest log lines over the picture once the game draws (off by default; the settings dialog's last box) */
     static boolean showLog(Context c) { return Prefs.open(c, "touch_controls").getBoolean("log", false); }
+
+    // PEANUTS begin: replacing the host layout also releases any touch from the old mode.
+    private void setFloatingRightStick(boolean enabled) {
+        floatRight = enabled;
+        relayout();
+    }
+    // PEANUTS end
 
     private void save() { prefs().edit().putFloat("opacity", opacity).putFloat("scale", scale).putBoolean("haptics", haptics).commit(); }
 }

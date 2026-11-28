@@ -256,7 +256,7 @@ int nxhost_touch_controls(nxhost_touch_control *out, int max) {
 void nxhost_touch_controls_state(uint64_t *pressed, int max, float stick[4]) {
     nxhost_touch_controls_snapshot(pressed, max, stick, NULL); // PEANUTS
 }
-// PEANUTS：在同一把锁内读取摇杆轴和落点。
+// PEANUTS: Read the stick axes and origin under the same lock.
 void nxhost_touch_controls_snapshot(uint64_t *pressed, int max, float stick[4], float origin[2]) {
     pthread_mutex_lock(&g_mu); touch_once();
     for (int i = 0; pressed && i < max && i < g_touch.n; i++) pressed[i] = g_touch.pressed[i];
