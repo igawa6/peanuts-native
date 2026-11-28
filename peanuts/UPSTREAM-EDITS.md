@@ -3335,3 +3335,4 @@ view (Settings › Developer) shows the testers' toasts and the in-game menu's t
 | `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 1 | the ignored adb command's toast with Developer view only | `// PEANUTS:` |
 | `android/app/src/main/java/dev/nxnative/android/SidePanel.java` | 4 | the two "DM_CTL is off" notes, the cap line and the frame generation state (`DevView.panel`, `DevView.frameGen`) | `// PEANUTS:` |
 | `android/app/src/main/java/dev/nxnative/android/Lsfg.java` | 2 | "Not in this build" and the mode line through `DevView.panel` | `// PEANUTS:` / `/* PEANUTS */` |
+| `dm/tools/ue_cvar.py` + `dm/tools/tests/test_ue_cvar.py` | PEANUTS(upstream-candidate) | Experimental shared-base Unreal CVar detection; needs upstream review |
