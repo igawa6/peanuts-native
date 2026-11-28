@@ -89,6 +89,10 @@ list(APPEND HOST_C ${NSP_C})
 add_subdirectory(${ROOT}/dm/peanuts/rt ${CMAKE_CURRENT_BINARY_DIR}/peanuts_rt)   # PEANUTS: the companion runtime (C++), linked into every host below
 # dm/gfx without Metal: the NVN front (hle_nvn.c and its C helpers), nn::vi, nvdrv, the CPU texture code; android_stub.c answers for nvn_mtl.m, hle_vk.m, hle_gl.m and the other .m files
 file(GLOB GFX_C CONFIGURE_DEPENDS ${GFX}/*.c ${GFX}/nvn/*.c ${GFX}/tex/*.c ${GFX}/vk_android/*.c)   # vk_android: the NVN → Vulkan replay
+# A game that renders through OpenGL (through EGL, not NVN) has nothing else to draw with here: hle_gl.m is
+# Objective-C on Metal and stays with the Mac and iOS host. dm/gfx/gl/*.c is this platform's front for them.
+file(GLOB GL_C CONFIGURE_DEPENDS ${GFX}/gl/*.c)
+list(APPEND GFX_C ${GL_C})
 # Lossless Scaling frame generation (dm/gfx/vk_android/lsfg, ported from Eden): GPL-3.0-or-later, so a libnxhost.so built with it (the default) is GPL-3.0-or-later as a whole
 # (android/README.md, android/NOTICE.md). -DNX_LSFG=OFF (Gradle -PnxLsfg=false) leaves it out: the rest of nxnative is MIT, and vka_framegen.c then reports "not in this build"
 option(NX_LSFG "Lossless Scaling frame generation (GPL-3.0-or-later)" ON)
