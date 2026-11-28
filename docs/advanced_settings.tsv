@@ -721,6 +721,7 @@ DM_VK_RT_LOG	developer	Diagnostics			text			both
 DM_VK_RT_LOG_LINES	developer	Diagnostics			text			both						
 DM_VK_SAMP_LOG	developer	Diagnostics			text			both						
 DM_VK_SAMP_SLOTS	developer	Diagnostics			text			both						
+DM_VK_SB_GW	developer	Graphics			text			both						
 DM_VK_SB_PEEK	developer	Diagnostics			text			both						
 DM_VK_SB_PEEK_AT	developer	Diagnostics			text			both						
 DM_VK_SB_PEEK_FROM	developer	Diagnostics			text			both						

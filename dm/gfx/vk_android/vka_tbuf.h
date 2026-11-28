@@ -13,7 +13,11 @@
 //     copy and one after the last), which sees what the work recorded before it wrote;
 //   - else (a draw: no copy can be recorded inside its pass) through the CPU's copy as before, noted.
 // Only stores through storage texel buffers count, not every opaque write: a storage buffer bound without a size is marked over the device's whole storage range, which
-// would take the CPU's copy away from buffers the CPU does write (the case the copy was made for).
+// would take the CPU's copy away from buffers the CPU does write (the case the copy was made for). PEANUTS: a storage buffer bound with a size of its own is a real range, and
+// its stores count as well (vka_tbuf_sb_tb, DM_VK_SB_GW, live, default 1): Hyrule Warriors: Age of Calamity's clustered lighting stores its light list (a buffer
+// texture of 4 MB, read by the lit draws through an image binding) from a dispatch through such a buffer. Read as the row image of the CPU's bytes in the same
+// submission, it held leftover memory in the save menu's first frame, the per-cluster light counts in it ran up to 65,535 and the GPU timed out (AYN Thor, Turnip,
+// 60 fps: 4 of 11 to 6 of 12 entries to the menu before, 0 of 12 with it).
 #ifndef VKA_TBUF_H
 #define VKA_TBUF_H
 #include <stdint.h>
@@ -26,6 +30,9 @@ enum { VKTB_NONE, VKTB_PLACE, VKTB_CPU, VKTB_GPU };   // an empty texel buffer; 
 static inline int vka_tbuf_gw_pending(uint64_t lo, uint64_t hi, uint64_t fence, int tb, uint64_t a, uint64_t b, uint64_t done) {
     return tb && (!fence || fence > done) && lo < b && hi > a;
 }
+// PEANUTS: a storage buffer binding the shader may store into (vka_draw.c bind_sets): 1 = its stores are kept as a storage texel buffer's (counted by vka_tbuf_gw_pending).
+// size: the binding's own size (0: bound to the end of its chunk, marked over the device's whole storage range); sw: DM_VK_SB_GW
+static inline int vka_tbuf_sb_tb(uint64_t size, int sw) { return sw && size != 0; }
 // storage: a storage texel buffer binding; placed: all of it is in placed guest memory; aligned: its offset there is one the device can view; copy_sw: DM_VK_TBUF_COPY;
 // gw: DM_VK_TBUF_GW is on and a storage texel buffer's write over it is pending; in_pass: a draw pass is open (or the writes are only being built for one)
 static inline int vka_tbuf_path(int storage, uint64_t bytes, int placed, int aligned, int copy_sw, int gw, int in_pass) {

@@ -1491,7 +1491,13 @@ static int tbuf_img_ask(int tid, uint8_t dim) {
     int fits = (dim & DMSH_VK_DIM_MASK) != 1 || (elems + 16383) / 16384 <= V.props.limits.maxImageDimension2D;
     uint64_t bytes = (uint64_t)elems * f.bpb; VkBuffer b; VkDeviceSize o = 0;
     int placed = vka_addr_run(addr, bytes, &b, &o) >= bytes;
-    return vka_tbuf_img_choice(sw, shape, want == have, fits, vka_tex_gw_tbuf_pending(addr, bytes), placed, placed && !(o % f.bpb));
+    int gw = vka_tex_gw_tbuf_pending(addr, bytes), ch = vka_tbuf_img_choice(sw, shape, want == have, fits, gw, placed, placed && !(o % f.bpb));
+    if (gw) {   // PEANUTS: the first time for each of 16 storage addresses, logged (texture IDs over the same storage come and go every frame)
+        static uint64_t seen[16]; static int ns; int k = 0; while (k < ns && seen[k] != addr) k++;
+        if (k == ns && ns < 16) { seen[ns++] = addr; VLOG("tbuf gw: texture ID %d (%#llx, %llu bytes) read as an image while GPU stores into it are not done: %s", tid, (unsigned long long)addr,
+                                                          (unsigned long long)bytes, ch ? "through a copy the GPU makes" : "through the CPU's bytes all the same (the copy cannot be made or read)"); }
+    }
+    return ch;
 }
 static int tbuf_img_gpu(int tid, uint8_t dim) {
     int k = vktb_memo_find(&g_tig, tid, dim);
@@ -1627,7 +1633,11 @@ static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const
             int storage = r[i].desc == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             switch (r[i].what) {
             case VKA_R_BUF: ok = storage ? ssbo_desc(r[i].addr, r[i].size, bi) : ubo_desc(r[i].addr, r[i].size, bi);
-                if (ok && storage && (r[i].flags & DMSH_VK_BF_RW)) vka_tex_gw_opaque(r[i].addr, bi->range);   // the shader may store into it
+                if (ok && storage && (r[i].flags & DMSH_VK_BF_RW)) {   // the shader may store into it
+                    // PEANUTS: a storage buffer bound with a size of its own is a real range: its stores are kept as a storage texel buffer's, so a buffer texture over
+                    // it is not read through the CPU's bytes while the work that stores into it is not done (vka_tbuf.h vka_tbuf_sb_tb, DM_VK_SB_GW)
+                    if (vka_tbuf_sb_tb(r[i].size, VKA_ENV("DM_VK_SB_GW", 1))) vka_tex_gw_tbuf(r[i].addr, bi->range); else vka_tex_gw_opaque(r[i].addr, bi->range);
+                }
                 if (ok && storage) sb_peek_note(sh->key, st, &r[i]);
                 if (ok && !storage) ub_peek_note(sh->key, st, &r[i]);
                 if (ok) sb_watch_use(sh->key, st, &r[i], storage, bi);

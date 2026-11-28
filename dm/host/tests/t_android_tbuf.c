@@ -120,6 +120,24 @@ int main(void) {
       for (int k = 1; k < 3; k++) { sub++;
           CHECK(made_key_old == fence_last + 1, "the old key cannot tell submission %d of the frame from the first", k + 1);
           CHECK(!vka_tbuf_copy_live(made_sub, sub), "a copy of the frame's first submission is not bound in submission %d", k + 1); } }
+    // PEANUTS: a storage buffer's stores (vka_draw.c bind_sets, DM_VK_SB_GW): kept as a storage texel buffer's when the binding has a size of its own (vka_tbuf_sb_tb).
+    // Hyrule Warriors: Age of Calamity's clustered lighting: a dispatch stores the light list (a buffer texture of 4,038,272 bytes) through a sized storage buffer, and the
+    // lit draws of the same submission read it through an image binding; read as the row image of the CPU's bytes, it held leftover memory in the save menu's first
+    // frame, its per-cluster light counts ran up to 65,535 and the GPU timed out (AYN Thor, Turnip, 60 fps)
+    CHECK(vka_tbuf_sb_tb(4038272, 1), "a sized storage buffer's stores count");
+    CHECK(!vka_tbuf_sb_tb(0, 1), "one bound to the end of its chunk (marked over the device's whole storage range) does not");
+    CHECK(!vka_tbuf_sb_tb(4038272, 0), "DM_VK_SB_GW=0: none counts, as before");
+    { uint64_t LL = 0x408d0c7940, LN = 4038272; nw = 0; done_ = 30;
+      mark(LL - (32u << 20), 128u << 20, vka_tbuf_sb_tb(0, 1));   // an unsized storage buffer bound over it, as most are
+      CHECK(!vka_tbuf_img_choice(1, 1, 1, 1, pending(LL, LN), 1, 1), "an unsized storage buffer's stores: the row image, as before");
+      mark(LL, LN, vka_tbuf_sb_tb(LN, 1));                         // the light list's dispatch, in the submission being recorded
+      CHECK(vka_tbuf_img_choice(1, 1, 1, 1, pending(LL, LN), 1, 1), "the light list stored by this submission's dispatch: the draws read the GPU's copy");
+      commit(31);
+      CHECK(vka_tbuf_img_choice(1, 1, 1, 1, pending(LL, LN), 1, 1), "queued, not done: still the GPU's copy");
+      done_ = 31;
+      CHECK(!vka_tbuf_img_choice(1, 1, 1, 1, pending(LL, LN), 1, 1), "done: the row image, uploaded again from the stored bytes");
+      nw = 0; mark(LL, LN, vka_tbuf_sb_tb(LN, 0));
+      CHECK(!vka_tbuf_img_choice(1, 1, 1, 1, pending(LL, LN), 1, 1), "DM_VK_SB_GW=0: the row image, as before"); }
     if (fails) { printf("t_android_tbuf: %d FAILED\n", fails); return 1; }
     printf("t_android_tbuf: ok (%d choices; the pending writes; the image of a buffer texture and a draw's answers; the copy kept for a submission)\n", n);
     return 0;

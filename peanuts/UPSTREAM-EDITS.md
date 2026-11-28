@@ -3481,3 +3481,20 @@ NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS draws its UI with OpenGL throug
 | `dm/host/hle.h` | 1 | `HLE_FORCE_BIG`'s comment: two stack slots carried over | `PEANUTS` |
 | `dm/host/tests/t_bigstack.c` | 4 | a ten-argument take-over through the switch and on the direct path; the call helpers use `PLAT_ASM_SYM` (ELF too) | `PEANUTS` |
 | `docs/reference/memory.md` | 1 | "Host calls on small guest stacks": the two stack slots | `PEANUTS` |
+
+### Sized storage buffers' stores count for buffer textures (2026-11-27)
+
+Round 10's pending GPU writes counted only stores through storage texel buffers. A storage buffer bound with a size of its own (`vka_res.size != 0`) is a real range:
+its stores are now kept the same way (`vka_tbuf_sb_tb` in `vka_tbuf.h`, `DM_VK_SB_GW`, live, default 1), so while the work storing into it is not done a buffer texture
+over it is read through the copy the GPU makes (image bindings) or in place (texel buffers). Unsized storage buffers, marked over the device's whole storage range, still
+do not count. Hyrule Warriors: Age of Calamity's clustered lighting stores its light list (a 4 MB buffer texture read through an image binding) from a dispatch of the same
+submission; read as the row image of the CPU's bytes it held leftover memory in the save menu's first frame, and the GPU timed out at 60 fps on an AYN Thor with Turnip
+(6 of 12 menu entries before, 0 of 12 after). `DM_VK_SB_GW=0` is the behaviour before.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_tbuf.h` | 2 | the header comment; `vka_tbuf_sb_tb` | `// PEANUTS` (Peanuts-owned file) |
+| `dm/gfx/vk_android/vka_draw.c` | 2 | `bind_sets`: a sized storage buffer's stores through `vka_tex_gw_tbuf`; `tbuf_img_ask`: the `tbuf gw: texture ID` line, once for each of 16 storage addresses | `// PEANUTS:` |
+| `dm/host/tests/t_android_tbuf.c` | 1 | `vka_tbuf_sb_tb` and the light list's sequence | Peanuts-owned file |
+| `docs/env_switches.tsv`, `docs/advanced_settings.tsv` | 1 row each | `DM_VK_SB_GW` | generated tables, rows by hand |
+| `dm/games/01002B00111A2000/README.md` | 1 | the note's Android section | `PEANUTS` |
