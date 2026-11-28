@@ -129,6 +129,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Kirby and the Forgotten Land - Nintendo Switch 2 Edition](04004D300C5AE001/README.md) | `04004D300C5AE001` | 1.1.0 (program 1) | 19.3.7 (Ounce) | HAL Laboratory's engine (NintendoWare) | NVN2 |
 | [DRAGON BALL: Sparking! ZERO](010035F022078000/README.md) | `010035F022078000` | 1.0.0 (base) | 14.3.0 | Unreal Engine 4.27 | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Kirby's Return to Dream Land Deluxe](01006B601380E000/README.md) | `01006B601380E000` | 1.0.0 (base) | 13.3.5 | HAL Laboratory's engine (NintendoWare) | NVN <!-- PEANUTS: Peanuts-only profile --> |
+| [My Hero One's Justice](010039000B68E000/README.md) | `010039000B68E000` | 1.0.3 | 4.5.0 | Unreal Engine 4 | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [LEGO 2K Drive](0100739018020000/README.md) | `0100739018020000` | 1.17 | 14.3.0 | Unreal Engine 4.27.2, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [LEGO CITY UNDERCOVER](010085500130A000/README.md) | `010085500130A000` | 1.0.3 | 1.3.1 | TT Games' engine (Nu2) | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [One Piece Pirate Warriors 4](01008FE00E2F6000/README.md) | `01008FE00E2F6000` | 1.0.0, 1.8.7 | 8.3.2 | Unknown | NVN <!-- PEANUTS: Peanuts-only profile --> |

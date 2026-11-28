@@ -1,0 +1,42 @@
+# PEANUTS: Android game support.
+# MY HERO ONE'S JUSTICE 1.0.3
+# Android bring-up verified on TurnipZ 0.3.0.
+
+# ---- Identity ----
+title_id	010039000B68E000
+program_id	010039000B68E000
+
+# ---- App ----
+name	MY HERO ONE'S JUSTICE
+ipa	MyHeroOnesJustice.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v196608	1.0.3	main=e6c20e29986a8b4d0c60b6c711986652	subsdk0=303578054faefc2198114b62e408c498	sdk=e01ad5381c948c4ec3b0bb210b08d5c8
+package	v196608
+shader_versions	v196608
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	HeroGame/Content/Paks/HeroGame-Switch.pak
+zip_store	.awb:.pak:.metallib
+
+# ---- Memory ----
+# Unreal: nninitStartup reserves a 62 GB address region and its FMallocBinned3 takes 37 GB of it, so a 64 GB alias region for the bring-up on the Mac. The rewriter cuts the allocator in any Unreal 4 / 5 main (dm/tools/ue_malloc.py) and gives the region what the alias region has room for (dm/tools/ue_region.py), so an iPhone takes a smaller guest block, as Octopath Traveler 0's profile (docs/reference/memory.md)
+mem_reserve	0x1028000000
+mem_alias	0x1000000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+
+# ---- Shader split ----
+# the decoded shader code archives: the engine's global shaders and the game's material shaders
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	MY HERO ONE'S JUSTICE shaders
+
+# ---- Engine frame rate ----
+fps_target	60
+fps_modes	30,60
+ue_fps_cvar	t.MaxFPS
