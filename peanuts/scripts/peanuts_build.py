@@ -39,6 +39,7 @@ NXYAZ0_SRC = REPO / 'dm' / 'peanuts' / 'pack_worker' / 'nxyaz0.c'
 PYMOD_BUILD = REPO / 'peanuts' / '.build' / 'pymod'
 WINDOWS = sys.platform == 'win32'
 LINUX = sys.platform.startswith('linux')
+TERMUX = sys.platform == 'android' and 'com.termux' in sys.prefix
 MAC = sys.platform == 'darwin'
 GAME_EXTS = ('.nsp', '.xci', '.nsz', '.xcz')
 DEVICE_ROOT = '/sdcard/Peanut Roms'   # the default folder on the phone; push-pack.py's --dest default is the same one (the test compares them)
@@ -159,6 +160,7 @@ def build_importer():
         die('the importer needs cmake and a C compiler: cmake (brew install cmake on macOS, your package manager on Linux, cmake.org on Windows), '
             'a C compiler (clang or gcc; on Windows MinGW-w64 GCC from MSYS2 UCRT64 or WinLibs), on PATH; or pass --importer / NX_IMPORTER')
     conf = [cmake, '-S', str(IMPORT_SRC), '-B', str(IMPORT_BUILD), '-DCMAKE_BUILD_TYPE=Release']
+    if TERMUX: conf += ['-DNXIMPORT_TERMUX_CLI=ON']
     if WINDOWS and not os.environ.get('CMAKE_GENERATOR'): conf += ['-G', 'MinGW Makefiles']
     build = [cmake, '--build', str(IMPORT_BUILD), '--target', 'nximport_cli', '--config', 'Release']
     say(f'building the importer into {IMPORT_BUILD}')
@@ -273,6 +275,11 @@ PC_REFUSE = {
 }
 
 
+# Games whose Oodle shader extraction was verified in native Termux.
+if TERMUX:
+    PC_DECODE['01004A4010FEA000'] = True  # Bayonetta 3 v1.2.0
+
+
 def profile_has(app, marker):
     tsv = REPO / 'dm' / 'games' / app / 'shader_map.tsv'
     return tsv.is_file() and marker in tsv.read_text(encoding='utf-8', errors='replace')
@@ -289,8 +296,8 @@ def stale(out, srcs):
 
 def build_unoodle():
     """-> (peanuts/.build/ooz/unoodle, '') built by dm/third_party/ooz/build.sh when it is missing or older than its sources, or (None, why this computer has none)"""
-    if not (LINUX or MAC) or platform.machine().lower() not in ('x86_64', 'amd64', 'arm64', 'aarch64'):
-        return None, ('the Oodle worker (dm/third_party/ooz) is built on Linux and macOS, x86-64 and arm64 (its decoder uses x86 SSE2 intrinsics; ooz_neon.h has them '
+    if not (LINUX or MAC or TERMUX) or platform.machine().lower() not in ('x86_64', 'amd64', 'arm64', 'aarch64'):
+        return None, ('the Oodle worker (dm/third_party/ooz) is built on Linux, macOS and Termux, x86-64 and arm64 (its decoder uses x86 SSE2 intrinsics; ooz_neon.h has them '
                       f'for arm64), and this is {platform.machine() or "an unknown processor"} on {sys.platform}')
     exe = OOZ_BUILD / 'unoodle'
     if not stale(exe, [OOZ_SRC / f for f in ('kraken.cpp', 'stdafx.h', 'unoodle.cpp', 'ooz-port.patch', 'ooz-guards.patch', 'ooz-arm64.patch', 'ooz_neon.h', 'build.sh')]): return exe, ''
@@ -347,7 +354,7 @@ def pc_decode(app, name=None):
     label = f'{name or app} ({app})'
     given = os.environ.get('DM_OODLE_OOZ')
     if given and not Path(given).expanduser().is_file(): die(f'DM_OODLE_OOZ names {given}, which is not a file')
-    if not given and not ((LINUX or MAC) and app in PC_DECODE): return {}
+    if not given and not ((LINUX or MAC or TERMUX) and app in PC_DECODE): return {}
     ue = profile_has(app, '/ue_shaders/')
     env = {}
     if given:

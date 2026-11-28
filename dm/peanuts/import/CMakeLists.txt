@@ -23,7 +23,8 @@ set(NXIMPORT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_zip.c
     ${CMAKE_CURRENT_SOURCE_DIR}/nximport.c
     ${NX_ZSTD})
-if(ANDROID)
+option(NXIMPORT_TERMUX_CLI "Build standalone CLI on Termux" OFF)
+if(ANDROID AND NOT NXIMPORT_TERMUX_CLI)
   add_library(nximport SHARED ${NXIMPORT_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/nximport_jni.c)
   target_link_options(nximport PRIVATE -Wl,--no-undefined -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384)
   target_link_libraries(nximport PRIVATE log z)   # z: zlib, for a deflated member of a firmware .zip (nx_zip.c / nximport.c font_try_zip_deflate); the NDK ships it

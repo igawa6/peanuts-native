@@ -109,6 +109,9 @@ def peanuts_env(step):
     """step 'split': DM_SPLIT_DIRECT=1 (the targeted split reads a file's recorded containers only); 'shaders': DMSH_VK_ZSTD_LEVEL=3 (the phone's level)"""
     kw = dict(DM_SPLIT_DIRECT='1') if step == 'split' else dict(DMSH_VK_ZSTD_LEVEL='3')
     # PEANUTS: a desktop checkout can build the locked translator. The phone has its own native one.
+    if step == 'shaders' and sys.platform == 'android':
+        if not os.environ.get('XLATE'):
+            raise Error('Android shader translation requires a compatible native libdmsh_xlate.so; set XLATE to its path and SPIRV_VAL to the native validator.')
     helper = REPO / 'peanuts/scripts'
     if step == 'shaders' and 'XLATE' not in os.environ and (helper / 'prepare_pc_translator.py').is_file():
         sys.path.insert(0, str(helper))
@@ -1082,7 +1085,28 @@ def split_shaders(a, g, vdir, pkg, parts=None, aoc=(), nros=None):   # parts: th
         for f in ('shader_map.tsv', 'shader_facts.tsv', 'shader_pairs.tsv'):
             if (g.dir / f).is_file() and table_lines(g.dir / f) != table_lines(tmp / f):   # the comment lines name the game and the split's wording at the time
                 print(f'shaders: the dump\'s {f} differs from the profile\'s ({len(have - want)} shaders more); the library is the profile\'s, its shaders found in the package by key')
-    shutil.rmtree(pkg, ignore_errors=True); (tmp / 'pkg').rename(pkg)
+    if pkg.exists():
+        shutil.rmtree(pkg)
+    try:
+        (tmp / 'pkg').rename(pkg)
+    except OSError as e:
+        if sys.platform != 'android' or e.errno not in (errno.EPERM, errno.EACCES):
+            raise
+        # Android shared storage can refuse directory renames.
+        print('shaders: directory rename refused; copying the validated package', flush=True)
+        try:
+            source = tmp / 'pkg'
+            pkg.mkdir()
+            for root, dirs, files in os.walk(source):
+                dest = pkg / Path(root).relative_to(source)
+                for name in dirs:
+                    (dest / name).mkdir(exist_ok=True)
+                for name in files:
+                    shutil.copyfile(Path(root) / name, dest / name)
+        except BaseException:
+            shutil.rmtree(pkg, ignore_errors=True)
+            raise
+        shutil.rmtree(tmp / 'pkg')
     absent = sorted(want - have) if (g.dir / 'shader_map.tsv').is_file() else []   # the keys only another registered build has (shader_optional.tsv): listed for a library build to leave out
     if absent:
         (pkg / '_absent.tsv').write_text(''.join(k + '\n' for k in absent))

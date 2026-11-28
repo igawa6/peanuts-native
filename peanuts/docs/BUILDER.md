@@ -54,6 +54,58 @@ Two ways to get the packer environment. Either way the importer needs cmake, gcc
 
 Without `PEANUTS_PYTHON` the launcher uses `python3.14`, or `python3` when it is 3.14 or later, from PATH.
 
+### Android (native Termux, experimental)
+
+Game preparation can run directly on ARM64 Android devices
+using native Termux without root.
+
+Install the native build tools:
+
+```sh
+pkg install python clang cmake make patch git
+```
+
+The builder detects Termux and builds nximport_cli and
+the supported Oodle decoder automatically.
+
+For Vulkan shader translation, provide compatible Android
+ARM64 native libraries:
+
+```sh
+export XLATE=/path/to/libdmsh_xlate.so
+export SPIRV_VAL=/path/to/libSPIRV-Tools-shared.so
+
+python dm/gfx/tools/xlate_tree.py --check-lib "$XLATE"
+```
+
+The translator must match the checkout's source tree.
+Building the translator itself in Termux is not yet supported.
+
+Run the builder:
+
+```sh
+python peanuts/scripts/peanuts_build.py /path/to/game --keys ~/.switch/prod.keys
+```
+
+Keep the repository in Termux's private home directory.
+Game files may be stored on Android shared storage.
+
+Bayonetta 3 v1.2.0 (131072) was prepared on a POCO Pad X1
+(Snapdragon 7+ Gen 3, 8 GB RAM, Android 16).
+
+- 6,424 matching shader keys.
+- 7,158 valid SPIR-V modules.
+- No shader translation failures.
+- Two chapters completed in 30 FPS mode without crashes.
+
+The original test used manual workarounds that this patch
+aims to integrate into the builder.
+
+The APK was compiled through GitHub Actions, not locally.
+
+Other games and Unreal-specific Python extensions have not
+yet been verified in native Termux.
+
 ## Examples
 
 ```sh
