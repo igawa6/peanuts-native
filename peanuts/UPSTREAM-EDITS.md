@@ -1,5 +1,6 @@
 # Upstream edits — marker status and contribution candidates
 
+- Upstream candidate: Vulkan cubemap view recovery for six-face textures registered with a single cube layer. Opt-in via DM_VK_CUBE_VIEW_FIX; verified in Bayonetta on Qualcomm System Driver and TurnipZ 0.3.0.
 - Upstream candidate: Vulkan direct texture and sampler bindings resolve against the executing queue’s descriptor pools. The CPU registry retains sparse texture IDs beyond one full pool without enlarging GPU tables. Trails through Daybreak II rotates three such pools.
 
 - Scarlet and Violet 4.0.0 and Kakarot 1.70 add game profiles and generated shader tables. The PC splitter accepts build-specific regular variation pairs, and the packer loads optional shader keys once per split. The host adds elapsed integer timing rows and offline Bluetooth replies.
