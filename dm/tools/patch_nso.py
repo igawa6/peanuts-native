@@ -1595,6 +1595,20 @@ def analyse_fn(fa, fb):
                     bounds = (fn_start, fn_end) if fn_end is not None else None
                     if scheduled := jump_scheduled_offsets(insl, j, IMG, MOD.segments[1], bounds):
                         tgt, scheduled_dispatches[ins.address] = scheduled
+                # PEANUTS(upstream-candidate): build-specific MHA2 v983040 jump table.
+                if (not tgt
+                        and os.environ.get('DM_GAME') == '01007E700DBF6000'
+                        and NAME == 'main'
+                        and BUILD_ID == '29e1cd0fbb24697e379da855ca5c367b'
+                        and ins.address == 0x1c58cac):
+                    tb = 0x58228a8
+                    expected = [0x1c58cb0, 0x1c58cbc, 0x1c58cc8, 0x1c58cd4, 0x1c58ce0]
+                    ro_start, ro_size = MOD.segments[1]
+                    if ro_start <= tb and tb + 20 <= ro_start + ro_size:
+                        actual = [tb + struct.unpack_from('<i', IMG, tb + 4*i)[0] for i in range(5)]
+                        if actual == expected and all(fa <= t < fb for t in actual):
+                            tgt = actual
+                            print('MHA2: verified jump table 0x1c58cac', flush=True)
                 assert tgt, f'jump table {ins.address:x}'
                 tabjumps[ins.address] = tgt; continue
             jumps[ins.address] = (base, width)
