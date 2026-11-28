@@ -168,6 +168,7 @@ public final class SettingsPage {
      * and from the tiles, false: Back goes on as it did (Advanced closes, Settings goes back to Home)
      */
     public static boolean onBack(Activity a) {
+        if (SetupPage.onBack(a)) return true;   // the first-run setup on Home: the step before
         if (dev.peanuts.mods.CheatsPage.onBack(a)) return true;   // a game's Mods & Cheats: back to the game's page
         if (GamePage.onBack(a)) return true;   // a game's page in areas: an area back to its tiles
         if (!tablet || atHub || a != owner || pane == null || !pane.isAttachedToWindow()) return false;

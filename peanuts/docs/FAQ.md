@@ -16,12 +16,12 @@ For version 0.1.9. Labels in **bold** are the words the app shows. "Settings" is
 
 You need three things from your own console first: your game dumps, your `prod.keys` and a firmware dump. Copy them to the device. Then:
 
-1. Install the APK and open the app. The first screen is the card **Set up your games**. It lists four steps: **1 Keys**, **2 Game folder**, **3 Updates & DLC**, **4 Firmware**.
-2. Tap **Keys** and pick your `prod.keys`. You should see the message **Keys accepted**, and the row reads **Added: prod.keys is in the app.**
-3. Tap **Game folder** and pick the folder that holds your dumps. The first time, a dialog **Allow file access** appears. Tap **Open settings**, turn on All files access for Peanuts Native, and go back to the app. You should see the folder's path in the row.
-4. Optional: tap **Updates & DLC** if your update or DLC files are in a folder of their own, and pick it. Skip this if everything is inside the game folder. More folders of either kind can be added later in Settings › Library › **Add folder**.
-5. Tap **Firmware**, then **Folder** or **Zip file**, and pick your firmware dump. The row reads **Reading the firmware…** and then **Firmware added from …**. Do this after the keys: the fonts cannot be read without them.
-6. Tap **Show my games**. You should see a grid of covers. A game that can be built has a **Build** label on its cover.
+1. Install the APK and open the app. The first screen is the setup's **Welcome**, with the app's peanut, still whole. Tap **Set up**. Four steps follow, one at a time; the peanut cracks a little further with each one you do (a step left for later cracks nothing). A controller works throughout: the D-pad, A, and B for the screen before.
+2. **Allow file access:** tap **Allow access**. Android opens its All files access page for Peanuts Native: turn the switch on and go back to the app. The step reads **File access allowed**; tap **Continue**. The app needs it to read your game and firmware folders, so this step cannot be left for later.
+3. **Add your keys:** tap **Choose prod.keys** and pick your `prod.keys`. The message **Keys loaded** comes, and the step reads **prod.keys added**. A file that is not a prod.keys is refused and changes nothing. **Later** goes on without keys: your games still show, and building asks for them.
+4. **Add your firmware:** tap **A folder** or **A .zip file** and pick your firmware dump. A bar shows while the app reads it, then the step reads **Firmware added**. Do this after the keys: the fonts cannot be read without them. **Later** works here too.
+5. **Where are your games?** Tap **Add a folder** and pick the folder that holds your dumps. Add as many folders as you have, on the phone and the SD card; each folder's chip says how many games it holds, and tapping it can remove it. If your update or DLC files are in folders of their own, add those with **Updates and DLC in a folder of their own? Add it too**. This is the one step you cannot leave out. Tap **Continue**.
+6. The peanut springs open, its halves fall away and its kernels after them, **Setting up Peanuts Native** shows for a moment while the app reads your folders, and then you see a grid of covers. A game that can be built has a **Build** label on its cover. Everything from the setup is in Settings › Library and Settings › Console later.
 7. Optional: install a GPU driver in Settings › Graphics › **GPU driver**. See [Which driver is recommended?](#which-driver-is-recommended)
 8. Tap a cover. Its sheet opens with the rows **Base**, **Update**, **DLC** and **Dual-screen companion**. Check them and tap **Build**. Android asks to allow notifications: allow it, so you can see the progress outside the app.
 9. Wait. The cover shows **Building · N %**. You can leave the app.
@@ -88,7 +88,7 @@ Both come from your own console. The app contains no keys and no firmware, and i
 
 ### How do I add my keys?
 
-1. Open Settings › Console › **Keys**. The same row is on the first-run card, and a game's sheet has **Add keys…** while keys are missing.
+1. Open Settings › Console › **Keys**. The first-run setup has the same as its second step, and a game's sheet has **Add keys…** while keys are missing.
 2. The file picker opens with the hint **Pick your prod.keys**. Pick the `prod.keys` file from your own console. A file larger than 1 MB is refused.
 3. The app checks the file and, when it is a usable `prod.keys`, keeps it in its own storage.
 
@@ -105,7 +105,7 @@ Your keys do not have the key this game or update needs. This usually means the 
 ### How do I add the firmware?
 
 1. Add your keys first. Without keys the firmware cannot be read.
-2. Open Settings › Console › **Firmware**. The same row is on the first-run card, and a game's sheet has **Choose firmware…** while fonts are missing.
+2. Open Settings › Console › **Firmware**. The first-run setup has the same as its third step, and a game's sheet has **Choose firmware…** while fonts are missing.
 3. A small sheet **Firmware** asks: **Folder** or **Zip file**.
    - **Folder**: pick the folder your firmware dump is extracted into (hint: **Pick your firmware folder**). The app looks for `.nca` files in it, up to three folders deep.
    - **Zip file**: pick the firmware `.zip` (hint: **Pick your firmware zip**), with the `.nca` files inside it.
@@ -146,9 +146,9 @@ Some games also need the fonts to start at all, for example Echoes of Wisdom. If
 
 ### How do I add and build my games?
 
-1. Open the app. The first screen is **Set up your games**.
-2. Add **Keys**, pick the **Game folder**, set **Updates & DLC** if those files are in other folders, and add **Firmware**.
-3. Tap **Show my games**.
+1. Open the app. The first screen is the setup's **Welcome**: tap **Set up**.
+2. Add your keys and your firmware, then your game folders, and the folders of your updates and DLC if they are in folders of their own.
+3. Tap **Continue**. Home shows your games after a moment.
 
 Then tap a game's cover to open its sheet. Check the **Base**, **Update**, **DLC** and **Dual-screen companion** rows and tap **Build**. The build imports the game, prepares it and installs the companion. Only one build runs at a time.
 

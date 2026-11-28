@@ -47,7 +47,7 @@ class Wiring(unittest.TestCase):
 
     def test_bottom_screen_page(self):
         screen = (UI / 'BottomScreen.java').read_text(encoding='utf-8')
-        self.assertIn('else if (started && explain != null && openSettings == null) panel.showExplain(explain);', screen)
+        self.assertIn('else if (started && explain != null && (openSettings == null || setup)) panel.showExplain(explain);', screen, "Settings' row, or the first-run setup's step on Home")
         for at in ('public static void home(Activity a, Runnable settings)', 'static void page(Activity a)'):
             self.assertIn('explain = null', body(screen, at), f'{at} clears the explanation')
         panel = (UI / 'BottomPanel.java').read_text(encoding='utf-8')

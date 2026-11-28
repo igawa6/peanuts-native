@@ -25,7 +25,7 @@ import java.util.List;
  * Settings › Library (SPEC.md), the first section of Banana's Settings: every folder the app uses (LibraryFolders: the game folders, the update and DLC folders,
  * the build folders, each a row, and Add folder), the keys (prod.keys, copied into files/keys and checked by the importer), the firmware fonts (the importer
  * extracts them into files/firmware/fonts), Rescan, and the Companions catalog. The pickers are the system's; their results come back through
- * MainActivity.onActivityResult to {@link #result} (requests 60 to 70, also the game sheet's Choose/Add). The same pickers serve Home's first-run card and the
+ * MainActivity.onActivityResult to {@link #result} (requests 60 to 70, also the game sheet's Choose/Add). The same pickers serve the first-run setup (SetupPage) and the
  * sheet's Add keys….
  */
 public final class LibrarySettings {
@@ -240,8 +240,12 @@ public final class LibrarySettings {
         if (fontsState != null && fontsState.startsWith("Waiting for file access") && Environment.isExternalStorageManager()) fontsState = null;
         firmwareAfterAccess(a);
         LibraryFolders.resumed(a);
+        SetupPage.resumed(a);   // the setup on Home: upstream's file access card stays aside (its own games step asks for the access)
         refreshRows();
     }
+
+    /** What a firmware read is doing or why it stopped ("Reading the firmware…", "Firmware not added: …", "Waiting for file access…"), null when nothing is (SetupPage) */
+    static String firmwareState() { return fontsState; }
 
     static CharSequence fontsValue(Activity a, String none) {
         firmwareAfterAccess(a);
@@ -253,7 +257,7 @@ public final class LibrarySettings {
 
     // ---- Pickers ----
 
-    /** The keys picker (Settings › Console › Keys, the first-run card, the sheet's Add keys…) */
+    /** The keys picker (Settings › Console › Keys, the first-run setup, the sheet's Add keys…) */
     public static void pickKeys(Activity a) {
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -279,7 +283,7 @@ public final class LibrarySettings {
 
     /** Settings › Console › Firmware: a folder of extracted NCAs (the old way), or a firmware .zip with the same NCAs flat inside it (stored
      * or deflated — users usually have firmware as a zip, not pre-extracted) */
-    static void pickFirmwareSource(Activity a) {   // also the game sheet's and the first-run card's firmware buttons
+    static void pickFirmwareSource(Activity a) {   // also the game sheet's and the first-run setup's firmware step
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
         AlertDialog[] d = new AlertDialog[1];
@@ -381,6 +385,7 @@ public final class LibrarySettings {
         ImporterPort imp = ImporterPort.get();
         if (!imp.available()) {
             if (!tmp.renameTo(out)) { tmp.delete(); error(a, "Could not place the keys in " + out); return; }
+            SetupPage.keysRejected = false;
             keysLanded(a);
             return;
         }
@@ -395,6 +400,7 @@ public final class LibrarySettings {
             } else ImporterPort.Holder.KEYS_OK = true;
             UI.post(() -> {
                 if (!placed) { keysRefused(a, "keys refused by the importer: " + err); return; }
+                SetupPage.keysRejected = false;
                 Haptics.play(a.getWindow().getDecorView(), Haptics.Word.CLICK);
                 Toast.makeText(a, "Keys loaded", Toast.LENGTH_LONG).show();
                 keysLanded(a);
@@ -402,9 +408,10 @@ public final class LibrarySettings {
         }, "peanuts-keys").start();
     }
 
-    /** A picked file that is not a prod.keys the app can read: nothing changed, and a dialog says so */
+    /** A picked file that is not a prod.keys the app can read: nothing changed. The setup says so on its Keys step; elsewhere a dialog */
     private static void keysRefused(Activity a, String why) {
         android.util.Log.w("peanuts", why);
+        if (SetupPage.needed(a)) { SetupPage.keysRejected = true; Haptics.play(a.getWindow().getDecorView(), Haptics.Word.REJECT); keysLanded(a); return; }
         error(a, "That file is not a prod.keys the app can read. Your keys were not changed. Pick the prod.keys from your own console, the same version as your firmware.");
     }
 

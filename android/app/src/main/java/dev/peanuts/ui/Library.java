@@ -71,7 +71,7 @@ import java.util.function.Predicate;
  * filter exists only while something runs and holds the full cards: the build card (Ondevice's shape: status, a sentence, the bar, Stop/Retry and a disabled Play)
  * and upstream's progress card (Ondevice); everywhere else the building game is a cover with a progress strip and a "Building · N %" chip that opens that filter.
  * The games come from {@link LibraryScanner} (every NSP/XCI/.nup/dump in the game folder) merged with upstream's own list: a scanned game that is ready is put
- * into upstream's list so Play and Manage are Banana's. With no game folder set, the first-run card (emptyCard's shape with three Setting rows) is Home's one card.
+ * into upstream's list so Play and Manage are Banana's. Until a game folder is set and the setup ended, the first-run setup (SetupPage) is Home's whole page.
  */
 public final class Library {
     private static final int ALL = 0, BUILDING = 1, READY = 2, BUILD = 3, NO_PROFILE = 4;
@@ -1065,11 +1065,16 @@ public final class Library {
     private void render() {
         if (box == null) return;
         dev.peanuts.ctl.Ctl.screen();   // the control interface's status file follows the filter, Find and what builds
+        if (SetupPage.needed(a)) {   // the first-run setup: its own page in place of the library (SetupPage keeps it, and builds a step again only when what it shows changed)
+            Motion.clear();
+            tiles.clear(); keyed.clear(); shown = null; lastCells = 0; hadNote = false;
+            SetupPage.fill(a, box);
+            return;
+        }
+        SetupPage.leave(box);
         View pc = ondeviceCard;
-        boolean setup = PeanutsPrefs.gameDir(a) == null || !PeanutsPrefs.setupDone(a);
         List<Row> rows = rows();
-        boolean bare = setup && rows.isEmpty() && pc == null;   // the first-run card alone
-        if (setup || rows.isEmpty()) BottomScreen.idle(setup);   // bottom screen: logo
+        if (rows.isEmpty()) BottomScreen.idle(false);   // bottom screen: logo
 
         Build b = build;
         if (b != null && b.failed && b.step.equals("prepare")) pc = null;   // a build that stopped in Prepare: one card, this build's (its Retry builds again), not upstream's failed card beside it
@@ -1109,10 +1114,10 @@ public final class Library {
         gridPos.clear();
         for (int i = 0; i < show.size(); i++) gridPos.put(show.get(i).id(), i);
         gridCols = Math.max(1, cols);
-        if (!setup && !rows.isEmpty() && filter != BUILDING) BottomScreen.only(gridPos.keySet());
+        if (!rows.isEmpty() && filter != BUILDING) BottomScreen.only(gridPos.keySet());
 
         // nothing visible changed: the views stay, with their focus, their scroll position and whatever is animating
-        String sig = setup ? null : signature(show, pc, b, buildCard, building, all, ready, toBuild, noProfile, hidden, cols) + queueSignature();   // the first-run card reads too much to list: always built
+        String sig = signature(show, pc, b, buildCard, building, all, ready, toBuild, noProfile, hidden, cols) + queueSignature();
         boolean user = animateNext;
         animateNext = false;
         if (sig != null && sig.equals(shown) && box.getChildCount() > 0) {
@@ -1136,8 +1141,6 @@ public final class Library {
         buildStatus = null; buildBody = null; buildPct = null; buildBar = null; buildGoOn = null; coverChip = null; coverStrip = null; firstCover = null;
         if (ondeviceCard != null && ondeviceCard.getParent() instanceof ViewGroup) ((ViewGroup) ondeviceCard.getParent()).removeView(ondeviceCard);
         shown = sig;
-        if (setup) PUi.add(box, setupCard(), 0);
-        if (bare) { lastCells = 0; hadNote = false; return; }
 
         // the filter row
         LinearLayout top = PUi.row(a);
@@ -1167,7 +1170,7 @@ public final class Library {
         }
         chips.addView(chipRow, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         top.addView(chips, PUi.weight());
-        if (!setup && offersBuildAll(rows)) {   // Build all that need it (issue #348): it asks first and names the games
+        if (offersBuildAll(rows)) {   // Build all that need it (issue #348): it asks first and names the games
             Button allB = PUi.button(a, "Build all…", PUi.Kind.QUIET, v -> buildAllAsk());
             allB.setCompoundDrawablesRelativeWithIntrinsicBounds(PUi.icon(a, R.drawable.ic_build, R.color.bn_accent), null, null, null);
             allB.setCompoundDrawablePadding(PUi.dp(a, 6));
@@ -1195,12 +1198,12 @@ public final class Library {
         track(findB, "find", null);
         LinearLayout.LayoutParams flp = PUi.wrap(); flp.leftMargin = PUi.dp(a, 8);
         top.addView(findB, flp);
-        PUi.add(box, top, setup ? 16 : 2);
+        PUi.add(box, top, 2);
         TextView note = null;   // the scan's line, or the empty library's: it fades in when the last rebuild did not have it
         if (scanning) {
             int n = PeanutsPrefs.roots(a).size();
             note = PUi.add(box, PUi.small(a, "Looking in " + n + (n == 1 ? " folder…" : " folders…")), 8);
-        } else if (rows.isEmpty() && pc == null && !setup) {
+        } else if (rows.isEmpty() && pc == null) {
             List<String> dirs = PeanutsPrefs.gameDirs(a);
             note = PUi.add(box, PUi.small(a, (dirs.size() == 1 ? "No games found in " + dirs.get(0) + ". Put NSP, NSZ, XCI, XCZ, .nup files or dump folders there"
                     : "No games found in your " + dirs.size() + " game folders. Put NSP, NSZ, XCI, XCZ, .nup files or dump folders in one of them") + ", then Rescan (Settings › Library)."), 8);
@@ -2189,62 +2192,5 @@ public final class Library {
         String why = startBuild(s);
         if (why != null) { Haptics.play(anchor(), Haptics.Word.REJECT); new AlertDialog.Builder(a).setTitle("Build").setMessage(why).setPositiveButton("OK", null).show(); }
         else if (building(t.titleId)) Haptics.play(anchor(), Haptics.Word.HEAVY);
-    }
-
-    // ---- First run ----
-
-    /** emptyCard's shape: the badge, a heading, the four steps (P5: Updates & DLC folded in as its own numbered row, no longer a quiet
-     *  footnote button), the four Setting rows, then the single "Show my games" action */
-    private View setupCard() {
-        LinearLayout c = PUi.card(a);
-        c.setGravity(Gravity.CENTER_HORIZONTAL);
-        c.setPadding(PUi.dp(a, 20), PUi.dp(a, 28), PUi.dp(a, 20), PUi.dp(a, 20));
-        ImageView im = new ImageView(a);
-        im.setImageResource(R.drawable.ic_banana_happy);
-        im.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        c.addView(im, new LinearLayout.LayoutParams(PUi.dp(a, 80), PUi.dp(a, 80)));
-        TextView h = PUi.heading(a, "Set up your games");
-        h.setGravity(Gravity.CENTER);
-        PUi.add(c, h, 12, PUi.wrap());
-        TextView t = PUi.small(a, "Keys, firmware and folders stay on this device. Nothing is uploaded.");
-        t.setGravity(Gravity.CENTER);
-        PUi.add(c, t, 6, PUi.wrap());
-        LinearLayout steps = PUi.row(a);
-        steps.setGravity(Gravity.CENTER);
-        String[] s = {"1  Keys", "2  Game folder", "3  Updates & DLC", "4  Firmware"};
-        for (int k = 0; k < s.length; k++) {
-            LinearLayout.LayoutParams lp = PUi.wrap();
-            if (k > 0) lp.leftMargin = PUi.dp(a, 6);
-            TextView chip = PUi.chip(a, s[k]);
-            chip.setSingleLine(true);
-            steps.addView(chip, lp);
-        }
-        PUi.add(c, steps, 16, PUi.wrap());
-        boolean keys = PeanutsPrefs.hasKeys(a);
-        List<String> games = PeanutsPrefs.gameDirs(a);
-        String game = games.isEmpty() ? null : games.size() == 1 ? games.get(0) : games.size() + " game folders";
-        // Keys and firmware fonts are a one-time setup requirement before Build, not per-build (owner, 2026-11-13): no longer worded "Optional" here, since
-        // Build itself is gated on both (GameSheet, Library.startBuild). Browsing this screen (Show my games, below) still needs only the game folder.
-        PUi.add(c, PUi.body(a, LibrarySettings.KEYS_FIRMWARE_GUIDANCE), 12);
-        PUi.add(c, new PUi.Setting(a, "🔑", "Keys", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.pickKeys(a)))
-                .value(keys ? "Added: prod.keys is in the app." : "Needed before building. Importing an NSP, NSZ, XCI or XCZ needs it; browsing your folders here does not.").chevron(a).view, 16);
-        PUi.add(c, new PUi.Setting(a, "📁", "Game folder", Haptics.on(Haptics.Word.TICK, v -> LibraryFolders.pick(a, dev.peanuts.folders.FolderKinds.GAMES, false)))
-                .value(game != null ? game : "Required. Every NSP, NSZ, XCI, XCZ, .nup and dump folder inside is shown on this screen.").chevron(a).view, 0);
-        // P5: folded in as its own numbered step, same Setting-row shape as the other three, instead of a quiet text button below the action row
-        List<String> addons = PeanutsPrefs.addonDirs(a);
-        CharSequence updDlcValue = addons.isEmpty() ? "Point at your update and DLC files if they're not inside the game folder already. Skip if everything's together."
-                : addons.size() == 1 ? addons.get(0) : addons.size() + " folders";
-        PUi.add(c, new PUi.Setting(a, "⬆️", "Updates & DLC", Haptics.on(Haptics.Word.TICK, v -> LibraryFolders.pick(a, dev.peanuts.folders.FolderKinds.ADDONS, false))).value(updDlcValue).chevron(a).view, 0);
-        PUi.add(c, new PUi.Setting(a, "🔤", "Firmware", Haptics.on(Haptics.Word.TICK, v -> LibrarySettings.pickFirmwareSource(a)))
-                .value(LibrarySettings.fontsValue(a, "Needed before building. A missing font can crash some games at boot.")).chevron(a).view, 0);
-        PUi.Action show = PUi.action(a, R.drawable.ic_add, "Show my games", PUi.Kind.PRIMARY, v -> {
-            if (PeanutsPrefs.gameDir(a) == null) { Haptics.play(v, Haptics.Word.REJECT); Toast.makeText(a, "Pick the game folder first", Toast.LENGTH_LONG).show(); return; }
-            Haptics.play(v, Haptics.Word.CLICK);
-            PeanutsPrefs.setupDone(a, true);
-            changed(a);
-        });
-        show.setEnabled(game != null);
-        PUi.add(c, show, 16, PUi.fill());
-        return c;
     }
 }

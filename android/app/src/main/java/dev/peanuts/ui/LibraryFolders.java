@@ -27,7 +27,7 @@ import java.util.Locale;
  * Every folder the app uses, in one place (issue #546): Settings › Library lists each folder as a row of its own, its kind's name over its path, and an Add
  * folder row after them. Add folder asks what is in the folder (FolderKinds.ALL), opens the system's folder picker, and comes back to the same sheet with what
  * was added, so several folders go in one after another. A folder's row opens what it is with Remove, which takes it off the list and never touches its files,
- * and for builds Make default. The first-run card and a build that misses its DLC open the picker of one kind directly ({@link #pick}).
+ * and for builds Make default. The first-run setup and a build that misses its DLC open the picker of one kind directly ({@link #pick}).
  */
 final class LibraryFolders {
     private LibraryFolders() {}
@@ -193,7 +193,7 @@ final class LibraryFolders {
         if (f != null && !box.isInTouchMode()) box.post(f::requestFocus);
     }
 
-    /** The system's folder picker for a kind (the Add sheet's choice, the first-run card's rows, a build's "Add a DLC folder"); sheet: its answer opens the Add sheet again */
+    /** The system's folder picker for a kind (the Add sheet's choice, the first-run setup's steps, a build's "Add a DLC folder"); sheet: its answer opens the Add sheet again */
     static void pick(Activity a, FolderKind k, boolean sheet) {
         sheetOpen = sheet;
         lastKind = k;

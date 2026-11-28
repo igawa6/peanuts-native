@@ -164,6 +164,20 @@ public final class PeanutsPrefs {
     public static boolean setupDone(Context c) { return of(c).getBoolean("setup_done", false); }
     public static void setupDone(Context c, boolean on) { of(c).edit().putBoolean("setup_done", on).apply(); }
 
+    /** The first-run setup's step that shows (dev.peanuts.setup.SetupSteps.Step.key), kept while the setup is open; null: none yet */
+    public static String setupStep(Context c) { return of(c).getString("setup_step", null); }
+    public static void setupStep(Context c, String key) { put(c, "setup_step", key); }
+    /** The furthest step the player has reached in the setup (its key): the peanut cracks only for a step reached; null: the welcome */
+    public static String setupFurthest(Context c) { return of(c).getString("setup_furthest", null); }
+    public static void setupFurthest(Context c, String key) { put(c, "setup_furthest", key); }
+    /** What the player left in the setup: "keys_later", "firmware_later", "addons_skipped" */
+    public static boolean setupMark(Context c, String what) { return of(c).getBoolean("setup_" + what, false); }
+    public static void setupMark(Context c, String what, boolean on) { of(c).edit().putBoolean("setup_" + what, on).apply(); }
+    /** The setup is over: its step and marks go */
+    public static void setupClear(Context c) {
+        of(c).edit().remove("setup_step").remove("setup_furthest").remove("setup_keys_later").remove("setup_firmware_later").remove("setup_addons_skipped").apply();
+    }
+
     /** Off by default: dev.peanuts.Companion only shows the chains/scan developer readout on the second display (instead of leaving it free) when this is on -
      * a long press on Settings › Screens › Companions toggles it (LibrarySettings). A title with no companion package normally gets no second-screen window at
      * all, so the AYN Thor's own launcher stays on Screen-2, exactly as without Peanuts. */

@@ -28,12 +28,12 @@ call `Haptics` themselves, and both would play.
   the name under it; Building → Ready by last played → Build needed A–Z → Not Supported Yet A–Z, no sections). Tap = Play (`Upstream.launch`, Banana's
   `MainActivity.launch` by reflection) for a ready listed game, the sheet otherwise; long press / Y = Banana's Manage (listed) or the sheet (scanned); L/R shoulders
   = previous/next filter. The Building filter holds the full cards (the build card, upstream's Ondevice card) two per row; in All the building game is a cover with
-  a progress strip and a `Building · N %` chip that opens that filter. The first-run card when no game folder is set; the scan (`LibraryScanner`) and the catalog
+  a progress strip and a `Building · N %` chip that opens that filter. The first-run setup (`SetupPage`, `SetupPeanut`) in place of the library until a game folder is set and the setup ended; the scan (`LibraryScanner`) and the catalog
   (`CompanionPort`) off the main thread; a scanned game that is ready goes into upstream's list (`Upstream.addToList`) so Play and Manage are Banana's own.
 - `GameSheet` — the game's dialog: Base / Update / DLC / Companion rows, Build or Rebuild, Import again… for a game whose base is a .nup (the .nup made anew from the dumps, `dev.peanuts.build.Reimport`), Add keys… when prod.keys are missing. Its Choose/Add pickers come back
   through `LibrarySettings.result` (requests 65, 66).
-- `LibrarySettings` — Settings › Library: folders, keys, firmware, Rescan, Haptics (System / Off), Motion (System / Reduced), Companions; the pickers
-  (also the first-run card's and the sheet's).
+- `LibrarySettings` — Settings › Library: folders (`LibraryFolders`, the kinds in `dev.peanuts.folders`), keys, firmware, Rescan, Haptics (System / Off),
+  Motion (System / Reduced), Companions; the pickers (also the first-run setup's and the sheet's).
 - `SettingsPage`, `SettingsSections`, `Icons` — Settings in ten sections: the table of which row goes where (by title; a row it does not know goes to
   the section of its old heading, under More), the page that shows one section (a sidebar on a window 600 dp wide or more, a drawer on a phone), and the
   Peanuts icons (`pi_*` drawables, their two colours from a style; found by name, so a build without the Peanuts resources keeps its emoji).

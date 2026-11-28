@@ -227,6 +227,21 @@ public final class BottomScreen {
         }
     }
 
+    /** The first-run setup (SetupPage): its step explained on this display; null: the setup is over */
+    static void setup(Activity a, Explain e) {
+        if (a != owner) return;
+        if (pendingCard != null) { UI.removeCallbacks(pendingCard); pendingCard = null; }
+        card = null; building = null;
+        setup = e != null;
+        if (e == null && explain != null && explain.key instanceof String && ((String) explain.key).startsWith("setup:")) explain = null;
+        else if (e != null) {
+            Explain was = explain;
+            explain = e;
+            if (was != null && e.key.equals(was.key) && showing() && panel.page() == BottomPanel.EXPLAIN) { panel.showExplain(e); return; }   // the same step: in place
+        }
+        show();
+    }
+
     /** Nothing focused: the logo; first run without the Settings hint */
     static void idle(boolean firstRun) {
         setup = firstRun;
@@ -368,7 +383,7 @@ public final class BottomScreen {
         if (l != null && l.companion) panel.showLaunch(l.titleId, l.name, l.icon, "Starting the game");
         else if (started && building != null && card != null && card.kind == Card.K_BUILDING) panel.showBuild(building);
         else if (started && card != null && openSettings != null) panel.showCard(card);
-        else if (started && explain != null && openSettings == null) panel.showExplain(explain);
+        else if (started && explain != null && (openSettings == null || setup)) panel.showExplain(explain);   // Settings' row, or the setup's step on Home
         else panel.showLogo(started && openSettings != null && !setup);
         if (!was) panel.appear();
     }
