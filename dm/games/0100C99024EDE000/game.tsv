@@ -1,0 +1,40 @@
+# Game profile of Mega Man Star Force Legacy Collection (Switch, update 1.0.1 = v65536)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Capcom RE Engine (Havok, Wwise), SDK 20.5.15, NVN; modules main, subsdk0 (NintendoSDK_movie), and sdk.
+# The shaders are 14,604 RE Engine SDF entries in re_chunk_000.pak (shader_split.py).
+# Status: plays on Android (README.md).
+
+# ---- Identity ----
+title_id	0100C99024EDE000
+program_id	0100C99024EDE000
+
+# ---- App ----
+name	Mega Man Star Force Legacy Collection
+ipa	MegaManStarForceLegacyCollection.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v65536	1.0.1	main=b81e081feebc12a18fb8420b8b810c0f	subsdk0=3904a8dee6801472d56bd4921378df27	sdk=190030518b5d64e5d87b84bc54661af9
+package	v65536
+shader_versions	v65536
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	re_chunk_000.pak
+zip_store	.pak:.metallib
+
+# ---- Memory ----
+# the NPDM declares 20 MB of system resource (virtual address memory) and RE Engine allocates a 16 GB alias region
+# mem_reserve sized to hold the 16 GB alias + heap + stack (address space only on Android)
+mem_reserve	0x428000000
+mem_alias	0x400000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 20 MB of system resource
+sys_resource	0x1400000
+
+# ---- Shader split ----
+shader_groups	re_chunk=sdf
+shader_note	Mega Man Star Force Legacy Collection shaders (RE Engine SDF in re_chunk_000.pak)

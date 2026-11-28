@@ -3411,3 +3411,13 @@ NCA through the check too), `CMakeLists.txt`, `HOOKS.md`, `tests/nsp_fixture.h` 
 `test_compressed.py` (the damaged cases beside #697's cut-off ones), `test_nup_icon.py` (its build of `nup_meta_test` takes `nx_verify.c`).
 The host's copy of `nx_nca.c` never sets a check (`nx_verify.c` is not in `android/host/CMakeLists.txt`'s `NSP_C`). Upstream candidate: the split's bounds
 checks (general: any FlatBuffers index); the rest is Peanuts' importer.
+
+### Mega Man Star Force Legacy Collection (0100C99024EDE000) game profile (2026-11-27)
+
+Adds the Android game profile and generated shader tables for Mega Man Star Force Legacy Collection (1.0.1, `v65536`).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/0100C99024EDE000/` (new: `game.tsv`, `README.md`, shader tables) + its row in `dm/games/README.md` | 1 | Peanuts-only profile for Mega Man Star Force Legacy Collection (`1.0.1`) | marked (`game.tsv`, `README.md`, row); generated tables allow-listed in `peanuts/upstream-unmarked.txt` |
+
+Upstream candidate: yes (the game profile).
