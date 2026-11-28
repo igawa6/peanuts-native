@@ -2,6 +2,9 @@
 #include "hle.h"
 #include <dlfcn.h>
 #include <time.h>
+#ifdef __ANDROID__  // PEANUTS: direct guest Vulkan imports
+#include "../gfx/vk_android/vk_android.h"
+#endif
 
 // ---------- Unimplemented imports: named stubs (the statically assembled stub table in entry.S, the k-th = movz x9,#k; b unimpl_entry) ----------
 #define MAX_STUB 4096                 // Matches the .rept count in entry.S
@@ -47,6 +50,10 @@ static const hle_ent *hle_find(const char *name) {
 }
 
 uint64_t resolve_import(module_t *m, const char *name) {
+#ifdef __ANDROID__  // PEANUTS: the verified profile selects a separate guest Vulkan dispatch table.
+    void *vk = vka_guest_import(name);
+    if (vk) return (uint64_t)vk;
+#endif
     const hle_ent *e = hle_find(name);
     if (e) {
         if (g_flag.imports) { Dl_info di; dladdr(e->fn, &di); LOG("import %s -> %s", name, di.dli_sname); }
@@ -77,7 +84,12 @@ uint64_t resolve_import(module_t *m, const char *name) {
 }
 
 // The host implements this import (the swhle table), without allocating a stub for it
-int hle_implements(const char *name) { return hle_find(name) != NULL; }
+int hle_implements(const char *name) {
+#ifdef __ANDROID__  // PEANUTS: weak imports use the same dispatch as strong ones.
+    if (vka_guest_import(name)) return 1;
+#endif
+    return hle_find(name) != NULL;
+}
 
 void stubs_report(void) { LOG("stubs=%u", g_nstub); }
 

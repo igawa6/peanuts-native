@@ -53,6 +53,30 @@ def write_lf(path, text):   # a text file with '\n' line ends in UTF-8 on every 
     with open(path, 'w', encoding='utf-8', newline='\n') as f: f.write(text)
 
 
+# PEANUTS: direct Vulkan titles supply shader modules themselves, not an NVN library.
+def verified_guest_bank(g, out, main_id):
+    rows = g.values('guest_spirv')
+    if not rows: return False
+    if len(rows) != 1 or len(rows[0]) != 4 or rows[0][0] != main_id:
+        raise Error('guest_spirv does not identify the rewritten main build')
+    _, offset, length, want = rows[0]
+    try: at, size = int(offset, 16), int(length, 16)
+    except ValueError: raise Error('guest_spirv offset and length must be hexadecimal') from None
+    main = out / 'main.patched.bin'
+    if at < 0 or size <= 0 or at + size > main.stat().st_size: raise Error('guest_spirv bank is outside the rewritten main')
+    with main.open('rb') as f:
+        f.seek(at)
+        digest = hashlib.sha256()
+        while size:
+            chunk = f.read(min(size, 1 << 16))
+            if not chunk: raise Error('short read in guest_spirv bank')
+            digest.update(chunk)
+            size -= len(chunk)
+    if digest.hexdigest() != want: raise Error('guest_spirv bank differs from the registered build')
+    print(f'guest Vulkan: verified embedded SPIR-V bank in main (SHA-256 {want})')
+    return True
+
+
 _stage_at = [0.0]
 
 
@@ -1405,7 +1429,8 @@ def main():
         shutil.copyfile(g.dir / 'game.tsv', out / 'game.tsv')
         place_cheats(g, out)
         # a program n > 0 splits program 0's RomFS (its conorig) and the add-ons with its own main: its own RomFS holds no shaders (Wonder's program 1: one text file)
-        shaders = None if a.no_shaders else pack_shaders(a, g, work, out, vdir, (conorig, exe) if a.program else (romfs, exe), list(dlc.values()) if a.program else ())
+        guest_vk = verified_guest_bank(g, out, ids.get('main'))  # PEANUTS: verify before omitting the NVN translation.
+        shaders = None if guest_vk or a.no_shaders else pack_shaders(a, g, work, out, vdir, (conorig, exe) if a.program else (romfs, exe), list(dlc.values()) if a.program else ())
         scenes = scene_overlays(g, romfs, out)
         ready = variant_overlays(g, romfs, out, ids)   # PEANUTS: complete variants and their game data (pack.tsv variant rows)
         top = folder.parent if pack_dump.nup.is_nup(folder) else folder   # a NUP file's paths are `<name>.nup:<package>/...`, relative to its folder

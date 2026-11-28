@@ -119,6 +119,7 @@ DM_GRAPHICS_SCALE	developer	Game			text			both
 DM_GRAPHICS_SIZE	developer	Game			text			both						
 DM_GUEST_BASE	developer	Diagnostics			text			both						
 DM_GUEST_SPAWN_TEST	developer	Diagnostics			text			both						
+DM_GUEST_VULKAN	internal	Graphics			text			game						Launcher verifies the embedded shader bank [PEANUTS]
 DM_HID_LOG	developer	Diagnostics			text			both						
 DM_HID_MAP	internal	Input			text			both						Mac or iOS only
 DM_HID_PADS	internal	Input			text			both						Mac or iOS only
