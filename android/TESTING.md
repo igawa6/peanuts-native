@@ -171,6 +171,8 @@ The `chmod` is needed: a file `adb shell` writes there belongs to the shell user
 
 `DM_SVC=1` logs the memory SVCs, `DM_THR=1` the thread SVCs, `DM_FS=1` file opens, `DM_NVN_LOG=1` NVN objects, `DM_WATCH_STALL=<s>` dumps every thread when the game stops making progress for that long ([03-bringup.md](../docs/agents/03-bringup.md)).
 
+<!-- PEANUTS --> **ArbitrateLock spin:** `PN_LOCK_SPIN=<µs>` (off by default, at most 1000) lets a game thread that would sleep in ArbitrateLock watch the lock word that long while the owner runs; the log says `ArbitrateLock spin: up to N µs while the owner runs`. For games whose worker threads stall each other on one lock ([Lock handoffs to a sleeping waiter queue up threads that share a lock](../docs/reference/threads.md#lock-handoffs-to-a-sleeping-waiter-queue-up-threads-that-share-a-lock-android)).
+
 **A test crash** (test app only): `DM_TEST_CRASH=java` throws an exception on the game's main thread 10 s after the start, `DM_TEST_CRASH=native` faults on a thread of its own; the game's screen goes and the launcher shows "The game stopped unexpectedly" with the cause and Share log ([README, When the game stops unexpectedly](README.md#the-launcher)). The log has `[RED] crash:` lines (java) or `CRASH sig=11` (native); `adb shell run-as dev.nxnative.android cat files/last-exit.txt` shows the record. Remove the line afterwards.
 
 ## Frame capture and replay on the phone
