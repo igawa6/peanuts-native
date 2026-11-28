@@ -499,3 +499,4 @@ dm/games/01002A000CD48000/shader_facts.tsv	Resident Evil 6 profile metadata. Pre
 dm/games/01002A000CD48000/shader_map.tsv	Resident Evil 6 profile metadata. Preserve the generated table bytes and shader input stamp.
 dm/games/01002A000CD48000/shader_map.tsv.conflicts.tsv	Resident Evil 6 profile metadata. Preserve the generated table bytes and shader input stamp.
 dm/games/01002A000CD48000/shader_pairs.tsv	Resident Evil 6 profile metadata. Preserve the generated table bytes and shader input stamp.
+dm/games/01002A000CD48000/shader_files.tsv	Generated RomFS file list for Fast Prepare. Preserve the full split output.

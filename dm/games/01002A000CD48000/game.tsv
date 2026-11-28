@@ -1,4 +1,4 @@
-# PEANUTS(upstream-candidate): Resident Evil 6 Android profile for update 2.0.0.
+# PEANUTS: Resident Evil 6 Android profile for update 2.0.0.
 
 # ---- Identity ----
 title_id	01002A000CD48000
@@ -6,8 +6,6 @@ program_id	01002A000CD48000
 
 # ---- App ----
 name	Resident Evil 6
-ipa	01002a000cd48000.ipa
-app_category	public.app-category.games
 
 # ---- Versions ----
 build	v131072	2.0.0	main=061d2a06cd700785e987c42ce2d72231	subsdk0=b9c00c0216af9b5b7f958ddbd25271c8	sdk=b2872a7bcc589969fb7afb8e372414e4
@@ -18,7 +16,6 @@ shader_versions	v131072
 # every module main imports from
 modules	main subsdk0 sdk
 romfs_marker	nativeNXx64/movie/e5120.mp4
-zip_store	.arc:.mfx:.mp4:.metallib
 
 # ---- Memory ----
 # main sets a heap of at most the pool − 64 MB: a 3328 MB heap region
@@ -34,4 +31,4 @@ mem_used	0x5000000
 
 # ---- Shader split ----
 shader_groups	/nativeNXx64/=nativenxx64
-shader_note	01002A000CD48000 shaders (provisional profile)
+shader_note	MT Framework NVN shaders from ARC v7 archives in update 2.0.0
