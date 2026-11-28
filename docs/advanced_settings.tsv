@@ -522,6 +522,7 @@ DM_VK_FB_LOOP	developer	Diagnostics			text			both
 DM_VK_FB_PIN	developer	Diagnostics			text			both						
 DM_VK_FD_ALIAS	developer	Graphics			text			both						
 DM_VK_FG	developer	Graphics			text			both						
+DM_VK_FG_GRID	developer	Performance			text			both						
 DM_VK_FG_OWNFMT	developer	Diagnostics			text			both						
 DM_VK_FG_REFRESH_CAP	developer	Graphics			text			both						
 DM_VK_FOUT_COMPS	developer	Graphics			text			both						

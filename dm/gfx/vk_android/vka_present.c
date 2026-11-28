@@ -740,7 +740,7 @@ static void window_take(void) {   // g_pmu held
 }
 
 // ---------- The present queue ----------
-typedef struct { tex_t t; double period; int crop[4], has_crop; uint64_t ticket, fence; vka_img *src; double hold; } pq_item;   // src, hold: a generated frame (vka_framegen.c)
+typedef struct { tex_t t; double period; int crop[4], has_crop; uint64_t ticket, fence; vka_img *src; double hold; int fg; } pq_item;   // src, hold: a generated frame (vka_framegen.c); fg: hold is frame generation's (a generated frame, or the game frame after them)
 static pq_item g_pq[PQ];
 static uint64_t g_pq_in, g_pq_read, g_pq_done, g_pq_fill;   // tickets: reserved, taken by the present thread, shown; filled (a ticket is reserved by the game's present, filled when the replay reaches it: vka_worker.c)
 
@@ -1007,14 +1007,18 @@ static int present_one(const pq_item *it) {
         // as in vka_fg_frame: a game on the host's 120 Hz tick held to 60 fps declares 8.3 ms, went out untimed and landed 1 and 3 refreshes apart. The lines below
         // remain for frame generation, for periods that are no whole number of refreshes, and until the grid is measured
         uint64_t grid = 0;
-        if (!g_fg_on && it->ticket && g_panel.period && VKA_ENV("DM_VK_PRESENT_GRID", 1)) {
+        // PEANUTS: DM_VK_FG_GRID (live, default 1): with frame generation the generated frames and the game frame after them take the same grid, one hold apart. On
+        // the chain of last-desired-plus-hold below, a game frame a little late started the chain again from "now", off the grid, and 4-7 % of game frames on a 60 Hz
+        // panel were on screen for 1 and 3 refreshes instead of 2 (DRAGON QUEST VII Reimagined, 30 fps x2 on an AYN Thor: a visible flicker in motion)
+        int fg_grid = g_fg_on && VKA_ENV("DM_VK_FG_GRID", 1);
+        if ((g_fg_on ? fg_grid && (it->ticket || it->src) : it->ticket != 0) && g_panel.period && VKA_ENV("DM_VK_PRESENT_GRID", 1)) {
             int nxhost_fps_limit_get(void) __attribute__((weak));
             int lim = &nxhost_fps_limit_get ? nxhost_fps_limit_get() : 0, late = 0; uint64_t per = period;
-            if (lim > 0 && per < 1000000000ull / (uint64_t)lim) per = 1000000000ull / (uint64_t)lim;
+            if (!it->fg && lim > 0 && per < 1000000000ull / (uint64_t)lim) per = 1000000000ull / (uint64_t)lim;   // (frame generation's hold is shorter than the limit's period by design)
             // PEANUTS(upstream-candidate): honor the compositor queue deadline, not merely a future desired-present timestamp.
             uint64_t lead = VKA_ENV("DM_VK_PRESENT_DEADLINE", 1) ? atomic_load_explicit(&g_presentation_deadline, memory_order_relaxed) : 0;
             grid = vkgrid_next_deadline(&g_grid, g_panel.last, g_panel.period, per, now_ns(), lead, &late);
-            if (grid) { want = grid - g_panel.period / 2; g_last_desired = 0; atomic_fetch_add_explicit(&g_grid_timed, 1, memory_order_relaxed); if (late) atomic_fetch_add_explicit(&g_grid_late, 1, memory_order_relaxed); }
+            if (grid) { want = grid - g_panel.period / 2; g_last_desired = 0; if (it->ticket) { atomic_fetch_add_explicit(&g_grid_timed, 1, memory_order_relaxed); if (late) atomic_fetch_add_explicit(&g_grid_late, 1, memory_order_relaxed); } }
         } else g_grid.last = 0;
         if (it->ticket) atomic_fetch_add_explicit(&g_grid_presents, 1, memory_order_relaxed);
         if (grid) { }   // PEANUTS: timed above
@@ -1071,8 +1075,8 @@ static void *present_main(void *arg) {
         g_fg_on = out_period > 0;
         if (out_period > 0) it.period = out_period;
         g_fg_acq_ns = 0; g_fg_gpu_ns = 0;   // PEANUTS(upstream-candidate)
-        for (int g = 0; g < ng; g++) { pq_item gi = it; gi.src = gen[g]; gi.has_crop = 0; gi.ticket = 0; gi.fence = 0; gi.hold = hold; vka_fps_note(present_one(&gi), 1); }
-        it.hold = ng ? hold : game_period;
+        for (int g = 0; g < ng; g++) { pq_item gi = it; gi.src = gen[g]; gi.has_crop = 0; gi.ticket = 0; gi.fence = 0; gi.hold = hold; gi.fg = 1; vka_fps_note(present_one(&gi), 1); }
+        it.hold = ng ? hold : game_period; it.fg = ng > 0;
         int shown = present_one(&it);
         prev_acq_ns = g_fg_acq_ns; prev_gpu_ns = g_fg_gpu_ns;   // PEANUTS(upstream-candidate)
         if (shown) { dm_guest_frame_tick(); if (peanuts_tick) peanuts_tick(); }   // PEANUTS: the companion's per-frame tick (dm/peanuts)
@@ -1110,7 +1114,7 @@ void vka_present_fill(uint64_t tk, const tex_t *t, double period_s, const int cr
     // The last submission handed to the queue, not the last fence reserved: a submission another thread is still recording (its fence taken at the top of mtl_sub_commit) would
     // be queued after this copy, which then waits for it forever (a wait-before-signal on one queue). On the Adreno 840 phone that froze the queue while the first level loaded
     // (fence N+2 never reached at N, android-perf c1ff15fa, three runs), and the compositor waiting on the frame restarted the system server
-    it->ticket = tk; it->fence = vka_fence_queued(); it->src = NULL; it->hold = 0;
+    it->ticket = tk; it->fence = vka_fence_queued(); it->src = NULL; it->hold = 0; it->fg = 0;
     uint64_t res = vka_fence_last();
     if (res > it->fence && !vka_worker_on()) { static _Atomic uint64_t n; uint64_t k = atomic_fetch_add(&n, 1) + 1;
         if (k <= 3 || !(k & (k - 1))) VLOG("present ticket %llu came while fence %llu was still being recorded (%llu queued): the present waits for %llu (%llu such presents)",
