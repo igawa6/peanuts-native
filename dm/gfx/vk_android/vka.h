@@ -106,6 +106,7 @@ typedef struct {
     // memu: NVN2 task and mesh draws drawn through compute (vka_memu.c): by default where the device lacks meshShader or taskShader, DM_VK_MESH_EMU=1 on any device, =0
     // never (restart). cs_groups: maxComputeWorkGroupCount[0]
     int memu; uint32_t cs_groups;
+    int comp_ctl;                                   // PEANUTS: VK_EXT_image_compression_control is on: an image with a raw-bits view is made uncompressed (vka_tex.c img_create)
     int fb_loop;                                    // PEANUTS: VK_EXT_attachment_feedback_loop_layout + _dynamic_state are on (DM_VK_FB_LOOP=0 leaves them off): a draw sampling its own attachment says so (vka_draw.c)
     int gl_ahb;                                     // PEANUTS: VK_ANDROID_external_memory_android_hardware_buffer is on: a game that imports EGL shares GL textures with NVN (vka_gl.c)
     int xfb;                                        // PEANUTS: VK_EXT_transform_feedback is on (DM_VK_XFB=0 leaves it off): NVN transform feedback is captured (vka_tf.c)

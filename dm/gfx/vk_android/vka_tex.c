@@ -594,7 +594,15 @@ static vka_img *img_create_(const tex_t *t, const vka_fmt *f, uint32_t base, int
     // when it has no type answer, and KTGL takes the bits back with as_type<int> (nvn_mtl.m tbuf_view_format), so the view of the shader's class (class_twin) is there without waiting for the pair to be learned
     if (tbuf && ubwc && f->kind <= 2) { VkFormat tw = class_twin(f->vk, f->kind ? 0 : 1); if (tw && !vkfl_has(&im->fl, (uint32_t)f->vk, (uint32_t)tw) && im->fl.nx < VKFL_MAX) im->fl.x[im->fl.nx++] = (uint32_t)tw; }
     uint32_t fls[2 + VKFL_MAX]; int nfl = ubwc ? vkfl_entries(&im->fl, (uint32_t)f->vk, fls) : 0;   // (own format first, no UNDEFINED entry)
-    VkImageFormatListCreateInfo fli = {VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO, .viewFormatCount = (uint32_t)nfl, .pViewFormats = (const VkFormat *)fls};
+    // PEANUTS: a list with a view of another texel layout than the image's own (not its sRGB / raw UNORM twin: A2B10G10R10 with R32_UINT, a shader reading the raw bits)
+    // is made uncompressed (VK_EXT_image_compression_control, below): Turnip on a7xx keeps UBWC whatever the view formats (ubwc_all_formats_compatible) and the R32_UINT
+    // view read compressed blocks (Xenoblade Chronicles: Definitive Edition's Colony 9 roads, AYN Thor, Turnip v27; TU_DEBUG=noubwc drew them right). The learned
+    // reinterpretations were meant to go without UBWC (DM_VK_VIEW_LEARN). DM_VK_UBWC_RAWVIEW=0: compressed as the driver decides
+    int rawv = 0;
+    if (nfl > 1 && f->kind <= 2 && VKA_ENV("DM_VK_UBWC_RAWVIEW", 1))
+        for (int k = 0; k < nfl; k++) { VkFormat x = (VkFormat)fls[k]; if (x != f->vk && x != srgb_twin(f->vk) && x != raw_unorm_twin(f->vk) && srgb_twin(x) != f->vk) rawv = 1; }
+    VkImageCompressionControlEXT icc = {VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_CONTROL_EXT, .flags = VK_IMAGE_COMPRESSION_DISABLED_EXT};
+    VkImageFormatListCreateInfo fli = {VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO, .pNext = rawv && V.comp_ctl ? &icc : NULL, .viewFormatCount = (uint32_t)nfl, .pViewFormats = (const VkFormat *)fls};
     VkImageCreateFlags fl = nfl || im->fl.any ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
     // A texture with image intent whose own format has no storage use (RGB9E5, R11G11B10 on some drivers) but a listed view format has (R32_UINT): storage use through
     // that view (EXTENDED_USAGE); views in formats without it leave storage out (vka_view)
@@ -3806,6 +3814,11 @@ static VkFormat class_twin(VkFormat v, int cls) {
     for (size_t i = 0; i < sizeof t / sizeof *t; i++) for (int c = 0; c < 3; c++) if (t[i].f[c] == v) return t[i].f[cls];
     if (v == VK_FORMAT_R16_UNORM || v == VK_FORMAT_R16_SNORM) return cls == 1 ? VK_FORMAT_R16_UINT : cls == 2 ? VK_FORMAT_R16_SINT : VK_FORMAT_UNDEFINED;
     if (v == VK_FORMAT_R16G16_UNORM || v == VK_FORMAT_R16G16_SNORM) return cls == 1 ? VK_FORMAT_R16G16_UINT : cls == 2 ? VK_FORMAT_R16G16_SINT : VK_FORMAT_UNDEFINED;
+    // PEANUTS: a packed 4-byte texel with no integer layout of its own, read through a uint / int shader image: the texel's 32-bit word, as Maxwell's raw image load gives it
+    // (one compatibility class with R32_UINT). Xenoblade Chronicles: Definitive Edition reads its R11G11B10 1280x720 targets as uint images in four shaders; with no twin they read as unbound
+    if (v == VK_FORMAT_B10G11R11_UFLOAT_PACK32 || v == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 || v == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || v == VK_FORMAT_A2R10G10B10_UNORM_PACK32 ||
+        v == VK_FORMAT_B8G8R8A8_UNORM || v == VK_FORMAT_B8G8R8A8_SRGB || v == VK_FORMAT_R8G8B8A8_SRGB)
+        return cls == 1 ? VK_FORMAT_R32_UINT : cls == 2 ? VK_FORMAT_R32_SINT : VK_FORMAT_UNDEFINED;
     return VK_FORMAT_UNDEFINED;
 }
 // The Vulkan format texture ID id is viewed in (its texture view's, else its own), UNDEFINED for none. Not its image's: textures of one memory and shape share an image made in
