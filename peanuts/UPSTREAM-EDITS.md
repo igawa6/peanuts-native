@@ -160,6 +160,7 @@ not edited (see table above).
 | `scripts/pack_android.py` | marked (2026-11-14, PR #13): the AppleDouble skip in `split_shaders`/`swap_in`, `peanuts_env` | partly: the AppleDouble skip yes (summary 11); `peanuts_env` no |
 | `scripts/pack_android.py`, `docs/reference/packing.md`, `dm/games/0100F7E00C70E000/README.md` | marked `PEANUTS(upstream-candidate)` (2026-11-25, issue #495): `copy_time` (block), its calls in `copy_counted` and `pack_shaders`, the `errno` import; the reference entry and Hogwarts Legacy's "Found on this game" line | **yes** (summary 14) |
 | `docs/guides/pc-mac-packing.md` | marked (`<!-- PEANUTS begin/end -->` section: send the pack to the phone) | no (Peanuts-specific) |
+| `dm/host/hle_hid.c`, `dm/host/tests/t_hid.c`, `docs/reference/services.md`, `dm/games/01008CF01BAAC000/README.md` | marked `PEANUTS(upstream-candidate)` (2026-11-26, issue #872): `DisconnectNpad` leaves the Handheld npad connected; its test in `t_assign`; the reference entry and the note's "Found on this game" line | **yes** (summary 16) |
 | `dm/games/0100EB100AB42000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be, once it plays: Banana Native has no profile for FINAL FANTASY XII THE ZODIAC AGE (plays on the Android test app on Turnip; the system driver shows the texture issues known from other games) |
 | `dm/games/010088401495E000/` (new: `game.tsv`, `README.md`, and the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for THE HOUSE OF THE DEAD: Remake |
 | `dm/games/01007A3024D10000/` (new: `game.tsv`, `README.md`, and the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for THE HOUSE OF THE DEAD 2: Remake |
@@ -233,6 +234,9 @@ Also gated, but not `#ifdef`-paired with upstream code (new Peanuts-owned files/
     after the whole build; there the copy is kept without its time and the next pack copies it again
     (`docs/reference/packing.md`, found on Hogwarts Legacy, `dm/games/0100F7E00C70E000/README.md`)
 15. `dm/gfx/vk_android/vka_draw.c` — depth / stencil dynamic state set again at each render pass (Qualcomm 512.676 loses it at a new pass)
+16. `dm/host/hle_hid.c` `DisconnectNpad` (issue #872): the Handheld npad, the console's own controls, stays connected, as on a console. Echoes of Wisdom
+    disconnects every npad again and again on its load screen, and the built-in controller, let go until a button press, lost its stick there
+    (`docs/reference/services.md`, found on Echoes of Wisdom, `dm/games/01008CF01BAAC000/README.md`)
 
 `dm/host/hle_fpslock.c`'s new `EXTRA_VSYNCS_U8` lock kind is also upstream-worthy infra; its two
 per-game rows (Link's Awakening, Echoes of Wisdom) should instead move to a Peanuts-owned

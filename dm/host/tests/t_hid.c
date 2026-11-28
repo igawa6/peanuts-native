@@ -264,6 +264,16 @@ static void t_assign(void) {
     CHECK(assign_calls == 3, "handheld: No1 has no player, nothing to swap");
     h_hid_Swap(&(uint32_t){1}, &(uint32_t){1});
     CHECK(assign_calls == 3, "an npad with itself: nothing");
+    // PEANUTS(upstream-candidate): DisconnectNpad leaves the console's own controls (the Handheld npad) connected, as a console does (issue #872)
+    for (int i = 0; i < 3; i++) h_hid_Disconnect(&(uint32_t){NPAD_HANDHELD});
+    CHECK(assign_calls == 3, "handheld: DisconnectNpad(Handheld), even again and again, does not let player 1's controller go");
+    h_hid_Disconnect(&(uint32_t){1});
+    CHECK(assign_calls == 4 && assign_op == DM_PAD_DISCONNECT && assign_a == 1, "handheld: DisconnectNpad(No2) still lets player 2's controller go");
+    g_mode = 1;
+    h_hid_Disconnect(&(uint32_t){0});
+    CHECK(assign_calls == 5 && assign_op == DM_PAD_DISCONNECT && assign_a == 0, "docked: DisconnectNpad(No1) lets player 1's controller go");
+    h_hid_Disconnect(&(uint32_t){NPAD_HANDHELD});
+    CHECK(assign_calls == 5, "docked: the Handheld npad has no player");
     dm_pad_assign_callback(NULL); g_mode = 1;
 }
 static void t_join(void) {
