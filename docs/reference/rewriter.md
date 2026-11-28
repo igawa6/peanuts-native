@@ -56,6 +56,14 @@ To enroll a cut for any game's own module:
 - **Found on:** [Fire Emblem Engage](../../dm/games/0100A6301214E000/README.md) `main`: 7 jump tables (beside 1 call and 1 `sp` write).
 - **Check:** [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md)'s output stays byte-identical.
 
+<!-- PEANUTS(upstream-candidate): scheduled offset jump tables -->
+### Offset jump tables with a distant unsigned guard
+
+- **Symptom:** `AssertionError: jump table 7a352c` in `patch_nso.py`.
+- **Cause:** the compiler scheduled independent instructions between the unsigned bounds check, the signed offset load and the indirect branch. The check fell outside the short search window.
+- **Fix:** the last resolver follows the reaching register and flag definitions back from `br x18`. A local 32-bit index definition or a full-width comparison proves the index fits the unsigned `cmp; …; b.hi` guard. The resolver follows an `adrp` plus immediate `add` to the read-only table, adds each signed 32-bit entry to the table base and checks that every destination decodes inside the unwind function. It checks the dispatch for intervening control flow and rejects direct branches or resolved tables that would bypass its setup. Older resolvers retain priority.
+- **Found on:** Resident Evil 6 (provisional profile, v131072, SDK 6.5.0), `main+0x7a352c`.
+
 ### Offset jump tables with the bounds check on another register
 
 - **Symptom:** `jump table <addr>` assertion in `patch_nso.py`, in a `subsdk`.

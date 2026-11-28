@@ -9,7 +9,8 @@ import sys
 import tempfile
 import unittest
 
-from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
+# PEANUTS(upstream-candidate): instruction groups for scheduled dispatch checks.
+from capstone import (Cs, CS_ARCH_ARM64, CS_MODE_ARM, CS_GRP_CALL, CS_GRP_INT, CS_GRP_IRET, CS_GRP_JUMP, CS_GRP_RET)
 from capstone.arm64 import ARM64_OP_IMM
 
 TOOLS = Path(__file__).resolve().parents[1]
@@ -20,8 +21,10 @@ from nso_asm import ADRP, ADDI, ADDR, B, BEQ, BLR, BR, NOP
 # Compile its actual recognition functions without executing that driver.
 tree = ast.parse((TOOLS / 'patch_nso.py').read_text())
 IMG = bytearray(0x5000); tabjumps = {}; jumps = {}   # the globals the recognizers read: the module image and the jump tables resolved so far in the function
-scope = {'re': re, 'struct': struct, 'ARM64_OP_IMM': ARM64_OP_IMM, 'IMG': IMG, 'tabjumps': tabjumps, 'jumps': jumps}
-exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in ('num', 'copied_base', 'table_base', 'table_cands', 'forward_table_base', 'check_before_copy', 'jump_offsets', 'jump_adr_offsets', 'jump_zero_extended', 'jump_masked_pred', 'jump_masked_not')], type_ignores=[]), str(TOOLS / 'patch_nso.py'), 'exec'), scope)
+# PEANUTS(upstream-candidate): load the scheduled resolver and its instruction groups.
+scope = {'re': re, 'struct': struct, 'ARM64_OP_IMM': ARM64_OP_IMM, 'IMG': IMG, 'tabjumps': tabjumps, 'jumps': jumps,
+         **{name: value for name, value in globals().items() if name.startswith('CS_GRP_')}}
+exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in ('num', 'copied_base', 'table_base', 'table_cands', 'forward_table_base', 'check_before_copy', 'jump_offsets', 'jump_adr_offsets', 'jump_zero_extended', 'jump_masked_pred', 'jump_masked_not', 'jump_scheduled_offsets')], type_ignores=[]), str(TOOLS / 'patch_nso.py'), 'exec'), scope)
 
 
 def mov(dst, src, wide=True): return (0xaa0003e0 if wide else 0x2a0003e0) | src << 16 | dst
@@ -480,6 +483,63 @@ class MaskedComplement(unittest.TestCase):
                 self.assertIsNone(self.run_site(self.words()))
         struct.pack_into('<i', IMG, self.TABLE, 8 - self.TABLE)
         self.assertEqual(self.run_site(self.words()), [8] + self.TARGETS[1:])
+
+
+# PEANUTS(upstream-candidate): synthetic delayed offset-table dispatch and proof failures.
+class ScheduledOffsets(unittest.TestCase):
+    def setUp(self):
+        self.words = [
+            0x51000000 | 7 << 10 | 3 << 5 | 10,  # sub w10, w3, #7
+            0x7100001f | 2 << 10 | 10 << 5,      # cmp w10, #2
+            NOP, NOP, bhi(16, 96),
+            ADRP(7, 20, 0x1000), ADDI(7, 7, 0x80),
+            0xb8a07800 | 10 << 16 | 7 << 5 | 18,  # ldrsw x18, [x7, x10, lsl #2]
+            ADDR(18, 18, 7),
+        ] + [NOP] * 14 + [BR(18), RET, RET, RET]
+        self.image = bytearray(0x1100)
+        self.table = 0x1080
+        struct.pack_into('<3i', self.image, self.table, *(t - self.table for t in (96, 100, 104)))
+
+    def resolve(self, ro=(0x1000, 0x100), bounds=(0, 108)):
+        md = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
+        md.detail = True
+        end = len(self.words) * 4
+        raw = struct.pack('<' + 'I' * len(self.words), *self.words)
+        ins = []
+        for pc in range(0, end, 4):
+            ins.extend(md.disasm(raw[pc:pc + 4], pc))
+        j = next(i for i, p in enumerate(ins) if p.address == 92)
+        return scope['jump_scheduled_offsets'](ins, j, self.image, ro, bounds)
+
+    def test_distant_compare_and_signed_table(self):
+        self.assertEqual(self.resolve(), ([96, 100, 104], 0))
+
+    def test_clobbers_and_guard_bypasses_are_refused(self):
+        for slot, word in (
+            (0, mov(10, 3)),               # no known zero upper half
+            (2, 0x7100001f | 4 << 5),     # cmp w4, #0 overwrites the flags
+            (2, 0xd51b4200),             # msr nzcv, x0 is missing from regs_access()
+            (2, 0xd500401f),             # cfinv is missing from regs_access()
+            (2, 0x540003d0),             # bc.eq is missing the jump group
+            (3, mov(10, 3, False)),       # the bounds check sees the old index
+            (4, BEQ(16, 96)),             # wrong branch condition
+            (9, mov(18, 2, False)),       # overwrites the computed destination
+            (10, 0xffffffff),             # breaks the decoded run
+            (25, B(100, 8)),              # another path skips the compare
+        ):
+            with self.subTest(slot=slot):
+                original = self.words[slot]
+                self.words[slot] = word
+                self.assertIsNone(self.resolve())
+                self.words[slot] = original
+
+    def test_table_and_targets_are_checked(self):
+        self.assertIsNone(self.resolve(ro=(self.table, 11)))
+        self.assertIsNone(self.resolve(bounds=(0, 104)))
+        for target in (8, 97, 108):
+            with self.subTest(target=target):
+                struct.pack_into('<i', self.image, self.table, target - self.table)
+                self.assertIsNone(self.resolve())
 
 
 if __name__ == '__main__': unittest.main()

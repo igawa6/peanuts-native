@@ -1034,6 +1034,71 @@ def jump_zero_extended(insl, j):
     targets = [tb + struct.unpack_from('<i', IMG, tb + 4 * i)[0] for i in range(n)]
     addresses = {p.address for p in insl}
     return targets if all(t in addresses and not head < t <= end for t in targets) else None
+# PEANUTS(upstream-candidate): prove offset tables whose scheduled dispatch exceeds the short lookback.
+def jump_scheduled_offsets(insl, j, image, ro, function):
+    """Recognize a local unsigned guard and signed, table-relative word entries."""
+    if function is None: return None
+    fa, fb = function
+    ctx = insl[max(0, j - 48):j + 1]
+    if ctx[-1].mnemonic != 'br' or ctx[-1].op_str != 'x18': return None
+
+    def writes(p, reg):
+        aliases = {reg, 'w' + reg[1:]}
+        if reg in ('x29', 'x30'): aliases.add('fp' if reg == 'x29' else 'lr')
+        return p.mnemonic not in ('cmp', 'cmn', 'tst') and any(p.reg_name(r) in aliases for r in p.regs_access()[1])
+
+    def writer(reg, before):
+        return next((k for k in range(before - 1, -1, -1) if writes(ctx[k], reg)), -1)
+
+    ka = writer('x18', len(ctx) - 1)
+    if ka < 0: return None
+    add = re.fullmatch(r'x18, (x\d+), (x\d+)', ctx[ka].op_str) if ctx[ka].mnemonic == 'add' else None
+    if not add: return None
+    ent, base = add.groups()
+    kl = writer(ent, ka)
+    load = re.fullmatch(rf'{ent}, \[{base}, (x\d+), lsl #2\]', ctx[kl].op_str) if kl >= 0 and ctx[kl].mnemonic == 'ldrsw' else None
+    if not load: return None
+    idx = load.group(1)
+    kb = writer(base, ka)
+    if not 0 <= kb < kl: return None
+    low = re.fullmatch(rf'{base}, {base}, #(0x[0-9a-f]+|\d+)', ctx[kb].op_str) if ctx[kb].mnemonic == 'add' else None
+    kp = writer(base, kb)
+    if not low or kp < 0 or ctx[kp].mnemonic != 'adrp': return None
+    kg = next((k for k in range(kl - 1, -1, -1) if ctx[k].mnemonic == 'b.hi'), -1)
+    if kg < 0: return None
+    def writes_flags(p):
+        # Capstone 5 omits NZCV writes for these instructions.
+        return p.mnemonic in ('msr', 'cfinv', 'rmif', 'setf8', 'setf16') or any(p.reg_name(r) == 'nzcv' for r in p.regs_access()[1])
+
+    kc = next((k for k in range(kg - 1, -1, -1) if writes_flags(ctx[k])), -1)
+    bound = re.fullmatch(rf'([wx]){idx[1:]}, #(0x[0-9a-f]+|\d+)', ctx[kc].op_str) if kc >= 0 and ctx[kc].mnemonic == 'cmp' else None
+    ki = writer(idx, kl)
+    if not bound or ki >= kc: return None
+    # A W comparison bounds an X index only if its upper half is known zero.
+    if bound.group(1) == 'w' and (ki < 0 or not any(ctx[ki].reg_name(r) == 'w' + idx[1:] for r in ctx[ki].regs_access()[1])):
+        return None
+    start = min(kc, kp, ki) if bound.group(1) == 'w' else min(kc, kp)
+    run = ctx[start:]
+    head, end = run[0].address, ctx[-1].address
+    if not fa <= head <= end < fb: return None
+    if any(b.address != a.address + 4 for a, b in zip(run, run[1:])): return None
+    control_flow = {CS_GRP_JUMP, CS_GRP_CALL, CS_GRP_RET, CS_GRP_INT, CS_GRP_IRET}
+    if any(control_flow.intersection(p.groups) or p.mnemonic.startswith('bc.') or
+           p.mnemonic in ('svc', 'hvc', 'smc', 'brk', 'hlt', 'eret', 'drps', 'udf')
+           for k, p in enumerate(run[:-1], start) if k != kg): return None
+    for p in insl:
+        if p.mnemonic in ('b', 'bl', 'cbz', 'cbnz', 'tbz', 'tbnz') or p.mnemonic.startswith(('b.', 'bc.')):
+            if head < p.operands[-1].imm <= end: return None
+    table = ctx[kp].operands[1].imm + int(low.group(1), 0)
+    count = int(bound.group(2), 0) + 1
+    ro_start, ro_size = ro
+    if not ro_start <= table <= table + 4 * count <= min(ro_start + ro_size, len(image)): return None
+    targets = [table + struct.unpack_from('<i', image, table + 4 * i)[0] for i in range(count)]
+    addresses = {p.address for p in insl if fa <= p.address < fb}
+    if not all(t in addresses and not head < t <= end for t in targets): return None
+    return targets, head
+
+
 def forward_table_base(insl, k, rb, n):
     """A loop's base initialized after its dispatch in address order (Blasphemous 1.0.8 main+0xae95f8: x17 is set at +0xae96dc, then the block branches backward).
     Used only after every older recognizer failed. Require exactly two writers of the full base in the function, an adjacent adrp + add after the load, no call that can clobber it,
@@ -1439,15 +1504,19 @@ class Tracked(dict):
     def items(self): self.read = True; return super().items()
     def keys(self): self.read = True; return super().keys()
     def __iter__(self): self.read = True; return super().__iter__()
+# PEANUTS(upstream-candidate): actual unwind extents for the scheduled resolver.
+scheduled_bounds = None
+
 def analyse_fn(fa, fb):
     """One function's windows (addresses), retry blocks ([(addresses, fall-through)] pairs), retry block interiors, tail call br, jump tables [(br, entry)] in order, and
     whether it read the tables of other functions (a worker only)"""
-    global jumps, tabjumps
+    global jumps, tabjumps, scheduled_bounds  # PEANUTS(upstream-candidate)
     if os.getpid() != MAIN_PID: jumps, tabjumps = Tracked(), Tracked()   # a worker: only this function's tables, and a note of any read (Tracked)
     own_j, own_t = len(jumps), len(tabjumps)
     insl = disasm_fn(fa, fb)
     ws = find_windows(insl)
     done, tails, rets = set(), [], []
+    scheduled_dispatches = {}  # PEANUTS(upstream-candidate): return dispatch windows to the parent
     for wseg in ws:
         done |= {x.address for x in wseg}
     for j, ins in enumerate(insl):
@@ -1475,6 +1544,15 @@ def analyse_fn(fa, fb):
                 if not tgt: tgt = jump_masked_not(insl, j)   # a complemented low-bit index with its zero case branched away: exactly mask entries
                 if not tgt: tgt = jump_offsets(insl, j, copy_first=True, far_base=True, forward_base=True)   # a unique base initialized in a later block that branches backward
                 if not tgt: tgt = jump_zero_extended(insl, j)   # a 32-bit checked value zero-extended into the index, with its full path to the br verified
+                # PEANUTS(upstream-candidate): require a real unwind extent for scheduled dispatches.
+                if not tgt:
+                    if scheduled_bounds is None:
+                        scheduled_bounds = dict(nso_code.fde_ranges(IMG))
+                    fn_start, _ = func_of(ins.address)
+                    fn_end = scheduled_bounds.get(fn_start)
+                    bounds = (fn_start, fn_end) if fn_end is not None else None
+                    if scheduled := jump_scheduled_offsets(insl, j, IMG, MOD.segments[1], bounds):
+                        tgt, scheduled_dispatches[ins.address] = scheduled
                 assert tgt, f'jump table {ins.address:x}'
                 tabjumps[ins.address] = tgt; continue
             jumps[ins.address] = (base, width)
@@ -1496,11 +1574,13 @@ def analyse_fn(fa, fb):
         if x.mnemonic in ('b', 'bl', 'cbz', 'cbnz', 'tbz', 'tbnz') or x.mnemonic.startswith('b.'):
             assert x.operands[-1].imm not in rmid, f'branch into retry block {x.address:x}'
     jl, tl = list(dict.items(jumps))[own_j:], list(dict.items(tabjumps))[own_t:]   # this function's tables, in the order found (dict.items: not a read Tracked notes)
-    return [[x.address for x in w] for w in ws], rets, rmid, tails, jl, tl, getattr(jumps, 'read', False) or getattr(tabjumps, 'read', False)
+    return [[x.address for x in w] for w in ws], rets, rmid, tails, jl, tl, getattr(jumps, 'read', False) or getattr(tabjumps, 'read', False), scheduled_dispatches  # PEANUTS(upstream-candidate)
 progress('functions')   # PEANUTS(upstream-candidate): analyse_fn in workers, what crosses functions here (above)
+scheduled_dispatches = {}  # PEANUTS(upstream-candidate): merge worker results before global validation
 for (fa, fb), r in zip(funcs, in_parallel(analyse_fn, funcs, 'functions')):
     if r[6]: r = analyse_fn(fa, fb)   # it read the jump tables: again with every earlier function's (jumps, tabjumps are this process's now)
-    wl, rets, rmid, tails, jl, tl, _ = r
+    wl, rets, rmid, tails, jl, tl, _, scheduled = r  # PEANUTS(upstream-candidate)
+    scheduled_dispatches.update(scheduled)  # PEANUTS(upstream-candidate)
     ws = [[dis(struct.unpack_from('<I', IMG, a)[0], a) for a in w] for w in wl]
     for wseg in ws:
         windows.append(wseg); done |= {x.address for x in wseg}
@@ -1519,6 +1599,24 @@ if far_into:   # functions analysed in pieces (pieces above): their far b / bl, 
     win_mid = {x.address for wseg in windows for x in wseg[1:]}
     for at, to in far_into: assert to not in win_mid and to not in rmid_all, f'far branch into a window or retry block {at:x}'
     for at, tgt in tabjumps.items(): assert not any(t in win_mid or t in rmid_all for t in tgt), f'jump table target into a window or retry block {at:x}'
+
+# PEANUTS(upstream-candidate): a later table must not enter a scheduled dispatch past its guard setup.
+for end, head in scheduled_dispatches.items():
+    assert not any(head < t <= end for targets in tabjumps.values() for t in targets), f'jump table enters scheduled dispatch {end:x}'
+    assert not any(base <= end and base + 4 * width > head + 4 for base, width in jumps.values()), f'jump table enters scheduled dispatch {end:x}'
+if scheduled_dispatches:
+    protected = {at for end, head in scheduled_dispatches.items() for at in range(head + 4, end + 4, 4)}
+    # A direct branch or call in another function can also bypass the guard.
+    for start, end in CODE_RANGES:
+        for (word,), at in zip(struct.iter_unpack('<I', memoryview(IMG)[start:end]), range(start, end, 4)):
+            if word & 0x7C000000 == 0x14000000: disp, sign = word & 0x3FFFFFF, 1 << 25  # b / bl
+            elif word >> 24 == 0x54 or word & 0x7E000000 == 0x34000000:  # b.cond / bc.cond / cbz / cbnz
+                disp, sign = (word >> 5) & 0x7FFFF, 1 << 18
+            elif word & 0x7E000000 == 0x36000000: disp, sign = (word >> 5) & 0x3FFF, 1 << 13  # tbz / tbnz
+            else: continue
+            target = at + 4 * ((disp ^ sign) - sign)
+            assert target not in protected, f'branch {at:x} enters scheduled dispatch at {target:x}'
+    print('scheduled offset jump tables: ' + ', '.join(f'{at:x}' for at in scheduled_dispatches))
 
 def put_branch(at, to): struct.pack_into('<I', IMG, at, B(at, to))
 for wseg in windows:

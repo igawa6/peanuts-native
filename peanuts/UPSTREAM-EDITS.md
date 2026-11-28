@@ -233,6 +233,7 @@ Also gated, but not `#ifdef`-paired with upstream code (new Peanuts-owned files/
 per-game rows (Link's Awakening, Echoes of Wisdom) should instead move to a Peanuts-owned
 `dm/games/<id>/peanuts.tsv` overlay once that mechanism lands, so upstream's own `k_locks[]` table
 stops needing a local edit at all.
+- Scheduled signed-offset jump tables through x18 ([rewriter reference](../docs/reference/rewriter.md#offset-jump-tables-with-a-distant-unsigned-guard)).
 
 ## Round 3 (2026-11-13) — launcher support
 
