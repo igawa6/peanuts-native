@@ -305,11 +305,17 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     // PEANUTS: static, process-wide as hostInBackground: a screen recreated while the game runs (attach: a fold, a turn) knows the old screen's placement is in
     // force, and its pinStart undoes it in top-app (an instance field started false there, and the threads stayed on the fast cores)
     private static boolean pinnedAway;
+    // PEANUTS: keep the launched pack's tuning when a new Activity attaches to the same host.
+    private static boolean tuneMainThread, pinnedSeparateMain;
     private void pinTick() {
         boolean asked = Prefs.pinThreads(this, titleId());
         // PEANUTS: stopped (Home, another app full screen) the game is suspended and Android has the process in background: no placement each second for it
         // (a /proc scan of every thread on this thread); onStart starts the loop again, which undoes a placement made before the stop once the game is the top app
         if (!asked && stopped) return;
+        // PEANUTS: undo the opt-in placement when the player turns off Use fast cores.
+        boolean separateMain = asked && tuneMainThread;
+        if (pinnedSeparateMain && !separateMain) Native.unpinThreads();
+        pinnedSeparateMain = separateMain;
         String group = asked ? null : cpuGroup();
         boolean demoted = group != null && !group.equals("top-app");
         if (!asked && demoted != pinnedAway) {
@@ -318,13 +324,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             android.util.Log.i("peanuts", demoted ? "not Android's top app (cpu group " + group + "): the game's threads go to the fast cores while it lasts" : "Android's top app again: thread placement ends");
         }
         if (!asked && !demoted && topResumed) return;   // the top app, and Android placed the threads back itself: the loop ends (losing the top activity starts it again)
-        if ((asked || demoted) && Native.pinThreads() < 0) return;
+        if ((asked || demoted) && Native.pinThreads(separateMain) < 0) return;   // PEANUTS
         ui.postDelayed(pinRun, asked ? 5000 : 1000);   // not the top activity: looked at each second (the group follows a moment after)
     }
     /** At the start and when a recreated screen attaches to the running game (attach: the old screen's loops were stopped); one loop, never two */
     private void pinStart() {
         ui.removeCallbacks(pinRun);
-        if (Prefs.pinThreads(this, titleId()) || !topResumed || pinnedAway) ui.postDelayed(pinRun, 2000);   // PEANUTS: || pinnedAway, the placement is undone in top-app
+        if (Prefs.pinThreads(this, titleId()) || !topResumed || pinnedAway || pinnedSeparateMain) ui.postDelayed(pinRun, 2000);   // PEANUTS: restore placement in top-app
     }
     /** This process's cgroup for the CPU ("top-app", "foreground", "background", ...) from /proc/self/cgroup; null when it cannot be read */
     static String cpuGroup() {
@@ -710,8 +716,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         // PEANUTS end
         // PEANUTS: a supported update may lack this game's reviewed FPSLocker plan.
-        boolean hasFpsPlan = prof == null || prof.fpsLockerPlanMatches(BuildCheck.builds(pack).get("main"));
+        String mainBuild = BuildCheck.builds(pack).get("main");   // PEANUTS
+        boolean hasFpsPlan = prof == null || prof.fpsLockerPlanMatches(mainBuild);   // PEANUTS
         gameOwnedAtStart = !hasFpsPlan || Prefs.limited(id) && fpsModeAtStart == FrameRateCaps.GAME_OWNED;
+        if (!gameOwnedAtStart && prof != null && prof.threadTuningMatches(Build.MODEL, mainBuild)) env.add("DM_MAIN_HANDOFF_NOTIFY=1");   // PEANUTS
         if (prof != null && prof.fpsPlan120.isEmpty() && (!prof.fpsLocker.isEmpty() || !prof.fpsLockerPlan.isEmpty()) && !gameOwnedAtStart) env.add("DM_FPSLOCKER_INTERVAL=1");
         if (prof != null && hasFpsPlan && !prof.fpsLockerPlan.isEmpty()) env.add("DM_FPSLOCKER_PLAN=" + prof.fpsLockerPlan);   // PEANUTS: only pass a plan the loader can apply
         if (prof != null && prof.fpsPlan120.isEmpty() && !prof.fpsLocker.isEmpty() && !gameOwnedAtStart) env.add("DM_FPSLOCKER=" + prof.fpsLocker);
@@ -1055,6 +1063,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // The 3D scene (Game settings › Resolution, ResPresets; Advanced › 3D scene, SceneRes): the chosen RomFS overlay in the pack, made by the pack step from the player's files,
             // or the chosen game arguments (scene_arg); a DM_ROMFS_OVERLAY or DM_GAME_ARGS_ADD line of the user's comes later and wins
             Profile sceneProf = Profile.of(id);
+            tuneMainThread = sceneProf != null && sceneProf.threadTuningMatches(Build.MODEL, BuildCheck.builds(pack).get("main"));   // PEANUTS
             List<SceneRes.Preset> scenes = SceneRes.presets(sceneProf);
             List<ResPresets.Preset> resPresets = ResPresets.presets(sceneProf);
             String sceneNote = null;

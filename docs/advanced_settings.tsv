@@ -140,6 +140,7 @@ DM_LSFG_FLOW	developer	Performance			text			both
 DM_LSFG_MIN_FPS	advanced	Performance	Frame generation floor	generated frames look bad when the game runs slowly (raise it); 0 always generates	number	0..120 fps|0,30,45,60	30 fps	game						
 DM_LSFG_MULT	developer	Performance			text			both						
 DM_LSFG_TARGET	developer	Performance			text			both						
+DM_MAIN_HANDOFF_NOTIFY	internal	Game			text			both						Launcher-managed handoff timing on matched profiles.
 DM_MARK_DRAWS	developer	Diagnostics			text			both						
 DM_MARK_KEYS_STOP	developer	Input			text			both						
 DM_MAX_RES	developer	Diagnostics			text			both						

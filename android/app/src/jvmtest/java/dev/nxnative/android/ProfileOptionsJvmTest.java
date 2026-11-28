@@ -9,6 +9,17 @@ public final class ProfileOptionsJvmTest {
     private static void check(boolean c, String what) { if (!c) throw new AssertionError(what); }
 
     public static void main(String[] args) throws Exception {
+        // PEANUTS begin: exact device and build matching, including older profile tables.
+        String prefix = "0100000000000000\tTest game";
+        String build = "0123456789abcdef0123456789abcdef";
+        Profile baseline = Profile.parse(prefix + "\t0\t\t").get(0);
+        Profile tuned = Profile.parse(prefix + "\t".repeat(43) + "TestModel|" + build).get(0);
+        check(!baseline.threadTuningMatches("TestModel", build), "older table has no tuning");
+        check(tuned.threadTuningMatches("TestModel", build), "matching model and build enable tuning");
+        check(!tuned.threadTuningMatches("TestModel Plus", build), "model must match exactly");
+        check(!tuned.threadTuningMatches("TestModel", "another-build"), "build must match exactly");
+        check(!tuned.threadTuningMatches("TestModel", null), "unidentified pack has no tuning");
+        // PEANUTS end
         check(Profile.parseOptions(null).isEmpty(), "null -> empty");
         check(Profile.parseOptions("").isEmpty(), "empty -> empty");
         check(Profile.parseOptions("   ").isEmpty(), "whitespace -> empty");

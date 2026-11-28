@@ -157,7 +157,7 @@ final class Native {
     static native void rumbleRoute(int player, boolean on);
 
     /** Places the replay thread on the phone's fastest cores and the encoder and the game's threads off the small ones (nxlaunch.c); the number placed by this call, -1 when the phone reports no clocks */
-    static native int pinThreads();
+    static native int pinThreads(boolean separateMain);   // PEANUTS
     /** The placement of pinThreads undone: those threads get every core again (nxlaunch.c) */   // PEANUTS: thread placement undone in top-app (0.1.8)
     static native int unpinThreads();
     /** The frame limit while the game runs (games whose speed follows the measured rate: Prefs.paced); 0 = none */

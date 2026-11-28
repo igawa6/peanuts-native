@@ -72,6 +72,15 @@ Guest threads, their synchronization and how the host schedules them. Each entry
   peer joins it, then checks completion, the join result and nested host work.
 - **Scope:** these are cooperative thread-SVC handoffs, not a complete asynchronous guest scheduler. The optional `core_preempt` profile key (`DM_PREEMPT=0` / `1` overrides it) additionally checks already-runnable peers after every thread SVC; it defaults off. Historically that broader policy moved [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md)'s first frame from 0.6 s to 2.9 s by waiting for busy decompression threads. Wake-triggered handoffs apply with either setting.
 
+### Guest main-thread handoff polling during frame pacing
+
+<!-- PEANUTS begin -->
+- **Symptom:** a movement and camera route drops frames while the guest main thread spends time in same-core handoff waits and the GPU has headroom.
+- **Cause:** a host sleep between scheduler predicate checks can delay guest main after a higher-priority peer has stopped holding the handoff.
+- **Fix:** with `DM_MAIN_HANDOFF_NOTIFY=1`, the peer signals on leave or exit under the scheduler mutex. The waiter still checks the same runnable and priority predicates. A timed recheck covers asynchronous state changes. The Android launcher enables this for reviewed `android_thread_tuning` model and main-build pairs with host-managed pacing.
+- **Check:** run `peanuts-sync` with notifications enabled and `SYNC_ARGS=--stops` to exercise pause and resume while a handoff is in progress.
+<!-- PEANUTS end -->
+
 ### A same-core handoff holds only a waker pinned to that core
 
 - **Symptom:** the picture stops for good while sound goes on; the main thread spins in the game's own wait loop (a `sample` of the process shows it in guest code, no SVC), the other guest threads wait, and the job workers it waits for sit in `svc_thread` → `dm_yield_to_core_peers` → `nanosleep`.

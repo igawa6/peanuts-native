@@ -150,10 +150,26 @@ def fpsLimitMaxOf = { String game ->
 // Whether the game's DLSS runs on the host's stand-in upscaler (game.tsv dlss_standin rows): "1", or empty. The launcher's Upscaler row then offers the stand-in's modes, with
 // Motion clarity and Temporal sharpness (Prefs.dlssGame, GameUpscaler, DlssTune: DM_VK_DLSS, DM_VK_GSR2_CLARITY, DM_VK_DLSS_SHARP)
 // Reviewed FPSLocker memory-write rows; executable-code configs are not accepted here.
+// PEANUTS begin: optional device and build pairs for Android thread tuning.
+def androidThreadTuningOf = { String game ->
+    tsvRows(game, 'android_thread_tuning').collect { c ->
+        if (c.size() != 3 || !(c[1] ==~ /[A-Za-z0-9][A-Za-z0-9._ -]*/) || !(c[2] ==~ /[0-9a-f]{32}/))
+            throw new GradleException("$game: invalid android_thread_tuning row")
+        c[1] + '|' + c[2]
+    }.join(';')
+}
+// PEANUTS end
 def fpsLockerOf = { String game ->
+    // PEANUTS: Keep these writes limited to kinds the host parser supports.
+    def kinds = ['zero_i32', 'target_f32', 'frame_ms_f32', 'frame_ms2_f32', 'vsync_u32',
+                 'inverse_f32', 'frame_scaled_f32', 'target_scaled_f32', 'time_ratio_f32',
+                 'flag_cap_u8', 'target_i32', 'zero_u16', 'time_step_pair_f32', 'constant_i32',
+                 'elapsed_fps_f32', 'flag_cap_u32_gt', 'step_ticks_u32', 'target_offset_f32',
+                 'frame_offset_ms_f32', 'vsync_floor_u32']
     // PEANUTS: reviewed typed rows include dynamic elapsed FPS and full-width state caps.
     (tsvRows(game, 'fpslocker') + tsvRows(game, 'fps_memory')).collect { c ->
-        if (c.size() != 6 || !(c[1] ==~ /[0-9a-f]{32}/) || !(c[2] in ['zero_i32','target_f32','frame_ms_f32','frame_ms2_f32','vsync_u32','inverse_f32','frame_scaled_f32','target_scaled_f32','time_ratio_f32','flag_cap_u8','target_i32','zero_u16','time_step_pair_f32','constant_i32','elapsed_fps_f32','flag_cap_u32_gt','step_ticks_u32','target_offset_f32','frame_offset_ms_f32']) || !(c[3] ==~ /[@%]?0x[0-9a-f]+(\/0x[0-9a-f]+){0,4}/) || !(c[4] in ['1','2'])) // PEANUTS: integer fixed-step ticks, four-offset chains, rate offsets
+        if (c.size() != 6 || !(c[1] ==~ /[0-9a-f]{32}/) || !(c[2] in kinds)
+                || !(c[3] ==~ /[@%]?0x[0-9a-f]+(\/0x[0-9a-f]+){0,4}/) || !(c[4] in ['1', '2'])) // PEANUTS
             throw new GradleException("$game: invalid reviewed fpslocker row")
         c[1..5].join(',')
     }.join(';')
@@ -321,7 +337,16 @@ def handheldGames = nxGames.findAll { g -> tsvRows(g, 'op_mode').any { it.size()
 def cheatsOf = { String game -> tsvRows(game, 'cheats').isEmpty() ? '' : '1' }
 def timeOfDayOf = { String game -> tsvRows(game, 'time_of_day').any { it.size() > 1 && it[1].trim() == '1' } ? '1' : '' }   // the Game tab's Time of day row only for profiles whose day/night cycle follows the user clock
 // PEANUTS: include each game's supported options in the launcher profile.
-def nxProfiles = nxGames.collect { g -> [g, nameOf(g).replaceAll(/[\t\n\\"]/, ' '), shaderTotalOf(g), shaderInputsOf(g), buildsOf(g), reqsOf(g), statusOf(g), deltaOf(g), stampOf(g), resolutionOf(g), romfsChecksOf(g), gpuTsOf(g), windowOf(g), decoupleOf(g), drsOf(g), fpsLimitOf(g), dlssOf(g), presentOnlyOf(g), stepsOf(g), tsvRows(g, 'mesh_vegetation_cut').isEmpty() ? '' : '1', optionsOf(g), sceneOf(g), presetsOf(g), skipLayersOf(g), recommendOf(g), variantsOf(g), presetFromOf(g), linkPlayOf(g), aspectsOf(g), timeOfDayOf(g), cheatsOf(g), fpsLimitMaxOf(g), fpsLockerOf(g), fpsLockerPlanOf(g), fpsLimitMinOf(g), fpsModesOf(g), fpsPlan120Of(g), tsvRows(g, 'fps_step_elapsed').isEmpty() ? '' : '1', tsvRows(g, 'fps_owned_default').isEmpty() ? '' : '1', aspectPlanOf(g), tsvRows(g, 'aspect_plan_untested').isEmpty() ? '' : '1', fpsTargetOf(g), fpsRatesOf(g), tsvRows(g, 'thermal_cap').isEmpty() ? '' : '1'].join('\\t') }.join('\\n')   // PEANUTS: fps_owned_default, then aspect_plan and aspect_plan_untested, then fps_target and the engine rows' rates (Profile.fpsTarget, fpsRates), then thermal_cap (Profile.thermalCap), the last column
+def nxProfiles = nxGames.collect { g -> [g, nameOf(g).replaceAll(/[\t\n\\"]/, ' '), shaderTotalOf(g), shaderInputsOf(g), buildsOf(g),
+    reqsOf(g), statusOf(g), deltaOf(g), stampOf(g), resolutionOf(g), romfsChecksOf(g),
+    gpuTsOf(g), windowOf(g), decoupleOf(g), drsOf(g), fpsLimitOf(g),
+    dlssOf(g), presentOnlyOf(g), stepsOf(g), tsvRows(g, 'mesh_vegetation_cut').isEmpty() ? '' : '1', optionsOf(g), sceneOf(g),
+    presetsOf(g), skipLayersOf(g), recommendOf(g), variantsOf(g), presetFromOf(g),
+    linkPlayOf(g), aspectsOf(g), timeOfDayOf(g), cheatsOf(g), fpsLimitMaxOf(g),
+    fpsLockerOf(g), fpsLockerPlanOf(g), fpsLimitMinOf(g), fpsModesOf(g), fpsPlan120Of(g),
+    tsvRows(g, 'fps_step_elapsed').isEmpty() ? '' : '1', tsvRows(g, 'fps_owned_default').isEmpty() ? '' : '1', aspectPlanOf(g),
+    tsvRows(g, 'aspect_plan_untested').isEmpty() ? '' : '1', fpsTargetOf(g), fpsRatesOf(g), tsvRows(g, 'thermal_cap').isEmpty() ? '' : '1',
+    androidThreadTuningOf(g)].join('\\t') }.join('\\n')   // PEANUTS: fps_owned_default, then aspect_plan and aspect_plan_untested, then fps_target and the engine rows' rates (Profile.fpsTarget, fpsRates), then thermal_cap and the optional android_thread_tuning pairs
 def lockOf = { String key -> def f = new File(repo, 'dm/gfx/tools/dmsh_chain.lock'); f.isFile() ? (f.readLines().find { it.startsWith(key + '\t') }?.split('\t')?.getAt(1) ?: 'unknown') : 'unknown' }
 
 android {
