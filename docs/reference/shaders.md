@@ -268,9 +268,9 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 ### ARC v7 archives with short paths
 
 - **Symptom:** Shader extraction fails on ARC v7 archives with 64-byte path fields.
-- **Cause:** The reader assumed the 128-byte path field and read the length and offset fields at the wrong positions.
-- **Fix:** A 0x90 table that is consistent (printable paths, entries in order and inside the file), or that decodes the way the reader always read it, stays 0x90, so The Great Ace Attorney Chronicles reads as before; only an archive the 0x90 reading cannot decode is read as 0x50, and only if that table is consistent. SPK records are yielded one at a time.
-- **Found on:** Resident Evil 6 2.0.0 (v131072).
+- **Cause:** With 64-byte path fields, the 0x90 reader can read zero padding as member sizes and offsets and return empty members.
+- **Fix:** Use the 0x50 table if it has printable paths and ordered, in-bounds entries and the 0x90 reading either fails to decode or gives zero for every member's sizes and offset. SPK records are yielded one at a time.
+- **Found on:** Resident Evil 6 2.0.0 (v131072) and Resident Evil 5 v196608.
 
 ### PKZ version 1 archives
 
