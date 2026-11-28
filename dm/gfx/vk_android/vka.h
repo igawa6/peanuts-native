@@ -244,6 +244,12 @@ uint64_t vka_addr_run(uint64_t addr, uint64_t len, VkBuffer *buf, VkDeviceSize *
 // PEANUTS: GPU-only lookups also resolve NVN virtual pools; their virtual addresses are still inaccessible to the CPU.
 uint64_t vka_gpu_addr_run(uint64_t addr, uint64_t len, VkBuffer *buf, VkDeviceSize *off);
 int vka_gpu_addr(uint64_t addr, uint64_t len, VkBuffer *buf, VkDeviceSize *off);
+int vka_cpu_read_gpu(uint64_t addr, uint64_t n, void *out);   // PEANUTS: CPU read through placed guest RAM or NVN virtual-pool mappings
+// PEANUTS begin: pair generation (placed segments + NVN virtual-pool mappings) for gmem_map, vertex rebind cache, and instanced runs
+typedef struct { uint64_t seg, sparse; } vka_gmem_gen_t;
+static inline int vka_gmem_gen_eq(vka_gmem_gen_t a, vka_gmem_gen_t b) { return a.seg == b.seg && a.sparse == b.sparse; }
+vka_gmem_gen_t vka_gmem_gen(void);
+// PEANUTS end
 extern _Atomic uint32_t vka_seg_gen;   // vka_mem.c: bumped when a segment's buffer is destroyed (views over segment buffers are made again)
 void vka_mem_join_due(void);   // the replay thread at a submission's start: joins the parts of pools placed by parts that a range given to the GPU lies across (vka_mem.c)
 int vka_pool_bda(uint64_t addr, VkDeviceAddress *bda);   // the device address of a pool byte (the table the binding side reads)

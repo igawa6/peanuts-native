@@ -3411,3 +3411,23 @@ NCA through the check too), `CMakeLists.txt`, `HOOKS.md`, `tests/nsp_fixture.h` 
 `test_compressed.py` (the damaged cases beside #697's cut-off ones), `test_nup_icon.py` (its build of `nup_meta_test` takes `nx_verify.c`).
 The host's copy of `nx_nca.c` never sets a check (`nx_verify.c` is not in `android/host/CMakeLists.txt`'s `NSP_C`). Upstream candidate: the split's bounds
 checks (general: any FlatBuffers index); the rest is Peanuts' importer.
+
+### NVN virtual-pool GPU/CPU buffer support and targeted cross-pool segment joins (2026-11-27)
+
+RE Engine titles on SDK 20 (Mega Man Star Force Legacy Collection) place buffers, UBOs, texel buffers, indirect draw arguments, and raw global-memory pointers inside NVN virtual pools backed by 4 MiB physical pools. Extending `vka_gpu_addr` / `vka_gpu_addr_run` across Vulkan GPU buffer sites, adding `vka_cpu_read_gpu` for CPU-side reads through virtual-pool mappings, mapping already-placed virtual-pool runs into `gmem_map` via a linear merge (`nvn_sparse_runs` + `vkp_merge_chunks` + `vka_gmem_gen()`), and queueing targeted cross-pool segment joins (`rjoin_queue` + `vkp_rjoin_plan` + segment-generation-keyed refusal cache, supporting `join_alias`) fixes missing 3D geometry and unplaced-buffer skips without enlarging the global coalescer or eagerly placing texture-only pools.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/nvn/hle_nvn.c` | 4 | lock-free `g_vp_count` / `nvn_sparse_has`; `vpool_drop` bumps `g_vp_gen`; `nvn_sparse_run` & `nvn_sparse_runs` clipped to `min(v->len, v->size)` | `// PEANUTS` / `// PEANUTS begin` / `end` |
+| `dm/gfx/vk_android/vka.h` | 1 | declare `vka_cpu_read_gpu`, `vka_gmem_gen_t`, `vka_gmem_gen_eq`, `vka_gmem_gen` | `// PEANUTS:` / `// PEANUTS begin` / `end` |
+| `dm/gfx/vk_android/vka_place.h` | 1 | `vkp_rjoin_neg_t` / `vkp_rjoin_neg_hit` / `vkp_rjoin_neg_put`, `vkp_rjoin_plan`, and `vkp_merge_chunks` | `// PEANUTS begin` / `end` |
+| `dm/gfx/vk_android/vka_mem.c` | 6 | keep `vka_mem_gen` segment-only and add `vka_gmem_gen`; `vka_gpu_addr_run` places sparse buffers & queues `rjoin_queue` (pre-checked + refusal cache); `vka_cpu_read_gpu`; `vka_mem_chunks` lists already-placed runs and merges linearly; `vka_mem_join_due` drains `g_rjoin` with `join` / `join_alias` and records refusals | `// PEANUTS` / `// PEANUTS begin` / `end` |
+| `dm/gfx/vk_android/vka_draw.c` | 19 | use `vka_gmem_gen()` for `gmem_map`, `VBC`, and instanced runs (`tbuf_view` stays on `vka_mem_gen()`); cap indirect virtual-pool `ibuf` probe in `ub_hazard` to `UB.q`; use `vka_gpu_addr` / `vka_gpu_addr_run` / `vka_cpu_read_gpu` for UBOs, inline updates, deferred texture handles, texel buffers, and indirect draws/dispatches | `// PEANUTS:` / `// PEANUTS begin` / `end` |
+| `dm/gfx/vk_android/vka_exec.c` | 6 | use `vka_gpu_addr` / `vka_gpu_addr_run` for buffer copies/fills/updates, buffer-texture copies, and indirect mesh draws | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_tex.c` | 2 | `vka_tex_gw_read` reads virtual-pool bytes via `vka_cpu_read_gpu` | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_tbuf.c` | 2 | `vka_tbuf_view` and `vka_tbuf_refresh` resolve virtual-pool texel buffers | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_tf.c` | 2 | `vka_tf_flush` and `vka_tf_state` resolve virtual-pool transform-feedback buffers | `// PEANUTS:` |
+| `dm/gfx/vk_android/vka_memu_draw.inc` | 1 | `vka_memu_batch` resolves virtual-pool indirect mesh draw records | `// PEANUTS:` |
+
+Peanuts' own files, no marker: `peanuts/tests/test_virtual_pool_buffers.py` (new).
+Upstream candidate: yes, for any NVN title placing GPU buffers or raw global-memory pointers in virtual pools.

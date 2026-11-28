@@ -2764,6 +2764,7 @@ typedef struct { const uint8_t *phys; uint64_t gen; } vpte;
 struct vpool { const pool_t *pool; uint8_t *base; uint64_t len, size, top; int nrun; struct { uint64_t lo, hi; } run[NVRUN]; vpte **pt; };   // len: reserved; size: the pool's; top: highest mapped end so far (logged per 128 MB)
 static struct vpool **g_vp; static int g_nvp, g_cvp;   // the pools with a range of their own, under g_vp_mu
 static pthread_mutex_t g_vp_mu = PTHREAD_MUTEX_INITIALIZER;
+static _Atomic int g_vp_count;   // PEANUTS: lock-free sparse pool count for fast-path lookups
 static _Atomic uint64_t g_vp_gen;   // bumped per mapping request
 static struct vpool *vpool_of(const pool_t *o) { return o->vp; }
 static uint8_t *vpool_reserve(pool_t *o) {   // → the reserved range, or NULL
@@ -2782,7 +2783,7 @@ static uint8_t *vpool_reserve(pool_t *o) {   // → the reserved range, or NULL
     pthread_mutex_lock(&g_vp_mu);
     if (g_nvp == g_cvp && !(g_vp = realloc(g_vp, (g_cvp = g_cvp ? 2 * g_cvp : 64) * sizeof *g_vp))) die("sparse pool table allocation failed");
     int at = g_nvp; while (at > 0 && g_vp[at - 1]->base > v->base) at--;   // (kept sorted by base: vpool_at's binary search)
-    memmove(&g_vp[at + 1], &g_vp[at], (size_t)(g_nvp - at) * sizeof *g_vp); g_vp[at] = v; g_nvp++; o->vp = v;
+    memmove(&g_vp[at + 1], &g_vp[at], (size_t)(g_nvp - at) * sizeof *g_vp); g_vp[at] = v; g_nvp++; atomic_store_explicit(&g_vp_count, g_nvp, memory_order_release); o->vp = v;   // PEANUTS: g_vp_count
     o->vmode = o->size > DM_GAME_APP_POOL ? 2 : 0;
     pthread_mutex_unlock(&g_vp_mu);
     if (o->vmode == 2) LOG("[nvn] virtual pool %p (%#llx bytes, flags %#x): sparse, own address range %p+%#llx, physical pages are remapped into it", (const void *)o, (unsigned long long)o->size, o->flags, a, (unsigned long long)len);
@@ -2794,6 +2795,10 @@ static void vpool_drop(pool_t *o) {   // caller holds g_vp_mu
     munmap(v->base, v->len);
     for (uint64_t l = 0; l < (v->size + (2u << 20) - 1) >> 21; l++) free(v->pt[l]);
     for (int i = 0; i < g_nvp; i++) if (g_vp[i] == v) { memmove(&g_vp[i], &g_vp[i + 1], (size_t)(g_nvp - 1 - i) * sizeof *g_vp); g_nvp--; break; }
+    // PEANUTS begin: invalidate gmem_map/caches on virtual-pool drop and update lock-free sparse pool count
+    atomic_store_explicit(&g_vp_count, g_nvp, memory_order_release);
+    atomic_fetch_add(&g_vp_gen, 1);
+    // PEANUTS end
     free(v->pt); free(v); o->vp = NULL;
 }
 static void vpool_release(pool_t *o) { pthread_mutex_lock(&g_vp_mu); vpool_drop(o); pthread_mutex_unlock(&g_vp_mu); }
@@ -3335,15 +3340,17 @@ static struct vpool *vpool_at(const void *pool, uint64_t a) {   // caller holds 
 }
 int nvn_sparse_pool(const void *pool) { return pool && ((const pool_t *)pool)->vp; }   // no lock: set at Initialize, cleared at the first mapping (an aliased pool) or Finalize; called per texture lookup
 uint64_t nvn_sparse_gen(void) { return atomic_load(&g_vp_gen); }
-// PEANUTS: Resolve one contiguous physical range for a Vulkan buffer binding. A hole or a different
-// physical run ends the binding, since one VkBuffer cannot span both.
+// PEANUTS begin: lock-free sparse pool check, contiguous physical range lookup, and clipped run enumeration for Vulkan gmem_map
+int nvn_sparse_has(void) { return atomic_load_explicit(&g_vp_count, memory_order_acquire) > 0; }
 uint64_t nvn_sparse_run(uint64_t a, uint64_t n, uint64_t *physical) {
+    if (!nvn_sparse_has() || !n) return 0;
     pthread_mutex_lock(&g_vp_mu);
     struct vpool *v = vpool_at(NULL, a);
     uint64_t run = 0;
     if (v) {
         uint64_t offset = a - (uint64_t)(uintptr_t)v->base;
-        uint64_t limit = v->size - offset;
+        uint64_t cap = v->len < v->size ? v->len : v->size;
+        uint64_t limit = offset < cap ? cap - offset : 0;
         if (n > limit) n = limit;
         while (run < n) {
             uint64_t page_off = (offset + run) & 0xfff;
@@ -3359,6 +3366,47 @@ uint64_t nvn_sparse_run(uint64_t a, uint64_t n, uint64_t *physical) {
     pthread_mutex_unlock(&g_vp_mu);
     return run;
 }
+int nvn_sparse_runs(uint64_t *vlo, uint64_t *vhi, uint64_t *plo, int max) {
+    if (!nvn_sparse_has() || max <= 0) return 0;
+    pthread_mutex_lock(&g_vp_mu);
+    int out = 0;
+    for (int i = 0; i < g_nvp && out < max; i++) {
+        const struct vpool *v = g_vp[i];
+        if (!v || !v->pt || !v->base) continue;
+        uint64_t base = (uint64_t)(uintptr_t)v->base;
+        uint64_t cap = (v->len < v->size ? v->len : v->size) & ~(uint64_t)0xfff;
+        uint64_t nleaf = (cap + (2u << 20) - 1) >> 21;
+        uint64_t r_vlo = 0, r_vhi = 0, r_plo = 0;
+        for (uint64_t l = 0; l < nleaf && out < max; l++) {
+            const vpte *leaf = v->pt[l];
+            if (!leaf) {
+                if (r_vhi > r_vlo) { vlo[out] = r_vlo; vhi[out] = r_vhi; plo[out] = r_plo; out++; r_vlo = r_vhi = r_plo = 0; }
+                continue;
+            }
+            uint64_t rem_pages = (cap - (l << 21)) >> 12;
+            uint64_t pend = rem_pages < VPT_LEAF ? rem_pages : VPT_LEAF;
+            for (uint64_t p = 0; p < pend && out < max; p++) {
+                const uint8_t *ph = leaf[p].phys;
+                uint64_t va = base + (l << 21) + (p << 12);
+                if (ph) {
+                    uint64_t pa = (uint64_t)(uintptr_t)ph;
+                    if (r_vhi > r_vlo && va == r_vhi && pa == r_plo + (r_vhi - r_vlo)) {
+                        r_vhi += 0x1000;
+                    } else {
+                        if (r_vhi > r_vlo) { vlo[out] = r_vlo; vhi[out] = r_vhi; plo[out] = r_plo; out++; }
+                        if (out < max) { r_vlo = va; r_vhi = va + 0x1000; r_plo = pa; }
+                    }
+                } else if (r_vhi > r_vlo) {
+                    vlo[out] = r_vlo; vhi[out] = r_vhi; plo[out] = r_plo; out++; r_vlo = r_vhi = r_plo = 0;
+                }
+            }
+        }
+        if (r_vhi > r_vlo && out < max) { vlo[out] = r_vlo; vhi[out] = r_vhi; plo[out] = r_plo; out++; }
+    }
+    pthread_mutex_unlock(&g_vp_mu);
+    return out;
+}
+// PEANUTS end
 uint64_t nvn_sparse_copy(const void *pool, void *dst, uint64_t a, uint64_t n) {
     pthread_mutex_lock(&g_vp_mu); struct vpool *v = vpool_at(pool, a); uint64_t miss = 0;
     if (!v) { pthread_mutex_unlock(&g_vp_mu); memset(dst, 0, n); return n; }

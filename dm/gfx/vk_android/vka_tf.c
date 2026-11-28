@@ -187,7 +187,7 @@ void vka_tf_flush(VkCommandBuffer cb) {
                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
     for (int i = 0; i < g_npend; i++) {
         for (uint64_t done = 0; done < g_pend[i].len;) {
-            VkBuffer b; VkDeviceSize o; uint64_t k = vka_addr_run(g_pend[i].dst + done, g_pend[i].len - done, &b, &o);
+            VkBuffer b; VkDeviceSize o; uint64_t k = vka_gpu_addr_run(g_pend[i].dst + done, g_pend[i].len - done, &b, &o);   // PEANUTS: resolve virtual pool buffers
             if (!k) { VRED_ONCE("transform feedback: buffer at %#llx is not in placed guest RAM: its capture is dropped", (unsigned long long)(g_pend[i].dst + done)); break; }
             VkBufferCopy c = {g_pend[i].off + done, o, k}; vk.vkCmdCopyBuffer(cb, g_ch[g_pend[i].ch].buf, b, 1, &c); done += k;
         }
@@ -212,7 +212,7 @@ void vka_tf_state(const p_tf_state *s, VkCommandBuffer cb) {
     vka_rp_end();   // what was captured is read next (as vertex streams): the pass ends and its captures are copied (vka_tf_flush)
     // The control buffer as nvn_feedback.h has it: four byte offsets, then the arguments of the draw DrawTransformFeedback makes (vertices, 1 instance, first 0, base 0)
     VkBuffer b; VkDeviceSize o; vka_span sp;
-    if (!s->ctl || vka_addr_run(s->ctl, 32, &b, &o) < 32 || !vka_scratch(32, 16, &sp)) return;
+    if (!s->ctl || vka_gpu_addr_run(s->ctl, 32, &b, &o) < 32 || !vka_scratch(32, 16, &sp)) return;   // PEANUTS: resolve virtual pool buffers
     uint32_t st[8] = {(uint32_t)g_off[0], (uint32_t)g_off[1], (uint32_t)g_off[2], (uint32_t)g_off[3], g_verts, 1, 0, 0};
     memcpy(sp.ptr, st, 32);
     VkBufferCopy c = {sp.off, o, 32}; vk.vkCmdCopyBuffer(cb, sp.buf, b, 1, &c);

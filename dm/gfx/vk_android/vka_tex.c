@@ -1074,9 +1074,8 @@ static uint8_t *gw_content(const uint8_t *mem, uint64_t n, uint64_t *seen) {
 int vka_tex_gw_read(uint64_t addr, uint64_t n, void *out) {
     if (!n) return 1;
     if (out) {
-        if (vka_addr(addr, n, NULL, NULL, NULL)) memcpy(out, (const void *)(uintptr_t)addr, (size_t)n);
-        else dm_guest_read_mapped(out, (uintptr_t)addr, (size_t)n);
-    } else if (!vka_addr(addr, n, NULL, NULL, NULL) && dm_guest_unmapped((uintptr_t)addr, n)) return 0;
+        if (!vka_cpu_read_gpu(addr, n, out)) dm_guest_read_mapped(out, (uintptr_t)addr, (size_t)n);   // PEANUTS: resolve virtual pool bytes
+    } else if (!vka_cpu_read_gpu(addr, n, NULL) && dm_guest_unmapped((uintptr_t)addr, n)) return 0;
     pthread_mutex_lock(&g_tmu);
     uint64_t a = addr, b = a + n, done = vka_done(); uint8_t *c = out; int ok = 1;
     for (int i = 0; i < g_ngw; i++) {
@@ -1091,7 +1090,7 @@ int vka_tex_gw_read(uint64_t addr, uint64_t n, void *out) {
                 if ((!x->fence || x->fence > done) && x->lo < w->src + (hi - w->lo) && x->hi > w->src + (lo - w->lo)) { ok = 0; break; }
             }
             if (!ok || gw_src_overwritten(i, w->src + (lo - w->lo), hi - lo, done)) { ok = 0; break; }   // PEANUTS(upstream-candidate): (gw_src_overwritten)
-            if (c) dm_guest_read_mapped(c + (lo - a), (uintptr_t)(w->src + (lo - w->lo)), (size_t)(hi - lo));
+            if (c && !vka_cpu_read_gpu(w->src + (lo - w->lo), hi - lo, c + (lo - a))) dm_guest_read_mapped(c + (lo - a), (uintptr_t)(w->src + (lo - w->lo)), (size_t)(hi - lo));   // PEANUTS: resolve virtual pool bytes
         } else if (c && w->kind == GW_FILL) {
             for (uint64_t k = lo; k < hi; k++) { uint32_t v = w->value; c[k - a] = ((const uint8_t *)&v)[(k - w->lo) & 3]; }
         } else if (c && w->kind == GW_UPDATE) {

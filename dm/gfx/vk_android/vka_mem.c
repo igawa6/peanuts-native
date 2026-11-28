@@ -49,7 +49,13 @@ typedef struct { uintptr_t lo, hi; VkDeviceMemory mem; VkBuffer buf; VkDeviceAdd
 static seg_t *g_sg; static int g_nsg, g_sgcap;   // sorted by lo, disjoint
 // Bumped (under g_rw for writing) whenever a segment comes or goes: the replay's per-thread lookup cache (vka_addr, vka_addr_run) holds while it stands
 static _Atomic uint64_t g_sg_gen = 1;
-uint64_t vka_mem_gen(void) { return atomic_load_explicit(&g_sg_gen, memory_order_acquire); }   // (vka_draw.c gmem_map: the table is kept while it stands)
+uint64_t vka_mem_gen(void) { return atomic_load_explicit(&g_sg_gen, memory_order_acquire); }
+// PEANUTS begin: sparse pool helpers and pair generation (segments + virtual-pool mappings)
+int nvn_sparse_has(void);
+uint64_t nvn_sparse_gen(void);
+int nvn_sparse_runs(uint64_t *vlo, uint64_t *vhi, uint64_t *plo, int max);
+vka_gmem_gen_t vka_gmem_gen(void) { return (vka_gmem_gen_t){atomic_load_explicit(&g_sg_gen, memory_order_acquire), nvn_sparse_gen()}; }
+// PEANUTS end
 static pthread_rwlock_t g_rw = PTHREAD_RWLOCK_INITIALIZER;
 static pthread_mutex_t g_pl = PTHREAD_MUTEX_INITIALIZER;   // table changes and placements, one at a time (see Locks above)
 static int lock_whole(void) { static int v = -1; if (v < 0) { v = VKA_ENV("DM_VK_MEM_LOCK_WHOLE", 0) != 0; if (v) VLOG("DM_VK_MEM_LOCK_WHOLE=1: placements hold the segment table's write lock (lookups wait for them)"); } return v; }
@@ -928,16 +934,22 @@ uint64_t vka_addr_run(uint64_t addr, uint64_t len, VkBuffer *buf, VkDeviceSize *
     return n;
 }
 
-// PEANUTS: GPU bindings can resolve a contiguous run of physical pool pages.
+// PEANUTS begin: GPU bindings resolve NVN virtual pools, queue targeted cross-pool segment joins, and support CPU reads through virtual-pool mappings
+static void rjoin_queue(uintptr_t a, uintptr_t e, const char *why);
 uint64_t nvn_sparse_run(uint64_t addr, uint64_t len, uint64_t *physical);
 uint64_t vka_gpu_addr_run(uint64_t addr, uint64_t len, VkBuffer *buf, VkDeviceSize *off) {
     uint64_t run = vka_addr_run(addr, len, buf, off);
     if (run || !len) return run;
-    uint64_t physical;
+    uint64_t physical = 0;
     uint64_t mapped = nvn_sparse_run(addr, len, &physical);
     if (!mapped) return 0;
     mtl_pool_need((const void *)(uintptr_t)physical, mapped, "a buffer in an NVN virtual pool");
     run = vka_addr_run(physical, mapped, buf, off);
+    if (run && run < mapped) {
+        VkBuffer nb; VkDeviceSize no;
+        if (vka_addr_run(physical + run, 1, &nb, &no))
+            rjoin_queue((uintptr_t)physical, (uintptr_t)(physical + mapped), "virtual pool buffer");
+    }
     static _Atomic int logged;
     if (!atomic_exchange(&logged, 1)) VLOG("virtual pool buffer %#llx resolves to %#llx (%llu of %llu bytes placed)",
                                            (unsigned long long)addr, (unsigned long long)physical, (unsigned long long)run, (unsigned long long)mapped);
@@ -946,6 +958,25 @@ uint64_t vka_gpu_addr_run(uint64_t addr, uint64_t len, VkBuffer *buf, VkDeviceSi
 int vka_gpu_addr(uint64_t addr, uint64_t len, VkBuffer *buf, VkDeviceSize *off) {
     return len != 0 && vka_gpu_addr_run(addr, len, buf, off) == len;
 }
+int plat_mem_read(uint64_t addr, void *buf, size_t len);
+uint64_t dm_guest_unmapped(uintptr_t addr, uint64_t len);
+int vka_cpu_read_gpu(uint64_t addr, uint64_t n, void *out) {
+    if (!n) return 1;
+    if (vka_addr(addr, n, NULL, NULL, NULL)) { if (out) memcpy(out, (const void *)(uintptr_t)addr, (size_t)n); return 1; }
+    uint64_t done = 0;
+    while (done < n) {
+        uint64_t phys = 0;
+        uint64_t k = nvn_sparse_run(addr + done, n - done, &phys);
+        if (!k) return 0;
+        if (out) {
+            if (vka_addr(phys, k, NULL, NULL, NULL)) memcpy((uint8_t *)out + done, (const void *)(uintptr_t)phys, (size_t)k);
+            else if (plat_mem_read(phys, (uint8_t *)out + done, (size_t)k)) return 0;
+        } else if (!vka_addr(phys, k, NULL, NULL, NULL) && dm_guest_unmapped((uintptr_t)phys, k)) return 0;
+        done += k;
+    }
+    return 1;
+}
+// PEANUTS end
 
 // Raw global memory's sink (dmsh_abi.h DMSH_GMEM_MAP_*, entry 0's words 6 and 7; vk_android_spv.py gmem_sink): the device address of a buffer of its own that the library's
 // branchless helpers load from and store to when an address lies in no pool, so such an access touches no guest memory (the translator's helpers skipped it in a branch).
@@ -971,14 +1002,67 @@ uint64_t vka_mem_sink(void) {
 
 // The placed segments in address order (raw global memory's table, vka_draw.c gmem_map): at most max, the count returned
 int vka_mem_chunks(uint64_t *lo, uint64_t *hi, uint64_t *bda, int max) {
+    // PEANUTS begin: list already-placed NVN virtual-pool runs alongside direct segments and merge linearly (no mtl_pool_need here)
+    int vcap = (max > 0 && nvn_sparse_has()) ? (max > 4096 ? 4096 : max) : 0;
+    uint64_t *vbuf = vcap > 0 ? malloc((size_t)vcap * 3 * sizeof(uint64_t)) : NULL;
+    int nvr = 0;
+    if (vbuf) nvr = nvn_sparse_runs(vbuf, vbuf + vcap, vbuf + 2 * vcap, vcap);
+    uint64_t *tmp = (nvr > 0 && max > 0) ? malloc((size_t)max * 6 * sizeof(uint64_t)) : NULL;
+    uint64_t *dlo = tmp ? tmp : lo, *dhi = tmp ? tmp + max : hi, *dbda = tmp ? tmp + 2 * max : bda;
+    uint64_t *mlo = tmp ? tmp + 3 * max : NULL, *mhi = tmp ? tmp + 4 * max : NULL, *mbda = tmp ? tmp + 5 * max : NULL;
+    // PEANUTS end
     pthread_rwlock_rdlock(&g_rw);
     int n = 0; for (int i = 0; i < g_nsg && n < max; i++) if (g_sg[i].bda) {
-        if (!g_hole.n || !vkh_over(&g_hole, g_sg[i].lo, g_sg[i].hi)) { lo[n] = g_sg[i].lo; hi[n] = g_sg[i].hi; bda[n] = g_sg[i].bda; n++; continue; }
+        if (!g_hole.n || !vkh_over(&g_hole, g_sg[i].lo, g_sg[i].hi)) { dlo[n] = g_sg[i].lo; dhi[n] = g_sg[i].hi; dbda[n] = g_sg[i].bda; n++; continue; }   // PEANUTS: dlo/dhi/dbda
         // PEANUTS: a segment with ranges given back inside it: its parts between them (an access in one goes to the sink, as in no pool)
-        for (uint64_t at = g_sg[i].lo, a, e; n < max && vkh_next_piece(&g_hole, g_sg[i].lo, g_sg[i].hi, &at, &a, &e);) { lo[n] = a; hi[n] = e; bda[n] = g_sg[i].bda + (a - g_sg[i].lo); n++; }
+        for (uint64_t at = g_sg[i].lo, a, e; n < max && vkh_next_piece(&g_hole, g_sg[i].lo, g_sg[i].hi, &at, &a, &e);) { dlo[n] = a; dhi[n] = e; dbda[n] = g_sg[i].bda + (a - g_sg[i].lo); n++; }   // PEANUTS: dlo/dhi/dbda
     }
-    if (n == max && n < g_nsg) VRED_ONCE("more than %d placed segments: raw global memory sees the first %d", max, max);
+    // PEANUTS begin: resolve already-placed pieces of each virtual-pool run (skipping unplaced physical gaps) and merge linearly
+    int nv = 0; uint64_t vbytes = 0;
+    if (tmp && vbuf && nvr > 0) {
+        uint64_t *vlo = vbuf, *vhi = vbuf + vcap, *plo = vbuf + 2 * vcap;
+        for (int j = 0; j < nvr && nv < max; j++) {
+            uint64_t cur_v = vlo[j], end_v = vhi[j], cur_p = plo[j];
+            while (cur_v < end_v && nv < max) {
+                int si = sg_find((uintptr_t)cur_p);
+                if (si < 0 || cur_p >= g_sg[si].hi || !g_sg[si].bda) {
+                    int nxt = si + 1;
+                    while (nxt < g_nsg && !g_sg[nxt].bda) nxt++;
+                    if (nxt >= g_nsg || g_sg[nxt].lo >= cur_p + (end_v - cur_v)) break;
+                    uint64_t skip = g_sg[nxt].lo - cur_p;
+                    cur_v += skip; cur_p += skip;
+                    continue;
+                }
+                uint64_t take = g_sg[si].hi - cur_p;
+                if (take > end_v - cur_v) take = end_v - cur_v;
+                if (!g_hole.n || !vkh_over(&g_hole, cur_p, cur_p + take)) {
+                    mlo[nv] = cur_v; mhi[nv] = cur_v + take; mbda[nv] = g_sg[si].bda + (cur_p - g_sg[si].lo); nv++; vbytes += take;
+                } else {
+                    for (uint64_t at = cur_p, a, e; nv < max && vkh_next_piece(&g_hole, cur_p, cur_p + take, &at, &a, &e);) {
+                        uint64_t va = cur_v + (a - cur_p), ve = cur_v + (e - cur_p);
+                        mlo[nv] = va; mhi[nv] = ve; mbda[nv] = g_sg[si].bda + (a - g_sg[si].lo); nv++; vbytes += (ve - va);
+                    }
+                }
+                cur_v += take; cur_p += take;
+            }
+        }
+    }
+    int n_total = n + nv;
     pthread_rwlock_unlock(&g_rw);
+    free(vbuf);
+    if (tmp) {
+        if (nv > 0) {
+            static _Atomic int vlogged;
+            if (!atomic_exchange(&vlogged, 1))
+                VLOG("gmem virtual pools: %d placed runs (%.1f MiB) merged into gmem_map (%d direct)", nv, vbytes / (1024.0 * 1024.0), n);
+            n = vkp_merge_chunks(dlo, dhi, dbda, n, mlo, mhi, mbda, nv, lo, hi, bda, max);
+        } else if (n > 0) {
+            memcpy(lo, dlo, (size_t)n * sizeof *lo); memcpy(hi, dhi, (size_t)n * sizeof *hi); memcpy(bda, dbda, (size_t)n * sizeof *bda);
+        }
+        free(tmp);
+    }
+    if (n == max && n < n_total) VRED_ONCE("more than %d placed segments: raw global memory sees the first %d", max, max);
+    // PEANUTS end
     return n;
 }
 
@@ -1113,6 +1197,47 @@ static int join_queue(uint64_t id, uintptr_t a, uintptr_t e, const char *why) { 
     g_join[g_njoin++] = (typeof(g_join[0])){id, a, e, why}; atomic_store(&g_join_n, g_njoin);
     return 1;
 }
+// PEANUTS begin: targeted cross-pool segment joins for virtual-pool buffers spanning contiguous physical pools (with gen-keyed refusal cache)
+enum { NRJOIN_NEG = 64 };
+static struct { uintptr_t a, e; const char *why; } g_rjoin[NJOIN];
+static int g_nrjoin; static _Atomic int g_rjoin_n;
+static vkp_rjoin_neg_t g_rjoin_neg[NRJOIN_NEG]; static int g_rjoin_neg_w;
+static const char *rjoin_reason(int plan) {
+    return plan == -1 ? "placed and exported-alias parts mixed"
+         : plan == -2 ? "more than DM_VK_PLACE_JOIN_MB"
+         : plan == -3 ? "more than one allocation can be"
+         : plan == -4 ? "parts are not end to end"
+         : "the join failed";
+}
+static void rjoin_queue(uintptr_t a, uintptr_t e, const char *why) {
+    uint64_t cap = join_cap();
+    if (!cap || e <= a || e - a > cap || (V.max_alloc && e - a > V.max_alloc)) return;
+    uint64_t gen = atomic_load_explicit(&g_sg_gen, memory_order_acquire);
+    pthread_mutex_lock(&g_pmu);
+    for (int j = 0; j < g_nrjoin; j++) if (g_rjoin[j].a <= a && g_rjoin[j].e >= e) { pthread_mutex_unlock(&g_pmu); return; }
+    if (vkp_rjoin_neg_hit(g_rjoin_neg, NRJOIN_NEG, gen, a, e)) { pthread_mutex_unlock(&g_pmu); return; }
+    pthread_mutex_unlock(&g_pmu);
+    pthread_rwlock_rdlock(&g_rw);
+    gen = atomic_load_explicit(&g_sg_gen, memory_order_relaxed);
+    int k0 = 0, k1 = 0;
+    int plan = vkp_rjoin_plan(g_sg, sizeof *g_sg, offsetof(seg_t, fd_alias), g_nsg, a, e, cap, V.max_alloc, &k0, &k1);
+    pthread_rwlock_unlock(&g_rw);
+    if (plan == 0) return;   // already in one segment
+    if (plan < 0) {
+        pthread_mutex_lock(&g_pmu);
+        vkp_rjoin_neg_put(g_rjoin_neg, NRJOIN_NEG, &g_rjoin_neg_w, gen, a, e);
+        pthread_mutex_unlock(&g_pmu);
+        static _Atomic int nref;
+        if (atomic_fetch_add(&nref, 1) < 8)
+            VRED("virtual pool range %#lx+%#lx (%s): cross-pool join refused (%s)", (unsigned long)a, (unsigned long)(e - a), why, rjoin_reason(plan));
+        return;
+    }
+    pthread_mutex_lock(&g_pmu);
+    for (int j = 0; j < g_nrjoin; j++) if (g_rjoin[j].a <= a && g_rjoin[j].e >= e) { pthread_mutex_unlock(&g_pmu); return; }
+    if (g_nrjoin < NJOIN) { g_rjoin[g_nrjoin++] = (typeof(g_rjoin[0])){a, e, why}; atomic_store(&g_rjoin_n, g_nrjoin); }
+    pthread_mutex_unlock(&g_pmu);
+}
+// PEANUTS end
 typedef struct { uint64_t gen; uintptr_t a, e; int join; } negent;   // PEANUTS(upstream-candidate): join, 1 = the recorded ask was a joining one (vka_place.h vkp_neg_hit)
 static __thread negent t_neg[NNEG];
 // [a, e) lies in parts of pool *p that were all placed by earlier asks (a buffer made over two parts that two other buffers placed): no placement, but it may lie across
@@ -1385,8 +1510,9 @@ void vka_mem_join_stats(uint64_t *idle_ns) { *idle_ns = g_join_idle_ns; }
 // waited idle once for all of them. A pool being placed (lazy 2) keeps its joins for the next submission; one finalized or placed whole since drops them
 void vka_mem_join_due(void) {
     int has_join = atomic_load_explicit(&g_join_n, memory_order_relaxed);
+    int has_rjoin = atomic_load_explicit(&g_rjoin_n, memory_order_relaxed);   // PEANUTS: targeted cross-pool virtual-pool joins
     int has_contig = contiguous_segs_due();
-    if (!has_join && !has_contig) return;
+    if (!has_join && !has_rjoin && !has_contig) return;   // PEANUTS
     if (has_join) {
         pthread_mutex_lock(&g_pmu);
         int any = 0;
@@ -1395,7 +1521,7 @@ void vka_mem_join_due(void) {
             int w = 0; for (int j = 0; j < g_njoin; j++) { int keep = 0; for (int i = 0; i < g_npool; i++) if (g_pool[i].id == g_join[j].id && g_pool[i].lazy == 2) keep = 1; if (keep) g_join[w++] = g_join[j]; }
             g_njoin = w; atomic_store(&g_join_n, w);
             pthread_mutex_unlock(&g_pmu);
-            if (!has_contig) return;
+            if (!has_rjoin && !has_contig) return;   // PEANUTS
         } else {
             pthread_mutex_unlock(&g_pmu);
         }
@@ -1445,6 +1571,40 @@ void vka_mem_join_due(void) {
                  (unsigned long)pe.mem, (unsigned long long)pe.size, (unsigned long)q.a, (unsigned long)(q.e - q.a), q.why, c, (unsigned long)jlo, (unsigned long)(jhi - jlo),
                  alias ? "placed and exported-alias parts mixed" : jhi - jlo > join_cap() ? "more than DM_VK_PLACE_JOIN_MB" : (V.max_alloc && jhi - jlo > V.max_alloc) ? "more than one allocation can be" : "the join failed");
     }
+    // PEANUTS begin: process targeted cross-pool joins queued for virtual-pool buffers (placed or exported-alias; record refusals by segment gen)
+    if (has_rjoin) {
+        for (;;) {
+            pthread_mutex_lock(&g_pmu);
+            if (!g_nrjoin) { atomic_store(&g_rjoin_n, 0); pthread_mutex_unlock(&g_pmu); break; }
+            typeof(g_rjoin[0]) rq = g_rjoin[--g_nrjoin]; atomic_store(&g_rjoin_n, g_nrjoin);
+            pthread_mutex_unlock(&g_pmu);
+            pthread_mutex_lock(&g_pl);
+            int k0 = 0, k1 = 0, done = 0, cnt = 0;
+            uintptr_t clo = 0, chi = 0;
+            int plan = vkp_rjoin_plan(g_sg, sizeof *g_sg, offsetof(seg_t, fd_alias), g_nsg, rq.a, rq.e, join_cap(), V.max_alloc, &k0, &k1);
+            if (plan > 0) {
+                cnt = k1 - k0 + 1; clo = g_sg[k0].lo; chi = g_sg[k1].hi;
+                done = plan == 2 ? join_alias(k0, k1, NULL) : join(k0, k1, NULL);
+            }
+            uint64_t gen = atomic_load_explicit(&g_sg_gen, memory_order_acquire);
+            pthread_mutex_unlock(&g_pl);
+            if (done) {
+                static uint64_t n_rjoin;
+                if (++n_rjoin <= 16 || !(n_rjoin & 63))
+                    VLOG("virtual pool range join: %d segments joined into %#lx+%#lx for %#lx+%#lx (%s; total: %llu)",
+                         cnt, (unsigned long)clo, (unsigned long)(chi - clo), (unsigned long)rq.a, (unsigned long)(rq.e - rq.a), rq.why, (unsigned long long)n_rjoin);
+            } else if (plan != 0) {
+                pthread_mutex_lock(&g_pmu);
+                vkp_rjoin_neg_put(g_rjoin_neg, NRJOIN_NEG, &g_rjoin_neg_w, gen, rq.a, rq.e);
+                pthread_mutex_unlock(&g_pmu);
+                static _Atomic int nred;
+                if (atomic_fetch_add(&nred, 1) < 8)
+                    VRED("virtual pool range %#lx+%#lx (%s): cross-pool join refused (%s)",
+                         (unsigned long)rq.a, (unsigned long)(rq.e - rq.a), rq.why, rjoin_reason(plan));
+            }
+        }
+    }
+    // PEANUTS end
     if (contiguous_segs_due()) {
         pthread_mutex_lock(&g_pl);
         for (int it = 0; it < 32 && g_nsg > 1; it++) {

@@ -49,7 +49,7 @@ VkBufferView vka_tbuf_view(int id, int writes) {
     uint64_t max = V.props.limits.maxTexelBufferElements, n = t.elems < max ? t.elems : max;
     if (n < t.elems) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VRED("buffer texture ID %d: %u elements, the device's texel buffers hold %llu: the rest reads as zero", id, t.elems, (unsigned long long)max); }
     VkDeviceSize range = (VkDeviceSize)n * t.f.bpb, off = 0; VkBuffer buf = VK_NULL_HANDLE;
-    if (vka_addr_run(t.addr, range, &buf, &off) < range) { not_placed(&t, "texel buffer"); return VK_NULL_HANDLE; }
+    if (vka_gpu_addr_run(t.addr, range, &buf, &off) < range) { not_placed(&t, "texel buffer"); return VK_NULL_HANDLE; }   // PEANUTS: resolve virtual pool texel buffers
     VkDeviceSize al = V.props.limits.minTexelBufferOffsetAlignment;
     if (al > 1 && off % al) {
         static _Atomic int k; if (atomic_fetch_add(&k, 1) < 8)
@@ -168,7 +168,7 @@ void vka_tbuf_refresh(int id, uint8_t dim, VkCommandBuffer cb) {
     if (!x || (x->copied_frame == fr && !x->dirty)) { pthread_mutex_unlock(&g_mu); return; }
     uint64_t n = is2d ? t.elems : x->w, bytes = n * t.f.bpb;
     VkBuffer buf = VK_NULL_HANDLE; VkDeviceSize off = 0;
-    if (vka_addr_run(t.addr, bytes, &buf, &off) < bytes) { pthread_mutex_unlock(&g_mu); not_placed(&t, "sampled image"); return; }
+    if (vka_gpu_addr_run(t.addr, bytes, &buf, &off) < bytes) { pthread_mutex_unlock(&g_mu); not_placed(&t, "sampled image"); return; }   // PEANUTS: resolve virtual pool texel buffers
     if (off % t.f.bpb) {
         pthread_mutex_unlock(&g_mu); static _Atomic int k; if (atomic_fetch_add(&k, 1) < 8)
             VRED("buffer texture ID %d at %#llx: offset %#llx in its segment is not a multiple of its texel size (%u): not copied into its image", id, (unsigned long long)t.addr, (unsigned long long)off, t.f.bpb);

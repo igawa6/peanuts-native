@@ -134,7 +134,7 @@ int vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint8
         r[VKA_MEMU_R_MAXG] = V.cs_groups < 65535 ? V.cs_groups : 65535;
         if (dw->ind) {   // {count, first}, as the GPU holds it now
             VkBuffer b; VkDeviceSize o;
-            if (!vka_addr(dw->ind, 8, &b, &o, NULL) || (o & 3)) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VRED("indirect mesh draw record at %#llx not in placed guest RAM: skipped", (unsigned long long)dw->ind); return 1; }
+            if (!vka_gpu_addr(dw->ind, 8, &b, &o) || (o & 3)) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VRED("indirect mesh draw record at %#llx not in placed guest RAM: skipped", (unsigned long long)dw->ind); return 1; }   // PEANUTS: resolve virtual pool buffers
             VkBufferCopy c = {o, MB.rec.off + ((VkDeviceSize)E->rec * VKA_MEMU_REC_WORDS + VKA_MEMU_R_COUNT) * 4, 8}; vk.vkCmdCopyBuffer(g_cb, b, MB.rec.buf, 1, &c);
         } else { r[VKA_MEMU_R_COUNT] = dw->count > 0 ? (uint32_t)dw->count : 0; r[VKA_MEMU_R_FIRST] = dw->first > 0 ? (uint32_t)dw->first : 0; }
         E->indexed = mi->L.indexed; E->points = mi->L.points; E->ok = 1; MB.ntask += ts != NULL;

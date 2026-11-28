@@ -807,7 +807,7 @@ static void buf_copy(uint64_t src, uint64_t dst, uint64_t n) {
     vka_tex_gw_copy(src, dst, n);
     while (n) {
         VkBuffer sb, db; VkDeviceSize so, dof;
-        uint64_t a = vka_addr_run(src, n, &sb, &so), b = vka_addr_run(dst, n, &db, &dof), k = a < b ? a : b;
+        uint64_t a = vka_gpu_addr_run(src, n, &sb, &so), b = vka_gpu_addr_run(dst, n, &db, &dof), k = a < b ? a : b;   // PEANUTS: resolve virtual pool buffers
         if (!k) { static _Atomic int nr; if (atomic_fetch_add(&nr, 1) < 8) VRED("buffer copy %#llx → %#llx (%llu bytes): %s is not in placed guest RAM", (unsigned long long)src, (unsigned long long)dst, (unsigned long long)n, a ? "the destination" : "the source"); return; }
         VkBufferCopy c = {so, dof, k}; vk.vkCmdCopyBuffer(g_cb, sb, db, 1, &c);
         src += k; dst += k; n -= k;
@@ -817,7 +817,7 @@ static void buf_fill(uint64_t dst, uint64_t n, uint32_t value) {
     vka_tex_gw_fill(dst, n, value);
     if ((dst | n) & 3) { VRED_ONCE("buffer fill at %#llx of %llu bytes is not 4-byte aligned", (unsigned long long)dst, (unsigned long long)n); return; }
     while (n) {
-        VkBuffer b; VkDeviceSize o; uint64_t k = vka_addr_run(dst, n, &b, &o);
+        VkBuffer b; VkDeviceSize o; uint64_t k = vka_gpu_addr_run(dst, n, &b, &o);   // PEANUTS: resolve virtual pool buffers
         if (!k) { VRED_ONCE("buffer fill at %#llx is not in placed guest RAM", (unsigned long long)dst); return; }
         vk.vkCmdFillBuffer(g_cb, b, o, k & ~3ull, value); dst += k; n -= k;
     }
@@ -827,7 +827,7 @@ static void buf_update(const void *data, uint64_t dst, uint64_t n) {   // inline
     vka_span s; if (!n || !vka_scratch(n, 16, &s)) return;
     memcpy(s.ptr, data, n);
     for (uint64_t done = 0; done < n;) {
-        VkBuffer b; VkDeviceSize o; uint64_t k = vka_addr_run(dst + done, n - done, &b, &o);
+        VkBuffer b; VkDeviceSize o; uint64_t k = vka_gpu_addr_run(dst + done, n - done, &b, &o);   // PEANUTS: resolve virtual pool buffers
         if (!k) { VRED_ONCE("inline buffer update at %#llx is not in placed guest RAM", (unsigned long long)(dst + done)); return; }
         VkBufferCopy c = {s.off + done, o, k}; vk.vkCmdCopyBuffer(g_cb, s.buf, b, 1, &c); done += k;
     }
@@ -1066,7 +1066,7 @@ static void copy_bt(const p_copy_b2t *c, int to_tex) {
     if (row % f->bpb) { VRED_ONCE("buffer copy row stride %zu is not a whole number of %u-byte blocks", row, f->bpb); return; }
     uint64_t span = img * (size_t)(nz - 1) + row * (rows - 1) + (size_t)((c->r.width + f->bw - 1) / f->bw) * f->bpb;
     VkBuffer b; VkDeviceSize o;
-    if (!vka_addr(c->src, span, &b, &o, NULL)) { static _Atomic int nr; if (atomic_fetch_add(&nr, 1) < 8) VRED("%s at %#llx (%llu bytes) is not in placed guest RAM", to_tex ? "buffer → texture copy source" : "texture → buffer copy destination", (unsigned long long)c->src, (unsigned long long)span); return; }
+    if (!vka_gpu_addr(c->src, span, &b, &o)) { static _Atomic int nr; if (atomic_fetch_add(&nr, 1) < 8) VRED("%s at %#llx (%llu bytes) is not in placed guest RAM", to_tex ? "buffer → texture copy source" : "texture → buffer copy destination", (unsigned long long)c->src, (unsigned long long)span); return; }   // PEANUTS: resolve virtual pool buffers
     vka_span s = {0}; VkDeviceSize al = asp == VK_IMAGE_ASPECT_COLOR_BIT ? (f->bpb % 4 == 0 ? f->bpb : f->bpb % 2 == 0 ? 2 * f->bpb : 4 * f->bpb) : 4;   // a whole block and a multiple of 4
     int bounce = o % al != 0 || (img % row) != 0;   // Vulkan wants block-aligned offsets and layers a whole number of rows apart
     if (bounce) {
@@ -1546,7 +1546,7 @@ static void mdx_copy(const uint64_t *inds, int n) {
     vka_barrier(g_cb);   // after what wrote the records
     for (int k = 0; k < n; k++) {
         VkBuffer b; VkDeviceSize o; VkDeviceSize d = s.off + 16 * (VkDeviceSize)k;
-        if (!vka_addr(inds[k], 8, &b, &o, NULL) || (o & 3)) continue;   // (the draw skips it, logged there)
+        if (!vka_gpu_addr(inds[k], 8, &b, &o) || (o & 3)) continue;   // PEANUTS: virtual pool indirect mesh
         VkBufferCopy c = {o, d, 4}; vk.vkCmdCopyBuffer(g_cb, b, s.buf, 1, &c);
         vk.vkCmdFillBuffer(g_cb, s.buf, d + 4, 8, 1);
         g_mdx[g_mdx_n].ind = inds[k]; g_mdx[g_mdx_n].buf = s.buf; g_mdx[g_mdx_n++].off = d; g_mdx_copies++;
@@ -1585,7 +1585,7 @@ static void mdx_before_draw(const uint8_t *p, const p_draw *d) {
     if (ind_mesh && mdx_find(d->ind) < 0) { vka_rp_end(); g_mdx_splits++; mdx_scan(p); }
 }
 int vka_mdx_args(uint64_t ind, VkBuffer *b, VkDeviceSize *o) {
-    if (!mdx_on()) return vka_addr(ind, 12, b, o, NULL) && !(*o & 3);
+    if (!mdx_on()) return vka_gpu_addr(ind, 12, b, o) && !(*o & 3);   // PEANUTS: virtual pool indirect mesh
     int i = mdx_find(ind); if (i < 0) return 0;
     *b = g_mdx[i].buf; *o = g_mdx[i].off; return 1;
 }
