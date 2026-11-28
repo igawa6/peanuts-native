@@ -732,34 +732,42 @@ VkShaderModule vka_shader_fout_module(vka_shader *s, uint32_t umask, uint32_t sm
 // A compute module with the float storage images at bindings of umask / smask retyped as uint / int images (vka_spvpatch.c vka_spv_img_retype), for integer textures bound
 // there: made once per pair of masks from the module the pipeline would use (cs_variant, as vka_shader_cs_module). VK_NULL_HANDLE when it cannot be made (logged): the caller
 // keeps the base pipeline, whose bound views read the bits as floats (vka_tex.c class_twin)
-struct vka_imgmod { struct vka_imgmod *next; uint64_t u, s; VkShaderModule mod; };
-VkShaderModule vka_shader_img_module(vka_shader *s, uint64_t umask, uint64_t smask) {
+struct vka_imgmod { struct vka_imgmod *next; uint64_t u, s, f, h4, h2; VkShaderModule mod; };
+// PEANUTS: fmask / h4mask / h2mask: integer storage images bound to float textures made float images first (vka_spv_img_floatize)
+VkShaderModule vka_shader_img_module(vka_shader *s, uint64_t umask, uint64_t smask, uint64_t fmask, uint64_t h4mask, uint64_t h2mask) {
+#define SAME(v) ((v)->u == umask && (v)->s == smask && (v)->f == fmask && (v)->h4 == h4mask && (v)->h2 == h2mask)
     pthread_mutex_lock(&g_mu);
-    for (struct vka_imgmod *v = s->img; v; v = v->next) if (v->u == umask && v->s == smask) { VkShaderModule m = v->mod; pthread_mutex_unlock(&g_mu); return m; }
+    for (struct vka_imgmod *v = s->img; v; v = v->next) if (SAME(v)) { VkShaderModule m = v->mod; pthread_mutex_unlock(&g_mu); return m; }   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     pthread_mutex_unlock(&g_mu);
     VkShaderModule mod = VK_NULL_HANDLE; char err[256] = "";
     int var = cs_variant(s);
     const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, var);
     size_t nb = 0; uint32_t *w = m ? lib_words(s->lib, s->e, m, &nb, err, sizeof err) : NULL;
     if (w) prep_words(s->e, s->key, &w, &nb);
-    size_t on = 0; uint32_t *o = w ? vka_spv_img_retype(w, nb / 4, 0, umask, smask, &on, err, sizeof err) : NULL;   // (compute: stage 0's binding range)
+    if (w && fmask) {   // (compute: stage 0's binding range)
+        size_t fn = 0; uint32_t *f = vka_spv_img_floatize(w, nb / 4, 0, fmask, h4mask, h2mask, &fn, err, sizeof err);
+        free(w); w = f; nb = fn * 4;
+    }
+    size_t on = 0; uint32_t *o = w && (umask | smask) ? vka_spv_img_retype(w, nb / 4, 0, umask, smask, &on, err, sizeof err) : NULL;
+    if (w && !(umask | smask)) { o = w; on = nb / 4; w = NULL; }   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     if (o) { VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = on * 4, .pCode = o};
              VkResult r = vk.vkCreateShaderModule(V.dev, &ci, NULL, &mod); if (r) { snprintf(err, sizeof err, "vkCreateShaderModule %d", r); mod = VK_NULL_HANDLE; } }
     free(w); free(o);
     { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) {
-        if (mod) VLOG("compute shader %016llx: images and textures at bindings %#llx (uint) / %#llx (int) retyped for the integer textures bound there (their bits read and written as they are)",
-                      (unsigned long long)s->key, (unsigned long long)umask, (unsigned long long)smask);
-        else VRED("compute shader %016llx: images and textures at bindings %#llx (uint) / %#llx (int) not retyped for their integer textures: %s; the base module, which reads them as floats",
-                  (unsigned long long)s->key, (unsigned long long)umask, (unsigned long long)smask, err); } }
+        if (mod) VLOG("compute shader %016llx: images and textures at bindings %#llx (uint) / %#llx (int) retyped for the integer textures bound there, %#llx (float; raw RGBA16F %#llx, RG16F %#llx) for the float ones (their bits read and written as on the Switch)",
+                      (unsigned long long)s->key, (unsigned long long)umask, (unsigned long long)smask, (unsigned long long)fmask, (unsigned long long)h4mask, (unsigned long long)h2mask);
+        else VRED("compute shader %016llx: images and textures at bindings %#llx (uint) / %#llx (int) / %#llx (float) not retyped for the textures bound there: %s; the base module, which reads them through views of the declared class",
+                  (unsigned long long)s->key, (unsigned long long)umask, (unsigned long long)smask, (unsigned long long)fmask, err); } }   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     pthread_mutex_lock(&g_mu);
-    for (struct vka_imgmod *x = s->img; x; x = x->next) if (x->u == umask && x->s == smask) {
+    for (struct vka_imgmod *x = s->img; x; x = x->next) if (SAME(x)) {   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
         VkShaderModule had = x->mod; pthread_mutex_unlock(&g_mu);
         if (mod && mod != had) vk.vkDestroyShaderModule(V.dev, mod, NULL);
         return had; }
     struct vka_imgmod *v = malloc(sizeof *v);
-    if (v) { *v = (struct vka_imgmod){s->img, umask, smask, mod}; s->img = v; }
+    if (v) { *v = (struct vka_imgmod){s->img, umask, smask, fmask, h4mask, h2mask, mod}; s->img = v; }   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     pthread_mutex_unlock(&g_mu);
     return mod;
+#undef SAME   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
 }
 // A graphics stage's module with its float textures and images at the bindings of tex_u / tex_s (of its binding range) retyped as uint / int (vka_spv_img_retype), for
 // integer texture views bound there (an R16G16_UINT, R32_UINT or RGBA8_UINT view: the hardware hands the shader their integer bits, and a float view of the same size,

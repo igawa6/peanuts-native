@@ -592,6 +592,7 @@ DM_VK_HOOKDIR	developer	Diagnostics			text			both
 DM_VK_IMGMEM	developer	Memory			text			both						
 DM_VK_IMG_DIAG	developer	Diagnostics			text			both						
 DM_VK_IMG_DUMP	developer	Diagnostics			text			both						
+DM_VK_IMG_FLOAT	developer	Memory			text			both						
 DM_VK_IMG_LIMIT_MB	advanced	Memory	Texture cache limit	the game is killed for memory (lower it) or textures keep reloading (raise it)	number	512..8192 MiB|1024,2048,3072,4096	Measured from free memory	both	Too high a limit lets Android kill the game.					
 DM_VK_IMG_PSI	advanced	Memory	Memory pressure guard	textures reload and stutter although the phone has free memory (Off gives the older behaviour)	toggle	Off=0;On=1	On: the texture cache shrinks when Android stalls on memory	both						
 DM_VK_IMG_PSI_EASE	developer	Diagnostics			text			both						

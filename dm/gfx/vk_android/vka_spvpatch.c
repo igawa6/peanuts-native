@@ -713,6 +713,173 @@ fail:
 #undef FAIL
 }
 
+// PEANUTS begin: vka_spv_img_floatize, the other direction of vka_spv_img_retype. Without a format for a surface access the translator types it as an integer image: a raw
+// access (SULD.B / SUST.B) as R32Uint / R32G32Uint / R32G32B32A32Uint by its size, a formatted one (SULD.D) through a handle the shader facts do not answer as R32G32B32A32Uint.
+// Bound to a float texture, such a binding asks for an integer view of the same texel layout (vka_tex.c class_twin: R16G16B16A16_UINT for RGBA16F), and both kinds read
+// garbage: a raw 64-bit access wants the texel's 64 bits as two 32-bit words (Eden binds an R32G32_UINT view, ImageView::StorageView), a formatted one the texel converted to
+// 32-bit floats in its registers. FINAL FANTASY RESONANCE's translucency lighting volume compute shader bdb8115dd17093e7 reads its RGBA16F 32x32x32 volumes both ways and
+// wrote NaN into them every frame (igawa6/peanuts-native#489: the burning castle's fire blue-white, the bloom washing the picture out). So for a dispatch that binds float
+// textures there, the integer storage images at set 0 bindings base + n (n in fmask) become float images of unknown format (viewed in the texture's own format), and each read
+// hands the shader the bits the Switch does: the raw texel, its halves packed (PackHalf2x16), when the texture is RGBA16F (h4mask) and the image R32G32 or RG16F (h2mask) and
+// R32; otherwise the floats, bit-cast. Writes the other way (raw RGBA16F: UnpackHalf2x16; formatted: four lanes bit-cast). Non-arrayed single-sample storage images only;
+// an atomic, a copy into memory, a call argument or a narrower write refuses the module (the caller keeps the base one)
+uint32_t *vka_spv_img_floatize(const uint32_t *w, size_t nw, uint32_t base, uint64_t fmask, uint64_t h4mask, uint64_t h2mask, size_t *out_nw, char *err, size_t errn) {
+#define FAIL(...) do { snprintf(err, errn, __VA_ARGS__); goto fail; } while (0)
+    enum { F_Capability = 17, F_ExtInstImport = 11, F_TypeInt = 21, F_TypeFloat = 22, F_TypeVector = 23, F_TypeImage = 25, F_TypePointer = 32, F_Variable = 59, F_Load = 61,
+           F_CopyObject = 83, F_ImageRead = 98, F_ImageWrite = 99, F_VectorShuffle = 79, F_CompositeConstruct = 80, F_CompositeExtract = 81, F_Bitcast = 124, F_ExtInst = 12,
+           F_Function = 54, F_Decorate = 71, F_ImageQuerySizeLod = 103, F_ImageQuerySize = 104, F_Name = 5, F_EntryPoint = 15,
+           CapReadNoFmt = 55, CapWriteNoFmt = 56, G_PackHalf2x16 = 58, G_UnpackHalf2x16 = 62, FmtUnknown = 0, FmtR32ui = 33, FmtRg32ui = 35, FmtR32i = 24, FmtRg32i = 25 };
+    uint32_t *bind = NULL, *set = NULL, *ptee = NULL, *rt = NULL, *mode = NULL, *vec_of = NULL; vec_t o = {0};
+    // mode[id]: 1 + the index in fz[] of a retyped variable, or of the image a loaded / copied id is; vec_of[id]: the lane count of a vector type
+    if (nw < 5 || w[0] != 0x07230203) { snprintf(err, errn, "not SPIR-V"); return NULL; }
+    uint32_t bound = w[3];
+    if (!fmask) { snprintf(err, errn, "no image"); return NULL; }
+    if (!(bind = calloc(bound, 4)) || !(set = calloc(bound, 4)) || !(ptee = calloc(bound, 4)) || !(rt = calloc(bound, 4)) || !(mode = calloc(bound, 4)) || !(vec_of = calloc(bound, 4)))
+        FAIL("out of memory");
+    for (uint32_t i = 0; i < bound; i++) bind[i] = set[i] = ~0u;
+    enum { MAXIMG = 16, MAXV = 16 };
+    uint32_t img_id[MAXIMG], img_f[MAXIMG][7]; int nimg = 0;   // OpTypeImage operands after the result: sampled type, dim, depth, arrayed, ms, sampled, format
+    uint32_t t_f32 = 0, t_u32 = 0, t_i32 = 0, t_fv[5] = {0}, t_uv[5] = {0}, glsl = 0; int cap_r = 0, cap_w = 0;
+    size_t first_fn = nw;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
+        if (!len || i + len > nw) FAIL("bad instruction at word %zu", i);
+        if (op == F_Capability && len == 2) { if (w[i + 1] == CapReadNoFmt) cap_r = 1; if (w[i + 1] == CapWriteNoFmt) cap_w = 1; }
+        else if (op == F_ExtInstImport && len >= 6 && !memcmp(w + i + 2, "GLSL.std.450", 13)) glsl = w[i + 1];
+        else if (op == F_Decorate && len >= 4 && w[i + 1] < bound) { if (w[i + 2] == DecBinding) bind[w[i + 1]] = w[i + 3]; else if (w[i + 2] == DecDescriptorSet) set[w[i + 1]] = w[i + 3]; }
+        else if (op == F_TypeFloat && len >= 3 && w[i + 2] == 32) t_f32 = w[i + 1];
+        else if (op == F_TypeInt && len >= 4 && w[i + 2] == 32) { if (w[i + 3]) t_i32 = w[i + 1]; else t_u32 = w[i + 1]; }
+        else if (op == F_TypeVector && len >= 4 && w[i + 3] >= 2 && w[i + 3] <= 4 && w[i + 1] < bound) {
+            if (w[i + 2] == t_f32 && t_f32) t_fv[w[i + 3]] = w[i + 1];
+            if (w[i + 2] == t_u32 && t_u32) t_uv[w[i + 3]] = w[i + 1];
+            vec_of[w[i + 1]] = w[i + 3];
+        }
+        else if (op == F_TypeImage && len >= 9 && w[i + 1] < bound) { if (nimg == MAXIMG) FAIL("more than %d image types", MAXIMG); img_id[nimg] = w[i + 1]; memcpy(img_f[nimg], w + i + 2, 7 * 4); nimg++; }
+        else if (op == F_TypePointer && len >= 4 && w[i + 2] == SCUniformConstant && w[i + 1] < bound) ptee[w[i + 1]] = w[i + 3];
+        else if (op == F_Function && first_fn == nw) first_fn = i;
+        if (i >= first_fn && len >= 3 && w[i + 1] < bound && w[i + 2] < bound && op != OpStore && op != F_ImageWrite && op != F_Name && op != F_Function && op != F_Decorate) rt[w[i + 2]] = w[i + 1];
+        i += len;
+    }
+    if (!t_f32 || !t_u32) FAIL("no 32-bit float or uint type");
+    t_fv[1] = t_f32; t_uv[1] = t_u32;
+    // The variables: set 0, binding base + n of fmask, a pointer to a non-arrayed, single-sample integer storage image
+    struct { uint32_t var, k, raw; } fz[MAXV]; int nv = 0; uint64_t found = 0; int need_glsl = 0;
+    for (size_t i = 5; i < first_fn;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16;
+        if (op == F_Variable && len >= 4 && w[i + 3] == SCUniformConstant && w[i + 2] < bound && w[i + 1] < bound) {
+            uint32_t id = w[i + 2], b = bind[id];
+            if (set[id] == 0 && b >= base && b - base < 64 && (fmask >> (b - base) & 1)) {
+                uint32_t pt = ptee[w[i + 1]]; int k = 0; while (k < nimg && img_id[k] != pt) k++;
+                if (k == nimg) FAIL("binding %u is not an image", b);
+                const uint32_t *f = img_f[k];
+                if ((f[0] != t_u32 && (f[0] != t_i32 || !t_i32)) || f[3] || f[4] || f[5] != 2) FAIL("binding %u is not a non-arrayed integer storage image", b);
+                if (nv == MAXV) FAIL("too many images");
+                uint32_t n = b - base, raw = 0;
+                if ((h4mask >> n & 1) && (f[6] == FmtRg32ui || f[6] == FmtRg32i)) raw = 2;      // two words: the four halves of an RGBA16F texel
+                else if ((h2mask >> n & 1) && (f[6] == FmtR32ui || f[6] == FmtR32i)) raw = 1;   // one word: the two halves of an RG16F texel
+                if (raw) need_glsl = 1;
+                fz[nv].var = id; fz[nv].k = (uint32_t)k; fz[nv].raw = raw; mode[id] = (uint32_t)nv + 1; nv++;
+                found |= 1ull << n;
+            }
+        }
+        i += len;
+    }
+    if (found != fmask) FAIL("bindings %#llx are not image variables", (unsigned long long)(fmask & ~found));
+    if (need_glsl && !glsl) FAIL("no GLSL.std.450 import for the half packing");
+    // New ids: the float vec2 / vec4 and uint vec2 the module lacks, a float twin (unknown format) of each image type taken, a pointer to it
+    uint32_t nb = bound, mk_fv[5] = {0}, mk_uv2 = 0;
+    for (int n = 2; n <= 4; n += 2) if (!t_fv[n]) t_fv[n] = mk_fv[n] = nb++;
+    if (!t_uv[2]) t_uv[2] = mk_uv2 = nb++;
+    uint32_t twin[MAXIMG] = {0}, mk_twin[MAXIMG] = {0}, ptwin[MAXIMG] = {0}, mk_ptwin[MAXIMG] = {0};
+    for (int v = 0; v < nv; v++) {
+        int k = (int)fz[v].k; if (twin[k]) continue;
+        for (int j = 0; j < nimg; j++) if (img_f[j][0] == t_f32 && !memcmp(img_f[j] + 1, img_f[k] + 1, 5 * 4) && img_f[j][6] == FmtUnknown) twin[k] = img_id[j];
+        // (two integer image types that differ only in their format, R32G32Uint and R32G32B32A32Uint of one dimension, share one new twin and its pointer: a second identical
+        // OpTypeImage or OpTypePointer is invalid SPIR-V, "Duplicate non-aggregate type declarations")
+        for (int j = 0; j < nimg && !twin[k]; j++) if (j != k && mk_twin[j] && !memcmp(img_f[j] + 1, img_f[k] + 1, 5 * 4)) { twin[k] = twin[j]; ptwin[k] = ptwin[j]; }
+        if (!twin[k]) twin[k] = mk_twin[k] = nb++;
+        for (uint32_t p = 0; p < bound && !ptwin[k]; p++) if (ptee[p] == twin[k] && twin[k] < bound) ptwin[k] = p;
+        if (!ptwin[k]) ptwin[k] = mk_ptwin[k] = nb++;
+    }
+    // Pass 2: copy, retyping (the capabilities first, the new types and the moved variables right before the first function)
+    if (!put_n(&o, w, 5)) FAIL("out of memory");
+    if (!cap_r) { uint32_t x[2] = {2u << 16 | F_Capability, CapReadNoFmt}; if (!put_n(&o, x, 2)) FAIL("out of memory"); }
+    if (!cap_w) { uint32_t x[2] = {2u << 16 | F_Capability, CapWriteNoFmt}; if (!put_n(&o, x, 2)) FAIL("out of memory"); }
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffff, len = w[i] >> 16; const uint32_t *in = w + i;
+        if (i == first_fn) {
+            for (int n = 2; n <= 4; n += 2) if (mk_fv[n]) { uint32_t x[4] = {4u << 16 | F_TypeVector, mk_fv[n], t_f32, (uint32_t)n}; if (!put_n(&o, x, 4)) FAIL("out of memory"); }
+            if (mk_uv2) { uint32_t x[4] = {4u << 16 | F_TypeVector, mk_uv2, t_u32, 2}; if (!put_n(&o, x, 4)) FAIL("out of memory"); }
+            for (int k = 0; k < nimg; k++) {
+                if (mk_twin[k]) { uint32_t x[9] = {9u << 16 | F_TypeImage, mk_twin[k], t_f32}; memcpy(x + 3, img_f[k] + 1, 5 * 4); x[8] = FmtUnknown; if (!put_n(&o, x, 9)) FAIL("out of memory"); }
+                if (mk_ptwin[k]) { uint32_t x[4] = {4u << 16 | F_TypePointer, mk_ptwin[k], SCUniformConstant, twin[k]}; if (!put_n(&o, x, 4)) FAIL("out of memory"); }
+            }
+            for (int v = 0; v < nv; v++) { uint32_t x[4] = {4u << 16 | F_Variable, ptwin[fz[v].k], fz[v].var, SCUniformConstant}; if (!put_n(&o, x, 4)) FAIL("out of memory"); }
+        }
+        if (op == F_Variable && len >= 4 && w[i + 2] < bound && mode[w[i + 2]] && i < first_fn) { i += len; continue; }   // re-emitted above
+        if ((op == F_Load || op == F_CopyObject) && len == 4 && w[i + 3] < bound && mode[w[i + 3]] && w[i + 2] < bound) {   // the image, or a copy of it
+            uint32_t v = mode[w[i + 3]] - 1; mode[w[i + 2]] = v + 1;
+            if (!put_n(&o, in, len)) FAIL("out of memory");
+            o.w[o.n - len + 1] = twin[fz[v].k];
+            i += len; continue;
+        }
+        if (op == F_ImageRead && len >= 5 && w[i + 3] < bound && mode[w[i + 3]] && i >= first_fn) {
+            uint32_t v = mode[w[i + 3]] - 1, ty = w[i + 1], r = w[i + 2], n = ty < bound ? (vec_of[ty] ? vec_of[ty] : ty == t_u32 || (ty == t_i32 && t_i32) ? 1 : 0) : 0;
+            if (!n || !t_uv[n]) FAIL("a read of image binding %u into type %u", bind[fz[v].var], ty);
+            uint32_t tmp = nb++, bits;
+            if (!put_n(&o, in, len)) FAIL("out of memory");
+            o.w[o.n - len + 1] = t_fv[4]; o.w[o.n - len + 2] = tmp;
+            if (fz[v].raw) {   // the texel's halves packed into its words
+                uint32_t a = nb++, lo = nb++, hi = lo;
+                uint32_t x1[7] = {7u << 16 | F_VectorShuffle, t_fv[2], a, tmp, tmp, 0, 1}, x2[6] = {6u << 16 | F_ExtInst, t_u32, lo, glsl, G_PackHalf2x16, a};
+                if (!put_n(&o, x1, 7) || !put_n(&o, x2, 6)) FAIL("out of memory");
+                if (fz[v].raw == 2) { uint32_t c = nb++; hi = nb++;
+                    uint32_t y1[7] = {7u << 16 | F_VectorShuffle, t_fv[2], c, tmp, tmp, 2, 3}, y2[6] = {6u << 16 | F_ExtInst, t_u32, hi, glsl, G_PackHalf2x16, c};
+                    if (!put_n(&o, y1, 7) || !put_n(&o, y2, 6)) FAIL("out of memory"); }
+                if (n == 1) bits = lo;
+                else { bits = nb++; uint32_t x[7] = {(3u + n) << 16 | F_CompositeConstruct, t_uv[n], bits, lo, hi, lo, hi}; if (!put_n(&o, x, 3 + n)) FAIL("out of memory"); }   // (lanes past the texel's words: repeated)
+            } else if (n == 4) { bits = nb++; uint32_t x[4] = {4u << 16 | F_Bitcast, t_uv[4], bits, tmp}; if (!put_n(&o, x, 4)) FAIL("out of memory"); }
+            else {   // fewer lanes: the first n floats
+                uint32_t part = nb++; bits = nb++;
+                if (n == 1) { uint32_t x[5] = {5u << 16 | F_CompositeExtract, t_f32, part, tmp, 0}; if (!put_n(&o, x, 5)) FAIL("out of memory"); }
+                else { if (!t_fv[n]) FAIL("no float vector of %u", n); uint32_t x[9] = {(5u + n) << 16 | F_VectorShuffle, t_fv[n], part, tmp, tmp, 0, 1, 2, 3}; if (!put_n(&o, x, 5 + n)) FAIL("out of memory"); }
+                uint32_t y[4] = {4u << 16 | F_Bitcast, t_uv[n], bits, part}; if (!put_n(&o, y, 4)) FAIL("out of memory");
+            }
+            uint32_t z[4] = {4u << 16 | (ty == t_uv[n] ? F_CopyObject : F_Bitcast), ty, r, bits}; if (!put_n(&o, z, 4)) FAIL("out of memory");   // (an int vector: bit-cast)
+            i += len; continue;
+        }
+        if (op == F_ImageWrite && len >= 4 && w[i + 1] < bound && mode[w[i + 1]] && i >= first_fn) {
+            uint32_t v = mode[w[i + 1]] - 1, tx = w[i + 3], ty = tx < bound ? rt[tx] : 0, n = ty && ty < bound ? (vec_of[ty] ? vec_of[ty] : 1) : 0, fv = nb++;
+            if (fz[v].raw == 2 && n >= 2 && t_uv[n]) {   // two words: four halves
+                uint32_t u = nb++, lo = nb++, hi = nb++, a = nb++, c = nb++;
+                uint32_t x0[4] = {4u << 16 | F_Bitcast, t_uv[n], u, tx};
+                uint32_t x1[5] = {5u << 16 | F_CompositeExtract, t_u32, lo, u, 0}, x2[5] = {5u << 16 | F_CompositeExtract, t_u32, hi, u, 1};
+                uint32_t x3[6] = {6u << 16 | F_ExtInst, t_fv[2], a, glsl, G_UnpackHalf2x16, lo}, x4[6] = {6u << 16 | F_ExtInst, t_fv[2], c, glsl, G_UnpackHalf2x16, hi};
+                uint32_t x5[9] = {9u << 16 | F_VectorShuffle, t_fv[4], fv, a, c, 0, 1, 2, 3};
+                if (!put_n(&o, x0, 4) || !put_n(&o, x1, 5) || !put_n(&o, x2, 5) || !put_n(&o, x3, 6) || !put_n(&o, x4, 6) || !put_n(&o, x5, 9)) FAIL("out of memory");
+            } else if (!fz[v].raw && n == 4) { uint32_t x[4] = {4u << 16 | F_Bitcast, t_fv[4], fv, tx}; if (!put_n(&o, x, 4)) FAIL("out of memory"); }
+            else FAIL("a write of %u lanes into image binding %u", n, bind[fz[v].var]);
+            if (!put_n(&o, in, len)) FAIL("out of memory");
+            o.w[o.n - len + 3] = fv;
+            i += len; continue;
+        }
+        int query = op == F_ImageQuerySize || op == F_ImageQuerySizeLod;   // (the image operand only: their results are integers)
+        if (!query && op != F_Name && op != OpMemberName && op != F_EntryPoint && op != F_Decorate && op != OpMemberDecorate && op != OpDecorateId && op != OpDecorateString
+            && op != OpMemberDecorateString && i >= first_fn)
+            for (uint32_t k = 1; k < len; k++) if (!(op == F_ExtInst && k == 4) && w[i + k] < bound && mode[w[i + k]]) FAIL("opcode %u uses a retyped image (id %u)", op, w[i + k]);
+        if (!put_n(&o, in, len)) FAIL("out of memory");
+        i += len;
+    }
+    o.w[3] = nb;
+    free(bind); free(set); free(ptee); free(rt); free(mode); free(vec_of);
+    *out_nw = o.n; return o.w;
+fail:
+    free(bind); free(set); free(ptee); free(rt); free(mode); free(vec_of); free(o.w);
+    return NULL;
+#undef FAIL
+}
+// PEANUTS end
+
 // vka_spv_instance: an instanced variant of a vertex or pixel shader (vka_draw.c's instanced runs, DM_VK_INSTANCE). Draws that repeat one mesh with only one uniform
 // block's offset changed become one instanced draw: every read of the block at `binding` (the translator's vec4 data[4096] constant buffer) goes to data[i + d],
 // d (vec4 units) a uint vertex input at location `loc`, fed per instance by the replay, and passed on as a flat uint output at the same location; in the pixel shader a
