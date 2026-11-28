@@ -20,6 +20,7 @@ static void fbl_pass_begin(void);   // PEANUTS: feedback loops (below, beside DY
 #include "vka_psosync.h"   // PEANUTS: which draws are not skipped while their pipeline is made in the background (draw_body)
 #include "vka_tbuf.h"   // PEANUTS: how a texel buffer is read: in place, through the CPU's copy or through a copy the GPU makes (tbuf_view)
 #include "vka_wbfollow.h"
+#include "vka_csalias.h"
 #include <math.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -1636,6 +1637,9 @@ static int rs_support(const vka_dstate *d, int st, const vka_shader *sh, VkDescr
     return 1;
 }
 // PEANUTS end
+enum { CSA_MAX_OVR = 8 };
+static struct { uint16_t binding, elem; VkImageView view; VkFormat fmt; } g_csa[CSA_MAX_OVR];
+static int g_csa_n;
 static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const vka_res *r, int n, int pool, c0_at *c0) {
     for (int i = 0; i < n; i++) {
         if (g_w.n == VKA_DESC_MAX) { VRED_ONCE("more than %d descriptors in one draw", (int)VKA_DESC_MAX); return 0; }   // PEANUTS: VKA_DESC_MAX
@@ -1692,6 +1696,10 @@ static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const
                     VRED("shader %016llx binding %u: buffer texture ID %d bound as a storage image: its stores go into its image of rows, not into the texture's memory (a read of that memory, or through a texel buffer, does not see them)", (unsigned long long)sh->key, r[i].binding, tid); }
                 if (tid && !storage && vka_tex_id_is_buffer(tid) && tbuf_img_gpu(tid, r[i].dim) && vktb_memo_bind_gpu(&g_tig, tid, r[i].dim) && (v = vka_tbuf_image_view(tid, r[i].dim, &fmt))) tid = 0;   // PEANUTS: sampler chosen by the view format
                 // PEANUTS end
+                else if (tid && storage && st == 5 && g_csa_n) {
+                    for (int k = 0; k < g_csa_n; k++) if (g_csa[k].binding == r[i].binding && g_csa[k].elem == r[i].elem) { v = g_csa[k].view; fmt = g_csa[k].fmt; tid = 0; break; }
+                    if (tid) v = vka_tex_id_view_samp_rec(tid, 0, g_cb, r[i].dim, wbf_view_of_binding(storage, r[i].flags, DMSH_VK_BF_RW), &fmt);
+                }
                 else if (tid) v = vka_tex_id_view_samp_rec(tid, storage ? 0 : r[i].sid, g_cb, r[i].dim, wbf_view_of_binding(storage, r[i].flags, DMSH_VK_BF_RW), &fmt);   // (a shader image only read: not a GPU write)   // PEANUTS(upstream-candidate): with the binding's sampler (vka_tex.c fb_view_levels); PEANUTS: report the final view format
                 if (tid && v) class_note(sh, st, &r[i], tid, storage);
                 if (tid) tex_peek(sh->key, st, &r[i], v, storage);
@@ -1747,6 +1755,50 @@ static void walk_all(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE]) {
         g_wk.n[st] = vka_walk(&d->b, st, s->e, s->b, s->lib->h->ssbo_align, V.sb_align, rd_cb, NULL, g_wk.r[st], VKA_DESC_MAX /* PEANUTS */, &g_wk.pool[st], g_wk.why[st], sizeof g_wk.why[st]);
     }
     if (g_prof) g_ps[0] += cntvct() - t0_;
+}
+static void cs_img_alias_prep(const vka_shader *cs) {
+    g_csa_n = 0;
+    if (!VKA_ENV("DM_VK_CS_IMG_ALIAS", 1)) return;
+    int nro = 0, nrw = 0, idx[32];
+    vka_csa_bind bs[32];
+    int nb = 0;
+    for (int i = 0; i < g_wk.n[5] && nb < 32; i++) {
+        const vka_res *r = &g_wk.r[5][i];
+        if (r->what != VKA_R_IMG || r->desc != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE || !r->tid) continue;
+        int rw = (r->flags & (DMSH_VK_BF_RW | DMSH_VK_BF_ATOMIC)) != 0;
+        if (rw) nrw++; else nro++;
+        idx[nb++] = i;
+    }
+    if (!nro || !nrw) return;
+    for (int k = 0; k < nb; k++) {
+        const vka_res *r = &g_wk.r[5][idx[k]];
+        uint64_t serial = 0; VkFormat vkfmt = VK_FORMAT_UNDEFINED; uint32_t lv = 0, ly0 = 0, nly = 0;
+        if (!vka_tex_id_subres(r->tid, g_cb, r->dim, &serial, &vkfmt, &lv, &ly0, &nly)) {
+            bs[k] = (vka_csa_bind){0};
+            continue;
+        }
+        uint8_t cls = (r->dim & DMSH_VK_DIM_SINT) ? 2 : (r->dim & DMSH_VK_DIM_UINT) ? 1 : 0;
+        uint8_t rw = (r->flags & (DMSH_VK_BF_RW | DMSH_VK_BF_ATOMIC)) != 0;
+        bs[k] = (vka_csa_bind){serial, (uint32_t)vkfmt, cls, rw, lv, ly0, nly};
+    }
+    int hits[CSA_MAX_OVR];
+    int nh = vka_csa_find(bs, nb, hits, CSA_MAX_OVR);
+    for (int h = 0; h < nh; h++) {
+        int k = hits[h];
+        const vka_res *r = &g_wk.r[5][idx[k]];
+        VkFormat fmt = VK_FORMAT_UNDEFINED;
+        VkImageView v = vka_tex_alias_copy(r->tid, g_cb, r->dim, &fmt);
+        if (!v) continue;
+        g_csa[g_csa_n++] = (typeof(g_csa[0])){r->binding, r->elem, v, fmt};
+        static struct { uint64_t key; uint16_t binding; } seen[8]; static int nseen;
+        int s = 0;
+        while (s < nseen && !(seen[s].key == cs->key && seen[s].binding == r->binding)) s++;
+        if (s == nseen && nseen < 8) {
+            seen[nseen++] = (typeof(seen[0])){cs->key, r->binding};
+            VLOG("compute storage alias: shader %016llx binding %u (serial %llu fmt %d -> %d): reading from a copy (DM_VK_CS_IMG_ALIAS=0: in place)",
+                 (unsigned long long)cs->key, r->binding, (unsigned long long)bs[k].serial, (int)bs[k].fmt, (int)fmt);
+        }
+    }
 }
 // A graphics stage's float textures and images bound to texture views of an integer format (an R16G16_UINT, R32_UINT or RGBA8_UINT view): on the Switch the shader gets the
 // integers' bits in its registers; the translator types them float (no shader facts), and a float view of the same size in their place (vka_tex.c class_twin) converts
@@ -3696,7 +3748,8 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     for (int i = 0; i < g_wk.n[5]; i++) if (g_wk.r[5][i].what == VKA_R_TEX && g_wk.r[5][i].tid && g_wk.r[5][i].desc != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE && vka_tex_id_is_buffer(g_wk.r[5][i].tid)
                                             && tbuf_img_gpu(g_wk.r[5][i].tid, g_wk.r[5][i].dim))   // PEANUTS: only where the choice is upstream's copy (tbuf_img_gpu)
         tbuf_img_make(g_wk.r[5][i].tid, g_wk.r[5][i].dim, 0);   // buffer textures read as images: their copies (vka_tbuf.c; no pass is open)   // PEANUTS: tbuf_img_make (upstream: vka_tbuf_refresh when vka_tbuf_pending)
-    { g_tbuf_disp = 1; int ok = bind_sets(d, sh, &lay, VK_PIPELINE_BIND_POINT_COMPUTE, &c0); g_tbuf_disp = 0; tbuf_gcopy_end(); if (V.fb_loop) vka_tex_fb_loop_take();   // PEANUTS: + the barrier after the texel buffer copies the GPU makes for this dispatch (tbuf_view), whether it is recorded or not
+    cs_img_alias_prep(sh[5]);
+    { g_tbuf_disp = 1; int ok = bind_sets(d, sh, &lay, VK_PIPELINE_BIND_POINT_COMPUTE, &c0); g_tbuf_disp = 0; g_csa_n = 0; tbuf_gcopy_end(); if (V.fb_loop) vka_tex_fb_loop_take();   // PEANUTS: + the barrier after the texel buffer copies the GPU makes for this dispatch (tbuf_view), whether it is recorded or not
       if (!ok) { g_skipped++; return; } }
     if (dp->ind && c0.buf) {   // the group counts the GPU wrote, into c0's dispatch words before the dispatch reads them (nvn_mtl.m g_c0_dim_buf); NVN2 reads them at c0 + 4 too
         vka_disp_settle(g_cb);   // (a copy: after the dispatches before it, as before; "Dispatch order")

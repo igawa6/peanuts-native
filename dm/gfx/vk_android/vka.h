@@ -698,6 +698,8 @@ void vka_rw_point(VkCommandBuffer cb, char kind, uint64_t key, uint64_t a, uint6
 void vka_rw_commit(uint64_t fence);          // the submission's copies, logged once fence is done
 void vka_nan_dispatch(VkCommandBuffer cb, uint64_t key, vka_img *const *ims, int n);   // after a dispatch (its writes made visible): its float storage images, as a pass's attachments
 void vka_nan_commit(uint64_t fence);
+int vka_tex_id_subres(int id, VkCommandBuffer cb, uint8_t dim, uint64_t *serial, VkFormat *vkfmt, uint32_t *lv, uint32_t *ly0, uint32_t *nly);
+VkImageView vka_tex_alias_copy(int id, VkCommandBuffer cb, uint8_t dim, VkFormat *actual);
 void vka_draw_stats(uint64_t *draws, uint64_t *skipped, uint64_t *dispatches, uint64_t *pipelines);
 void vka_draw_run_break(void);   // an instanced run (DM_VK_INSTANCE) is not extended past this point (an occlusion query boundary)
 void vka_oq_draw(void);          // vka_exec.c Occlusion queries: a draw about to be recorded in the open pass (begins a query while counting)

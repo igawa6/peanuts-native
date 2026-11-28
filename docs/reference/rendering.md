@@ -1871,3 +1871,11 @@ On the Retroid Pocket Flip 2, PurpleVK T30 (`git-62ac221a33`) reports a 33.11 ns
 - **Cause:** `nvnCommandBufferDownsample` is recorded as a texture copy whose rectangles are the two whole textures (`rec_downsample`, `hle_nvn.c`), and the Vulkan replay resolved with the source's extent (`copy_t2t`, `vka_exec.c`). A game that resolves its 4x 1920x1080 scene target into a 1280x720 texture got a `vkCmdResolveImage` region that ran 640x360 past the destination, which Vulkan does not allow; Adreno wrote the overflow into the destination's own tiles.
 - **Fix:** the resolve takes the part both textures have: the smaller of the two rectangles, kept inside both images' levels (the top-left 1280x720 the game drew). The log says it once: `multisample resolve of 1920x1080 (serial …, 4 samples) into 1280x720 (serial …): the 1280x720 both have`.
 - **Found on:** [Digimon Story Time Stranger](../../dm/games/010062E01FE0C000/README.md#found-on-this-game) in handheld mode (issue #552), Turnip on the AYN Thor and on a Snapdragon 7 series phone.
+
+### Cross-format in-place compute storage image aliasing (Android)
+
+<!-- PEANUTS: an entry of this fork. -->
+- **Symptom:** (Android, Qualcomm's system driver `driverID` 8, and rarely on Turnip `driverID` 18) transient bright white or tinted blooming orbs in outdoors scenes: occasional `8x4` (32-texel) blocks saturating `VK_FORMAT_B10G11R11_UFLOAT_PACK32` to `65024` for 1–2 frames, smeared by downstream bloom.
+- **Cause:** binding the same image subresource simultaneously as a read-only storage image in one format/class (e.g. `R32_UINT`) and a written storage image in another (e.g. `B10G11R11_UFLOAT_PACK32`) in a single compute dispatch (`computedeferredcomposite_cs` `7376789d2f755269` reading and writing `serial 2` in place) triggers an in-place per-`8x4`-wave/tile read-write cache hazard on Adreno.
+- **Fix:** `vka_csalias.h` / `vka_draw.c` (`cs_img_alias_prep`) / `vka_tex.c` (`vka_tex_alias_copy`): detect same-subresource cross-format/cross-class read+write compute storage aliases and copy the read-only subresource into a cached scratch image (`vkCmdCopyImage`, `DM_VK_CS_IMG_ALIAS=0` disables). Checked in `dm/host/tests/t_android_csalias.c`.
+- **Found on:** DOOM (2016), `0100416004C00000` (its note comes with the game's bring-up).

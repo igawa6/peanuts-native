@@ -98,6 +98,8 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_pckeep
 	$(B)/t_android_pwlist
 	$(B)/t_android_fmtlist
+# PEANUTS: cross-format compute storage aliasing
+	$(B)/t_android_csalias
 # PEANUTS: sampler chosen by the view format
 	$(B)/t_android_sampfilter
 # PEANUTS: bounded draw ranges
@@ -511,6 +513,10 @@ $(B)/t_android_pwlist: t_android_pwlist.c $(VKA)/vka_pwlist.h $(VKA)/vka_gkey.h 
 # An image's format list (vka_fmtlist.h; vka_tex.c img_create, img_lists, img_storage_upgrade)
 $(B)/t_android_fmtlist: t_android_fmtlist.c $(VKA)/vka_fmtlist.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_fmtlist.c
+# PEANUTS: cross-format compute storage aliasing (vka_csalias.h; vka_draw.c cs_img_alias_prep)
+run: $(B)/t_android_csalias
+$(B)/t_android_csalias: t_android_csalias.c $(VKA)/vka_csalias.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ $<
 # PEANUTS: a direct sampler must fit the sampled image view's filter features
 run: $(B)/t_android_sampfilter
 $(B)/t_android_sampfilter: t_android_sampfilter.c $(VKA)/vka_sampfilter.h ../../gfx/nvn/nvn_obj.h ../../gfx/nvn/include/nvn.h | $(B)

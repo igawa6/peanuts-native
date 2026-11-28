@@ -3765,6 +3765,143 @@ VkImageView vka_tex_id_view_bits(int id, VkCommandBuffer cb, VkImageLayout *layo
     if (layout) *layout = VK_IMAGE_LAYOUT_GENERAL;
     return id_view(id, cb, 1, 1, NULL, VK_FORMAT_R32_UINT, NULL);   // (dim 1: 2D)   // PEANUTS
 }
+// Computes the storage subresource (level, layer range) and view type for a registered texture ID on an image.
+static int storage_subres(const treg_ent *e, const vka_img *im, uint8_t dim, uint32_t *lv, uint32_t *ly0, uint32_t *nly, int *vt_out) {
+    if (!im || im->samples > 1 || im->aspect != VK_IMAGE_ASPECT_COLOR_BIT || im->is_video ||
+        im->d.target == NVN_TEXTURE_TARGET_3D || im->d.target == NVN_TEXTURE_TARGET_BUFFER ||
+        !(im->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT))
+        return 0;
+    const view_t *v = e->has_v ? &e->v : NULL;
+    uint32_t l0 = v && v->set_levels ? v->base_level : 0, nl = 1;
+    vksoft_view(im->base, &l0, &nl);
+    l0 += im->lvk;
+    uint32_t dmax = im->layers;
+    uint32_t a0 = v && v->set_layers ? v->min_layer : 0;
+    uint32_t na = v && v->set_layers && v->nlayers ? v->nlayers : (a0 < dmax ? dmax - a0 : 1);
+    if (l0 >= im->levels || a0 >= dmax) return 0;
+    if (a0 + na > dmax) na = dmax - a0;
+    int vt = dim_view_type(dim);
+    if (vt < 0 || vt == VK_IMAGE_VIEW_TYPE_1D || vt == VK_IMAGE_VIEW_TYPE_1D_ARRAY || vt == VK_IMAGE_VIEW_TYPE_3D) return 0;
+    if (vt == VK_IMAGE_VIEW_TYPE_CUBE || vt == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
+        if (im->w != im->h || im->layers < 6 || im->layers % 6 || na < 6) return 0;
+        if (vt == VK_IMAGE_VIEW_TYPE_CUBE) na = 6; else na -= na % 6;
+    } else if (vt == VK_IMAGE_VIEW_TYPE_2D) na = 1;
+    *lv = l0; *ly0 = a0; *nly = na; if (vt_out) *vt_out = vt;
+    return 1;
+}
+int vka_tex_id_subres(int id, VkCommandBuffer cb, uint8_t dim, uint64_t *serial, VkFormat *vkfmt, uint32_t *lv, uint32_t *ly0, uint32_t *nly) {
+    pthread_mutex_lock(&g_tmu);
+    const treg_ent *te = treg_lookup(id);
+    if (id <= 0 || !te->t.serial) { pthread_mutex_unlock(&g_tmu); return 0; }
+    treg_ent e = *te;
+    pthread_mutex_unlock(&g_tmu);
+    nvn_pool_use(1); vka_img *im = treg_dead(id, &e) ? NULL : vka_tex_get(&e.t, cb); nvn_pool_use(0);
+    if (!im) return 0;
+    pthread_mutex_lock(&g_tmu);
+    uint32_t l0 = 0, a0 = 0, na = 0;
+    int ok = storage_subres(&e, im, dim, &l0, &a0, &na, NULL);
+    if (ok) { *serial = im->serial; *vkfmt = view_fmt(&e, im).vk; *lv = l0; *ly0 = a0; *nly = na; }
+    pthread_mutex_unlock(&g_tmu);
+    return ok;
+}
+enum { CSA_CACHE = 4 };
+typedef struct {
+    VkFormat img_f, view_f; VkImageViewType vt;
+    uint32_t w, h, layers; uint64_t use;
+    VkImage img; VkImageView view; vka_imem m;
+} csa_ent;
+typedef struct { VkImage img; VkImageView view; vka_imem m; } csa_evict_t;
+static csa_ent g_csa_cache[CSA_CACHE];
+static uint64_t g_csa_seq;
+static void csa_free(void *arg) {
+    csa_evict_t *e = arg;
+    if (e->view) vk.vkDestroyImageView(V.dev, e->view, NULL);
+    if (e->img) vk.vkDestroyImage(V.dev, e->img, NULL);
+    if (e->m.dm) vka_imem_free(&e->m);
+    free(e);
+}
+// Copies a read-only compute storage subresource into a cached scratch image when it aliases a written storage binding.
+VkImageView vka_tex_alias_copy(int id, VkCommandBuffer cb, uint8_t dim, VkFormat *actual) {
+    pthread_mutex_lock(&g_tmu);
+    const treg_ent *te = treg_lookup(id);
+    if (id <= 0 || !te->t.serial) { pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
+    treg_ent e = *te;
+    pthread_mutex_unlock(&g_tmu);
+    nvn_pool_use(1); vka_img *im = treg_dead(id, &e) ? NULL : vka_tex_get(&e.t, cb); nvn_pool_use(0);
+    if (!im) return VK_NULL_HANDLE;
+    pthread_mutex_lock(&g_tmu);
+    uint32_t l0 = 0, a0 = 0, na = 0; int vt = -1;
+    if (!storage_subres(&e, im, dim, &l0, &a0, &na, &vt)) { pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
+    vka_fmt vf = view_fmt(&e, im);
+    int want = (dim & DMSH_VK_DIM_SINT) ? 2 : (dim & DMSH_VK_DIM_UINT) ? 1 : 0;
+    int have = vf.kind == 1 ? 1 : vf.kind == 2 ? 2 : 0;
+    VkFormat view_f = (want != have && !(vf.kind >= 3 && want == 0)) ? class_twin(vf.vk, want) : vf.vk;
+    VkFormat img_f = im->f.vk;
+    VkImage src_img = im->img;
+    uint32_t w = (im->w >> l0) ? (im->w >> l0) : 1u, h = (im->h >> l0) ? (im->h >> l0) : 1u;
+    pthread_mutex_unlock(&g_tmu);
+    if (view_f == VK_FORMAT_UNDEFINED || !(feats(view_f) & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) || !src_img) return VK_NULL_HANDLE;
+    csa_ent *sc = NULL;
+    for (int i = 0; i < CSA_CACHE; i++) {
+        if (g_csa_cache[i].view && g_csa_cache[i].img_f == img_f && g_csa_cache[i].view_f == view_f &&
+            g_csa_cache[i].vt == (VkImageViewType)vt && g_csa_cache[i].w == w && g_csa_cache[i].h == h && g_csa_cache[i].layers == na) {
+            sc = &g_csa_cache[i];
+            break;
+        }
+    }
+    if (!sc) {
+        int slot = 0;
+        for (int i = 0; i < CSA_CACHE; i++) {
+            if (!g_csa_cache[i].view) { slot = i; break; }
+            if (g_csa_cache[i].use < g_csa_cache[slot].use) slot = i;
+        }
+        csa_ent old = g_csa_cache[slot], nw = {0};
+        nw.img_f = img_f; nw.view_f = view_f; nw.vt = (VkImageViewType)vt; nw.w = w; nw.h = h; nw.layers = na;
+        VkFormat fls[2] = {img_f, view_f};
+        VkImageFormatListCreateInfo fli = {VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO, .viewFormatCount = 2, .pViewFormats = fls};
+        VkImageCreateFlags cflags = view_f != img_f ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
+        if (!(feats(img_f) & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) cflags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+        VkImageCreateInfo ci = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .pNext = view_f != img_f ? &fli : NULL, .flags = cflags,
+            .imageType = VK_IMAGE_TYPE_2D, .format = img_f, .extent = {w, h, 1}, .mipLevels = 1, .arrayLayers = na,
+            .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT};
+        VkResult r = vk.vkCreateImage(V.dev, &ci, NULL, &nw.img);
+        VkMemoryRequirements mr = {0};
+        if (!r) vk.vkGetImageMemoryRequirements(V.dev, nw.img, &mr);
+        uint32_t mt = !r ? vka_mem_type(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0) : UINT32_MAX;
+        if (!r && mt == UINT32_MAX) r = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        if (!r) r = vka_imem_bind(nw.img, mt, &mr, &nw.m);
+        VkImageViewUsageCreateInfo vu = {VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO, .usage = VK_IMAGE_USAGE_STORAGE_BIT};
+        VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .pNext = (cflags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT) ? &vu : NULL,
+            .image = nw.img, .viewType = (VkImageViewType)vt, .format = view_f,
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, na}};
+        if (!r) r = vk.vkCreateImageView(V.dev, &vi, NULL, &nw.view);
+        if (r) {
+            VRED_ONCE("compute storage alias: scratch image %ux%ux%u fmt %d->%d: %d", w, h, na, img_f, view_f, r);
+            if (nw.view) vk.vkDestroyImageView(V.dev, nw.view, NULL);
+            if (nw.img) vk.vkDestroyImage(V.dev, nw.img, NULL);
+            if (nw.m.dm) vka_imem_free(&nw.m);
+            return VK_NULL_HANDLE;
+        }
+        if (old.view || old.img) {
+            csa_evict_t *ev = malloc(sizeof *ev);
+            if (ev) { *ev = (csa_evict_t){old.img, old.view, old.m}; vka_after(vka_fence_last() + 1, csa_free, ev); }
+        }
+        vka_img_barrier(cb, nw.img, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+        g_csa_cache[slot] = nw;
+        sc = &g_csa_cache[slot];
+    }
+    sc->use = ++g_csa_seq;
+    vka_barrier_stages(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT);
+    VkImageCopy cp = {{VK_IMAGE_ASPECT_COLOR_BIT, l0, a0, na}, {0, 0, 0},
+                      {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, na}, {0, 0, 0}, {w, h, 1}};
+    vk.vkCmdCopyImage(cb, src_img, VK_IMAGE_LAYOUT_GENERAL, sc->img, VK_IMAGE_LAYOUT_GENERAL, 1, &cp);
+    vka_barrier_stages(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+    if (actual) *actual = view_f;
+    return sc->view;
+}
 static VkImageView id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage, vka_img **imo, VkFormat force, VkFormat *actual) {   // PEANUTS
     int writes = wbf_view_writes(storage); storage &= VKA_VIEW_STORAGE;   // (VKA_VIEW_RO: a shader image the shader only reads)
     pthread_mutex_lock(&g_tmu);

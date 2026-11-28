@@ -482,6 +482,7 @@ DM_VK_CRT	developer	Graphics			text			both
 DM_VK_CRT_LINES	developer	Graphics			text			both						
 DM_VK_CS_ASYNC	developer	Graphics			text			both						
 DM_VK_CS_ASYNC_RETYPE	developer	Graphics			text			both						
+DM_VK_CS_IMG_ALIAS	developer	Graphics			text			both						
 DM_VK_CS_LANE	developer	Performance			text			both						
 DM_VK_CS_LANE_MEM_MB	developer	Performance			text			both						
 DM_VK_CS_SHARED_OVER	developer	Diagnostics			text			both						
