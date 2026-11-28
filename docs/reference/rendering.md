@@ -848,6 +848,15 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Open:** per-vertex streams of indexed draws, indirect draws and the batched geometry captures are not bounded (their last element is not known on the CPU without scanning the indices or reading the arguments).
 - **Found on:** [Super Mario Odyssey](../../dm/games/0100000000010000/README.md) (GitHub issue #558): the composite of agl's half-resolution translucent pass (`alProgramShader`, vertex `40cc99352976d0ff`, pixel `934386ce027e72be`), every frame the half-resolution effects draw.
 
+### A vertex stream bound past its memory pool
+
+<!-- PEANUTS: entry imported from nxnative upstream for South Park: The Fractured But Whole. -->
+
+- **Symptom:** South Park's character creator draws its backdrop, shadow and menus with the character missing. The loading screen is black and the title flickers between black and visible frames. The host may log only one skipped vertex stream, then silently skip later draws with the same problem.
+- **Cause:** Snowdrop binds a stream from an interior offset with the buffer's full size. In the captured preview frame, stream 0 began at `0x705f714b80`, inside the pool up to `0x705f7dd000`. Its declared `0xcb9c0` bytes ended `0x3540` past the pool. The UI binds a 4 MiB range from successive offsets, although individual draws may fetch only a few hundred bytes. Those offsets make the full-range lookup succeed near the start of the buffer and fail on most frames, even with the same indexed draws submitted by the game.
+- **Fix:** `bind_vbufs` and the pulling layout can resolve the mapped prefix of an aligned stream after the full lookup fails. They prove the last byte from the draw and every reflected attribute on that stream. For direct indexed draws the proof scans CPU-readable indices and includes the base vertex. Pending writes, possible sparse aliases and invalid indices prevent the proof. Draws with unknown bounds or a fetch beyond the mapped bytes still fail. The smaller limit also bounds format conversion for the draw. Full-range cache hits include the requested size, and a prefix-only result is checked again for the next draw.
+- **Found on:** [South Park: The Fractured But Whole](../../dm/games/01008F2005154000/README.md#rendering) 1.05. `t_vbuf` exercises the Metal binding and readback, the pulling range, rejection of draws beyond the mapped pool and cache reuse after the declared size changes.
+
 ### Programs bound per stage
 
 - **Symptom:** scenes and characters black, only foliage, light shafts and the HUD drawn; pass dumps full of `Z … draw skipped: no program bound`.

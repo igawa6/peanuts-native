@@ -190,6 +190,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [SHIN MEGAMI TENSEI V: Vengeance](010069C01AB82000/README.md) | `010069C01AB82000` | 1.0.3 | 15.3.2 | Unreal Engine 4.27 | NVN |
 | [Silver Pines](0100D5B026844000/README.md) | `0100D5B026844000` | 1.0.0 (base) | 21.4.7 | Unity 6000.3.15f1 IL2CPP | NVN |
 | [Sonic Frontiers Definitive Edition](0400921025B32000/README.md) | `0400921025B32000` | v65536 (Switch 2) | 21.4.1 (Ounce) | Hedgehog Engine 2, CRIWARE | NVN2 |
+| [South Park: The Fractured But Whole](01008F2005154000/README.md) | `01008F2005154000` | 1.05 | 3.5.1 | Ubisoft Snowdrop | NVN <!-- PEANUTS: profile imported from nxnative upstream; tested on Android (POCO X7 Pro, PanVK) --> |
 | [Splatoon Raiders](0400380020056000/README.md) | `0400380020056000` | v65536 (Switch 2) | 21.4.4 (Ounce) | Nintendo EPD (sead / agl / gsys) | NVN2 |
 | [SPY×ANYA: Operation Memories](010089B01AB44000/README.md) | `010089B01AB44000` | 1.0.1 | 14.3.1 | Unity 2020.3.43f1 IL2CPP, CRIWARE, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Star Fox](0400E88025B1A000/README.md) | `0400E88025B1A000` | v131072 (Switch 2) | 21.4.4 (Ounce) | custom (eclipse) | NVN2 |

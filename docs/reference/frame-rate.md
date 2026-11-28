@@ -87,6 +87,16 @@ Frame pacing: the host's frame step, engine frame limiters, present intervals an
 - **Found on:** [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md) 1.4.2 with `DM_FPS_TARGET=60`, from reading the code after [PR #794](https://github.com/seedds/nxnative/pull/794); not reproduced in a game run.
 - **Check:** `t_fpslock` (`dm_fps_lock_engine` in every case, asked before the first present in half of them: limiter rows, Unreal, Frostbite, NieR's build gate, another build's main, a main without Unreal variables); `t_nvn` (no limiter: the 60 and 30 caps are not applied and the game's interval stays; a state page needs no limiter).
 
+### A present interval that is the game's only limit, in display mode
+
+<!-- PEANUTS: entry imported from nxnative upstream for South Park: The Fractured But Whole. -->
+
+- **Symptom:** a game holds 30 fps with spare CPU and GPU time; it asks for present interval 2 once (`the game sets present interval 1 → 2`) and nothing else limits it. With `present_interval display` it runs at 60, but `fps_target` logs `present cap … not applied` and the player's **Frame rate** (30 or 60) does nothing: frames stay at one a display tick.
+- **Cause:** `fps_present_cap()` (`hle_nvn.c`) applied a cap without a frame-step page only when the host writes an engine limiter of the main ([above](#a-present-cap-applies-only-with-a-frame-step-or-an-engine-limit-the-host-writes)), so that a game stepping by its own fixed rate is not presented at another one. A game whose only limit is its present interval has no limiter to write, and needs none: `present_interval display` already declares that it steps by the time that passed.
+- **Fix:** in display mode (`present_interval display`, or `DM_PRESENT_INTERVAL=display`) the cap is applied by the present interval alone, with or without an engine limiter, and logged as `present cap … applied by the present interval alone`: 60 presents one frame a tick, 30 two, and the game reads that interval back. `display_mode()` answers from the environment and the profile before the window's first interval, as `present_cfg` does. Game mode is unchanged. Every other profile with `present_interval display` and `fps_target` has a limiter the host writes (or, Monster Train 2, no `fps_target`), so none changes; on a build whose limiter row is missing, the cap now sets the interval display mode would otherwise hold at 1.
+- **Found on:** [South Park: The Fractured But Whole](../../dm/games/01008F2005154000/README.md#frame-rate) 1.05: Snowdrop requests present interval 2 and the profile paces it at 60 fps through display mode. Upstream found the same shape on Red Dead Redemption 1.0.7 and Borderlands: Game of the Year Edition.
+- **Check:** `t_nvn` (display mode without a limiter: the 60 and 30 caps applied, the intervals 1 and 2, the interval read back, the 30 Hz link target, no cap, the cap asked for before the window's first interval).
+
 ### Engine-native frame caps also govern presentation
 
 - **Symptom:** selecting 30 FPS changes the engine's interval field, but the screen and frame loop still run near 60 FPS.
