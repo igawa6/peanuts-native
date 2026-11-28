@@ -256,6 +256,14 @@ If you hit this symptom on a new title, look for it before assuming the pack is 
 - **No binaries.** No `.so`, no APK, no GPU driver, no shader library, no prewarm seed, no pack. Everything is built
   from source.
 - **Say what you did not check.** If you only tested on the system driver, or only reached the title screen, say so.
+- **Before opening a pull request**, run `python3 peanuts/scripts/pr_ready.py` from a checkout of the branch (the base is the remote's `dev`;
+  `--base <ref>` names another). It exits 1 on what gets a PR sent back: a base that is behind `dev` and conflicts with it, or is built on another
+  PR's head, merge commits, binaries and prewarm seeds, a file over about 10 MB or 200,000 rows, hand edits to generated or maintainer-owned files
+  (the games table and credits in `README.md`, `peanuts/docs/README.github.md`, the game catalog, the release list, the issue forms, the chain lock
+  and headers, `nxGames`, a profile's `readiness.tsv`), a new switch or an every-game change together with a game profile, em or en dashes, middle
+  dots and bullets in code, and CRLF line endings in `dm/games/`. It also runs `check-publish.sh` and `upstream-update.sh --check`, warns about
+  every-game scope, size, C logic without a test, a missing docs entry and commit authors not on a `users.noreply.github.com` address, and ends with
+  the checks no script can make (device runs on both drivers, gameplay, fps). A PR stacked on another runs it with `--base` set to that PR's head.
 
 ### Publishing rules (strict, checked before every push)
 
