@@ -484,3 +484,7 @@ dm/gfx/tools/vk_android_spv_native/spvn.c	Peanuts' own file (#120, Round 67): vk
 dm/gfx/tools/vk_android_spv_native/build.sh	Peanuts' own file (#120, Round 67): builds libdmsh_spvn from spvn.c; kept with spvn.c, its header names Peanuts Native
 dm/tools/rwspin_native/rwspin.c	Peanuts' own file (#120, Round 68): patch_nso.py's spin wait search in C; its SHA-256 is patch_nso.py's RWSPIN_SHA, so a marker would change the rewriter file
 dm/tools/rwspin_native/build.sh	Peanuts' own file (#120, Round 68): builds libdmsh_rwspin from rwspin.c; kept with rwspin.c, its header names Peanuts Native
+dm/games/01005A20190A6000/shader_map.tsv	Generated shader key and source offset map; preserve the input digest.
+dm/games/01005A20190A6000/shader_facts.tsv	Generated compute launch dimensions; preserve the input digest.
+dm/games/01005A20190A6000/shader_pairs.tsv	Generated vertex and pixel key pairs; preserve the input digest.
+dm/games/01005A20190A6000/shader_files.tsv	Generated shader-bearing file inventory for the targeted split.
