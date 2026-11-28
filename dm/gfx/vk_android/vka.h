@@ -131,6 +131,14 @@ extern vka_dev V;
 // system libvulkan.so. vka_driver_open returns the libvulkan handle (NULL = use the system one); vka_driver_tag is a file-name-safe name of the custom driver in use, NULL for the system's
 void *vka_driver_open(void);
 const char *vka_driver_tag(void);
+// PEANUTS begin(linux): Banana Native 0.3.44's loader name. The system's Vulkan loader, opened when no custom driver is (vka_dev.c, vka_readiness.c): libvulkan.so
+// on Android (the NDK's name); libvulkan.so.1 on Linux, the loader's soname, since a desktop distribution has libvulkan.so only with its -dev package
+#ifdef NX_LINUX
+#define VKA_SYSTEM_LOADER "libvulkan.so.1"
+#else
+#define VKA_SYSTEM_LOADER "libvulkan.so"
+#endif
+// PEANUTS end
 int vka_init(void);   // 1 = the device is up (idempotent, any thread); 0 = no Vulkan: every op logs and does nothing
 #include "vka_fpenv.h"
 // The host's FPCR (0) on this thread (vka_fpenv.h): who names a thread the host made, logged the first few times one started with the game's FPCR (NULL: not logged);

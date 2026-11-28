@@ -1,0 +1,33 @@
+# PEANUTS: the aarch64 Linux AppImage (peanuts/docs/LINUX.md), built from source on a GitHub-hosted runner when started by hand (Actions, "linux-appimage",
+# Run workflow). The AppImage comes out as a workflow artifact; attaching it to a release is a maintainer's choice. Prepare on the device downloads the source of
+# the commit the AppImage was built from, so build it from a commit that is on this repository.
+name: linux-appimage
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+# Actions are pinned to commit SHAs (the tag in the comment), as in tests.yml.
+jobs:
+  appimage:
+    name: aarch64 Linux AppImage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0   # the version is git describe --tags
+      - name: Build (Docker cross image of linux/Dockerfile, the generic host, every Switch 1 profile)
+        run: peanuts/linux/build-appimage.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: PeanutsNative-aarch64-AppImage
+          path: linux/build/appimage/PeanutsNative-*-aarch64.AppImage
+          if-no-files-found: error
