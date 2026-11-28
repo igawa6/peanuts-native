@@ -254,9 +254,14 @@ int nxhost_touch_controls(nxhost_touch_control *out, int max) {
     return all;
 }
 void nxhost_touch_controls_state(uint64_t *pressed, int max, float stick[4]) {
+    nxhost_touch_controls_snapshot(pressed, max, stick, NULL); // PEANUTS
+}
+// PEANUTS: Read the stick axes and origin under the same lock.
+void nxhost_touch_controls_snapshot(uint64_t *pressed, int max, float stick[4], float origin[2]) {
     pthread_mutex_lock(&g_mu); touch_once();
     for (int i = 0; pressed && i < max && i < g_touch.n; i++) pressed[i] = g_touch.pressed[i];
     if (stick) { stick[0] = g_touch.sx[0]; stick[1] = g_touch.sy[0]; stick[2] = g_touch.sx[1]; stick[3] = g_touch.sy[1]; }
+    if (origin) nxin_touch_float_origin(&g_touch, origin); // PEANUTS
     pthread_mutex_unlock(&g_mu);
 }
 

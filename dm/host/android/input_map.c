@@ -161,12 +161,18 @@ static float dist(const nxin_touch *t, const nxhost_touch_control *c, float x, f
 }
 static int hit(const nxin_touch *t, float x, float y) {
     int best = -1; float bd = 0;
+    int floating = -1; // PEANUTS
     for (int i = 0; i < t->n; i++) {
+        // PEANUTS: The floating stick only gets right-side touches that miss the existing controls.
+        if (t->c[i].kind == NXT_FLOAT_STICK) {
+            if (x >= 0.5f) floating = i;
+            continue;
+        }
         const nxhost_touch_control *c = &t->c[i]; float dx, dy, d = dist(t, c, x, y, &dx, &dy);
         float grab = c->kind == NXT_STICK ? STICK_GRAB : c->kind == NXT_DPAD ? DPAD_GRAB : 1;
         if (d <= c->r * grab && (best < 0 || d / c->r < bd)) { best = i; bd = d / c->r; }
     }
-    return best;
+    return best >= 0 ? best : floating; // PEANUTS
 }
 static uint64_t dpad_dir(float dx, float dy, float r) {   // 8 directions, a centre dead spot
     if (sqrtf(dx * dx + dy * dy) < r * 0.2f) return 0;
@@ -180,6 +186,11 @@ static void drive(nxin_touch *t, nxin_pointer *p) {   // a pointer on a control:
     if (c->kind == NXT_BUTTON) t->pressed[p->ctl] = c->buttons;
     else if (c->kind == NXT_DPAD) t->pressed[p->ctl] = dpad_dir(dx, dy, c->r);
     else {
+        // PEANUTS: Reuse the fixed stick's dead zone, saturation and radial clamp with the initial touch as the center.
+        if (c->kind == NXT_FLOAT_STICK) {
+            dx = (p->x - p->down_x) * (t->sw / t->sh);
+            dy = p->y - p->down_y;
+        }
         float sx = dx / (c->r * STICK_FULL), sy = -dy / (c->r * STICK_FULL), m = sqrtf(sx * sx + sy * sy);
         if (m > 1) { sx /= m; sy /= m; }
         if (m < STICK_DEAD) sx = sy = 0;
@@ -189,7 +200,8 @@ static void drive(nxin_touch *t, nxin_pointer *p) {   // a pointer on a control:
 static void release(nxin_touch *t, int ctl) {
     if (ctl < 0) return;
     t->pressed[ctl] = 0;
-    if (t->c[ctl].kind == NXT_STICK) t->sx[t->c[ctl].stick] = t->sy[t->c[ctl].stick] = 0;
+    if (t->c[ctl].kind == NXT_STICK || t->c[ctl].kind == NXT_FLOAT_STICK) // PEANUTS
+        t->sx[t->c[ctl].stick] = t->sy[t->c[ctl].stick] = 0;
 }
 static int in_game(const nxin_touch *t, float x, float y) { return x >= t->gx && y >= t->gy && x < t->gx + t->gw && y < t->gy + t->gh; }
 int nxin_touch_event(nxin_touch *t, int action, int id, float x, float y) {
@@ -201,6 +213,7 @@ int nxin_touch_event(nxin_touch *t, int action, int id, float x, float y) {
     if (action == AM_DOWN || action == AM_POINTER_DOWN) {
         if (k >= 0 || t->np >= 16) return 0;
         nxin_pointer *p = &t->p[t->np++]; p->id = id; p->x = x; p->y = y; p->slot = -1;
+        p->down_x = x; p->down_y = y; // PEANUTS
         p->ctl = t->enabled ? hit(t, x, y) : -1;
         if (p->ctl >= 0) { for (int i = 0; i < t->np - 1; i++) if (t->p[i].ctl == p->ctl) { p->ctl = -2; return 0; } drive(t, p); return 1; }   // a control has one pointer
         if (!in_game(t, x, y)) { p->ctl = -2; return 0; }
@@ -221,6 +234,18 @@ void nxin_touch_pad(const nxin_touch *t, uint64_t *buttons, int32_t *lx, int32_t
     uint64_t b = 0; for (int i = 0; i < t->n; i++) b |= t->pressed[i];
     *buttons = b; *lx = axis(t->sx[0]); *ly = axis(t->sy[0]); *rx = axis(t->sx[1]); *ry = axis(t->sy[1]);
 }
+// PEANUTS begin: Draw from the host's captured origin so rendering follows the input hit test.
+void nxin_touch_float_origin(const nxin_touch *t, float out[2]) {
+    out[0] = out[1] = -1;
+    for (int i = 0; i < t->np; i++) {
+        const nxin_pointer *p = &t->p[i];
+        if (p->ctl < 0 || t->c[p->ctl].kind != NXT_FLOAT_STICK) continue;
+        out[0] = p->down_x;
+        out[1] = p->down_y;
+        return;
+    }
+}
+// PEANUTS end
 int nxin_touch_fingers(const nxin_touch *t, nxin_finger *out, int max) {
     int n = 0;
     for (int i = 0; i < t->np && n < max; i++) {

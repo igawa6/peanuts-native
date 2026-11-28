@@ -37,6 +37,7 @@ NXHOST_API void nxhost_touch_controls_enable(bool on);   // on by default; off s
 // The on-screen controls to draw: their count, and each one's kind / buttons / centre / radius / label (input_map.h). pressed: what each holds now, stick: deflection (-1..1, y up)
 NXHOST_API int nxhost_touch_controls(nxhost_touch_control *out, int max);
 NXHOST_API void nxhost_touch_controls_state(uint64_t *pressed, int max, float stick[4]);
+NXHOST_API void nxhost_touch_controls_snapshot(uint64_t *pressed, int max, float stick[4], float origin[2]); // PEANUTS
 // The launcher's own layout (it draws the controls; the host still decides what each touch drives): n controls in the units above, at most NXT_MAX; n <= 0 or NULL brings
 // the default layout back. Touches held on the old layout are let go. Returns the number of controls now
 NXHOST_API int nxhost_touch_controls_set(const nxhost_touch_control *c, int n);

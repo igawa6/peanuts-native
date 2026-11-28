@@ -18,6 +18,8 @@ import android.widget.RadioGroup;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
+import dev.peanuts.ingame.FloatingStickSetting; // PEANUTS
+
 import java.util.Arrays;
 
 /**
@@ -47,6 +49,10 @@ final class TouchControls extends View {
     private int mode = MODE_AUTO;   // the "On-screen controls" setting (setMode)
     private float opacity, scale;
     private boolean haptics;
+    // PEANUTS begin: fixed right stick remains the default for all games.
+    private boolean floatRight, floatRightActive;
+    private static final int FLOAT_STICK = 3; // input_map.h NXT_FLOAT_STICK
+    // PEANUTS end
 
     // The layout in pixels, as the host has it
     private int n;
@@ -86,7 +92,7 @@ final class TouchControls extends View {
     private static final String[] TOOL = {"Top", "Centre", "Bottom", "Reset", "Done"};
 
     private final long[] pressed = new long[MAX], prev = new long[MAX];
-    private final float[] sticks = new float[4];
+    private final float[] sticks = {0, 0, 0, 0, -1, -1}; // PEANUTS: The last two entries hold the floating stick center from the host.
     private int toggleId = -1;
     private boolean toggleLong;
     private final Runnable longPress = () -> { toggleLong = true; performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); settings(); };
@@ -101,6 +107,7 @@ final class TouchControls extends View {
         opacity = prefs().getFloat("opacity", 0.6f);
         scale = prefs().getFloat("scale", 1f);
         haptics = prefs().getBoolean("haptics", true);
+        floatRight = FloatingStickSetting.enabled(prefs()); // PEANUTS
         shown = prefs().getBoolean("shown", true);
         line.setStyle(Paint.Style.STROKE);
         text.setTextAlign(Paint.Align.CENTER);
@@ -152,6 +159,7 @@ final class TouchControls extends View {
     private void apply() {
         if (input) Native.touchControlsEnable(active() && !editing);   // off: every touch in the picture is the game's touchscreen
         Arrays.fill(pressed, 0); Arrays.fill(prev, 0); Arrays.fill(sticks, 0);
+        sticks[4] = sticks[5] = -1; // PEANUTS: Clear the previous center after changing the mode or layout.
         invalidate();
     }
 
@@ -241,11 +249,13 @@ final class TouchControls extends View {
         float[] f = new float[n * 6];
         for (int i = 0; i < n; i++) {
             f[6 * i] = kind[i]; f[6 * i + 1] = buttons[i]; f[6 * i + 2] = stick[i];
+            if (floatRight && kind[i] == STICK && stick[i] == 1) f[6 * i] = FLOAT_STICK; // PEANUTS
             f[6 * i + 3] = cx[i] / w; f[6 * i + 4] = cy[i] / h; f[6 * i + 5] = r[i] / h;
         }
         int kept = input ? Native.touchControlsSet(f) : -1;
         boolean was = available;
-        available = kept == n;
+        floatRightActive = floatRight && kept == n; // PEANUTS
+        available = kept == n || floatRight && kept == -2 - n; // PEANUTS: Older hosts still draw and handle the fixed stick.
         if (!available && was != available) Native.note("on-screen controls: this host takes no layout (" + kept + "): not drawn");
         if (!editing) Native.note(String.format(java.util.Locale.ROOT, "on-screen controls: %d in a %dx%d view (%.1f dp high, %.2f px a unit, band from y %.0f, screen %s%s), picture x %.3f y %.3f, size %.2f, opacity %.2f, %s",
                 n, w, h, h / dp, u, y0, prof, custom() ? ", the user's layout" : "", picX, picY, scale, opacity, active() ? "shown" : "hidden")
@@ -486,8 +496,10 @@ final class TouchControls extends View {
     private void poll() {
         if (!active()) return;
         float s0 = sticks[0], s1 = sticks[1], s2 = sticks[2], s3 = sticks[3];
+        float x = sticks[4], y = sticks[5]; // PEANUTS
         Native.touchControlsState(pressed, sticks);
         boolean changed = s0 != sticks[0] || s1 != sticks[1] || s2 != sticks[2] || s3 != sticks[3], tick = false;
+        changed |= x != sticks[4] || y != sticks[5]; // PEANUTS: Redraw on press or release even when the axes are centered.
         for (int i = 0; i < n; i++) {
             if (pressed[i] != prev[i]) changed = true;
             if ((pressed[i] & ~prev[i]) != 0) tick = true;
@@ -580,12 +592,20 @@ final class TouchControls extends View {
     }
 
     private void drawStick(Canvas c, int i) {
+        // PEANUTS begin: The editor shows the fixed group. In play, the floating stick appears while held.
+        float x = cx[i], y = cy[i];
+        if (floatRightActive && stick[i] == 1 && !editing) {
+            if (sticks[4] < 0) return;
+            x = sticks[4] * getWidth();
+            y = sticks[5] * getHeight();
+        }
+        // PEANUTS end
         float sx = sticks[2 * stick[i]], sy = sticks[2 * stick[i] + 1];
         boolean held = sx != 0 || sy != 0;
         fill.setColor(Color.argb(alpha(0.25f), 0, 0, 0));
-        c.drawCircle(cx[i], cy[i], r[i], fill);
-        c.drawCircle(cx[i], cy[i], r[i], line);
-        float k = r[i] * 0.55f, kx = cx[i] + sx * k, ky = cy[i] - sy * k;
+        c.drawCircle(x, y, r[i], fill); // PEANUTS
+        c.drawCircle(x, y, r[i], line); // PEANUTS
+        float k = r[i] * 0.55f, kx = x + sx * k, ky = y - sy * k; // PEANUTS
         fill.setColor(held ? Color.argb(alpha(0.6f), 255, 255, 255) : Color.argb(alpha(0.4f), 90, 90, 90));
         c.drawCircle(kx, ky, r[i] * 0.45f, fill);
         c.drawCircle(kx, ky, r[i] * 0.45f, line);
@@ -657,7 +677,9 @@ final class TouchControls extends View {
         android.widget.Button reset = new android.widget.Button(ctx);
         reset.setText("Reset the controls");
         reset.setOnClickListener(v -> { os.setProgress(50); ss.setProgress(40); hb.setChecked(true); });   // 60 % opacity, 100 % size, the tick on
-        box.addView(ol); box.addView(os); box.addView(sl); box.addView(ss); box.addView(hb); box.addView(lb); box.addView(tb); box.addView(reset);
+        box.addView(ol); box.addView(os); box.addView(sl); box.addView(ss); box.addView(hb); box.addView(lb); box.addView(tb); // PEANUTS
+        FloatingStickSetting.addRow(ctx, box, prefs(), this::setFloatingRightStick); // PEANUTS
+        box.addView(reset); // PEANUTS
         android.widget.Button ed = new android.widget.Button(ctx);   // the layout editor (runs onEditStart); the picture's position is in the panel's Picture rows (positionRows)
         ed.setText("Edit the controls layout…");
         ed.setOnClickListener(v -> startEditLayout());
@@ -666,6 +688,13 @@ final class TouchControls extends View {
 
     /** Whether GameActivity keeps the newest log lines over the picture once the game draws (off by default; the settings dialog's last box) */
     static boolean showLog(Context c) { return Prefs.open(c, "touch_controls").getBoolean("log", false); }
+
+    // PEANUTS begin: replacing the host layout also releases any touch from the old mode.
+    private void setFloatingRightStick(boolean enabled) {
+        floatRight = enabled;
+        relayout();
+    }
+    // PEANUTS end
 
     private void save() { prefs().edit().putFloat("opacity", opacity).putFloat("scale", scale).putBoolean("haptics", haptics).commit(); }
 }

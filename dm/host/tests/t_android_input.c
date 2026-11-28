@@ -129,6 +129,43 @@ static void t_layout(void) {
     CHECK(nxin_touch_set_layout(&t, NULL, 0, &kept) == 3 && kept == 13 && ctl(&t, DM_BTN_A) >= 0, "the default layout back: %d", kept);
     nxin_touch_pad(&t, &b, &lx, &ly, &rx, &ry); CHECK(b == 0 && rx == 0 && ry == 0, "and nothing held");
 }
+// PEANUTS begin: Check the origin, multi-touch priority, cancellation and disabled controls.
+static void t_float_stick(void) {
+    nxin_touch t;
+    nxin_touch_init(&t);
+    const nxhost_touch_control layout[] = {
+        {NXT_STICK, 0, 0, 0.15f, 0.7f, 0.1f, "L"},
+        {NXT_FLOAT_STICK, 0, 1, 0.9f, 0.8f, 0.1f, "R"},
+        {NXT_BUTTON, DM_BTN_RS, 0, 0.8f, 0.6f, 0.04f, "R3"},
+    };
+    nxin_touch_set_layout(&t, layout, 3, NULL);
+    float origin[2];
+    CHECK(nxin_touch_event(&t, AM_DOWN, 1, 0.15f, 0.7f) == 1, "left stick captured");
+    CHECK(nxin_touch_event(&t, AM_POINTER_DOWN, 2, 0.62f, 0.4f) == 1, "floating stick captured");
+    nxin_touch_float_origin(&t, origin);
+    CHECK(origin[0] == 0.62f && origin[1] == 0.4f && t.sx[1] == 0 && t.sy[1] == 0, "neutral at first touch");
+    nxin_touch_event(&t, AM_MOVE, 1, 0.1f, 0.7f);
+    nxin_touch_event(&t, AM_MOVE, 2, 0.7f, 0.4f);
+    CHECK(t.sx[0] < 0 && t.sx[1] > 0.99f, "both sticks work together");
+    CHECK(nxin_touch_event(&t, AM_POINTER_DOWN, 3, 0.8f, 0.6f) == 1 && t.pressed[2] == DM_BTN_RS, "R3 keeps priority");
+    CHECK(nxin_touch_event(&t, AM_POINTER_DOWN, 4, 0.9f, 0.4f) == 0, "second camera finger cannot hijack the stick");
+    nxin_touch_event(&t, AM_POINTER_UP, 2, 0.7f, 0.4f);
+    nxin_touch_float_origin(&t, origin);
+    CHECK(origin[0] < 0 && origin[1] < 0 && t.sx[1] == 0 && t.sx[0] < 0, "release only returns the right stick to centre");
+    nxin_touch_event(&t, AM_POINTER_DOWN, 5, 0.73f, 0.2f);
+    nxin_touch_float_origin(&t, origin);
+    CHECK(origin[0] == 0.73f && origin[1] == 0.2f && t.sx[1] == 0, "next touch uses its own origin");
+    nxin_touch_event(&t, AM_MOVE, 5, 0.73f, 0.1f);
+    CHECK(t.sy[1] > 0.99f, "swiping up tilts the right stick up");
+    nxin_touch_event(&t, AM_CANCEL, 0, 0, 0);
+    nxin_touch_float_origin(&t, origin);
+    CHECK(origin[0] < 0 && t.sx[0] == 0 && t.sy[1] == 0 && t.pressed[2] == 0, "cancel releases all controls");
+    CHECK(nxin_touch_event(&t, AM_DOWN, 6, 0.35f, 0.2f) == 2, "left-side background remains touchscreen");
+    nxin_touch_event(&t, AM_CANCEL, 0, 0, 0);
+    t.enabled = 0;
+    CHECK(nxin_touch_event(&t, AM_DOWN, 7, 0.65f, 0.2f) == 2, "right-side background is touchscreen when controls are off");
+}
+// PEANUTS end
 static void t_motion(void) {
     float acc[3], rot[3];
     // lying face up: +9.81 m/s² on z is gravity (0, 0, -1) in the Switch frame
@@ -190,6 +227,7 @@ static void t_fit(void) {
 int main(void) {
     t_map(); t_fit();
     t_keys(); t_pad(); t_touch(); t_layout(); t_motion(); t_shake();
+    t_float_stick(); // PEANUTS
     if (fails) { printf("t_android_input: %d failures\n", fails); return 1; }
     printf("t_android_input: ok\n");
     return 0;
