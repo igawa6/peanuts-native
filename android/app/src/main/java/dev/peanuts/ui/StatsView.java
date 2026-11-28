@@ -65,7 +65,7 @@ import dev.peanuts.overlay.SocTemp;
  *     memory; the label the phone's RAM in use over its whole RAM, the meter the game's share, the rest in use faint behind it, the free part empty) and the
  *     run's clock. The meters mark the run's peak, and TEMP names it when it is above now.</li>
  * </ul>
- * What shows is the player's (StatsConfig: the presets Simple, Normal and Full, or items picked by hand), from the gear's sheet, kept for every game
+ * What shows is the player's (StatsConfig: the preset Simple or Full; a stored Normal or hand-picked set reads as Full), from the gear's sheet, kept for every game
  * (PeanutsPrefs.statsShown). Frame times come from the host (Bridge.frameTimes, on whether or not the overlay is); the numbers update 4 times a second and roll to
  * a new value (Num), GPU and CPU once a second, the rest every 2 s; nothing is read while the page is not shown.
  * <p>
@@ -140,11 +140,12 @@ public final class StatsView extends FrameLayout {
     private void build() {
         Context base = getContext();
         shown = StatsConfig.parse(PeanutsPrefs.statsShown(base));
+        if (!StatsConfig.match(shown).equals(StatsConfig.SIMPLE)) shown = StatsConfig.preset(StatsConfig.FULL);   // two presets, Simple and Full: a stored Normal or hand-picked set reads as Full
         black = PeanutsPrefs.statsGuard(base, StatsConfig.BLACK);
         shift = PeanutsPrefs.statsGuard(base, StatsConfig.SHIFT);
-        dimLabels = PeanutsPrefs.statsGuard(base, StatsConfig.DIM_LABELS);
+        dimLabels = false;   // no longer an option: the labels are the quiet grey already
         autoDim = PeanutsPrefs.statsGuard(base, StatsConfig.AUTO_DIM);
-        autoOff = PeanutsPrefs.statsGuard(base, StatsConfig.AUTO_OFF);
+        autoOff = false;   // no longer an option: idle only dims. Black after 30 min without a touch hid the stats in a long session played on the controller
         dark = true;   // always dark, as the top screen's game menu (dev.peanuts.ingame.Look), whatever the app's theme
         Context c = base;
         if (!night) {   // the dark theme's colours whatever the app's theme
@@ -238,6 +239,7 @@ public final class StatsView extends FrameLayout {
         fps = new Num(fpsView, v -> String.format(Locale.ROOT, "%.0f", v), "--", 2f);
         big.addView(fpsView);
         fpsView.setOnClickListener(v -> openControl(v, false));
+        fpsView.setOnLongClickListener(v -> { explain(v, "fps"); return true; });
         // the cap in effect (or the target and "FPS") in a pill, as the header's: it reads as a button (the frame rate cap's pop-up), with a caret while a game runs
         LinearLayout capPill = pill(c, null, null);
         capPill.setGravity(Gravity.CENTER_VERTICAL);
@@ -260,6 +262,7 @@ public final class StatsView extends FrameLayout {
         paceView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));   // medium, as the top screen panel
         paceView.setIncludeFontPadding(false);
         pace = new Num(paceView, v -> Math.round(v) + "%", "\u2014", 3f);
+        paceView.setOnLongClickListener(v -> { explain(v, "pace"); return true; });
         View fpsBlock = big;
         if (side) {   // the bento's frame rate card: the cap pill on top, the number with a small "FPS" beside it, ON PACE under it with its gauge
             LinearLayout col = column(c);
@@ -291,13 +294,13 @@ public final class StatsView extends FrameLayout {
             col.addView(big);
             PUi.add(col, capPill, 8, PUi.wrap());
             fpsBlock = col;
-        } else {   // Normal and Full: the number with the cap pill under it, at the graph's left
+        } else {   // Full: the number with the cap pill under it, at the graph's left
             LinearLayout col = column(c);
             col.addView(big, PUi.wrap());
             PUi.add(col, capPill, 6, PUi.wrap());
             fpsBlock = col;
         }
-        View paceBox = null;   // Normal and Full: under the graph, with the frame time and the 1% low
+        View paceBox = null;   // Full: under the graph, with the frame time and the 1% low
         if (shown.contains(StatsConfig.PACE)) {
             LinearLayout pc = column(c);
             pc.setGravity(simple ? Gravity.END : Gravity.START);
@@ -311,6 +314,7 @@ public final class StatsView extends FrameLayout {
 
         // the graph, flat on the card, and its span alone under it (no legend, no scale); a tap switches 30 s / 2 s
         graph = new Graph(c);
+        graph.longView = !PeanutsPrefs.statsGraphLive(c);   // the sheet's GRAPH: where it opens
         LinearLayout gbox = null;
         if (shown.contains(StatsConfig.GRAPH)) {
             gbox = column(c);
@@ -341,10 +345,10 @@ public final class StatsView extends FrameLayout {
         none.setVisibility(View.INVISIBLE);   // no meter, but its room: the clock lines up with its neighbours
         List<String> shownTiles = StatsConfig.tiles(shown, device.hasGpu(), device.cpuKHz() > 0);
         List<String> gridTiles = new java.util.ArrayList<>(shownTiles);
-        if (!simple) { gridTiles.remove(StatsConfig.FRAME); gridTiles.remove(StatsConfig.LOW); }   // Normal and Full: those two are with the pace, under the graph
+        if (!simple) { gridTiles.remove(StatsConfig.FRAME); gridTiles.remove(StatsConfig.LOW); }   // Full: those two are with the pace, under the graph
         LinearLayout grid = column(c);
         int gap = PUi.dp(c, simple ? 8 : 7);
-        List<List<String>> gridRows = new java.util.ArrayList<>();   // Simple two a row; Normal and Full three (the hardware, small)
+        List<List<String>> gridRows = new java.util.ArrayList<>();   // Simple two a row; Full three (the hardware, small)
         for (int i = 0; i < gridTiles.size(); i += simple ? 2 : 3) gridRows.add(gridTiles.subList(i, Math.min(gridTiles.size(), i + (simple ? 2 : 3))));
         for (List<String> row : gridRows) {
             LinearLayout r = PUi.row(c);
@@ -471,7 +475,7 @@ public final class StatsView extends FrameLayout {
         addView(sheet, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         dim = new View(c);
         dim.setBackgroundColor(Color.BLACK);
-        dim.setAlpha(stage == 0 ? 0f : stage == 1 ? dimAlpha() : 1f);
+        dim.setAlpha(stage == 0 ? veil() : stage == 1 ? dimAlpha() : 1f);
         dim.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         addView(dim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         ember = new View(c);   // black after 30 min: a small dot that moves, so the page is seen to be there
@@ -553,12 +557,14 @@ public final class StatsView extends FrameLayout {
         stage = 0;
         graph.live(graphRuns());
         ember.setVisibility(View.GONE);
-        dim.animate().alpha(0f).setDuration(Motion.on() ? Motion.ENTER : 0).start();
+        dim.animate().alpha(veil()).setDuration(Motion.on() ? Motion.ENTER : 0).start();
         frameStats();   // the numbers it shows at once are now, not from when it went black
     }
 
-    private float dimAlpha() { return dark ? 0.65f : 0.55f; }
+    private float dimAlpha() { return Math.max(veil(), dark ? 0.65f : 0.55f); }
 
+    /** The sheet's brightness: the black veil over the lit page */
+    private float veil() { return 1f - PeanutsPrefs.statsBrightness(getContext()) / 100f; }
 
     /**
      * Whether the graph draws on its own (30 a second): while the page is shown and lit, and the GPU has room. With the GPU 85 % busy or more for two readings
@@ -824,6 +830,43 @@ public final class StatsView extends FrameLayout {
         }
     }
 
+    // ---- the guide: what each number means, in the sheet and on a long press of its tile ----
+
+    private static final String[][] GUIDE = {
+            {"fps", "FPS", "Frames each second. The pill under it sets the frame rate cap.", "Frames each second. The pill sets the cap."},
+            {"pace", "On pace", "The share of the latest frames that came on time. 90 % or more feels smooth.", "Frames on time. 90 % or more feels smooth."},
+            {StatsConfig.FRAME, "Frame", "How long one frame takes. 16.7 ms is 60 FPS; lower is faster.", "Time per frame. 16.7 ms is 60 FPS."},
+            {StatsConfig.LOW, "1% low", "The frame rate of the slowest 1 % of frames. Close to the FPS means no stutter.", "Slowest 1 % of frames. Close to FPS: no stutter."},
+            {StatsConfig.GPU, "GPU", "How busy the graphics chip is, its clock, and the video memory the game uses (VRAM).", "Graphics chip load, clock and VRAM."},
+            {StatsConfig.CPU, "CPU", "The main cores' clock now and at most. CPU cap: how far the system lets them run.", "Main cores' clock. Cap: what the system allows."},
+            {StatsConfig.SOC, "Temp", "The chip's temperature. The ▲ number is the highest this run.", "Chip temperature; ▲ is this run's highest."},
+            {StatsConfig.BAT, "Power", "The battery's charge, or the power drawn in watts, and the time left.", "Charge or watts, and time left."},
+            {StatsConfig.RAM, "RAM", "The memory the game uses, and the phone's memory in use of all of it.", "Game memory, and the phone's in use."},
+            {StatsConfig.RUN, "Time", "How long this game has been running.", "How long this game has run."},
+    };
+
+    /** A tile's line of the guide in a pop-up, as the console mode's; a tap anywhere closes it */
+    private void explain(View from, String key) {
+        for (String[] g : GUIDE) if (g[0].equals(key) && popup == null) {
+            Haptics.play(from, Haptics.Word.TICK);
+            Context c = getContext();
+            FrameLayout scrim = new FrameLayout(c);
+            scrim.setBackgroundColor(0x99000000);
+            scrim.setOnClickListener(v -> closeControl());
+            LinearLayout box = column(c);
+            int p = PUi.dp(c, 16);
+            box.setPadding(p, p, p, p);
+            box.setBackground(PUi.round(0xFF202124, PUi.dp(c, 16), track, PUi.dp(c, 1)));
+            box.addView(section(c, g[1]));
+            TextView t = PUi.text(c, g[2], 15, R.color.bn_text, 400);
+            t.setTextColor(text);
+            PUi.add(box, t, 8);
+            scrim.addView(box, new FrameLayout.LayoutParams(Math.min(PUi.dp(c, 360), getWidth() - 2 * PUi.dp(c, 24)), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+            popup = scrim;
+            addView(scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+    }
+
     // ---- the console mode and frame rate cap pop-ups ----
 
     /** A centred pop-up over the page: Docked / Handheld ({@code mode}) or the frame rate caps (GameControls); a pick applies at once and closes it, a tap outside closes it */
@@ -913,6 +956,7 @@ public final class StatsView extends FrameLayout {
 
     private void openSheet(boolean on) {
         sheetOpen = on;
+        if (guideBack != null) guideBack.run();   // it opens on the settings, not on the guide left open
         sheet.setVisibility(on ? View.VISIBLE : View.GONE);
         touchedAt = SystemClock.elapsedRealtime();
     }
@@ -934,8 +978,8 @@ public final class StatsView extends FrameLayout {
         PUi.add(col, section(c, "Preset"), 16);
         android.widget.RadioGroup seg = new android.widget.RadioGroup(c);   // PanelPolish makes it one track, the picked one brown
         String now = StatsConfig.match(shown);
-        String[] names = {"Simple", "Normal", "Full", "Custom"};
-        String[] keys = {StatsConfig.SIMPLE, StatsConfig.NORMAL, StatsConfig.FULL, StatsConfig.CUSTOM};
+        String[] names = {"Simple", "Full"};   // two presets; what each shows is fixed (no picking items by hand)
+        String[] keys = {StatsConfig.SIMPLE, StatsConfig.FULL};
         for (int i = 0; i < keys.length; i++) {
             String k = keys[i];
             android.widget.RadioButton b = new android.widget.RadioButton(c);
@@ -944,39 +988,78 @@ public final class StatsView extends FrameLayout {
             b.setTextSize(15);
             seg.addView(b);
             b.setChecked(k.equals(now));
-            if (k.equals(StatsConfig.CUSTOM)) b.setEnabled(k.equals(now));   // Custom is what a change by hand makes, not a choice
-            else b.setOnClickListener(v -> { Haptics.play(v, Haptics.Word.CLICK); setShown(StatsConfig.preset(k)); });
+            b.setOnClickListener(v -> { Haptics.play(v, Haptics.Word.CLICK); setShown(StatsConfig.preset(k)); });
         }
         PUi.add(col, seg, 8);
 
-        PUi.add(col, section(c, "Shown"), 16);
-        for (int i = 0; i < StatsConfig.ITEMS.length; i++) {
-            String k = StatsConfig.ITEMS[i];
-            half(c, col, toggle(c, StatsConfig.NAMES[i], shown.contains(k), v -> {
-                java.util.Set<String> s = new java.util.LinkedHashSet<>(shown);
-                if (!s.remove(k)) s.add(k);
-                setShown(s);
-            }));
+        if (shown.contains(StatsConfig.GRAPH)) {   // where the graph opens; a tap on it still switches
+            PUi.add(col, section(c, "Graph"), 16);
+            boolean liveNow = PeanutsPrefs.statsGraphLive(getContext());
+            PUi.add(col, choices(c, new String[] {"Last 30 s", "Live"}, liveNow ? 1 : 0, new boolean[] {true, true},
+                    i -> { PeanutsPrefs.statsGraphLive(getContext(), i == 1); build(); }), 8);
         }
 
-        PUi.add(col, section(c, "OLED / burn-in"), 16);
-        for (int i = 0; i < StatsConfig.GUARDS.length; i++) {
-            String k = StatsConfig.GUARDS[i];
-            half(c, col, toggle(c, StatsConfig.GUARD_NAMES[i], PeanutsPrefs.statsGuard(getContext(), k), v -> {
+        // the screen: its brightness (a veil over this page only) and the black page; then the burn-in guards. Dim fixed labels and black after 30 min
+        // are no longer offered (build)
+        PUi.add(col, section(c, "Screen"), 16);
+        TextView bl = PUi.text(c, "Brightness " + PeanutsPrefs.statsBrightness(getContext()) + " %", 16, R.color.bn_text, 400);   // PanelPolish: name left, value right
+        bl.setTextColor(text);
+        PUi.add(col, bl, 4);
+        android.widget.SeekBar bright = new android.widget.SeekBar(c);
+        bright.setMax(70);   // 30..100 %
+        bright.setProgress(PeanutsPrefs.statsBrightness(getContext()) - 30);
+        bright.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(android.widget.SeekBar s, int p, boolean user) {
+                if (!user) return;
+                PeanutsPrefs.statsBrightness(getContext(), p + 30);
+                bl.setText("Brightness " + (p + 30) + " %");
+                if (stage == 0) dim.setAlpha(veil());
+            }
+            @Override public void onStartTrackingTouch(android.widget.SeekBar s) {}
+            @Override public void onStopTrackingTouch(android.widget.SeekBar s) {}
+        });
+        PUi.add(col, bright, 2);
+        String[] guards = {StatsConfig.BLACK, StatsConfig.SHIFT, StatsConfig.AUTO_DIM};
+        String[] guardNames = {"Black background", "Pixel shifter", "Dim after 10 min"};
+        for (int i = 0; i < guards.length; i++) {
+            String k = guards[i];
+            half(c, col, toggle(c, guardNames[i], PeanutsPrefs.statsGuard(getContext(), k), v -> {
                 PeanutsPrefs.statsGuard(getContext(), k, !PeanutsPrefs.statsGuard(getContext(), k));
                 build();
             }));
         }
-        TextView note = PUi.small(c, "Kept for every game. A touch wakes a dimmed or black screen.");
+
+        // the guide on a page of its own (reading, not a setting), as the top screen menu's rows that open a page
+        ScrollView guide = guidePage(c);
+        View hair = new View(c);
+        hair.setBackgroundColor(Look.RAIL_EDGE);
+        PUi.add(col, hair, 14, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PUi.dp(c, 1)));
+        LinearLayout gr = PUi.row(c);
+        gr.setGravity(Gravity.CENTER_VERTICAL);
+        gr.setMinimumHeight(PUi.dp(c, 44));
+        TextView gn = PUi.text(c, "Guide", 16, R.color.bn_text, 400);
+        gn.setTextColor(text);
+        gr.addView(gn, PUi.weight());
+        TextView chev = PUi.text(c, "›", 20, R.color.bn_text_2, 400);
+        chev.setTextColor(text2);
+        gr.addView(chev, PUi.wrap());
+        gr.setOnClickListener(v -> { Haptics.play(v, Haptics.Word.CLICK); sv.setVisibility(View.GONE); guide.setVisibility(View.VISIBLE); });
+        PUi.add(col, gr, 4);
+        TextView note = PUi.small(c, "Tip: hold any number to see what it means. Kept for every game; a touch wakes a dimmed screen.");
         note.setTextColor(labelCol);
-        PUi.add(col, note, 10);
+        PUi.add(col, note, 6);
         PanelPolish.apply(col);
         sv.addView(col);
         f.addView(sv, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        guide.setVisibility(View.GONE);
+        f.addView(guide, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        guideBack = () -> { guide.setVisibility(View.GONE); sv.setVisibility(View.VISIBLE); };
         return f;
     }
 
-    /** The sheet's head: a boxed back button (the top screen panel's pis_back) beside the title */
+    private Runnable guideBack;   // the guide page's back: to the sheet
+
+    /** The sheet's and the guide's head: a boxed back button (the top screen panel's pis_back) beside the title */
     private LinearLayout sheetHead(Context c, String title, String backLabel, View.OnClickListener back) {
         LinearLayout head = PUi.row(c);
         head.setGravity(Gravity.CENTER_VERTICAL);
@@ -991,6 +1074,33 @@ public final class StatsView extends FrameLayout {
         tl.leftMargin = PUi.dp(c, 14);
         head.addView(t, tl);
         return head;
+    }
+
+    /** The guide: each number's name and its short line, two a row so it fits the bottom screen */
+    private ScrollView guidePage(Context c) {
+        ScrollView sv = new ScrollView(c);
+        sv.setFillViewport(true);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout col = column(c);
+        int pad = PUi.dp(c, 16);
+        col.setPadding(pad + PUi.dp(c, 2), pad, pad + PUi.dp(c, 2), pad);
+        col.addView(sheetHead(c, "Guide", "Back", v -> { if (guideBack != null) guideBack.run(); }));
+        LinearLayout row = null;
+        for (int i = 0; i < GUIDE.length; i++) {
+            if (i % 2 == 0) { row = PUi.row(c); row.setBaselineAligned(false); PUi.add(col, row, i == 0 ? 16 : 12); }   // not baseline aligned: both columns start at the top
+            LinearLayout cell = column(c);
+            TextView n = PUi.text(c, GUIDE[i][1], 15, R.color.bn_text, 500);
+            n.setTextColor(text);
+            cell.addView(n);
+            TextView b = PUi.small(c, GUIDE[i][3]);
+            b.setTextColor(text2);
+            PUi.add(cell, b, 2);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+            if (i % 2 > 0) lp.leftMargin = PUi.dp(c, 16);
+            row.addView(cell, lp);
+        }
+        sv.addView(col);
+        return sv;
     }
 
     private void setShown(Set<String> s) {
@@ -1068,7 +1178,7 @@ public final class StatsView extends FrameLayout {
         LinearLayout t = column(c);
         int p = bigTiles ? 14 : 8;   // Simple's tiles: larger, to read at a glance
         t.setPadding(PUi.dp(c, p), PUi.dp(c, p + 1), PUi.dp(c, p), PUi.dp(c, p));
-        if (bigTiles) t.setBackground(PUi.round(tileBg, PUi.dp(c, 10), 0, 0));   // Normal and Full: flat on their card, no card in a card
+        if (bigTiles) t.setBackground(PUi.round(tileBg, PUi.dp(c, 10), 0, 0));   // Full: flat on their card, no card in a card
         TextView v = PUi.text(c, "—", bigTiles ? 28 : 16, R.color.bn_text, 500);   // Simple: a step under the frame rate, which leads
         v.setTextColor(text);
         v.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));   // medium, as the top screen panel
@@ -1099,6 +1209,7 @@ public final class StatsView extends FrameLayout {
         v.setTag(lab);
         if (meter != null) PUi.add(t, meter, bigTiles ? 8 : 6, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PUi.dp(c, bigTiles ? 5 : 3)));
         tiles.put(key, t);
+        t.setOnLongClickListener(x -> { explain(x, key); return true; });   // its line of the guide
         return v;
     }
 
