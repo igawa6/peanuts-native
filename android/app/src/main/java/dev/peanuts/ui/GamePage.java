@@ -122,6 +122,7 @@ public final class GamePage {
     /** MainActivity.onBackPressed (through SettingsPage.onBack): an area goes back to the tiles; true when it did */
     public static boolean onBack(Activity a) {
         if (a != owner || pane == null || !pane.isAttachedToWindow() || area == null || facts == null) return false;
+        if (GameAreas.AMIIBO.equals(area) && dev.peanuts.amiibo.AmiiboPage.back()) return true;   // an amiibo's page, or a search: back to the pictures
         cameFrom = area;
         leaveArea(null);
         area = null;
@@ -143,6 +144,7 @@ public final class GamePage {
 
     private static void leaveArea(String next) {
         if (GameAreas.MODS.equals(area) && !GameAreas.MODS.equals(next)) dev.peanuts.mods.CheatsPage.leaveArea();
+        if (GameAreas.AMIIBO.equals(area) && !GameAreas.AMIIBO.equals(next)) dev.peanuts.amiibo.AmiiboPage.leave();
     }
 
     // ---- The page ----
@@ -645,6 +647,9 @@ public final class GamePage {
                 modsBody = body;   // its rows explain themselves on the second screen (CheatsPage)
                 dev.peanuts.mods.CheatsPage.area(a, body, f.titleId, f.name, f.gameDir, f.packDir, f.again);
                 return;
+            case GameAreas.AMIIBO:
+                dev.peanuts.amiibo.AmiiboPage.area(a, body, f.titleId, f.name, wide);
+                return;
             case GameAreas.COMPANION:
                 if (got.companion != null) {   // in a card, as it sat in the Game tab's
                     LinearLayout card = PUi.add(body, PUi.listCard(a), 4);
@@ -743,6 +748,7 @@ public final class GamePage {
                 case GameAreas.MODS: return f.missing == null;   // its row was on the Game tab: a game with a profile (Mods & Cheats, Part D)
                 case GameAreas.SAVES: case GameAreas.FILES: case GameAreas.HELP: return true;
                 case GameAreas.COMPANION: return companion != null;
+                case GameAreas.AMIIBO: return dev.peanuts.amiibo.AmiiboStand.usesAmiibo(a, f.titleId);   // AmiiboAPI lists the game, or it looked for one
                 case GameAreas.GRAPHICS: return recommend != null || rows.containsKey(key);
                 default: return rows.containsKey(key);
             }
@@ -914,6 +920,8 @@ public final class GamePage {
                     return GameAreas.line(Boolean.TRUE.equals(f.recommended) ? "Recommended" : null, sv("Resolution"), sv("Upscaler"), sv("Frame rate cap"));
                 case GameAreas.MODS:
                     return dev.peanuts.mods.CheatsPage.tileLine(a, f.titleId, f.name, f.gameDir, f.packDir);
+                case GameAreas.AMIIBO:
+                    return dev.peanuts.amiibo.AmiiboPage.tileLine(a, f.titleId);
                 case GameAreas.SAVES:
                     return f.savesLine != null ? f.savesLine : "Back up, restore and import";
                 case GameAreas.OPTIONS: {

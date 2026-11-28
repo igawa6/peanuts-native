@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Peanuts in-game icon (solid), generated from icons.py. Do not edit by hand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M3.6 17.4a8.4 2.7 0 0 1 16.8 0v1.5a8.4 2.7 0 0 1-16.8 0ZM5.5 17.4a6.5 1.55 0 1 0 13 0a6.5 1.55 0 1 0 -13 0Z" android:fillColor="?attr/pnSolidBase" android:fillType="evenOdd"
+        android:strokeColor="?attr/pnSolidBase" android:strokeWidth="0.6" android:strokeLineJoin="round"/>
+    <path android:pathData="M8.06 5.32A5 5 0 0 0 8.06 11.48M15.94 5.32A5 5 0 0 1 15.94 11.48M5.20 3.81A8.2 8.2 0 0 0 5.20 12.99M18.80 3.81A8.2 8.2 0 0 1 18.80 12.99" android:strokeColor="?attr/pnSolidBase" android:strokeWidth="2.4"
+        android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000"/>
+    <path android:pathData="M9.6 8.4a2.4 2.4 0 1 0 4.8 0a2.4 2.4 0 1 0 -4.8 0Z" android:fillColor="?attr/pnSolidAccent" android:fillType="evenOdd"
+        android:strokeColor="?attr/pnSolidAccent" android:strokeWidth="0.6" android:strokeLineJoin="round"/>
+</vector>

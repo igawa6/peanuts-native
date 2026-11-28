@@ -24,7 +24,13 @@ public final class Request {
     static final List<String> COMPANION_ACTIONS = Arrays.asList("list", "install", "update", "remove");
     static final List<String> TABS = Arrays.asList("performance", "game", "saves", "storage");
     /** game's do: stop, ctl (one raw line into the game's control file), then the live controls of the running game (GameLive.ACTIONS) */
-    static final List<String> GAME_ACTIONS = Arrays.asList("stop", "ctl", "fps_cap", "console_mode", "second_screen", "controls");
+    static final List<String> GAME_ACTIONS = gameActions();   // from GameLive.ACTIONS, so a live control it adds (amiibo) is taken here too
+
+    private static List<String> gameActions() {
+        List<String> l = new java.util.ArrayList<>(Arrays.asList("stop", "ctl"));
+        l.addAll(GameLive.ACTIONS);
+        return java.util.Collections.unmodifiableList(l);
+    }
     private static final Set<String> YES = new HashSet<>(Arrays.asList("true", "1", "on", "yes")), NO = new HashSet<>(Arrays.asList("false", "0", "off", "no"));
 
     public final String cmd, id;

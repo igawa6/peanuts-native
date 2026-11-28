@@ -76,7 +76,10 @@ class Sources(unittest.TestCase):
         self.assertRegex(panel, r'static int TAB_CONTROLS = 2, TAB_GENERAL = 3;\s+// PEANUTS')
         self.assertRegex(panel, r'if \(!ModsPanel\.shows\(\)\) cheatRows\(\);', "General keeps upstream's cheat switches only without the Mods tab")
         mp = (LAUNCHER / 'ModsPanel.java').read_text(encoding='utf-8')
-        self.assertRegex(mp, r'if \(shows\) names\.add\(CHEATS\);\s+if \(mods\) names\.add\(MODS\);\s+names\.add\("Controls"\);', 'the quick menu: Cheats, then Mods, before Controls (the canvas page "In-game menus")')
+        self.assertRegex(mp, r'if \(shows\) names\.add\(CHEATS\);\s+if \(mods\) names\.add\(MODS\);\s+'
+                             r'(?:if \(dev\.peanuts\.amiibo\.AmiiboTab\.wanted\(a, titleId\)\) names\.add\(dev\.peanuts\.amiibo\.AmiiboTab\.NAME\);[^\n]*\s+)?'
+                             r'names\.add\("Controls"\);',
+                         'the quick menu: Cheats, then Mods, before Controls (the canvas page "In-game menus"); the amiibo tab (#582) between Mods and Controls')
         bridge = (LAUNCHER / 'CheatsBridge.java').read_text(encoding='utf-8')
         for call in ('Native.cheatStatus()', 'Native.cheatsReload()', 'Native.cheatSet('):
             self.assertIn(call, bridge, f'the tab reaches {call} through CheatsBridge (Native is package-private)')

@@ -3751,3 +3751,88 @@ Two profiles of the game that the OpenGL UI and no-colour draw sections above we
 | `dm/games/01005A20190A6000/shader_map.tsv`, `shader_facts.tsv`, `shader_pairs.tsv`, `shader_files.tsv`, and the same four in `dm/games/0100D2D0190A4000/` | new | the generated tables (the US ones copies of the EU ones) | allow-listed in `peanuts/upstream-unmarked.txt` |
 | `dm/games/README.md` | 2 | the two table rows | `<!-- PEANUTS: ... -->` in the row's last cell |
 | `docs/reference/rendering.md` | 3 | the Found on lines of the BGR5A1, no-colour draw and OpenGL UI entries link the EU profile | `<!-- PEANUTS -->` at the line's end |
+
+### amiibo: a virtual stand the app places amiibo on (2026-11-24, GitHub issue #582, Part A: engine and store; opt-in since 2026-11-26)
+
+Games read amiibo through `nn::nfp`, which upstream's `hle_sdk16.c` takes over with one NFC device that never finds a tag. The take-over sits above
+the SDK's NFC service and above the figures' encryption, so a game asks for plain TagInfo, ModelInfo, CommonInfo, RegisterInfo and application area
+bytes: a virtual tag needs no amiibo keys. `dm/peanuts/peanuts_amiibo.c` takes over the same nfc and nfp symbols, only in a game the player turned
+amiibo on for (2026-11-26, igawa6's review of #711: an opt-in, not a replacement for every game). Settings › Users › amiibo (off by default) and the
+game's own amiibo switch in its Game options (`dev.peanuts.amiibo.AmiiboSwitch`) start the game with `PN_AMIIBO=1`; the loader's `force_lookup` asks
+`peanuts_amiibo_force` before its own table, which answers only then. Its take-overs sit in a table of their own (the section `pnamiibo`, as
+`HLE_FORCE` builds `swforce`), so `hle_sdk16.c`'s block stays unchanged and every other game gets it as before. With amiibo on:
+the app places an amiibo (`Bridge.amiiboPlace`, the amiibo's ID, the tag's UID, the nickname, the player's Mii as owner, the dates and the games' data it
+keeps), the activate event is signalled, the game mounts and reads it, its writes (Flush, Create and Recreate of its area) go to the amiibo's folder from a
+helper thread, and a second after the game unmounted it the tag leaves the stand on its own (the deactivate event), as Breath of the Wild expects. An
+amiibo placed in advance is found 0.3 s after the game's next search. Areas are kept per access ID, so one amiibo serves every game. `nn::nfc::IsNfcEnabled`
+answers on now (upstream's open note: nfp and nfc agree). The amiibo settings applets end at once (already registered, nothing to erase or restore).
+`Bridge.amiiboStatus` tells the app whether the game searches and what lies on the stand. The app's side, `dev.peanuts.amiibo`: AmiiboAPI's table
+(MIT) offline (`peanuts/scripts/amiibo-db.py` makes `android/app/src/peanuts/res/raw/amiibo_db.tsv`), the player's own amiibo (`files/amiibo/own`), imports
+of .bin files, folders and ZIP packs (ID and UID only, no keys), pictures loaded on demand, and the adb control's `game do=amiibo`. The pictures are
+downloaded from AmiiboAPI's images on GitHub only once the player turns them on, and only while amiibo is on in Settings or for a game
+(`AmiiboSwitch.picturesOn`; the pictures off by default, 2026-11-26 and 2026-11-28: igawa6's review of #711, strictly opt-in; Part B has the row);
+otherwise nothing is downloaded and Peanuts' own card stands in. See `peanuts/docs/AMIIBO.md`.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/loader.c` | 1 | `force_lookup`: `peanuts_amiibo_force(name)` first, under `#ifdef PN_AMIIBO` (NULL unless the game started with `PN_AMIIBO=1`) | `// PEANUTS:` |
+| `android/host/CMakeLists.txt` | 3 | `dm/peanuts/peanuts_amiibo.c` in `HOST_C`; `PN_AMIIBO` in both kinds of host's definitions (on the marked lines of `DM_NSP_DIRECT`) | `# PEANUTS:` |
+| `android/app/src/main/java/dev/nxnative/android/GameActivity.java` | 1 | `settingsEnv`: `AmiiboSwitch.env` after `Companion.env` | `// PEANUTS:` |
+| `android/app/src/main/java/dev/nxnative/android/GameSettings.java` | 1 | Game options: the game's amiibo switch after Time of day, above Mods & Cheats, for a game that uses amiibo (`AmiiboSwitch.offered`) | `// PEANUTS:` |
+| `android/NOTICE.md` | 1 | AmiiboAPI's table (MIT) and its pictures (once turned on) | `<!-- PEANUTS -->` |
+
+Peanuts-owned: `dm/peanuts/peanuts_amiibo.c`, `dev.peanuts.amiibo` (`AmiiboDb`, `AmiiboBin`, `AmiiboStore`, `AmiiboTag`, `AmiiboImport`, `AmiiboFiles`,
+`AmiiboStand`, `AmiiboSwitch`, `AmiiboPictures`), `Bridge.amiibo*`, AmiiboAPI's line in `AboutData`, Settings' amiibo row (`LibrarySettings`, `SettingsSections`,
+`SettingsHelp`; `SettingsPage` hands Users' amiibo group to `UsersPage`, which draws it under the users) and the game's (`GameAreas`, `GameHelp`), the `amiibo` action of `dev.peanuts.ctl.GameLive` and `GameLink`, `peanuts/scripts/amiibo-db.py`,
+`amiibo_db.tsv`. Tests: `peanuts/tests/test_amiibo_host.py` (the stand in C with made-up IDs, off without `PN_AMIIBO=1`, and that its symbols are
+the upstream block's, which stays whole),
+`peanuts/tests/test_amiibo.py` (`AmiiboJvmTest`: the table, dumps made in the test, imports, the store, the host's description; no keys or dumps in the
+repository; `AmiiboPicturesJvmTest`: no connection and no cache folder while the pictures or amiibo are off), `peanuts/tests/test_ctl.py`. `upstream-update.sh --check` counts `android/app/src/jvmtest/java/dev/peanuts/` (the JVM tests of
+Peanuts' own classes) as Peanuts-owned.
+
+### amiibo Part B: a game's amiibo on its page (2026-11-24, GitHub issue #582, on Part A)
+
+A game that uses amiibo (AmiiboAPI's table lists it, or it was seen initializing nfp) gets an amiibo tile after Controls. Its area
+(`dev.peanuts.amiibo.AmiiboPage`): the game's amiibo switch (`AmiiboSwitch`, the same as the one in its Game options; 2026-11-26), the player's own amiibo
+that fit the game (the last placed in it first), then every amiibo that fits it, as square pictures with their names; a search over all of them (name, series, game series); Import of .bin files or ZIP packs, or a folder (the system's picker,
+`LibrarySettings.result`, codes 87 and 88). An amiibo opens its page in the area: the picture, series and type, what it does in this game, the game's data on
+it with Reset game data (that game's area only), where it came from and how often it was placed, the other games that use it, and Remove from yours. B goes
+back from the page or the search to the pictures (`GamePage.onBack`). Pictures load when the area shows them (`AmiiboPictures`), once the player has
+turned them on: Settings › Users › amiibo pictures (`LibrarySettings`, `SettingsSections`, `SettingsHelp`), off by default, says that turning it on
+downloads them from AmiiboAPI on GitHub (raw.githubusercontent.com) (2026-11-26 and 2026-11-28, igawa6's review of #711 and #712: strictly opt-in), and
+only while amiibo is on (`AmiiboSwitch.picturesOn`). Peanuts' own card (the stand icon, `pi_amiibo`) stands in until then, while they are off, offline, or when
+there is none. The tile says "Off for this game" while amiibo is off for it. No upstream file changes.
+
+Peanuts-owned: `AmiiboPage`, `GameAreas.AMIIBO`, its lines in `GamePage` and `LibrarySettings`, `pi_amiibo` (`peanuts/scripts/icons.py`). Tests:
+`peanuts/tests/test_amiibo.py` (Page: the wiring, the switch, the pictures' row, pictures only on demand, the words),
+`peanuts/tests/test_settings_search.py` ("mii" finds both amiibo rows), `peanuts/tests/test_game_page.py` (`GameAreasJvmTest`: the ten areas).
+
+### amiibo Part C: the game asks, the player places (2026-11-24, GitHub issue #582, on Part B and the in-game menus)
+
+In a game amiibo is on for (Part A's switch) and that uses amiibo the quick menu has an amiibo tab (between Mods and Controls, the new solid icon `pis_amiibo`: the stand, its waves, the figure
+as the kernel). It shows what the stand has, a search, the player's own amiibo that fit and every one that fits, and "When a game looks for an amiibo":
+Suggest one of mine (the default), Only light up this tab, Place my last one at once (`PeanutsPrefs.amiiboWhen`). While the game looks, the tab's rail item
+lights up with a slowly breathing banana ring (`Rail.lit`). After 0.4 s of looking, once per search, a small card slides in at the bottom of the game's
+screen (`AmiiboCard`): one of the player's own (or the last placed in this game) with A Place and B Not now, a short row when several fit (the last placed
+first, left and right pick), or Choose an amiibo, which opens the quick menu on the amiibo tab. The quick menu never opens unasked. While the card shows it
+has the controller; B closes it and the game goes on looking. A placed amiibo comes with a short show (`dev.peanuts.ui.AmiiboShow`,
+about 2.3 s, any button skips it): the stand's ring pulses, the About peanut (PeanutArt) drops onto it, one firm haptic tick, the peanut cracks and
+the amiibo's picture (Peanuts' own card while the pictures are off, offline or for none) rises out of the kernel, then stands with the line "On the stand"
+and the amiibo's name; the game gets the tag at the crack. No title names the app beside amiibo (2026-11-26, igawa6's review of #713: it read like a joint
+product). One picked from the list becomes the player's own copy (with its data for each
+game). Placed from the tab while the game does not look, it is ready for the game's next search, and the show plays when the game takes it.
+
+The stand is watched only while the game has its amiibo library open (2026-11-26, igawa6's review of #713: a game without amiibo pays nothing).
+`AmiiboWatch.attach` starts nothing in a game amiibo is off for. In one it is on for, a thread sleeps in the host (`nxhost_peanuts_amiibo_wait_lib`,
+`Bridge.amiiboWaitLib`: woken by nfp's Initialize and Finalize, 30 s at most), and the 150 ms reads of the stand run only while the library is open and
+the game is in front.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/ModsPanel.java` | 5 | the amiibo tab in `opening`'s names; `openOn` around the tab to open on; its `build` line; `host()` for it; `padKey`: the controller's X (Take off) on the amiibo tab | `// PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/InGamePanel.java` | 3 | `AmiiboWatch.attach` in `attach`; `AmiiboWatch.key` first in `backKey` and `menuKey` (the in-game menus shipped in 0.1.9, so these are marked) | `// PEANUTS` |
+
+Peanuts-owned: `AmiiboTab`, `AmiiboCard`, `AmiiboWatch`, `dev.peanuts.ui.AmiiboShow`, `Rail.lit` and its `amiibo` icon, `PeanutsPrefs.amiiboWhen`,
+`pis_amiibo.xml` (design icons.py, SOLID). Tests: `peanuts/tests/test_amiibo.py` (InGame: the tab's and the watch's wiring with their markers, the watch only while
+the library is open, the menu never opens unasked, 0.4 s and once per search, Suggest by default, the show without a title beside amiibo, the words),
+`peanuts/tests/test_amiibo_host.py` (the wait).

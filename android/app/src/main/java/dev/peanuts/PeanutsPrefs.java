@@ -302,6 +302,12 @@ public final class PeanutsPrefs {
     public static int quickKey(Context c) { return of(c).getInt("quick_key", 0); }
     public static void quickKey(Context c, int keyCode) { of(c).edit().putInt("quick_key", keyCode).apply(); }
 
+    /** When a game looks for an amiibo (the quick menu's amiibo tab): Suggest one of mine (a card over the game), Only light up the tab, Place my last one
+     *  at once. In the game's prefs file ("peanuts_panel"): only the game's process reads and writes it */
+    public static final int AMIIBO_SUGGEST = 0, AMIIBO_LIGHT = 1, AMIIBO_AUTO = 2;
+    public static int amiiboWhen(Context c) { int v = panel(c).getInt("amiibo_when", AMIIBO_SUGGEST); return v < 0 || v > 2 ? AMIIBO_SUGGEST : v; }
+    public static void amiiboWhen(Context c, int v) { panel(c).edit().putInt("amiibo_when", v).apply(); }
+
     /**
      * The in-game menus' layout: two menus (the game menu at the left, the quick menu at the right), one menu at the right, or one menu on the bottom screen.
      * Picked once in the launcher's question (dev.peanuts.ui.LayoutChoice, kept in "peanuts", which the launcher writes) and changed later in the menu's own

@@ -160,6 +160,19 @@ public final class LibrarySettings {
                 .toggle(a, dev.peanuts.smooth.DevView.on(a), (b, on) -> { Feel.toggled(b, on); dev.peanuts.smooth.DevView.on(a, on); refreshRows(); });
         devRow.view.setOnClickListener(v -> devRow.toggle.toggle());
         card.addView(devRow.view);
+        // amiibo for every game (dev.peanuts.amiibo.AmiiboSwitch; SettingsSections puts the row under Users › amiibo): off by default, a game's own switch
+        // in its Game options comes first
+        PUi.Setting amiibo = new PUi.Setting(a, "", "amiibo", null).value("Games find your amiibo on Peanuts' stand, from their next start. Off: they find none, as before.")
+                .toggle(a, dev.peanuts.amiibo.AmiiboSwitch.all(a), (b, on) -> { Feel.toggled(b, on); dev.peanuts.amiibo.AmiiboSwitch.all(a, on); });
+        amiibo.view.setOnClickListener(v -> amiibo.toggle.toggle());
+        card.addView(amiibo.view);
+        // amiibo pictures (dev.peanuts.amiibo.AmiiboPictures, under Users › amiibo with amiibo): off by default, says where the pictures are downloaded
+        // from, nothing downloaded until on (and while amiibo is off everywhere: AmiiboSwitch.picturesOn)
+        PUi.Setting pics = new PUi.Setting(a, "", "amiibo pictures", null)
+                .value("Turning this on downloads each amiibo's picture from AmiiboAPI on GitHub (raw.githubusercontent.com) when a page shows it. Off: Peanuts' own card, nothing downloaded.")
+                .toggle(a, dev.peanuts.amiibo.AmiiboSwitch.pictures(a), (b, on) -> { Feel.toggled(b, on); dev.peanuts.amiibo.AmiiboSwitch.pictures(a, on); });
+        pics.view.setOnClickListener(v -> pics.toggle.toggle());
+        card.addView(pics.view);
         refreshRows();
     }
 
@@ -309,6 +322,7 @@ public final class LibrarySettings {
         if (PackImportUi.result(a, request, result, data)) return true;   // the game sheet's Import pack… (72, 73)
         if (dev.peanuts.mods.CheatImportUi.result(a, request, result, data)) return true;   // Mods & Cheats' Add (83, 84 when it started the pick)
         if (dev.nxnative.android.CheatsBridge.result(a, request, result, data)) return true;   // Game settings › Cheat files: a cheat file, a folder, an export (83 to 86)
+        if (dev.peanuts.amiibo.AmiiboPage.result(a, request, result, data)) return true;   // the game page's amiibo Import (87, 88)
         if (request < REQ_KEYS || request > REQ_MOD_ZIP) return false;
         dev.peanuts.folders.FolderKind kind = dev.peanuts.folders.FolderKinds.ofRequest(request);   // a game, update and DLC or build folder (LibraryFolders)
         if (kind != null) {

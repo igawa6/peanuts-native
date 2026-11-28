@@ -43,6 +43,7 @@ public final class UsersPage {
     private List<UsersPort.User> users;
     private String focused;
     private LinearLayout below;   // Settings on one screen: where the focused user's card goes, after the rows
+    private View tail;   // Settings: the section's other groups (amiibo), at the end each time the part is drawn anew
 
     private UsersPage(Activity a, LinearLayout col, boolean wide, Sink sink) {
         this.a = a; this.col = col; this.wide = wide; this.sink = sink;
@@ -60,7 +61,10 @@ public final class UsersPage {
      * Settings' Users section (dev.peanuts.ui.SettingsPage): the focused user's card on the launcher's bottom screen (BottomScreen.explain, a view of its own), and
      * the part read again when the window has the focus back (after the picture page, a rename or the editor), since Settings builds its column only once
      */
-    public static UsersPage fill(Activity a, LinearLayout col, boolean wide) {
+    public static UsersPage fill(Activity a, LinearLayout col, boolean wide) { return fill(a, col, wide, (View) null); }
+
+    /** The same, with tail (Settings › Users' other groups, amiibo; null for none) after the users' part */
+    public static UsersPage fill(Activity a, LinearLayout col, boolean wide, View tail) {
         LinearLayout below = new LinearLayout(a);   // a phone or a tablet with one screen (or the bottom screen off): the user's card below the rows
         below.setOrientation(LinearLayout.VERTICAL);
         UsersPage p = new UsersPage(a, col, wide, (key, card) -> {
@@ -78,6 +82,7 @@ public final class UsersPage {
             dev.peanuts.ui.BottomScreen.explain(a, e);
         });
         p.below = below;
+        p.tail = tail;
         p.refresh();
         col.getViewTreeObserver().addOnWindowFocusChangeListener(has -> { if (has && col.isAttachedToWindow()) p.refresh(); });
         return p;
@@ -123,6 +128,10 @@ public final class UsersPage {
             below.setAlpha(1f);
             below.setTranslationY(0);
             PUi.add(col, below, 16);
+        }
+        if (tail != null) {
+            if (tail.getParent() instanceof ViewGroup) ((ViewGroup) tail.getParent()).removeView(tail);
+            PUi.add(col, tail, 0);   // its first heading has the gap between groups
         }
         if (focus != null) { View f = focus; f.post(f::requestFocus); }
         sink.show("users:" + focused, this::actions);

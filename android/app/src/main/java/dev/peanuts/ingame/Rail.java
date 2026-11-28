@@ -50,6 +50,7 @@ public final class Rail {
 
     /** The same with the bottom screen's Game first on the rail (game: its rows), null for the top screen's quick menu */
     public Rail(Context c, LinearLayout sheet, LinearLayout tabs, View rows, Runnable back, GameRows game) {
+        live.add(this);
         this.c = c;
         this.tabs = tabs;
         this.content = rows;
@@ -360,11 +361,16 @@ public final class Rail {
     }
 
     private void paintIcons() {
+        boolean any = false;
         for (int i = 0; i < items.size(); i++) {
             ImageView ic = (ImageView) ((FrameLayout) items.get(i)).getChildAt(0);
-            Drawable d = Look.icon(c, iconOf(names[i]), !onGame && i == selected ? Look.Ink.SELECTED : Look.Ink.REST);
+            boolean glow = names[i].equals(litTab);
+            any |= glow;
+            Drawable d = Look.icon(c, iconOf(names[i]), glow || !onGame && i == selected ? Look.Ink.SELECTED : Look.Ink.REST);
             if (d != null) ic.setImageDrawable(d);
+            items.get(i).setBackground(glow ? ring() : null);
         }
+        breathe(any);
         if (gameItem != null) {
             Drawable d = Look.icon(c, "game", onGame ? Look.Ink.SELECTED : Look.Ink.REST);
             if (d != null) ((ImageView) ((FrameLayout) gameItem).getChildAt(0)).setImageDrawable(d);
@@ -391,6 +397,42 @@ public final class Rail {
         if (it.getHeight() > 0) go.run(); else box.post(go);
     }
 
+    // ---- A tab lit while something waits there for the player: the amiibo tab while the game looks for one (dev.peanuts.amiibo.AmiiboWatch) ----
+
+    private static final java.util.Set<Rail> live = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    private static String litTab;
+    private Drawable ring;
+    private android.animation.ValueAnimator breath;
+
+    /** Lights a tab by its name (null: none): its icon in the selected colours with a banana ring that breathes slowly, on every rail there is */
+    public static void lit(String tab) {
+        if (java.util.Objects.equals(tab, litTab)) return;
+        litTab = tab;
+        for (Rail r : live) if (r.names != null) r.paintIcons();
+    }
+
+    private Drawable ring() {
+        if (ring == null) {
+            android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+            g.setStroke(Look.dp(c, 2), Look.YELLOW);
+            g.setColor(0x14FFD54F);
+            g.setCornerRadius(Look.dp(c, 12));
+            ring = new android.graphics.drawable.InsetDrawable(g, Look.dp(c, 9), Look.dp(c, 5), Look.dp(c, 9), Look.dp(c, 5));
+        }
+        return ring;
+    }
+
+    private void breathe(boolean on) {
+        if (!on) { if (breath != null) { breath.cancel(); breath = null; } return; }
+        if (breath != null || !android.animation.ValueAnimator.areAnimatorsEnabled()) return;
+        breath = android.animation.ValueAnimator.ofInt(110, 255);   // calm: 1.6 s each way, no pulse
+        breath.setDuration(1600);
+        breath.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+        breath.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+        breath.addUpdateListener(v -> { if (ring != null) ring.setAlpha((int) v.getAnimatedValue()); });
+        breath.start();
+    }
+
     /** The solid icon of a tab, by upstream's name (dev.nxnative.android.ModsPanel's names) */
     public static String iconOf(String tab) {
         switch (tab) {
@@ -399,6 +441,7 @@ public final class Rail {
             case "Cheats": return "cheats";
             case "Mods": return "mods";
             case "Controls": return "controller";
+            case "amiibo": return "amiibo";
             default: return "settings";
         }
     }

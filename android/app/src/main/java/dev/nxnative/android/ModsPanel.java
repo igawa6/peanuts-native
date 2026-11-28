@@ -47,12 +47,13 @@ final class ModsPanel {
         java.util.List<String> names = new java.util.ArrayList<>(java.util.Arrays.asList("Performance", "Display"));
         if (shows) names.add(CHEATS);
         if (mods) names.add(MODS);
+        if (dev.peanuts.amiibo.AmiiboTab.wanted(a, titleId)) names.add(dev.peanuts.amiibo.AmiiboTab.NAME);   // PEANUTS: the amiibo tab for a game that uses amiibo (#582)
         names.add("Controls");
         names.add("General");
         SidePanel.TAB_NAMES = names.toArray(new String[0]);
         SidePanel.TAB_CONTROLS = names.indexOf("Controls");
         SidePanel.TAB_GENERAL = SidePanel.TAB_NAMES.length - 1;
-        String want = opened ? was : ModsTab.lastTab(a);   // the first opening of this run: the tab shown last, in this run or an earlier one
+        String want = dev.peanuts.amiibo.AmiiboTab.openOn(opened ? was : ModsTab.lastTab(a));   // the first opening of this run: the tab shown last, in this run or an earlier one; PEANUTS: the amiibo card's Choose opens on the amiibo tab
         opened = true;
         for (int i = 0; i < SidePanel.TAB_NAMES.length; i++) if (SidePanel.TAB_NAMES[i].equals(want)) return i;
         return Math.min(tab, SidePanel.TAB_NAMES.length - 1);
@@ -62,6 +63,7 @@ final class ModsPanel {
     static boolean build(SidePanel p, Activity a, LinearLayout box, int tab) {
         String name = SidePanel.TAB_NAMES[Math.min(tab, SidePanel.TAB_NAMES.length - 1)];
         ModsTab.lastTab(a, name);
+        if (dev.peanuts.amiibo.AmiiboTab.NAME.equals(name)) { ModsTab.left(); dev.peanuts.amiibo.AmiiboTab.fill(a, box, host(p, a)); return true; }   // PEANUTS: the amiibo tab (#582)
         if (!MODS.equals(name) && !CHEATS.equals(name)) { ModsTab.left(); return false; }
         ModsTab.fill(a, box, new ModsTab.Host() {
             @Override public void close() { p.close(); }
@@ -71,11 +73,21 @@ final class ModsPanel {
         return true;
     }
 
+    /** PEANUTS: what the amiibo tab gets from the panel, as the Mods tab's: close, the panel's look, the header's action (#582) */
+    private static ModsTab.Host host(SidePanel p, Activity a) {
+        return new ModsTab.Host() {
+            @Override public void close() { p.close(); }
+            @Override public void style(View v) { ModsPanel.style(a, v); }
+            @Override public void action(String key, String label, Runnable run) { InGamePanel.action(p, key, label, run); }
+        };
+    }
+
     /** SidePanel.general: whether the cheat switches are in the Mods tab (General has them otherwise, as upstream's) */
     static boolean shows() { return shows; }
 
     /** SidePanel.padKey: Y (details) and X (All off) on the Mods tab, the Switch's Y and X by the game's A / B (confirm: the key that is A); true when taken */
     static boolean padKey(int k, View focus, int confirm) {
+        if (dev.peanuts.amiibo.AmiiboTab.padKey(k, confirm)) return true;   // PEANUTS: X (Take off) on the amiibo tab (#582)
         if (!shows) return false;
         boolean nintendo = confirm == KeyEvent.KEYCODE_BUTTON_B;   // A on the right: the controller's labels are the Switch's, X on top and Y on the left
         int y = nintendo ? KeyEvent.KEYCODE_BUTTON_X : KeyEvent.KEYCODE_BUTTON_Y, x = nintendo ? KeyEvent.KEYCODE_BUTTON_Y : KeyEvent.KEYCODE_BUTTON_X;

@@ -44,6 +44,24 @@ public final class Bridge {
     /** opMode(), or -1 when the host does not have it (an older libnxhost), is not loaded, or the game has not shown a frame yet (asking earlier would fix the mode) */
     public static int opModeSafe() { try { return opMode(); } catch (UnsatisfiedLinkError e) { return -1; } }
 
+    /** The amiibo stand (dm/peanuts/peanuts_amiibo.c) as "key=value" lines: lib, state, search, searching_ms, on, ready, reads, access */
+    public static native String amiiboStatus();
+    /** Puts an amiibo on the stand (dev.peanuts.amiibo.AmiiboTag.describe): 1 the searching game found it, 2 kept for its next search, 0 refused */
+    public static native int amiiboPlace(String desc);
+    /** Takes the amiibo off the stand, and the one placed in advance */
+    public static native void amiiboRemove();
+    /** amiiboStatus(), or "" when the host does not have it or is not loaded */
+    public static String amiiboStatusSafe() { try { return amiiboStatus(); } catch (UnsatisfiedLinkError e) { return ""; } }
+    /** amiiboPlace(desc), or 0 when the host does not have it */
+    public static int amiiboPlaceSafe(String desc) { try { return amiiboPlace(desc); } catch (UnsatisfiedLinkError e) { return 0; } }
+    /** amiiboRemove(), nothing when the host does not have it */
+    public static void amiiboRemoveSafe() { try { amiiboRemove(); } catch (UnsatisfiedLinkError e) { /* no amiibo in this host */ } }
+    /** Sleeps in the host until the game's amiibo library is not in state was any more (nfp's Initialize, Finalize), at most ms: 1 open, 0 closed, AMIIBO_OFF when amiibo is off for this game */
+    public static native int amiiboWaitLib(int was, int ms);
+    public static final int AMIIBO_OFF = -1, AMIIBO_NO_HOST = -2;
+    /** amiiboWaitLib(was, ms), or AMIIBO_NO_HOST when the host is not loaded (yet), does not have it, or has not loaded the game's modules yet (the host says -2) */
+    public static int amiiboWaitLibSafe(int was, int ms) { try { return amiiboWaitLib(was, ms); } catch (UnsatisfiedLinkError e) { return AMIIBO_NO_HOST; } }
+
     public static final int RT_PENDING = 0, RT_LOADED = 1, RT_NONE = 2, RT_FAILED = 3;
 
     /** Core::Mods::HapticKind (dm/peanuts/peanuts.h): what raised a pulse. */
