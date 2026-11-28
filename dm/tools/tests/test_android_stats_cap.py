@@ -53,9 +53,9 @@ class Wiring(unittest.TestCase):
 
     def test_stats_page_pick(self):
         s = (UI / 'StatsView.java').read_text(encoding='utf-8')
-        pick = s[s.index('row.addView(choice(c, h.capLabel(v0)'):]
-        pick = pick[:pick.index('}), weighted(c, i % 3));')]
-        self.assertLess(pick.index('h.cap(v0);'), pick.index('closeControl();'))
+        pick = s[s.index('PUi.add(box, choices(c, labels, at, offered, i -> {'):]
+        pick = pick[:pick.index('}), 8);')]
+        self.assertLess(pick.index('h.cap(caps[i]);'), pick.index('closeControl();'))
         self.assertRegex(pick, r'if \(h\.capRunning\(\) != h\.cap\(\)\) openControl\(from, false\);', 'a pick that waits for a restart shows the note again')
 
     def test_adb_takes_the_same_call(self):

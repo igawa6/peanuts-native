@@ -18,9 +18,9 @@ import java.util.Map;
 public final class Icons {
     private Icons() {}
 
-    /** The shell and kernel colours: NORMAL (a row's tile), QUIET (a sidebar entry), ON_BANANA (the selected one, on yellow) */
+    /** The shell and kernel colours: NORMAL (a row's tile), QUIET (a sidebar entry), ON_BANANA (the selected one, on yellow), MENU (the bottom screen stats, as the top screen game menu) */
     public enum Ink {
-        NORMAL("PeanutsIcon"), QUIET("PeanutsIconQuiet"), ON_BANANA("PeanutsIconOnBanana");
+        NORMAL("PeanutsIcon"), QUIET("PeanutsIconQuiet"), ON_BANANA("PeanutsIconOnBanana"), MENU("PeanutsIconMenu");
         final String style;
         Ink(String style) { this.style = style; }
     }

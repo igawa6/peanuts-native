@@ -195,7 +195,7 @@ public final class PeanutsPrefs {
     /** The stats page's items (dev.peanuts.ui.StatsConfig.format; null: never set, every item) and its burn-in guards (StatsConfig.GUARDS, each on by default), for every game */
     public static String statsShown(Context c) { return of(c).getString("stats_shown", null); }
     public static void statsShown(Context c, String items) { of(c).edit().putString("stats_shown", items).apply(); }
-    public static boolean statsGuard(Context c, String guard) { return of(c).getBoolean("stats_guard_" + guard, true); }
+    public static boolean statsGuard(Context c, String guard) { return of(c).getBoolean("stats_guard_" + guard, !"black".equals(guard)); }   // all on but the black page: the default is the top screen side panel's grey
     public static void statsGuard(Context c, String guard, boolean on) { of(c).edit().putBoolean("stats_guard_" + guard, on).apply(); }
 
     /** Settings > Library > Haptics: false (default) = the launcher's haptics follow the system's touch feedback setting, true = none at all */

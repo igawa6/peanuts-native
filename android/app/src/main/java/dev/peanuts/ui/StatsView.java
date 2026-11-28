@@ -42,6 +42,7 @@ import java.util.Set;
 
 import dev.nxnative.android.R;
 import dev.peanuts.Bridge;
+import dev.peanuts.ingame.Look;
 import dev.peanuts.PeanutsPrefs;
 import dev.peanuts.overlay.FrameStats;
 import dev.peanuts.overlay.Hud;
@@ -69,7 +70,7 @@ import dev.peanuts.overlay.SocTemp;
  * a new value (Num), GPU and CPU once a second, the rest every 2 s; nothing is read while the page is not shown.
  * <p>
  * Burn-in guard (the AYN Thor's bottom screen is AMOLED, and this page stays still for hours), each switchable in the sheet (PeanutsPrefs.statsGuard), all on by
- * default: a black page (its pixels are off; the page takes the dark theme's colours then), the pixel shifter (the page goes round a circle of 8 pixels, a pixel
+ * default but the first: a black page (its pixels are off; off by default, the page in the top screen side panel rail's grey), the pixel shifter (the page goes round a circle of 8 pixels, a pixel
  * every 30 s: GameStats.orbit), dimmer fixed labels, a dim after 10 minutes without a touch and black after 30 but for a small moving dot. A touch brings it back
  * (and does nothing else). The build tag always shows small at the bottom right (GameScreen.buildTag), whatever the overlay over the game shows.
  */
@@ -144,9 +145,9 @@ public final class StatsView extends FrameLayout {
         dimLabels = PeanutsPrefs.statsGuard(base, StatsConfig.DIM_LABELS);
         autoDim = PeanutsPrefs.statsGuard(base, StatsConfig.AUTO_DIM);
         autoOff = PeanutsPrefs.statsGuard(base, StatsConfig.AUTO_OFF);
-        dark = night || black;
+        dark = true;   // always dark, as the top screen's game menu (dev.peanuts.ingame.Look), whatever the app's theme
         Context c = base;
-        if (dark && !night) {   // a black page takes the dark theme's colours whatever the app's theme: cream text on black
+        if (!night) {   // the dark theme's colours whatever the app's theme
             Configuration cf = new Configuration(base.getResources().getConfiguration());
             cf.uiMode = (cf.uiMode & ~Configuration.UI_MODE_NIGHT_MASK) | Configuration.UI_MODE_NIGHT_YES;
             c = base.createConfigurationContext(cf);
@@ -168,16 +169,17 @@ public final class StatsView extends FrameLayout {
         warnYellow = dark ? 0xFFFF9F1A : 0xFFB25E00;
         warnRed = dark ? 0xFFFF5A4E : 0xFFC62828;
         good = dark ? 0xFF4CAF50 : 0xFF2E7D32;
-        text = PUi.col(c, R.color.bn_text);
-        text2 = PUi.col(c, R.color.bn_text_2);
-        int cardBg = black ? 0xFF120E0A : PUi.col(c, R.color.bn_card);
-        tileBg = black ? 0xFF0B0806 : PUi.col(c, R.color.bn_bg);
-        track = black ? 0xFF241B10 : PUi.col(c, R.color.bn_tint);
+        // the top screen's game menu's neutral greys (dev.peanuts.ingame.Look), so the two screens read as one: the page the rail's (black: black), the cards the panel's
+        text = Look.TEXT;
+        text2 = Look.QUIET;
+        int cardBg = 0xFF202124;
+        tileBg = Look.ROW;   // the graph and Full's tiles a step lighter than their card, as the panel's controls
+        track = Look.CHIP;   // pills and meters: a step above the tiles (the game menu's version chip)
         labelCol = dimLabels ? blend(text2, cardBg, 0.35f) : text2;   // the words that never change, a step quieter than the numbers
-        // the overlay's group colours where they do not clash here: the CPU's blue was the frame times' too (indigo now); the SoC and the battery shared one orange,
-        // the warning's (pink and teal now), so a hot SoC's meter did not change colour
-        cFps = tone(FrameStats.LABEL_FPS); cGpu = tone(0xFF4DD0C4); cCpu = tone(0xFF8C9EFF); cSoc = tone(0xFFFF8FB1); cBat = tone(0xFF4DD0C4); cMem = tone(FrameStats.LABEL_MEM);
-        setBackgroundColor(black ? Color.BLACK : Color.TRANSPARENT);   // black: over GameScreen's banana pattern too
+        // the meters in the top screen panel's yellow (its sliders); orange and red mean a warning (warnYellow, warnRed); the 1% low line
+        // keeps the frame times' blue
+        cFps = tone(FrameStats.LABEL_FPS); cGpu = cCpu = cSoc = cBat = cMem = Look.YELLOW;   // the top screen panel's sliders
+        setBackgroundColor(black ? Color.BLACK : Look.RAIL);   // the top screen side panel's rail; over GameScreen's banana pattern too
 
         Configuration cf = c.getResources().getConfiguration();
         boolean wide = cf.screenWidthDp >= 600 && cf.screenWidthDp >= cf.screenHeightDp * 1.25f;
@@ -194,7 +196,7 @@ public final class StatsView extends FrameLayout {
         content.setClipToPadding(false);
 
         card = PUi.card(c);
-        if (black) card.setBackground(PUi.round(cardBg, PUi.dp(c, 20), 0xFF221A12, PUi.dp(c, 1)));
+        card.setBackground(PUi.round(cardBg, PUi.dp(c, 20), Look.RAIL_EDGE, PUi.dp(c, 1)));
 
         // the parts: the cover, the name, the pills, the gear
         // the side cover: as large as the card leaves it, at most 192 dp: under the card's height (with its name and pill below) and beside the right column's
@@ -203,12 +205,13 @@ public final class StatsView extends FrameLayout {
         // the bento's game card is about 62 % of the width, its cover about 42 % of that card, at most 140 dp (the Thor: about 128)
         int coverDp = side ? Math.max(72, Math.min(140, Math.round(innerW * 0.62f * 0.42f))) : stacked ? 96 : 52;
         tile = PUi.tile(c, "?", coverDp);
-        name = PUi.text(c, "", stacked ? 20 : 17, R.color.bn_text, 800);
+        name = PUi.text(c, "", stacked ? 20 : 17, R.color.bn_text, 500);
+        name.setTextColor(text);
         if (simple) name.setMaxLines(side ? 3 : 2); else name.setSingleLine(true);   // the bento's game card has room for a long name in full
         name.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout pills = PUi.row(c);
         live = dot(c, good);
-        LinearLayout livePill = pill(c, live, "LIVE");
+        LinearLayout livePill = pill(c, live, "Live");
         modeText = (TextView) livePill.getChildAt(1);
         livePill.setOnClickListener(v -> openControl(v, true));
         pills.addView(livePill);
@@ -223,13 +226,15 @@ public final class StatsView extends FrameLayout {
         pills.addView(thrPill, gapLeft(c, 6));
         if (!shown.contains(StatsConfig.PILLS)) { drvPill.setVisibility(View.GONE); thrPill.setVisibility(View.GONE); }
         ImageView gear = PUi.iconButton(c, R.drawable.ic_settings, "Stats settings", PUi.Kind.QUIET, v -> { Haptics.play(v, Haptics.Word.TICK); openSheet(true); });
+        android.graphics.drawable.Drawable gs = Look.icon(c, "settings", Look.Ink.MENU);   // the top screen menu's solid icon (pis_settings), else the gear in its grey
+        if (gs != null) gear.setImageDrawable(gs); else gear.setColorFilter(text);
         gear.setAlpha(0.8f);
 
         // the frame rate and its target; ON PACE beside it (on the right, or next to it in Simple)
         LinearLayout big = PUi.row(c);
         big.setGravity(simple ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL : Gravity.BOTTOM);
-        TextView fpsView = PUi.text(c, "--", side ? 64 : stacked ? 100 : 52, R.color.bn_accent, 700);
-        fpsView.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        TextView fpsView = PUi.text(c, "--", side ? 64 : stacked ? 100 : 52, R.color.bn_accent, 500);
+        fpsView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));   // medium, as the top screen panel
         fpsView.setIncludeFontPadding(false);
         fps = new Num(fpsView, v -> String.format(Locale.ROOT, "%.0f", v), "--", 2f);
         big.addView(fpsView);
@@ -238,8 +243,9 @@ public final class StatsView extends FrameLayout {
         LinearLayout capPill = pill(c, null, null);
         capPill.setGravity(Gravity.CENTER_VERTICAL);
         capPill.setPadding(PUi.dp(c, 10), PUi.dp(c, 4), PUi.dp(c, 10), PUi.dp(c, 4));
-        target = PUi.text(c, "", 15, R.color.bn_text_2, 600);
-        target.setTypeface(Typeface.MONOSPACE);
+        target = PUi.text(c, "", 15, R.color.bn_text_2, 400);
+        target.setTextColor(text2);
+        target.setTypeface(Typeface.DEFAULT);
         target.setTextColor(labelCol);
         target.setIncludeFontPadding(false);
         capPill.addView(target);
@@ -251,8 +257,8 @@ public final class StatsView extends FrameLayout {
         capPill.addView(capCaret, gapLeft(c, 6));
         capPill.setOnClickListener(v -> openControl(v, false));
         // Simple: the pill on a line of its own under the frame rate, centred (beside a 100 sp number it was squeezed to a letter a line)
-        TextView paceView = PUi.text(c, "", 20, R.color.bn_text, 700);
-        paceView.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        TextView paceView = PUi.text(c, "", 20, R.color.bn_text, 500);
+        paceView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));   // medium, as the top screen panel
         paceView.setIncludeFontPadding(false);
         pace = new Num(paceView, v -> Math.round(v) + "%", "\u2014", 3f);
         View fpsBlock = big;
@@ -269,7 +275,7 @@ public final class StatsView extends FrameLayout {
             col.addView(big, PUi.wrap());
             col.addView(new View(c), new LinearLayout.LayoutParams(1, 0, 1f));
             LinearLayout paceRow = PUi.row(c);
-            android.graphics.drawable.Drawable g = Icons.get(c, "gauge", Icons.Ink.NORMAL);
+            android.graphics.drawable.Drawable g = Icons.get(c, "gauge", Icons.Ink.MENU);
             if (g != null) {
                 paceIcon = new ImageView(c);
                 paceIcon.setImageDrawable(g.mutate());
@@ -277,7 +283,7 @@ public final class StatsView extends FrameLayout {
             }
             paceView.setTextSize(18);
             paceRow.addView(paceView, paceRow.getChildCount() > 0 ? gapLeft(c, 6) : PUi.wrap());
-            paceRow.addView(label(c, "ON PACE"), gapLeft(c, 6));
+            paceRow.addView(label(c, "On pace"), gapLeft(c, 6));
             col.addView(paceRow, PUi.wrap());
             fpsBlock = col;
         } else if (simple) {
@@ -296,7 +302,7 @@ public final class StatsView extends FrameLayout {
             LinearLayout pc = column(c);
             pc.setGravity(Gravity.END);
             pc.addView(paceView, PUi.wrap());
-            PUi.add(pc, label(c, "ON PACE"), 3, PUi.wrap());   // wrap: a match_parent child in a wrap_content column is cut to its sibling's width
+            PUi.add(pc, label(c, "On pace"), 3, PUi.wrap());   // wrap: a match_parent child in a wrap_content column is cut to its sibling's width
             LinearLayout.LayoutParams pl = simple ? gapLeft(c, 20) : PUi.wrap();
             pl.bottomMargin = PUi.dp(c, simple ? 12 : 4);
             big.addView(pc, pl);
@@ -312,12 +318,14 @@ public final class StatsView extends FrameLayout {
             gbox.addView(graph, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PUi.dp(c, 66)));
             LinearLayout legend = PUi.row(c);
             TextView key = PUi.text(c, legendText(), 11, R.color.bn_text_2, 500);
-            key.setTypeface(Typeface.MONOSPACE);
+            key.setTextColor(text2);
+            key.setTypeface(Typeface.DEFAULT);
             key.setSingleLine(true);
             legend.addView(key, PUi.wrap());
             legend.addView(PUi.spacer(c));
             graphNote = PUi.text(c, "", 11, R.color.bn_text_2, 500);
-            graphNote.setTypeface(Typeface.MONOSPACE);
+            graphNote.setTextColor(text2);
+            graphNote.setTypeface(Typeface.DEFAULT);
             graphNote.setSingleLine(true);
             graphNote.setTextColor(labelCol);
             legend.addView(graphNote, PUi.wrap());
@@ -328,19 +336,19 @@ public final class StatsView extends FrameLayout {
 
         // the tiles: every one made, the shown ones (StatsConfig.tiles) laid out in rows of four at most, or two (Simple's 2 x 2)
         mGpu = new Meter(c); mCpu = new Meter(c); mSoc = new Meter(c); mBat = new Meter(c); mRam = new Meter(c);
-        frame = new Num(tileView(c, StatsConfig.FRAME, "FRAME", cFps, null), v -> unit(String.format(Locale.ROOT, "%.1f", v), " ms"), "\u2014", 1f);
-        vLow = tileView(c, StatsConfig.LOW, "1% LOW", cFps, null);
+        frame = new Num(tileView(c, StatsConfig.FRAME, "Frame", cFps, null), v -> unit(String.format(Locale.ROOT, "%.1f", v), " ms"), "\u2014", 1f);
+        vLow = tileView(c, StatsConfig.LOW, "1% low", cFps, null);
         gpu = new Num(tileView(c, StatsConfig.GPU, "GPU", cGpu, mGpu), v -> {
             int mhz = device.gpuMhz();
             return unit(Math.round(v) + "%", mhz > 0 ? " " + mhz + "MHz" : "");
         }, "\u2014", 5f);
         vCpu = tileView(c, StatsConfig.CPU, "CPU", cCpu, mCpu);
-        soc = new Num(tileView(c, StatsConfig.SOC, "TEMP", cSoc, mSoc), v -> Math.round(v) + "\u00B0", "\u2014", 2f);
-        vBat = tileView(c, StatsConfig.BAT, "BATTERY", cBat, mBat);
+        soc = new Num(tileView(c, StatsConfig.SOC, "Temp", cSoc, mSoc), v -> Math.round(v) + "\u00B0", "\u2014", 2f);
+        vBat = tileView(c, StatsConfig.BAT, "Battery", cBat, mBat);
         watts = new Num(vBat, v -> unit((wasCharging ? "+" : "") + String.format(Locale.ROOT, "%.1f", v), "W"), "\u2014", 0.5f);
-        vRam = tileView(c, StatsConfig.RAM, "GAME RAM", cMem, mRam);
+        vRam = tileView(c, StatsConfig.RAM, "Game RAM", cMem, mRam);
         Meter none = new Meter(c);
-        vRun = tileView(c, StatsConfig.RUN, "THIS RUN", PUi.col(c, R.color.bn_banana), none);
+        vRun = tileView(c, StatsConfig.RUN, "This run", PUi.col(c, R.color.bn_banana), none);
         none.setVisibility(View.INVISIBLE);   // no meter, but its room: the clock lines up with its neighbours
         List<String> shownTiles = StatsConfig.tiles(shown, device.hasGpu(), device.cpuKHz() > 0);
         LinearLayout grid = column(c);
@@ -623,7 +631,7 @@ public final class StatsView extends FrameLayout {
         paceNow = fresh ? GameStats.onPace(frames, n, PACE_FRAMES, tgt) : Float.NaN;
         pace.set(paceNow * 100f);
         pace.view.setTextColor(Float.isNaN(paceNow) ? text2 : paceNow >= 0.9f ? good : paceNow >= 0.75f ? warnYellow : warnRed);
-        if (paceIcon != null) paceIcon.setColorFilter(pace.view.getCurrentTextColor());   // the bento's gauge in the pace's colour
+        if (paceIcon != null) { int pc = pace.view.getCurrentTextColor(); if (pc == warnYellow || pc == warnRed) paceIcon.setColorFilter(pc); else paceIcon.clearColorFilter(); }   // the bento's gauge: a warning's colour
         float ft = Float.isNaN(rate) ? Float.NaN : 1000f / rate;
         frame.set(ft);
         frame.view.setTextColor(Float.isNaN(ft) || Float.isNaN(tgt) ? text : warn(FrameStats.level(ft, tgt)));
@@ -655,10 +663,10 @@ public final class StatsView extends FrameLayout {
         float cap = device.cpuCap();
         vCpu.setText(cur <= 0 ? "—" : unit(String.format(Locale.ROOT, "%.1f", cur / 1e6f), max > 0 ? String.format(Locale.ROOT, "/%.1fGHz", max / 1e6f) : "GHz"));
         // the cap (scaling_max_freq) is information, not a warning: a performance mode sets it as well as heat (slowStats)
-        ((TextView) vCpu.getTag()).setText(!Float.isNaN(cap) && cap < 0.99f ? "CPU CAP " + Math.round(cap * 100) + "%" : "CPU");
+        ((TextView) vCpu.getTag()).setText(!Float.isNaN(cap) && cap < 0.99f ? "CPU cap " + Math.round(cap * 100) + "%" : "CPU");
         mCpu.set(cur > 0 && max > 0 ? (float) cur / max : 0f, cCpu);
         int mode = Bridge.opModeSafe();   // the in-game panel can change it while the game runs
-        modeText.setText((mode == 1 ? "DOCKED" : mode == 0 ? "HANDHELD" : "LIVE") + (GameControls.host() != null && GameControls.host().consoleMode() >= 0 ? " \u25BE" : ""));
+        modeText.setText((mode == 1 ? "Docked" : mode == 0 ? "Handheld" : "Live") + (GameControls.host() != null && GameControls.host().consoleMode() >= 0 ? " \u25BE" : ""));
         state();
         if (infoLine != null) infoLine.setText(cause >= 0 ? PUi.joined(driver.getText(), thrText.getText()) : driver.getText());   // PEANUTS: PUi.joined, not a middle dot (test_separators)
     }
@@ -673,7 +681,7 @@ public final class StatsView extends FrameLayout {
         View p = (View) thrText.getParent();
         p.setVisibility(now < 0 || !shown.contains(StatsConfig.PILLS) ? View.GONE : View.VISIBLE);
         if (now < 0) return;
-        thrText.setText(now == GameStats.COOL ? "COOL" : now == GameStats.WARM ? "WARM" : now == GameStats.THROTTLING ? "THROTTLING" : "GPU-BOUND");
+        thrText.setText(now == GameStats.COOL ? "Cool" : now == GameStats.WARM ? "Warm" : now == GameStats.THROTTLING ? "Throttling" : "GPU-bound");
         int col = now == GameStats.COOL ? good : now == GameStats.THROTTLING ? warnRed : warnYellow;
         thrDot.setBackground(PUi.round(col, PUi.dp(getContext(), 3), 0, 0));
     }
@@ -681,7 +689,7 @@ public final class StatsView extends FrameLayout {
     private void slowStats() {
         Context c = getContext();
         String d = Hud.driverName();
-        driver.setText(d == null ? "" : d.toUpperCase(Locale.ROOT));
+        driver.setText(d == null ? "" : d);
         ((View) driver.getParent()).setVisibility(d == null || !shown.contains(StatsConfig.PILLS) ? View.GONE : View.VISIBLE);
 
         PowerManager pm = (PowerManager) c.getSystemService(Context.POWER_SERVICE);
@@ -701,7 +709,7 @@ public final class StatsView extends FrameLayout {
         mSoc.peak(socPeak == SocTemp.NONE ? -1f : socPeak / 100f);
         // the peak named when it is 3 degrees above now: a run that warmed and cooled again
         boolean peaked = t != SocTemp.NONE && socPeak >= t + 3;
-        ((TextView) soc.view.getTag()).setText(bento ? (peaked ? "\u25B2" + socPeak + "\u00B0 PEAK" : "NOW") : peaked ? "TEMP \u25B2" + socPeak + "\u00B0" : "TEMP");
+        ((TextView) soc.view.getTag()).setText(bento ? (peaked ? "\u25B2" + socPeak + "\u00B0 peak" : "Now") : peaked ? "TEMP \u25B2" + socPeak + "\u00B0" : "Temp");
 
         battery(c);
         memory(c);
@@ -728,7 +736,7 @@ public final class StatsView extends FrameLayout {
             mv = b.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1);
             charging = st == BatteryManager.BATTERY_STATUS_CHARGING || st == BatteryManager.BATTERY_STATUS_FULL || b.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0;
         }
-        if (level < 0) { watts.set(Float.NaN); lab.setText("BATTERY"); mBat.set(0f, good); iconTint(StatsConfig.BAT, good); return; }
+        if (level < 0) { watts.set(Float.NaN); lab.setText("Battery"); mBat.set(0f, good); iconTint(StatsConfig.BAT, good); return; }
         BatteryManager bm = (BatteryManager) c.getSystemService(Context.BATTERY_SERVICE);
         float amps = bm == null ? Float.NaN : GameStats.amps(bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW));
         long charge = bm == null ? -1 : bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER);
@@ -738,14 +746,14 @@ public final class StatsView extends FrameLayout {
         wasCharging = charging;
         if (!Float.isNaN(amps)) ampsAvg = Float.isNaN(ampsAvg) ? amps : ampsAvg + (amps - ampsAvg) * 0.3f;   // about 6 s to settle
         float w = GameStats.watts(ampsAvg, mv);
-        mBat.set(level / 100f, level <= 15 ? warnRed : level <= 30 ? warnYellow : good);
+        mBat.set(level / 100f, level <= 15 ? warnRed : level <= 30 ? warnYellow : cBat);
         iconTint(StatsConfig.BAT, level <= 15 ? warnRed : level <= 30 ? warnYellow : good);
         int left = charging ? -1 : GameStats.minutesLeftAt(charge, ampsAvg);
         if (!charging && left < 0) left = GameStats.minutesLeft(level, GameStats.drainPerHour(batFrom, batFromAt, level, now));
         String until = charging || left < 0 ? "" : GameStats.shortDuration(left);
         if (Float.isNaN(w)) {   // no current on this phone: the level is the value, as before
             watts.clear(level + "%");
-            lab.setText(charging ? "CHARGING" : left < 0 ? "BATTERY" : PUi.joined("BAT", until));
+            lab.setText(charging ? "Charging" : left < 0 ? "Battery" : PUi.joined("Bat", until));
         } else {
             watts.set(w);
             lab.setText(charging ? level + "% ⚡︎" : PUi.joined(level + "%", until));
@@ -824,43 +832,32 @@ public final class StatsView extends FrameLayout {
         LinearLayout box = column(c);
         int p = PUi.dp(c, 16);
         box.setPadding(p, p, p, p);
-        box.setBackground(PUi.round(black ? 0xFF1A140E : PUi.col(c, R.color.bn_card), PUi.dp(c, 16), track, PUi.dp(c, 1)));   // a hairline in the tiles' colour sets it off the page
+        box.setBackground(PUi.round(0xFF202124, PUi.dp(c, 16), track, PUi.dp(c, 1)));   // a hairline in the tiles' colour sets it off the page
         box.setClickable(true);   // a tap on the box is not a tap outside
-        box.addView(section(c, mode ? "CONSOLE MODE" : "FRAME RATE CAP"));
+        box.addView(section(c, mode ? "Console mode" : "Frame rate cap"));
         if (mode) {
             int cur = h.consoleMode();
-            LinearLayout row = PUi.row(c);
-            String[] names = {"Docked", "Handheld"};
-            for (int i = 0; i < 2; i++) {
-                int m = i;
-                row.addView(choice(c, names[i], m == cur, cur >= 0, v -> { h.consoleMode(m); modeText.setText((m == 0 ? "DOCKED" : "HANDHELD") + " \u25BE"); closeControl(); }), weighted(c, i));
-            }
-            PUi.add(box, row, 8);
+            PUi.add(box, choices(c, new String[] {"Docked", "Handheld"}, cur, new boolean[] {cur >= 0, cur >= 0},
+                    m -> { h.consoleMode(m); modeText.setText((m == 0 ? "Docked" : "Handheld") + " \u25BE"); closeControl(); }), 8);
             if (cur < 0) { TextView n = PUi.small(c, "This game's Resolution sets the mode (Game settings)."); n.setTextColor(labelCol); PUi.add(box, n, 8); }
         } else {
             int[] caps = h.caps();
-            int cur = h.cap();
-            LinearLayout row = null;
-            for (int i = 0; i < caps.length; i++) {
-                if (i % 3 == 0) { row = PUi.row(c); PUi.add(box, row, i == 0 ? 8 : 6); }
-                int v0 = caps[i];
-                row.addView(choice(c, h.capLabel(v0), v0 == cur, h.capOffered(v0), v -> {
-                    h.cap(v0);
-                    target.setText(capText(h));
-                    closeControl();
-                    // a pick the game takes only at its next start (to or from Game owned, a limited game's 120): the pop-up opens again with its note,
-                    // "Restart the game to apply 60 fps.", so the game running on at its old rate does not read as the pick not taken
-                    if (h.capRunning() != h.cap()) openControl(from, false);
-                }), weighted(c, i % 3));
-            }
-            for (int i = caps.length % 3; i != 0 && i < 3; i++) {   // the last row's empty places keep the widths; 1 px high: a bare View takes all the height it is offered
-                LinearLayout.LayoutParams lp = weighted(c, i);
-                lp.height = 1;
-                row.addView(new View(c), lp);
-            }
+            int cur = h.cap(), at = -1;
+            String[] labels = new String[caps.length];
+            boolean[] offered = new boolean[caps.length];
+            for (int i = 0; i < caps.length; i++) { labels[i] = h.capLabel(caps[i]); offered[i] = h.capOffered(caps[i]); if (caps[i] == cur) at = i; }
+            PUi.add(box, choices(c, labels, at, offered, i -> {
+                h.cap(caps[i]);
+                target.setText(capText(h));
+                closeControl();
+                // a pick the game takes only at its next start (to or from Game owned, a limited game's 120): the pop-up opens again with its note,
+                // "Restart the game to apply 60 fps.", so the game running on at its old rate does not read as the pick not taken
+                if (h.capRunning() != h.cap()) openControl(from, false);
+            }), 8);
             String note = h.capNote();
             if (note != null) { TextView n = PUi.small(c, note); n.setTextColor(labelCol); PUi.add(box, n, 8); }
         }
+        PanelPolish.apply(box);   // as the top screen panel's choices: up to 4 short ones one track, more a list with round marks
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(Math.min(PUi.dp(c, 360), getWidth() - 2 * PUi.dp(c, 24)), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
         scrim.addView(box, lp);
         popup = scrim;
@@ -869,12 +866,12 @@ public final class StatsView extends FrameLayout {
 
     /** The cap pill's text: the cap the game runs at ("120 FPS", "GAME OWNED"), and the picked one while it waits for a restart ("120 \u2192 90 FPS", "60 FPS \u2192 GAME") */
     private static String capText(GameControls.Host h) {
-        if (h.heldForHeat()) return "30 FPS (HOT)";   // held for heat: its pop-up's line says until when
+        if (h.heldForHeat()) return "30 FPS (hot)";   // held for heat: its pop-up's line says until when
         int run = h.capRunning(), picked = h.cap();
-        String a = h.capLabel(run).toUpperCase(Locale.ROOT);
+        String a = h.capLabel(run).replace("fps", "FPS");
         if (picked == run || picked == -1) return a;
-        String b = h.capLabel(picked).toUpperCase(Locale.ROOT).replace("GAME OWNED", "GAME");
-        a = a.replace("GAME OWNED", "GAME");
+        String b = h.capLabel(picked).replace("fps", "FPS").replace("Game owned", "Game");
+        a = a.replace("Game owned", "Game");
         if (a.endsWith(" FPS") && b.endsWith(" FPS")) a = a.substring(0, a.length() - 4);   // one unit for both: "120 \u2192 90 FPS"
         return a + " \u2192 " + b;
     }
@@ -886,22 +883,22 @@ public final class StatsView extends FrameLayout {
         touchedAt = SystemClock.elapsedRealtime();
     }
 
-    /** One option of a pop-up, in the sheet's PRESET style; {@code enabled} false: greyed out, no tap */
-    private TextView choice(Context c, String label, boolean on, boolean enabled, View.OnClickListener l) {
-        TextView b = PUi.text(c, label, 13, on ? R.color.bn_on_banana : R.color.bn_text, 700);
-        b.setGravity(Gravity.CENTER);
-        b.setSingleLine(true);
-        b.setPadding(PUi.dp(c, 6), PUi.dp(c, 10), PUi.dp(c, 6), PUi.dp(c, 10));
-        b.setBackground(PUi.round(on ? PUi.col(c, R.color.bn_banana) : track, PUi.dp(c, 10), 0, 0));
-        if (!enabled) b.setAlpha(0.35f);
-        else b.setOnClickListener(v -> { Haptics.play(v, Haptics.Word.CLICK); l.onClick(v); });
-        return b;
-    }
-
-    private static LinearLayout.LayoutParams weighted(Context c, int i) {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        if (i > 0) lp.leftMargin = PUi.dp(c, 6);
-        return lp;
+    /** A pop-up's choices, PanelPolish styles them; {@code enabled} false: greyed out, no tap */
+    private android.widget.RadioGroup choices(Context c, String[] labels, int picked, boolean[] enabled, java.util.function.IntConsumer pick) {
+        android.widget.RadioGroup g = new android.widget.RadioGroup(c);
+        for (int i = 0; i < labels.length; i++) {
+            int k = i;
+            android.widget.RadioButton b = new android.widget.RadioButton(c);
+            b.setId(View.generateViewId());
+            b.setText(labels[i]);
+            b.setTextSize(15);
+            b.setTextColor(enabled[i] ? text : text2);
+            g.addView(b);
+            b.setChecked(i == picked);
+            b.setEnabled(enabled[i]);
+            b.setOnClickListener(v -> { Haptics.play(v, Haptics.Word.CLICK); pick.accept(k); });
+        }
+        return g;
     }
 
     // ---- the settings sheet ----
@@ -915,7 +912,7 @@ public final class StatsView extends FrameLayout {
     /** Presets, the items shown and the burn-in guards; each change is kept at once (PeanutsPrefs) and the page made again behind the sheet */
     private View sheet(Context c) {
         FrameLayout f = new FrameLayout(c);
-        f.setBackgroundColor(blend(black ? Color.BLACK : PUi.col(c, R.color.bn_bg), Color.BLACK, 0.1f) & 0xF7FFFFFF);
+        f.setBackgroundColor(blend(black ? Color.BLACK : Look.RAIL, Color.BLACK, 0.1f) & 0xF7FFFFFF);
         f.setClickable(true);   // touches stop here, not on the card under it
         ScrollView sv = new ScrollView(c);
         sv.setFillViewport(true);
@@ -923,61 +920,69 @@ public final class StatsView extends FrameLayout {
         LinearLayout col = column(c);
         int pad = PUi.dp(c, 16);
         col.setPadding(pad + PUi.dp(c, 2), pad, pad + PUi.dp(c, 2), pad);
-        LinearLayout head = PUi.row(c);
-        head.addView(PUi.text(c, "Bottom screen stats", 17, R.color.bn_text, 800), PUi.weight());
-        ImageView close = PUi.iconButton(c, R.drawable.ic_close, "Close", PUi.Kind.QUIET, v -> { Haptics.play(v, Haptics.Word.TICK); openSheet(false); });
-        close.setLayoutParams(new LinearLayout.LayoutParams(PUi.dp(c, 36), PUi.dp(c, 36)));
-        head.addView(close);
-        col.addView(head);
+        // as the top screen's side panel (SidePanel, PanelPolish): a boxed back button beside the title, the presets one track, a switch a row
+        col.addView(sheetHead(c, "Bottom Screen Stats", "Close", v -> openSheet(false)));
 
-        PUi.add(col, section(c, "PRESET"), 8);
-        LinearLayout seg = PUi.row(c);
+        PUi.add(col, section(c, "Preset"), 16);
+        android.widget.RadioGroup seg = new android.widget.RadioGroup(c);   // PanelPolish makes it one track, the picked one brown
         String now = StatsConfig.match(shown);
         String[] names = {"Simple", "Normal", "Full", "Custom"};
         String[] keys = {StatsConfig.SIMPLE, StatsConfig.NORMAL, StatsConfig.FULL, StatsConfig.CUSTOM};
         for (int i = 0; i < keys.length; i++) {
             String k = keys[i];
-            boolean on = k.equals(now);
-            TextView b = PUi.text(c, names[i], 13, on ? R.color.bn_on_banana : R.color.bn_text, 700);
-            b.setGravity(Gravity.CENTER);
-            b.setPadding(0, PUi.dp(c, 8), 0, PUi.dp(c, 8));
-            b.setBackground(PUi.round(on ? PUi.col(c, R.color.bn_banana) : track, PUi.dp(c, 10), 0, 0));
-            if (k.equals(StatsConfig.CUSTOM)) { if (!on) b.setAlpha(0.45f); }   // Custom is what a change by hand makes, not a choice
+            android.widget.RadioButton b = new android.widget.RadioButton(c);
+            b.setId(View.generateViewId());
+            b.setText(names[i]);
+            b.setTextSize(15);
+            seg.addView(b);
+            b.setChecked(k.equals(now));
+            if (k.equals(StatsConfig.CUSTOM)) b.setEnabled(k.equals(now));   // Custom is what a change by hand makes, not a choice
             else b.setOnClickListener(v -> { Haptics.play(v, Haptics.Word.CLICK); setShown(StatsConfig.preset(k)); });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-            if (i > 0) lp.leftMargin = PUi.dp(c, 6);
-            seg.addView(b, lp);
         }
-        PUi.add(col, seg, 6);
+        PUi.add(col, seg, 8);
 
-        PUi.add(col, section(c, "SHOWN"), 12);
-        LinearLayout grid = column(c);
+        PUi.add(col, section(c, "Shown"), 16);
         for (int i = 0; i < StatsConfig.ITEMS.length; i++) {
             String k = StatsConfig.ITEMS[i];
-            addToggle(c, grid, StatsConfig.NAMES[i], shown.contains(k), v -> {
+            half(c, col, toggle(c, StatsConfig.NAMES[i], shown.contains(k), v -> {
                 java.util.Set<String> s = new java.util.LinkedHashSet<>(shown);
                 if (!s.remove(k)) s.add(k);
                 setShown(s);
-            });
+            }));
         }
-        PUi.add(col, grid, 6);
 
-        PUi.add(col, section(c, "OLED / BURN-IN"), 12);
-        LinearLayout guards = column(c);
+        PUi.add(col, section(c, "OLED / burn-in"), 16);
         for (int i = 0; i < StatsConfig.GUARDS.length; i++) {
             String k = StatsConfig.GUARDS[i];
-            addToggle(c, guards, StatsConfig.GUARD_NAMES[i], PeanutsPrefs.statsGuard(getContext(), k), v -> {
+            half(c, col, toggle(c, StatsConfig.GUARD_NAMES[i], PeanutsPrefs.statsGuard(getContext(), k), v -> {
                 PeanutsPrefs.statsGuard(getContext(), k, !PeanutsPrefs.statsGuard(getContext(), k));
                 build();
-            });
+            }));
         }
-        PUi.add(col, guards, 6);
         TextView note = PUi.small(c, "Kept for every game. A touch wakes a dimmed or black screen.");
         note.setTextColor(labelCol);
         PUi.add(col, note, 10);
+        PanelPolish.apply(col);
         sv.addView(col);
         f.addView(sv, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         return f;
+    }
+
+    /** The sheet's head: a boxed back button (the top screen panel's pis_back) beside the title */
+    private LinearLayout sheetHead(Context c, String title, String backLabel, View.OnClickListener back) {
+        LinearLayout head = PUi.row(c);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView close = PUi.iconButton(c, R.drawable.ic_back, backLabel, PUi.Kind.QUIET, v -> { Haptics.play(v, Haptics.Word.TICK); back.onClick(v); });
+        android.graphics.drawable.Drawable bs = Look.icon(c, "back", Look.Ink.MENU);
+        if (bs != null) close.setImageDrawable(bs); else close.setColorFilter(text);
+        close.setBackground(PUi.round(Look.ROW, PUi.dp(c, 12), 0, 0));
+        head.addView(close, new LinearLayout.LayoutParams(PUi.dp(c, 44), PUi.dp(c, 44)));
+        TextView t = PUi.text(c, title, 22, R.color.bn_text, 400);
+        t.setTextColor(text);
+        LinearLayout.LayoutParams tl = PUi.weight();
+        tl.leftMargin = PUi.dp(c, 14);
+        head.addView(t, tl);
+        return head;
     }
 
     private void setShown(Set<String> s) {
@@ -985,51 +990,38 @@ public final class StatsView extends FrameLayout {
         build();
     }
 
+    /** A section head, as the top screen panel's (PanelPolish: CONTROLLERS): bold capitals in peanut tan, spaced */
     private TextView section(Context c, String s) {
-        TextView t = label(c, s);
-        t.setTextColor(labelCol);
+        TextView t = PUi.text(c, s, 12, R.color.bn_text_2, 700);
+        t.setTextColor(Look.TAN);
+        t.setAllCaps(true);
+        t.setLetterSpacing(0.08f);
         return t;
     }
 
-    /** A toggle into a grid of three a row: its name and a small switch */
-    private void addToggle(Context c, LinearLayout grid, String label, boolean on, View.OnClickListener l) {
-        LinearLayout row = grid.getChildCount() == 0 ? null : (LinearLayout) grid.getChildAt(grid.getChildCount() - 1);
-        if (row == null || row.getChildCount() == 3) {
-            row = PUi.row(c);
-            PUi.add(grid, row, 6);
-        }
-        LinearLayout t = PUi.row(c);
-        t.setPadding(PUi.dp(c, 10), PUi.dp(c, 7), PUi.dp(c, 8), PUi.dp(c, 7));
-        t.setBackground(PUi.ripple(c, PUi.round(track, PUi.dp(c, 9), 0, 0)));
-        TextView n = PUi.text(c, label, 12, R.color.bn_text, 600);
-        n.setSingleLine(true);
-        n.setEllipsize(TextUtils.TruncateAt.END);
-        t.addView(n, PUi.weight());
-        t.addView(new Switch(c, on), new LinearLayout.LayoutParams(PUi.dp(c, 26), PUi.dp(c, 15)));
-        t.setOnClickListener(v -> { Haptics.play(v, Haptics.Word.CLICK); l.onClick(v); });
-        t.setContentDescription(label + (on ? ", on" : ", off"));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        if (row.getChildCount() > 0) lp.leftMargin = PUi.dp(c, 6);
-        row.addView(t, lp);
-        if (row.getChildCount() < 3 && grid.getChildCount() > 0) row.setWeightSum(3);   // a last row of fewer keeps the toggles' width
+    /** A switch row, as the top screen panel's (PanelPolish draws the switch): its name at the left, the switch at the right */
+    private android.widget.CheckBox toggle(Context c, String label, boolean on, View.OnClickListener l) {
+        android.widget.CheckBox b = new android.widget.CheckBox(c);
+        b.setText(label);
+        b.setTextSize(16);
+        b.setTextColor(text);
+        b.setChecked(on);
+        b.setOnClickListener(v -> { Haptics.play(v, Haptics.Word.CLICK); l.onClick(v); });
+        PanelPolish.apply(b);   // before it has a place: the switch, but not the panel's full width (half keeps it to its half)
+        return b;
     }
 
-    /** The sheet's small switch: a track and a thumb, the banana when on */
-    private final class Switch extends View {
-        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final RectF r = new RectF();
-        private final boolean on;
-        Switch(Context c, boolean on) { super(c); this.on = on; setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); }
-        @Override protected void onDraw(Canvas c) {
-            float w = getWidth(), h = getHeight(), g = h * 0.15f;
-            p.setColor(on ? 0xFFFFD43B : blend(track, text2, 0.25f));
-            r.set(0, 0, w, h);
-            c.drawRoundRect(r, h / 2, h / 2, p);
-            p.setColor(on ? 0xFF3B2A1A : text2);
-            float d = h - 2 * g, x = on ? w - g - d : g;
-            r.set(x, g, x + d, g + d);
-            c.drawOval(r, p);
-        }
+    /** A switch into two a row: the names are short, so the sheet fits the bottom screen with less scrolling */
+    private static void half(Context c, LinearLayout col, View t) {
+        View last = col.getChildCount() > 0 ? col.getChildAt(col.getChildCount() - 1) : null;
+        LinearLayout row;
+        if (last instanceof LinearLayout && "pair".equals(last.getTag()) && ((LinearLayout) last).getChildCount() == 1) row = (LinearLayout) last;
+        else { row = PUi.row(c); row.setTag("pair"); row.setWeightSum(2); col.addView(row, PUi.fill()); }   // weight sum 2: a last one alone keeps its half
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        // the weights share what the margins leave: a first one holds the whole 24 dp gap (alone, it lines up with the pairs), a second takes it over
+        if (row.getChildCount() > 0) { ((LinearLayout.LayoutParams) row.getChildAt(0).getLayoutParams()).rightMargin = 0; lp.leftMargin = PUi.dp(c, 24); }
+        else lp.rightMargin = PUi.dp(c, 24);
+        row.addView(t, lp);
     }
 
     // ---- helpers ----
@@ -1083,18 +1075,18 @@ public final class StatsView extends FrameLayout {
         int p = bigTiles ? 14 : 8;   // Simple's tiles: larger, to read at a glance
         t.setPadding(PUi.dp(c, p), PUi.dp(c, p + 1), PUi.dp(c, p), PUi.dp(c, p));
         t.setBackground(PUi.round(tileBg, PUi.dp(c, 10), 0, 0));
-        TextView v = PUi.text(c, "—", bigTiles ? 26 : 16, R.color.bn_text, 700);
-        v.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        TextView v = PUi.text(c, "—", bigTiles ? 26 : 16, R.color.bn_text, 500);
+        v.setTextColor(text);
+        v.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));   // medium, as the top screen panel
         v.setSingleLine(true);
         t.addView(v);
         LinearLayout l = PUi.row(c);
         l.setGravity(Gravity.CENTER_VERTICAL);
         // the reading's icon in its group's colour (tileIcon), else the dot of that colour (a build without the Peanuts icons)
-        android.graphics.drawable.Drawable ic = Icons.get(c, tileIcon(key), Icons.Ink.NORMAL);
+        android.graphics.drawable.Drawable ic = Icons.get(c, tileIcon(key), Icons.Ink.MENU);
         View d;
         if (ic != null) {
             ic = ic.mutate();
-            ic.setTint(dotColor);
             ImageView iv = new ImageView(c);
             iv.setImageDrawable(ic);
             int s = PUi.dp(c, bigTiles ? 16 : 14);
@@ -1137,21 +1129,20 @@ public final class StatsView extends FrameLayout {
         String icon, title;
         int col;
         switch (key) {
-            case StatsConfig.SOC: icon = "temp"; title = "TEMP"; col = cSoc; break;
-            case StatsConfig.BAT: icon = "battery"; title = "POWER"; col = cBat; break;
+            case StatsConfig.SOC: icon = "temp"; title = "Temp"; col = cSoc; break;
+            case StatsConfig.BAT: icon = "battery"; title = "Power"; col = cBat; break;
             case StatsConfig.RAM: icon = "storage"; title = "RAM"; col = cMem; break;
-            case StatsConfig.RUN: icon = "clock"; title = "TIME"; col = PUi.col(c, R.color.bn_banana); break;
+            case StatsConfig.RUN: icon = "clock"; title = "Time"; col = PUi.col(c, R.color.bn_banana); break;
             default: return;   // not one of Simple's: as it is
         }
         View value = t.getChildAt(0), line = t.getChildAt(1), meter = t.getChildCount() > 2 ? t.getChildAt(2) : null;
         ((LinearLayout) line).getChildAt(0).setVisibility(View.GONE);
         t.removeAllViews();
         LinearLayout head = PUi.row(c);
-        android.graphics.drawable.Drawable d = Icons.get(c, icon, Icons.Ink.NORMAL);
+        android.graphics.drawable.Drawable d = Icons.get(c, icon, Icons.Ink.MENU);
         if (d != null) {
             ImageView iv = new ImageView(c);
             d = d.mutate();
-            d.setTint(col);
             iv.setImageDrawable(d);
             head.addView(iv, new LinearLayout.LayoutParams(PUi.dp(c, 26), PUi.dp(c, 26)));
             tileIcons.put(key, iv);
@@ -1177,13 +1168,13 @@ public final class StatsView extends FrameLayout {
     }
 
     private static android.graphics.drawable.Drawable bentoBack(Context c, boolean black, int cardBg) {
-        return PUi.round(cardBg, PUi.dp(c, 20), black ? 0xFF221A12 : PUi.col(c, R.color.bn_card_stroke), PUi.dp(c, 1));
+        return PUi.round(cardBg, PUi.dp(c, 20), Look.RAIL_EDGE, PUi.dp(c, 1));
     }
 
-    /** A tile's icon in a state's colour (the battery's level, the SoC's heat), as its meter */
+    /** A tile's icon in a warning's colour (the battery's level, the SoC's heat), as its meter; its own inks otherwise */
     private void iconTint(String key, int color) {
         ImageView iv = tileIcons.get(key);
-        if (iv != null) iv.setColorFilter(color);
+        if (iv != null) { if (color == warnYellow || color == warnRed) iv.setColorFilter(color); else iv.clearColorFilter(); }
     }
 
     private static View dot(Context c, int color) {
@@ -1200,8 +1191,7 @@ public final class StatsView extends FrameLayout {
     }
 
     private TextView label(Context c, String s) {
-        TextView l = PUi.text(c, s, 11, R.color.bn_text_2, 600);
-        l.setLetterSpacing(0.08f);
+        TextView l = PUi.text(c, s, 11, R.color.bn_text_2, 400);
         l.setSingleLine(true);
         l.setTextColor(labelCol);
         return l;
@@ -1217,8 +1207,7 @@ public final class StatsView extends FrameLayout {
     }
 
     private TextView pillText(Context c, String s) {
-        TextView t = PUi.text(c, s, 11, R.color.bn_text_2, 600);
-        t.setLetterSpacing(0.06f);
+        TextView t = PUi.text(c, s, 11, R.color.bn_text_2, 400);
         t.setSingleLine(true);
         t.setTextColor(text2);   // the pills change, so not dimmed with the fixed labels
         return t;
@@ -1380,7 +1369,7 @@ public final class StatsView extends FrameLayout {
             lowLine.setColor(cFps);
             lowLine.setAlpha(190);
             lowLine.setStrokeWidth(PUi.dp(c, 1));
-            num.setTypeface(Typeface.MONOSPACE);
+            num.setTypeface(Typeface.DEFAULT);
             num.setTextSize(PUi.dp(c, 11));
             num.setTextAlign(Paint.Align.RIGHT);
             labelW = num.measureText("000") + PUi.dp(c, 6);
