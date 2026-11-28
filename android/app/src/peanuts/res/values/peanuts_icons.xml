@@ -14,6 +14,11 @@
     <style name="PeanutsIconQuiet" parent="PeanutsIcon">
         <item name="pnIconInk">@color/bn_text_2</item>
     </style>
+    <!-- The bottom screen stats page (dev.peanuts.ui.StatsView): the top screen game menu's inks (PeanutsSolidMenu), light grey and yellow -->
+    <style name="PeanutsIconMenu">
+        <item name="pnIconInk">#FFE8EAED</item>
+        <item name="pnIconKernel">#FFFFD54F</item>
+    </style>
     <!-- The selected entry, on banana yellow: shell and kernel in the brown of text on yellow -->
     <style name="PeanutsIconOnBanana">
         <item name="pnIconInk">@color/bn_on_banana</item>
