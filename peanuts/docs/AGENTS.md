@@ -110,6 +110,7 @@ this project has touched, and which edits are marked / queued for a Banana Nativ
 - **No private data:** no LAN or adb addresses, home or mount paths, work-folder paths, or personal e-mails in any
   committed file or message; use placeholders (`<work dir>`, `<device ip>`).
 - `sh peanuts/scripts/check-publish.sh` must print "clean" before any push.
+- Run `sh peanuts/scripts/install-hooks.sh` once in every clone (worktrees share its hooks): the `commit-msg` and `pre-push` hooks then refuse an AI trailer and run `check-publish.sh` on every push, so the rules above are checked, not only read. `CLAUDE.md` at the root links to this file and `CLAUDE.md` here to the `AGENTS.md` beside it, for agents that read only that name; the repository-wide notes are in `AGENTS.md` at the root. A Windows checkout with `core.symlinks=false` gets a one-line text file holding the target path instead of the link: open that path yourself.
 
 ## Where findings go
 
