@@ -3751,3 +3751,12 @@ Two profiles of the game that the OpenGL UI and no-colour draw sections above we
 | `dm/games/01005A20190A6000/shader_map.tsv`, `shader_facts.tsv`, `shader_pairs.tsv`, `shader_files.tsv`, and the same four in `dm/games/0100D2D0190A4000/` | new | the generated tables (the US ones copies of the EU ones) | allow-listed in `peanuts/upstream-unmarked.txt` |
 | `dm/games/README.md` | 2 | the two table rows | `<!-- PEANUTS: ... -->` in the row's last cell |
 | `docs/reference/rendering.md` | 3 | the Found on lines of the BGR5A1, no-colour draw and OpenGL UI entries link the EU profile | `<!-- PEANUTS -->` at the line's end |
+
+### The shader split reads NVN shaders inside PH3 archives (2026-11-28)
+
+The shader reader is not a shader-cache input (`dmsh_chain.py` `FILES`, `vk_android_build.py` `VK_FILES`), so no library version moves. It runs only on a file that starts with `PH3ARCV\0`, which no profile on `dev` reads.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/shader_split.py` | 2 | `p3a_shaders` and its branch in `scan_file_in`: a PH3 archive (version 1200) is read by its member index, and only the members named `*.nvn` are decoded (stored, LZ4, zstd, or zstd with the archive's dictionary) and scanned for GLSLC outputs; the other members are not read. Every size and offset is checked against the file before it is read, and a named shader that fails is an unreadable file. Trails beyond the Horizon 1.0.6 went from 18 shaders (those in `main`) to 10,320. Test: `test_split_p3a.py`. Upstream candidate: yes | `PEANUTS(upstream-candidate)` |
+| `dm/tools/tests/test_split_p3a.py` | new | an LZ4 member with one GLSLC output is found under its member name; a truncated member makes the file unreadable | `PEANUTS` |
