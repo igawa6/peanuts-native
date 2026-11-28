@@ -84,8 +84,9 @@ class Iga(unittest.TestCase):
     def test_other_files_and_versions(self):
         self.assertIsNone(ss.iga_entries(io.BytesIO(b'PAK\0' + bytes(0x40))))
         self.assertIsNone(ss.iga_entries(io.BytesIO(ss.IGA)))
-        with self.assertRaises(SystemExit) as e: ss.iga_entries(io.BytesIO(archive([('a', b'x', 'c')], version=12)))
-        self.assertIn('version 12', str(e.exception.code))
+        self.assertEqual(self.read(archive([('a', b'x', 'c')], version=12)), {'a': b'x'})   # PEANUTS: Crash N. Sane Trilogy uses igArchive v12
+        with self.assertRaises(SystemExit) as e: ss.iga_entries(io.BytesIO(archive([('a', b'x', 'c')], version=14)))
+        self.assertIn('version 14', str(e.exception.code))
         with self.assertRaises(SystemExit) as e: ss.iga_entries(io.BytesIO(archive([('a', b'x', 'c')], kind=3)))
         self.assertIn('compression 3', str(e.exception.code))
 

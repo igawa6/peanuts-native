@@ -3596,7 +3596,7 @@ def iga_entries(f):
     if len(h) < 0x38 or h[:4] != IGA: return None
     ver, _, nf, sector, _, _, nl, nm, ns = struct.unpack_from('<9I', h, 4)
     noff, nsz = struct.unpack_from('<QI', h, 0x28)
-    if ver != 13: red(f'igArchive version {ver}: only 13 is known')
+    if ver not in (12, 13): red(f'igArchive version {ver}: only 12 and 13 are known')   # PEANUTS(upstream-candidate): Crash N. Sane Trilogy uses igArchive v12
     if not sector or nf > 1 << 24 or max(nl, nm, ns) > 1 << 26 or nsz > 1 << 28: red('igArchive: a header count out of range')
     base = 0x38 + 4 * nf; tl = base + 16 * nf; tm = tl + 4 * nl; ts = tm + 2 * nm
     f.seek(0); t = f.read(ts + ns); f.seek(noff); names = f.read(nsz)
