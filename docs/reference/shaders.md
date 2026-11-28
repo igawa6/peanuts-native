@@ -2022,6 +2022,17 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Found on:** Tomodachi Life: Living the Dream (010051F0207B2000), the island's ground between two ground types.
 <!-- PEANUTS end -->
 
+<!-- PEANUTS begin: half conversions exact for fp16 subnormals. -->
+### Half conversions flushing fp16 subnormals on Adreno 6xx / 7xx
+
+- **Symptom:** (Android, Vulkan) effects that turn into white or black shapes, or NaN spreading through bloom, where a shader divides by a value it stored in half precision. No `[RED]` line.
+- **Cause:** Maxwell keeps fp16 denormals unless an instruction asks for FTZ, and the translator turns every conversion to and from half precision (`F2F.F16`, the operands and results of `HADD2` / `HMUL2` / `HFMA2`, half texture results) into GLSL.std.450 `PackHalf2x16` / `UnpackHalf2x16`. A device that cannot preserve fp16 denormals (`shaderDenormPreserveFloat16` false: Adreno 6xx / 7xx on Turnip and on Qualcomm's driver) may make those conversions with its half conversion, which gives 0 below 2^-14. A shader that divides by such a value gets infinity, then NaN: Fire Emblem Engage's engage-attack effects compute `1 - f16(a) * (1 / a)`.
+- **Fix:** with `DM_VK_FP16_EXACT=1` (restart; off by default) every module with half conversions is rewritten when it is made (`vka_spv_fp16_exact` in `vka_spvpatch.c`, from `prep_words` in `vka_shader.c`): each `PackHalf2x16` encodes a component below 2^-14 in magnitude as sign | round-to-even(|x| * 2^24), each `UnpackHalf2x16` decodes a half of exponent 0 as (-1)^sign * mantissa * 2^-24, both exact in fp32; other values keep the hardware's result. No library or chain change. The start of the log says whether the device preserves fp16 subnormals and whether the rewrite is on (`fp16 subnormals: ...`), and the first rewritten shaders are logged (`half conversions made exact for fp16 subnormals`).
+- **Check:** `t_android_spvpatch` (both instructions rewritten, `spirv-val` when on the `PATH`, and the arithmetic against the compiler's `_Float16` conversions for every subnormal half and a 2^-34 grid below 2^-14).
+- **Open:** whether the phones' drivers flush in these two instructions in a release game, and the cost in GPU time and pipeline creation. It stays off by default until a release game shows a picture change with it.
+- **Found on:** not yet in a release game here. Fire Emblem Engage's engage attacks are the case to compare with `DM_VK_FP16_EXACT=0` and `1`.
+<!-- PEANUTS end -->
+
 ## Optional page candidates for compute-mesh raw loads
 
 - **Symptom:** cached raw-load helpers still enter a full pool-table search on cold words whose pools cover no complete 2 MiB hint chunk.

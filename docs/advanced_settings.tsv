@@ -539,6 +539,7 @@ DM_VK_FG_OWNFMT	developer	Diagnostics			text			both
 DM_VK_FG_REFRESH_CAP	developer	Graphics			text			both						
 DM_VK_FOUT_COMPS	developer	Graphics			text			both						
 DM_VK_FOUT_RETYPE	developer	Graphics			text			both						
+DM_VK_FP16_EXACT	developer	Graphics			text		off	both						
 DM_VK_FRAME_RATE	developer	Memory			text			both						
 DM_VK_FRAME_RATE_HOLD	developer	Memory			text			both						
 DM_VK_FSR	developer	Graphics			text			both						

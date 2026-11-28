@@ -400,6 +400,16 @@ static void quad_shfl(uint64_t key, int stage, uint32_t **w, size_t *nb) {
     free(*w); *w = o; *nb = on * 4;
 }
 // PEANUTS end
+// PEANUTS begin: half conversions made exact for fp16 subnormals (vka_spv_fp16_exact has the why). DM_VK_FP16_EXACT=1 (restart, V.fp16_exact) on any device; off by default.
+// Logged for the first few shaders; a module that cannot be rewritten is used as built, with a red line
+static void fp16_exact(uint64_t key, uint32_t **w, size_t *nb) {
+    if (!V.fp16_exact) return;
+    size_t on = 0; int sites = 0; char e[160] = ""; uint32_t *o = vka_spv_fp16_exact(*w, *nb / 4, &on, &sites, e, sizeof e);
+    if (!o) { if (e[0]) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("shader %016llx: half conversions not made exact for fp16 subnormals: %s", (unsigned long long)key, e); } return; }
+    static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VLOG("shader %016llx: %d half conversions made exact for fp16 subnormals (DM_VK_FP16_EXACT)", (unsigned long long)key, sites);
+    free(*w); *w = o; *nb = on * 4;
+}
+// PEANUTS end
 // The library's words for a module, made ready for this device: subgroups of one lane where the stage has none (single_lane), a geometry shader's empty runs filled (gs_fill)
 static void prep_words(const dmsh_vk_entry *e, uint64_t key, uint32_t **w, size_t *nb) {
     if (e->stage == DMSH_VK_STAGE_FS) {   // PEANUTS(upstream-candidate): apply depth precision to existing packs and every derived pixel module.
@@ -410,6 +420,7 @@ static void prep_words(const dmsh_vk_entry *e, uint64_t key, uint32_t **w, size_
     if (e->flags & DMSH_VK_F_SUBGROUP) single_lane(key, e->stage, w, nb);
     if (e->flags & DMSH_VK_F_SUBGROUP) quad_shfl(key, e->stage, w, nb);   // PEANUTS: quad shuffles keep their helper lanes
     gs_fill(key, e->stage, w, nb);
+    fp16_exact(key, w, nb);   // PEANUTS: half conversions exact for fp16 subnormals (DM_VK_FP16_EXACT=1)
     vka_tf_prep(key, w, nb);   // PEANUTS: a transform feedback capture variant's words get their capture (vka_tf.c; a key of no variant, every library key among them: untouched)
 }
 // PEANUTS begin: tables of texture handles read through the texture pool (vka_spv_table_pool has the why: the translator's 32-element arrays over Hogwarts Legacy's
