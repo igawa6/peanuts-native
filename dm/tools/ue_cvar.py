@@ -59,6 +59,60 @@ def registered_at(word, text_end, j):
         else: val[d] = v
     return None
 
+# PEANUTS(upstream-candidate) begin: shared-base Unreal CVars
+def shared_base_at(word, text_end, j):
+    """Recognize an inline console variable using a shared global base."""
+    name = add_imm(word(j))
+    if not name or name[0] != 1:
+        return None
+
+    calls = 0
+    first = None
+
+    for t in range(j + 4, min(text_end, j + 96), 4):
+        u = word(t)
+
+        if u == RET or (u & 0xFC000000) == 0x14000000:
+            break
+
+        if is_adrp(u) and (u & 31) == 1:
+            break
+
+        if (u & 0xFFFFFC1F) == 0xD63F0000:
+            calls += 1
+            continue
+
+        if (u & 0xFFC0001F) != 0xF9000000:
+            continue
+
+        reg = (u >> 5) & 31
+        off = ((u >> 10) & 0xFFF) * 8
+
+        if not 19 <= reg <= 28:
+            continue
+
+        if calls == 1:
+            first = (reg, off)
+            continue
+
+        if calls != 2 or first != (reg, off - 8):
+            continue
+
+        for k in range(j - 4, max(-1, j - 0x2000), -4):
+            a = add_imm(word(k))
+            if not a or a[0] != reg or a[1] != reg:
+                continue
+
+            for h in range(k - 4, max(-1, k - 24), -4):
+                v = word(h)
+                if is_adrp(v) and (v & 31) == reg:
+                    return adrp_page(v, h) + a[2] + off - 16
+
+    return None
+
+
+# PEANUTS(upstream-candidate) end
+
 def find(img, text_end, ro_off, data_off, name):
     """(main's offset of the TAutoConsoleVariable registered under name, reason), or (None, why not); why starts '[RED] ' when the name is registered at more than one object"""
     word = lambda a: struct.unpack_from('<I', img, a)[0]
@@ -79,6 +133,8 @@ def find(img, text_end, ro_off, data_off, name):
                     if not a or a[2] != lo: continue
                     if not any(is_adrp(word(i)) and word(i) & 31 == a[1] and adrp_page(word(i), i) == s & ~0xFFF for i in range(max(0, j - 20), j, 4)): continue
                     o = registered_at(word, text_end, j)
+                    if o is None:
+                        o = shared_base_at(word, text_end, j)  # PEANUTS(upstream-candidate)
                     if o is not None: objs.add(o)
             s = img.find(pat, s + z, data_off)
     if not objs: return None, f'{name}: not registered'

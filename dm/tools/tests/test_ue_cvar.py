@@ -85,6 +85,32 @@ class FindTest(unittest.TestCase):
         self.assertIsNone(o)
         self.assertTrue(why.startswith('[RED] ') and '2 objects' in why, why)
 
+    # PEANUTS(upstream-candidate) begin
+    def test_shared_global_base(self):
+        def sequence(a):
+            base = 0xa000
+            w = [ADRP(23, a, base),
+                 ADDI(23, 23, 0x520)]
+            w += [0xd503201f] * 1100
+            pc = a + 4 * len(w)
+            w += [
+                ADRP(1, pc, NAME),
+                ADDI(1, 1, NAME & 0xfff),
+                BLR(8),
+                STRX(0, 23, 0x6d8 // 8),
+                ADDI(19, 23, 0x6d0),
+                LDRX(8, 0),
+                BLR(8),
+                STRX(0, 23, 0x6e0 // 8),
+                RET,
+            ]
+            return w
+
+        o, why = find(image(sequence, z=4))
+        self.assertEqual(o, 0xabf0, why)
+
+    # PEANUTS(upstream-candidate) end
+
     def test_find_all(self):
         found, why = ue_cvar.find_all(bytes(image(lambda a: register_form(a, NAME, OBJ))), TEXT, RO, DATA)
         self.assertEqual(found, {'t.MaxFPS': OBJ})
