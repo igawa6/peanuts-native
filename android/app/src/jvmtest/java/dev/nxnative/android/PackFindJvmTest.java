@@ -82,8 +82,29 @@ public final class PackFindJvmTest {
     public static void main(String[] args) throws Exception {
         File repo = new File(args[0]), t = new File(args[1]);
         finder(new File(t, "finder"));
+        guestShaders(new File(t, "guest"));   // PEANUTS: no stale NVN fallback for a corrupt direct Vulkan pack.
         scan(repo, new File(t, "scan"));
         System.out.println("ok " + n);
+    }
+
+    // PEANUTS: a synthetic bank tests the same checks the real collection packs need, without guest bytes.
+    static void guestShaders(File dir) throws IOException {
+        String id = "010090C022978001";
+        pack(dir, id, "abcd", BuildConfig.NX_DMSH_VK_CHAIN);
+        File meta = new File(dir, "pack.tsv"), main = new File(dir, "main.patched.bin");
+        String original = Files.readString(meta.toPath());
+        write(main, "abcd");
+        check(Pack.libraryProblem(dir, id) != null, "menu pack is not a member");
+        write(meta, original + "program\t1\n");
+        check(Pack.libraryProblem(dir, id) == null, "verified embedded bank");
+        write(meta, original.replace("main=abcd", "main=dcba") + "program\t1\n");
+        check(Pack.libraryProblem(dir, id) != null, "another main rejected even with the same bank");
+        write(meta, original + "program\t1\n");
+        write(main, "abxd");
+        check(Pack.libraryProblem(dir, id) != null, "corrupt bank");
+        check(Pack.playableLibrary(dir, id) == null && Pack.legacyLibrary(dir, id) == null, "no NVN fallback");
+        write(main, "ab");
+        check(Pack.libraryProblem(dir, id) != null, "short bank");
     }
 
     static void finder(File t) throws IOException {
