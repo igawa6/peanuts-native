@@ -44,6 +44,7 @@ final class Profile {
     int fpsLimitMax = 60;   // launcher-only opt-in to higher caps; does not change the runtime profile ABI
     int fpsTarget;   // PEANUTS: game.tsv fps_target (build.gradle fpsTargetOf), 0 without one: the host's default target, which a game without a frame limit starts at until the player picks a cap (Prefs.fpsCap)
     boolean thermalCap;   // PEANUTS: game.tsv thermal_cap 1: the launcher passes DM_THERMAL_CAP=1 (rates above 30 hold 30 while the phone is hot; hle_nvn.c thermal_capped)
+    private String threadTuning = "";   // PEANUTS: semicolon-separated model and main Build ID pairs from android_thread_tuning.
     String fpsRates = "";   // PEANUTS: "40,45" when every Android build's main has an engine row of a rate kind (hle_fpslock.c k_locks, build.gradle fpsRatesOf): the fps_target list offers them too (FrameRateCaps.targetCaps)
     boolean drs;   // game.tsv has drs_ctl rows (build.gradle drsOf): the host can steer the game's dynamic resolution (Prefs.drsGame)
     String recommend = "";   // game.tsv recommend rows (build.gradle recommendOf): "<match>|<setting>=<value> …", ';' between them; the recommended settings per phone (Recommend, Prefs.recommended)
@@ -83,6 +84,15 @@ final class Profile {
             if (row.startsWith(mainBuild + ",")) return true;
         return false;
     }
+    // PEANUTS begin: tuning is opt-in for an exact device model and pack build.
+    boolean threadTuningMatches(String model, String mainBuild) {
+        if (mainBuild == null || threadTuning.isEmpty()) return false;
+        String key = model + "|" + mainBuild;
+        for (String row : threadTuning.split(";")) if (row.equals(key)) return true;
+        return false;
+    }
+    // PEANUTS end
+
     // PEANUTS: the ordinary FPSLocker code plan requires a matching main build.
     boolean fpsLockerPlanMatches(String mainBuild) {
         if (fpsLockerPlan.isEmpty() || mainBuild == null) return true;
@@ -620,6 +630,7 @@ final class Profile {
             try { p.fpsTarget = c.length > 41 && !c[41].isEmpty() ? Math.max(0, Integer.parseInt(c[41])) : 0; } catch (NumberFormatException e) { p.fpsTarget = 0; }   // PEANUTS: fps_target
             p.fpsRates = c.length > 42 ? c[42] : "";   // PEANUTS: the rates the engine rows hold beyond 60, 30, 20 and 15
             p.thermalCap = c.length > 43 && c[43].equals("1");   // PEANUTS: thermal_cap
+            p.threadTuning = c.length > 44 ? c[44] : "";   // PEANUTS: android_thread_tuning
             out.add(p);
         }
         return Collections.unmodifiableList(out);

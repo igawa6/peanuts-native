@@ -567,7 +567,7 @@ static long cpu_max_khz(int c) {
     FILE *f = fopen(path, "r"); long v = 0; if (f) { if (fscanf(f, "%ld", &v) != 1) v = 0; fclose(f); }
     return v;
 }
-JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_pinThreads(JNIEnv *env, jclass cls) {
+JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_pinThreads(JNIEnv *env, jclass cls, jboolean separateMain) {   // PEANUTS
     (void)env; (void)cls;
     static cpu_set_t fast, mid; static int ready;
     if (!ready) {
@@ -584,6 +584,23 @@ JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_pinThreads(JNIEnv *env, 
         fprintf(stderr, "[nxlaunch] thread placement: the replay thread on %d core(s) at %ld MHz, the encoder and the game on %d%s\n",
                 CPU_COUNT(&fast), top / 1000, CPU_COUNT(&mid), CPU_EQUAL(&mid, &fast) ? " (the same: no middle cluster)" : "");
     }
+    // PEANUTS: With two fast cores, give replay and guest main one each. Leave the other guest threads on the middle cores.
+    cpu_set_t replay = fast, main_core = fast;
+    int isolate = separateMain && CPU_COUNT(&fast) == 2 && !CPU_EQUAL(&fast, &mid);
+    if (isolate) {
+        for (int c = 0; c < CPU_SETSIZE; ++c) {
+            if (!CPU_ISSET(c, &fast)) continue;
+            CPU_ZERO(&replay);
+            CPU_SET(c, &replay);
+            CPU_CLR(c, &main_core);
+            break;
+        }
+        static int reported;
+        if (!reported) {
+            fprintf(stderr, "[nxlaunch] thread placement: separate fast cores for Vulkan replay and guest main\n");
+            reported = 1;
+        }
+    }
     DIR *d = opendir("/proc/self/task"); if (!d) return 0;
     int placed = 0; struct dirent *e;
     while ((e = readdir(d))) {
@@ -596,7 +613,9 @@ JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_pinThreads(JNIEnv *env, 
         if (!g) continue;   // not a placed thread; looked at again next time (a thread may be renamed after it starts)
         // Checked every call, not once: the replay thread starts under the name of the game thread that made it, and Android resets every thread to all cores
         // when it moves the app between foreground and background
-        const cpu_set_t *to = g == 1 ? &fast : &mid; cpu_set_t cur;
+        const cpu_set_t *to = g == 1 ? &replay : &mid;
+        if (isolate && !strcmp(name, "0x1001 main thr")) to = &main_core;   // PEANUTS
+        cpu_set_t cur;
         if (!sched_getaffinity(tid, sizeof cur, &cur) && CPU_EQUAL(&cur, to)) continue;
         if (!sched_setaffinity(tid, sizeof *to, to)) placed++;   // fails while a core is parked (core control at low load): the next call places it
     }

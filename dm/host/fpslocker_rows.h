@@ -88,7 +88,8 @@ static inline int fpw_parse(const char *spec, const char *build,
                            "time_ratio_f32",   "flag_cap_u8", "target_i32", "zero_u16",
                            "time_step_pair_f32", "constant_i32",
                            "elapsed_fps_f32", "flag_cap_u32_gt", "step_ticks_u32", // PEANUTS: integer fixed step
-                           "target_offset_f32", "frame_offset_ms_f32"}; // PEANUTS: (fps + a) * b and b * 1000 / (fps + a)
+                           "target_offset_f32", "frame_offset_ms_f32",
+                           "vsync_floor_u32"}; // PEANUTS: Use a 60 Hz integer engine interval of at least one.
     for (unsigned i = 0; i < sizeof kinds / sizeof *kinds; i++)
       if (!strcmp(f[1], kinds[i]))
         r.kind = i + 1;
@@ -136,7 +137,7 @@ static inline int fpw_parse(const char *spec, const char *build,
         return -1;
       r.ticks = (uint32_t)ticks;
       r.ticks_max = (uint32_t)ceiling;
-    } else if ((r.kind >= 6 && r.kind <= 10) || r.kind >= 13) {
+    } else if ((r.kind >= 6 && r.kind <= 10) || (r.kind >= 13 && r.kind <= 19)) { // PEANUTS: Integer interval rows have no factors.
       if (!fpw_factors(f[4], &r.a, &r.b) ||
           (r.kind != 10 && r.kind != 14 && r.kind != 16 && r.a == 0))
         return -1;
@@ -306,6 +307,8 @@ static inline unsigned fpw_apply_context_storage(const struct fpw_rows *rows,
       value = (uint32_t)fps;
     else if (r->kind == 5)
       value = 60 / (unsigned)fps;
+    else if (r->kind == 20) // PEANUTS: The host paces presents at rates that do not divide 60.
+      value = fps >= 60 ? 1 : 60 / (unsigned)fps;
     else if (r->kind != 1) {
       float f = r->kind == 2 ? (float)fps : 1000.f / (float)fps;
       if (r->kind == 4)
@@ -322,7 +325,9 @@ static inline unsigned fpw_apply_context_storage(const struct fpw_rows *rows,
         f = r->b * (1000.f / ((float)fps + r->a));
       if (r->kind == 9) {
         double v = elapsed * r->a, lo = r->a / fps;
-        f = (float)(v < lo ? lo : v > r->b ? r->b : v);
+        if (v < lo) v = lo;
+        // PEANUTS: Honor the consumer's upper time-step bound even when the nominal step exceeds it.
+        f = (float)(v > r->b ? r->b : v);
       }
       // Reciprocal of the same clamped elapsed time used by time_ratio_f32:
       // games can consume seconds, a speed ratio and FPS in separate paths.

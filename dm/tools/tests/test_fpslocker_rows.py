@@ -63,6 +63,19 @@ int main(void) {
         fpw_apply(&r,base,rate,read_guest,write_guest);
         uint32_t integer;memcpy(&integer,mem+0x700,4);assert(integer==(unsigned)rate);
     }
+    // PEANUTS: The engine interval stays an integer while the host paces non-divisor rates.
+    const int rates[] = {20, 30, 40, 45, 60, 90, 120};
+    const uint32_t vsyncs[] = {3, 2, 1, 1, 1, 1, 1};
+    assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,vsync_floor_u32,@0x700,1,0",bid,&r)==1);
+    for (unsigned i=0; i<sizeof rates/sizeof *rates; i++) {
+        fpw_apply(&r,base,rates[i],read_guest,write_guest);
+        uint32_t interval; memcpy(&interval,mem+0x700,4);
+        assert(interval==vsyncs[i]);
+    }
+    assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,vsync_floor_u32,@0x700,1,1:1",bid,&r)==-1);
+    assert(fpw_parse("9fe60a212cff9b9a3656ab63d4f882e5,time_ratio_f32,@0x700,1,30:1",bid,&r)==1);
+    fpw_apply_context(&r,base,0,20,0.01,read_guest,write_guest);
+    assert(val(0x700)==1.0f);
     // PEANUTS: a dynamic clock must agree across ratio, reciprocal FPS and seconds,
     // including slow GPU frames, startup, and a movie's 32-bit state flag.
     const char *dynamic =

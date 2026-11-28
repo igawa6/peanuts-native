@@ -103,6 +103,11 @@ static thr_t *g_all;
 extern __thread _Atomic int dm_host_work;   // declared in hle.h too; defined in hle_nvn.c
 static _Atomic uint64_t g_preempt_n, g_preempt_ns;   // same-core handoffs: count and total wait (svc_thread)
 static int g_core_preempt;   // also check already-runnable peers after every thread SVC (profile / DM_PREEMPT)
+// PEANUTS: A departing peer can notify the main thread waiting on its same-core handoff.
+static int g_main_handoff_notify;
+static pthread_cond_t g_main_handoff_cv;
+static thr_t *g_main_handoff_peer;   // Read and write only while holding G.
+static void main_handoff_wait(thr_t *peer);
 
 static pthread_mutex_t G = PTHREAD_MUTEX_INITIALIZER;
 #define MAX_H 4096
@@ -157,7 +162,17 @@ static int thr_in_handoff(const thr_t *t, const thr_t *self) {
     return 0;
 }
 // Holding G. t blocked (a guest wait, a timed sleep, YieldToAnyThread): it gave its core back, so it no longer holds the threads whose handoff made it runnable
-static void hand_leave(thr_t *t) { t->nhand = 0; t->start_by = NULL; }
+// PEANUTS: Notify the guest main thread under G as its peer leaves the handoff.
+static void main_handoff_notify(thr_t *t) {
+    if (g_main_handoff_peer != t) return;
+    g_main_handoff_peer = NULL;
+    pthread_cond_signal(&g_main_handoff_cv);
+}
+static void hand_leave(thr_t *t) {
+    t->nhand = 0;
+    t->start_by = NULL;
+    main_handoff_notify(t);
+}
 // Connecting to a service takes the caller a few round trips, and threads it started on other cores run meanwhile. Mario Tennis Fever's boot stub builds its last decoder thread's arguments on its stack
 // (main+0x97c), starts that thread and calls nn::ro::Initialize, then reuses the same stack slots for a string (main+0xa04): on Horizon the thread has read them long before. The host's Initialize
 // returned at once, and the pthread started too late and read null (main+0x1dc0, once in a dozen boots on the Mac; nxnative b6dbb851). So this waits until the threads started so far have been
@@ -234,14 +249,24 @@ int dm_yield_to_core_peers(int all) {
     uint64_t bit = 1ull << (self->core & 63); int waited = 0;
     if (self->mask & ~bit) return 0;
     for (;;) {
-        int busy = 0;
+        thr_t *peer = NULL;
         pthread_mutex_lock(&G);
-        for (thr_t *t = g_all; t && !busy; t = t->all)
-            if (t != self && t->started && !t->exited && !t->host_owned && t->mask == bit && t->prio < self->prio && thr_runnable(t) && (all || thr_in_handoff(t, self))) { busy = 1; self->held_by = t->handle; }   // PEANUTS: held_by, for the state dump
-        if (!busy) self->held_by = 0;   // PEANUTS
-        pthread_mutex_unlock(&G);
-        if (!busy) return waited;
-        { struct timespec ts = {0, 50000}; nanosleep(&ts, 0); } waited = 1;
+        for (thr_t *t = g_all; t && !peer; t = t->all)
+            if (t != self && t->started && !t->exited && !t->host_owned && t->mask == bit && t->prio < self->prio && thr_runnable(t) && (all || thr_in_handoff(t, self))) peer = t;
+        self->held_by = peer ? peer->handle : 0;   // PEANUTS: held_by, for the state dump
+        if (!peer) {
+            pthread_mutex_unlock(&G);
+            return waited;
+        }
+        if (g_main_handoff_notify && !all && self->handle == 0x1001) {
+            main_handoff_wait(peer);
+            pthread_mutex_unlock(&G);
+        } else {
+            pthread_mutex_unlock(&G);
+            struct timespec ts = {0, 50000};
+            nanosleep(&ts, 0);
+        }
+        waited = 1;
     }
 }
 // Take a host lock that an HLE call holds while it runs guest code. A guest thread waiting for it is in a native HLE wait (dm_thread_native_wait), blocked as it would be
@@ -299,6 +324,20 @@ static void wait_cv_init(pthread_cond_t *cv) { pthread_condattr_t a; pthread_con
 #define WAIT_CLOCK CLOCK_REALTIME
 static void wait_cv_init(pthread_cond_t *cv) { pthread_cond_init(cv, NULL); }
 #endif
+// Hold G so a departing peer cannot signal between the predicate check and the wait.
+static void main_handoff_wait(thr_t *peer) {
+    struct timespec deadline;
+    clock_gettime(WAIT_CLOCK, &deadline);
+    // Recheck for runnable-state changes from affinity, pause or asynchronous host work.
+    deadline.tv_nsec += 1000000;
+    if (deadline.tv_nsec >= 1000000000) {
+        deadline.tv_sec++;
+        deadline.tv_nsec -= 1000000000;
+    }
+    g_main_handoff_peer = peer;
+    pthread_cond_timedwait(&g_main_handoff_cv, &G, &deadline);
+    g_main_handoff_peer = NULL;
+}
 // PEANUTS end
 // Suspend until woken or timed out (ns<0 infinite, 0 immediate timeout); returns wres or R_TIMEOUT
 static int64_t block_wait(thr_t *t, int kind, int64_t ns);
@@ -421,6 +460,7 @@ static void thread_exit(thr_t *t) {
     // No logging here: the exit happens on the guest thread's own stack (some are only a dozen or so KiB), and a printf with floating point would blow the stack (real-device smoke test: SIGBUS when LibcurlResolver exits, backtrace fprintf → __dtoa). Only the time is recorded, and it is printed later in the state dump
     pthread_mutex_lock(&G);
     t->exited = 1;
+    main_handoff_notify(t);   // PEANUTS
     wake_sync_waiters(t);   // Synchronization waiters on this thread re-check
     pthread_setspecific(g_keythr, NULL);
     if (t->closed) thr_free(t);
@@ -675,6 +715,11 @@ uint32_t svc_thread_main_init(void) {
     pthread_key_create(&g_keythr, NULL);
     qos_map_init();
     { const char *e = getenv("DM_PREEMPT"); g_core_preempt = e ? atoi(e) != 0 : DM_GAME_CORE_PREEMPT; }
+    { const char *e = getenv("DM_MAIN_HANDOFF_NOTIFY"); g_main_handoff_notify = e && atoi(e); }   // PEANUTS
+    if (g_main_handoff_notify) {
+        wait_cv_init(&g_main_handoff_cv);
+        LOG("main guest thread: notified same-core handoffs (DM_MAIN_HANDOFF_NOTIFY=1)");
+    }
     pause_install();
     hitch_init();
     thr_t *t = calloc(1, sizeof *t);
