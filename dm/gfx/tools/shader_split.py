@@ -1595,7 +1595,11 @@ def mtarc_members(d, label):
     # cannot decode is a 0x50 one (Resident Evil 6). A consistent 0x90 table is taken at once; any other is decoded once to check it first.
     rows = strict(128)
     if rows is None:
-        if wide_reads(): rows = wide()
+        if wide_reads():
+            rows = wide()
+            # Short-entry header padding can masquerade as an all-zero wide table.
+            if all(csz == usz == off == 0 for _, csz, usz, off in rows):
+                rows = strict(64) or rows
         else: rows = strict(64)
     if rows is None: red(f'{label}: no consistent ARC v7 entry layout (0x90 or 0x50)')
     for path, csz, usz, off in rows:

@@ -98,6 +98,14 @@ class MtFramework(unittest.TestCase):
                     (f'{label}@{len(head) + len(vcode) + len(vctl):#x}', 'ps', pctl, pcode),
                 ])
 
+    def test_arc_v7_short_entry_with_zero_padding(self):
+        payload = b'shader package'
+        offset = 0x8000
+        header = bytearray(self.arc(64, [(b'sc/root', payload, True)])[:88])
+        struct.pack_into('<I', header, 84, offset)
+        archive = header.ljust(offset, b'\0') + zlib.compress(payload)
+        self.assertEqual(list(ss.mtarc_members(archive, 'test.arc')), [('sc/root', payload)])
+
     def test_arc_v7_rejects_invalid_tables(self):
         arc = self.arc(64, [(b'first', b'one', False), (b'second', b'two', False)])
         for field, value in ((8 + 76, 8), (8 + 80 + 76, 8 + 160 + 1), (8 + 80 + 76, len(arc))):
