@@ -1,12 +1,15 @@
-# ooz: an open-source Oodle decoder, and unoodle, the PC builder's worker around it
+# ooz: an open-source Oodle decoder, and unoodle, the worker around it
 
 <!-- PEANUTS: this folder is Peanuts Native's; upstream Banana Native has none of it. -->
 
-Some games keep their shaders in Oodle-compressed files (Pokémon Legends: Arceus's GFPAK archives, the shader libraries of some Unreal games). The phone and the
-Mac's NSP script decode them with the game's own decoder. The PC builder has neither, so it (`peanuts/scripts/peanuts_build.py`,
-[BUILDER.md](../../../peanuts/docs/BUILDER.md)) builds `unoodle` from this folder and gives it to the shader split as `DM_OODLE_OOZ`.
+Some games keep their shaders in Oodle-compressed files (Pokémon Legends: Arceus's GFPAK archives, the Trinity packs of Pokémon Scarlet, Violet and Legends: Z-A,
+the shader libraries of some Unreal games). The Mac's NSP script decodes them with the game's own decoder. The PC builder has none, so it
+(`peanuts/scripts/peanuts_build.py`, [BUILDER.md](../../../peanuts/docs/BUILDER.md)) builds `unoodle` from this folder and gives it to the shader split as
+`DM_OODLE_OOZ`.
 
-`unoodle` is not in the Android app, not in the on-device packer and not in any release file. It is built on the user's PC, from source, when a game needs it.
+The phone decoded them with the game's own decoder too, which runs from the rewritten modules, so the split waited there for the rewrite beside it (FINAL
+FANTASY RESONANCE on an AYN Thor: 264 s of its 291 s). Since 2026-11-28 the APK carries the same worker as a library, `libunoodle.so` (`build.sh <output>.so`,
+made by `android/ondevice/build.sh <work dir> zbic`), and the split decodes with it first: see [On the phone](#on-the-phone).
 
 ## Licence: GPL-3.0-or-later, kept as a program of its own
 
@@ -18,8 +21,12 @@ links any file of this folder. The MIT tools (`dm/gfx/tools/shader_split.py`, `d
 to it over a pipe, with the protocol they already used for the game's own decoder (`DM_OODLE_SERVE`). They stay MIT. Whoever passes a built `unoodle` on must offer
 its source under the GPL: this folder at the same commit.
 
-Where it is listed: here, in [dm/third_party/README.md](../README.md), and in the builder's guide. It is not listed in
-[android/NOTICE.md](../../../android/NOTICE.md) and must not be: that file is the notice of the APK, which does not contain it.
+`libunoodle.so`, the phone's form, is the same code with `unoodle_main()` in place of `main()`. It is loaded only into a worker process the split starts for it
+(`nxpack_worker`, the APK's Python, under `/system/bin/linker64`), which talks to the split over the same pipe; nothing of the app links it. The APK is already a
+GPL-3.0-or-later work as a whole (its translator and the host's mesh emulation, [android/NOTICE.md](../../../android/NOTICE.md)), so carrying a GPL-3.0-or-later
+library changes nothing for it; the APK's notice lists it, and its source is this folder at the APK's commit.
+
+Where it is listed: here, in [dm/third_party/README.md](../README.md), in the builder's guide and in [android/NOTICE.md](../../../android/NOTICE.md).
 
 ### The open question upstream
 
@@ -82,6 +89,26 @@ they come from `<x86intrin.h>`, on arm64 from `ooz_neon.h` (AArch64 NEON). Any o
 Mac should build it as Linux does (not tried). Windows is not supported: the worker's guard pages use `mmap` and its pipes would need binary mode. The builder
 uses the worker on Linux and macOS and keeps its refusal on Windows.
 
+## On the phone
+
+`PackService` sets `DM_OODLE_OOZ_LIB=libunoodle.so` when the APK has the library (`findLibrary("unoodle")`) and the worker program is there. `shader_split.py`'s
+`oodle()` (Trinity packs, GFPAK entries, Unreal Engine 3 chunks, legacy and IoStore paks read inline, New Pokémon Snap's DRPF) and `ue_ondevice.py`'s `decode()`
+(Unreal shader code archives) then start `DM_UE_HOST`'s command with a few lines of Python that load the library and call `unoodle_main()`
+(`dm/gfx/tools/ooz_split.py`): no file of the app's storage is executed, and the guard pages below end that worker, not the app. That decoder needs no rewritten
+modules, so the split no longer waits for the rewrite beside it (`rewrite_wait.wait()` is called only where the game's own decoder starts).
+
+The rule of [Safety](#safety) holds on the phone in the split itself: ooz's output is written only when the split's tables are the profile's (`shader_split.py`
+`main`, `ooz_check`: `profile_differs`, byte for byte but for the keys of `shader_optional.tsv` and the other listed versions). When they are not, or the split
+stops while ooz was in use (a stream it refuses, a worker that does not start, a red line), the split runs again with the game's own decoder, which waits for the
+rewrite as before, and `PN_REUSE_DIR/ooz.refused` keeps that for the title's later splits of the same files (until the app, the profile's map or `main`
+changes). The targeted scan does not go on to a full scan with ooz: a targeted scan whose tables differ goes straight to the game's decoder. ooz's kept scan
+results are kept apart from the game decoder's (`DM_SPLIT_DECODER`, in `ScanCache`'s and `split_reuse.py`'s keys; `decoder ooz` in the decoded Unreal archives'
+stamp), so the rerun never takes a result ooz decoded. A profile without `shader_map.tsv` is never split with ooz. `DM_OODLE_OOZ_LIB=` (empty) in
+`ondevice/env.txt` forces the game's own decoder; an APK without the library decodes as before.
+
+The library carries the SHA-256 of this folder's sources in `build.sh`'s order (`unoodle_source=`), and the APK build refuses a stage library of other sources
+(`nxPackUnoodleCheck`). `-fno-strict-overflow` is in the flags (PR #889: clang miscopies Leviathan matches without it).
+
 ## Safety
 
 Upstream says the decoder is not fuzz safe. Its inputs here are the user's own game files, and the worker fails closed:
@@ -110,6 +137,12 @@ map and every record of the package hashed again.
 2026-11-17, arm64 macOS (Apple Silicon, Apple clang), the worker built with the three patches and `ooz_neon.h`, through the PC builder from FINAL FANTASY
 RESONANCE 1.0.1's `.nsp` files: the split's keys were all 73,496 of the profile's and no other (`ooz_split_checked`), and the pack played on an AYN Thor from
 a save in Chapter 1. Before that, `peanuts/tests/test_unoodle.py` compared every intrinsic of `ooz_neon.h` with SSE2's definition on 20,000 random registers.
+
+2026-11-28, x86-64 Linux, g++ 16.2 and the library form (`build.sh <output>.so`, run through `ooz_split.py`'s worker code), OCTOPATH TRAVELER 0 1.0.5 from its
+two `.nsp` files: the 10,596 Mermaid streams of a recorded Unreal job decode byte for byte to the game's own decoder's output, with the program and with the
+library; the targeted split with each (and `DM_UE_DECODE`) has the profile's four tables, byte for byte in their rows, and the same package. A stand-in decoder
+that changes one byte in every 50th stream sends the split back to the game's decoder, whose tables are the profile's again. The arm64 Android library is built
+with NDK 28.2 clang, not run here (no arm64 machine or emulator); it awaits a phone.
 
 Not checked: Leviathan and Selkie streams as such; any other game on arm64 (Arceus and Octopath Traveler 0 were checked on x86-64 only); clang beyond one job
 on x86-64; any other system. ooz issue #6 (a tANS-coded Mermaid chunk whose lookup table does not fit the scratch space) did not occur in these 16,515 type 10

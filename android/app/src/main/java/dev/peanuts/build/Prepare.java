@@ -305,6 +305,8 @@ final class Prepare {
                 String err = o.optString("error");
                 log("prepare: the job failed at " + step + ": " + err + (o.optString("error_detail").isEmpty() ? "" : " (" + o.optString("error_detail").replace('\n', ' ') + ")"));
                 String fix = o.optString("fix"), cause = o.optString("cause");
+                // a game file the split found damaged (issue #561): the same file stops the same way again, so the card offers the game's sheet, not Retry
+                if (dev.nxnative.android.PrepareText.CAUSE_DAMAGED.equals(cause)) throw new BuildListener.Failure(err, BuildListener.FILE_DAMAGED);
                 // Not pressed for the player when the cause is theirs to mend (add-on content that was not imported): the build stops with the card's words,
                 // and the card offers Import again with the DLC, and Try anyway as a choice
                 if (AutoRelax.asks(fix, cause, o.optBoolean("try_anyway"))) {

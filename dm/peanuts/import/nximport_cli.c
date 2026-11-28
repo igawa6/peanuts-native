@@ -3,7 +3,8 @@
 //   nximport_cli [--keys prod.keys] icon <nsp|xci|nsz|xcz> <title id|-> <out.png>
 //   nximport_cli [--keys prod.keys] nup [--keep-base] <out.nup> <base title id> <nsp|xci|nsz|xcz>...   (Ctrl-C stops it: no .nup, nothing left behind;
 //     --keep-base also writes the base package when an update carries the whole game)
-//   nximport_cli [--keys prod.keys] check <nsz|xcz>...  (every NCZ rebuilt and checked against its name and its CNMT; nothing is written)
+//   nximport_cli [--keys prod.keys] check <nsp|xci|nsz|xcz>...  (every NCZ rebuilt and checked against its name and its CNMT, every plain NCA read whole against
+//     its own hash layers, an update's RomFS when its base is among the files; nothing is written)
 //   nximport_cli [--keys prod.keys] fonts <firmware dir> <out dir>
 //   nximport_cli verify <file.nup>                 (lists every entry: size, offset, codec)
 //   nximport_cli cat <file.nup> <entry path> <out file>
@@ -53,6 +54,7 @@ static void on_int(int sig) { (void)sig; nximport_cancel(1); }   // Ctrl-C: the 
 
 static void tick(void *u, uint64_t n) { long long *d = u; d[0] += (long long)n; progress(NULL, "check", d[0], d[1]); }
 // every .ncz of a compressed dump rebuilt (a solid one only hashed: no temporary file) and checked as the import checks it → 0 all good
+static int ncz_seen;
 static int check(const char *path) {
     NxContainer c; NxTitle *ts = NULL; int nt = 0, bad = 0, seen = 0;
     if (nx_container_open(&c, path) || nx_container_titles(&c, &ts, &nt)) { fprintf(stderr, "%s: %s\n", path, nximport_last_error()); nx_container_close(&c); return 1; }
@@ -76,8 +78,61 @@ static int check(const char *path) {
         nx_ncz_close(z);
     }
     nx_ncz_thread_done();
-    printf("%s: %d compressed NCA%s, %s\n", path, seen, seen == 1 ? "" : "s", !seen ? "nothing to check (not an NSZ or XCZ)" : bad ? "DAMAGED" : "all good");
-    free(ts); nx_container_close(&c); return bad || !seen;
+    if (seen) printf("%s: %d compressed NCA%s, %s\n", path, seen, seen == 1 ? "" : "s", bad ? "DAMAGED" : "all good");
+    ncz_seen += seen;
+    free(ts); nx_container_close(&c); return bad;
+}
+
+// A plain NCA's sections read whole against their own hash layers, as the import checks them (nx_sec_verify, issue #561): every block of each section's data
+// level. A patch's RomFS needs its base among the files given (base: its program NCA, else the RomFS is left out and says so). → 0 when every block matched
+static int check_plain_nca(NxNca *n, const char *what, NxNca *base) {
+    static uint8_t buf[4u << 20]; int bad = 0;
+    for (int s = 0; s < 4; s++) {
+        NxSection *S = &n->sec[s];
+        if (!S->present || (S->fs_type != NX_FS_PFS0 && S->fs_type != NX_FS_ROMFS)) continue;
+        if (S->crypt_type == 4) {
+            int bs = base ? nx_nca_find_section(base, NX_FS_ROMFS) : -1;
+            if (bs < 0) { printf("  %s: section %d patches the base game's RomFS: give the base too to check it\n", what, s); continue; }
+            if (nx_nca_set_base(n, s, base, bs)) { printf("  %s: section %d: %s\n", what, s, nximport_last_error()); bad++; continue; }
+        }
+        double t = now(); uint64_t size = S->crypt_type == 4 ? S->bktr->total : S->size, done = 0, all = 0;
+        int rc = nx_sec_verify(n, s, what);
+        for (uint64_t o = 0; !rc && o < size; o += sizeof buf) rc = nx_sec_read_raw(n, s, o, buf, size - o < sizeof buf ? (size_t)(size - o) : sizeof buf);
+        nx_sec_check_count(n, s, &done, &all);
+        if (rc) { printf("  section %d (%s): %s\n", s, S->fs_type == NX_FS_ROMFS ? "RomFS" : "ExeFS", nximport_last_error()); bad++; }
+        else if (!all) printf("  %s: section %d has no hash layers this reader knows: not checked\n", what, s);
+        else printf("  %s: section %d (%s) ok, %llu of %llu blocks, %.2f GiB in %.1fs\n", what, s, S->fs_type == NX_FS_ROMFS ? "RomFS" : "ExeFS",
+                    (unsigned long long)done, (unsigned long long)all, size / 1073741824.0, now() - t);
+    }
+    return bad;
+}
+// every plain content NCA of the files (bases first, so an update finds its base among them) → 0 all good
+static int check_plain(char **paths, int np) {
+    NxContainer *c = calloc((size_t)np, sizeof *c); NxTitle **ts = calloc((size_t)np, sizeof *ts); int *nt = calloc((size_t)np, sizeof *nt), bad = 0, seen = 0;
+    NxNca *bases = calloc((size_t)np * 8, sizeof *bases); uint64_t *base_tid = calloc((size_t)np * 8, sizeof *base_tid); int nb = 0;
+    if (!c || !ts || !nt || !bases || !base_tid) { fprintf(stderr, "out of memory\n"); return 1; }
+    for (int i = 0; i < np; i++) {
+        c[i].fd = -1;
+        if (nx_container_open(&c[i], paths[i]) || nx_container_titles(&c[i], &ts[i], &nt[i])) { printf("%s: %s\n", paths[i], nximport_last_error()); bad++; nt[i] = 0; }
+    }
+    for (int pass = 0; pass < 3; pass++) for (int i = 0; i < np; i++) for (int k = 0; k < nt[i]; k++) {
+        const NxTitle *t = &ts[i][k]; const char *id = t->kind == 2 ? t->data : t->program; char nm[48], what[400];
+        if (t->kind != pass || !id[0]) continue;
+        snprintf(nm, sizeof nm, "%s.nca", id); const NxEntry *e = nx_container_find(&c[i], nm);
+        if (!e) continue;   // an NCZ (check above) or not in this file
+        const char *leaf = strrchr(paths[i], '/'); leaf = leaf ? leaf + 1 : paths[i];
+        if (t->kind == 0) snprintf(what, sizeof what, "%s: the base game", leaf); else if (t->kind == 1) snprintf(what, sizeof what, "%s: the update v%u", leaf, t->version);
+        else snprintf(what, sizeof what, "%s: the DLC %016llx", leaf, (unsigned long long)t->title_id);
+        NxNca n; if (nx_nca_open(&n, &c[i], e)) { printf("  %s: %s\n", what, nximport_last_error()); bad++; continue; }
+        seen++;
+        NxNca *base = NULL; for (int b = 0; b < nb && !base; b++) if (base_tid[b] == t->app_id) base = &bases[b];
+        bad += check_plain_nca(&n, what, base);
+        if (t->kind == 0 && nb < np * 8) { bases[nb] = n; base_tid[nb++] = t->title_id; } else nx_nca_close(&n);   // a base stays open for its updates
+    }
+    for (int b = 0; b < nb; b++) nx_nca_close(&bases[b]);
+    for (int i = 0; i < np; i++) { free(ts[i]); nx_container_close(&c[i]); }
+    if (seen || !ncz_seen) printf("%d plain NCA%s, %s\n", seen, seen == 1 ? "" : "s", bad ? "DAMAGED" : seen ? "all good" : "nothing to check");
+    free(c); free(ts); free(nt); free(bases); free(base_tid); return bad || (!seen && !ncz_seen);
 }
 
 static int list_cb(void *u, const char *path, unsigned long long size, unsigned long long off, int codec) {
@@ -121,7 +176,8 @@ int main(int argc, char **argv) {
     }
     if (!strcmp(cmd, "check")) {
         int bad = 0; signal(SIGINT, on_int);
-        for (; a < argc; a++) bad |= check(argv[a]);
+        for (int i = a; i < argc; i++) bad |= check(argv[i]);
+        bad |= check_plain(argv + a, argc - a);   // the plain NCAs of the same files, against their hash layers (issue #561)
         return bad;
     }
     if (!strcmp(cmd, "fonts")) {

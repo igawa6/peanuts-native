@@ -367,6 +367,10 @@ def functions_named(m):
     return {m.names.get(x[2], ''): x[2] for x in m.ins if x[0] & 0xffff == OP_FUNCTION}
 
 
+def has_spec_id(m, spec_id):   # PEANUTS: a value decorated SpecId spec_id (vk_android_build.py finish: a mesh module's GL depth constant; vk_android_spvn.py has the same)
+    return any(d.get(DEC_SPEC_ID) == [spec_id] for d in m.decos.values())
+
+
 def ensure_glsl(m):
     """The GLSL.std.450 import's id, added before OpMemoryModel when the module has none"""
     for x in m.ins:

@@ -10,7 +10,7 @@ On the Mac: the boot, the Bink opening movie, the title, Nell's introduction, a 
 |---|---|---|
 | Node area cut 1 GB → 62 MB, and 2 MB alignment for regions of 4 MB and more (SDK 20's) | `dm/tools/sdk_patches.py` SDK-wide rules, `sdk` build `d9add76f…` | StandardAllocator's region (more than 1 GB) aborted in `nninitStartup`; see [Memory](#memory) |
 | `sys_resource 0x1000000` | [`game.tsv`](game.tsv) | the NPDM declares 16 MB of system resource (virtual address memory) |
-| 5 GB block with a 2.5 GB pool: `mem_reserve 0x140000000`, `mem_alias 0x118000000`, `mem_stack 0x10000000`, `app_pool 0xA0000000` | `game.tsv` | Engage's 5 GB block (4.375 GB alias region) and pool. The heap check's 1 GB pool ran the game's malloc dry at the first loading screen; 2 GB ran out on Android once maps past the pool were refused ([Memory](#memory)) <!-- PEANUTS --> |
+| PEANUTS: a 16 GB alias region (address space only on Android) with the retail pool: `mem_reserve 0x428000000`, `mem_alias 0x400000000`, `mem_stack 0x10000000`, `app_pool 0xCD500000` | `game.tsv` | Engage's 5 GB block (4.375 GB alias region) and pool. The heap check's 1 GB pool ran the game's malloc dry at the first loading screen; 2 GB ran out on Android once maps past the pool were refused ([Memory](#memory)) <!-- PEANUTS --> |
 | `fpslocker … vsync_u32 0x481b2f8/0xb8/0x0`, `present_interval display`, `fps_limit 60` | `game.tsv` | Android: Unity renders every frame in battle, 60 fps where the Switch has 30 ([Frame rate](#frame-rate)) <!-- PEANUTS --> |
 | `pad_layout full` | `game.tsv` | the 3D gamepad layout: the map cursor moves with the D-pad |
 

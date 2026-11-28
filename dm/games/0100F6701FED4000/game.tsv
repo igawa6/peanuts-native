@@ -1,0 +1,27 @@
+# PEANUTS: The Legend of Heroes: Trails through Daybreak II, Switch base 1.0.0, SDK 17.5.6.
+title_id	0100F6701FED4000
+program_id	0100F6701FED4000
+name	The Legend of Heroes: Trails through Daybreak II
+ipa	Trails-through-Daybreak-II.ipa
+app_category	public.app-category.role-playing-games
+
+build	v0	1.0.0	main=49ee48d255d782fa3f7447bd71e55d1c	subsdk0=540b08ec046f39a50014ed6cd9117eb9	sdk=38873c89d24e5d11020e8d0aafe51cab
+package	v0
+shader_versions	v0
+
+# main imports NintendoSDK_movie; the host supplies rtld.
+modules	main subsdk0 sdk
+romfs_marker	asset/asset_config.json
+zip_store	.mp4:.nxopus:.nvn:.pac:.metallib
+
+# main reserves 10 * 0x4be00000 bytes in the alias region. Its heap can reach
+# 0x81600000 bytes with this application pool; leave 2.25 GiB for the heap.
+mem_reserve	0x4b0000000
+mem_alias	0x400000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# 16 MiB of system resources in main.npdm.
+sys_resource	0x1000000
+
+shader_groups	/asset/=asset /pac/=pac /system_nx/=systemnx
+shader_note	Trails through Daybreak II 1.0.0 NVN shaders

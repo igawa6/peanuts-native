@@ -13,6 +13,7 @@ Update 2.0.59001 (v786432) over the base game, SDK 16.2.0. Unity 2021.3.25f1 IL2
 | <!-- PEANUTS: raised from 0x60000000 to 0xCD500000 --> `app_pool 0xCD500000` (3.285 GB) | `game.tsv` | hardware pool; 1.5 GB caused a crash on Android at the cutscene-to-gameplay transition; see [Memory](#memory) |
 | `pad_layout full` | `game.tsv` | the 3D layout (D-pad, right stick) |
 | <!-- PEANUTS: prefer Turnip on Qualcomm < 512.800 --> `recommend … driver=18` | `game.tsv` | Qualcomm `512.762.41` draws broken graphics from boot and hangs (`VK_ERROR_DEVICE_LOST` at submission `1039`/`1076`); Turnip plays 20+ min at 60 fps |
+| <!-- PEANUTS: #907 as a profile key --> `push_desc_qcom_old off` | `game.tsv` | on Qualcomm `< 512.800` only, draw and compute layouts without push descriptors: pull request #907 reports that this fixes the overworld whiting out in pixel shader `4dcce9647508810e` (`SOS/VFX/MistMesh-V4`, #888) on `512.762.41`; not yet checked on a device by us. See [Push descriptors corrupt deferred UBO updates](../../../docs/reference/rendering.md#push-descriptors-corrupt-deferred-ubo-updates-inside-a-render-pass-on-qualcomms-driver-android) |
 
 No code of the game is cut. The game asks for present interval 1, so it needs no frame-rate key.
 
@@ -60,6 +61,7 @@ No code of the game is cut. The game asks for present interval 1, so it needs no
     - Earlier runs with smaller bounds hit pool refusal (`app_pool 0x60000000` at 1.43 GB mapped), alias VA exhaustion (`mem_alias 0x118000000` at `+4.25 GB` of `4.38 GB`), and 256 MB stack fragmentation on town exit (`sdk+0x136578` at 47 live stacks / `10 × 8 MB`).
     - With `app_pool 0xCD500000`, `mem_alias 0x400000000`, `mem_stack 0x80000000`, `mem_reserve 0x498000000`: played for 20+ minutes (`88,113` frames, clean user exit) through boot, MP4 intro, cutscenes, scripted battle, town, town exit, and further gameplay/battles at **60.0 fps median** (`p10 = 59.5 fps`, `p5 = 57.0 fps`, `max = 60.2 fps` across 298 five-second windows; brief loading-screen dips to `24.4–53.5 fps` with GPU busy `0.2–1.9 ms`). Zero failed pipelines (`234` graphics + `91` compute, `0` draws skipped waiting), zero audio underruns across `394,000+` device callbacks, `0` non-standard `[RED]` lines.
   - **System driver (Qualcomm `512.762.41` / `0x802fa029`):** broken graphics from boot and `VK_ERROR_DEVICE_LOST` (`-4`) GPU hang as pipelines start (submission `1039` / `1076`, including with `DM_VK_ZSHARE=0`). With `DM_VK_FD_ALIAS=0`, the readiness check marks it incompatible (`placed maps` is unsupported). Profile `recommend` row prefers Turnip (`driver=18`) on Qualcomm `< 512.800`.
+  - <!-- PEANUTS: #907 as a profile key --> 2026-11-27, pull request #907 (OnePlus 13R, Qualcomm `512.762.41`): the overworld whiteout in pixel shader `4dcce9647508810e` goes away with draw and compute layouts off push descriptors (`DM_VK_PUSH_DESC=0`), which the profile now asks for on Qualcomm `< 512.800` (`push_desc_qcom_old off`). Not yet checked on a device by us; the `recommend` row stays.
 
 ## Open
 

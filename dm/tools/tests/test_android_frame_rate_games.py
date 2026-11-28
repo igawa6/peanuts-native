@@ -279,6 +279,17 @@ EXPECTED = {
     '01004BC0166CC000': ('CRISIS CORE –FINAL FANTASY VII– REUNION', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '0100ACD0163D0000': ('Batman: Arkham Knight', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
     '010057D006492000': ('OCTOPATH TRAVELER', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
+    # PEANUTS: Xenoblade Chronicles 2 and 3 on the 0.1.10 release list (2026-11-27)
+    '0100E95004038000': ('Xenoblade Chronicles 2', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
+    '010074F013262000': ('Xenoblade Chronicles 3', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
+    # PEANUTS: Cult of the Lamb, Super Smash Bros. Ultimate and OCTOPATH TRAVELER II on the 0.1.10 release list (2026-11-28)
+    '01002E7016C46000': ('Cult of the Lamb', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
+    '01006A800016E000': ('Super Smash Bros. Ultimate', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
+    '0100A3501946E000': ('OCTOPATH TRAVELER II', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', 'profile 60', '-'),
+    # PEANUTS: THE HOUSE OF THE DEAD: Remake and 2: Remake, and Trails through Daybreak II on the 0.1.10 release list (2026-11-28)
+    '010088401495E000': ('THE HOUSE OF THE DEAD: Remake', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
+    '01007A3024D10000': ('THE HOUSE OF THE DEAD 2: Remake', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
+    '0100F6701FED4000': ('The Legend of Heroes: Trails through Daybreak II', 'target', '-', 'own,60,30,20,15', 'own,60,30,20,15', 'own,60,30,20,15', '60', '-'),
 }
 
 if __name__ == '__main__':

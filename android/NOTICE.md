@@ -23,6 +23,11 @@ build shader libraries is the same GPL combined work.
 [`dm/gfx/vk_android/vka_memu.c`](../dm/gfx/vk_android/vka_memu.c), `vka_memu_spv.c`, `vka_memu_draw.inc`, `vka_memu_abi.h` and the passes in `memu/`, after
 [Hokkaido](https://github.com/pavelgajdo/Hokkaido)'s compute mesh emulation (GPL-3.0-or-later; its #569 and #642), so every `libnxhost.so` is a GPL-3.0-or-later work as a whole.
 
+**The split's Oodle decoder is GPL-3.0-or-later.** <!-- PEANUTS --> `lib/arm64-v8a/libunoodle.so` is [ooz](https://github.com/powzix/ooz) by Powzix (its
+`kraken.cpp`, GPL-3.0-or-later by the notice in that file; upstream has no licence file) with Peanuts Native's worker around it, built from
+[`dm/third_party/ooz`](../dm/third_party/ooz/README.md) ([COPYING](../dm/third_party/ooz/COPYING)). The packer loads it only in a worker process of the shader split,
+which talks to it over a pipe (`dm/gfx/tools/ooz_split.py`); its source is that folder at the APK's commit.
+
 File-backed memory pools (the launcher's per-game **RAM saver (uses storage)**, `DM_MEM_FILEBACK`) come from [Anka Native](https://github.com/EddizEge/AnkaNative)
 v0.2.2 by EddizEge (MIT, "Copyright (c) 2026 EddizEge" with the MIT permission notice in [LICENSE](../LICENSE)): `dm/gfx/vk_android/vka_fileback.h` and its test
 `dm/host/tests/t_android_fileback.c` as they were there, the "File-backed pools" part of `dm/gfx/vk_android/vka_mem.c` with its hook in `dm/gfx/nvn/hle_nvn.c`, and the

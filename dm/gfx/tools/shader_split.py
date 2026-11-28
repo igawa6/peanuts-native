@@ -1541,18 +1541,65 @@ def pg_sized_shader(d, label):
     return [(f'{label}#PGSO', st, ctl, code)]
 
 MTARC, MTSPK = b'ARC\0', b'SPK\0'
+# PEANUTS(upstream-candidate) begin: detect both ARC v7 entry widths and stream SPK records.
 def mtarc_members(d, label):
-    """Capcom's MT Framework archive (The Great Ace Attorney Chronicles: 447 '.arc' files under nativeNXx64): 'ARC\\0', u16 version 7, u16 entry count, then one 0x90-byte entry per file
-    {char path[128] ('\\\\'-separated, no extension), u32 type hash, u32 stored length, u32 length in the low 29 bits (flags above), u32 offset}; the data is a zlib stream, or stored when the
-    stored length equals the length. → (path, data) of each entry"""
+    """Capcom MT Framework ARC v7: magic, u16 version, u16 count, then a table.
+    Entries are 0x90 bytes in The Great Ace Attorney Chronicles (128-byte path)
+    and 0x50 bytes in Resident Evil 6 (64-byte path). Four little-endian u32s
+    follow the path: type hash, stored size, size (low 29 bits) with flags, offset.
+    A member is stored if its sizes match, and zlib-compressed otherwise.
+    """
     import zlib
+    if len(d) < 8: red(f'{label}: truncated ARC header')
     ver, n = struct.unpack_from('<HH', d, 4)
     if ver != 7: red(f'{label}: ARC version {ver}: only version 7 is known')
-    for i in range(n):
-        o = 8 + 0x90 * i
-        path = d[o:o + 0x80].split(b'\0')[0].decode('latin-1')
-        csz, usz, off = struct.unpack_from('<3I', d, o + 0x84); usz &= 0x1fffffff
-        data = d[off:off + csz] if csz == usz else zlib.decompress(d[off:off + csz])
+    if not n: return
+
+    def strict(path_size):
+        """The table at this width, or None unless every path is printable and non-empty and every entry lies inside the file, after the table and after the entry before it"""
+        stride = path_size + 16
+        end = 8 + stride * n
+        if end > len(d): return None
+        rows = []
+        for i in range(n):
+            o = 8 + stride * i
+            path = d[o:o + path_size].split(b'\0', 1)[0].decode('latin-1')
+            csz, usz, off = struct.unpack_from('<3I', d, o + path_size + 4)
+            if not path or not path.isprintable() or off < end or off + csz > len(d):
+                return None
+            rows.append((path, csz, usz & 0x1fffffff, off))
+            end = off + csz
+        return rows
+
+    def wide():
+        """The 0x90 table read the way the reader always has, with no order or bounds checks of its own: entries may be out of order or overlap"""
+        rows = []
+        for i in range(n):
+            o = 8 + 0x90 * i
+            path = d[o:o + 0x80].split(b'\0')[0].decode('latin-1')
+            csz, usz, off = struct.unpack_from('<3I', d, o + 0x84)
+            rows.append((path, csz, usz & 0x1fffffff, off))
+        return rows
+
+    def member(path, csz, usz, off):
+        return d[off:off + csz] if csz == usz else zlib.decompress(memoryview(d)[off:off + csz])
+
+    def wide_reads():
+        """Whether every 0x90 entry decodes to its stated length (what failed with a struct, zlib or [RED] length error before the 0x50 layout was known)"""
+        try:
+            return all(len(member(*r)) == r[2] for r in wide())
+        except (struct.error, zlib.error):
+            return False
+
+    # The Great Ace Attorney Chronicles' 0x90 archives keep the reading they always had: the strict checks only decide whether an archive the 0x90 reading
+    # cannot decode is a 0x50 one (Resident Evil 6). A consistent 0x90 table is taken at once; any other is decoded once to check it first.
+    rows = strict(128)
+    if rows is None:
+        if wide_reads(): rows = wide()
+        else: rows = strict(64)
+    if rows is None: red(f'{label}: no consistent ARC v7 entry layout (0x90 or 0x50)')
+    for path, csz, usz, off in rows:
+        data = member(path, csz, usz, off)
         if len(data) != usz: red(f'{label}#{path}: {len(data):#x} bytes, the entry says {usz:#x}')
         yield path.replace('\\', '/'), data
 
@@ -1560,8 +1607,12 @@ def mtspk_shaders(d, label):
     """MT Framework's shader package ('SPK\\0'; The Great Ace Attorney Chronicles keeps its only one, sc\\NX_64\\root, in sa/NX_64/root.arc): after the package's tables every shader is a
     code area followed directly by its control section, back to back to the end of the file (230 vertex shaders, then 230 pixel shaders). Each control section names its code length (+0x704),
     so the code area is the bytes right before it, and every block must start where the previous one ended. The tables that say which vertex and pixel shaders the engine combines are not
-    read, so the shaders are paired as single-stage programs (separable_pairs)"""
-    out, end, c = [], None, d.find(CTL_MAGIC)
+    read, so the shaders are paired as single-stage programs (separable_pairs).
+    Resident Evil 6 (SDK 6.5.0) uses the same control and code layout in its four
+    packages. Records are yielded one at a time, so mtarc_shaders adds them to its
+    list without first building a second list of the package (GameStage is 424 MB).
+    """
+    end, c = None, d.find(CTL_MAGIC)
     while c >= 0:
         nctl, ncode = struct.unpack_from('<I', d, c + 0x20)[0], struct.unpack_from('<I', d, c + 0x704)[0]
         a = c - ncode
@@ -1570,11 +1621,11 @@ def mtspk_shaders(d, label):
         st = sph_stage(code)
         why = check(label, st, ctl, code) if st else 'no stage in the SPH'
         if why: red(f'{label} SPK @{a:#x}: {why}')
-        out.append((f'{label}#MTSPK@{a:#x}', st, ctl, code))
+        yield f'{label}#MTSPK@{a:#x}', st, ctl, code
         end = c + nctl; c = d.find(CTL_MAGIC, end)
     if end != len(d): red(f'{label} SPK: the last shader ends at {end}, not at the end of the package ({len(d):#x})')
-    return out
 
+# PEANUTS(upstream-candidate) end
 def mtarc_shaders(d, label, out):
     for path, m in mtarc_members(d, label):
         if m[:4] == MTSPK: out.extend(mtspk_shaders(m, f'{label}#{path}'))
@@ -2458,25 +2509,54 @@ def raw_shaders(d, label, known=()):
     return nx + out   # PEANUTS(upstream-candidate): nx
 
 ONEPACK = b'ONEPACK\0'
+# PEANUTS begin: the FlatBuffers readers check every offset against the file (GitHub issue #561: a garbled index in Pokémon Legends: Z-A's data.trpfs pointed
+# past its end, and the split stopped with a raw struct.error). FbOutside names the place; trpfs_jobs and trinity_shaders say the game file is damaged
+class FbOutside(Exception):
+    def __init__(self, at, n, size): super().__init__(f'{n} bytes at {at:#x} lie outside the {size:#x} bytes of the file'); self.at, self.size = at, size
+
+def fb_u(fmt, d, at):
+    """struct.unpack_from(fmt, d, at)[0], or FbOutside when the bytes are not inside d"""
+    n = struct.calcsize(fmt)
+    if not 0 <= at <= len(d) - n: raise FbOutside(at, n, len(d))
+    return struct.unpack_from(fmt, d, at)[0]
+
+def fb_array(fmt, d, st, n):
+    """n values of one struct format from st, or FbOutside when they are not inside d"""
+    w = struct.calcsize(fmt)
+    if not (0 <= st and 0 <= n and w * n <= len(d) - st): raise FbOutside(st, w * n, len(d))
+    return struct.unpack_from(f'<{n}{fmt[-1]}', d, st)
+
+def damaged(where, e):
+    """The split's end for an index that points outside its own file: a damaged or incomplete game file, which a retry cannot mend (PrepareText.toolStopped)"""
+    red(f'{where}: the game file is damaged: its index points outside it ({e}). Copy or dump the game again, then import it again')
+# PEANUTS end
+
+def fb_text(d, s):   # PEANUTS: a string's bytes inside the file and readable as text, else FbOutside (a garbled descriptor is a damaged file, GitHub issue #561)
+    """FlatBuffers: the string at s (u32 length, then its bytes)"""
+    n = fb_u('<I', d, s)
+    if n > len(d) - s - 4: raise FbOutside(s + 4, n, len(d))
+    try: return bytes(d[s + 4:s + 4 + n]).decode()
+    except UnicodeDecodeError: raise FbOutside(s + 4, n, len(d)) from None
+
 def fb_field(d, t, i):
     """FlatBuffers: absolute offset of field i of the table at t, None when the field is absent"""
-    vt = t - struct.unpack_from('<i', d, t)[0]
-    if 4 + 2 * i >= struct.unpack_from('<H', d, vt)[0]: return None
-    off = struct.unpack_from('<H', d, vt + 4 + 2 * i)[0]
+    vt = t - fb_u('<i', d, t)   # PEANUTS: offsets checked (fb_u)
+    if 4 + 2 * i >= fb_u('<H', d, vt): return None
+    off = fb_u('<H', d, vt + 4 + 2 * i)
     return t + off if off else None
 
 def fb_vec(d, t, i):
     """FlatBuffers: (start, count) of the vector in field i"""
     p = fb_field(d, t, i)
     if p is None: return 0, 0
-    p += struct.unpack_from('<I', d, p)[0]
-    return p + 4, struct.unpack_from('<I', d, p)[0]
+    p += fb_u('<I', d, p)   # PEANUTS: offsets checked (fb_u)
+    return p + 4, fb_u('<I', d, p)
 
 def fb_refs(d, t, i):   # the tables / strings a vector of offsets points at
     st, n = fb_vec(d, t, i)
-    return [st + 4 * k + struct.unpack_from('<I', d, st + 4 * k)[0] for k in range(n)]
+    return [st + 4 * k + v for k, v in enumerate(fb_array('<I', d, st, n))]   # PEANUTS: offsets checked (fb_array)
 
-def fb_root(d, at=0): return at + struct.unpack_from('<I', d, at)[0]
+def fb_root(d, at=0): return at + fb_u('<I', d, at)   # PEANUTS: offsets checked (fb_u)
 
 def trpfs_jobs(files, parts=64, targeted=False):   # PEANUTS: select Trinity packs for a known shader map
     """Game Freak's Trinity engine (Pokémon Legends: Z-A): almost everything is in arc/data.trpfs, packs of files, with arc/data.trpfd as their index, both FlatBuffers. The descriptor's root table:
@@ -2490,18 +2570,25 @@ def trpfs_jobs(files, parts=64, targeted=False):   # PEANUTS: select Trinity pac
         if not p.endswith('.trpfs') or not os.path.exists(p[:-1] + 'd'): continue
         with open(p, 'rb') as f:
             if f.read(8) != ONEPACK: continue
-        fd = open(p[:-1] + 'd', 'rb').read(); fr = fb_root(fd)
-        hashes = struct.unpack_from(f'<{fb_vec(fd, fr, 0)[1]}Q', fd, fb_vec(fd, fr, 0)[0])
-        names = [fd[s + 4:s + 4 + struct.unpack_from('<I', fd, s)[0]].decode() for s in fb_refs(fd, fr, 1)]
-        pack_of = {h: struct.unpack_from('<Q', fd, fb_field(fd, t, 0))[0] if fb_field(fd, t, 0) is not None else 0 for h, t in zip(hashes, fb_refs(fd, fr, 2))}
-        sizes = [struct.unpack_from('<Q', fd, fb_field(fd, t, 0))[0] for t in fb_refs(fd, fr, 3)]
+        fd = open(p[:-1] + 'd', 'rb').read()
+        try:   # PEANUTS: an index that points outside its own file is a damaged game file (damaged), not a struct.error
+            fr = fb_root(fd)
+            hashes = fb_array('<Q', fd, *fb_vec(fd, fr, 0))
+            names = [fb_text(fd, s) for s in fb_refs(fd, fr, 1)]
+            pack_of = {h: fb_u('<Q', fd, fb_field(fd, t, 0)) if fb_field(fd, t, 0) is not None else 0 for h, t in zip(hashes, fb_refs(fd, fr, 2))}
+            sizes = [fb_u('<Q', fd, fb_field(fd, t, 0)) for t in fb_refs(fd, fr, 3)]
+        except FbOutside as e: damaged(f'/{r[:-1]}d', e)
         with open(p, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as d:
-            sr = fb_root(d, struct.unpack_from('<Q', d, 8)[0]); st, n = fb_vec(d, sr, 1)
-            packs = []
-            for off in struct.unpack_from(f'<{n}Q', d, st):
-                pr = fb_root(d, off); h0 = fb_vec(d, pr, 0)
-                if not h0[1] or struct.unpack_from('<Q', d, h0[0])[0] not in pack_of: red(f'{r}: the pack at {off:#x} has no file the descriptor lists')
-                i = pack_of[struct.unpack_from('<Q', d, h0[0])[0]]; packs.append((off, names[i], sizes[i]))
+            try:   # PEANUTS: the same for the packs' table at the end of the file
+                sr = fb_root(d, fb_u('<Q', d, 8)); st, n = fb_vec(d, sr, 1)
+                packs = []
+                for off in fb_array('<Q', d, st, n):
+                    pr = fb_root(d, off); h0 = fb_vec(d, pr, 0)
+                    if not h0[1] or fb_u('<Q', d, h0[0]) not in pack_of: red(f'{r}: the pack at {off:#x} has no file the descriptor lists')
+                    i = pack_of[fb_u('<Q', d, h0[0])]
+                    if i >= min(len(names), len(sizes)): raise FbOutside(off, 8, len(d))   # a pack index past the descriptor's lists
+                    packs.append((off, names[i], sizes[i]))
+            except FbOutside as e: damaged(f'/{r}', e)
         # PEANUTS begin: a Trinity source records the pack name after the archive path. Compare all result tables before accepting this subset.
         if targeted:
             prefix = r + '#'
@@ -2600,12 +2687,13 @@ def oodle_ask(comp, n):
         # PEANUTS begin: on the phone there is no host executable: the title's host library in a worker process, as for an Unreal game's shader archives (ue_ondevice.py DeviceOodle;
         # PackService sets DM_UE_HOST, DM_UE_HOST_LIB and DM_UE_MODULES for the split step). Pokemon Legends: Arceus's 678 GFPAK archives stopped the build there without it
         dev, lib, dmods = os.environ.get('DM_UE_HOST', ''), os.environ.get('DM_UE_HOST_LIB', ''), os.environ.get('DM_UE_MODULES', '')
-        # PEANUTS: DM_OODLE_OOZ=<helper> (opt-in, for a PC that has neither the Mac host nor the phone's library): a worker built from the open-source ooz decoder answers the
-        # same requests instead of the game's own decoder. It is not the game's code, so its output counts only once the split's tables are the profile's (every key hashes its shader's bytes)
-        ooz = os.environ.get('DM_OODLE_OOZ', '')
-        if ooz: argv = [ooz]
+        # PEANUTS: the ooz worker (DM_OODLE_OOZ, the PC builder's; DM_OODLE_OOZ_LIB, the phone's: ooz_split.py) answers the same requests instead of the game's own
+        # decoder, without waiting for the rewrite. It is not the game's code, so its output counts only once the split's tables are the profile's (main, ooz_check)
+        import ooz_split
+        if ooz := ooz_split.argv(): argv = ooz; ooz_split.mark()
         elif (not host or not mods) and dev and lib and dmods:
-            import shlex, ue_ondevice
+            import shlex, ue_ondevice, rewrite_wait
+            rewrite_wait.wait()   # PEANUTS: the rewrite beside the split must have written the modules (#120)
             argv = shlex.split(dev) + ['-I', '-c', ue_ondevice.HOST_CODE, lib, dmods]
         elif not host or not mods: red('Oodle- or LZ5-compressed game files: set DM_OODLE_HOST (the Mac host, make -C dm/host GAME=<id> dmhost) and DM_OODLE_MODULES (the rewritten modules) to decode them with the game\'s own decoder')
         else: argv = [host, mods]
@@ -2626,7 +2714,8 @@ def oodle_said():   # what the host wrote so far
     return _OODLE[1].read().decode(errors='replace')
 
 def oodle_red(comp, n) -> NoReturn:
-    who = 'the ooz worker (DM_OODLE_OOZ; not the game\'s own decoder)' if os.environ.get('DM_OODLE_OOZ') else 'the game\'s own decoder (run by the app\'s host)'   # PEANUTS: the message names the decoder that failed; the host runs on a phone as on a Mac
+    import ooz_split
+    who = f'the ooz worker ({ooz_split.name()}; not the game\'s own decoder)' if ooz_split.argv() else 'the game\'s own decoder (run by the app\'s host)'   # PEANUTS: the message names the decoder that failed; the host runs on a phone as on a Mac
     red(f'{who} failed on a {len(comp)} → {n} byte stream; ---- host output ----\n' + oodle_said()[-3000:])   # PEANUTS: who
 
 def oodle(comp, n):
@@ -2649,12 +2738,13 @@ def trinity_shaders(path, rel, packs, out):
             pr = fb_root(d, off); hs = fb_vec(d, pr, 0)
             for k, t in enumerate(fb_refs(d, pr, 1)):
                 c, ln = fb_field(d, t, 1), fb_field(d, t, 3)
-                comp, n = (struct.unpack_from('<b', d, c)[0] if c is not None else 0), (struct.unpack_from('<Q', d, ln)[0] if ln is not None else 0)
+                comp, n = (fb_u('<b', d, c) if c is not None else 0), (fb_u('<Q', d, ln) if ln is not None else 0)   # PEANUTS: offsets checked (fb_u; FbOutside: the caller says the file is damaged)
                 st, sz = fb_vec(d, t, 4)
+                if not 0 <= st <= len(d) - sz: raise FbOutside(st, sz, len(d))   # PEANUTS: a slice past the end would come out short in silence
                 if comp == 3: data = oodle(d[st:st + sz], n)
                 elif sz == n: data = d[st:st + sz]
                 else: red(f'/{rel}#{name}: file {k} has compression {comp} ({sz} → {n} bytes), which is not known')
-                scan_blob(data, f'/{rel}#{name}#{struct.unpack_from("<Q", d, hs[0] + 8 * k)[0]:016x}', out)
+                scan_blob(data, f'/{rel}#{name}#{fb_u("<Q", d, hs[0] + 8 * k):016x}', out)   # PEANUTS: offsets checked (fb_u)
 
 UE3_TAG = bytes.fromhex('c1832a9e')   # an Unreal package's tag; Unreal Engine 3 has a positive file version after it (u16, Batman: Arkham Knight 0x360), Unreal Engine 4 a negative legacy version (i32)
 def ue3_package(head): return head[:4] == UE3_TAG and len(head) >= 6 and 0 < struct.unpack_from('<H', head, 4)[0] < 0x8000
@@ -3751,7 +3841,8 @@ def scan_file_in(args):
         idrk_shaders(path, '/' + rel, found)
         return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and head[:8] == ONEPACK:   # a range of Trinity packs (trpfs_jobs)
-        trinity_shaders(path, rel, args[2], found)
+        try: trinity_shaders(path, rel, args[2], found)
+        except FbOutside as e: damaged('/' + rel, e)   # PEANUTS: a pack table that points outside the file (GitHub issue #561)
         return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2 and head[:4] == PDAT:   # a byte range of a phx archive (pdat_jobs)
         pdat_shaders(path, rel, args[2][1], args[2][2], found)
@@ -4215,7 +4306,7 @@ def scan_digest(argv, jobs, sources=None):
     """ScanCache's digest: the split's arguments and environment (with DM_PACKER_COMMIT, the app's commit on the phone), every job (with its file's size and
     modification time) and the content of the tools and the profile (digest_sources)"""
     h = hashlib.sha256()
-    h.update(repr((argv, [os.environ.get(k) for k in ('DM_GAME', 'DM_GLSLC_CAPTURE', 'DM_UE_SHADERS', 'DM_PACKER_COMMIT', 'DM_NRO_DIR')])).encode())
+    h.update(repr((argv, [os.environ.get(k) for k in ('DM_GAME', 'DM_GLSLC_CAPTURE', 'DM_UE_SHADERS', 'DM_PACKER_COMMIT', 'DM_NRO_DIR', 'DM_SPLIT_DECODER')])).encode())   # PEANUTS: DM_SPLIT_DECODER (ooz_split.py): ooz's results apart
     for j in jobs:
         try: st = os.stat(j[0]); t = (st.st_size, st.st_mtime_ns)
         except OSError: t = None
@@ -4280,7 +4371,56 @@ def path_list(arg):
 # PEANUTS end
 
 
+# PEANUTS begin: the split with the ooz Oodle decoder first, when one is given (ooz_split.py), and with the game's own decoder again when ooz's output is not
+# the profile's: its tables differ from the profile's, or the split stopped while ooz was in use. ooz's output is written only once its tables are the profile's
 def main():
+    import ooz_split
+    prof, mains = GAME.table('shader_map.tsv'), path_list(sys.argv[2])
+    try:
+        if not ooz_split.begin(prof, mains, os.environ.get('DM_SPLIT_RESUME')): return save(*split_once())
+        try:
+            out, paths = split_once()
+            why = ooz_check(out, paths, mains) if ooz_split.fallback() else None   # without a game decoder (the PC builder) pack_android.py checks the keys, as before
+        except (Exception, SystemExit) as e:   # red() is a SystemExit; an interrupt (KeyboardInterrupt: the app's stop) is not caught
+            if not ooz_split.fallback(): raise
+            why = str(e) if isinstance(e, OozDiffers) else 'the split stopped: ' + (str(e).removeprefix('[RED] ') if isinstance(e, SystemExit) else f'{type(e).__name__}: {e}')[:500]
+        if why is None: return save(out, paths)
+        oodle_close()
+        ooz_split.off(why, prof, mains)
+        save(*split_once())
+    finally:
+        oodle_close(); ooz_split.end()
+
+def ooz_check(out, paths, mains):
+    """None when the tables of a split whose Oodle streams the ooz worker decoded are the profile's (profile_differs: byte for byte, but for the keys
+    shader_optional.tsv or the other listed versions give to another build), else why not"""
+    if not os.path.isfile(GAME.table('shader_map.tsv')): return 'the profile has no shader_map.tsv'
+    why = profile_differs(out, paths[3], paths[4], single_shader_version(mains))
+    if why: return f'it {why}'
+    print('split: decoded with the ooz worker; its tables are the profile\'s', flush=True)
+    return None
+
+def oodle_close():
+    """The Oodle worker of this process goes (oodle_ask starts the next one from the environment as it is then)"""
+    global _OODLE
+    if _OODLE:
+        p, err = _OODLE; _OODLE = None
+        try: p.stdin.close(); p.wait(10)
+        except Exception: p.kill()
+        err.close()
+
+def save(out, paths):
+    pkg, mapout, factsout, pairsout, psopairsout = paths
+    stage('saving the shaders found')
+    write_outputs(out, pkg, mapout, factsout, pairsout, psopairsout)
+    if d := os.environ.get('DM_SPLIT_DIFF_DIR'):   # PEANUTS: the tables written, kept as final.<name> (a profile regenerated from a device's full scan: the build deletes its own copies)
+        import shutil
+        os.makedirs(d, exist_ok=True)
+        for p in (mapout, factsout, pairsout, psopairsout):
+            if p and os.path.isfile(p): shutil.copyfile(p, os.path.join(d, 'final.' + os.path.basename(p)))
+# PEANUTS end
+
+def split_once():   # PEANUTS: was main(); its outputs are written by save
     romfs_l, main_l, pkg, mapout, factsout = sys.argv[1:6]
     pairsout = sys.argv[6] if len(sys.argv) > 6 else None
     psopairsout = sys.argv[7] if len(sys.argv) > 7 else None   # pso_pairs.tsv: supplemental BAHS program variations and legacy Unity pass-input covers
@@ -4380,6 +4520,7 @@ def main():
                 out = None; why = f'the {mode} scan ' + why
                 if failed:
                     with open(failed, 'w') as f: f.write(mdg + '\n')
+                if mode == modes[-1][0] and ooz_fallback(): raise OozDiffers(why)   # PEANUTS: not a full scan with ooz: main runs the split again with the game's own decoder
                 if mode != modes[-1][0]: print(f'{mode} split: not taken, {why}: the whole files are scanned', flush=True)
         if out is None: print(f'targeted split: not taken, {why}: every file is scanned', flush=True)
     if out is None:
@@ -4389,15 +4530,13 @@ def main():
         stage(f'reading all {len(files):,} of the game\'s files')
         cd = (os.path.join(rd, 'full') if targeted else rd) if rd else None
         out = split_tables(list(results), big, todo, dumps, J, common, zdicts, ScanCache(cd, scan_digest(inputs, big + todo + mains)) if cd else None)
-    stage('saving the shaders found')
-    write_outputs(out, pkg, mapout, factsout, pairsout, psopairsout)
-    if d := os.environ.get('DM_SPLIT_DIFF_DIR'):   # PEANUTS: the tables written, kept as final.<name> (a profile regenerated from a device's full scan: the build deletes its own copies)
-        import shutil
-        os.makedirs(d, exist_ok=True)
-        for p in (mapout, factsout, pairsout, psopairsout):
-            if p and os.path.isfile(p): shutil.copyfile(p, os.path.join(d, 'final.' + os.path.basename(p)))
+    return out, (pkg, mapout, factsout, pairsout, psopairsout)   # PEANUTS: written by save (main)
 
 class Fallback(Exception): pass   # the targeted scan cannot give the full scan's outputs (split_tables)
+class OozDiffers(Exception): pass   # PEANUTS: the targeted scan's tables differ from the profile's, and the ooz worker decoded some of its streams (main)
+def ooz_fallback():   # PEANUTS: ooz_split.py
+    import ooz_split
+    return ooz_split.fallback()
 
 def build_id(path):
     """An NSO's build ID as game.tsv's build rows write it: the first 16 of the 32 bytes at header +0x40, in hex; None when it is not an NSO"""

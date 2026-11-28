@@ -25,6 +25,8 @@ the production path. The final fixed host also loads it and walks in Argentum.
 <!-- PEANUTS: #645, tapionallanaire -->
 ## Android (AYN Thor, Turnip v27.0.0-R1, 2026-11-25)
 
+On the release list from 0.1.10 (`peanuts/release-titles.txt`, so in the default APK), with no readiness row. <!-- PEANUTS: on the 0.1.10 release list -->
+
 The profile works on Android as it is: no host or profile change was needed. Built
 with the app's own import from base, the 2.1.0 update (`v983040`) and seven DLC
 (Torna included), New Game (Normal) → opening → King Crustip: Rex draws his weapon,

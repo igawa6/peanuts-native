@@ -65,6 +65,56 @@ re-translation on every device. **Never change `vk_android_build.py`, `vk_androi
 available, say), leave the row out; an under-justified row is worse than a missing one, because the next person
 trusts it without re-checking.
 
+## A new-game pull request
+
+A new-game pull request adds one game's profile and nothing else. Read NEW-GAME.md for the steps.
+
+Before you open it
+- Base it on the `dev` branch, never on `main`. Rebase on it; do not merge it in.
+- One game per pull request. A host, renderer, rewriter, shader-tool or launcher change goes in its own pull request first. If your profile needs it, write "Depends on: #<n>" and keep the profile a draft until that one lands.
+- Touch only `dm/games/<title ID>/` and the game's row in `dm/games/README.md`.
+- Switch 1 games only. A game that needs a network sign-in to reach play cannot be supported, since Peanuts is always offline.
+
+Never in the pull request
+- Binaries of any kind, `vk_prewarm.bin` included. Attach your runs' `.keys` files instead; we build the seed.
+- `peanuts/release-titles.txt`, `peanuts/games.tsv`, `nxGames`, `readiness.tsv`, the Supported games tables, `games.json` or the issue forms. We add the game after our own device runs and credit you as its contributor.
+- A file over 10 MB. If your shader tables are larger, open an issue first.
+- Game files, keys, or anything extracted from a game.
+
+The profile
+- `game.tsv`: `name`, a `build` row per version with its display version filled in, `package` equal to the highest build, `shader_note`, `# PEANUTS:` on the lines you add. Only keys Android reads: no `pad_layout`, no `zip_store .metallib`.
+- Shader tables exactly as the current `shader_split.py` wrote them, with LF line endings.
+- A `recommend` row needs a comment above it naming the note section or `docs/reference` page where the fact was measured.
+- The note from the template: Status, Tested on, Builds, Open. Status says only what you ran, Open lists what you did not, and they must not disagree. Memory values you did not measure are marked as the survey's guess.
+
+Frame rate
+- Give the game the frame rates it can hold, with the method that fits its engine. The methods, cheapest first, with their profile rows and an example game each, are in `FPS-METHODS.md` (`sh peanuts/scripts/fps-survey.sh` lists every profile's rows by method). In short: test whether the game steps by elapsed time (at caps of 30 and 60, a 3-second walk lands in the same place). If it does, display pacing is enough. If movement halves at 30, it counts frames, and you need an engine limiter found by name, an FPSLocker Warehouse row for the exact build, a community timing plan, or a frame step. If nothing works safely, leave the game's own pacing (Game owned) and say why in the note.
+- Measure every cap the profile offers: the median and slowest frame times, and the game speed (10 game seconds take 10 s, from an idle animation or a clock in the game). Put the numbers in the note's Status, per cap. A cap you did not measure is not offered, or is marked experimental (`fps_limit_present 1`) and named in Open.
+- The default cap (`fps_limit` or `fps_target`) is one you measured.
+- Do not edit `dm/tools/tests/test_android_frame_rate_games.py`: we pin the caps when the game goes on the release list.
+
+Prewarm seed (first launch without stutter)
+- The app writes the pipeline keys a run made to `/sdcard/Android/data/<app package>/files/temp/<title ID>/vk_pipelines.keys` (the test app: `dev.nxnative.android.peanutstest`), beside that driver's pipeline cache. It is one file per game, rewritten by each run, so copy it out (`adb pull`) after each driver's run and name it after the driver.
+- Start from a fresh cache: delete that `temp/<title ID>` folder before the run, then play the startup, the menus and the gameplay you tested. Attach the keys files to the pull request, with the driver each came from.
+- Do not commit `vk_prewarm.bin`. We build the seed from your keys when the game lands (`python3 dm/tools/vk_prewarm.py seed <title ID> <keys files>`; every file must come from the same host build), and check that a cold first launch draws right with it.
+
+Fast Prepare (targeted shader split)
+- So that a phone's Prepare reads only the game files that hold shaders, add `shader_files.tsv`: run one full split with `DM_SPLIT_FILES=dm/games/<title ID>/shader_files.tsv` (`android/SHADERS.md`). Then run a targeted split (`DM_SPLIT_TARGETED=1`) of the same build into a separate output folder, and check that its `shader_map.tsv`, `shader_facts.tsv`, `shader_pairs.tsv` and `pso_pairs.tsv` match the full split's. Give both times in the pull request.
+- If the shader map is far larger than what play reaches (tens of MB), open an issue first. A `shader_seen.tsv` of the keys real play uses may be the answer, and we decide that together.
+- A game with several builds lists the pairs a build may lack in `pso_pairs_optional.tsv`, so a targeted split of each build still matches.
+- A game whose shaders are all compiled at run time has no game file to target, so it needs no `shader_files.tsv`. Say so in the note, and give the run-time shader capture's count and, if its empty save waits on a screen, the `capture_keys` row it needs.
+
+Checks (paste the result lines)
+- `python3 dm/tools/docs_patches.py`, and commit its output.
+- For a profile with `shader_files.tsv`: the full and targeted split times, and that their tables match.
+- `python3 -m unittest discover -s dm/tools/tests`: give the failure count at your head and at its merge-base. A pull request adds none.
+- `check-profiles.sh <title ID>`, `gen_runtime_profile.py check-all`.
+
+Device evidence
+- To land as a profile: a named phone (model, chip, RAM, Android version), the driver and its exact version, a log attached (Settings > Share log), and what you played.
+- To be considered for the release list: an Adreno phone with 12 GB or more, and a run on a named Turnip build (not 27.0.0-R3). At least 10 minutes of play past the first scene, with its log. The median and slowest frame times and the game speed at each cap the profile offers (10 game seconds should take 10 s). The memory peak. A run on Qualcomm's own driver as well, with its log, counts as a bonus. Runs on Mali, Xclipse or PowerVR phones, or only in menus, do not count.
+- Say what you did not check.
+
 ## Adding a supported game
 
 For a game that has no profile yet, in Peanuts or in Banana Native, [NEW-GAME.md](NEW-GAME.md) has the steps, commands and pitfalls end to end.
@@ -199,9 +249,8 @@ If you hit this symptom on a new title, look for it before assuming the pack is 
   you're done with it rather than letting it accumulate — this is a disk-budget practice, not a licensing one, but it
   also makes "did I accidentally stage game data" much easier to answer by inspection (there's nothing there to
   stage).
-- **One change per branch**, rebased on the current overlay branch (which itself is rebased onto Banana Native's
-  current `android` branch tip) — never merged in, since `upstream-update.sh` rewrites this branch's history on
-  every upstream update.
+- **One change per branch**, based on the stable `dev` branch and rebased on it, never merged in. `dev` follows each
+  release cycle's line (today `dev-0.1.10`); `main` moves only at a release, so a pull request never targets `main`.
 - **Commit messages** say what changed and why: the symptom, the cause, the fix, what was measured or checked on the
   device. No secrets, no local paths, no device serials, no personal identifiers in a committed file.
 - **No binaries.** No `.so`, no APK, no GPU driver, no shader library, no prewarm seed, no pack. Everything is built
@@ -271,6 +320,5 @@ applies to every change however it was produced. See `peanuts/docs/AGENTS.md` fo
 
 ## How changes get in
 
-There is no public CI for this project yet (it mirrors Banana Native's own stance: there's no CI on its public repo
-either).
-Run the checks yourself and say in the PR description what ran, on what device and driver, and what was not checked.
+CI runs on every pull request (`.github/workflows/peanuts.yml`): the Peanuts tests, the catalog and issue-form checks,
+the profile checks and the docs checks, reporting what your change makes fail. Still run the checks yourself and say in the PR description what ran, on what device and driver, and what was not checked.

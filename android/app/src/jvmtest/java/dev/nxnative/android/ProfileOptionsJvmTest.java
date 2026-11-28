@@ -78,6 +78,38 @@ public final class ProfileOptionsJvmTest {
         check(p.options.size() == 3, "options count: " + p.options.size());
         check(p.optionsEnv(enabled::contains).equals(env), "optionsEnv");
 
+        // PEANUTS begin: option groups (group=<name> as a <key>=<value> token from the 8th field on, option_group rows as column 44 after thermal_cap): one member at most, shared words allowed
+        String w = "c55f6b8aefa54324c8e3debe0912c57c,m0x100,11111111,";
+        String grouped = "DM_PACE|Pacing|Even frames|restart;"
+                + "DM_DD_HIGH|High|Like PS4|restart|||" + w + "22222222|group=draw;"
+                + "DM_DD_ULTRA|Ultra|Twice|restart|||" + w + "33333333~c55f6b8aefa54324c8e3debe0912c57c,m0x104,44444444,55555555|group=draw";
+        List<Profile.Option> gr = Profile.parseOptions(grouped);
+        check(gr.get(0).group.isEmpty() && gr.get(1).group.equals("draw") && gr.get(2).group.equals("draw"), "group field parsed");
+        check(Profile.groupMembers(gr, "draw").size() == 2 && Profile.groupMembers(gr, "").isEmpty(), "group members");
+        check(Profile.groupChoice(gr, "draw", e -> false) == null, "Default: no member on");
+        check(Profile.buildOptionsEnv(gr, e -> false).isEmpty(), "Default sends nothing");
+        check(Profile.buildOptionsEnv(gr, Set.of("DM_DD_HIGH")::contains).equals(List.of("DM_DD_HIGH=1", "DM_OPTION_PATCHES=" + w + "22222222")), "one member");
+        List<String> both = Profile.buildOptionsEnv(gr, Set.of("DM_PACE", "DM_DD_HIGH", "DM_DD_ULTRA")::contains);
+        check(both.equals(List.of("DM_PACE=1", "DM_DD_HIGH=1", "DM_OPTION_PATCHES=" + w + "22222222")), "two stored members: the first only: " + both);
+        check(Profile.buildOptionsEnv(gr, Set.of("DM_DD_ULTRA")::contains).get(1).equals("DM_OPTION_PATCHES=" + w + "33333333;c55f6b8aefa54324c8e3debe0912c57c,m0x104,44444444,55555555"), "member words, ';' between");
+        check(!gr.get(1).equals(new Profile.Option("DM_DD_HIGH", "High", "Like PS4", false, "", "", w + "22222222")), "group part of equality");
+        // tokens from the 8th field on: any order, keys this build does not know ignored (a later field such as perf= or inverted= does not break the group)
+        List<Profile.Option> later = Profile.parseOptions("DM_DD_HIGH|High|Like PS4|restart|||" + w + "22222222|perf=1|group=draw|inverted=1;DM_X|X|x|restart||||perf=2");
+        check(later.get(0).equals(gr.get(1)) && later.get(1).group.isEmpty() && later.get(1).patches.isEmpty(), "unknown tokens ignored: " + later);
+        // without a group the row is the 7-field encoding as before, and parses to the same option
+        check(Profile.parseOptions("DM_PACE|Pacing|Even frames|restart").get(0).equals(new Profile.Option("DM_PACE", "Pacing", "Even frames", false, "", "")), "no group: as before");
+        check(Profile.parseOptionGroups("").isEmpty() && Profile.parseOptionGroups("draw|Draw distance|How far").get(0).label.equals("Draw distance"), "option_group parsed");
+        String[] cols = new String[45];
+        java.util.Arrays.fill(cols, "");
+        cols[0] = "0100BAC01E57E000"; cols[1] = "Ys X"; cols[2] = "0"; cols[20] = grouped; cols[43] = "1"; cols[44] = "draw|Draw distance|How far detail reaches";
+        Profile pg = Profile.parse(String.join("\t", cols)).get(0);
+        check(pg.optionGroups.size() == 1 && pg.optionGroups.get(0).name.equals("draw") && pg.shownGroups().size() == 1 && pg.thermalCap, "option groups column 44, thermal_cap 43");
+        Profile p44 = Profile.parse(String.join("\t", java.util.Arrays.copyOf(cols, 44))).get(0);
+        check(p44.optionGroups.isEmpty() && p44.thermalCap, "no option groups column");
+        cols[43] = "";
+        check(!Profile.parse(String.join("\t", cols)).get(0).thermalCap, "option groups without thermal_cap");
+        // PEANUTS end
+
         // Profile.parse without option column
         String oldLine = "0400486024DEC000\tThe Legend of Zelda: Ocarina of Time\t22852\tabcdef012345\t131072 main=aa\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t1";
         Profile pOld = Profile.parse(oldLine).get(0);

@@ -217,6 +217,7 @@ def optionsOf = { String game ->
         def mode = 'restart'
         def implies = ''
         def needs = ''
+        def group = ''   // PEANUTS: option groups
         def patches = tsvRows(game, 'option_patch').findAll { it.size() > 1 && it[1] == env }.collect { patch ->
             if (patch.size() != 6 || !(patch[2] ==~ /[0-9a-f]{32}/) || !(patch[3] ==~ /0x[0-9a-f]+/) || !(patch[4] ==~ /[0-9a-f]{8}/) || !(patch[5] ==~ /[0-9a-f]{8}/)) throw new GradleException("$game: invalid option_patch")
             [patch[2], 'm' + patch[3], patch[4], patch[5]].join(',')
@@ -226,11 +227,15 @@ def optionsOf = { String game ->
                 if (tok == 'restart' || tok == 'live') mode = tok
                 else if (tok.startsWith('implies=')) implies = tok.substring('implies='.length()).trim()
                 else if (tok.startsWith('needs=')) needs = tok.substring('needs='.length()).trim()
+                else if (tok.startsWith('group=')) group = tok.substring('group='.length()).trim()   // PEANUTS: option groups
             }
         }
-        [env, label, desc, mode, implies, needs, patches].collect { it.replaceAll(/[\t\n\\"]/, ' ').replaceAll(/[;|]/, ',').trim() }.join('|')
+        // PEANUTS: fields from the 8th on are <key>=<value> tokens, written only when set (Profile.parseOptions ignores keys it does not know): group=<name>
+        ([env, label, desc, mode, implies, needs, patches] + (group ? ['group=' + group] : [])).collect { it.replaceAll(/[\t\n\\"]/, ' ').replaceAll(/[;|]/, ',').trim() }.join('|')
     }.join(';')
 }
+// PEANUTS: option groups (game.tsv option_group rows: "<name>|<label>|<description>", ';' between them: Profile.optionGroups, column 44, after thermal_cap)
+def optionGroupsOf = { String game -> tsvRows(game, 'option_group').findAll { it.size() > 3 }.collect { c -> c[1..3].collect { it.trim().replaceAll(/[\t\n\\"]/, ' ').replaceAll(/[;|]/, ',') }.join('|') }.join(';') }
 // The 3D scene choices for Advanced (or 3D scene): the overlays (game.tsv scene_scale rows, only with a scene_scale_palette row: dm/tools/scene_res.py), "<name>|<label>|<scale>|<mode>",
 // then the game arguments (scene_arg rows: dm/games/game.py scene_args checks them), "<name>|<label>|<scale or ->|arg|<arguments with {s} replaced>"; ';' between them (Profile.scenes, SceneRes)
 def sceneOf = { String game ->
@@ -321,7 +326,7 @@ def handheldGames = nxGames.findAll { g -> tsvRows(g, 'op_mode').any { it.size()
 def cheatsOf = { String game -> tsvRows(game, 'cheats').isEmpty() ? '' : '1' }
 def timeOfDayOf = { String game -> tsvRows(game, 'time_of_day').any { it.size() > 1 && it[1].trim() == '1' } ? '1' : '' }   // the Game tab's Time of day row only for profiles whose day/night cycle follows the user clock
 // PEANUTS: include each game's supported options in the launcher profile.
-def nxProfiles = nxGames.collect { g -> [g, nameOf(g).replaceAll(/[\t\n\\"]/, ' '), shaderTotalOf(g), shaderInputsOf(g), buildsOf(g), reqsOf(g), statusOf(g), deltaOf(g), stampOf(g), resolutionOf(g), romfsChecksOf(g), gpuTsOf(g), windowOf(g), decoupleOf(g), drsOf(g), fpsLimitOf(g), dlssOf(g), presentOnlyOf(g), stepsOf(g), tsvRows(g, 'mesh_vegetation_cut').isEmpty() ? '' : '1', optionsOf(g), sceneOf(g), presetsOf(g), skipLayersOf(g), recommendOf(g), variantsOf(g), presetFromOf(g), linkPlayOf(g), aspectsOf(g), timeOfDayOf(g), cheatsOf(g), fpsLimitMaxOf(g), fpsLockerOf(g), fpsLockerPlanOf(g), fpsLimitMinOf(g), fpsModesOf(g), fpsPlan120Of(g), tsvRows(g, 'fps_step_elapsed').isEmpty() ? '' : '1', tsvRows(g, 'fps_owned_default').isEmpty() ? '' : '1', aspectPlanOf(g), tsvRows(g, 'aspect_plan_untested').isEmpty() ? '' : '1', fpsTargetOf(g), fpsRatesOf(g), tsvRows(g, 'thermal_cap').isEmpty() ? '' : '1'].join('\\t') }.join('\\n')   // PEANUTS: fps_owned_default, then aspect_plan and aspect_plan_untested, then fps_target and the engine rows' rates (Profile.fpsTarget, fpsRates), then thermal_cap (Profile.thermalCap), the last column
+def nxProfiles = nxGames.collect { g -> [g, nameOf(g).replaceAll(/[\t\n\\"]/, ' '), shaderTotalOf(g), shaderInputsOf(g), buildsOf(g), reqsOf(g), statusOf(g), deltaOf(g), stampOf(g), resolutionOf(g), romfsChecksOf(g), gpuTsOf(g), windowOf(g), decoupleOf(g), drsOf(g), fpsLimitOf(g), dlssOf(g), presentOnlyOf(g), stepsOf(g), tsvRows(g, 'mesh_vegetation_cut').isEmpty() ? '' : '1', optionsOf(g), sceneOf(g), presetsOf(g), skipLayersOf(g), recommendOf(g), variantsOf(g), presetFromOf(g), linkPlayOf(g), aspectsOf(g), timeOfDayOf(g), cheatsOf(g), fpsLimitMaxOf(g), fpsLockerOf(g), fpsLockerPlanOf(g), fpsLimitMinOf(g), fpsModesOf(g), fpsPlan120Of(g), tsvRows(g, 'fps_step_elapsed').isEmpty() ? '' : '1', tsvRows(g, 'fps_owned_default').isEmpty() ? '' : '1', aspectPlanOf(g), tsvRows(g, 'aspect_plan_untested').isEmpty() ? '' : '1', fpsTargetOf(g), fpsRatesOf(g), tsvRows(g, 'thermal_cap').isEmpty() ? '' : '1', optionGroupsOf(g)].join('\\t') }.join('\\n')   // PEANUTS: fps_owned_default, then aspect_plan and aspect_plan_untested, then fps_target and the engine rows' rates (Profile.fpsTarget, fpsRates), then thermal_cap (Profile.thermalCap), then option groups (Profile.optionGroups), the last column
 def lockOf = { String key -> def f = new File(repo, 'dm/gfx/tools/dmsh_chain.lock'); f.isFile() ? (f.readLines().find { it.startsWith(key + '\t') }?.split('\t')?.getAt(1) ?: 'unknown') : 'unknown' }
 
 android {
@@ -493,6 +498,9 @@ tasks.register('apk', Copy) {
 //   lib/arm64-v8a/libdmsh_xlate.so, libSPIRV-Tools-shared.so   the translator and the validator, which vk_android_build.py loads through ctypes in that process
 //   lib/arm64-v8a/libzbicdec.so   the ZBIC decoder (dm/third_party/zstd-zbic), which nso.py loads through ctypes for the segments of system 22.0.0+ modules
 //   lib/arm64-v8a/libcra.so       the unscramble of Camelot's archive (dm/gfx/tools/cra_unscramble.c), which cra.py loads through ctypes in the shader split
+//   lib/arm64-v8a/libdmsh_spvn.so PEANUTS: the shaders step's SPIR-V post-passes (dm/gfx/tools/vk_android_spv_native/spvn.c), which vk_android_spvn.py loads through ctypes
+//   lib/arm64-v8a/libdmsh_rwspin.so PEANUTS: the rewriter's spin wait search (dm/tools/rwspin_native/rwspin.c), which patch_nso.py loads through ctypes
+//   lib/arm64-v8a/libunoodle.so   PEANUTS: the split's Oodle decoder (dm/third_party/ooz, GPL-3.0-or-later), loaded by ctypes in a worker process (ooz_split.py)
 //   assets/pack/python.zip   the Python home (lib/python3.14 with lib-dynload, capstone, lz4), unpacked to filesDir by PackNative
 //   assets/pack/tools.zip    the repository's tools the job runs (scripts, dm/tools, dm/games/<game>, dm/gfx/tools without the Mac binaries, and the other sources DMSH_CHAIN
 //                            hashes), likewise
@@ -503,6 +511,9 @@ if (nxPackEngine == 'native') {
     def stage = file(stageProp)
     def nxPack = layout.buildDirectory.dir('nxpack')
     def need = ['lib/libpython3.14.so', 'lib/libnxpack.so', 'lib/libzbicdec.so', 'lib/libcra.so', 'lib/libdmsh_xlate.so', 'lib/libSPIRV-Tools-shared.so', 'python/lib/python3.14/os.py']
+    need += ['lib/libdmsh_spvn.so']   // PEANUTS: the SPIR-V post-passes in C (android/ondevice/build.sh <work dir> zbic makes it); the phone's Python would run them many times slower
+    need += ['lib/libdmsh_rwspin.so']   // PEANUTS: the rewriter's spin wait search in C (zbic makes it too); in Python it was most of the phone's rewrite
+    need += ['lib/libunoodle.so']   // PEANUTS: the split's Oodle decoder (zbic makes it too); without it the split waits for the rewrite beside it at its first Oodle stream
     // PEANUTS: HAL's .cmp containers need lz4.frame; an older stage silently lost Kirby's 9,693 particle shaders (issue #78).
     need += ['python/lib/python3.14/site-packages/lz4/frame/__init__.py', 'python/lib/python3.14/site-packages/lz4/frame/_frame.cpython-314-aarch64-linux-android.so']
     // PEANUTS: shader_split.py's Yaz0 in C (dm/peanuts/pack_worker/nxyaz0.c); a stage without it splits in Python, many times slower (peanuts/scripts/ondevice-stage.sh <work dir> zbic adds it)
@@ -522,9 +533,49 @@ if (nxPackEngine == 'native') {
             logger.lifecycle(out)
         }
     }
+    // PEANUTS begin: the stage's libdmsh_spvn.so must be built from this tree's spvn.c: it carries that file's SHA-256 (spvn_source), and vk_android_spvn.py on the
+    // phone runs the Python passes instead of a library of other sources (slow, but the same shaders); this says so at build time
+    def spvnCheck = tasks.register('nxPackSpvnCheck') {
+        def lib = new File(stage, 'lib/libdmsh_spvn.so'), src = new File(repo, 'dm/gfx/tools/vk_android_spv_native/spvn.c')
+        inputs.files(lib, src)
+        doLast {
+            def sha = java.security.MessageDigest.getInstance('SHA-256').digest(src.bytes).encodeHex().toString()
+            if (!new String(lib.bytes, 'ISO-8859-1').contains(sha))
+                throw new GradleException("$lib was not built from this tree's spvn.c (SHA-256 $sha): run android/ondevice/build.sh <work dir> zbic (Linux: peanuts/scripts/ondevice-stage.sh <work dir> zbic)")
+        }
+    }
+    // PEANUTS end
+    // PEANUTS begin: likewise libdmsh_rwspin.so and this tree's rwspin.c (rws_source; patch_nso.py names the same SHA-256 in RWSPIN_SHA and searches in Python
+    // with a library of other sources: the same output, minutes slower on a phone)
+    def rwspinCheck = tasks.register('nxPackRwspinCheck') {
+        def lib = new File(stage, 'lib/libdmsh_rwspin.so'), src = new File(repo, 'dm/tools/rwspin_native/rwspin.c')
+        inputs.files(lib, src)
+        doLast {
+            def sha = java.security.MessageDigest.getInstance('SHA-256').digest(src.bytes).encodeHex().toString()
+            if (!new String(lib.bytes, 'ISO-8859-1').contains(sha))
+                throw new GradleException("$lib was not built from this tree's rwspin.c (SHA-256 $sha): run android/ondevice/build.sh <work dir> zbic (Linux: peanuts/scripts/ondevice-stage.sh <work dir> zbic)")
+        }
+    }
+    // PEANUTS end
+    // PEANUTS begin: likewise libunoodle.so and this tree's dm/third_party/ooz: it carries the SHA-256 of its sources read in build.sh's order (unoodle_source=...).
+    // A library of other sources would decode with another decoder than the one checked (dm/third_party/ooz/README.md)
+    def unoodleCheck = tasks.register('nxPackUnoodleCheck') {
+        def lib = new File(stage, 'lib/libunoodle.so'), ooz = new File(repo, 'dm/third_party/ooz')
+        def srcs = ['kraken.cpp', 'stdafx.h', 'unoodle.cpp', 'ooz-port.patch', 'ooz-guards.patch', 'ooz-arm64.patch', 'ooz_neon.h', 'build.sh'].collect { new File(ooz, it) }
+        inputs.files(lib, srcs)
+        doLast {
+            def md = java.security.MessageDigest.getInstance('SHA-256')
+            srcs.each { md.update(it.bytes) }
+            def sha = md.digest().encodeHex().toString()
+            if (!new String(lib.bytes, 'ISO-8859-1').contains('unoodle_source=' + sha))
+                throw new GradleException("$lib was not built from this tree's dm/third_party/ooz (sources SHA-256 $sha): run android/ondevice/build.sh <work dir> zbic (Linux: peanuts/scripts/ondevice-stage.sh <work dir> zbic)")
+        }
+    }
+    // PEANUTS end
     def jni = tasks.register('nxPackJni', Sync) {
-        dependsOn xlateCheck
+        dependsOn xlateCheck, spvnCheck, rwspinCheck, unoodleCheck   // PEANUTS: spvnCheck, rwspinCheck, unoodleCheck
         from(new File(stage, 'lib')) { include 'libpython3.14.so', 'libnxpack.so', 'libzbicdec.so', 'libcra.so', 'libdmsh_xlate.so', 'libSPIRV-Tools-shared.so' }
+        from(new File(stage, 'lib')) { include 'libdmsh_spvn.so', 'libdmsh_rwspin.so', 'libunoodle.so' }   // PEANUTS
         into nxPack.map { it.dir('jni/arm64-v8a') }
     }
     def pyZip = tasks.register('nxPackPython', Zip) {
@@ -553,6 +604,8 @@ if (nxPackEngine == 'native') {
             include 'dm/ios/tools/ios_metal.py', 'dm/third_party/ryujinx/src/**/*.cs', 'dm/third_party/ryujinx/src/**/*.csproj'
             // and the translator library's own sources: xlate_tree.py checks libdmsh_xlate.so was built from this tree
             include 'dm/gfx/tools/dmsh_xlate_android/*.cs', 'dm/gfx/tools/dmsh_xlate_android/*.csproj'
+            include 'dm/gfx/tools/vk_android_spv_native/spvn.c'   // PEANUTS: in the tools digest (vk_android_build.py VK_FILES), and what vk_android_spvn.py checks libdmsh_spvn.so against
+            include 'dm/tools/rwspin_native/rwspin.c'   // PEANUTS: the source of libdmsh_rwspin.so (patch_nso.py RWSPIN_SHA names its SHA-256)
             exclude '**/bin/**', '**/obj/**'
             exclude '**/__pycache__/**', '**/.DS_Store'
         }

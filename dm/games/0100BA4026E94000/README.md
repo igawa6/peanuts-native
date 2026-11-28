@@ -61,3 +61,5 @@ Update 1.1.0 (v65536) over the base game, SDK 19.3.16. Unity 2022.3.62f2 IL2CPP 
 - Sound is checked only in the log (one AudioOut, no underruns): nobody has listened to it. Input has gone only through `DM_CTL`, not a controller or the keyboard.
 - Everything past the sewer's first room, including bosses and the area changes after it, and memory there.
 - The base game alone was not played or registered; packing it takes a derived profile.
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [226 observed RomFS files](shader_files.tsv) out of 3,101 on 1.1.0. A full split took 9.0 s and the targeted one 2.5 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

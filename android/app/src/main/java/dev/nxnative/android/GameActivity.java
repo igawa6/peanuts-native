@@ -699,7 +699,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (prof != null && prof.hasFpsVariant() && Prefs.limited(id) && fpsModeAtStart != FrameRateCaps.GAME_OWNED) {
             String fv = prof.fpsVariant(FrameRateCaps.limitRate(fpsModeAtStart, Prefs.displayMaxHz(getDisplay())));
             if (fv != null && pack != null && pack.variantReady(fv)) fpsVariantAtStart = fv;
-            else {
+            else if (fv != null) {   // PEANUTS: a cap without a variant of its own (Ys X: Nordics' 30; its 60 starts one) starts the game's own code at that cap, not Game owned
                 fpsVariantMissing = true;
                 fpsModeAtStart = FrameRateCaps.GAME_OWNED;
                 String note = "[nxlaunch] frame rate: the build has no complete " + fv + " variant (pack.tsv variant row and " + fv + "/main.patched.bin): started Game owned";
@@ -1418,6 +1418,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     /** The last lines of the log over the surface, once a second: until the game's first frame, then only with the setting on (TouchControls.showLog), or after a crash */
     private boolean drawing, failed;
+    private long tailSeen;   // PEANUTS: the log length at the last look (tail)
     private void tail() {
         if (log == null) return;
         if (stopped || paused) { ui.postDelayed(this::tail, 2000); return; }   // the log does not move while the game is suspended
@@ -1427,6 +1428,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             r.seek(from);
             r.readFully(b);
             String text = new String(b, StandardCharsets.UTF_8);
+            // PEANUTS: look for the first-frame lines in everything written since the last look, not only the last 2 KB shown: a game whose long stats lines follow them
+            // within the second (Ys X: Nordics) kept the log over the picture for the whole run
+            if (!drawing && tailSeen < from) {
+                long s0 = Math.max(tailSeen, from - (1 << 18)); byte[] m = new byte[(int) (from - s0)]; r.seek(s0); r.readFully(m);
+                String more = new String(m, StandardCharsets.UTF_8);
+                if (more.contains("[nvn] frame ") || more.contains("[longframe]") || more.contains("window frame rate")) drawing = true;
+            }
+            tailSeen = n;
+            // PEANUTS end
             if (text.contains("[nvn] frame ") || text.contains("[longframe]") || text.contains("window frame rate")) drawing = true;   // the host logs these once frames are presented
             if (text.contains("CRASH sig=") || text.contains("FATAL")) failed = true;
             overlay.setVisibility(!drawing || failed || TouchControls.showLog(this) ? View.VISIBLE : View.GONE);

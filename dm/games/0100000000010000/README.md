@@ -100,3 +100,5 @@ General host and tool changes first needed here; each applies to every game:
 - PEANUTS, Android: the opening's Bowser scene was not checked again after the texture copy fix for the green refracting materials ([Rendering](#rendering)).
 - development.md calls SDK 7.3.2 "the oldest so far"; Mario Kart 8 Deluxe (SDK 4.4.0) is older now.
 - `game.tsv` says values marked "Mario's" are not measured yet, but none is marked.
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [38 observed RomFS files](shader_files.tsv) out of 4,972 on 1.4.1. A full split took 6.3 s and the targeted one 2.9 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

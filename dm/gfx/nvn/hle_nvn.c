@@ -639,19 +639,63 @@ void nvn_dpool_base_set(const void *pool, int tex_base, int samp_base) {
 }
 // The pools each command buffer last bound are kept in its own host state (cmd_t tex_base / samp_base). They used to be a 64-entry list of command buffers that was never cleared:
 // Dark Souls Remastered binds one of 12 sampler pools in more than 64 command buffers, and every later one read its samplers through the first pool's numbering
+// PEANUTS: tex_pool_range, the IDs each texture pool takes of the host table. Ys X: Nordics makes three texture pools of 1,048,576 entries each and uses them in turn, one a
+// frame: they are numbered from 0, 1048576 and 2097152, past the 2^20 IDs Vulkan's set 1 addresses (vka_treg.h TREG_GPU) and the 20-bit texture ID of a handle bound on macOS
+// (bind_handles), so pools #2 and #3 read pool #1's IDs: single frames with other textures (UI atlas, sky, garbage HUD) while the camera moved (Turnip, before the Android
+// replay resolved handles against the executing pool and kept IDs from 2^20 on for direct binds). DM_NVN_TEXPOOL_RANGE=<entries> (restart; the profile's tex_pool_range when
+// not set, 0 off) gives each texture pool at most that many IDs (a multiple of 256), so several large pools fit below 2^20; its IDs from there (or from its own size,
+// rounded up to 256) are dropped with a red line. A reused finalized range may be larger than the pool: the limit is the pool's own (texpool_lim), not its range's cap.
+// Without the key nothing here runs: registrations take base + ID as before, with no new lines. Ys X: Nordics: 16384 (its IDs stay below 500)
+#define TEXPOOL_TABLE (1 << 20)
+#ifndef DM_GAME_TEX_POOL_RANGE   // a hand-written test profile
+#define DM_GAME_TEX_POOL_RANGE 0
+#endif
+static int texpool_range(void) {
+    static int r = -1;
+    if (r < 0) { const char *e = getenv("DM_NVN_TEXPOOL_RANGE"); int v = e ? atoi(e) : (int)DM_GAME_TEX_POOL_RANGE; r = v > 0 ? ((v + 255) & ~255) : 0;
+                 if (r || (e && DM_GAME_TEX_POOL_RANGE)) LOG("[nvn] texture pool range: %s%d IDs of the host table at most for each texture pool (%s)", r ? "" : "off, ", r ? r : (int)DM_GAME_TEX_POOL_RANGE,
+                                                            e ? "DM_NVN_TEXPOOL_RANGE" : "game profile tex_pool_range"); }
+    return r;
+}
+// Per slot of g_tpt (under g_dpool_mu): the pool's limit, set at each Initialize, also when it takes a finalized range; 0: none (a slot nvn_dpool_base_set made for the
+// frame replayer, which has no Initialize and registers host IDs straight into the table, vka_replay.c CAP_TREG), and the usage counters of the diagnostic below
+static int g_texpool_lim[NVN_NDPOOL]; static _Atomic uint64_t g_texpool_nreg[NVN_NDPOOL]; static _Atomic int g_texpool_maxid[NVN_NDPOOL];
+static int texpool_slot(const void *pool) { for (int i = 0; i < g_tpt.n; i++) if (g_tpt.e[i].pool == pool) return i; return -1; }   // (caller holds g_dpool_mu)
+static void texpool_init(const NVNtexturePool *tp, int n, int r) {   // tex_pool_range set: the pool's limit and a line for it
+    pthread_mutex_lock(&g_dpool_mu);
+    int i = texpool_slot(tp), lim = ((n + 255) & ~255) < r ? (n + 255) & ~255 : r, base = i >= 0 ? g_tpt.e[i].base : 0;
+    if (i >= 0) { g_texpool_lim[i] = lim; atomic_store(&g_texpool_nreg[i], 0); atomic_store(&g_texpool_maxid[i], 0); }
+    pthread_mutex_unlock(&g_dpool_mu);
+    if (i >= 0) LOG("[nvn] texture pool #%d: %d entries, IDs 0-%d from host ID %d (tex_pool_range)%s", i + 1, n, lim - 1, base, base + lim > TEXPOOL_TABLE ? ": past the 2^20 IDs Vulkan's set 1 addresses" : "");
+}
+static int texpool_reg_id(const NVNtexturePool *tp, int id) {   // the host table ID of a registration, -1: dropped
+    if (!texpool_range()) return dpool_base(&g_tpt, tp) + id;   // without the key: as before
+    pthread_mutex_lock(&g_dpool_mu); int i = texpool_slot(tp), base = i >= 0 ? g_tpt.e[i].base : 0, lim = i >= 0 ? g_texpool_lim[i] : 0; pthread_mutex_unlock(&g_dpool_mu);
+    if (i >= 0) {   // usage (diagnostic, with the key only): a line at each power of two of a pool's registrations from 64, with its highest ID so far
+        int m = atomic_load(&g_texpool_maxid[i]); while (id > m && !atomic_compare_exchange_weak(&g_texpool_maxid[i], &m, id)) {}
+        uint64_t k = atomic_fetch_add(&g_texpool_nreg[i], 1) + 1;
+        if (!(k & (k - 1)) && k >= 64) LOG("[nvn] texture pool #%d (host base %d, range %d): %llu registrations, highest ID %d", i + 1, base, lim, (unsigned long long)k, atomic_load(&g_texpool_maxid[i]));
+    }
+    if (lim && id >= lim) {
+        static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) LOG("[RED] texture pool #%d: ID %d is past its host range of %d (tex_pool_range / DM_NVN_TEXPOOL_RANGE): the registration is dropped", i + 1, id, lim);
+        return -1;
+    }
+    return base + id;
+}
 NVN(nvnTexturePoolInitialize, NVNboolean, NVNtexturePool *tp, const NVNmemoryPool *p, ptrdiff_t off, int n) {
     *(dpool_t *)tp = (dpool_t){(const pool_t *)p, off, n}; OLOG("TexturePool n=%d", n);
-    dpool_add(&g_tpt, tp, n, "texture"); mtl_set_tex_pool_n(g_tpt.next);
+    int r = texpool_range(); dpool_add(&g_tpt, tp, r && n > r ? r : n, "texture"); mtl_set_tex_pool_n(g_tpt.next);   // PEANUTS: tex_pool_range (above)
+    if (r) texpool_init(tp, n, r);   // PEANUTS
     return 1;
 }
 NVN(nvnTexturePoolFinalize, void, NVNtexturePool *tp) { dpool_release(&g_tpt, tp); }   // its range is free for a later pool (nvn_dpool.h)
 NVN(nvnTexturePoolRegisterTexture, void, const NVNtexturePool *tp, int id, const NVNtexture *t, const NVNtextureView *v) {
-    mtl_reg_tex(dpool_base(&g_tpt, tp) + id, (const tex_t *)t, (const view_t *)v);
+    int hid = texpool_reg_id(tp, id); if (hid >= 0) mtl_reg_tex(hid, (const tex_t *)t, (const view_t *)v);   // PEANUTS: texpool_reg_id
 }
 // Image descriptors live in the same pool index space as texture descriptors, and image handles are pool indices (nvnDeviceGetImageHandle; BindImages below), so an image
 // registers into the same table. Hyrule Warriors: Age of Calamity registers the images its compute shaders write in the first battle (earlier games registered only textures)
 NVN(nvnTexturePoolRegisterImage, void, const NVNtexturePool *tp, int id, const NVNtexture *t, const NVNtextureView *v) {
-    mtl_reg_image(dpool_base(&g_tpt, tp) + id, (const tex_t *)t, (const view_t *)v);
+    int hid = texpool_reg_id(tp, id); if (hid >= 0) mtl_reg_image(hid, (const tex_t *)t, (const view_t *)v);   // PEANUTS: texpool_reg_id
 }
 NVN(nvnSamplerPoolInitialize, NVNboolean, NVNsamplerPool *sp, const NVNmemoryPool *p, ptrdiff_t off, int n) {
     *(dpool_t *)sp = (dpool_t){(const pool_t *)p, off, n}; OLOG("SamplerPool n=%d", n); dpool_add(&g_spt, sp, n, "sampler"); return 1;
@@ -1130,6 +1174,10 @@ NVN(nvnQueueWaitSync, NVNboolean, NVNqueue *q, const NVNsync *s) {
 // ZCull data: the host does no ZCull, so there is nothing to save / restore
 NVN(nvnCommandBufferRestoreZCullData, void, NVNcommandBuffer *c, NVNbufferAddress a, size_t n) { (void)c; (void)a; (void)n; }
 NVN(nvnCommandBufferSaveZCullData, void, NVNcommandBuffer *c, NVNbufferAddress a, size_t n) { (void)c; (void)a; (void)n; }
+// PEANUTS: ResolveDepthBuffer: on the Switch the bound depth target is decompressed in place so it can be sampled (I: no public NVN text; inferred from the name and from
+// Ys X: Nordics, which calls it about 2.6 times a second from the title on). The host keeps no compressed depth: a draw that samples a depth target is ordered after the
+// pass that wrote it by the replay's barriers, so there is nothing to resolve. Before, a red "unimplemented" line each call (2,045 in an 11-minute run)
+NVN(nvnCommandBufferResolveDepthBuffer, void, NVNcommandBuffer *c) { (void)c; static _Atomic int once; if (!atomic_exchange(&once, 1)) LOG("[nvn] ResolveDepthBuffer: nothing to resolve on the host (no compressed depth); later calls not logged"); }
 // The stencil test ZCull's stencil cull assumes (a stencil function, then its reference and mask): only a hint for culling ahead of the real stencil test, which the draws'
 // depth-stencil state still does. The host does no ZCull, so there is nothing to set (Donkey Kong Bananza: EQUAL, 0xff)
 NVN_NOPROTO(nvnCommandBufferSetStencilCullCriteria, void, NVNcommandBuffer *c, int func, int ref) { (void)c; (void)func; (void)ref; }
@@ -1581,7 +1629,8 @@ static p_bind_handles *bind_handles(NVNcommandBuffer *c, int op, int st, int fir
         for (int i = 0; i < n && (tb || sb); i++) {
             uint64_t v = r->h[i], tid = v & 0xfffff, sid = v >> 20;
             if (op == OP_BIND_SAMP) { if (sid) r->h[i] = (sid + (uint64_t)sb) << 20; }
-            else { if (tid) tid += (uint64_t)tb; if (sid && op == OP_BIND_TEX) sid += (uint64_t)sb; r->h[i] = tid | sid << 20; }
+            else { if (tid) tid += (uint64_t)tb; if (sid && op == OP_BIND_TEX) sid += (uint64_t)sb; r->h[i] = tid | sid << 20;
+                   if (tid >= (1u << 20) && texpool_range()) { static _Atomic int nb; if (atomic_fetch_add(&nb, 1) < 4) LOG("[RED] bound texture ID %llu (pool base %d) is past the host table's 20-bit IDs: it reads another ID (tex_pool_range too large)", (unsigned long long)tid, tb); } }   // PEANUTS: with tex_pool_range only
         }
     }
 #endif   // PEANUTS(upstream-candidate): Vulkan resolves the original handles against the queue's pools at replay.

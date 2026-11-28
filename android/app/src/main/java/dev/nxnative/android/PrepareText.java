@@ -52,6 +52,10 @@ public final class PrepareText {   // PEANUTS: Home and Prepare use the same fai
 
     /** PEANUTS: a failure's cause (Failure.cause): shaders that come from files the import does not have, in an import without add-on content (addonNotImported) */
     static final String CAUSE_ADDON = "addon_not_imported";
+    /** PEANUTS: a failure's cause: a game file whose index points outside it (shader_split.py damaged(), GitHub issue #561); dev.peanuts.build.Prepare ends the build as FILE_DAMAGED on it */
+    public static final String CAUSE_DAMAGED = "game_file_damaged";
+    /** PEANUTS: what shader_split.py's [RED] line for such a file says after the file's path */
+    static final String DAMAGED = ": the game file is damaged: ";
 
     /** The warning Try anyway shows before it relaxes a check: what may go wrong, plainly */
     static final String ANYWAY_WARNING = "This goes on without the check that stopped it. The game may not start, may crash, or may draw parts wrongly or not at all. "
@@ -71,6 +75,11 @@ public final class PrepareText {   // PEANUTS: Home and Prepare use the same fai
         String what = step + " stopped.";
         if (red.startsWith(XLATE_MISMATCH))
             return new Failure(what + " " + XLATE_MISMATCH_TEXT, detail, FIX_UPDATE);
+        // PEANUTS begin: a damaged game file stops the step the same way at every try: no Retry (FIX_NONE), and the build offers the game's sheet (CAUSE_DAMAGED)
+        if (red.contains(DAMAGED))
+            return new Failure(what + " A game file is damaged: " + shown(red.substring(0, red.indexOf(DAMAGED))) + ". Copy or dump the game again, then import it again.",
+                    detail, FIX_NONE, CAUSE_DAMAGED, 0, 0);
+        // PEANUTS end
         if (red.contains("MemoryError") || red.contains("out of memory") || code == 137)
             return new Failure(what + " The phone ran out of memory. Close other apps, then tap Retry.", detail, FIX_RETRY);
         if (red.contains("No space left") || red.contains("ENOSPC"))

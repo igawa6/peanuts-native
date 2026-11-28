@@ -23,6 +23,10 @@ No code of the game is cut. The game asks for present interval 1, so it needs no
 - **Current:** with the 1 GB pool the alias region reaches +2.26 GB at the title and +3.51 GB in the first fight, with at most 1.75 GB mapped; about 2.7 GB resident and 1.0 GB of Metal allocations on the Mac.
 - **PEANUTS, Android: `mem_map_limit off` (a workaround).** With the map limit on, Unity's allocator crashed at `main+0x6f86ec` after `MapPhysicalMemory` was refused with the pool full: a 4 MB map at 0.93 GB mapped, 45 s after boot, past the intro movie; with a 1.5 GB pool, a 2 MB map at 1.43 GB, 66 s after boot (AYN Thor, Turnip). The fault address is the last 32 bytes of the refused block: the allocator writes to it without checking the result. The Mac runs above came before the map limit and mapped up to 1.75 GB, so the key restores the layout they measured, as for [Castlevania: Belmont's Curse](../0100BA4026E94000/README.md). With it off: about 8.5 minutes at 60 fps with no crash and no red line, at most 1.76 GB mapped and the alias region up to +3.26 GB (AYN Thor, the PurpleVK Turnip build). <!-- PEANUTS -->
 
+## Android
+
+On the release list from 0.1.10 (`peanuts/release-titles.txt`, so in the default APK), with no readiness row. <!-- PEANUTS: on the 0.1.10 release list -->
+
 ## Files and shaders
 
 - RomFS: 10,443 files, 1.65 GB; 10,312 UnityFS bundles, 100 FMOD banks and 4 MP4 movies, nearly all under `Data/StreamingAssets`.

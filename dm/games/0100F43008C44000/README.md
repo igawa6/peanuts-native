@@ -150,3 +150,5 @@ General host changes first needed here; each applies to every game:
 - `c85de3713170e519` ORs bit fields into output 0 and has not been seen with an integer attachment (no row).
 - The development notes list "the render condition the host does not evaluate" among the Mac route's red lines; `render_cond` changes nothing here and stays off.
 - `game.tsv`'s header says "Plays on the Mac"; AGENTS.md and the development notes say it is playable on the iPhone.
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [1 observed RomFS files](shader_files.tsv) out of 22 on 2.0.2. A full split took 15.8 s and the targeted one 9.7 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

@@ -173,6 +173,7 @@ static const steps_row_t k_steps[] = DM_FPS_STEPS_ROWS;   // PEANUTS: the per-ti
 static int rd(uint64_t a, void *out, size_t n) { return a >= 0x1000 && !plat_mem_read(a, out, n); }
 // PEANUTS: preferred, reviewed Warehouse rows are build-gated and use the host presentation limiter's live target.
 #include "fpslocker_rows.h"
+#include "fps_pace.h"   // PEANUTS: fps_pace_next, a deadline held within one period (GitHub issue #887)
 static void fpslocker_store(uint64_t a, uint32_t value) {
     uint32_t *p = (uint32_t *)(uintptr_t)a;
     dm_guest_write_prepare(p, sizeof *p); __atomic_store_n(p, value, __ATOMIC_RELAXED);
@@ -722,8 +723,8 @@ static void fps_limit_wait(void) {
     uint64_t now = plat_abs_time(), period = 1000000000ull / (uint64_t)lim;   // the platform's monotonic clock and sleep (plat.h): clock_nanosleep is Linux only
     // PEANUTS: DM_VK_PACE_PANEL: a limit that is the panel's rate or a whole division of it ticks in the panel's measured refreshes (60 on a 59.83 Hz panel: 16.71 ms)
     { uint64_t vka_panel_tick(uint64_t) __attribute__((weak)); if (!fixed && &vka_panel_tick) period = vka_panel_tick(period); }
-    if (next > now && next - now <= period) { plat_wait_until(next); now = next; }
-    next = (next > now || (next && now - next < period / 2) ? next : now) + period;   // keep the phase through small lateness, restart after a long frame
+    uint64_t wake = fps_pace_next(&next, now, period);   // PEANUTS: fps_pace.h
+    if (wake) plat_wait_until(wake);   // PEANUTS: fps_pace.h (#887)
 }
 
 // A step count row (STEPS_I32, a profile's fps_steps): the cap, and the frame limit's whole-vsync rate if lower (dm_fps_limit_step), as the framework's steps a frame. n steps of

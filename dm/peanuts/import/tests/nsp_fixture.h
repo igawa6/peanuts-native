@@ -169,9 +169,56 @@ static void fx_compress(const FxBuf *img, const FxSeg *seg, int nseg, FxBuf *phy
     free(e);
 }
 
+// ---- hash layers as an NCA's (nx_verify.c reads them): written into a section image's bytes before its data level (img[0, data_off)), and the fs header's
+// hash info (fs header + 8) into info. A RomFS gets IVFC: five hash levels one after the other from offset 0 (16-byte aligned), 512-byte blocks for them, and
+// for the data the smallest block size from 512 up whose levels fit before data_off (a fixture's data has many blocks and a short last one); every block
+// hashed zero-padded to its block size. A PFS0 gets one hash table at 0, the smallest block size from 64 up whose table fits, the last block hashed as it is
+static void fx_block_hash(const uint8_t *p, size_t n, size_t len, uint8_t out[32]) {
+    NxSha256 h; static const uint8_t z[512]; nx_sha256_init(&h); nx_sha256_update(&h, p, n);
+    for (size_t left = len - n; left; ) { size_t k = left < sizeof z ? left : sizeof z; nx_sha256_update(&h, z, k); left -= k; }
+    nx_sha256_final(&h, out);
+}
+static size_t fx_hashes(const uint8_t *p, size_t n, size_t bs, int pad, uint8_t *out) {   // → the bytes written: 32 per block
+    size_t k = 0; for (size_t at = 0; at < n; at += bs, k += 32) fx_block_hash(p + at, n - at < bs ? n - at : bs, pad ? bs : (n - at < bs ? n - at : bs), out + k);
+    return k;
+}
+// fx_ivfc_slack set: the IVFC hash levels are sized for fx_ivfc_slack times the data (as a compressed section's are, for its decompressed data: Echoes of
+// Wisdom's RomFS), the hashes past the data's zeros, and a level's hash for a block of the level below that holds none of the data's zeros too
+static int fx_ivfc_slack;
+static void fx_layers(FxBuf *img, int fs_type, size_t data_off, uint8_t info[0xF8]) {
+    size_t dn = img->n - data_off; memset(info, 0, 0xF8);
+    if (fs_type == NX_FS_PFS0) {
+        size_t bs = 64; while (32 * ((dn + bs - 1) / bs) > data_off) bs *= 2;
+        size_t t = fx_hashes(img->p + data_off, dn, bs, 0, img->p);
+        nx_sha256(img->p, t, info); fx_w32(info + 0x20, (uint32_t)bs); fx_w32(info + 0x24, 2);
+        fx_w64(info + 0x28, 0); fx_w64(info + 0x30, t); fx_w64(info + 0x38, data_off); fx_w64(info + 0x40, dn);
+        return;
+    }
+    for (uint32_t order = 9; order < 24; order++) {
+        size_t off[6], sz[6]; uint8_t *lv[6]; size_t at = 0, used = dn;   // [0, 5): the hash levels 1 to 5, [5]: the data
+        size_t sized = fx_ivfc_slack ? dn * (size_t)fx_ivfc_slack : dn;
+        sz[5] = dn; sz[4] = 32 * ((sized + ((size_t)1 << order) - 1) >> order);
+        for (int i = 4; i > 0; i--) sz[i - 1] = 32 * ((sz[i] + 511) / 512);
+        for (int i = 0; i < 5; i++) { off[i] = at; at = (at + sz[i] + 15) & ~(size_t)15; }
+        if (at > data_off || sz[0] > 512) continue;
+        lv[5] = img->p + data_off;
+        for (int i = 4; i >= 0; i--) {   // level i holds the hashes of level i + 1 (the data for i = 4)
+            size_t bs = i == 4 ? (size_t)1 << order : 512, n = i == 4 ? dn : (used + bs - 1) / bs * bs;   // the used blocks of level i + 1
+            if (n > sz[i + 1]) n = sz[i + 1];
+            lv[i] = img->p + off[i]; memset(lv[i], 0, sz[i]); used = fx_hashes(lv[i + 1], n, bs, 1, lv[i]);
+        }
+        memcpy(info, "IVFC", 4); fx_w32(info + 4, 0x20000); fx_w32(info + 8, 0x20); fx_w32(info + 0xC, 7);
+        for (int i = 0; i < 6; i++) { uint8_t *r = info + 0x10 + 0x18 * i; fx_w64(r, i < 5 ? off[i] : data_off); fx_w64(r + 8, i < 5 ? sz[i] : dn); fx_w32(r + 16, i < 5 ? 9 : order); }
+        fx_block_hash(lv[0], sz[0], 512, info + 0xC0);   // the master hash: level 1's one block
+        return;
+    }
+    abort();   // the data is too big for the hash region before it
+}
+
 // ---- an NCA
 typedef struct FxSec {
     int present, fs_type, crypt;       // crypt: 1 none, 2 AES-XTS (the bytes are left as they are: nothing reads it), 3 AES-CTR, 4 a patch (AES-CTR-EX)
+    uint8_t hinfo[0xF8]; int hinfo_set;   // the hash layers' info for the fs header (fx_layers), when the section has them
     FxBuf body;                        // plain bytes: the layers before data_off, then the PFS0 or the data level
     uint64_t data_off;
     uint64_t toff, tsize; uint32_t tcnt;                      // the compression table, from data_off (tcnt 0: not compressed)
@@ -179,6 +226,7 @@ typedef struct FxSec {
     struct { uint64_t off; uint32_t cv; } sub[4]; int nsub;   // a patch's subsections: the bytes from off to the next one's are encrypted with counter value cv
 } FxSec;
 typedef struct FxNca { int content_type; uint64_t title_id; int rights; uint8_t rid[16], key[16], id[16]; FxSec sec[4]; } FxNca;
+static void fx_hash_sec(FxSec *S) { fx_layers(&S->body, S->fs_type, (size_t)S->data_off, S->hinfo); S->hinfo_set = 1; }   // a section that is not a patch: its own bytes
 
 static void fx_nca(const FxKeys *k, FxNca *n, FxBuf *out) {
     uint8_t hdr[0xC00] = {0}; uint64_t off = 0xC00; size_t start = out->n;
@@ -193,11 +241,13 @@ static void fx_nca(const FxKeys *k, FxNca *n, FxBuf *out) {
         fx_align(&S->body, 0x200);
         fx_w32(hdr + 0x240 + 0x10 * i, (uint32_t)(off / 0x200)); fx_w32(hdr + 0x244 + 0x10 * i, (uint32_t)((off + S->body.n) / 0x200));
         fx_w16(fh, 2); fh[2] = (uint8_t)S->fs_type; fh[3] = S->fs_type == NX_FS_PFS0 ? 2 : 3; fh[4] = (uint8_t)S->crypt;
+        if (S->hinfo_set) memcpy(fh + 8, S->hinfo, 0xF8);
         fx_w64(fh + (S->fs_type == NX_FS_PFS0 ? 0x40 : 0x90), S->data_off);
         fx_w32(fh + 0x140, lo); fx_w32(fh + 0x144, hi);
         if (S->crypt == 4) { fx_w64(fh + 0x100, S->roff); fx_w64(fh + 0x108, S->rsize); memcpy(fh + 0x110, "BKTR", 4); fx_w32(fh + 0x114, 1);
                              fx_w64(fh + 0x120, S->soff); fx_w64(fh + 0x128, S->ssize); memcpy(fh + 0x130, "BKTR", 4); fx_w32(fh + 0x134, 1); }
         if (S->tcnt) { fx_w64(fh + 0x178, S->toff); fx_w64(fh + 0x180, S->tsize); memcpy(fh + 0x188, "BKTR", 4); fx_w32(fh + 0x18C, 1); fx_w32(fh + 0x190, S->tcnt); }
+        nx_sha256(fh, 0x200, hdr + 0x280 + 0x20 * i);   // the fs header's SHA-256 in the NCA header, as a console's NCA has it
         size_t at = fx_put(out, S->body.p, S->body.n); uint8_t *b = out->p + at;
         if (S->crypt == 3) fx_ctr(n->key, hi, lo, off, b, S->body.n);
         if (S->crypt == 4) {
@@ -263,7 +313,7 @@ static void fx_title_ctl(const FxKeys *k, const char *path, uint64_t tid, uint64
         cn.content_type = 2; cn.title_id = tid; fx_fill(cn.id, 16); fx_fill(cn.key, 16);
         cn.sec[0].present = 1; cn.sec[0].fs_type = NX_FS_ROMFS; cn.sec[0].crypt = 3; cn.sec[0].data_off = 0x200;
         { uint8_t *hash = fx_bytes(0x200); fx_put(&cn.sec[0].body, hash, 0x200); free(hash); }
-        fx_put(&cn.sec[0].body, img.p, img.n); free(img.p);
+        fx_put(&cn.sec[0].body, img.p, img.n); free(img.p); fx_hash_sec(&cn.sec[0]);
         fx_nca(k, &cn, &ctlb); free(cn.sec[0].body.p);
         { uint8_t sha[32]; nx_sha256(ctlb.p, ctlb.n, sha); memcpy(cn.id, sha, 16); memcpy(crec, sha, 32); }   // named by its SHA-256 too, which the CNMT records
         memcpy(crec + 0x20, cn.id, 16); crec[0x36] = 3;
@@ -278,7 +328,7 @@ static void fx_title_ctl(const FxKeys *k, const char *path, uint64_t tid, uint64
     meta.sec[0].present = 1; meta.sec[0].fs_type = NX_FS_PFS0; meta.sec[0].crypt = 3; meta.sec[0].data_off = 0x200;
     { uint8_t *hash = fx_bytes(0x200); fx_put(&meta.sec[0].body, hash, 0x200); free(hash);
       FxEnt ce; snprintf(ce.name, sizeof ce.name, "%s_%016llx.cnmt", kind == 0 ? "Application" : kind == 1 ? "Patch" : "AddOnContent", (unsigned long long)tid); ce.p = cnmt.p; ce.n = cnmt.n;
-      fx_fs0(&ce, 1, 0, &meta.sec[0].body); }
+      fx_fs0(&ce, 1, 0, &meta.sec[0].body); fx_hash_sec(&meta.sec[0]); }
     fx_nca(k, &meta, &mb);
     { uint8_t sha[32]; nx_sha256(mb.p, mb.n, sha); memcpy(meta.id, sha, 16); }
     char hex[33]; fx_hex(hex, content->id, 16); snprintf(e[ne].name, sizeof e[ne].name, "%s.nca", hex); e[ne].p = cb.p; e[ne++].n = cb.n;
@@ -308,11 +358,11 @@ static void fx_exefs(FxSec *S, uint8_t build[32]) {
     fx_fill(build, 32); memcpy(nso, "NSO0", 4); memcpy(nso + 0x40, build, 32); fx_fill(npdm, sizeof npdm);
     strcpy(e[0].name, "main"); e[0].p = nso; e[0].n = sizeof nso; strcpy(e[1].name, "main.npdm"); e[1].p = npdm; e[1].n = sizeof npdm;
     memset(S, 0, sizeof *S); S->present = 1; S->fs_type = NX_FS_PFS0; S->crypt = 3; S->data_off = 0x200;
-    fx_put(&S->body, hash, 0x200); free(hash); fx_fs0(e, 2, 0, &S->body);
+    fx_put(&S->body, hash, 0x200); free(hash); fx_fs0(e, 2, 0, &S->body); fx_hash_sec(S);
 }
 
 // ---- a game: base and update dumps, and what they hold
-enum { FX_HASH = 0x1000 };   // the bytes before the data level (the hash layers: never read by the reader, random here)
+enum { FX_HASH = 0x1000 };   // the bytes before the data level: the hash layers (fx_layers), random bytes after them
 typedef struct FxGame {
     char base[600], upd[600];            // the dumps
     FxFile *bf, *uf; int nbf, nuf;       // the base's files, and the game's with the update
@@ -346,6 +396,7 @@ static void fx_game(const FxKeys *k, const char *dir, const char *tag, uint64_t 
     { uint8_t *hash = fx_bytes(FX_HASH); fx_put(&S->body, hash, FX_HASH); free(hash); }
     if (compressed) { FxSeg none; int nn; fx_compress(&g->bimg, &none, 0, &S->body, &none, &nn, &S->toff, &S->tsize, &S->tcnt); }
     else fx_put(&S->body, g->bimg.p, g->bimg.n);
+    fx_hash_sec(S);   // before the copy below: the update's runs of the base are of its bytes as stored
     FxBuf bbody = S->body;   // the base section as stored (kept: the update's shared files are runs of it)
     { uint8_t *keep = malloc(bbody.n); memcpy(keep, bbody.p, bbody.n); bbody.p = keep; }
     fx_title(k, g->base, tid, tid, 0, 0, &bn, 0, 0, xci);
@@ -369,8 +420,9 @@ static void fx_game(const FxKeys *k, const char *dir, const char *tag, uint64_t 
     fx_exefs(&un.sec[0], build); fx_hex(g->ubuild, build, 16);
     S->present = 1; S->fs_type = NX_FS_ROMFS; S->crypt = 4; S->data_off = FX_HASH;
     { uint8_t *hash = fx_bytes(FX_HASH); fx_put(&virt, hash, FX_HASH); free(hash); }
-    if (compressed) { int np; fx_compress(&g->uimg, seg, ns, &virt, pseg, &np, &S->toff, &S->tsize, &S->tcnt); fx_patch(&virt, pseg, np, S); }
-    else { fx_put(&virt, g->uimg.p, g->uimg.n); for (int i = 0; i < ns; i++) seg[i].v += FX_HASH; fx_patch(&virt, seg, ns, S); }
+    // the patch's hash layers are of the patched image (virt), which the patch carries: they are written into virt before it is cut into the patch
+    if (compressed) { int np; fx_compress(&g->uimg, seg, ns, &virt, pseg, &np, &S->toff, &S->tsize, &S->tcnt); fx_layers(&virt, NX_FS_ROMFS, FX_HASH, S->hinfo); S->hinfo_set = 1; fx_patch(&virt, pseg, np, S); }
+    else { fx_put(&virt, g->uimg.p, g->uimg.n); for (int i = 0; i < ns; i++) seg[i].v += FX_HASH; fx_layers(&virt, NX_FS_ROMFS, FX_HASH, S->hinfo); S->hinfo_set = 1; fx_patch(&virt, seg, ns, S); }
     fx_title(k, g->upd, tid + 0x800, tid, 1, 0x20000, &un, 0, 0, 0);
     free(virt.p); free(seg); free(pseg); free(bn.sec[0].body.p); free(bn.sec[1].body.p); free(un.sec[0].body.p); free(un.sec[1].body.p);
 }
@@ -385,7 +437,7 @@ static void fx_addon(const FxKeys *k, const char *dir, const char *tag, uint64_t
     fx_romfs(a->f, N, &img);
     n.content_type = 5; n.sec[0].present = 1; n.sec[0].fs_type = NX_FS_ROMFS; n.sec[0].crypt = crypt; n.sec[0].data_off = FX_HASH;
     { uint8_t *hash = fx_bytes(FX_HASH); fx_put(&n.sec[0].body, hash, FX_HASH); free(hash); }
-    fx_put(&n.sec[0].body, img.p, img.n);
+    fx_put(&n.sec[0].body, img.p, img.n); fx_hash_sec(&n.sec[0]);
     fx_title(k, a->path, app + 0x1000 + (uint64_t)index, app, 2, 0x10000, &n, ticket, 0, 0);
     free(img.p); free(n.sec[0].body.p);
 }

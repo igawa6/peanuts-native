@@ -128,3 +128,5 @@ General host changes first needed here; each applies to every game:
 - `game.tsv` opens with "Bring-up has just started: the memory values are Mario's until measured", while its memory section gives measured values.
 - [dm/games/README.md, Adding a game](../README.md#adding-a-game) gives `0x90000000` as this game's heap region in the guesser's 4 GB layout; in `game.tsv` `0x90000000` is the whole block (`mem_reserve`) and the heap region is 1.5 GB.
 - Only the merged 2.1.0 copy is extracted; the base game's own build IDs are not in the profile.
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [478 observed RomFS files](shader_files.tsv) out of 9,774 on 2.1.0. A full split took 4.7 s and the targeted one 0.9 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

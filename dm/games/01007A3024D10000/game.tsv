@@ -1,0 +1,45 @@
+# Game profile of THE HOUSE OF THE DEAD 2: Remake (Switch, base v0 + update 1.0.2 = v131072)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Unity 2022.3.55f1 IL2CPP with FMOD and Addressables on SDK 19.3.5, NVN, NintendoSDK_movie (subsdk0).
+# Shaders: 28,134 shaders (37 compute, 1 geometry, 14,050 pixel, 14,046 vertex; 28,123 from Data, 11 from main).
+
+# ---- Identity ----
+title_id	01007A3024D10000
+program_id	01007A3024D10000
+
+# ---- App ----
+name	THE HOUSE OF THE DEAD 2: Remake
+ipa	TheHouseOfTheDead2Remake.ipa
+app_category	public.app-category.action-games
+
+# ---- Versions ----
+build	v0	1.0.0	main=16ae183b4953cc0616e227ff2eaa7be1	subsdk0=e0ee365be8fb7ba6d2071082b5417b50	sdk=191086db0c8bb8477a320ccd7942a254
+build	v131072	1.0.2	main=a6f2e97d9d49d82c40fac30e3d2497d8	subsdk0=e0ee365be8fb7ba6d2071082b5417b50	sdk=191086db0c8bb8477a320ccd7942a254
+package	v131072
+shader_versions	v131072
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Data/StreamingAssets/Master.bank
+zip_store	.assets:.bank:.bundle:.dat:.resource:.ress:.metallib
+
+# ---- Memory ----
+# The NPDM declares 16 MB of system resource (virtual address memory).
+# 16 GB alias region (address space only on Android) so StandardAllocator's region does not starve Unity 2022.3's own address regions.
+# Modules total ~156 MB (main 137.4 MB, sdk 12.3 MB, subsdk0 6.5 MB), so mem_used is raised above the 64 MB default.
+mem_reserve	0x428000000
+mem_alias	0x400000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+mem_used	0xC000000
+sys_resource	0x1000000
+
+# ---- Graphics ----
+# PEANUTS: see README.md (plays on Mesa Turnip T30 on SM-X800; Qualcomm system driver not tested)
+recommend	driver.id=8	driver=18
+
+# ---- Shader split ----
+shader_groups	/Data/=data
+shader_note	THE HOUSE OF THE DEAD 2: Remake shaders

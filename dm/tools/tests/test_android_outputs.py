@@ -44,7 +44,7 @@ class OutputsThatWent(unittest.TestCase):
     def test_wired(self):
         s = PACK_SERVICE.read_text(encoding='utf-8')
         work = s[s.index('private void work()'):s.index('private void finished(')]   # finished(Thread w) since #150 (PEANUTS, 0.1.8)
-        self.assertLess(work.index('dropMissing(j, "before it goes on")'), work.index('while ((i = j.next()) >= 0)'), 'checked before the steps run')
+        self.assertLess(work.index('dropMissing(j, "before it goes on")'), work.index('while ((i = nextStep(j)) >= 0)'), 'checked before the steps run')   # PEANUTS: nextStep (the rewrite beside, #120)
         self.assertIn('j.codeModules(Outputs.codeModules(j.pack()))', work, 'the rewrite records the modules it wrote')
         pack = s[s.index('case "pack": {'):s.index('default:\n                return "unknown step "')]
         self.assertLess(pack.index('dropMissing(j, "before the pack step")'), pack.index('"--keep-code"'), 'the pack step goes back instead of stopping')

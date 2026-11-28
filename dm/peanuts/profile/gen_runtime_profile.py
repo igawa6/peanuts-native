@@ -44,8 +44,9 @@ SCALAR = {
     'NDRS_CTL': ('ndrs_ctl', 'int'), 'NRES_LEVELS': ('nres_levels', 'int'),
     'EVENT_WAIT': ('event_wait', 'int'), 'OCCLUSION_SPLIT_PASS': ('occlusion_split_pass', 'int'), 'LOW_RAM_PLACE_PART_MB': ('low_ram_place_part_mb', 'int'),
     'LOW_RAM_IMG_CACHE_MAX_MB': ('low_ram_img_cache_max_mb', 'int'), 'LOW_RAM_APP_POOL_MB': ('low_ram_app_pool_mb', 'int'),
-    'PLACE_JOIN_MB': ('place_join_mb', 'int'),
+    'PLACE_JOIN_MB': ('place_join_mb', 'int'), 'PUSH_DESC_QCOM_OLD_OFF': ('push_desc_qcom_old_off', 'int'),
     'RENDER_DEFAULT_OUT': ('render_default_out', 'str'), 'NRENDER_CFG': ('nrender_cfg', 'int'), 'NRT_POOL': ('nrt_pool', 'int'),
+    'TEX_POOL_RANGE': ('tex_pool_range', 'int'),   # PEANUTS: hle_nvn.c texpool_range
 }
 # PRESENCE: macros header() emits only when the game.tsv key is set (optional; absent means "the host decides some other way", e.g. by SDK version).
 PRESENCE = {'SHARED_FONT_TTF': 'shared_font_ttf', 'NVN_API_MAJOR': 'nvn_api_major', 'NVN_API_MINOR': 'nvn_api_minor'}
@@ -77,9 +78,11 @@ LAYOUT = [
     ('nfps_steps', 'u32'), ('fps_steps', 'row[8]:char[48]+u64+u32+u32+u32+u64[3]'), ('ndrs_ctl', 'u32'), ('drs_ctl', 'row[8]:char[48]+u64x4'),
     ('nres_levels', 'u32'), ('res_levels', 'row[8]:char[48]+u64+u32+u32+row[12]:u64+u32'),
     ('event_wait', 'u32'), ('occlusion_split_pass', 'u32'), ('low_ram_place_part_mb', 'u32'), ('low_ram_img_cache_max_mb', 'u32'), ('low_ram_app_pool_mb', 'u32'), ('place_join_mb', 'u32'),
+    ('push_desc_qcom_old_off', 'u32'),
     ('render_default_out', 'char[16]'), ('render_quality', 'u32[4]'),
     ('nrender_cfg', 'u32'), ('render_cfg', 'row[4]:char[48]+u64+u32x4+u32[8][4]+u32x5'),
     ('nrt_pool', 'u32'), ('rt_pool', 'row[4]:char[48]+char[16]+u64+u32x3+u32[4]x3+u32'),
+    ('tex_pool_range', 'u64'),   # PEANUTS
 ]
 
 
@@ -439,7 +442,7 @@ def build_profile_bytes(g, modules_override=None):
     rl_rows = [row_res_levels(b_, table, lvln, nl, (lists + [(0, 0)] * 12)[:12]) for b_, table, lvln, nl, lists in rl]
     b, a = pack_rows(rl_rows, CAPS['res_levels'], zrl); p.sub(b, a)
 
-    for n in ('EVENT_WAIT', 'OCCLUSION_SPLIT_PASS', 'LOW_RAM_PLACE_PART_MB', 'LOW_RAM_IMG_CACHE_MAX_MB', 'LOW_RAM_APP_POOL_MB', 'PLACE_JOIN_MB'): p.u32(as_int(val(n)))
+    for n in ('EVENT_WAIT', 'OCCLUSION_SPLIT_PASS', 'LOW_RAM_PLACE_PART_MB', 'LOW_RAM_IMG_CACHE_MAX_MB', 'LOW_RAM_APP_POOL_MB', 'PLACE_JOIN_MB', 'PUSH_DESC_QCOM_OLD_OFF'): p.u32(as_int(val(n)))
     p.raw(unq(val('RENDER_DEFAULT_OUT')), 16)
     rq = [as_int(x) for x in split_top(unbrace(val('RENDER_QUALITY')))]
     assert len(rq) == 4, rq
@@ -454,6 +457,7 @@ def build_profile_bytes(g, modules_override=None):
     p.u32(nrt)
     zrt = row_rt_pool('', '', 0, 0, 0, 0, [], [], [], 0)
     b, a = pack_rows([row_rt_pool(*r) for r in rt], CAPS['rt_pool'], zrt); p.sub(b, a)
+    p.u64(as_int(val('TEX_POOL_RANGE')))   # PEANUTS
 
     out, _ = p.finish()
     return out

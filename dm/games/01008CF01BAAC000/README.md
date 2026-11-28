@@ -68,3 +68,5 @@ The development build is `01008CF01BAAC000_build/` beside the NSPs, with runs an
 - **An archive built for the profile's default GL depth was rejected at runtime:** [Offline pipeline archive and profile depth disagree](../../../docs/reference/shaders.md#offline-pipeline-archive-and-profile-depth-disagree).
 - **Unused conditional cube inputs are not rendering errors:** [A 2D texture in a cube slot binds the zero cube](../../../docs/reference/rendering.md#a-2d-texture-in-a-cube-slot-binds-the-zero-cube).
 - **A stale `DM_ROMFS` crashed the game 0.3 s after `nnMain`:** [A stale `DM_ROMFS` path crashes the game soon after `nnMain`](../../../docs/reference/packing.md#a-stale-dm_romfs-path-crashes-the-game-soon-after-nnmain).
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [154 observed RomFS files](shader_files.tsv) out of 10,965 on 1.1.0. A full split took 6.9 s and the targeted one 2.3 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

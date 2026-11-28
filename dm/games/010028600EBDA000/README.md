@@ -64,3 +64,5 @@ General host changes first needed here; each applies to every game:
 - The scaled copy when leaving the title: 04's 3D World section says it is skipped, its Link's Awakening section says `copy_t2t_draw` covers it.
 - The fur fin geometry shader (`RenderFinFur`) does not build.
 - `game.tsv` still says "In bring-up" and its memory values "until measured".
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [56 observed RomFS files](shader_files.tsv) out of 3,728 on 1.2.2. A full split took 4.5 s and the targeted one 2.1 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

@@ -263,7 +263,16 @@ final class GameSettings {
                 }
             };
 
+            java.util.Set<String> groupsShown = new java.util.HashSet<>();   // PEANUTS: option groups
             for (Profile.Option opt : prof.options) {
+                // PEANUTS begin: an option group is one row at its first member's place, a radio choice like the Frame rate cap (optionGroup)
+                if (!opt.group.isEmpty()) {
+                    Profile.OptionGroup grp = null;
+                    for (Profile.OptionGroup x : prof.optionGroups) if (x.name.equals(opt.group)) grp = x;
+                    if (grp != null && groupsShown.add(grp.name)) options.add(optionGroupRow(a, g, prof, grp, packDir, again));
+                    continue;
+                }
+                // PEANUTS end
                 Ui.Setting setting = new Ui.Setting(a, optionIcon(opt.env), opt.label, null)
                         .toggle(a, Prefs.gameOption(a, id, opt.env), (button, checked) -> {
                             if (updating[0]) return;
@@ -756,6 +765,37 @@ final class GameSettings {
     }
 
     // PEANUTS: xbox(), the Xbox button labels picker, is removed (owner 2026-11-26)
+
+    // PEANUTS begin: an option group's row (game.tsv option_group): its label, the choice (Default or a member's label) as the value, what the choice does under it, and
+    // a single-choice dialog as the Frame rate cap's; restart options only (game.py), so it applies at the next start
+    private static Ui.Setting optionGroupRow(MainActivity a, Game g, Profile prof, Profile.OptionGroup grp, File packDir, Runnable again) {
+        List<Profile.Option> members = Profile.groupMembers(prof.options, grp.name);
+        Profile.Option cur = Profile.groupChoice(prof.options, grp.name, env -> Prefs.gameOption(a, g.titleId, env));
+        Ui.Setting s = new Ui.Setting(a, optionIcon(members.get(0).env), grp.label, v -> optionGroup(a, g, prof, grp, again)).chevron(a);
+        s.value(cur == null ? "Default" : cur.label).note(cur == null ? grp.description : cur.description);
+        s.status(cur != null && !cur.isSupported(packDir) ? "Needs Prepare again: patches the game's code (Storage › Prepare again)" : null);
+        return s;
+    }
+
+    private static void optionGroup(MainActivity a, Game g, Profile prof, Profile.OptionGroup grp, Runnable done) {
+        List<Profile.Option> members = Profile.groupMembers(prof.options, grp.name);
+        Profile.Option cur = Profile.groupChoice(prof.options, grp.name, env -> Prefs.gameOption(a, g.titleId, env));
+        String[] labels = new String[members.size() + 1];
+        boolean[] enabled = new boolean[labels.length];
+        labels[0] = "Default"; enabled[0] = true;
+        int checked = 0;
+        for (int k = 0; k < members.size(); k++) {
+            labels[k + 1] = members.get(k).label; enabled[k + 1] = true;
+            if (members.get(k) == cur) checked = k + 1;
+        }
+        new PadFocus.Builder(a).setTitle(grp.label + " · " + g.name).setSingleChoiceItems(capItems(a, labels, enabled), checked, (x, w) -> {
+            Prefs.gameOptionGroup(a, g.titleId, grp.name, w == 0 ? null : members.get(w - 1).env);
+            x.dismiss();
+            done.run();
+        }).setNegativeButton("Cancel", null).show();
+    }
+    // PEANUTS end
+
     private static android.widget.ListAdapter capItems(MainActivity a, String[] labels, boolean[] enabled) {
         return new android.widget.ArrayAdapter<String>(a, android.R.layout.simple_list_item_single_choice, labels) {
             @Override public boolean areAllItemsEnabled() { return false; }

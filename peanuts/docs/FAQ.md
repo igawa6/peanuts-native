@@ -272,6 +272,12 @@ The games tested for 0.1.1 were Link's Awakening, Echoes of Wisdom, Fire Emblem:
 
 0.1.9 adds One Piece: Pirate Warriors 4, FINAL FANTASY XII THE ZODIAC AGE, FINAL FANTASY Pixel Remaster, Battle Brothers, The Hundred Line -Last Defense Academy-, DRAGON QUEST VII Reimagined, Sea of Stars, FANTASIAN Neo Dimension, CRISIS CORE FINAL FANTASY VII REUNION, Batman: Arkham Knight and OCTOPATH TRAVELER. Play The Hundred Line, Sea of Stars, CRISIS CORE and Batman: Arkham Knight with a Turnip driver: on Qualcomm's own driver The Hundred Line draws no 3D world, Sea of Stars draws broken graphics on drivers before 512.800, and CRISIS CORE and Batman: Arkham Knight crash. CRISIS CORE can look washed out white on its first start; start it again. DRAGON QUEST VII Reimagined was not tried on a phone yet. FANTASY LIFE i: The Girl Who Steals Time also supports update 2.2.0, and Trails in the Sky 1st Chapter supports update 1.0.8.
 
+0.1.10 adds Xenoblade Chronicles 2 and Xenoblade Chronicles 3. Both were checked on an AYN Thor with a Turnip driver (30 fps through the first battle); Qualcomm's own driver was not tried. Xenoblade Chronicles 3 was checked with its European release.
+
+0.1.10 also adds Cult of the Lamb, Super Smash Bros. Ultimate and OCTOPATH TRAVELER II, each checked on an AYN Thor with a Turnip driver at 60 fps. Cult of the Lamb's inventory menu draws wrong on one older Turnip build; Turnip 27.0.0-R2 and the system driver draw it right. Super Smash Bros. Ultimate crashed once on its first launch, after about 4 minutes, and not again. OCTOPATH TRAVELER II needs Turnip: on Qualcomm's own driver the game stops after New Game, and on a first launch Hikari's opening can draw bright green and white until the game's shaders are ready.
+
+0.1.10 also adds THE HOUSE OF THE DEAD: Remake and THE HOUSE OF THE DEAD 2: Remake, each checked on a Samsung Galaxy Tab S8+ with a Turnip driver at about 60 fps; Qualcomm's own driver was not tried. And Trails through Daybreak II, base game 1.0.0, an early version: it was checked on an AYN Odin 2 with Turnip from New Game through the opening and the first field tutorials, and it needs Turnip, because on Qualcomm's own driver it stops before the title screen. Its water is not drawn yet, and saves, battles and later areas were not checked.
+
 The 0.1.5 verification build was checked on an AYN Thor with Turnip v26.2.0 R5. Demon Slayer 2 reached the playable rooftop fight against Daki at about 30 fps. Tears of the Kingdom reached the opening cave and responded to movement. Kirby and the Forgotten Land prepared all 418 pipeline keys on its first launch, then reused the cache on relaunch. The other six additions have earlier, game-specific device checks.
 
 Settings › **About** › **Games** lists the games of the app you have installed, each with the version it builds.
@@ -368,6 +374,12 @@ Open the game's sheet (for a built game: hold the cover › **Storage** › **Bu
 The dumps must still be in their folders. If one is missing, the app names it and the folders it read, and changes nothing. Every part the old `.nup` has must be found again: its base, an update at least as new, and each of its DLC.
 
 The new file is written beside the old one, so for a while both are on the storage. If there is not enough room, the app says how much is needed. When deleting the old file first would make room, it offers that as a second choice. The risk: if the import then fails or is stopped, the game has no `.nup` and cannot be played until a build from its sheet has made one.
+
+### The build says a game file is cut off or damaged
+
+The import checks every part of the game against the sizes and the checksums the game's own files carry, as it reads them. A file that was copied or downloaded only in part ("is cut off"), or whose bytes changed on the way ("is damaged"), stops the build with its name, and nothing is changed. The check adds about a second to the import of a 6 GB game on an AYN Thor. Retry would stop at the same place, so the card offers the game's sheet instead: copy the file again from where you keep your dumps, or dump it again from your console, then build again.
+
+A game imported with an older version of the app was not checked this way. If its build stops at **Finding the shaders** with "A game file is damaged", the damage is inside its `.nup`: put good files in place and tap **Import again** on the game's sheet.
 
 ### Can I build from NSZ or XCZ files?
 

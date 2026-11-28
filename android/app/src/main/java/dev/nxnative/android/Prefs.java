@@ -193,6 +193,14 @@ final class Prefs {
     }
     static boolean gameOption(Context c, String titleId, String env) { return of(c).getBoolean(gameKey("opt_" + env, titleId), Recommend.bool(rec(c, titleId, Recommend.OPTION + env), false)); }
     static void gameOption(Context c, String titleId, String env, boolean on) { of(c).edit().putBoolean(gameKey("opt_" + env, titleId), on).commit(); }
+    /** PEANUTS: an option group's choice (Profile.OptionGroup): the chosen member on and the others off, or every member off for Default (env null) */
+    static void gameOptionGroup(Context c, String titleId, String group, String env) {
+        Profile p = Profile.of(titleId);
+        if (p == null) return;
+        SharedPreferences.Editor e = of(c).edit();
+        for (Profile.Option o : Profile.groupMembers(p.options, group)) e.putBoolean(gameKey("opt_" + o.env, titleId), o.env.equals(env));
+        e.commit();
+    }
     static boolean hold60(Context c, String titleId) { return of(c).getBoolean(gameKey("hold60", titleId), Recommend.bool(rec(c, titleId, Recommend.HOLD60), false)); }
     static void hold60(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("hold60", titleId), on).commit(); }
     static final String HOLD60_TEXT = "Off: the game drops to 30 fps when it cannot keep 60, as on the console. On: the game always runs its 60 fps mode and the app does not hold frames, so it never drops to 30; the frame rate is less even and the game runs a little slower while under 60. Only with the 60 fps cap";

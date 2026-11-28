@@ -79,3 +79,5 @@ The rewriter took all three modules without an error.
 **Untested.** Game settings › Display offers **Fill the screen** on 1.4.2.0 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
 
 <!-- PEANUTS end -->
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [11 observed RomFS files](shader_files.tsv) out of 103,413 on 1.4.2.0. A full split took 41.8 s and the targeted one 3.7 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

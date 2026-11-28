@@ -40,3 +40,5 @@ On Thor with Turnip R5, the rooftop tutorial ran at about 20 and 59–60 rendere
 **Untested.** Game settings › Display offers **Fill the screen** on 1.80 through 1 `aspect_plan` row that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the packed 1920x1080 sizes in code and the 16/9 float words, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
 
 <!-- PEANUTS end -->
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [3 observed RomFS files](shader_files.tsv) out of 43 on 1.80. A full split took 29.6 s and the targeted one 21.5 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

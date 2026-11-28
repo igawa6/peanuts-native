@@ -35,7 +35,7 @@ class OptionTsv(unittest.TestCase):
         for p in (REPO / 'dm/games').glob('*/game.tsv'):
             for r in (l.split('\t') for l in p.read_text(encoding='utf-8').splitlines() if l.startswith('option\t')):
                 self.assertRegex(r[1].strip(), r'^DM_[A-Z0-9_]+$', p)
-                for tok in (t for col in r[4:] for t in col.split()): self.assertRegex(tok, r'^(restart|live|implies=DM_[A-Z0-9_,]+|needs=[A-Z0-9_]+)$', f'{p}: {tok}')
+                for tok in (t for col in r[4:] for t in col.split()): self.assertRegex(tok, r'^(restart|live|implies=DM_[A-Z0-9_,]+|needs=[A-Z0-9_]+|group=[a-z0-9_]+)$', f'{p}: {tok}')
         # PEANUTS end
 
     def test_oot_options_in_game_tsv(self):
@@ -65,6 +65,9 @@ class OptionTsv(unittest.TestCase):
         self.assertIn("optionsOf(g)", gradle)
         self.assertIn("implies=", gradle)
         self.assertIn("needs=", gradle)
+        # PEANUTS: group= is written as a <key>=<value> token only when set, so an option without a group keeps the 7-field encoding
+        self.assertIn("(group ? ['group=' + group] : [])", gradle)
+        self.assertIn("tsvRows(g, 'thermal_cap').isEmpty() ? '' : '1', optionGroupsOf(g)].join", gradle)
 
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')

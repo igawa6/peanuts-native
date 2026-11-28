@@ -72,6 +72,8 @@ General changes first needed here; each applies to every game:
 
 ## Android
 
+On the release list from 0.1.10 (`peanuts/release-titles.txt`, so in the default APK), with no readiness row. <!-- PEANUTS: on the 0.1.10 release list -->
+
 PEANUTS: this profile is Banana Native's, taken as it is: no `game.tsv` key, shader table or code changed. Packed on macOS from update 1.1.1 (v131072) over the base game with its DLC (a licence only): the shader split gave 13,980 shaders whose keys are exactly the profile's `shader_map.tsv`, and the Vulkan library has 24,616 modules, every one valid for spirv-val `--target-env vulkan1.3` (217.6 MB; the pack is 340 MiB). The builder logs six red lines for Oodle- or LZ5-compressed pak files it cannot read (three effect `.uasset` and three level `.umap`, "their shaders are left out"); none of them is the first source of any shader in the profile's map and the key sets are equal, so no shader is lost.
 
 - **Current (2026-11-24), AYN Thor (Adreno 740), Turnip 27.0.0-R2:** all eight travelers, each from an empty pipeline cache (the shader parts prepared first) to the end of the opening and the first battle, 60 fps (frame time p50 16.7 to 16.9 ms, p95 18.7 to 21.1 ms in the last 300-frame window of nine runs, GPU about 6 to 13 ms a frame), 2.4 to 3.0 GB of game memory on the overlay, no crash, no red line other than the `mtl_*` statistics stubs. The engine region gate ran: `[mem] Unreal's engine region: 62.00 GB asked, 2.81 GB of address space, what the alias region has room for`.

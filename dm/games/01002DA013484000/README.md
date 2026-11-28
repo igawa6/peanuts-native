@@ -83,3 +83,5 @@ General host changes first needed here; each applies to every game:
 ## Android (Peanuts Native)
 
 PEANUTS: this profile is nxnative's, taken as it is (links to notes this tree does not have are plain text). Packed on Linux (2,470 shaders, all valid) and played on an AYN Thor (Adreno 740, Turnip) from a save in the Knight Academy: 60 fps, about 0.9 GB, graphics and HUD right indoors. Two log lines, each once: a sampler's reduction mode is not applied, and a colour clear of the alpha channel alone is skipped (the Vulkan replay has no masked clear yet). The game clears alpha before it writes its fog there for the depth of field, so Skyloft outdoors is the scene to check; not done yet.
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [31 observed RomFS files](shader_files.tsv) out of 876 on 1.0.1. A full split took 7.7 s and the targeted one 0.6 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

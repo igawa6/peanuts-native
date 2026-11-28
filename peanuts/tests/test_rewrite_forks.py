@@ -44,6 +44,19 @@ def without_forks(src):
     return '\n'.join(out)
 
 
+def forks(src):
+    """The PEANUTS(upstream-candidate) spans of patch_nso.py's text that hold in_forks (what without_forks leaves out)"""
+    lines, out, i = src.split('\n'), [], 0
+    while i < len(lines):
+        if 'PEANUTS(upstream-candidate) begin' in lines[i]:
+            j = next(k for k in range(i, len(lines)) if 'PEANUTS end' in lines[k])
+            if any('in_forks' in l for l in lines[i:j + 1]):
+                out.append('\n'.join(lines[i:j + 1])); i = j + 1
+                continue
+        i += 1
+    return out
+
+
 def square_plus(a, b): return [a * a + b] * 3
 
 
@@ -243,19 +256,34 @@ class Wiring(unittest.TestCase):
         self.assertIn('except ImportError: return in_forks(fn, jobs, phase)', SRC)
 
     def test_the_file_before_it_counts_as_the_same_rewriter(self):
-        # the equivalent (scripts/pack_android.py EQUIV: a pack whose key was made with it counts as up to date) is the current file without the forks, and
+        # the equivalent (scripts/pack_android.py EQUIV: a pack whose key was made with it counts as up to date) is the file in_forks was added to, and
         # nothing else: only then does a rewrite with it come out the same. main's PR #164 changed the rewriter under this branch (2026-11-20), and the file
         # kept here was still the one before #164: every pack rewritten before #164 would have counted as up to date, where main rewrites them. On dev 0.1.7
-        # #177 changed it again (its second pass, 2590f2d2), and 0.1.7 with #290's allocator cuts: the file kept was main's at 54b9ce16, and on dev 0.1.8 #481 changed the rewriter again (its worker processes on Windows) and keeps main's file as its own equivalent, so the one kept here is 0.1.8's at e13378e6; it follows every
-        # rewriter change on the branch this lands on
+        # #177 changed it again (its second pass, 2590f2d2), and 0.1.7 with #290's allocator cuts: the file kept was main's at 54b9ce16, and on dev 0.1.8 #481 changed the rewriter again (its worker processes on Windows) and keeps main's file as its own equivalent, so the one kept here is 0.1.8's at e13378e6.
+        # A later rewriter change of the same output (a rewrite census) keeps the file before it as its own equivalent (CHAIN, oldest first): e13378e6's
+        # file is then the first of them without in_forks, and each of them has the current file's in_forks spans, byte for byte
         name = 'patch_nso.py.e13378e630c8'   # dev 0.1.8's file (e13378e6, #481); 0.1.7's, patch_nso.py.54b9ce16465e, is #481's equivalent and stays
+        last = 'patch_nso.py.d98ba837b4c1'   # the file with the forks before dev 0.1.10's speed round (d98ba837)
         equiv = REPO / 'dm/tools/rewriter_equiv' / name
         self.assertTrue(equiv.is_file())
         for before in ('6bc30f06074b', 'eaf706b807d5', '2590f2d24457'):   # the files before #164, before #177 and before #290
             self.assertFalse((REPO / f'dm/tools/rewriter_equiv/patch_nso.py.{before}').exists())
-        self.assertEqual(without_forks(SRC), equiv.read_text(encoding='utf-8'), f'{name} is not patch_nso.py without in_forks: the rewriter changed '
-                         'on the branch this is on; the equivalent is then its file (git show <its last commit>:dm/tools/patch_nso.py)')
-        self.assertIn(f'dm/tools/rewriter_equiv/{name}\t', (REPO / 'peanuts/upstream-unmarked.txt').read_text(encoding='utf-8'))
+        unmarked = (REPO / 'peanuts/upstream-unmarked.txt').read_text(encoding='utf-8')
+        self.assertIn(f'dm/tools/rewriter_equiv/{name}\t', unmarked)
+        files = [REPO / 'dm/tools/rewriter_equiv' / f'patch_nso.py.{c}' for c in self.CHAIN]
+        for f in files:
+            self.assertTrue(f.is_file(), f.name)
+            self.assertIn(f'dm/tools/rewriter_equiv/{f.name}\t', unmarked)
+            self.assertEqual(forks(f.read_text(encoding='utf-8')), forks(SRC), f'{f.name}: in_forks is not the current file\'s')
+        first = files[0].read_text(encoding='utf-8') if files else SRC
+        self.assertEqual(without_forks(first), equiv.read_text(encoding='utf-8'), f'{name} is not {files[0].name if files else "patch_nso.py"} without in_forks: the '
+                         'rewriter changed on the branch this is on; if a rewrite census shows the same output, keep the file before the change '
+                         '(git show <its last commit>:dm/tools/patch_nso.py) and add it to CHAIN')
+
+    # the files before each later rewriter change of the same output, oldest first: #654 (scheduled offset jump tables through x18), #863 (the table base
+    # between the check and the load in check_before_copy), #120's Round 65 (the spin wait search and the x18 scan decode each word once), Round 68 (the spin wait search
+    # in C through rwspin_native)
+    CHAIN = ('d98ba837b4c1', 'aa0f78aee5ab', '8e3599f57768', '5b7e6a2af704')
 
     def test_the_pack_script_runs_it_in_the_worker(self):
         pack = (REPO / 'scripts/pack_android.py').read_text(encoding='utf-8')

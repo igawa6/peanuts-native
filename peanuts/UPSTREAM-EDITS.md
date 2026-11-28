@@ -159,6 +159,9 @@ not edited (see table above).
 | `scripts/pack_android.py`, `docs/reference/packing.md`, `dm/games/0100F7E00C70E000/README.md` | marked `PEANUTS(upstream-candidate)` (2026-11-25, issue #495): `copy_time` (block), its calls in `copy_counted` and `pack_shaders`, the `errno` import; the reference entry and Hogwarts Legacy's "Found on this game" line | **yes** (summary 14) |
 | `docs/guides/pc-mac-packing.md` | marked (`<!-- PEANUTS begin/end -->` section: send the pack to the phone) | no (Peanuts-specific) |
 | `dm/games/0100EB100AB42000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be, once it plays: Banana Native has no profile for FINAL FANTASY XII THE ZODIAC AGE (plays on the Android test app on Turnip; the system driver shows the texture issues known from other games) |
+| `dm/games/010088401495E000/` (new: `game.tsv`, `README.md`, and the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for THE HOUSE OF THE DEAD: Remake |
+| `dm/games/01007A3024D10000/` (new: `game.tsv`, `README.md`, and the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for THE HOUSE OF THE DEAD 2: Remake |
+| `dm/tools/patch_nso.py` (`check_before_copy` table-base `adrp`/`add`) + `dm/tools/tests/test_jump_copies.py` | marked (`PEANUTS(upstream-candidate)`); `dm/tools/rewriter_equiv/patch_nso.py.aa0f78aee5ab` (the file after #654) allow-listed in `peanuts/upstream-unmarked.txt` | **yes** — fallback-only jump-table recognition fix (Crash Bandicoot N. Sane Trilogy) |
 
 ## Generic host runtime-profile sites
 
@@ -198,6 +201,8 @@ Also gated, but not `#ifdef`-paired with upstream code (new Peanuts-owned files/
 
 ## Summary of good upstream-contribution candidates (general fixes, not Peanuts-specific)
 
+- MT Framework ARC v7 short-path layout and streamed SPK records ([shader reader](../docs/reference/shaders.md#arc-v7-archives-with-short-paths)).
+
 1. `dm/host/plat/plat_android.c` — stack guard-page exclusion (IL2CPP GC crash fix)
 2. `dm/host/crash.c` — stripped-library lib+offset in crash output
 3. `dm/host/loader.c` — module arena (fixes an Android-only OOB read vs the console's layout)
@@ -231,6 +236,7 @@ Also gated, but not `#ifdef`-paired with upstream code (new Peanuts-owned files/
 per-game rows (Link's Awakening, Echoes of Wisdom) should instead move to a Peanuts-owned
 `dm/games/<id>/peanuts.tsv` overlay once that mechanism lands, so upstream's own `k_locks[]` table
 stops needing a local edit at all.
+- Scheduled signed-offset jump tables through x18 ([rewriter reference](../docs/reference/rewriter.md#offset-jump-tables-with-a-distant-unsigned-guard)).
 
 ## Round 3 (2026-11-13) — launcher support
 
@@ -3288,6 +3294,152 @@ the generic profile field, `join_cap` cut from vka_mem.c with the profile at 0 a
 changes: `place_join_mb` is not a build row (`pack_android.py build_rows`), and `vka_mem.c` does not feed `DMSH_VK_CHAIN`. Upstream candidate: the key, if
 upstream wants a per-game join cap.
 
+### Texture pool range and option groups (2026-11-28, #859, buinghia98)
+
+Two of #859's seven commits; its ResolveDepthBuffer, fps-variant and log-panel commits land on their own, and its even frame pacing and `audio_follow`
+are not taken. `tex_pool_range` (`DM_NVN_TEXPOOL_RANGE`): each texture pool takes at most that many IDs of the host's texture table, so the three
+1,048,576-entry pools Ys X: Nordics uses in turn fit below the 2^20 IDs Vulkan's set 1 addresses (16384 there). Without the key nothing changes: a
+registration takes base + ID with no line (the pick dropped every ID past 2^20 and added red lines for every game with large pools, which would have
+undone dev's direct binds, 387973248). With it the limit is the pool's own, also in a reused finalized range, and the frame replayer's pools
+(`nvn_dpool_base_set`) have none. `option_group <name> <label> <description>` with `group=<name>` on restart options: Game settings shows them as one
+single-choice row, the in-game panel as radio buttons; a start takes one member at most. The profile line's column 44 (after `thermal_cap`); in the
+options field `group=` is a `<key>=<value>` token from the 8th field on, written only when set, so options without a group keep their seven fields.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/nvn/hle_nvn.c` | 3 | `texpool_range`, `texpool_init`, `texpool_reg_id` and the per-slot limits; `nvnTexturePoolInitialize` / `RegisterTexture` / `RegisterImage` through them; `bind_handles` (macOS): a red line for a bound ID past 20 bits, with the key only | `PEANUTS` |
+| `dm/games/game.py` | 4 | `tex_pool_range` (0 or a multiple of 256 up to 1048576, `DM_GAME_TEX_POOL_RANGE`); `option_group` rows and `group=`: two to 15 restart members without `implies=`, 16 groups at most, shared option words within a group | `PEANUTS` |
+| `dm/games/README.md` | 3 | the `tex_pool_range`, `option` and `option_group` rows, the options encoding | `PEANUTS:` (allow-listed table) |
+| `docs/env_switches.tsv`, `docs/advanced_settings.tsv` | 1 each | `DM_NVN_TEXPOOL_RANGE` | `[PEANUTS]` (allow-listed) |
+| `dm/tools/docs_patches.py` | 1 | the `tex_pool_range` binding entry (`game` → `host`) | `PEANUTS` |
+| `android/app/build.gradle` | 3 | `optionsOf` writes `group=`; `optionGroupsOf`; column 44 | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/Profile.java` | 6 | `Option.group`, `OptionGroup`, `parseOptionGroups`, `groupMembers`, `groupChoice`, `shownGroups`; `parseOptions` reads `<key>=<value>` tokens; `buildOptionsEnv` one member at most; column 44 | `PEANUTS` |
+| `android/app/src/main/java/dev/nxnative/android/GameSettings.java`, `Prefs.java`, `SidePanel.java` | 2, 1, 4 | the group row and its dialog, `Prefs.gameOptionGroup`, the panel's radio buttons (`ID_OPT_GROUP` 6000) | `PEANUTS` |
+| `android/app/src/jvmtest/.../ProfileOptionsJvmTest.java`, `dm/tools/tests/test_game_profile.py`, `test_android_profile_options.py` | 1, 1, 2 | group cases, columns 43 and 44, unknown tokens ignored | `PEANUTS` |
+
+New: `dm/tools/tests/test_nvn_texpool_range.py`. Peanuts' own files: `dm/peanuts/profile/` (`TEX_POOL_RANGE` scalar, `tex_pool_range` u64 as the
+layout's last field: the runtime profile schema changes, 0x5783cffc / 12208 bytes to 0x673dc538 / 12216, so every title's profile.bin is regenerated
+with the APK, as for any new key). No rewrite key or shader input changes. Upstream candidate: option groups; the texture pool range only until the host
+numbers pools by the IDs they use. Merging hold-895 (`nvn_dpool.h` small pools) meets this in `hle_nvn.c`'s texture pool Initialize / Register lines.
+
+### Xenoblade Chronicles: Definitive Edition: `core_preempt lock`, `fps_limit 30` (2026-11-28, #641, #642, tapionallanaire)
+
+About one boot in four crashed 1-4 s into `nnMain` on a corrupt heap: the game takes two threads of one core never to run at the same moment, as on Horizon.
+`core_preempt lock` (`DM_CORE_LOCK`): a guest thread whose affinity is one core holds that core's lock (a first-come ticket lock) while it runs guest code,
+gives it up at each SVC entry and native HLE wait, and takes it again at the SVC exit; a waiter of higher priority preempts the holder in guest code (SIGURG);
+threads that may run on several cores run free. For the first 20 s only (`DM_CORE_LOCK_SECS`): held for good it cost 2-3 hitches of 70-100 ms in 5 min.
+AYN Thor, Turnip v27.0.0-R1: 0 of 60 boots crashed. Only a profile with `core_preempt lock` (or `DM_CORE_LOCK=1`) takes the lock; `core_preempt on` / `off`
+keep their meaning (`DM_GAME_CORE_PREEMPT` 1 / 0, now 2 for `lock`). Limits, in a comment at the wait loop: a holder that blocks in host code without
+`dm_thread_native_wait` keeps its core's waiters waiting (no known path), and after a native wait the thread runs without the lock until its next SVC exit.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/hle_thread.c` | 12 | `thr_t.preempt_req`, `thr_t.clk`; the per-core ticket locks, `core_lock_on` / `core_lock_take` / `core_lock_give`, the SIGURG preemption handler; taken at thread start and SVC exit, given up at SVC entry, native wait entry and `dm_thread_mark_host`; `DM_PREEMPT`'s default is `DM_GAME_CORE_PREEMPT == 1` | `PEANUTS` in each hunk |
+| `dm/games/game.py` | 2 | `core_preempt` accepts `lock`; `DM_GAME_CORE_PREEMPT 2` for it | `PEANUTS` |
+| `dm/games/README.md` | 1 | the `core_preempt` row: `lock` | `PEANUTS:` (allow-listed table) |
+| `docs/env_switches.tsv`, `docs/advanced_settings.tsv` | 1 each | `DM_CORE_LOCK`, `DM_CORE_LOCK_SECS`, `DM_CORE_SLICE_US` | `[PEANUTS]` (allow-listed) |
+| `dm/tools/docs_patches.py` | 1 | the `core_preempt lock` binding entry (`game` → `host`) | `PEANUTS` |
+| `dm/games/0100FF500E34A000/game.tsv` | 1 | `fps_limit 30`, `core_preempt lock` | `# PEANUTS:` |
+| `dm/games/0100FF500E34A000/README.md` | 1 | the Android section: frame pacing, the boot crash, open items (the Colony 9 roads, fixed by #640, still open; black save thumbnails) | `<!-- PEANUTS begin/end -->` |
+| `docs/agents/game-patches.md` | generated | `dm/tools/docs_patches.py` | (generated) |
+
+No rewrite key or shader input changes. Every other game is unchanged: with `core_preempt` off (the default) `core_lock_on` is false and each hook returns at once.
+Upstream candidate: the lock, if upstream wants Horizon's one-thread-a-core rule for a game; a cheaper lock could make it every game's default.
+
+### MT Framework ARC v7 archives with 64-byte paths (2026-11-28, #653, aldotms89)
+
+Resident Evil 6's ARC v7 archives keep 0x50-byte entries (a 64-byte path); The Great Ace Attorney Chronicles' 447 keep 0x90-byte ones (a 128-byte path), and
+no dump of it is here to split again. So its archives keep the reading they had: a consistent 0x90 table (printable, non-empty paths, entries in order and inside
+the file) is taken at once, and any other 0x90 table is decoded the old way first (entries out of order or overlapping, as before); only an archive that reading
+cannot decode (a struct, zlib or length error, each of which stopped the split before) is read as 0x50, and only if that table is consistent. SPK records are
+yielded one at a time, so `mtarc_shaders` adds them to its list without a second list of the package.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/shader_split.py` | 1 | `mtarc_members`: the strict table check at either width, the old 0x90 reading, the 0x50 fallback; `mtspk_shaders` yields | `PEANUTS(upstream-candidate) begin`/`end` |
+| `dm/tools/tests/test_split_targeted.py` | 2 | `MtFramework`: both widths, malformed 0x50 tables refused, a 0x90 table out of order or overlapping still read | `PEANUTS(upstream-candidate)` |
+| `docs/reference/shaders.md` | 1 | ARC v7 archives with short paths | `<!-- PEANUTS(upstream-candidate) -->` |
+| `docs/agents/symptoms.md` | generated | `dm/tools/docs_symptoms.py` | (generated) |
+
+No rewrite key or shader input changes (`shader_split.py` is not hashed into a library's stamp). Upstream candidate: yes.
+
+### Scheduled offset jump tables through x18 (2026-11-28, #654, aldotms89)
+
+Resident Evil 6's `main+0x7a352c` stopped the rewrite (`AssertionError: jump table 7a352c`): the compiler scheduled other instructions between the unsigned
+guard (`cmp; …; b.hi`), the signed offset load and `br x18`, beyond the older resolvers' lookback. `jump_scheduled_offsets`, the last resolver, follows the
+reaching definitions back from `br x18`, proves the index, the table (read-only, in bounds) and every destination (inside the unwind function), and
+refuses a dispatch any branch enters past its setup; `analyse_fn` returns its dispatches as an eighth result, and after the workers' results are merged no
+resolved table and no direct branch anywhere may enter one.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/tools/patch_nso.py` | 5 | `jump_scheduled_offsets`; `scheduled_bounds` (FDE ranges, read once); the resolver called last in `analyse_fn`, its dispatches returned and merged; the check after the merge and the summary line (only when a dispatch is found) | `PEANUTS(upstream-candidate)` on each hunk |
+| `dm/tools/tests/test_jump_copies.py` | 4 | `ScheduledOffsets` (the resolver); `ScheduledOffsetsRewrite` (the rewriter on a synthetic NRO with 1 and 2 workers; a branch of another function into the dispatch stops it) | `PEANUTS(upstream-candidate)` |
+| `dm/tools/rewriter_equiv/patch_nso.py.d98ba837b4c1` | file | dev 0.1.10's rewriter (d98ba837), byte for byte | allow-listed in `peanuts/upstream-unmarked.txt` |
+| `peanuts/tests/test_rewrite_forks.py` | 1 | `Wiring`: e13378e6's file is the first file of `CHAIN` (the files before later rewriter changes of the same output) without in_forks, and each has the current in_forks | Peanuts-owned test |
+| `docs/reference/rewriter.md` | 1 | Offset jump tables with a distant unsigned guard | `<!-- PEANUTS(upstream-candidate) -->` |
+| `docs/agents/symptoms.md` | generated | `dm/tools/docs_symptoms.py` | (generated) |
+
+Rewrite key: `patch_nso.py` changes, and the file before it is kept as `rewriter_equiv/patch_nso.py.d98ba837b4c1` after a rewrite census (11 games, 13
+builds, 39 modules byte-identical; the commit lists them), so existing packs stay up to date. Upstream candidate: yes.
+
+### The table base between the check and the load in `check_before_copy` (2026-11-28, #863, Sed-El)
+
+Crash Bandicoot N. Sane Trilogy puts the table base (`adrp rb, #page; add rb, rb, #imm`) between the `b.hi` and the `ldrsw` of a jump table whose index is
+copied before the check. `check_before_copy`, tried only after every other form has failed, steps back over those two forms only (no other write of `rb`,
+`add x9, x9, x10` for one) to the `cmp; b.hi`, and follows the writers back from the `cmp`.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/tools/patch_nso.py` | 2 | `check_before_copy(…, rb)`: the table base steps; `jump_offsets` passes `rb` | `PEANUTS(upstream-candidate) begin`/`end` on the body, a `PEANUTS(upstream-candidate)` comment on the call |
+| `dm/tools/tests/test_jump_copies.py` | 1 | the table base between the check and the load; other writes of `rb` refused | `PEANUTS(upstream-candidate)` |
+| `dm/tools/rewriter_equiv/patch_nso.py.aa0f78aee5ab` | file | the rewriter after #654 (aa0f78ae), byte for byte | allow-listed in `peanuts/upstream-unmarked.txt` |
+| `peanuts/tests/test_rewrite_forks.py` | 1 | `Wiring.CHAIN`: the file after #654 | Peanuts-owned test |
+
+Rewrite key: `patch_nso.py` changes, and the file before it is kept as `rewriter_equiv/patch_nso.py.aa0f78aee5ab` after a rewrite census (11 games, 13
+builds, 39 modules byte-identical; the commit lists them), so existing packs stay up to date. Upstream candidate: yes.
+
+### 0.1.10 release list: THE HOUSE OF THE DEAD: Remake and 2: Remake, and Trails through Daybreak II (2026-11-28)
+
+The owner put three profiles that landed for 0.1.10 on the release list: THE HOUSE OF THE DEAD: Remake (#790) and THE HOUSE OF THE DEAD 2: Remake (#792),
+Sed-El, and Trails through Daybreak II (#581, tapionallanaire). No readiness row is added; Trails through Daybreak II keeps the `readiness.tsv` it came with
+(`status bring-up` and its feature rows).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/gradle.properties` | 1 | `nxGames` = the release titles (95) | `# PEANUTS:` comment line above the row |
+| `dm/tools/tests/test_android_frame_rate_games.py` | 1 | the three games' pinned caps, from their `game.tsv` frame rows | `# PEANUTS:` comment line above the rows |
+| `dm/games/010088401495E000/README.md` | 1 | on the release list | `<!-- PEANUTS: ... -->` |
+| `dm/games/01007A3024D10000/README.md` | 1 | on the release list | `<!-- PEANUTS: ... -->` |
+| `dm/games/0100F6701FED4000/README.md` | 1 | on the release list, the readiness rows kept | `<!-- PEANUTS: ... -->` |
+
+### 0.1.10 release list: Cult of the Lamb, Super Smash Bros. Ultimate and OCTOPATH TRAVELER II (2026-11-28)
+
+The owner put three more profiles that landed in 0.1.9 on the release list: Cult of the Lamb (#718, bryan-era24) and Super Smash Bros. Ultimate (#719,
+bryan-era24), whose release-list commits were held back when they landed, and OCTOPATH TRAVELER II (#548, zelkibuilds, its Thor results). No readiness
+row is added: the release titles need none. The cycle after 0.1.9 is 0.1.10 (owner, 2026-11-28), so the Xenoblade rows below say 0.1.10 too.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/gradle.properties` | 1 | `nxGames` = the release titles (92) | `# PEANUTS:` comment line above the row |
+| `dm/tools/tests/test_android_frame_rate_games.py` | 1 | the three games' pinned caps, from their `game.tsv` frame rows | `# PEANUTS:` comment line above the rows |
+| `dm/games/01002E7016C46000/README.md` | 1 | Android section: on the release list | `<!-- PEANUTS: ... -->` |
+| `dm/games/01006A800016E000/README.md` | 1 | Android section: on the release list | `<!-- PEANUTS: ... -->` |
+| `dm/games/0100A3501946E000/README.md` | 1 | on the release list | `<!-- PEANUTS: ... -->` |
+
+### 0.1.10 release list: Xenoblade Chronicles 2 and 3 (2026-11-27)
+
+The owner put Xenoblade Chronicles 2 and Xenoblade Chronicles 3 on the release list. Both profiles came with the upstream import; their Android runs on an
+AYN Thor landed in 0.1.9 (#645 for 2, the test record; #639 for 3, the launcher's NACP language) but they were not added to the list then. No readiness
+row is added: the release titles need none.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/gradle.properties` | 1 | `nxGames` = the release titles (89) | `# PEANUTS:` comment line above the row |
+| `dm/tools/tests/test_android_frame_rate_games.py` | 1 | the two games' pinned caps, from their `game.tsv` frame rows | `# PEANUTS:` comment line above the rows |
+| `dm/games/0100E95004038000/README.md` | 1 | on the release list | `<!-- PEANUTS: ... -->` |
+| `dm/games/010074F013262000/README.md` | 1 | Android section (#639), on the release list | `PEANUTS begin`/`end` |
+
 ### 0.1.9 release list: eleven more games (2026-11-27)
 
 The owner put eleven profiles that landed for 0.1.9 on the release list: One Piece: Pirate Warriors 4 (#714), FINAL FANTASY XII THE ZODIAC AGE
@@ -3335,3 +3487,229 @@ view (Settings › Developer) shows the testers' toasts and the in-game menu's t
 | `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 1 | the ignored adb command's toast with Developer view only | `// PEANUTS:` |
 | `android/app/src/main/java/dev/nxnative/android/SidePanel.java` | 4 | the two "DM_CTL is off" notes, the cap line and the frame generation state (`DevView.panel`, `DevView.frameGen`) | `// PEANUTS:` |
 | `android/app/src/main/java/dev/nxnative/android/Lsfg.java` | 2 | "Not in this build" and the mode line through `DevView.panel` | `// PEANUTS:` / `/* PEANUTS */` |
+
+### Round 65, the rewrite beside the split and the shaders (2026-11-28, issue #120)
+
+The shaders step needs the split only; the pack step is the first that needs the rewritten code. On a phone with the memory for both (14 GB and more), the
+rewrite step now runs in a process of its own while the split and the shaders run, and the pack step waits for it ([INCREMENTAL-BUILD.md](docs/INCREMENTAL-BUILD.md#the-rewrite-beside-the-split-and-the-shaders)).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/ondevice/java/dev/nxnative/android/PackService.java` | 5 | the job loop: `nextStep` (past a rewrite that runs beside, never to the pack), `joinBeside` before the pack, `fail == BESIDE` goes on; `step()`: the rewrite started beside when `RewriteBesidePlan.allowed`; `stopBeside` in `work()`'s `finally`; `stopLeftover` before the loop; the fields and helpers | `// PEANUTS:` and `PEANUTS begin` / `end` |
+| `android/app/src/ondevice/java/dev/nxnative/android/RewriteBeside.java`, `RewriteBesidePlan.java` (new) | - | the process (start, wait, stop, a leftover's end) and the decision and command (pure Java) | Peanuts' own files |
+| `android/app/src/jvmtest/java/dev/nxnative/android/RewriteBesidePlanJvmTest.java`, `dm/tools/tests/test_android_rewrite_beside.py` (new) | - | the decision, the command and PackService's wiring | Peanuts' own files |
+
+### Round 64, a damaged game file is found at the import, and a split that meets one says so (2026-11-24, GitHub issue #561)
+
+Pokémon Legends: Z-A 2.0.2 on a phone stopped at "Finding the shaders" with `struct.error: unpack_from requires a buffer of at least 8725344222 bytes`
+(`shader_split.py` `fb_field`, from `trpfs_jobs`), and the card offered Retry, which failed the same way every time. The update's `data.trpfs` had its right
+size, its index near the end garbled: the update dump was damaged. The importer had never compared a plain NCA's bytes with anything (an NCZ's are rebuilt and
+hashed whole), so the damage went into the `.nup` and came out later as a raw error. Now:
+
+- The importer checks every plain NCA it writes from against the NCA's own hash layers (`dm/peanuts/import/nx_verify.c`, Peanuts' own): the fs header against
+  its SHA-256 in the NCA header, a RomFS's IVFC levels and an ExeFS's hash table from the master hash down when the NCA is opened, and the data blocks as the
+  writer reads them (`nx_sec_read_raw`; a patch's levels through the patched image, its base's bytes against the base's own levels). The CNMT's size and the
+  NCA header's size of each content NCA are checked too; a container that ends before its last file keeps `nx_nca.c`'s message of #697. A mismatch stops the
+  import before the `.nup` is complete (`<file>: the update v393216 is damaged: …`), which `dev.peanuts.build.Compressed.failure` turns into the player's words
+  beside #697's cut-off file (one sentence shape: "<file> is damaged, so <game> was not imported. …"), with the game's sheet and no Retry
+  (`BuildListener.FILE_DAMAGED`).
+- Hashing the raw NCA whole against its CNMT SHA-256, as an NCZ is, was the other way: it reads every byte a second time (at a microSD card's speed minutes
+  for Z-A's 15 GB). The hash layers cost only the hashing of bytes the writer reads anyway, spread over its worker threads.
+- A `.nup` imported before this check still reaches the split. The FlatBuffers readers there check every offset against the file (`fb_u`, `fb_array`); an index
+  that points outside its own file ends the split with `[RED] /<file>: the game file is damaged: …`, and `PrepareText.toolStopped` gives it `FIX_NONE` and the
+  cause `game_file_damaged`, which `dev.peanuts.build.Prepare` turns into `FILE_DAMAGED`: no Retry.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/shader_split.py` | 11 | `FbOutside`, `fb_u`, `fb_array`, `damaged` (one `PEANUTS begin/end` block); `fb_field`, `fb_vec`, `fb_refs`, `fb_root` through them; `trpfs_jobs`' two index reads in `try` with `damaged`; `trinity_shaders`' reads checked, its call in `scan_file` in `try` | `PEANUTS` per hunk |
+| `android/app/src/main/java/dev/nxnative/android/PrepareText.java` | 2 | `CAUSE_DAMAGED` (public: `dev.peanuts.build.Prepare` reads it), `DAMAGED`; `toolStopped`'s case for the split's line | `PEANUTS`, `PEANUTS begin/end` |
+| `android/app/src/jvmtest/java/dev/nxnative/android/PrepareTextJvmTest.java` | 1 | the damaged file's card: no Retry, its cause, the file in the player's words | inside the `PEANUTS begin/end` block |
+
+Peanuts' own files, no marker: `dm/peanuts/import/nx_verify.c` (new), `nx_internal.h`, `nx_nca.c`, `nximport.c`, `nximport_cli.c` (`check` reads a plain
+NCA through the check too), `CMakeLists.txt`, `HOOKS.md`, `tests/nsp_fixture.h` (the fixture's NCAs carry real hash layers and fs header hashes now),
+`tests/verify_test.c` (new); `android/app/src/main/java/dev/peanuts/build/Compressed.java`, `Prepare.java`; `peanuts/tests/test_damaged_game_files.py` (new),
+`test_compressed.py` (the damaged cases beside #697's cut-off ones), `test_nup_icon.py` (its build of `nup_meta_test` takes `nx_verify.c`).
+The host's copy of `nx_nca.c` never sets a check (`nx_verify.c` is not in `android/host/CMakeLists.txt`'s `NSP_C`). Upstream candidate: the split's bounds
+checks (general: any FlatBuffers index); the rest is Peanuts' importer.
+
+Follow-up (2026-11-28, before 0.1.10): a good The Legend of Zelda: Echoes of Wisdom base was refused ("hash level 5 of its RomFS does not match its
+checksum"). Its RomFS is compressed, and its IVFC levels are sized for the decompressed data (8.0 GB: level 5 has 958 blocks of 16 KiB), while they hold the
+hashes of the data as stored (5.4 GB: 350,822 blocks, whose hashes fill 686 of level 5's blocks). The other 272 blocks are zeros, and level 4 holds zeros for
+them, not their hashes; the console never reads them. `nx_verify.c` checked every block of every hash level; now only the blocks that hold hashes the next
+level uses (the data level's check was already right: the stored bytes match level 5). `tests/nsp_fixture.h` can size the IVFC levels for more than the data
+(`fx_ivfc_slack`), and `verify_test.c` imports such an LZ4 base and its update (the unfixed check refuses them with Echoes of Wisdom's message) and still
+refuses a byte flipped in its stored data or in a used level 5 block. Peanuts' own files, no marker.
+## NVN BGR5A1 on Android (2026-11-26)
+
+NVN_FORMAT_BGR5A1 (0x97) had no Vulkan format; NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS samples one such texture. Found while taking over the draft igawa6/peanuts-native#637 (codetz7).
+
+| File | Hunks | What | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_tex.c` | 1 | NVN BGR5A1 (0x97) → `VK_FORMAT_A1R5G5B5_UNORM_PACK16` in `fmt_ent_of` | `PEANUTS` |
+| `docs/reference/rendering.md`, `docs/agents/symptoms.md` | 1, 1 | the entry "A material's body invisible or black: NVN_FORMAT_BGR5A1 had no Vulkan format", and its line in the generated index | `PEANUTS` / generated |
+## NVN games with an OpenGL UI on Android (2026-11-26)
+
+NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS draws its UI with OpenGL through EGL into a texture NVN samples. Taken over from the draft igawa6/peanuts-native#637 (codetz7) and split by scope.
+
+| File | Hunks | What | Marker |
+|---|---|---|---|
+| `dm/host/hle_bigstack.c` | 3 | the big-stack entry copies the caller's first two stack slots (a 9th and 10th integer argument: `glTexImage2D`) onto the host stack (codetz7's change), and its comments say so. Every game: any big-stack wrapper of a function with stack-passed arguments | `PEANUTS` |
+| `dm/host/hle.h` | 1 | `HLE_FORCE_BIG`'s comment: two stack slots carried over | `PEANUTS` |
+| `dm/host/tests/t_bigstack.c` | 4 | a ten-argument take-over through the switch and on the direct path; the call helpers use `PLAT_ASM_SYM` (ELF too) | `PEANUTS` |
+| `docs/reference/memory.md` | 1 | "Host calls on small guest stacks": the two stack slots | `PEANUTS` |
+
+### Round 66, the spin wait search and the x18 scan decode each word once (2026-11-28)
+
+With one worker (the phone's rewrite) a large `main` spent most of its rewrite in the spin wait search and the x18 scan: Super Mario Bros. Wonder's `main`
+57 s on a PC, of which spin 28 s and x18 13.5 s, and 5 to 6 minutes on a phone. The spin search kept its decoded words for one head only, so each of about
+200,000 heads decoded its neighbours' words again (1.77 million detailed capstone decodes), and the x18 scan decoded every word to find the few that name x18.
+Now:
+
+- What the spin search reads of a word is decoded once per process into two arrays of 16-bit indices (`spin_word`, `spin_rw_at`; two bytes a text word
+  each, no capstone objects kept), most words without details (`spin_word_lite`), the rest with them. `spin_lock` and `spin_rmw` decode their later words only
+  where the bits allow their sequence, `spin_quick` runs once per head from a 13-bit class table (`SPIN_QK`), `prune` walks the edges backward, and a spin
+  job is a run of neighbouring heads.
+- The x18 scan decodes only the words with a register field of 17 or 18 (`X18_F`); the instruction scan (`SCAN_TOPS`) and `acquire_lock_sites` (`LDXR_B`)
+  look only at the words whose bytes can match. `PHASES` has the shares measured again.
+- The output is byte-identical (Wonder's `main` and `sdk`, Animal Crossing's and Mario Kart 8 Deluxe's `main`, one, four and eight workers, SHA-256 of
+  every file but `build_src.sha256`). One worker: Wonder `main` 55 to 29 s, Animal Crossing `main` 94 to 52 s; four: 23 to 14 s and 37 to 22 s. Peak
+  memory the same. docs/reference/rewriter.md "One decode per word in the spin wait search and the x18 scan".
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/tools/patch_nso.py` | 15 | `PHASES`; `LDXR_B`, `acquire_lock_sites`; `X18_F`, `x18_words` (one `PEANUTS begin/end` block); `SCAN_TOPS`, `x18_sorted`, `scan_piece`; `spin_rn`, `spin_rw`; `spin_word` and its helpers (one `PEANUTS begin/end` block); `spin_lock`; `spin_quick_class`, `SPIN_QK`, `spin_quick`; `spin_region` (the quick check once, `spin_dec` kept for the next heads, the instructions of a region's single words); `spin_region1` (`spin_word`'s values, `prune`, `spin_rw_at`); `spin_heads_with_region`, `find_spin_regions` (runs of heads) | `PEANUTS(upstream-candidate)` per hunk |
+| `dm/tools/tests/test_spin_waits.py`, `test_acquire_lock.py` | 5 | the new helpers and tables compiled with the search; `WordValues`: `spin_word_lite`'s values are the detailed decode's | `PEANUTS(upstream-candidate)` |
+| `dm/tools/rewriter_equiv/patch_nso.py.d98ba837b4c1` (new) | file | the rewriter before this round (d98ba837), byte for byte: packs made with it count as up to date | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+The generated index `docs/agents/symptoms.md` (`dm/tools/docs_symptoms.py`) has the new entry. Peanuts' own files, no marker: `peanuts/tests/test_rewrite_forks.py` (`patch_nso.py.e13378e630c8` is now `patch_nso.py.d98ba837b4c1` without `in_forks`;
+both stay until a rewriter change whose output differs), `peanuts/upstream-unmarked.txt`. Upstream candidate: yes, the whole `patch_nso.py` change.
+### Round 67, the shaders step's SPIR-V post-passes in C, the same libraries (2026-11-28)
+
+`vk_android_build.py` `finish` ran `vk_android_spv.py`'s ~50 passes in Python on every translated module: parsing it into lists, about nine re-indexes a
+shader, `promote_locals`, `value_uses`, `retype_outputs` and the words packed back through a generator. On a PC that was most of the shaders step that holds
+the GIL; on the phone, the step's Python half. `libdmsh_spvn` (`dm/gfx/tools/vk_android_spv_native/spvn.c`, Peanuts' own) is that module and those passes
+transliterated to C, loaded by `vk_android_spvn.py` through `ctypes`: each module is parsed once, every common pass runs in C, and its words come back once a
+stored variant. What it does not have (HMMA lowering, the GlobalToStorage raw helpers' rewrites, the viewport mask, a dynamic sample offset, per-primitive
+inputs, any shape the Python raises on) raises `Fallback`, and `finish` makes that shader with the Python. `DMSH_VK_SPVN=0` turns it off; without a library (no
+C compiler on a PC, an older stage) the Python runs. Both write the same bytes: full builds of Yoshi's Crafted World (23,497 shaders), Hyrule Warriors: Age of Calamity (40,729) and Trails in the Sky 1st
+Chapter (6,602 of 6,605, the package lacks 3) give `dmsh_vk.lib`, `index.json` and `_vk_build.json` byte for byte as before (and with `DMSH_VK_SPVN=0`), so the
+version stays `c1eff1d2d8c1` (`vk_android_same.tsv` row `8d875f5b323f`). Crafted World on Linux: 5 min 01 s → 1 min 29 s at `J=8`, 10 min 46 s → 6 min 53 s at
+`J=1`; the numbers and what stays in Python: `android/SHADERS.md`, Native post-passes. The phone's library builds with the NDK but has not run on a phone yet.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/vk_android_build.py` | 19 | `import vk_android_spvn`; `VK_FILES` += the library's two sources (they make modules, so they are in the tools digest); `finish` → `finish_with(S, …)` with the library's module first, the Python on `Fallback`; `S.` for the passes in `finish_with`, `ps_variants`, `facts_of`, `drv_reads`; `m_atomic`, `m_writes`, `tess_modes_set` for the library's module; the header text names the files; the summary's `post-passes:` line | `# PEANUTS` per hunk, `PEANUTS begin`/`end` around `finish` |
+| `dm/gfx/tools/vk_android_spv.py` | 1 | `has_spec_id` (the mesh module's GL depth check, out of `finish`) | `# PEANUTS:` |
+| `dm/gfx/tools/vk_android_same.tsv` | 1 | `8d875f5b323f` → `c1eff1d2d8c1` after the full builds below | (a TSV row: the evidence column) |
+| `dm/gfx/nvn/dmsh_chain_vk.h` | 1 | regenerated: the comment names the new files; `DMSH_VK_CHAIN` stays `c1eff1d2d8c1`, `DMSH_VK_ABI` stays `288a138fa7d1` | generated |
+| `android/app/build.gradle` | 4 | the stage's `lib/libdmsh_spvn.so` into the APK's jniLibs (`need`, `nxPackJni`), `nxPackSpvnCheck` (the library carries this tree's `spvn.c` SHA-256), `spvn.c` into `tools.zip` (the phone computes the digest) | `// PEANUTS` per hunk |
+| `android/ondevice/build.sh` | 2 | `zbic` builds `libdmsh_spvn.so` with the NDK, as `libcra.so` | `# PEANUTS begin`/`end`, `# PEANUTS:` |
+| `android/SHADERS.md` | 2 | Native post-passes (2026-11-28); Versions names the files | `<!-- PEANUTS -->` |
+
+Peanuts' own files, no marker: `dm/gfx/tools/vk_android_spv_native/spvn.c`, `build.sh`, `dm/gfx/tools/vk_android_spvn.py` (new), `dm/tools/tests/test_vk_android_spvn.py`
+(new: every step of `finish` on 12 real modules of three games and a synthetic one, native against Python, byte for byte; the fallbacks; `DMSH_VK_SPVN=0`; a library
+of other sources refused), `peanuts/tests/fixtures/spvn/*.spv` (76 KB). Upstream candidate: yes (the same libraries, any machine), with the library's build in
+upstream's stage script.
+### Round 68, the spin wait search in C, the same output (2026-11-28, issue #120)
+
+After Round 66 the spin wait search was still the largest phase of a large `main`'s rewrite with one worker, which is how the phone rewrites (and on an AYN
+Thor the rewrite is the build's critical path): Super Mario Bros. Wonder's `main` 18 of 29 s, in capstone's Python wrapper and the Python search over about
+200,000 heads. `libdmsh_rwspin` (`dm/tools/rwspin_native/rwspin.c`, Peanuts' own) answers for each head whether `spin_region` finds a region: `spin_quick`,
+`spin_region` and `spin_region1` transliterated, the words decoded from their bits for the classes that give capstone's values, `spin_rmw` and `spin_lock`
+decided where their words have checked encodings, anything else asked from `patch_nso.py` through a `ctypes` callback. The regions of the heads that have one
+are built by `spin_region` in Python as before. `DM_REWRITE_NATIVE=0` turns it off; without a library (no C compiler on a PC, an older stage) the Python
+search runs. `patch_nso.py` names `rwspin.c`'s SHA-256 (`RWSPIN_SHA`) and refuses a library of other sources, so a change to `rwspin.c` changes the rewrite
+key through `patch_nso.py` (no new `REWRITER` file, which the launcher's `RewriteKey` would also need).
+
+- The output is byte-identical: Wonder's `main` and `sdk`, Animal Crossing's and Mario Kart 8 Deluxe's `main`, with the library and with
+  `DM_REWRITE_NATIVE=0`, one, four and eight workers and through `in_forks`. The decoder matches capstone on every text word of those modules it decodes
+  (96-97 %) and on 12 million random words; `spin_rmw` / `spin_lock` at every address the C decides and on 6 million generated lock-sequence words.
+- One worker: Wonder `main` 27 to 12 s, Animal Crossing `main` 55 to 22 s, Mario Kart 8 Deluxe `main` 6.6 to 2.6 s (four: 11 to 7, 20 to 13, 3.1 to 1.9 s);
+  the spin phase of Wonder's `main` 18 s to 0.7 s. Peak memory the same. `PHASES` measured again. docs/reference/rewriter.md "The spin wait search in C".
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/tools/patch_nso.py` | 5 | `PHASES`; `RWSPIN_SHA`, `spin_native_lib`, `spin_native_ask`, `spin_native` and helpers (one `PEANUTS begin/end` block); `spin_heads_with_region` (the library first); `find_spin_regions` (the state made before the workers fork, freed after) | `PEANUTS(upstream-candidate)` per hunk |
+| `android/app/build.gradle` | 4 | the stage's `lib/libdmsh_rwspin.so` into the APK's jniLibs (`need`, `nxPackJni`), `nxPackRwspinCheck` (the library carries this tree's `rwspin.c` SHA-256), `rwspin.c` into `tools.zip` | `// PEANUTS` per hunk |
+| `android/ondevice/build.sh` | 2 | `zbic` builds `libdmsh_rwspin.so` with the NDK, as `libdmsh_spvn.so` | `# PEANUTS begin`/`end`, `# PEANUTS:` |
+| `docs/reference/rewriter.md`, `docs/reference/packing.md` | 2 | "The spin wait search in C"; the new `PHASES` shares | `<!-- PEANUTS(upstream-candidate) -->`, in the entry Round 66 changed |
+| `docs/env_switches.tsv`, `docs/advanced_settings.tsv` | 4 | `DM_REWRITE_NATIVE`, `DM_REWRITE_NATIVE_CACHE` | `[PEANUTS]` |
+| `dm/tools/rewriter_equiv/patch_nso.py.5b7e6a2af704` (new) | file | the rewriter before this round (5b7e6a2a), byte for byte: packs made with it count as up to date | allow-listed in `peanuts/upstream-unmarked.txt` |
+
+The generated index `docs/agents/symptoms.md` has the new entry. Peanuts' own files, no marker: `dm/tools/rwspin_native/rwspin.c`, `build.sh` (new),
+`dm/tools/tests/test_rwspin.py` (new: the decoder against capstone on generated words, `spin_rmw` / `spin_lock` on generated lock sequences, the same heads
+with a region on generated loops, `RWSPIN_SHA`), `peanuts/tests/test_rewrite_forks.py` (the third equivalent), `peanuts/upstream-unmarked.txt`. Upstream
+candidate: yes, with the library's build in upstream's stage script.
+
+### Round 69, the phone's split decodes Oodle with ooz and no longer waits for the rewrite (2026-11-28, issue #120)
+
+Since Round 65 the rewrite runs beside the split, and the split waits for it where the game's own Oodle decoder needs the rewritten modules: FINAL FANTASY
+RESONANCE on an AYN Thor waited 264 s of its 291 s. The APK now carries the PC builder's ooz worker as a library, `libunoodle.so` (dm/third_party/ooz, `build.sh
+<output>.so`), which the split loads in a worker process of `DM_UE_HOST`'s command (`nxpack_worker` under the linker: no file of the app's storage is executed)
+and asks over the same pipe protocol, for Trinity packs, GFPAK entries and Unreal archives alike. Its output is written only when the split's tables are the
+profile's; otherwise, or when the split stops while ooz was in use, the split runs again with the game's own decoder (which waits for the rewrite as before)
+and remembers that for the title (`PN_REUSE_DIR/ooz.refused`). New `dm/gfx/tools/ooz_split.py` holds the choice, the markers and the memory. The PC builder,
+which has no game decoder to fall back to, writes the split as before and `pack_android.py ooz_split_checked` still decides. dm/third_party/ooz/README.md "On
+the phone"; peanuts/docs/INCREMENTAL-BUILD.md.
+
+- Checked on x86-64 Linux, OCTOPATH TRAVELER 0 1.0.5 from its `.nsp` files: the recorded job's 10,596 Mermaid streams decode byte for byte to the game
+  decoder's output with the program and with the library; the targeted split with either has the profile's tables (their rows byte for byte) and the same
+  package. A stand-in ooz that changes one byte in every 50th stream: the split falls back to a stand-in game decoder and its tables are the profile's again;
+  the next split goes to the game decoder at once. The arm64 library is built (NDK 28.2) but not yet run on a phone.
+- `build.sh` gains `-fno-strict-overflow` (the same line as PR #889: Leviathan on clang) and the library form; both forms carry `unoodle_source=<SHA-256 of
+  the sources>`, which `nxPackUnoodleCheck` checks.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/tools/shader_split.py` | 7 | `oodle_ask` takes `ooz_split.argv()` (and marks its use), `oodle_red` names the worker, `scan_digest` keys `DM_SPLIT_DECODER`; `main` split into `main` (the ooz split, `ooz_check`, the rerun), `oodle_close`, `save` and `split_once` (the former body); the targeted scan raises `OozDiffers` instead of a full scan with ooz | `PEANUTS begin/end`, `# PEANUTS` per hunk |
+| `android/app/src/ondevice/java/dev/nxnative/android/PackService.java` | 1 | `DM_OODLE_OOZ_LIB=libunoodle.so` when the APK has it | `// PEANUTS begin`/`end` |
+| `android/app/build.gradle` | 4 | `lib/libunoodle.so` into jniLibs (`need`, `nxPackJni`), `nxPackUnoodleCheck` | `// PEANUTS` per hunk |
+| `android/ondevice/build.sh` | 2 | `zbic` builds `libunoodle.so` with the NDK's clang++ | `# PEANUTS begin`/`end`, `# PEANUTS:` |
+| `android/NOTICE.md` | 1 | the library's licence | `<!-- PEANUTS -->` |
+| `docs/env_switches.tsv`, `docs/advanced_settings.tsv` | 8 | `DM_OODLE_OOZ_LIB`, `DM_OODLE_OOZ_USED`, `DM_SPLIT_DECODER`, `DM_SPLIT_DECODER_OFF` | `[PEANUTS]` |
+
+Peanuts' own files, no marker: `dm/gfx/tools/ooz_split.py` (new), `dm/gfx/tools/ue_ondevice.py` (`OozWorker` takes the command; the decoded archives' stamp
+names ooz), `dm/third_party/ooz/` (`build.sh`, `unoodle.cpp`, `README.md`), `dm/third_party/README.md`, `dm/tools/tests/test_ooz_split.py` (new: the worker's
+command, no wait on the ooz path, the markers, the fallback and its memory, the PC path, the phone's wiring), `peanuts/tests/test_unoodle.py` (the library form
+through the same tests, the source digest), `peanuts/docs/INCREMENTAL-BUILD.md`. Upstream candidate: no (upstream has no ooz).
+
+## Qualcomm driver before 512.800: auto-disable DM_VK_PUSH_DESC (2026-11-27)
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_pso.c` | 1 | Gate `L->push` on `VKA_ENV("DM_VK_PUSH_DESC", !V.qcom_old)` for draw/compute pipeline layouts | `PEANUTS(upstream-candidate)` |
+| `dm/gfx/vk_android/vka_auto.h` | 1 | Add `DM_VK_PUSH_DESC=0` auto rule when `qcom_old` is set | `PEANUTS(upstream-candidate)` |
+| `dm/host/tests/t_android_auto.c` | 3 | Check `DM_VK_PUSH_DESC` is `0` for `qcom_old` and unset for Turnip and Qualcomm 512.800+ | `PEANUTS(upstream-candidate)` |
+
+Qualcomm driver 512.762.41 (Adreno 750, OnePlus 13R) mis-handles `vkCmdPushDescriptorSetKHR` UBO updates inside an open render pass when `DM_VK_UB_DEFER=1` swaps UBO bindings to `vka_scratch` shadows, causing disappearing terrain/geometry and flickering in *Untitled Goose Game* (`010082400BCC6000`) and overworld whiteout in *Sea of Stars* (`01008C0016544000`, #888). Disabling `DM_VK_UB_DEFER` fixes it at ~3x render-pass cost (67-114 passes/frame), whereas disabling `L->push` via `DM_VK_PUSH_DESC=0` fixes rendering completely while keeping `DM_VK_UB_DEFER=1` (~18-24 passes/frame, locked 60 fps) and leaving internal B2T mirroring push descriptors active.
+
+Upstream candidate: yes, a general fix with no Peanuts dependency.
+
+### #907 as a profile key: push_desc_qcom_old (2026-11-28)
+
+The section above turned push descriptors off for draw and compute layouts on every Qualcomm driver before 512.800. A Thor A/B on the stock `512.676` driver
+(Adreno 740) then measured the cost for a game that does not need it: Breath of the Wild drew the same picture with about 45 % more replay CPU (24.4 against
+16.7 ms a frame). The owner chose a profile key: `push_desc_qcom_old off` (`DM_GAME_PUSH_DESC_QCOM_OLD_OFF`) in the two games the change fixes. The rule above
+and its `t_android_auto.c` checks are replaced by the rows below; a profile without the key gets the layouts it got before #907 on every driver.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka_pso.c` | 1 | `layout_slow`: `DM_VK_PUSH_DESC` defaults to 0 only when `DM_GAME_PUSH_DESC_QCOM_OLD_OFF && V.qcom_old`, else 1; the env line still wins | `PEANUTS` |
+| `dm/gfx/vk_android/vka_auto.h` | 2 | `prof_push_desc_off` input; the `DM_VK_PUSH_DESC=0` rule needs it as well as `qcom_old` (the unconditional rule removed) | `PEANUTS` |
+| `dm/gfx/vk_android/vka_dev.c` | 1 | `auto_log`: `.prof_push_desc_off = DM_GAME_PUSH_DESC_QCOM_OLD_OFF` | `PEANUTS` |
+| `dm/host/tests/t_android_auto.c` | 6 | the unconditional checks back to dev's; the key on Turnip, Qualcomm 512.800+ and another driver adds no rule (counts unchanged), old Qualcomm only with the key, its line | `PEANUTS` |
+| `dm/games/game.py` | 2 | `push_desc_qcom_old` checked (`on` / `off`, default `on`), `#define DM_GAME_PUSH_DESC_QCOM_OLD_OFF` | `PEANUTS` |
+| `dm/games/README.md` | 1 | the key's row | `<!-- PEANUTS -->` |
+| `dm/tools/docs_patches.py` | 1 | the key's binding entry (`game` → `host`) | `PEANUTS` |
+| `docs/reference/rendering.md` | 1 | the #907 entry: Fix per profile, "Why not for every game" (the measured CPU cost) | inside the `PEANUTS(upstream-candidate)` block |
+| `docs/env_switches.tsv`, `docs/advanced_settings.tsv` | 1 each | `DM_VK_PUSH_DESC`: default per profile | `[PEANUTS]` / Peanuts' row |
+| `android/README.md` | 1 | the per-driver defaults list: `DM_VK_PUSH_DESC=0` for profiles with the key | `<!-- PEANUTS: #907 -->` |
+| `dm/games/010082400BCC6000/*` | 3 | `push_desc_qcom_old off`; README and readiness.tsv: the profile turns push descriptors off on Qualcomm `< 512.800` (no longer "use Turnip until #907 lands") | Peanuts' own profile |
+| `dm/games/01008C0016544000/*` | 3 | `push_desc_qcom_old off` (`# PEANUTS:` comment); README: the table row and a Testing line (#907's report, not yet checked on a device by us); the `recommend` row stays | `PEANUTS` |
+| `docs/agents/game-patches.md` | generated | `dm/tools/docs_patches.py` | (generated) |
+
+Peanuts' own files: `dm/peanuts/profile/` (`PUSH_DESC_QCOM_OLD_OFF` scalar, `push_desc_qcom_old_off` u32 after `place_join_mb`: the runtime profile schema
+changes, so every title's profile.bin is regenerated with the APK; the struct size stays 12216 bytes, the new field takes alignment padding before
+`render_cfg`), `peanuts/tests/test_push_desc_qcom_old.py` (the values, every real profile's macro, the generic profile field, the `layout_slow` line cut from
+vka_pso.c against the pre-#907 expression over every driver state with the key unset, and the `vka_auto.h` rule agreeing with it). No rewrite key or shader
+input changes: `vka_pso.c` layouts do not feed `DMSH_VK_CHAIN`. Upstream candidate: the switch and the key, if upstream wants a per-game choice.

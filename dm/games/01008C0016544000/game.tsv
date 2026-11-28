@@ -57,6 +57,12 @@ pad_layout	full
 recommend	driver.id=8,driver.version&0xffc00000=0x80000000,driver.version&0x3ff000<0x320000	driver=18
 # PEANUTS end
 
+# ---- Rendering ----
+# PEANUTS: Qualcomm's driver before 512.800 (512.762.41, Adreno 750): the overworld whited out in pixel shader 4dcce9647508810e (SOS/VFX/MistMesh-V4) with push
+# descriptors on (#888, #907; README.md, not yet checked on a device by us). Only draw / compute layouts go off push descriptors there; the recommend row above
+# still prefers Turnip. DM_VK_PUSH_DESC still overrides it
+push_desc_qcom_old	off
+
 # ---- Shader split (shader_split.py; Unity Shader objects, read by unityfs.py) ----
 # everything is under Data/: the player's serialized files and the StreamingAssets bundles
 shader_groups	/Data/=data

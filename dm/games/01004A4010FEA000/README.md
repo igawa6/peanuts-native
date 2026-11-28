@@ -46,6 +46,17 @@ General host changes first needed here; each applies to every game:
 - **Oodle's streaming decoder in the Mac host's tool mode** (`hle_oodle.c`, `OodleLZDecoder_*`, `oodle_packs`) and the **PKZ / DAT readers**: [01, Compressed RomFS content](../../../docs/agents/01-extract.md#compressed-romfs-content).
 - **PlatinumGames shader objects** (`pg_shader`): [PlatinumGames' shader objects](../../../docs/reference/shaders.md#platinumgames-shader-objects).
 
+<!-- PEANUTS begin: Android results (#846, codetz7) -->
+## Android (POCO Pad X1, 2026-11-27)
+
+Source only: not on the release list (`peanuts/release-titles.txt`), so the default APK does not build it.
+
+- 1.2.0 (`v131072`), built on Android: the shaders translated, and two chapters were played at 30 fps without a crash or a visible drawing fault on a POCO Pad X1 (Snapdragon 7+ Gen 3, 8 GB, Android 16).
+- The run used a patched Turnip build that is not part of the app ("Gen8 V39-patched"), RAM Saver and background pipelines on, frame generation off, and three switches in the game's environment: `DM_VK_ENC_BATCH=8192`, `DM_VK_ENC_TAIL=32768`, `DM_VK_ENC_SPIN=100`. With them the game stayed close to 30 fps; no frame-time numbers were recorded.
+- `fps_limit_present 1` with `fps_limit 30` and `fps_modes 30,60`: the game starts at 30 fps; 60 is offered as experimental.
+- Not checked: 60 fps, whether the game keeps its normal speed at 30 and at 60, Qualcomm's own driver, the app's own Turnip builds, a phone with 12 GB or more, and anything past the second chapter.
+<!-- PEANUTS end -->
+
 ## Open
 
 - Dotted patches on some surfaces (a grid every 4 pixels: the platforms breaking up in the prologue, a floor near the camera) look like the engine's dithered dissolve; not compared with the Switch yet.

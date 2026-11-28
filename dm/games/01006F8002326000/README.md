@@ -86,3 +86,5 @@ General host changes first needed here; each applies to every game:
 - `game.tsv` still describes the game as "In bring-up", while it plays on the iPhone.
 - A save on the Mac (the end of the first day) has not been reached.
 - The keyboard's 8 geometry shaders do not translate.
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [502 observed RomFS files](shader_files.tsv) out of 103,400 on 3.0.3. A full split took 124.0 s and the targeted one 4.3 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

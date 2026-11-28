@@ -8,7 +8,7 @@ Update 2.0.0 (v327680) over the base game, SDK 12.3.7. Unity 2020.3.18f1 IL2CPP 
 |---|---|---|
 | `QualitySettings.set_vSyncCount` argument → 1 | [`patches.py`](patches.py) `CUTS`, `main` `8c08b971…` at `main+0x32f92d4` | the game's own 60 fps path; see [Frame rate](#frame-rate) |
 | Node area cut 1 GB → 62 MiB and 2 MiB alignment for regions of 4 MiB and up | `dm/tools/sdk_patches.py`, SDK-wide rules matched on `56ec2474…` | gives Unity's allocator room in the alias region; see [Memory](#memory) | <!-- PEANUTS -->
-| 5 GB guest layout: `mem_reserve 0x140000000`, `mem_alias 0x118000000`, `mem_stack 0x10000000`, `app_pool 0xA0000000` | [`game.tsv`](game.tsv) | 256 MB in front + 4.375 GB alias region + 256 MB stack region + 128 MB heap region, with a 2.5 GB pool reported. 5 GB is the total proven on a phone |
+| Guest layout (Android, PEANUTS: a 16 GB alias region, address space only): `mem_reserve 0x428000000`, `mem_alias 0x400000000`, `mem_stack 0x10000000`, `app_pool 0xA0000000` | [`game.tsv`](game.tsv) | 256 MB in front + 4.375 GB alias region + 256 MB stack region + 128 MB heap region, with a 2.5 GB pool reported. 5 GB is the total proven on a phone |
 | `shader_groups` `engine` / `assets` | `game.tsv` | `data.unity3d` and `Resources/` are the engine's built-ins, `StreamingAssets/` the Addressables bundles |
 | `depth_mode zero` | `game.tsv` | the game sets the near = 0 depth mode, so the pipeline bases made before it runs (the NSP script's Mac prebuild, and a [pipeline archive made offline](../../../docs/development.md#the-pipeline-archive-made-offline) for the iPhone when one is built with `DM_PSO_GPUS`) take its vertex shaders' `main0_z` entries (the host itself follows the mode the game sets) |
 
@@ -95,3 +95,5 @@ General host changes first needed here; each applies to every game:
 Engage uses the reviewed Warehouse pointer/direct vsync fields and hub timing field. A checked pre-seal instruction restores the legacy force-60 cut in mapped memory. Its 60 Hz integer controller supports 20, 30 and 60; 40, 90 and 120 stay unavailable.
 
 The launcher defaults to 60 and offers Game owned as a separate choice. Switching to or from Game owned requires restarting. Code plans require the exact main build and expected instruction words, validate every replacement before writing, and leave pack files unchanged. Other platform patch preparation retains its existing method. See the Thor continuation report for bounded Turnip validation.
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [182 observed RomFS files](shader_files.tsv) out of 206,874 on 2.0.0. A full split took 76.5 s and the targeted one 5.5 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

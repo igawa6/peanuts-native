@@ -19,7 +19,7 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Symptom:** A stationary dialog flashes rectangles and its font atlas alternates with a much smaller texture when the game rotates descriptor pools.
 - **Cause:** adding the texture pool base to a combined handle can carry into the sampler field. Registrations for later full-size pools also exceed a single pool's 20-bit ID range.
 - **Fix:** keep the pool-local handles during recording; add each executing pool's base after extracting its field. Store direct texture registrations in sparse pages and capture their host IDs, not their page ordinals. GPU bindless array sizes do not change.
-- **Found on:** Trails through Daybreak II (0100F6701FED4000), whose bring-up profile is a separate change. <!-- PEANUTS(upstream-candidate) -->
+- **Found on:** [Trails through Daybreak II](../../dm/games/0100F6701FED4000/README.md). <!-- PEANUTS(upstream-candidate) -->
 
 ### Null textures in diagnostic logs
 
@@ -761,6 +761,16 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Found on:** [Pokémon: Let's Go, Pikachu!](../../dm/games/010003F003A34000/README.md) (title screen, new-game intro, Oak's lab), AYN Thor, 2026-11-20; Turnip T30 was not affected.
 <!-- PEANUTS(upstream-candidate) end -->
 
+<!-- PEANUTS(upstream-candidate) begin: push descriptors off on Qualcomm before 512.800, per profile -->
+### Push descriptors corrupt deferred UBO updates inside a render pass on Qualcomm's driver (Android)
+
+- **Symptom:** (PEANUTS, Android, Qualcomm's driver 512.762.41 on an Adreno 750) terrain and hill meshes flicker and disappear as the camera moves (Untitled Goose Game), or the overworld whites out in pixel shader `4dcce9647508810e` (`SOS/VFX/MistMesh-V4`, Sea of Stars, #888), while Turnip T30 renders cleanly. No `[RED]` line, no failed pipeline. Turning off deferred UBO updates (`DM_VK_UB_DEFER=0`) stops the flickering at the cost of tripling render passes (67–114/frame vs 20–32) and recording time; turning off only outside-pass deferral (`DM_VK_UB_DEFER_OUTSIDE=0`) leaves the flickering intact.
+- **Cause:** inside an open render pass, `DM_VK_UB_DEFER=1` swaps UBO bindings to `vka_scratch` shadow ranges and updates them via `vkCmdPushDescriptorSetKHR`. Qualcomm drivers before 512.800 mis-handle those push-descriptor UBO updates inside a render pass. Switching draw/compute pipeline layouts off push descriptors (`DM_VK_PUSH_DESC=0`) fixes the rendering at the same render-pass count (20–32/frame) while leaving internal B2T mirroring and FSR push descriptors enabled.
+- **Fix:** per game, in the profile: `push_desc_qcom_old off` in `game.tsv` (Untitled Goose Game, Sea of Stars) makes `vka_pso.c` `layout_slow` create draw and compute layouts without push descriptors (`L->push` 0) on Qualcomm's driver before 512.800 only (`V.qcom_old`); the log has `[auto] DM_VK_PUSH_DESC=0 because driver_id=8 (…), driver version before 512.800, the profile's push_desc_qcom_old off` (`vka_auto.h`). `DM_VK_PUSH_DESC=0` / `1` overrides it either way. A game without the key, Turnip, Qualcomm 512.800 or later and other drivers keep push descriptors as before.
+- **Why not for every game:** pull request #907 turned them off on every Qualcomm driver before 512.800. A Thor A/B on the stock `512.676` driver (Adreno 740, 2026-11-28): with push descriptors off Breath of the Wild drew the same picture but took about 45 % more replay CPU (24.4 against 16.7 ms a frame). So the switch defaults off only where a game is known to draw wrong; finding and avoiding the driver bug's trigger itself (the push update of a deferred uniform range inside a pass) would let every game keep push descriptors.
+- **Found on:** [Untitled Goose Game](../../dm/games/010082400BCC6000/README.md) (`010082400BCC6000`, v458752) and [Sea of Stars](../../dm/games/01008C0016544000/README.md) (`01008C0016544000`, v983040, #888), OnePlus 13R (Snapdragon 8 Gen 3, Adreno 750), 2026-11-27; Turnip Mr. Purple T30 was not affected. Sea of Stars is the pull request's report, not yet checked on a device by us.
+<!-- PEANUTS(upstream-candidate) end -->
+
 ## Vertex input and draws
 
 ### Integer vertex inputs
@@ -1383,6 +1393,14 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Cause:** Portal's `main` is SDL with its EGL video backend; it imports 20 EGL functions and names `glShaderSource` twice (SDL's GL renderer), but imports no NVN and draws nothing. The renderer is in the Source engine NROs: `materialsystem.nro` (with the D3D9 layer linked in) and `video_nx.nro` import `nvnBootstrapLoader` and draw with NVN.
 - **Fix:** `profile_guess.py` `shader_sources` now reads the imports of the loose NROs in the RomFS (`romfs_nro_imports`): when one imports `nvnBootstrapLoader`, the game is an NVN game whatever `main` imports. Digimon keeps the GL rule: it has no NRO. The survey, which has only a RomFS manifest, called Portal 2 an OpenGL game and left GLSLC out of its modules until the survey's manifest pass also wrote the RomFS's NROs (`romfs_nro/`, 60 MB for Portal 2's 21) for it to read the same way.
 - **Found on:** [Portal](../../dm/games/01007BB017812000/README.md); [Portal 2](../../dm/games/0100ABD01785C000/README.md) (the survey).
+
+### A material's body invisible or black: NVN_FORMAT_BGR5A1 had no Vulkan format
+
+<!-- PEANUTS -->
+- **Symptom:** `[RED] vk: NVN format 0x97 has no Vulkan format on this device (VkFormat 0)`, then `texture ID … has no view of shape 0x1: it reads as unbound (… format 0x97 …)`. Whatever samples that texture reads (0, 0, 0, 0): with an alpha test on its alpha the surface is discarded (an invisible body with only head, hands and feet drawn), without one it is black.
+- **Cause:** the replay's format table (`vka_tex.c` `fmt_ent_of`) had the RGB 16-bit family (0x39-0x3C) and BGR565 (0x95) but not BGR5A1 (0x97). NVN names packed formats from the low bits up, as the table's other rows show (RGB5A1 0x3B → `A1B5G5R5_UNORM_PACK16`, red in the low bits; BGR565 0x95 → `R5G6B5_UNORM_PACK16`, blue in the low bits), and the Metal backend maps 0x97 to `MTLPixelFormatBGR5A1Unorm`, which MoltenVK pairs with `VK_FORMAT_A1R5G5B5_UNORM_PACK16`: blue in bits 0-4, green 5-9, red 10-14, alpha in bit 15.
+- **Fix:** 0x97 → `VK_FORMAT_A1R5G5B5_UNORM_PACK16` (a core format; the texel size table already has 2 bytes for 0x95-0x98). BGR5 (0x96) and A1BGR5 (0x98) stay unmapped until a game uses them.
+- **Found on:** NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS (`01005A20190A6000`, 1.70): one 512x512 BGR5A1 texture, the diffuse of Sage of the Six Paths Naruto's costume, read by fragment `c33de2d38178c8b4` (`nuccMaterial_nx.nsh`), whose alpha test (`diffuse.a * colour.a <= threshold` → discard) removed the body in fights; at the character select the costume was flat black.
 
 ### Which GL functions a game calls
 

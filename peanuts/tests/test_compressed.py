@@ -91,6 +91,17 @@ class Logic(unittest.TestCase):
             'Game [DLC].xci: abc.nca lies outside its file (1576726 + 128254464 > 100663296 bytes): the file is cut off': 'Game [DLC].xci' + cut,
             'abc.nca: lies outside its file (1 + 2 > 2): a cut-off dump?': 'A game file' + cut,   # the message before the file's name was in it
         })
+        bad = (' is damaged, so Kart was not imported. Nothing was changed. Its contents do not match the checksums inside it, so it changed when it was copied or'
+               ' downloaded. Copy the file again, or dump it again from your console, then build the game again.')
+        cases.update({   # an uncompressed file whose bytes do not match its own hash layers (nx_verify.c, nximport.c; issue #561): the cut-off file's sentence shape
+            'Z-A Update [0100F43008C44800][v393216].nsp: the update v393216 is damaged: the bytes at 0x11b5a0000 of its RomFS do not match their checksum':
+                'Z-A Update [0100F43008C44800][v393216].nsp' + bad,
+            'Base.xci: the base game is damaged: hash level 1 of its RomFS does not match its checksum': 'Base.xci' + bad,
+            "Extra.nsp: the DLC 0100f43008c45001 is damaged: 0123.nca is 4096 bytes, its title's metadata says 8192": 'Extra.nsp' + bad,
+            # a plain NCA inside a compressed file keeps the compressed file's words (what to do differs: compress it again)
+            'Game.nsz: the base game is damaged: the bytes at 0x4000 of its ExeFS do not match their checksum':
+                'Game.nsz is damaged or incomplete, so Kart was not imported. Nothing was changed. Copy or compress the file again, or build from the uncompressed file.',
+        })
         for msg, words in cases.items():
             self.assertEqual(self.java('fail', msg, 'Kart', 1), words, msg)
         self.assertEqual(self.java('fail', 'Game.nsz: abc.ncz does not match its checksum', 'Kart', 0),

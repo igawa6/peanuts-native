@@ -135,6 +135,8 @@ SHADER_BINDING = [
 # Profile switches: (key, the start of its value ('' = any), entry). A key is per-game data, so `game`; its goal is `host` where it is the semantics every game should get
 DEFAULT_SOON = 'a default for every game after `regress.py check` on the games'
 SWITCH_BINDING = [
+    ('tex_pool_range', '', {'what': "each texture pool limited to that many IDs of the host's 2^20-entry texture table", 'now': 'game', 'goal': 'host', 'purpose': 'rendering',   # PEANUTS
+     'why': "the range a pool needs is known only from the IDs the game registers, not when the pool is made: a host that numbers pools by the IDs they use would make it unneeded"}),
     ('option_patch', '', {'what': 'opt-in expected-byte code words', 'now': 'build', 'goal': 'build', 'purpose': 'rendering', 'why': 'literal instructions of a registered main build; an explicit restart option selects them independently of FPS'}),
     ('render_cond', '', {'what': 'NVN conditional rendering', 'now': 'game', 'goal': 'host', 'purpose': 'rendering',
      'why': f'what the GPU does; off by default only because other games drew everything before: {DEFAULT_SOON}'}),
@@ -146,6 +148,8 @@ SWITCH_BINDING = [
      'why': "a game with graphics_scale rows whose start is not Phone 1080p keeps that start as its default (Mario Tennis Fever: console scale 1, 2048x1152), so adding the rows changes no player's picture"}),
     ('android_window', '', {'what': "the Android launcher's default Game resolution", 'now': 'game', 'goal': 'host', 'purpose': 'frame rate',
      'why': "a workaround while the game's upscaler is too slow on Adreno with Turnip at 1080p: the faster upscaler makes it unneeded"}),
+    ('core_preempt', 'lock', {'what': "one core's guest threads take turns, a core's lock held in guest code and given up at SVCs, for the first 20 s (DM_CORE_LOCK; hle_thread.c)", 'now': 'game', 'goal': 'host', 'purpose': 'runtime',   # PEANUTS: #641
+     'why': "Horizon's semantics (two threads of one core never run at the same moment), but the lock's waits cost hitches when held for good: a lock cheap enough for every game, checked with `regress.py check` on the games"}),
     ('mem_map_limit', '', {'what': 'MapPhysicalMemory limited to the application pool', 'now': 'game', 'goal': 'host', 'purpose': 'memory',
      'why': "Horizon's limit, on for every game; `off` only for a profile whose pool is too small (Switch 1 games, not supported)"}),
     ('alloc_big_align', '', {'what': "StandardAllocator blocks of 64 KB and more aligned to 64 KB", 'now': 'game', 'goal': 'host', 'purpose': 'memory',
@@ -166,6 +170,8 @@ SWITCH_BINDING = [
      'why': "the total the game's SDK sizes its cache of freed pages from, measured on the game; the pool and the map limit stay the profile's"}),
     ('place_join_mb', '', {'what': "a larger run of a pool's placed parts joined into one", 'now': 'game', 'goal': 'host', 'purpose': 'rendering',   # PEANUTS: GitHub issues #394, #651
      'why': "a join holds the joined bytes twice for a moment, so the default stays 256 MiB; a larger default for every game once the transient is measured on the phones of 8 GB or less"}),
+    ('push_desc_qcom_old', 'off', {'what': "draw and compute layouts without push descriptors on Qualcomm's driver before 512.800", 'now': 'game', 'goal': 'host', 'purpose': 'rendering',   # PEANUTS: #888, #907
+     'why': "off cost Breath of the Wild about 45 % more replay CPU on 512.676 with no difference in its picture, so only games whose push updates of deferred uniform ranges break there take it; the driver bug's own trigger, found and avoided in the replay, would serve every game"}),
     ('tex_soft', '', {'what': 'large block-compressed textures kept without their finest level', 'now': 'game', 'goal': 'game', 'purpose': 'memory',
      'why': 'a loss of detail chosen for a game that does not fit a device otherwise'}),
     ('occlusion_split_pass', 'on', {'what': 'split Qualcomm depth passes after counted occlusion queries', 'now': 'game', 'goal': 'host', 'purpose': 'rendering',

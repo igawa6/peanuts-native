@@ -136,8 +136,31 @@ static void prep_tick(void *u, uint64_t n) {
     if (j->progress && (j->prep_done - j->prep_said >= (long long)NX_CHUNK || j->prep_done == j->prep_total)) { j->prep_said = j->prep_done; j->progress(j->user, j->prep_step, j->prep_done, j->prep_total); }
 }
 
-// A content NCA of title t (its id and the SHA-256 its CNMT records): <id>.nca, or <id>.ncz rebuilt from its compressed bytes and checked against both
-static NxNca *job_nca(Job *j, const NxTitle *t, const char *id, const uint8_t sha[32]) {
+// What a title's file is in the messages (nx_sec_verify and the checks below): "<file>: the base game", "<file>: the update v131072", "<file>: the DLC <id>".
+// The app's card takes the file from there (dev.peanuts.build.Compressed.failure)
+static void title_what(const NxTitle *t, char *out, size_t n) {
+    const char *f = leaf_of(t->c->path);
+    if (t->kind == 0) snprintf(out, n, "%s: the base game", f);
+    else if (t->kind == 1) snprintf(out, n, "%s: the update v%u", f, t->version);
+    else snprintf(out, n, "%s: the DLC %016llx", f, (unsigned long long)t->title_id);
+}
+
+// A plain NCA's sections the writer reads, checked as they are read against the NCA's own hash layers (nx_sec_verify): its ExeFS, and its RomFS unless that
+// is a patch, whose levels are read through the patched image (the update loop sets it up after nx_nca_set_base). Its size first, as its header gives it
+// (job_nca compared the entry with the CNMT's record before it opened the NCA)
+static int nca_checks(NxNca *n, const NxTitle *t, const NxEntry *e) {
+    char what[320]; title_what(t, what, sizeof what);
+    uint64_t hs; memcpy(&hs, n->hdr + 0x208, 8);
+    if (hs != e->size) { nx_err("%s is damaged: %s is %llu bytes, its header says %llu", what, e->name, (unsigned long long)e->size, (unsigned long long)hs); return -1; }
+    int ex = nx_nca_find_section(n, NX_FS_PFS0), ro = nx_nca_find_section(n, NX_FS_ROMFS);
+    if (ex >= 0 && nx_sec_verify(n, ex, what)) return -1;
+    if (ro >= 0 && n->sec[ro].crypt_type != 4 && nx_sec_verify(n, ro, what)) return -1;
+    return 0;
+}
+
+// A content NCA of title t (its id, and the SHA-256 and size its CNMT records): <id>.nca, checked against its own hash layers as the writer reads it
+// (nca_checks), or <id>.ncz rebuilt from its compressed bytes and checked against both
+static NxNca *job_nca(Job *j, const NxTitle *t, const char *id, const uint8_t sha[32], uint64_t size) {
     const NxContainer *c = t->c;
     if (j->nncas >= j->cap) { nx_err("too many NCAs"); return NULL; }
     char nm[48]; snprintf(nm, sizeof nm, "%s.nca", id);
@@ -148,9 +171,17 @@ static NxNca *job_nca(Job *j, const NxTitle *t, const char *id, const uint8_t sh
     if (strlen(e->name) > 4 && !strcasecmp(e->name + strlen(e->name) - 4, ".ncz")) {
         if (nx_ncz_open(&z, c, e)) return NULL;
         if (nx_nca_open_store(n, c, e, nx_ncz_store(z))) { nx_ncz_close(z); return NULL; }
-    } else if (nx_nca_open(n, c, e)) return NULL;
+    } else {
+        if (size && e->size != size) {   // the container's entry is not the NCA the title's CNMT records (a damaged container header): nothing of it is read
+            char what[320]; title_what(t, what, sizeof what);
+            nx_err("%s is damaged: %s is %llu bytes, its title's metadata says %llu", what, e->name, (unsigned long long)e->size, (unsigned long long)size);
+            return NULL;
+        }
+        if (nx_nca_open(n, c, e)) return NULL;
+    }
     // PEANUTS fix (AUDIT #1): nx_nca_open can succeed with key_ok 0 (no titlekey/area key: key_why says why); it still opened the NCA's sections, so they must be closed here too
     if (!n->key_ok) { nx_err("%s in %s: %s", nm, c->path, n->key_why); nx_nca_close(n); nx_ncz_close(z); return NULL; }
+    if (!z && nca_checks(n, t, e)) goto fail;
     if (z) {
         uint8_t got[32];
         // its keys are the ones the ticket or prod.keys give (never a key of its own: a compressed file opens only where its uncompressed one would)
@@ -583,7 +614,7 @@ int nximport_write_nup(const char *out_nup, const char **inputs, int n_inputs, c
       j->prep_total = (long long)sum; }
     if (base) {
         if (!base->program[0]) NX_FAIL("the base %s has no program NCA", base_title_id);
-        if (!(base_prog = job_nca(j, base, base->program, base->program_sha))) goto out;
+        if (!(base_prog = job_nca(j, base, base->program, base->program_sha, base->program_size))) goto out;
         int ex = nx_nca_find_section(base_prog, NX_FS_PFS0); base_rom = nx_nca_find_section(base_prog, NX_FS_ROMFS);
         NxNode *exefs = ex >= 0 ? nx_pfs0_tree(base_prog, ex) : NULL; if (ex >= 0 && !exefs) goto out;
         // PEANUTS: a sparse base RomFS (Castlevania: Belmont's Curse) holds only the ranges its update reads from it, its own header included only in the update: it is the
@@ -600,11 +631,14 @@ int nximport_write_nup(const char *out_nup, const char **inputs, int n_inputs, c
         if (t->kind == 1) {
             int dup = 0; for (int p = 0; p < j->npk; p++) if (j->pk[p].kind == 1 && j->pk[p].ver == t->version) dup = 1; if (dup) continue;
             if (!t->program[0]) NX_FAIL("update %016llx v%u has no program NCA", (unsigned long long)t->title_id, t->version);
-            NxNca *pn = job_nca(j, t, t->program, t->program_sha); if (!pn) goto out;
+            NxNca *pn = job_nca(j, t, t->program, t->program_sha, t->program_size); if (!pn) goto out;
             int ex = nx_nca_find_section(pn, NX_FS_PFS0), ro = nx_nca_find_section(pn, NX_FS_ROMFS);
             if (ro >= 0 && pn->sec[ro].crypt_type == 4) {
                 if (!base_prog || base_rom < 0) NX_FAIL("the update v%u patches the base game's RomFS: the base %s must be among the inputs", t->version, base_title_id);
                 if (nx_nca_set_base(pn, ro, base_prog, base_rom)) goto out;
+                // the patched image against the update's own hash levels (an NCZ was checked whole already): what the update carries and what it maps from the
+                // base, as the writer reads it. The base's bytes are checked against the base's levels on the way (bktr_read), so each file is named for its own
+                if (!j->ncz[j->nncas - 1]) { char what[320]; title_what(t, what, sizeof what); if (nx_sec_verify(pn, ro, what)) goto out; }
             }
             NxNode *exefs = ex >= 0 ? nx_pfs0_tree(pn, ex) : NULL; if (ex >= 0 && !exefs) goto out;
             NxNode *romfs = ro >= 0 ? nx_romfs_tree(pn, ro) : NULL; if (ro >= 0 && !romfs) { nx_node_free(exefs); goto out; }
@@ -613,7 +647,7 @@ int nximport_write_nup(const char *out_nup, const char **inputs, int n_inputs, c
         } else {
             int dup = 0; for (int p = 0; p < j->npk; p++) if (j->pk[p].kind == 2 && j->pk[p].tid == t->title_id) dup = 1; if (dup) continue;
             if (!t->data[0]) NX_FAIL("add-on %016llx has no data NCA", (unsigned long long)t->title_id);
-            NxNca *dn = job_nca(j, t, t->data, t->data_sha); if (!dn) goto out;
+            NxNca *dn = job_nca(j, t, t->data, t->data_sha, t->data_size); if (!dn) goto out;
             int ro = nx_nca_find_section(dn, NX_FS_ROMFS); if (ro < 0) NX_FAIL("add-on %016llx has no RomFS", (unsigned long long)t->title_id);
             NxNode *romfs = nx_romfs_tree(dn, ro); if (!romfs) goto out;
             if (add_pkg(j, t, 2, t->title_id, t->version, NULL, romfs)) goto out;
@@ -640,6 +674,11 @@ int nximport_write_nup(const char *out_nup, const char **inputs, int n_inputs, c
       for (int p = 0; p < j->npk; p++) if (pkg_meta(&j->pk[p], p == app)) goto out; }
     for (int p = 0; p < j->npk; p++) sum_sizes(j, j->pk[p].root);
     rc = write_nup(j, out_nup);
+    if (getenv("NX_DEBUG"))   // how much of each checked section the writer read (a base an update replaces whole is read only where the update maps it)
+        for (int i = 0; i < j->nncas; i++) for (int s = 0; s < 4; s++) {
+            uint64_t done, all; nx_sec_check_count(&j->ncas[i], s, &done, &all);
+            if (all) fprintf(stderr, "nximport: %s section %d: %llu of %llu blocks checked\n", j->ncas[i].id, s, (unsigned long long)done, (unsigned long long)all);
+        }
 out:
 fail:
     if (j) {

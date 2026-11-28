@@ -58,11 +58,59 @@ Where one Pokopia shader's time goes (`cProfile`, one thread, 1,022 shaders, 180
 | translator (`dmsh_xlate_main`, batches of 64) | 10 ms | no |
 | the rest of `finish` (reflection, variants, result files) | ~3 ms | yes |
 
-About 70 % of the step holds the GIL, so one interpreter's threads ran it on about one core; DKB's shaders spend ~30 ms there (ONDEVICE.md), Pokopia's ~110. The largest single cost is `promote_locals`; a faster form that writes the same modules would keep the library version (a `vk_android_same.tsv` row) and helps on every core count. Not done.
+About 70 % of the step holds the GIL, so one interpreter's threads ran it on about one core; DKB's shaders spend ~30 ms there (ONDEVICE.md), Pokopia's ~110. The largest single cost is `promote_locals`; a faster form that writes the same modules would keep the library version (a `vk_android_same.tsv` row) and helps on every core count. <!-- PEANUTS -->Done for every pass: [Native post-passes](#native-post-passes-2026-11-28).
+
+<!-- PEANUTS begin: the post-passes in C -->
+#### Native post-passes (2026-11-28)
+
+`finish` (`vk_android_build.py`) runs `vk_android_spv.py`'s passes on each translated module; in Python they were most of the shaders step (`Module` parsing and its
+nine re-indexes a shader, `promote_locals`, `value_uses`, `retype_outputs`, the words packed back through a generator), and they hold the GIL. `libdmsh_spvn`
+(`dm/gfx/tools/vk_android_spv_native/spvn.c`, loaded by `vk_android_spvn.py` through `ctypes`, which drops the GIL for each call) has the module and the passes in C:
+the module is parsed once into the library, each pass runs there, and its words come back once for each module the library stores (base, `MOD_UINT`,
+`MOD_UINT_MIXED`, a copy for `shuffle_lds`). `finish` keeps the orchestration and the reflection bookkeeping in Python and calls the same function names on
+either module (`finish_with(S, …)`, `spv_of`).
+
+- **The same bytes.** Each C function is the Python function of the same name, transliterated: the same instruction list, the same index with the same update
+  rules (what the Python changes by hand between two `index()` calls, the C changes by hand; dictionary iteration in insertion order, e.g. `find_type`'s first
+  match, `resources()`' order), the same new ids in the same order, and the same evaluation order where the Python would raise. The library is part of the tools
+  digest (`VK_FILES`: `vk_android_spvn.py`, `spvn.c`), so a change to it moves `DMSH_VK_CHAIN` like any pass change; this change itself got a
+  `vk_android_same.tsv` row after full builds reproduced the libraries byte for byte (below).
+- **Fallback.** What the library does not make raises `Fallback`, and `finish` makes that shader again with `vk_android_spv.py` from its translated module: the HMMA
+  lowering (`hmma_lds`), the GlobalToStorage raw helpers' rewrites (any `OpConvertUToPtr` outside the entry point: `simplify_helpers`' CAS / inPool part,
+  `loop_pool_search`, `cache_raw_loads`), the emulated passthrough's viewport mask, a non-constant sample offset (`lower_sample_offsets`), per-primitive mesh
+  inputs, and every shape on which the Python raises (a missing type, a short instruction, …: the Python then gives its own `reflection failed` message). `dual_source`
+  and a `shuffle_lds` that applies run the Python on the fresh copy they get anyway (the library checks first whether `shuffle_lds` applies). The build's summary
+  says how many shaders each made: `post-passes: native (libdmsh_spvn) N, redone in Python K; <step> n …; finish <s> of thread time`.
+- **Which library.** `DMSH_VK_SPVN`: unset, `libdmsh_spvn.so` on Android (the APK's `lib/`, built by `android/ondevice/build.sh <work dir> zbic`, as `libcra.so`;
+  `build.gradle` refuses a stage whose library was not built from the tree's `spvn.c`), elsewhere a library compiled from `spvn.c` with `cc` (or `CC`) into
+  `~/.cache/dmsh_spvn/<SHA-256>/` (`DMSH_VK_SPVN_CACHE`) the first time; `0` = the Python passes; a path = that library. The library carries `spvn.c`'s SHA-256
+  (`spvn_source`); one of other sources is not used. Without a library (no compiler) the Python runs, with the same output.
+- **Checked (2026-11-28, Linux PC):** every pass step by step on 13,169 translated modules (every 4th of Yoshi's Crafted World's, every 3rd of Trails in the Sky 1st
+  Chapter's, every 8th of Hyrule Warriors: Age of Calamity's): the same result and bytes after every step, no fallback; `dm/tools/tests/test_vk_android_spvn.py` does
+  the same on fixtures from those builds (`peanuts/tests/fixtures/spvn`). Full builds:
+
+Full builds on Linux (32 threads, other jobs running; `DMSH_VK_ZSTD_LEVEL=6`, spirv-val as a program; finish's thread time from the `post-passes:` line, the old
+tree's measured the same way). `dmsh_vk.lib`, `index.json` and `_vk_build.json` are byte-identical to the Python's in every row (and with `DMSH_VK_SPVN=0` for
+Crafted World and Trails in the Sky):
+
+| Build | Python passes | Native | finish, thread time |
+|---|---|---|---|
+| Yoshi's Crafted World, 23,497 shaders, `J=8` | 5 min 01 s | 1 min 29 s | 1,668 → 299 s |
+| the same, `J=1` | 10 min 46 s | 6 min 53 s (the translator is the rest) | 401 → 186 s |
+| Hyrule Warriors: Age of Calamity, 40,729 shaders, `J=8` | 57 min 05 s (with other builds) | 10 min 16 s (1 shader redone in Python: a sample offset) | |
+| Trails in the Sky 1st Chapter, 6,602 shaders, `J=8` | 5 min 51 s (with other builds) | 1 min 36 s | 2,084 → 252 s |
+| Crafted World, 604 keys (every 39th of the map), `J=8` / `J=1` | 11.9 / 21.0 s | 4.2 / 15.1 s | 49.6 / 12.6 → 8.3 / 6.4 s |
+| the same with `SPIRV_VAL=libSPIRV-Tools-shared.so` (the phone's way), `J=8` / `J=1` | 8.9 / 18.6 s | 3.7 / 10.1 s | 30.6 / 10.0 → 4.0 / 2.7 s |
+
+What stays in Python in `finish`: the reflection (`classify`, `place`, `facts_of`), the result's JSON; around it the validator (a subprocess on a PC unless
+`SPIRV_VAL` names the library), zstd and the translator. The passes themselves: 0.4 s of the 604-key sample against about 9 s in Python. Not measured on a
+phone: the stage's `libdmsh_spvn.so` builds with NDK r30 (`--target=aarch64-linux-android33`, no warnings) but has not run on one yet.
+
+<!-- PEANUTS end -->
 
 ### Versions
 
-`DMSH_VK_CHAIN` (`dm/gfx/nvn/dmsh_chain_vk.h`) is the library version: the hash of `DMSH_CHAIN`, `vk_android_build.py`, `vk_android_spv.py`, `vk_android_delta.py` and `dmsh_abi_vk.h` (the tools digest, `vk_android_build.py --digest`), or the earlier version that `dm/gfx/tools/vk_android_same.tsv` names for that digest. After changing any of the files, or after `DMSH_CHAIN` changes, run `vk_android_build.py --header` and commit the header (`dm/tools/tests/test_vk_android_abi.py` fails on a stale one).
+`DMSH_VK_CHAIN` (`dm/gfx/nvn/dmsh_chain_vk.h`) is the library version: the hash of `DMSH_CHAIN`, `vk_android_build.py`, `vk_android_spv.py`, `vk_android_delta.py`, `dmsh_abi_vk.h` <!-- PEANUTS -->and the native post-passes (`vk_android_spvn.py`, `vk_android_spv_native/spvn.c`) (the tools digest, `vk_android_build.py --digest`), or the earlier version that `dm/gfx/tools/vk_android_same.tsv` names for that digest. After changing any of the files, or after `DMSH_CHAIN` changes, run `vk_android_build.py --header` and commit the header (`dm/tools/tests/test_vk_android_abi.py` fails on a stale one).
 
 A change that cannot change the libraries (a cache, progress, how a tool is called) need not move the version and make every library already on a phone stale: build the full library of a game with the new tools, compare `dmsh_vk.lib` (and `index.json`, `_vk_build.json`) with the current version's byte for byte, and only when they are equal add the row `<new digest>\t<current version>\t<what changed and the evidence>` to `vk_android_same.tsv` (then `--header` leaves the header as it is). A change of output never gets a row. The result files are stamped with the digest, so the build cache starts over either way. The library header records both versions and the ABI; the replay loads a library whose `chain` and `vk_chain` are the ones it was compiled with, or, while that one is missing, an older one of the same ABI ([Delta updates](#delta-updates)). A version that moves sends phones a delta update, not a full build, once its manifest is published.
 

@@ -11,6 +11,9 @@
 // raw length, or does not use exactly its compressed bytes, answers 0; a read or write past the buffers' slack hits a guard page and ends the
 // process, which the caller sees as a closed pipe. LZNA and Bitknit streams are refused (their decoders are not built in).
 // Environment UNOODLE_STATS=<file>: one line appended at the end of input: streams, bytes and decode time per decoder type.
+// PEANUTS: built as a shared library (-DUNOODLE_LIBRARY, build.sh <output>.so: the phone's libunoodle.so) it has no main: unoodle_main() serves the same protocol on
+// stdin and stdout and returns main's exit code, called by a worker process that loads it (dm/gfx/tools/ooz_split.py), never inside the app's own process
+// (the guard pages end the process that runs it). unoodle_source() is the SHA-256 of the sources it was built from (build.sh; build.gradle checks it).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,7 +70,7 @@ static const char *type_name(int t) {
   return "other";
 }
 
-int main() {
+static int serve() {   // PEANUTS: main's body, shared with unoodle_main (#120)
   signal(SIGSEGV, fault); signal(SIGBUS, fault);
   Arena in = {NULL, 0}, out = {NULL, 0};
   struct { uint64_t ok, bad, cbytes, rbytes; double s; } st[16]; memset(st, 0, sizeof st);
@@ -106,3 +109,14 @@ int main() {
   }
   return 0;
 }
+
+#ifndef UNOODLE_SOURCE   // PEANUTS: the phone's libunoodle.so and the source SHA-256 (#120)
+#define UNOODLE_SOURCE "unknown"
+#endif
+#ifdef UNOODLE_LIBRARY
+extern "C" __attribute__((visibility("default"))) int unoodle_main(void) { return serve(); }
+extern "C" __attribute__((visibility("default"))) const char *unoodle_source(void) { return "unoodle_source=" UNOODLE_SOURCE; }
+#else
+__attribute__((used)) static const char source[] = "unoodle_source=" UNOODLE_SOURCE;
+int main() { return serve(); }
+#endif

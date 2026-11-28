@@ -52,6 +52,13 @@ typedef struct NxCompEntry { uint64_t virt, end, phys; uint32_t psize; uint8_t t
 typedef struct NxCompCache { const struct NxComp *comp; uint8_t *out, *in; size_t outcap, incap; uint32_t cached; } NxCompCache;
 typedef struct NxComp { NxCompEntry *e; uint32_t n; uint64_t total, table_off; NxCompCache cache; int shared; /* nx_sec_share */ } NxComp;
 void nx_comp_cache_free(NxCompCache *c);
+// A check of a section's raw bytes against the hash layers its NCA carries (nx_verify.c, set by nx_sec_verify; the importer only, the run-time reader never
+// sets one): read() is called after every nx_sec_read_raw of the section with the bytes read, from any thread, and fails (-1 with the reason) when they do
+// not match; free() when the NCA is closed
+typedef struct NxCheck {
+    int (*read)(struct NxCheck *k, struct NxNca *n, int sec, uint64_t off, const uint8_t *buf, size_t len);
+    void (*free)(struct NxCheck *k);
+} NxCheck;
 typedef struct NxSection {
     int present, fs_type /* NX_FS_ROMFS 0, NX_FS_PFS0 1 */, hash_type, crypt_type /* 1 none 2 xts 3 ctr 4 bktr */;
     uint64_t off, size;          // in the NCA
@@ -61,6 +68,7 @@ typedef struct NxSection {
     int compressed;              // the header has a compression table (loaded on the first read: for a BKTR section it lives in the patched bytes)
     NxComp *comp;
     NxSparse *sparse;            // PEANUTS: the sparse layer's table (nx_nca_open), below everything else
+    NxCheck *check;              // not NULL: every raw read is checked against the section's hash layers (nx_sec_verify)
 } NxSection;
 // An NCA whose bytes come from somewhere else than a plain file (an NCZ, nx_ncz.c): the reader asks it instead of reading fd. Set only by the importer
 // (nximport.c); the run-time reader's copy of this file never has one.
@@ -93,6 +101,14 @@ int nx_nca_set_base(NxNca *patch, int sec, NxNca *base, int base_sec);   // a BK
 int nx_sec_read(NxNca *n, int sec, uint64_t off, void *buf, size_t len);
 int nx_sec_read_tc(NxNca *n, int sec, uint64_t off, void *buf, size_t len, NxCompCache *cache);   // the same with a caller's (thread's) scratch; needs nx_sec_prepare first
 int nx_sec_read_raw(NxNca *n, int sec, uint64_t off, void *buf, size_t len);   // the same without the decompression (the bytes the hash layer covers)
+int nx_sec_read_unchecked(NxNca *n, int sec, uint64_t off, void *buf, size_t len);   // nx_sec_read_raw without the section's own check (the check's reads)
+// The section's hash layers (nx_verify.c, the importer only): the fs header against its SHA-256 in the NCA header, then a RomFS's IVFC levels or a PFS0's hash
+// table, each block of a level against its hash one level up, from the master hash in the fs header down. From then on every raw read of the data level is
+// checked against them as it is read (NxCheck); each block once. what names the file in the messages ("<file>: the update v131072"). 0 ok, also for a section
+// that has no hash layers this reader knows (nothing is checked then); -1 when a level does not match or cannot be read: the file is damaged or incomplete.
+// A patch (BKTR) section is set up after nx_nca_set_base: its levels are read through the patched image
+int nx_sec_verify(NxNca *n, int sec, const char *what);
+void nx_sec_check_count(const NxNca *n, int sec, uint64_t *checked, uint64_t *blocks);   // data blocks checked so far, of how many (0, 0: no check)
 // Loads a compressed section's table now (it is otherwise loaded on the first read, which is not thread-safe). 0 ok; a plain section: nothing to do.
 int nx_sec_prepare(NxNca *n, int sec);
 // A run-time reader's cache of decoded LZ4 entries: one for the process, shared by every section that asked for it and by every thread (8 shards, each with its

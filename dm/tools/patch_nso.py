@@ -21,6 +21,7 @@ if capstone.cs_version()[0] != 5:   # the rewriter uses Capstone 5's names (CS_A
     sys.exit(f'[RED] Capstone {capstone.__version__} is unsupported; the rewriter requires Capstone 5.x. Run: {shlex.join([sys.executable, "-m", "pip", "install", "capstone>=5,<6"])}')
 from capstone import *
 from capstone.arm64 import ARM64_OP_IMM, ARM64_OP_MEM, ARM64_OP_REG
+from array import array   # PEANUTS(upstream-candidate): spin_word and spin_rw_at (#120)
 import nso, nso_asm
 from nso_asm import *   # the instruction encoders (B, ADRP, LDRX, ...), shared with the per-build patch files
 
@@ -34,7 +35,10 @@ if WORKERS < 1: sys.exit('[RED] DM_REWRITE_J must be a positive integer')
 # Prepare's bar. Each phase has a fixed share of the 1000 (PHASES: start, width), measured with one worker on large modules (docs/reference/packing.md
 # "Prepare stays at 1 % while it rewrites the code"); a phase reports its own count inside its share. At most one line a second, plus each phase's start.
 import time
-PHASES = {'load': (0, 30), 'x18': (30, 250), 'scan': (280, 80), 'functions': (360, 125), 'sites': (485, 15), 'spin': (500, 490), 'write': (990, 10)}
+# PEANUTS(upstream-candidate): measured again after dev 0.1.10's speed round (one worker, Super Mario Bros. Wonder's and Animal Crossing's main); before:
+# load 30, x18 250, scan 80, functions 125, sites 15, spin 490, write 10. PEANUTS(upstream-candidate): and again with the spin wait search in C (spin_native); before:
+# load 125, x18 23, scan 31, functions 207, sites 37, spin 555, write 22
+PHASES = {'load': (0, 277), 'x18': (277, 45), 'scan': (322, 62), 'functions': (384, 437), 'sites': (821, 79), 'spin': (900, 51), 'write': (951, 49)}
 _progress_at = [0.0, -1]
 def progress(phase, done=0, total=1):
     start, width = PHASES[phase]
@@ -777,6 +781,7 @@ def undecodable_piece(s, e):
     return nso_code.count_undecodable(IMG, s, e, md)
 DATA_BLOCKS = nso_code.data_blocks(IMG, TEXT_END, md, lambda pieces: in_parallel(undecodable_piece, pieces, 'load'))   # PEANUTS(upstream-candidate): in worker processes
 CODE_RANGES = list(zip([0] + [e for _, e in DATA_BLOCKS], [s for s, _ in DATA_BLOCKS] + [TEXT_END]))
+LDXR_B = tuple(bytes(int(x & m == v) for x in range(256)) for m, v in ((0xFC, 0x7C), (0xFF, 0x5F), (0xBF, 0x88)))   # PEANUTS(upstream-candidate): bytes 1-3 of an ldxr
 def acquire_lock_sites(img, ranges):
     """Offsets of exclusive test-and-set lock acquires without acquire ordering: ldxr rt,[rn]; cbnz rt,<the ldxr>; stxr ws,rk,[rn]; cbnz ws,<the ldxr> (w or x, rk not zero), not followed by
     dmb ish / dmb ishld (Tears of the Kingdom's and Super Mario Bros. Wonder's locks of this shape all are, which orders them already). Armv8 lets the loads after such a lock be satisfied
@@ -784,7 +789,12 @@ def acquire_lock_sites(img, ranges):
     the job queue pop at main+0x13a0784 ran one job on two threads, see docs/reference/threads.md). Nintendo's own SDK locks use ldaxr"""
     out = []
     for s, e in ranges:
-        for o in range(s, e - 12, 4):
+        # PEANUTS(upstream-candidate): the ldxr words found on the bytes at once (each byte of w & 0xbffffc00 == 0x885f7c00 through a table, the tables' results
+        # and-ed as big integers), in address order as before; before, every word of the text went through this loop
+        n = max(0, (e - 12 - s + 3) // 4); t = bytes(img[s:s + 4 * n])
+        f = lambda k, tab: int.from_bytes(t[k::4].translate(tab), 'little')
+        m = f(1, LDXR_B[0]) & f(2, LDXR_B[1]) & f(3, LDXR_B[2])
+        for o in (s + 4 * k.start() for k in re.finditer(b'\x01', m.to_bytes(n, 'little'))):
             w = struct.unpack_from('<I', img, o)[0]
             if w & 0xBFFFFC00 != 0x885F7C00: continue
             c1, st, c2 = struct.unpack_from('<III', img, o + 4)
@@ -827,17 +837,34 @@ elif trinity:
     stat('trinity_completer')
 md_lite = Cs(CS_ARCH_ARM64, CS_MODE_ARM)   # no details: the x18 scan reads only the operand text
 R18 = re.compile(r'\b[xw]18\b')
+# PEANUTS(upstream-candidate) begin: x18_words decodes only the words that can name x18. A general register is a 5-bit field at bits 0, 5, 10 or 16 of the
+# word (Rd / Rt, Rn, Ra / Rt2, Rm / Rs); a word with none of them 18 (or 17: the second register of a pair such as casp's, which is printed but not encoded)
+# cannot print x18 / w18. The fields are tested on the word's bytes all at once (bytes.translate, big integer and / or), and the words left are decoded
+# together, 16 KB at a time, as before (at other addresses: only a pc-relative target, never a register, depends on the address). The same offsets as
+# decoding every word (Super Mario Bros. Wonder's main and sdk, Animal Crossing's and Mario Kart 8 Deluxe's main, 16 million random words); before, this
+# phase decoded every word of the text (Wonder main, one worker: 13.5 s of 57 s, now 0.6 s)
+X18_F = (bytes(int(x & 0x1F in (17, 18)) for x in range(256)),           # bits 0-4 (first byte)
+         bytes(int(x >> 2 & 0x1F in (17, 18)) for x in range(256)),      # bits 10-14 (second byte)
+         bytes(int(x >> 5 in (1, 2)) for x in range(256)),               # bits 5-7 of bits 5-9 (first byte): 18 = 0b10010, 17 = 0b10001
+         bytes(int(x & 3 == 2) for x in range(256)))                     # bits 8-9 (second byte)
 def x18_words(lo, hi):
     """offsets in [lo, hi) of the instructions whose operands name x18 / w18 (as has18). Decoded 16 KB at a time without details, going on after a word capstone cannot decode:
     a third of the time of decoding one word at a time with details (Paper Mario: The Thousand-Year Door main, 437 sites in 300,000 words either way)"""
-    out, a = set(), lo
-    while a < hi:
-        end = min(hi, a + 0x4000); last = a - 4
-        for addr, size, mn, op in md_lite.disasm_lite(bytes(IMG[a:end]), a):
-            last = addr
-            if R18.search(op): out.add(addr)
-        a = last + 4 if last + 4 >= end else last + 8   # the chunk is done, or the word after the last decoded one is no instruction
+    n = (hi - lo) // 4; t = bytes(IMG[lo:lo + 4 * n])
+    b0, b1, b2 = t[0::4], t[1::4], t[2::4]
+    f = lambda b, tab: int.from_bytes(b.translate(tab), 'little')
+    m = f(b0, X18_F[0]) | f(b1, X18_F[1]) | f(b2, X18_F[0]) | (f(b0, X18_F[2]) & f(b1, X18_F[3]))
+    idx = [k.start() for k in re.finditer(b'\x01', m.to_bytes(n, 'little'))]   # the words that can name x18
+    buf = b''.join([t[4 * i:4 * i + 4] for i in idx]); n = len(idx)
+    out, p = set(), 0
+    while p < n:   # buf word by word as the text before: going on after a word capstone cannot decode
+        end = min(n, p + 0x1000); last = p - 1
+        for addr, size, mn, op in md_lite.disasm_lite(buf[4 * p:4 * end], 4 * p):
+            last = addr >> 2
+            if R18.search(op): out.add(lo + 4 * idx[last])
+        p = last + 1 if last + 1 >= end else last + 2   # the chunk is done, or the word after the last decoded one is no instruction
     return out
+# PEANUTS end
 # PEANUTS(upstream-candidate): in_serial, in_parallel and in_spawned are defined before the data blocks now (they count in them too)
 def find_x18_words():
     """x18_words over all the code, in 1 MB pieces"""
@@ -855,13 +882,20 @@ x18 = find_x18_words()
 kinds = {}
 # Spin wait candidates (see "Spin waits" below): backward direct branches (b, b.cond, cbz / cbnz, tbz / tbnz) at most SPIN_WIN bytes back, by target
 SPIN_WIN, SPIN_TOPS = 512, {0x16, 0x17, 0x54, 0x34, 0x35, 0xB4, 0xB5, 0x36, 0x37, 0xB6, 0xB7}
+SCAN_TOPS = bytes(int(t in SPIN_TOPS or t in (0xD4, 0xD5, 0xCB)) for t in range(256))   # PEANUTS(upstream-candidate): scan_piece's words
+import bisect
+x18_sorted = sorted(x18)
 spin_cand = {}
 # PEANUTS(upstream-candidate): the scan in 1 MB pieces in worker processes (in_parallel), merged in address order, so kinds and spin_cand have the same
 # entries in the same order as the scan word by word in one process (before: the whole text in one Python loop, serial)
 def scan_piece(lo, hi):
     """([(offset, kind)], [(spin target, branch offset)]) of the words in [lo, hi), in address order"""
     kl, spin = [], []
-    for o in range(lo, hi, 4):
+    # PEANUTS(upstream-candidate): only the words below can add anything: a top byte of SPIN_TOPS, of svc (0xd4), mrs / msr (0xd5) or sub sp (0xcb), or an
+    # x18 word. They are found on the bytes at once (bytes.translate), in address order as before; before, every word went through this loop
+    n = (hi - lo + 3) // 4
+    cand = {lo + 4 * k.start() for k in re.finditer(b'\x01', bytes(IMG[lo + 3:lo + 4 * n:4]).translate(SCAN_TOPS))}
+    for o in sorted(cand.union(x18_sorted[bisect.bisect_left(x18_sorted, lo):bisect.bisect_left(x18_sorted, hi)])):
         w = struct.unpack_from('<I', IMG, o)[0]
         if w >> 24 in SPIN_TOPS:
             t = w >> 24
@@ -898,21 +932,28 @@ def func_of(a):
     if i >= 0: return (starts[i], starts[i + 1] if i + 1 < len(starts) else TEXT_END)
     return (max((e for s, e in DATA_BLOCKS if e <= a), default=0), starts[0]) if starts else (a, a + 4)
 done = set(); windows = []; jumps = {}; tabjumps = {}; tailcalls = set(); retries = []
-def check_before_copy(insl, ctx, ld, idx):
+def check_before_copy(insl, ctx, ld, idx, rb=None):   # PEANUTS(upstream-candidate): allow table-base adrp/add between b.hi and ldrsw (Crash N. Sane Trilogy)
+    # PEANUTS(upstream-candidate) begin: the table base (adrp rb, #page; add rb, rb, #imm) may come between the b.hi and the load (Crash Bandicoot N. Sane Trilogy)
     """The index copied from the checked register before the check, far back (DRAGON QUEST XI S main+0x2dd8cd0: mov w0,w18, then 41 instructions with two other jump tables on x0, then
-    cmp w18,#4; b.hi; ldrsw x18,[x11,x0,lsl #2]; add x18,x18,x11; br x18). Accepted when the cmp and its b.hi come right before the load and the mov is the last writer of the index and of the
+    cmp w18,#4; b.hi; ldrsw x18,[x11,x0,lsl #2]; add x18,x18,x11; br x18). Accepted when the cmp and its b.hi come right before the load (or table-base adrp/add) and the mov is the last writer of the index and of the
     checked register before them. Kingdom Battle's GLSLC (subsdk0+0x7340b8) copies w17 into w18 71 instructions before the load, across two switches that preserve both registers: an arbitrary
     64-instruction limit missed that copy. Follow the writers to the function's start, stopping at calls that can clobber either register or at gaps in decoded code. Blocks in between that branch out
     and back (main+0x2dd8ce0 → main+0x2dd8cb8) write neither. Tried only when every other form has failed (jump_offsets copy_first), so sites that rewrote before come out the same:
     the one br x18 of its kind among the 25,508 x18 sites of that main. → the cmp, or None"""
     k = ctx.index(ld)
-    if k < 2 or ctx[k - 1].mnemonic != 'b.hi' or ctx[k - 2].mnemonic != 'cmp': return None
-    m = re.fullmatch(r'(w\d+), #(0x[0-9a-f]+|\d+)', ctx[k - 2].op_str)
+    b_idx = k - 1
+    def table_base(p):   # adrp rb, #page or add rb, rb, #imm: nothing else that writes rb (add x9, x9, x10 is not a table base)
+        if p.mnemonic == 'adrp': return re.fullmatch(rf'{rb}, #(0x[0-9a-f]+|\d+)', p.op_str)
+        return p.mnemonic == 'add' and re.fullmatch(rf'{rb}, {rb}, #(0x[0-9a-f]+|\d+)', p.op_str)
+    while b_idx >= 1 and rb and table_base(ctx[b_idx]):
+        b_idx -= 1
+    if b_idx < 1 or ctx[b_idx].mnemonic != 'b.hi' or ctx[b_idx - 1].mnemonic != 'cmp': return None
+    m = re.fullmatch(r'(w\d+), #(0x[0-9a-f]+|\d+)', ctx[b_idx - 1].op_str)
     if not m: return None
-    src, kl = m.group(1), insl.index(ld)
+    src, kl = m.group(1), insl.index(ctx[b_idx - 1])
     def writes(p):   # capstone lists a compare's first operand as written (cmp w18,#4 at main+0x2dd8c30); it only sets the flags
         return set() if p.mnemonic in ('cmp', 'cmn', 'tst') else {'w' + p.reg_name(r)[1:] for r in p.regs_access()[1]}
-    for q in range(kl - 3, -1, -1):
+    for q in range(kl - 1, -1, -1):
         p = insl[q]
         if p.address + 4 != insl[q + 1].address: return None
         if p.mnemonic in ('bl', 'blr') and any(int(r[1:]) <= 18 for r in idx | {src}): return None
@@ -920,7 +961,8 @@ def check_before_copy(insl, ctx, ld, idx):
         if mm and mm.group(1) in idx and mm.group(2) == src: break
         if writes(p) & (idx | {src}): return None
     else: return None
-    return ctx[k - 2]
+    return ctx[b_idx - 1]
+    # PEANUTS end
 def jump_offsets(insl, j, copy_first=False, far_base=False, forward_base=False):
     """The br x18 is preceded by the offset-table form (Engage main+0x12eec94): cmp w18,#N; b.hi; ldrsw x18,[xB,x18,lsl #2]; add x18,x18,xB.
     The index may be another register, and the bounds check may be on a register copied into it: Link's Awakening's GLSLC (subsdk0+0x1be6e8) has
@@ -963,7 +1005,7 @@ def jump_offsets(insl, j, copy_first=False, far_base=False, forward_base=False):
                     cmp = p
                 break
             if cmp: break
-    if not cmp and copy_first: cmp = check_before_copy(insl, ctx, ld, idx)
+    if not cmp and copy_first: cmp = check_before_copy(insl, ctx, ld, idx, rb)   # PEANUTS(upstream-candidate): pass table base register rb
     if not cmp: return None
     n = int(cmp.op_str.split('#')[1], 0) + 1
     k = insl.index(ld); lo = page = None
@@ -1034,6 +1076,71 @@ def jump_zero_extended(insl, j):
     targets = [tb + struct.unpack_from('<i', IMG, tb + 4 * i)[0] for i in range(n)]
     addresses = {p.address for p in insl}
     return targets if all(t in addresses and not head < t <= end for t in targets) else None
+# PEANUTS(upstream-candidate): prove offset tables whose scheduled dispatch exceeds the short lookback.
+def jump_scheduled_offsets(insl, j, image, ro, function):
+    """Recognize a local unsigned guard and signed, table-relative word entries."""
+    if function is None: return None
+    fa, fb = function
+    ctx = insl[max(0, j - 48):j + 1]
+    if ctx[-1].mnemonic != 'br' or ctx[-1].op_str != 'x18': return None
+
+    def writes(p, reg):
+        aliases = {reg, 'w' + reg[1:]}
+        if reg in ('x29', 'x30'): aliases.add('fp' if reg == 'x29' else 'lr')
+        return p.mnemonic not in ('cmp', 'cmn', 'tst') and any(p.reg_name(r) in aliases for r in p.regs_access()[1])
+
+    def writer(reg, before):
+        return next((k for k in range(before - 1, -1, -1) if writes(ctx[k], reg)), -1)
+
+    ka = writer('x18', len(ctx) - 1)
+    if ka < 0: return None
+    add = re.fullmatch(r'x18, (x\d+), (x\d+)', ctx[ka].op_str) if ctx[ka].mnemonic == 'add' else None
+    if not add: return None
+    ent, base = add.groups()
+    kl = writer(ent, ka)
+    load = re.fullmatch(rf'{ent}, \[{base}, (x\d+), lsl #2\]', ctx[kl].op_str) if kl >= 0 and ctx[kl].mnemonic == 'ldrsw' else None
+    if not load: return None
+    idx = load.group(1)
+    kb = writer(base, ka)
+    if not 0 <= kb < kl: return None
+    low = re.fullmatch(rf'{base}, {base}, #(0x[0-9a-f]+|\d+)', ctx[kb].op_str) if ctx[kb].mnemonic == 'add' else None
+    kp = writer(base, kb)
+    if not low or kp < 0 or ctx[kp].mnemonic != 'adrp': return None
+    kg = next((k for k in range(kl - 1, -1, -1) if ctx[k].mnemonic == 'b.hi'), -1)
+    if kg < 0: return None
+    def writes_flags(p):
+        # Capstone 5 omits NZCV writes for these instructions.
+        return p.mnemonic in ('msr', 'cfinv', 'rmif', 'setf8', 'setf16') or any(p.reg_name(r) == 'nzcv' for r in p.regs_access()[1])
+
+    kc = next((k for k in range(kg - 1, -1, -1) if writes_flags(ctx[k])), -1)
+    bound = re.fullmatch(rf'([wx]){idx[1:]}, #(0x[0-9a-f]+|\d+)', ctx[kc].op_str) if kc >= 0 and ctx[kc].mnemonic == 'cmp' else None
+    ki = writer(idx, kl)
+    if not bound or ki >= kc: return None
+    # A W comparison bounds an X index only if its upper half is known zero.
+    if bound.group(1) == 'w' and (ki < 0 or not any(ctx[ki].reg_name(r) == 'w' + idx[1:] for r in ctx[ki].regs_access()[1])):
+        return None
+    start = min(kc, kp, ki) if bound.group(1) == 'w' else min(kc, kp)
+    run = ctx[start:]
+    head, end = run[0].address, ctx[-1].address
+    if not fa <= head <= end < fb: return None
+    if any(b.address != a.address + 4 for a, b in zip(run, run[1:])): return None
+    control_flow = {CS_GRP_JUMP, CS_GRP_CALL, CS_GRP_RET, CS_GRP_INT, CS_GRP_IRET}
+    if any(control_flow.intersection(p.groups) or p.mnemonic.startswith('bc.') or
+           p.mnemonic in ('svc', 'hvc', 'smc', 'brk', 'hlt', 'eret', 'drps', 'udf')
+           for k, p in enumerate(run[:-1], start) if k != kg): return None
+    for p in insl:
+        if p.mnemonic in ('b', 'bl', 'cbz', 'cbnz', 'tbz', 'tbnz') or p.mnemonic.startswith(('b.', 'bc.')):
+            if head < p.operands[-1].imm <= end: return None
+    table = ctx[kp].operands[1].imm + int(low.group(1), 0)
+    count = int(bound.group(2), 0) + 1
+    ro_start, ro_size = ro
+    if not ro_start <= table <= table + 4 * count <= min(ro_start + ro_size, len(image)): return None
+    targets = [table + struct.unpack_from('<i', image, table + 4 * i)[0] for i in range(count)]
+    addresses = {p.address for p in insl if fa <= p.address < fb}
+    if not all(t in addresses and not head < t <= end for t in targets): return None
+    return targets, head
+
+
 def forward_table_base(insl, k, rb, n):
     """A loop's base initialized after its dispatch in address order (Blasphemous 1.0.8 main+0xae95f8: x17 is set at +0xae96dc, then the block branches backward).
     Used only after every older recognizer failed. Require exactly two writers of the full base in the function, an adjacent adrp + add after the load, no call that can clobber it,
@@ -1439,15 +1546,19 @@ class Tracked(dict):
     def items(self): self.read = True; return super().items()
     def keys(self): self.read = True; return super().keys()
     def __iter__(self): self.read = True; return super().__iter__()
+# PEANUTS(upstream-candidate): actual unwind extents for the scheduled resolver.
+scheduled_bounds = None
+
 def analyse_fn(fa, fb):
     """One function's windows (addresses), retry blocks ([(addresses, fall-through)] pairs), retry block interiors, tail call br, jump tables [(br, entry)] in order, and
     whether it read the tables of other functions (a worker only)"""
-    global jumps, tabjumps
+    global jumps, tabjumps, scheduled_bounds  # PEANUTS(upstream-candidate)
     if os.getpid() != MAIN_PID: jumps, tabjumps = Tracked(), Tracked()   # a worker: only this function's tables, and a note of any read (Tracked)
     own_j, own_t = len(jumps), len(tabjumps)
     insl = disasm_fn(fa, fb)
     ws = find_windows(insl)
     done, tails, rets = set(), [], []
+    scheduled_dispatches = {}  # PEANUTS(upstream-candidate): return dispatch windows to the parent
     for wseg in ws:
         done |= {x.address for x in wseg}
     for j, ins in enumerate(insl):
@@ -1475,6 +1586,15 @@ def analyse_fn(fa, fb):
                 if not tgt: tgt = jump_masked_not(insl, j)   # a complemented low-bit index with its zero case branched away: exactly mask entries
                 if not tgt: tgt = jump_offsets(insl, j, copy_first=True, far_base=True, forward_base=True)   # a unique base initialized in a later block that branches backward
                 if not tgt: tgt = jump_zero_extended(insl, j)   # a 32-bit checked value zero-extended into the index, with its full path to the br verified
+                # PEANUTS(upstream-candidate): require a real unwind extent for scheduled dispatches.
+                if not tgt:
+                    if scheduled_bounds is None:
+                        scheduled_bounds = dict(nso_code.fde_ranges(IMG))
+                    fn_start, _ = func_of(ins.address)
+                    fn_end = scheduled_bounds.get(fn_start)
+                    bounds = (fn_start, fn_end) if fn_end is not None else None
+                    if scheduled := jump_scheduled_offsets(insl, j, IMG, MOD.segments[1], bounds):
+                        tgt, scheduled_dispatches[ins.address] = scheduled
                 assert tgt, f'jump table {ins.address:x}'
                 tabjumps[ins.address] = tgt; continue
             jumps[ins.address] = (base, width)
@@ -1496,11 +1616,13 @@ def analyse_fn(fa, fb):
         if x.mnemonic in ('b', 'bl', 'cbz', 'cbnz', 'tbz', 'tbnz') or x.mnemonic.startswith('b.'):
             assert x.operands[-1].imm not in rmid, f'branch into retry block {x.address:x}'
     jl, tl = list(dict.items(jumps))[own_j:], list(dict.items(tabjumps))[own_t:]   # this function's tables, in the order found (dict.items: not a read Tracked notes)
-    return [[x.address for x in w] for w in ws], rets, rmid, tails, jl, tl, getattr(jumps, 'read', False) or getattr(tabjumps, 'read', False)
+    return [[x.address for x in w] for w in ws], rets, rmid, tails, jl, tl, getattr(jumps, 'read', False) or getattr(tabjumps, 'read', False), scheduled_dispatches  # PEANUTS(upstream-candidate)
 progress('functions')   # PEANUTS(upstream-candidate): analyse_fn in workers, what crosses functions here (above)
+scheduled_dispatches = {}  # PEANUTS(upstream-candidate): merge worker results before global validation
 for (fa, fb), r in zip(funcs, in_parallel(analyse_fn, funcs, 'functions')):
     if r[6]: r = analyse_fn(fa, fb)   # it read the jump tables: again with every earlier function's (jumps, tabjumps are this process's now)
-    wl, rets, rmid, tails, jl, tl, _ = r
+    wl, rets, rmid, tails, jl, tl, _, scheduled = r  # PEANUTS(upstream-candidate)
+    scheduled_dispatches.update(scheduled)  # PEANUTS(upstream-candidate)
     ws = [[dis(struct.unpack_from('<I', IMG, a)[0], a) for a in w] for w in wl]
     for wseg in ws:
         windows.append(wseg); done |= {x.address for x in wseg}
@@ -1519,6 +1641,24 @@ if far_into:   # functions analysed in pieces (pieces above): their far b / bl, 
     win_mid = {x.address for wseg in windows for x in wseg[1:]}
     for at, to in far_into: assert to not in win_mid and to not in rmid_all, f'far branch into a window or retry block {at:x}'
     for at, tgt in tabjumps.items(): assert not any(t in win_mid or t in rmid_all for t in tgt), f'jump table target into a window or retry block {at:x}'
+
+# PEANUTS(upstream-candidate): a later table must not enter a scheduled dispatch past its guard setup.
+for end, head in scheduled_dispatches.items():
+    assert not any(head < t <= end for targets in tabjumps.values() for t in targets), f'jump table enters scheduled dispatch {end:x}'
+    assert not any(base <= end and base + 4 * width > head + 4 for base, width in jumps.values()), f'jump table enters scheduled dispatch {end:x}'
+if scheduled_dispatches:
+    protected = {at for end, head in scheduled_dispatches.items() for at in range(head + 4, end + 4, 4)}
+    # A direct branch or call in another function can also bypass the guard.
+    for start, end in CODE_RANGES:
+        for (word,), at in zip(struct.iter_unpack('<I', memoryview(IMG)[start:end]), range(start, end, 4)):
+            if word & 0x7C000000 == 0x14000000: disp, sign = word & 0x3FFFFFF, 1 << 25  # b / bl
+            elif word >> 24 == 0x54 or word & 0x7E000000 == 0x34000000:  # b.cond / bc.cond / cbz / cbnz
+                disp, sign = (word >> 5) & 0x7FFFF, 1 << 18
+            elif word & 0x7E000000 == 0x36000000: disp, sign = (word >> 5) & 0x3FFF, 1 << 13  # tbz / tbnz
+            else: continue
+            target = at + 4 * ((disp ^ sign) - sign)
+            assert target not in protected, f'branch {at:x} enters scheduled dispatch at {target:x}'
+    print('scheduled offset jump tables: ' + ', '.join(f'{at:x}' for at in scheduled_dispatches))
 
 def put_branch(at, to): struct.pack_into('<I', IMG, at, B(at, to))
 for wseg in windows:
@@ -1697,12 +1837,17 @@ def spin_norm(n):
     if m: return 'x' + m.group(1)
     m = re.fullmatch(r'[bhsdqv](\d+)', n)
     return 'v' + m.group(1) if m else n
+spin_rns = {}
+def spin_rn(ins, r):
+    """PEANUTS(upstream-candidate): spin_norm(ins.reg_name(r)), kept by register number (the name is capstone's for the number)"""
+    if r not in spin_rns: spin_rns[r] = spin_norm(ins.reg_name(r))
+    return spin_rns[r]
 def spin_rw(ins):
     """(registers read, registers written), w / x and the vector views merged. Capstone's own lists are not enough: it lists a compare's first operand as written and the flags
     as read by cbz / tbz, and leaves out the destination of adds (sdk+0x31033c in Paper Mario: The Thousand-Year Door, adds w9,w9,#8; b.ne: a counted loop). So every register
     operand counts as well: operand 0 written and the others read, or for a load all of them written (its address registers are in capstone's reads)"""
     m = ins.mnemonic
-    regs = [spin_norm(ins.reg_name(o.reg)) for o in ins.operands if o.type == ARM64_OP_REG]
+    regs = [spin_rn(ins, o.reg) for o in ins.operands if o.type == ARM64_OP_REG]   # PEANUTS(upstream-candidate): spin_rn, names cached (#120)
     ops = set(regs) - {None}
     if m in ('cbz', 'cbnz', 'tbz', 'tbnz'): return ops, set()
     if m.startswith('b.'): return {'nzcv'}, set()
@@ -1710,7 +1855,7 @@ def spin_rw(ins):
     if m in ('cmp', 'cmn', 'tst', 'fcmp', 'fcmpe'): return ops, {'nzcv'}
     if m in ('ccmp', 'ccmn', 'fccmp', 'fccmpe'): return ops | {'nzcv'}, {'nzcv'}
     r, w = ins.regs_access()
-    r, w = {spin_norm(ins.reg_name(x)) for x in r} - {None}, {spin_norm(ins.reg_name(x)) for x in w} - {None}
+    r, w = {spin_rn(ins, x) for x in r} - {None}, {spin_rn(ins, x) for x in w} - {None}   # PEANUTS(upstream-candidate): spin_rn (#120)
     if m.startswith(('ld', 'prfm', 'prfum')): return r, w | ops
     return r | (set(regs[1:]) - {None}), w | (set(regs[:1]) - {None})
 def spin_kind(ins):
@@ -1723,6 +1868,79 @@ def spin_kind(ins):
     mem = any(o.type == ARM64_OP_MEM for o in ins.operands)
     if m.startswith(('ld', 'prfm', 'prfum')): return 'ok' if mem else None   # no memory operand: a pc-relative literal load
     return None if mem else 'ok'
+# PEANUTS(upstream-candidate) begin: what the search reads of a single word, decoded once per process (spin_word, spin_rw_at) and kept in two arrays of 16-bit
+# indices into the distinct values (two bytes a word of the text each), not as capstone objects: the decode cache of one head (spin_dec) held every word its
+# searches reached, and the next head, a few words on, decoded the same words again (Super Mario Bros. Wonder main: 1.77 million detailed decodes; its spin phase
+# took 28 s with one worker, now 18 s). The values are the ones spin_kind, spin_store and spin_rw give for the decoded word, so the search finds the same regions
+spin_wix = spin_rwix = None
+spin_wtab, spin_wids, spin_rwtab, spin_rwids = [None], {}, [None], {}
+SPIN_LOCK0 = {'ldxr': 1, 'ldaxr': 1, 'stlr': 1, 'ldr': 2, 'ldrb': 2, 'ldrh': 2}   # the first instructions of spin_lock's sequences (2: only the test loop's)
+SPIN_MEM = re.compile(r'(?:^|\s)\[')   # a memory operand in capstone's text: a bracket at the start of an operand (a lane index, v1.d[1], follows its register)
+SPIN_STR = ('str', 'strb', 'strh', 'stur', 'sturb', 'sturh')   # spin_store's mnemonics: their values need the decoded operands
+def spin_bt(w, a):
+    """the target of the direct branch word w at a (b / bl, b.cond, cbz / cbnz, tbz / tbnz) from its bits"""
+    t = w >> 24
+    if t & 0x7C == 0x14: d = w & 0x3FFFFFF; d -= (d & 0x2000000) << 1
+    elif t & 0x7E == 0x36: d = (w >> 5) & 0x3FFF; d -= (d & 0x2000) << 1
+    else: d = (w >> 5) & 0x7FFFF; d -= (d & 0x40000) << 1
+    return a + 4 * d
+def spin_cached(a, ix, tab, ids, make):
+    """ix[a / 4]'s value from tab, made by make(the word decoded) the first time (values beyond 65,535 distinct ones, or a word outside the text, are not kept)"""
+    ok = 0 <= a < TEXT_END and not a & 3
+    if ok and ix[a >> 2]: return tab[ix[a >> 2]]
+    v = make(spin_ins(a), a)
+    if ok:
+        k = ids.get(v)
+        if k is None and len(tab) < 0x10000: k = ids[v] = len(tab); tab.append(v)
+        if k: ix[a >> 2] = k
+    return v
+def spin_word_make(x, a):
+    k = spin_kind(x)
+    if k == 'br':
+        tgt = x.operands[-1].imm
+        tgt = None if tgt == spin_bt(struct.unpack('<I', x.bytes)[0], a) else tgt - a   # None: the target from the word's bits (spin_bt)
+    else: tgt = None
+    return (k, tgt, x is not None and x.mnemonic == 'b', spin_store(x), x is not None and x.mnemonic.startswith('ld'), SPIN_LOCK0.get(x.mnemonic, 0) if x is not None else 0)
+def spin_word_lite(m, op, w, a):
+    """spin_word_make's value from the mnemonic and operand text alone (capstone without details, a third of the time), or None where that needs the operands:
+    spin_store's mnemonics, a branch whose printed target is not spin_bt's, and a memory operand other than a load's from a general register base. A memory
+    operand is the one printed in brackets (SPIN_MEM, spin_kind). The same values as spin_word_make for every word of the code of Super Mario Bros. Wonder's
+    main and sdk, Animal Crossing's and Mario Kart 8 Deluxe's main, and of 16 million random words"""
+    if m in SPIN_STR: return None
+    if m in ('b', 'cbz', 'cbnz', 'tbz', 'tbnz') or m.startswith('b.'):
+        k = 'br'
+        if not op.rpartition('#')[2].startswith('0x') or int(op.rpartition('#')[2], 16) != spin_bt(w, a): return None
+    elif m in ('adr', 'adrp'): k = 'pc'
+    elif m in SPIN_BAD or m.startswith(('st', 'cas', 'swp') + SPIN_LSE): k = None
+    elif not SPIN_MEM.search(op): k = None if m.startswith(('ld', 'prfm', 'prfum')) else 'ok'   # a load with no memory operand: from a pc-relative literal
+    elif m.startswith(('ld', 'prfm', 'prfum')) and '[z' not in op: k = 'ok'
+    else: return None   # a memory operand capstone may not list as one: the SVE vector bases ([z1.d]), the MOPS set / cpy operands ([x0]!)
+    return (k, None, m == 'b', None, m.startswith('ld'), SPIN_LOCK0.get(m, 0))
+def spin_word(a):
+    """(spin_kind, the branch target's offset from a or None for spin_bt's, an unconditional b, spin_store, a mnemonic ld*, SPIN_LOCK0's number of the mnemonic) of the
+    word at a. A word not yet known is decoded without details with the next 15 (spin_word_lite), all those it gives kept; the rest with details (spin_cached)"""
+    global spin_wix
+    if spin_wix is None: spin_wix = array('H', [0]) * (TEXT_END >> 2)
+    if 0 <= a < TEXT_END and not a & 3:
+        k = spin_wix[a >> 2]
+        if k: return spin_wtab[k]
+        for addr, size, mn, op in md_lite.disasm_lite(bytes(IMG[a:min(a + 64, TEXT_END)]), a):
+            i = addr >> 2
+            if spin_wix[i]: continue
+            v = spin_word_lite(mn, op, struct.unpack_from('<I', IMG, addr)[0], addr)
+            if v is None: continue
+            k = spin_wids.get(v)
+            if k is None and len(spin_wtab) < 0x10000: k = spin_wids[v] = len(spin_wtab); spin_wtab.append(v)
+            if k: spin_wix[i] = k
+        k = spin_wix[a >> 2]
+        if k: return spin_wtab[k]
+    return spin_cached(a, spin_wix, spin_wtab, spin_wids, spin_word_make)
+def spin_rw_at(a):
+    """spin_rw of the word at a, as frozensets"""
+    global spin_rwix
+    if spin_rwix is None: spin_rwix = array('H', [0]) * (TEXT_END >> 2)
+    return spin_cached(a, spin_rwix, spin_rwtab, spin_rwids, lambda x, a: tuple(frozenset(r) for r in spin_rw(x)))
+# PEANUTS end
 def spin_rmw(a):
     """ld(a)xr wA,[xN]; add|sub wB,wA,#k; st(l)xr wS,wB,[xN]; cbnz wS,<the load> at a → (xN, ±k, registers written, the four instructions), or None"""
     l = [spin_ins(a + 4 * i) for i in range(4)]
@@ -1739,11 +1957,17 @@ def spin_lock(a):
     'acq'  ld(a)xr wA,[xN]; cbz wA,+16; clrex; b <the load>; st(l)xr wS,wK,[xN]; cbnz wS,<the load>    test-and-set, retried until the store succeeds (wK not zero)
     'rel'  clrex; ld(a)xr wA,[xN]; cmp wA,#k; b.ne <the clrex>; st(l)xr wS,wzr,[xN]; cbnz wS,<the load>  compare-and-clear, entered at the load; or stlr wzr,[xN]
     'tst'  ldr|ldrb|ldrh wA,[xN{,#imm}]; cmp wA,#k; b.eq|b.ne <the load>                                 a test loop that only another thread ends"""
-    l = [spin_ins(a + 4 * i) for i in range(6)]
+    # PEANUTS(upstream-candidate): the words after the first are decoded only for a first word that can start a sequence of them, and the test loop's only
+    # where its third word is a b.cond (top byte 0x54); before, all six for every word the search reached
+    l = [spin_ins(a)]
     if l[0] is None: return None
     r = lambda x, i: x.reg_name(x.operands[i].reg)
     plain = lambda x, i: x.operands[i].type == ARM64_OP_MEM and not x.operands[i].mem.index and not x.operands[i].mem.disp
     m0 = l[0].mnemonic
+    # PEANUTS(upstream-candidate): the later words decoded only where the bits allow the sequence (#120)
+    if m0 in ('ldxr', 'ldaxr'): l += [spin_ins(a + 4 * i) for i in range(1, 6)]
+    elif m0 in ('ldr', 'ldrb', 'ldrh') and IMG[a + 4] & 0x1F == 0x1F and IMG[a + 11] == 0x54: l += [spin_ins(a + 4), spin_ins(a + 8), None, None, None]   # cmp: Rd is zr
+    else: l += [None] * 5   # (read below only for a stlr, which looks at its own word alone)
     if m0 in ('ldxr', 'ldaxr') and None not in l and r(l[0], 0).startswith('w') and plain(l[0], 1):
         base = l[0].operands[1].mem.base; bn = spin_norm(l[0].reg_name(base))
         if (l[1].mnemonic == 'cbz' and r(l[1], 0) == r(l[0], 0) and l[1].operands[1].imm == a + 16 and l[2].mnemonic == 'clrex' and l[3].mnemonic == 'b' and l[3].operands[0].imm == a
@@ -1785,17 +2009,27 @@ spin_touched = set(kinds) | done | {o for off, oid, ow, why in obs for o in (off
 # post-index loads: a seqlock read in SDK 15's nn::time (sdk+0x3d3270) moves a base it sets again on each pass
 SPIN_STOP = ((0xFC000000, 0x94000000), (0xFE000000, 0xD6000000), (0xFF000000, 0xD4000000), (0x3FC00000, 0x39000000), (0x3FC00000, 0x3D000000), (0x3FC00000, 0x3D800000),
              (0x3FE00000, 0x38000000), (0x3FE00C00, 0x38200800), (0x3FE00000, 0x3C000000), (0x3FE00000, 0x3C800000), (0x3A400000, 0x28000000), (0x3F200C00, 0x38200000))
+def spin_quick_class(w):
+    """spin_quick's class of the word w: 1 b / bl, 2 b.cond / cbz / cbnz, 3 tbz / tbnz, 4 a word of SPIN_STOP, 0 any other"""
+    t = w >> 24
+    if 0x14 <= t <= 0x17: return 1
+    if t == 0x54 or t & 0x7E == 0x34: return 2
+    if t & 0x7E == 0x36: return 3
+    if any(w & m == v for m, v in SPIN_STOP) and not (w & 0xBFC00000 in (0xB9000000, 0x39000000, 0x79000000) or w & 0xBFE00C00 in (0xB8000000, 0x38000000, 0x78000000)): return 4   # str / strb / strh (immediate, unscaled) may store the same on every pass
+    return 0
+# PEANUTS(upstream-candidate): spin_quick_class reads only bits 10-11 and 21-31 of a word (every mask above), so it is a table of those 13 bits
+SPIN_QK = bytes(spin_quick_class((k >> 2) << 21 | (k & 3) << 10) for k in range(1 << 13))
 def spin_quick(T, hi):
     """a back-edge to T can be reached from T without passing a word of SPIN_STOP (only such heads get the full check, which decodes)"""
     seen, todo = set(), [T]
     while todo:
         a = todo.pop()
         if a in seen or not T <= a <= hi: continue
-        seen.add(a); w = struct.unpack_from('<I', IMG, a)[0]; t = w >> 24
-        if 0x14 <= t <= 0x17: succ = (a + (((w & 0x3FFFFFF) ^ 0x2000000) - 0x2000000) * 4,)
-        elif t == 0x54 or t & 0x7E == 0x34: succ = (a + ((((w >> 5) & 0x7FFFF) ^ 0x40000) - 0x40000) * 4, a + 4)
-        elif t & 0x7E == 0x36: succ = (a + ((((w >> 5) & 0x3FFF) ^ 0x2000) - 0x2000) * 4, a + 4)
-        elif any(w & m == v for m, v in SPIN_STOP) and not (w & 0xBFC00000 in (0xB9000000, 0x39000000, 0x79000000) or w & 0xBFE00C00 in (0xB8000000, 0x38000000, 0x78000000)): continue   # str / strb / strh (immediate, unscaled) may store the same on every pass
+        seen.add(a); w = struct.unpack_from('<I', IMG, a)[0]; c = SPIN_QK[(w >> 21) << 2 | (w >> 10) & 3]   # PEANUTS(upstream-candidate): the word's class (SPIN_QK)
+        if c == 1: succ = (a + (((w & 0x3FFFFFF) ^ 0x2000000) - 0x2000000) * 4,)
+        elif c == 2: succ = (a + ((((w >> 5) & 0x7FFFF) ^ 0x40000) - 0x40000) * 4, a + 4)
+        elif c == 3: succ = (a + ((((w >> 5) & 0x3FFF) ^ 0x2000) - 0x2000) * 4, a + 4)
+        elif c == 4: continue
         else: succ = (a + 4,)
         if T in succ: return True
         todo.extend(succ)
@@ -1807,40 +2041,48 @@ def spin_region(T, bes):
     through stores bring in a register that a pass changes, the region is looked for once more with every store ending its path, as before stores could be part of one"""
     # The decode cache serves one head's searches (up to ten over the same code). Kept for every head it held a detailed capstone instruction
     # for every word any search reached, gigabytes on a large main (Mario Kart World), and on a phone capstone ran out of memory (CS_ERR_MEM)
-    spin_dec.clear()
+    # PEANUTS(upstream-candidate): it holds only the words spin_lock, spin_rmw and spin_rw_at decode now (the search reads spin_word), and serves the next heads
+    # too, emptied when it has 4096
+    if len(spin_dec) >= 4096: spin_dec.clear()
+    hi = max(bes)   # PEANUTS(upstream-candidate): checked once here, not in each of spin_region1's searches (the same T and hi)
+    if any(s < hi + 4 and T < e for s, e in DATA_BLOCKS) or not spin_quick(T, hi): return None
     ban = set()
     for _ in range(8):
         g = spin_region1(T, bes, ban, True)
         if not isinstance(g, set): break
         ban |= g
     old = spin_region1(T, bes, set(), False)   # the region without stores, which the search took before: the wider one only when it covers its back-edges
-    return g if isinstance(g, dict) and (not old or old['valid'] <= g['valid']) else old
+    g = g if isinstance(g, dict) and (not old or old['valid'] <= g['valid']) else old
+    if g:   # PEANUTS(upstream-candidate): the single-word nodes get their instructions now (spin_emit), the search read spin_word's values
+        for a, n in g['nodes'].items():
+            if n['ins'] == [None]: n['ins'] = [spin_ins(a)]
+    return g
 def spin_region1(T, bes, ban, stores):
     hi = max(bes)
-    if any(s < hi + 4 and T < e for s, e in DATA_BLOCKS) or not spin_quick(T, hi): return None
     nodes, back, bad, inner = {}, set(), set(), set()
     todo = [T]
     while todo:
         a = todo.pop()
         if a in nodes or a in bad: continue
         if a in ban: bad.add(a); continue
-        rmw = spin_rmw(a) if a + 12 <= hi and struct.unpack_from('<I', IMG, a)[0] & 0x3FE00000 == 0x08400000 else None   # ldxr / ldaxr
-        lk = None if rmw else spin_lock(a)
+        rmw = spin_rmw(a) if a + 12 <= hi and struct.unpack_from('<I', IMG, a)[0] & 0x3FE00000 == 0x08400000 and IMG[a + 15] & 0x7F == 0x35 else None   # ldxr / ldaxr ... cbnz (PEANUTS(upstream-candidate): the cbnz's top byte, 0x35 / 0xb5)
+        wd = spin_word(a)   # PEANUTS(upstream-candidate): this word's values, decoded once per process (spin_word)
+        lk = spin_lock(a) if not rmw and (wd[5] == 1 or wd[5] == 2 and IMG[a + 11] == 0x54 and IMG[a + 4] & 0x1F == 0x1F) else None   # (else spin_lock is None: its first word's mnemonic, the test loop's cmp and b.cond)
         if lk and lk[0] == 'tst' and a == T: lk = None   # the region's own test loop
         if rmw:
             n = {'kind': 'rmw', 'base': rmw[0], 'k': rmw[1], 'ins': rmw[3], 'uses': {rmw[0]}, 'defs': rmw[2], 'succ': [a + 16]}
         elif lk:
             n = {'kind': lk[0], 'base': lk[1], 'k': {'acq': 1, 'rel': -1, 'tst': 0}[lk[0]], 'ins': lk[2], 'pre': lk[3], 'uses': lk[5], 'defs': lk[6], 'succ': [a + 4 * lk[4]]}
-        elif stores and spin_store(spin_ins(a)):
-            x = spin_ins(a); st = spin_store(x); n = {'kind': 'stc', 'st': st, 'ins': [x], 'uses': {st[1]} | ({st[0]} - {None}), 'defs': set(), 'succ': [a + 4]}
+        elif stores and wd[3]:   # PEANUTS(upstream-candidate): single words from spin_word; 'ins' [None] until spin_region returns the region
+            st = wd[3]; n = {'kind': 'stc', 'st': st, 'ins': [None], 'uses': {st[1]} | ({st[0]} - {None}), 'defs': set(), 'succ': [a + 4]}
         else:
-            x = spin_ins(a); k = spin_kind(x)
+            k = wd[0]
             if k is None: bad.add(a); continue
             if k == 'br':
-                t = x.operands[-1].imm
-                succ = [t] if x.mnemonic == 'b' else [t, a + 4]
+                t = spin_bt(struct.unpack_from('<I', IMG, a)[0], a) if wd[1] is None else a + wd[1]
+                succ = [t] if wd[2] else [t, a + 4]
             else: succ = [a + 4]
-            n = {'kind': k, 'ins': [x], 'succ': succ}
+            n = {'kind': k, 'ins': [None], 'succ': succ, 'ld': wd[4]}
         pre = n.get('pre', 0)
         if any(a + 4 * (i - pre) in spin_touched for i in range(len(n['ins']))): bad.add(a); continue
         nodes[a] = n
@@ -1850,16 +2092,20 @@ def spin_region1(T, bes, ban, stores):
             if s == T: back.add(a)
             elif T < s <= hi: todo.append(s)
     if not back or inner & set(nodes) or any(s in inner for n in nodes.values() for s in n['succ']): return None
+    pred = {}   # PEANUTS(upstream-candidate): prune walks the edges backward (before: every node again until nothing changed; the same set)
+    for a, n in nodes.items():
+        for s in n['succ']:
+            if s != T: pred.setdefault(s, []).append(a)
     def prune(ends):
-        keep, more = set(ends), True
-        while more:
-            more = False
-            for a, n in nodes.items():
-                if a not in keep and any(s in keep and s != T for s in n['succ']): keep.add(a); more = True
+        """ends and every node that reaches one of them without passing T"""
+        keep, todo = set(ends), list(ends)
+        while todo:
+            for p in pred.get(todo.pop(), ()):
+                if p not in keep: keep.add(p); todo.append(p)
         return keep
     R = prune(back)
     for a in R:
-        if 'uses' not in nodes[a]: nodes[a]['uses'], nodes[a]['defs'] = spin_rw(nodes[a]['ins'][0])
+        if 'uses' not in nodes[a]: nodes[a]['uses'], nodes[a]['defs'] = spin_rw_at(a)   # PEANUTS(upstream-candidate): decoded once per process
     # every path from T to a back-edge: no inner cycle, and the exclusive adds on each address (a register between two writes to it) sum to 0
     bad_back, cnt = set(), [0, 0]
     def walk(a, onpath, ver, delta):
@@ -1895,7 +2141,7 @@ def spin_region1(T, bes, ban, stores):
             new = n['uses'] | (out - n['defs'])
             if new != live[a]: live[a] = new; more = True
     defs = set().union(*(nodes[a]['defs'] for a in R))
-    if any(nodes[a]['kind'] == 'stc' for a in R) and not any(nodes[a]['kind'] in ('rmw', 'acq', 'rel', 'tst') or nodes[a]['ins'][0].mnemonic.startswith('ld') for a in R): return None   # stores and nothing polled
+    if any(nodes[a]['kind'] == 'stc' for a in R) and not any(nodes[a]['kind'] in ('rmw', 'acq', 'rel', 'tst') or nodes[a].get('ld') for a in R): return None   # stores and nothing polled; PEANUTS(upstream-candidate): 'ld' kept by spin_word (#120)
     vary = {a for a in R if nodes[a]['kind'] == 'stc' and nodes[a]['uses'] & defs}   # a store's value and address must come from registers no pass writes
     if vary: return vary
     if sum(nodes[a]['kind'] == 'stc' for a in R) > SPIN_STORES: return None
@@ -1947,17 +2193,141 @@ def spin_emit(g):
     stat('spin')
 spin_heads = sorted(spin_cand)
 
-def spin_heads_with_region(first, step):
-    return [T for T in spin_heads[first::step] if spin_region(T, spin_cand[T])]
+# PEANUTS(upstream-candidate) begin: the search over the heads in C (rwspin_native/rwspin.c, libdmsh_rwspin through ctypes; docs/reference/rewriter.md "The spin
+# wait search in C"). It tells which heads have a region, as spin_region would (the same nodes, prune, walk and live registers, transliterated); the regions
+# of those heads are then built here by spin_region, as before, so the output is the Python's. Words are decoded there from their bits for the classes that
+# give capstone's values (every text word of Super Mario Bros. Wonder's main and sdk, Animal Crossing's and Mario Kart 8 Deluxe's main, and millions of random
+# words: dm/tools/tests/test_rwspin.py); any other word, spin_rmw and spin_lock are asked from here (spin_native_ask). Which library (DM_REWRITE_NATIVE):
+# unset, on Android libdmsh_rwspin.so (the APK's lib/), elsewhere one built from rwspin.c with the C compiler into a cache folder named after the source's
+# SHA-256 (DM_REWRITE_NATIVE_CACHE, default ~/.cache/dmsh_rwspin; built once, by cc or CC); 0 = none (the Python search below); a path = that library. The
+# library must carry RWSPIN_SHA, rwspin.c's SHA-256 written here: rwspin.c decides which heads have a region, so a change to it changes this file and with
+# it the rewrite key (scripts/pack_android.py rewrite_keys). Without a library, or when the Python cannot answer a question, the Python search runs: the same output
+RWSPIN_SHA = '4df593054538f5ade627a76180627035d19d43b967281cd31493774865c1e6ff'
+RWSPIN_C = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rwspin_native', 'rwspin.c')
+spin_nat = {}
+def spin_native_lib():
+    """(the library through ctypes or None, why not)"""
+    import ctypes, hashlib, subprocess, tempfile
+    want = os.environ.get('DM_REWRITE_NATIVE')
+    if want == '0': return None, 'DM_REWRITE_NATIVE=0'
+    if want: path = want
+    elif sys.platform == 'android': path = 'libdmsh_rwspin.so'
+    else:
+        try:
+            with open(RWSPIN_C, 'rb') as f: sha = hashlib.sha256(f.read()).hexdigest()
+        except OSError: return None, 'no rwspin.c'
+        if sha != RWSPIN_SHA: return None, 'rwspin.c is not the one patch_nso.py names (RWSPIN_SHA)'
+        ext = '.dylib' if sys.platform == 'darwin' else '.dll' if sys.platform == 'win32' else '.so'
+        cache = os.environ.get('DM_REWRITE_NATIVE_CACHE') or os.path.join(os.path.expanduser('~'), '.cache', 'dmsh_rwspin')
+        path = os.path.join(cache, sha[:16], 'libdmsh_rwspin' + ext)
+        if not os.path.exists(path):   # as rwspin_native/build.sh does
+            flags = ['-shared', '-fPIC', '-O2', '-std=gnu11', '-fvisibility=hidden', f'-DRWS_SOURCE="{sha}"'] + (['-undefined', 'dynamic_lookup'] if sys.platform == 'darwin' else [])
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix='.tmp'); os.close(fd)
+                try:
+                    subprocess.run([os.environ.get('CC') or 'cc', *flags, '-o', tmp, RWSPIN_C], check=True, capture_output=True)
+                    os.replace(tmp, path)
+                finally:
+                    if os.path.exists(tmp): os.unlink(tmp)
+            except (OSError, subprocess.CalledProcessError) as e: return None, f'no C compiler build ({type(e).__name__})'
+    try: L = ctypes.CDLL(path)
+    except OSError as e: return None, f'{path}: {e}'
+    L.rws_source.restype = ctypes.c_char_p
+    if L.rws_source().decode() != RWSPIN_SHA: return None, f'{path} was not built from the rwspin.c patch_nso.py names (RWSPIN_SHA)'
+    L.ask_t = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int, ctypes.c_int64, ctypes.POINTER(ctypes.c_int64))
+    P = ctypes.POINTER(ctypes.c_int64)
+    L.rws_new.argtypes = [ctypes.c_char_p, ctypes.c_int64, ctypes.c_int64, P, ctypes.c_int64, P, ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, L.ask_t]
+    L.rws_new.restype = ctypes.c_void_p
+    L.rws_free.argtypes, L.rws_free.restype = [ctypes.c_void_p], None
+    L.rws_heads.argtypes, L.rws_heads.restype = [ctypes.c_void_p, P, ctypes.c_int64, P, P, P], ctypes.c_int64
+    L.rws_asked.argtypes, L.rws_asked.restype = [ctypes.c_void_p, P], None
+    L.rws_word.argtypes, L.rws_word.restype = [ctypes.c_uint32, P], ctypes.c_int
+    return L, ''
+SPIN_NREG = {**{f'x{i}': i for i in range(31)}, 'sp': 31, **{f'v{i}': 32 + i for i in range(32)}, 'nzcv': 64}   # rwspin.c's register bits
+def spin_native_reg(r):
+    """r's bit (a name beyond rwspin.c's gets the next one; past 127, OverflowError: the job is searched here)"""
+    if r not in SPIN_NREG:
+        if len(SPIN_NREG) >= 128: raise OverflowError('more than 128 register names')
+        SPIN_NREG[r] = len(SPIN_NREG)
+    return SPIN_NREG[r]
+def spin_native_mask(rs, out, at):
+    """the register set rs (names, None left out) as two 64-bit words at out[at], out[at + 1]"""
+    m = 0
+    for r in rs:
+        if r is not None: m |= 1 << spin_native_reg(r)
+    for i in (0, 1): v = m >> 64 * i & 0xFFFFFFFFFFFFFFFF; out[at + i] = v - (v >> 63 << 64)
+def spin_native_ask(mode, a, out):
+    """rwspin.c's question about the word at a, answered with this file's functions: 0 spin_word, 1 spin_rw_at, 2 spin_rmw, 3 spin_lock → 0, or 1 (no answer)"""
+    try:
+        if len(spin_dec) >= 4096: spin_dec.clear()   # (as spin_region)
+        if mode == 0:
+            k, tgt, b, st, ld, l0 = spin_word(a)
+            if tgt is not None and not -1 << 63 <= tgt < 1 << 63: raise OverflowError('a branch target beyond 64 bits')
+            out[0] = {None: 0, 'br': 1, 'pc': 2, 'ok': 3}[k]; out[1] = tgt is not None; out[2] = tgt or 0; out[3] = bool(b)
+            out[4] = st is not None; out[5] = -1 if st is None or st[0] is None else spin_native_reg(st[0]); out[6] = -1 if st is None else spin_native_reg(st[1])
+            out[7] = bool(ld); out[8] = l0
+        elif mode == 1:
+            r, w = spin_rw_at(a); spin_native_mask(r, out, 0); spin_native_mask(w, out, 2)
+        elif mode == 2:
+            m = spin_rmw(a); out[0] = m is not None
+            if m: out[1] = spin_native_reg(m[0]); out[2] = m[1]; spin_native_mask(m[2], out, 3)
+        else:
+            lk = spin_lock(a); out[0] = lk is not None
+            if lk:
+                out[1] = {'acq': 1, 'rel': 2, 'tst': 3}[lk[0]]; out[2] = spin_native_reg(lk[1]); out[3] = len(lk[2]); out[4] = lk[3]; out[5] = lk[4]
+                spin_native_mask(lk[5], out, 6); spin_native_mask(lk[6], out, 8)
+        return 0
+    except BaseException as e:   # (a callback cannot raise: kept for spin_heads_with_region, which raises it again when it is no error of the answer)
+        spin_nat['raised'] = e
+        return 1
+def spin_native():
+    """this process's library state (made on the first call: the text, the touched words, the data blocks), or None"""
+    if 'st' not in spin_nat:
+        import ctypes
+        spin_nat['st'] = None
+        L, spin_nat['why'] = spin_native_lib()
+        if L is not None:
+            n = min(len(IMG), TEXT_END + 64); t = sorted(o for o in spin_touched if 0 <= o < n)
+            P = lambda v: (ctypes.c_int64 * max(1, len(v)))(*v)
+            spin_nat['ask'] = L.ask_t(spin_native_ask)   # (kept: the library calls it)
+            st = L.rws_new(bytes(IMG[:n]), n, TEXT_END, P(t), len(t), P([x for b in DATA_BLOCKS for x in b]), len(DATA_BLOCKS), SPIN_QK, SPIN_PATHS, SPIN_STEPS, SPIN_STORES, spin_nat['ask'])
+            if st: spin_nat['lib'], spin_nat['st'] = L, st
+            else: spin_nat['why'] = 'rws_new failed'
+        if spin_nat['st'] is None and os.environ.get('DM_REWRITE_NATIVE') != '0': print(f'spin wait search: in Python ({spin_nat["why"]})', flush=True)
+    return spin_nat['st']
+def spin_native_free():
+    if spin_nat.get('st'): spin_nat['lib'].rws_free(spin_nat['st'])
+    spin_nat.clear(); spin_nat['st'] = None; spin_nat['why'] = 'freed'
+# PEANUTS end
+
+def spin_heads_with_region(lo, hi):
+    st = spin_native()   # PEANUTS(upstream-candidate): in C (above) when the library is there
+    if st:
+        import ctypes
+        heads = spin_heads[lo:hi]; off = [0]; bes = []
+        for T in heads: bes += spin_cand[T]; off.append(len(bes))
+        A = lambda v: (ctypes.c_int64 * max(1, len(v)))(*v)
+        out = A(heads); spin_nat.pop('raised', None)
+        n = spin_nat['lib'].rws_heads(st, A(heads), len(heads), A(bes), A(off), out)
+        if n >= 0: return list(out[:n])
+        e = spin_nat.pop('raised', None)
+        if e is not None and not isinstance(e, Exception): raise e   # a stop (SIGTERM's SystemExit, KeyboardInterrupt) during a question
+    return [T for T in spin_heads[lo:hi] if spin_region(T, spin_cand[T])]
 
 def find_spin_regions():
-    """spin_region for every candidate head that has one, in address order. Each job takes every nth head, so the slow stretches
-    of code are spread across the workers. A region holds capstone objects, which can't be sent back from a worker, so the workers
+    """spin_region for every candidate head that has one, in address order. Each job takes a run of neighbouring heads (PEANUTS(upstream-candidate);
+    before, every nth head, so the slow stretches of code were spread across the workers). A region holds capstone objects, which can't be sent back from a worker, so the workers
     only say which heads have one and the regions are built again here."""
-    step = min(8 * WORKERS if WORKERS > 1 else 64, len(spin_heads))   # one worker: 64 jobs only for finer progress lines (the regions are sorted below either way)
+    # PEANUTS(upstream-candidate): a job is a run of neighbouring heads, whose searches read the same words (spin_word decodes each once per process); before,
+    # every nth head, which a worker's cache could not share. 32 jobs a worker (in_forks deals them out in turn, Pool hands them out as workers finish) spread the slow stretches
+    step = min(32 * WORKERS if WORKERS > 1 else 64, len(spin_heads))   # one worker: 64 jobs only for finer progress lines (the regions are sorted below either way)
     heads = []
-    for found in in_parallel(spin_heads_with_region, [(first, step) for first in range(step)], 'spin'):
+    cut = [len(spin_heads) * k // step for k in range(step + 1)] if step else []
+    spin_native()   # PEANUTS(upstream-candidate): the library's state made before the workers fork, which share it
+    for found in in_parallel(spin_heads_with_region, list(zip(cut, cut[1:])), 'spin'):
         heads += found
+    spin_native_free()   # PEANUTS(upstream-candidate)
     return [spin_region(T, spin_cand[T]) for T in sorted(heads)]
 
 progress('spin')

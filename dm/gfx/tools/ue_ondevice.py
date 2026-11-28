@@ -23,6 +23,7 @@ HOST_CODE = ("import ctypes, sys\n"
 class DeviceOodle(uepak.OodleHost):
     """uepak.OodleHost with the Android host: the worker command (DM_UE_HOST) runs HOST_CODE, which loads the title's host library and calls nxhost_main(modules)"""
     def __init__(self, cmd, lib, modules):
+        import rewrite_wait; rewrite_wait.wait()   # PEANUTS: the rewrite beside the split must have written the modules (#120)
         self.err = tempfile.TemporaryFile()
         self.p = subprocess.Popen(shlex.split(cmd) + ['-I', '-c', HOST_CODE, lib, modules], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.err,
                                   env=dict(os.environ, DM_OODLE_SERVE='1'))
@@ -30,10 +31,16 @@ class DeviceOodle(uepak.OodleHost):
 
 
 class OozWorker(uepak.OodleHost):
-    """uepak.OodleHost with the PC builder's worker from the open-source ooz decoder (DM_OODLE_OOZ, dm/third_party/ooz); a failure names it, not the game's decoder"""
+    """uepak.OodleHost with the worker from the open-source ooz decoder (dm/third_party/ooz; ooz_split.argv: the PC builder's program, DM_OODLE_OOZ, or the phone's
+    library in a worker process, DM_OODLE_OOZ_LIB); a failure names it, not the game's decoder"""
+    def __init__(self, argv):   # PEANUTS: the command as ooz_split.argv gives it
+        import ooz_split; ooz_split.mark()
+        self.err = tempfile.TemporaryFile()
+        self.p = subprocess.Popen(list(argv), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.err, env=dict(os.environ, DM_OODLE_SERVE='1'))
+        self.n = 0
     def __call__(self, comp, n):
         try: return super().__call__(comp, n)
-        except ValueError as e: raise ValueError(str(e).replace('the game\'s Oodle in the Mac host', 'the ooz worker (DM_OODLE_OOZ; not the game\'s own decoder)')) from None
+        except ValueError as e: raise ValueError(str(e).replace('the game\'s Oodle in the Mac host', 'the ooz worker (DM_OODLE_OOZ / DM_OODLE_OOZ_LIB; not the game\'s own decoder)')) from None   # PEANUTS: names the phone's library too
 
 
 def stamp(romfs):
@@ -60,19 +67,21 @@ def rmtree(p):
 
 def decode(romfs, main_nso, out):
     """<out> holds the decoded shader code archives of the RomFS's paks (made now, or kept from an earlier run with the same paks); → out"""
-    st = stamp(romfs)
+    import ooz_split
+    ooz = ooz_split.argv()   # PEANUTS: the ooz worker in place of the game's own decoder (below)
+    st = stamp(romfs) + ('decoder\tooz\n' if ooz else '')   # PEANUTS: archives ooz decoded are reused only by a split that may take ooz's output (ooz_split.py)
     sf = os.path.join(out, 'stamp')
     if os.path.isfile(sf) and open(sf).read() == st:
+        if ooz: ooz_split.mark()   # PEANUTS: their shaders count only once the split's tables are the profile's
         print(f'ue: reusing the decoded shader archives in {out}', flush=True); return out
     t0 = time.time()
     work, part = out + '.job', out + '.partial'
     rmtree(work); rmtree(part)
     cmd, lib, mods = os.environ.get('DM_UE_HOST', ''), os.environ.get('DM_UE_HOST_LIB', ''), os.environ.get('DM_UE_MODULES', '')
-    # PEANUTS: DM_OODLE_OOZ=<helper> (opt-in, for a PC that has neither the Mac host nor the phone's library): a worker built from the open-source ooz decoder answers the same
-    # requests (uepak.OodleHost's protocol; it ignores its arguments) instead of the game's own decoder. Its output counts only once the split's tables are the profile's
-    ooz = os.environ.get('DM_OODLE_OOZ', '')
+    # PEANUTS: the ooz worker (ooz_split.argv: DM_OODLE_OOZ, the PC builder's program; DM_OODLE_OOZ_LIB, the phone's library) answers the same requests
+    # (uepak.OodleHost's protocol) instead of the game's own decoder, without waiting for the rewrite. Its output counts only once the split's tables are the profile's
     Host = DeviceOodle
-    if ooz: cmd, lib, mods, Host = ooz, 'the ooz worker ' + ooz, '-', lambda c, l, m: OozWorker(c, m)
+    if ooz: cmd, lib, mods, Host = ' '.join(ooz), 'the ooz worker ' + ooz_split.name(), '-', lambda c, l, m: OozWorker(ooz)
     dec = None
     try:
         if uepak.io_shader_tocs(romfs):

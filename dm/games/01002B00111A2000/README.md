@@ -106,3 +106,5 @@ General host changes first needed here; each applies to every game:
 - The 3D texture mismatch on slots 8 and 9 above.
 - Sources disagree on small counts: `game.tsv` says 118 shaders in `main`, the shader notes 117; `game.tsv` puts the dispatches after the first cutscene at 1,000 to 2,800 a frame and the iPhone battle's GPU at 10 → 41 ms, the development notes at 900–1,500 a frame (Mac) and 15 → 51 ms (iPhone log); `patches.py` speaks of "two 30 fps values" before describing the third.
 - The memory layout is Link's Awakening's, not measured for this game (`game.tsv`).
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [3 observed RomFS files](shader_files.tsv) out of 1,101 on 1.3.0. A full split took 11.0 s and the targeted one 7.9 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

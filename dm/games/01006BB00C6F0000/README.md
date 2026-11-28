@@ -95,3 +95,5 @@ General host changes first needed here; each applies to every game:
 - **Two pixel shaders do not translate** (`9d8f6b8543355374`, `9338e3f1b597fe7c`: variants 0 and 1 of one program in `postprocess.bfsha` @0x252000; SPIRV-Cross throws on a null pointer). No run so far has loaded either.
 - development.md calls SDK 8.2.0 "the oldest so far"; Mario Kart 8 Deluxe (SDK 4.4.0) is older now.
 - `game.tsv` still says "In bring-up" and its memory values "until measured".
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [35 observed RomFS files](shader_files.tsv) out of 3,836 on 1.1.0. A full split took 4.8 s and the targeted one 1.7 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

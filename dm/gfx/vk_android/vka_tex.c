@@ -71,6 +71,7 @@ static fmt_ent fmt_ent_of(int f) {
     case 0x39: return C(A4B4G4R4_UNORM_PACK16);   // Maxwell's packed formats start with R in the low bits
     case 0x3A: case 0x3B: return C(A1B5G5R5_UNORM_PACK16);
     case 0x3C: return C(B5G6R5_UNORM_PACK16); case 0x95: return C(R5G6B5_UNORM_PACK16);
+    case 0x97: return C(A1R5G5B5_UNORM_PACK16);   // PEANUTS: BGR5A1, blue in the low bits and alpha in the top one (Naruto x Boruto Ultimate Ninja Storm Connections)
     case 0x3D: return C(A2B10G10R10_UNORM_PACK32); case 0x3E: case 0x6B: return U(A2B10G10R10_UINT_PACK32); case 0x69: return C(A2B10G10R10_SNORM_PACK32); case 0x6A: case 0x6C: return S(A2B10G10R10_SINT_PACK32);
     case 0x3F: return C(B10G11R11_UFLOAT_PACK32); case 0x40: return C(E5B9G9R9_UFLOAT_PACK32);
     case 0x41: return C(BC1_RGB_UNORM_BLOCK); case 0x42: return C(BC1_RGBA_UNORM_BLOCK); case 0x43: return C(BC2_UNORM_BLOCK); case 0x44: return C(BC3_UNORM_BLOCK);
@@ -3637,8 +3638,8 @@ int vka_tex_id_in_pass(int id) {
     return r;
 }
 typedef struct { int id; uint8_t dim; uint32_t ver, gen; vka_img *im; VkImageView v; VkFormat fmt; } vmemo;   // PEANUTS: keep the view's resolved format with its handle
-static vmemo g_vm[2048];
-static inline vmemo *vm_slot(int id, uint8_t dim) { return &g_vm[((unsigned)id * 7u + dim) & 2047]; }
+static vmemo g_vm[4096];   // PEANUTS
+static inline vmemo *vm_slot(int id, uint8_t dim) { return &g_vm[((unsigned)id * 7u + dim) & 4095]; }   // PEANUTS
 static inline int vm_hit(const vmemo *m, int id, uint8_t dim) {
     return m->id == id && m->dim == dim && g_tver && m->ver == atomic_load_explicit(&g_tver[id], memory_order_acquire) && m->gen == atomic_load_explicit(&g_tgen, memory_order_acquire) && !in_fb(m->im);
 }
@@ -3941,8 +3942,8 @@ int vka_tex_id_pending(int id) {
 _Static_assert(VKSF_LINEAR == VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT && VKSF_MINMAX == VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_MINMAX_BIT, "vka_sampfilter.h feature bits");
 VkSampler vka_samp_id_rec(int id, VkFormat fmt) {
     if (id <= 0 || id >= 4096 * 8) return VK_NULL_HANDLE;
-    static struct { int id; uint32_t ver; VkFormat fmt; VkSampler s; } memo[512];
-    typeof(memo[0]) *m = &memo[((unsigned)id + 31u * (unsigned)fmt) & 511];
+    static struct { int id; uint32_t ver; VkFormat fmt; VkSampler s; } memo[1024];
+    typeof(memo[0]) *m = &memo[((unsigned)id + 31u * (unsigned)fmt) & 1023];
     int use_memo = g_sver && VKA_ENV("DM_VK_TEX_MEMO", 1);
     uint32_t ver = use_memo ? atomic_load_explicit(&g_sver[id], memory_order_acquire) : 0;
     if (use_memo && m->id == id && m->ver == ver && m->fmt == fmt && m->s) return m->s;
@@ -3966,6 +3967,36 @@ VkSampler vka_samp_id_rec(int id, VkFormat fmt) {
     pthread_mutex_unlock(&g_tmu);
     if (use_memo) *m = (typeof(*m)){id, ver, fmt, s};   // PEANUTS: sampler chosen by the view format
     return s;
+}
+// PEANUTS: combined image+sampler descriptor memo for the recording thread (avoids separate buffer check, view lookup, frame/fence queries, and sampler lookup on cache hit)
+typedef struct { int tid, sid; uint8_t dim; uint32_t tver, sver, gen; vka_img *im; VkImageView v; VkSampler s; } ismemo;
+static ismemo g_ism[4096];
+int vka_tex_img_samp_rec(int tid, int sid, VkCommandBuffer cb, uint8_t dim, uint64_t frame, uint64_t fence, VkImageView *out_v, VkSampler *out_s) {
+    if (tid <= 0 || tid >= (1 << 20) || sid < 0 || sid >= 4096 * 8) return 0;
+    if (g_tisbuf && atomic_load_explicit(&g_tisbuf[tid], memory_order_acquire)) return 0;
+    int use_memo = g_tver && g_sver && VKA_ENV("DM_VK_TEX_MEMO", 1);
+    ismemo *m = &g_ism[(((unsigned)tid * 131u) ^ ((unsigned)sid * 17u) ^ (unsigned)dim) & 4095];
+    uint32_t gen = use_memo ? atomic_load_explicit(&g_tgen, memory_order_acquire) : 0;
+    uint32_t tver = use_memo ? atomic_load_explicit(&g_tver[tid], memory_order_acquire) : 0;
+    uint32_t sver = (use_memo && sid) ? atomic_load_explicit(&g_sver[sid], memory_order_acquire) : 0;
+    if (use_memo && m->tid == tid && m->sid == sid && m->dim == dim && m->tver == tver && m->sver == sver && m->gen == gen && !in_fb(m->im)) {
+        if (m->im->last_frame != frame) m->im->last_frame = frame;
+        if (m->im->last_fence != fence) m->im->last_fence = fence;
+        *out_v = m->v; *out_s = m->s;
+        return 1;
+    }
+    VkFormat fmt = VK_FORMAT_UNDEFINED;
+    VkImageView v = vka_tex_id_view_samp_rec(tid, sid, cb, dim, 0, &fmt);
+    if (!v) return 0;
+    VkSampler s = sid ? vka_samp_id_rec(sid, fmt) : VK_NULL_HANDLE;
+    if (!s) s = vka_samp_default();
+    if (use_memo) {
+        const vmemo *vm = vm_slot(tid, dim);
+        if (vm->id == tid && vm->dim == dim && vm->ver == tver && vm->gen == gen && vm->im && !in_fb(vm->im))
+            *m = (ismemo){tid, sid, dim, tver, sver, gen, vm->im, v, s};
+    }
+    *out_v = v; *out_s = s;
+    return 1;
 }
 // PEANUTS end
 // PEANUTS: DM_VK_TEX_PEEK: the registered sampler's wrap modes (NVN enums: 0 clamp 1 repeat 2 mirror clamp 3 mirror clamp to edge 4 mirror clamp to border 5 clamp to border 6 mirrored repeat

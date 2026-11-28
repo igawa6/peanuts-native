@@ -3,13 +3,15 @@ import ast
 import os
 from pathlib import Path
 import re
+import shutil  # PEANUTS(upstream-candidate): ScheduledOffsetsRewrite
 import struct
 import subprocess
 import sys
 import tempfile
 import unittest
 
-from capstone import Cs, CS_ARCH_ARM64, CS_MODE_ARM
+# PEANUTS(upstream-candidate): instruction groups for scheduled dispatch checks.
+from capstone import (Cs, CS_ARCH_ARM64, CS_MODE_ARM, CS_GRP_CALL, CS_GRP_INT, CS_GRP_IRET, CS_GRP_JUMP, CS_GRP_RET)
 from capstone.arm64 import ARM64_OP_IMM
 
 TOOLS = Path(__file__).resolve().parents[1]
@@ -20,8 +22,10 @@ from nso_asm import ADRP, ADDI, ADDR, B, BEQ, BLR, BR, NOP
 # Compile its actual recognition functions without executing that driver.
 tree = ast.parse((TOOLS / 'patch_nso.py').read_text())
 IMG = bytearray(0x5000); tabjumps = {}; jumps = {}   # the globals the recognizers read: the module image and the jump tables resolved so far in the function
-scope = {'re': re, 'struct': struct, 'ARM64_OP_IMM': ARM64_OP_IMM, 'IMG': IMG, 'tabjumps': tabjumps, 'jumps': jumps}
-exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in ('num', 'copied_base', 'table_base', 'table_cands', 'forward_table_base', 'check_before_copy', 'jump_offsets', 'jump_adr_offsets', 'jump_zero_extended', 'jump_masked_pred', 'jump_masked_not')], type_ignores=[]), str(TOOLS / 'patch_nso.py'), 'exec'), scope)
+# PEANUTS(upstream-candidate): load the scheduled resolver and its instruction groups.
+scope = {'re': re, 'struct': struct, 'ARM64_OP_IMM': ARM64_OP_IMM, 'IMG': IMG, 'tabjumps': tabjumps, 'jumps': jumps,
+         **{name: value for name, value in globals().items() if name.startswith('CS_GRP_')}}
+exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in ('num', 'copied_base', 'table_base', 'table_cands', 'forward_table_base', 'check_before_copy', 'jump_offsets', 'jump_adr_offsets', 'jump_zero_extended', 'jump_masked_pred', 'jump_masked_not', 'jump_scheduled_offsets')], type_ignores=[]), str(TOOLS / 'patch_nso.py'), 'exec'), scope)
 
 
 def mov(dst, src, wide=True): return (0xaa0003e0 if wide else 0x2a0003e0) | src << 16 | dst
@@ -185,6 +189,25 @@ class IndexCopiedBeforeCheck(unittest.TestCase):
     def test_copy_beyond_old_search_limit(self):
         actual, expected = self.run_site([NOP] * 75)
         self.assertEqual(actual, expected)
+
+    def test_adrp_add_between_check_and_load(self):   # PEANUTS(upstream-candidate)
+        table = 0x4040
+        words = [mov(18, 17, False)] + [NOP] * 4
+        at = len(words) * 4
+        words += [0x7100123f, bhi(at + 4, at + 28), ADRP(9, at + 8, table), ADDI(9, 9, table & 0xfff),
+                  0xb8b27932, ADDR(18, 18, 9), BR(18), RET]
+        for i in range(5): struct.pack_into('<i', IMG, table + 4 * i, at + 28 - table)
+        md = Cs(CS_ARCH_ARM64, CS_MODE_ARM); md.detail = True
+        ins = [p for i, w in enumerate(words) for p in md.disasm(struct.pack('<I', w), 4 * i)]
+        j = next(i for i, p in enumerate(ins) if p.mnemonic == 'br')
+        self.assertEqual(scope['jump_offsets'](ins, j, copy_first=True, far_base=True), [at + 28] * 5)
+        # PEANUTS(upstream-candidate): only adrp rb, #page and add rb, rb, #imm come between the check and the load; another write of rb does not
+        for slot, word in ((8, ADDR(9, 9, 10)), (8, ADDI(9, 10, table & 0xfff)), (7, mov(9, 10)), (8, ADDI(9, 9, 1, sh=1))):   # add x9,x9,x10; add x9,x10,#imm; mov x9,x10; add x9,x9,#1,lsl #12
+            with self.subTest(slot=slot, word=hex(word)):
+                changed = list(words); changed[slot] = word
+                ins = [p for i, w in enumerate(changed) for p in md.disasm(struct.pack('<I', w), 4 * i)]
+                self.assertIsNone(scope['check_before_copy'](ins, ins, ins[9], {'w18'}, 'x9'))
+        self.assertIs(scope['check_before_copy'](ins := [p for i, w in enumerate(words) for p in md.disasm(struct.pack('<I', w), 4 * i)], ins, ins[9], {'w18'}, 'x9'), ins[5])
 
     def test_source_and_index_must_remain_unchanged(self):
         for reg in (17, 18):
@@ -480,6 +503,108 @@ class MaskedComplement(unittest.TestCase):
                 self.assertIsNone(self.run_site(self.words()))
         struct.pack_into('<i', IMG, self.TABLE, 8 - self.TABLE)
         self.assertEqual(self.run_site(self.words()), [8] + self.TARGETS[1:])
+
+
+# PEANUTS(upstream-candidate): synthetic delayed offset-table dispatch and proof failures.
+class ScheduledOffsets(unittest.TestCase):
+    def setUp(self):
+        self.words = [
+            0x51000000 | 7 << 10 | 3 << 5 | 10,  # sub w10, w3, #7
+            0x7100001f | 2 << 10 | 10 << 5,      # cmp w10, #2
+            NOP, NOP, bhi(16, 96),
+            ADRP(7, 20, 0x1000), ADDI(7, 7, 0x80),
+            0xb8a07800 | 10 << 16 | 7 << 5 | 18,  # ldrsw x18, [x7, x10, lsl #2]
+            ADDR(18, 18, 7),
+        ] + [NOP] * 14 + [BR(18), RET, RET, RET]
+        self.image = bytearray(0x1100)
+        self.table = 0x1080
+        struct.pack_into('<3i', self.image, self.table, *(t - self.table for t in (96, 100, 104)))
+
+    def resolve(self, ro=(0x1000, 0x100), bounds=(0, 108)):
+        md = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
+        md.detail = True
+        end = len(self.words) * 4
+        raw = struct.pack('<' + 'I' * len(self.words), *self.words)
+        ins = []
+        for pc in range(0, end, 4):
+            ins.extend(md.disasm(raw[pc:pc + 4], pc))
+        j = next(i for i, p in enumerate(ins) if p.address == 92)
+        return scope['jump_scheduled_offsets'](ins, j, self.image, ro, bounds)
+
+    def test_distant_compare_and_signed_table(self):
+        self.assertEqual(self.resolve(), ([96, 100, 104], 0))
+
+    def test_clobbers_and_guard_bypasses_are_refused(self):
+        for slot, word in (
+            (0, mov(10, 3)),               # no known zero upper half
+            (2, 0x7100001f | 4 << 5),     # cmp w4, #0 overwrites the flags
+            (2, 0xd51b4200),             # msr nzcv, x0 is missing from regs_access()
+            (2, 0xd500401f),             # cfinv is missing from regs_access()
+            (2, 0x540003d0),             # bc.eq is missing the jump group
+            (3, mov(10, 3, False)),       # the bounds check sees the old index
+            (4, BEQ(16, 96)),             # wrong branch condition
+            (9, mov(18, 2, False)),       # overwrites the computed destination
+            (10, 0xffffffff),             # breaks the decoded run
+            (25, B(100, 8)),              # another path skips the compare
+        ):
+            with self.subTest(slot=slot):
+                original = self.words[slot]
+                self.words[slot] = word
+                self.assertIsNone(self.resolve())
+                self.words[slot] = original
+
+    def test_table_and_targets_are_checked(self):
+        self.assertIsNone(self.resolve(ro=(self.table, 11)))
+        self.assertIsNone(self.resolve(bounds=(0, 104)))
+        for target in (8, 97, 108):
+            with self.subTest(target=target):
+                struct.pack_into('<i', self.image, self.table, target - self.table)
+                self.assertIsNone(self.resolve())
+
+
+class ScheduledOffsetsRewrite(unittest.TestCase):
+    """The scheduled resolver through the rewriter itself: analyse_fn's eighth result (its dispatches) merged from the workers, the summary line, and the
+    check after the merge that no direct branch of another function enters a dispatch past its guard"""
+    F, TABLE = 0x100, 0x2040
+
+    def words(self):
+        f = self.F
+        return [0x51000000 | 7 << 10 | 3 << 5 | 10, 0x7100001f | 2 << 10 | 10 << 5, NOP, NOP, bhi(f + 16, f + 96),   # sub w10,w3,#7; cmp w10,#2; …; b.hi
+                ADRP(7, f + 20, self.TABLE), ADDI(7, 7, self.TABLE & 0xfff), 0xb8a07800 | 10 << 16 | 7 << 5 | 18, ADDR(18, 18, 7)] + [NOP] * 14 + [BR(18), RET, RET, RET]
+
+    def rewrite(self, other, jobs):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from test_nso_match import image
+        raw = image({self.F: self.words(), 0x400: other})
+        for i in range(3): struct.pack_into('<i', raw, self.TABLE + 4 * i, self.F + 96 + 4 * i - self.TABLE)
+        # The NRO header of ZeroExtendedIndex's rewrite: text 0x0-0x1000, read-only 0x1000-0x3000.
+        raw[0x1100:0x111c] = raw[0x20:0x3c]; struct.pack_into('<I', raw, 4, 0x1100)
+        struct.pack_into('<ii', raw, 0x1110, 0x3000 - 0x1100, 0x3014 - 0x1100)
+        raw[0x10:0x14] = b'NRO0'; struct.pack_into('<I', raw, 0x18, len(raw))
+        struct.pack_into('<6I', raw, 0x20, 0, 0x1000, 0x1000, 0x2000, 0x3000, 0x1000); struct.pack_into('<I', raw, 0x38, 0)
+        tmp = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, tmp)
+        src = Path(tmp) / 'input.nro'; src.write_bytes(raw)
+        run = subprocess.run([sys.executable, str(TOOLS / 'patch_nso.py'), str(src), tmp, 'nro0'],
+                             env=os.environ | {'DM_GAME': '010015100B514000', 'DM_REWRITE_J': str(jobs)}, capture_output=True, text=True)
+        return run, Path(tmp)
+
+    def test_the_rewriter_resolves_it_in_its_workers(self):
+        for jobs in (1, 2):
+            with self.subTest(jobs=jobs):
+                run, tmp = self.rewrite([0xb4000040, NOP, RET], jobs)   # cbz x0, +8: a branch of its own function only
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertIn(f'scheduled offset jump tables: {self.F + 92:x}', run.stdout)
+                rows = [line.split('\t') for line in (tmp / 'nro0.sites.tsv').read_text().splitlines()]
+                self.assertEqual([[int(t, 0) for t in row[2].split()] for row in rows if row[1] == 'T'], [[self.F + 96, self.F + 100, self.F + 104]])
+
+    def test_a_branch_of_another_function_into_the_dispatch_stops_the_rewrite(self):
+        for at in (self.F + 4, self.F + 36, self.F + 92):   # after the guard's start: the cmp, the add of the table base, the br
+            with self.subTest(at=hex(at)):
+                run, _ = self.rewrite([0xb4000000 | ((at - 0x400) >> 2 & 0x7ffff) << 5, RET], 2)   # cbz x0, <at>
+                self.assertNotEqual(run.returncode, 0)
+                self.assertIn(f'branch 400 enters scheduled dispatch at {at:x}', run.stderr)
+        run, _ = self.rewrite([0xb4000000 | ((self.F - 0x400) >> 2 & 0x7ffff) << 5, RET], 2)   # the dispatch's first instruction: its setup runs whole
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
 
 
 if __name__ == '__main__': unittest.main()

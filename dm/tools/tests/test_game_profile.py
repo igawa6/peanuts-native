@@ -270,5 +270,45 @@ class FpsModes(unittest.TestCase):
         self.assertIn('requires fps_modes including 120', out)
 
 
+class OptionGroups(unittest.TestCase):   # PEANUTS: option_group rows and group=<name> (one radio choice); a shared code word only inside one group
+    B = 'c55f6b8aefa54324c8e3debe0912c57c'
+    BASE = 'build\tv1\t1.0\tmain=' + B + '\n' + 'option_group\tdraw\tDraw distance\tHow far detail reaches.\n'
+
+    def rows(self, a='restart group=draw', b='restart group=draw', words=('0x100\t11111111\t22222222', '0x100\t11111111\t33333333')):
+        return (self.BASE + f'option\tDM_A\tHigh\tFar.\t{a}\n' + f'option\tDM_B\tUltra\tFarther.\t{b}\n'
+                + f'option_patch\tDM_A\t{self.B}\t{words[0]}\n' + f'option_patch\tDM_B\t{self.B}\t{words[1]}\n')
+
+    def test_group_shares_word(self):
+        self.assertEqual(header(self.rows()), (0, ''))
+
+    def test_shared_word_outside_group(self):
+        rc, out = header(self.rows(b='restart') + 'option\tDM_C\tX\tY.\trestart group=draw\n')
+        self.assertNotEqual(rc, 0)
+        self.assertIn('repeats a main code word', out)
+
+    def test_shared_word_other_expected(self):
+        rc, out = header(self.rows(words=('0x100\t11111111\t22222222', '0x100\t44444444\t33333333')))
+        self.assertNotEqual(rc, 0)
+        self.assertIn('repeats a main code word', out)
+
+    def test_same_option_twice(self):
+        rc, out = header(self.rows() + f'option_patch\tDM_A\t{self.B}\t0x100\t11111111\t55555555\n')
+        self.assertNotEqual(rc, 0)
+        self.assertIn('repeats a main code word', out)
+
+    def test_group_rules(self):
+        for rows, msg in ((self.rows(a='restart group=other'), 'without an option_group row'),
+                          (self.rows(a='live group=draw'), 'must be a restart option'),
+                          (self.rows(a='restart group=draw implies=DM_X'), 'must be a restart option'),
+                          (self.rows(b='restart'), 'needs at least two options'),
+                          (self.rows() + 'option_group\tdraw\tAgain\tAgain.\n', 'option_group takes'),
+                          (self.rows() + 'option\tDM_C\tC\tC.\trestart implies=DM_A\n', 'a member of group'),
+                          (self.rows(a='restart group=Draw'), 'option group takes')):
+            with self.subTest(msg=msg):
+                rc, out = header(rows)
+                self.assertNotEqual(rc, 0)
+                self.assertIn(msg, out)
+
+
 if __name__ == '__main__':
     unittest.main()

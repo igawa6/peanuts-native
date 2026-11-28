@@ -46,3 +46,5 @@ PEANUTS: packed on Linux from 1.0.3 with its DLC (`0100B8E016F77001`): all 1,225
 ## Open
 
 - The dynamic-resolution control and the 30 fps choice on the iPhone are untested.
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [1 observed RomFS files](shader_files.tsv) out of 660 on 1.0.3. A full split took 194.8 s and the targeted one 1.3 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

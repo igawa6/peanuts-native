@@ -78,9 +78,11 @@ typedef struct {
     uint32_t nres_levels; dm_pf_res_levels_t res_levels[DM_PROFILE_RES_LEVELS_CAP];
 
     uint32_t event_wait, occlusion_split_pass, low_ram_place_part_mb, low_ram_img_cache_max_mb, low_ram_app_pool_mb, place_join_mb;
+    uint32_t push_desc_qcom_old_off;   // game.tsv push_desc_qcom_old off (vka_pso.c layout_slow)
     char render_default_out[16]; uint32_t render_quality[4];
     uint32_t nrender_cfg; dm_pf_render_cfg_t render_cfg[DM_PROFILE_RENDER_CFG_CAP];
     uint32_t nrt_pool; dm_pf_rt_pool_t rt_pool[DM_PROFILE_RT_POOL_CAP];
+    uint64_t tex_pool_range;   // PEANUTS: game.tsv tex_pool_range (hle_nvn.c texpool_range)
 } dm_game_profile_t;
 
 // A few checkpoints along the layout (found in review), so a field inserted or resized in the wrong place fails the build here, at the

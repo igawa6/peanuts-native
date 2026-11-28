@@ -222,6 +222,36 @@ Measured on an AYN Thor (ACNH 3.0.3, `incremental-check.py full`, 2026-11-19): t
 and 203 s (two runs with the file before), the build from nothing 5 min 34 s in place of 6 min 38 s; `main`, `subsdk0` and `sdk` byte for byte (SHA-256) the
 modules of those two runs.
 
+## The rewrite beside the split and the shaders
+
+The shaders step needs the split only, never the rewritten code; the pack step is the first that needs both. One after the other, a build from nothing waited for
+the rewrite before the split began (an AYN Thor, 2026-11-26: Super Mario Bros. Wonder's rewrite 68 s of 223 s, FINAL FANTASY RESONANCE's 5 min 46 s of about 45 min).
+Now, on a phone the memory plan gives its full worker count (`BuildMemory`, 14 GB and more), `PackService` starts the rewrite step's tool in a process of its own
+(`RewriteBeside`: the same `scripts/pack_android.py` argv, run by `nxpack_worker` as the split's workers are, with the packer's environment and the tools'
+variables of `PackEngine.ENV`; its output goes to `rewrite.log`, whose `Tail` moves the rewrite's share of the bar) and goes on with the split and the shaders.
+Before the pack step it waits for that process; a rewrite that failed fails there with its own words, as it would have at its own turn.
+
+- When (`RewriteBesidePlan.allowed`): not for the full check of kept shaders, not with the simulated engine, not without the worker program, not after Android
+  already ended this job's process (`Job.memLevel`; a kill during a build beside raises it, so the next run goes one step at a time), and only while the split
+  or the shaders are still to do. `PN_REWRITE_BESIDE=0` in `ondevice/env.txt` keeps the steps one after the other.
+- A stop, a pause or a failure of another step ends the process (SIGINT, as the packer's interrupt: `pn_rewrite_worker` ends its own worker and that worker's
+  forks; a kill after 15 s) and the rewrite runs again at the next start. A process an earlier packer left (Android ended the packer, not its child) is ended
+  before a job runs again (`rewrite-beside.pid` in the job's `ondevice` folder, checked against `/proc/<pid>/cmdline`).
+- The heat pause holds it as it holds the step in the packer (`PN_HOLD_FILE` is in its environment).
+- The split needs the rewritten modules in one case: a game whose files only the game's own decoder can read (an Unreal game's Oodle, `ue_ondevice.DeviceOodle`;
+  Oodle- or LZ5-compressed files, `shader_split.py`). Just before it starts that decoder, the split waits for the rewrite (`dm/gfx/tools/rewrite_wait.py`):
+  when the rewrite's process ends the app writes its exit code to `rewrite-beside.done` (`PN_REWRITE_BESIDE_DONE`), and a failed rewrite stops the split
+  with its words. A game that never needs the decoder never waits. Found on FINAL FANTASY RESONANCE (Thor, 2026-11-28): without the wait its split stopped at
+  its first Oodle stream, before the rewrite had written `main`.
+- Oodle games no longer wait (2026-11-28): the split decodes Oodle streams with the open-source ooz decoder, `libunoodle.so` in the APK
+  (`DM_OODLE_OOZ_LIB`, [dm/third_party/ooz](../../dm/third_party/ooz/README.md) "On the phone", `dm/gfx/tools/ooz_split.py`), which needs no rewritten modules.
+  FINAL FANTASY RESONANCE's split had waited 264 s of its 291 s on a Thor. ooz's output is written only when the split's tables are the profile's; otherwise,
+  or when the split stops while ooz is in use, the split runs again with the game's own decoder, which waits for the rewrite as above, and the title's later
+  splits of the same files go to the game's decoder at once (`PN_REUSE_DIR/ooz.refused`). LZ5 (DRAGON QUEST XI S's legacy paks) still needs the game's decoder.
+  `DM_OODLE_OOZ_LIB=` in `ondevice/env.txt` forces the game's own decoder. Not measured on a phone yet.
+- Not measured on a phone yet: the rewrite's workers (`PN_REWRITE_J`) and the shader workers then share the cores, so the time saved is less than the
+  rewrite's own time.
+
 ## The split: game files that did not change
 
 The split scans every file of the profile's list (targeted) or of the RomFS (full) on every build; its `ScanCache` keeps results only to resume a stopped split,

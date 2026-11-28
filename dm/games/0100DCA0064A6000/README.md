@@ -99,3 +99,5 @@ General host changes first needed here; each applies to every game:
 - Tessellation (15 hull, 18 domain shaders) and the 10 geometry shaders are not built ([Rendering](#rendering)).
 - [docs/geometry-metal-research.md](../../../docs/geometry-metal-research.md) describes geometry shaders now built as compute kernels, checked on AI: THE SOMNIUM FILES only ("Other games and iOS device execution are unvalidated"); whether this game's 10 build with it is not recorded.
 - The limiter's phase lock stays off while `nn::vi::ListFrameHistory` returns no entries.
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [1 observed RomFS files](shader_files.tsv) out of 239 on 1.4.0. A full split took 67.1 s and the targeted one 6.3 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

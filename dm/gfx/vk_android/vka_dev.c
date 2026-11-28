@@ -382,7 +382,8 @@ static int init_once(void) {
         if (!V.vin_dyn) VLOG("vertex input dynamic state: off (%s; DM_VK_VIN_DYN=1: on), the vertex input goes into the pipeline", e && *e ? "DM_VK_VIN_DYN=0" : "Qualcomm driver before 512.800");
     }
     auto_log(&(vka_auto_in){.driver_id = V.driver_id, .qcom_old = V.qcom_old, .mesh_ext = mesh_ext, .memu = V.memu, .vin_dyn_ext = vin_dyn_ext,
-                            .prof_one_lane = DM_GAME_NSUBGROUP_ONE_LANE, .prof_prepass_cut = DM_GAME_NMESH_PREPASS_CUT, .prof_oq_split = DM_GAME_OCCLUSION_SPLIT_PASS}, pdr.driverName);
+                            .prof_one_lane = DM_GAME_NSUBGROUP_ONE_LANE, .prof_prepass_cut = DM_GAME_NMESH_PREPASS_CUT, .prof_oq_split = DM_GAME_OCCLUSION_SPLIT_PASS,
+                            .prof_push_desc_off = DM_GAME_PUSH_DESC_QCOM_OLD_OFF}, pdr.driverName);   // PEANUTS: push_desc_qcom_old
     vka_enc_install();
     vka_gbar_install();   // on top of the encoder: sees every work command the replay records (vka_gbar.c)
     const VkPhysicalDeviceLimits *lim = &V.props.limits;

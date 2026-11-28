@@ -84,6 +84,8 @@ int main(int argc, char **argv) {
     printf("low_ram_place_part_mb=%d\n", (int)p->low_ram_place_part_mb); printf("low_ram_img_cache_max_mb=%d\n", (int)p->low_ram_img_cache_max_mb);
     printf("low_ram_app_pool_mb=%d\n", (int)p->low_ram_app_pool_mb); printf("render_default_out=%s\n", p->render_default_out);
     printf("place_join_mb=%d\n", (int)p->place_join_mb);
+    printf("push_desc_qcom_old_off=%d\n", (int)p->push_desc_qcom_old_off);
+    printf("tex_pool_range=%d\n", (int)p->tex_pool_range);   // PEANUTS
     printf("render_quality=%d,%d,%d,%d\n", (int)p->render_quality[0], (int)p->render_quality[1], (int)p->render_quality[2], (int)p->render_quality[3]);
     printf("nrender_cfg=%d\n", (int)p->nrender_cfg);
     for (int i = 0; i < (int)p->nrender_cfg; i++) {

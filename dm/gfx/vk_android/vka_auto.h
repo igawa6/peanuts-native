@@ -23,6 +23,7 @@ typedef struct {
     int prof_one_lane;      // the profile's subgroup_one_lane keys (DM_GAME_NSUBGROUP_ONE_LANE)
     int prof_prepass_cut;   // the profile's mesh_prepass_cut rows (DM_GAME_NMESH_PREPASS_CUT)
     int prof_oq_split;      // the profile's occlusion_split_pass (DM_GAME_OCCLUSION_SPLIT_PASS)
+    int prof_push_desc_off; // the profile's push_desc_qcom_old off (DM_GAME_PUSH_DESC_QCOM_OLD_OFF); PEANUTS
 } vka_auto_in;
 
 typedef struct { const char *key, *why; char val[8]; } vka_auto_rule;   // why: NULL or what else the rule keys on, besides the driver ID
@@ -48,6 +49,7 @@ static inline int vka_auto_rules(const vka_auto_in *in, vka_auto_rule *o, int ma
     VKA_AUTO_ADD(q, "DM_VK_GS_FILL", 1, NULL);                                                               // vka_shader.c gs_fill
     VKA_AUTO_ADD(q && !in->memu && in->prof_prepass_cut, "DM_VK_MESH_PREPASS_SKIP", 1, "the profile's mesh_prepass_cut, mesh shaders on");   // vka_draw.c mesh_cut
     VKA_AUTO_ADD(q && in->prof_oq_split, "DM_VK_OQ_SPLIT_PASS", 1, "the profile's occlusion_split_pass");   // vka_exec.c oq_report
+    VKA_AUTO_ADD(in->qcom_old && in->prof_push_desc_off, "DM_VK_PUSH_DESC", 0, "driver version before 512.800, the profile's push_desc_qcom_old off");   // vka_pso.c layout_slow; PEANUTS
 #undef VKA_AUTO_ADD
     return n;
 }

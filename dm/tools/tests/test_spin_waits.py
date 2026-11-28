@@ -1,5 +1,6 @@
 """The rewriter's spin wait search (patch_nso.py "Spin waits") on hand-assembled AArch64 loops, without game files."""
 import ast
+from array import array   # PEANUTS(upstream-candidate): spin_word (#120)
 from pathlib import Path
 import re
 import struct
@@ -12,8 +13,10 @@ from capstone.arm64 import ARM64_OP_IMM, ARM64_OP_MEM, ARM64_OP_REG
 TOOLS = Path(__file__).resolve().parents[1]
 # patch_nso.py is a command-line program whose top level loads and rewrites an image: compile only the spin wait search and its constants
 tree = ast.parse((TOOLS / 'patch_nso.py').read_text())
-FUNCS = {'spin_ins', 'spin_norm', 'spin_rw', 'spin_kind', 'spin_rmw', 'spin_lock', 'spin_store', 'spin_quick', 'spin_region', 'spin_region1'}
-CONSTS = {'SPIN_PATHS', 'SPIN_STEPS', 'SPIN_STORES', 'SPIN_LSE', 'SPIN_BAD', 'SPIN_STOP'}
+# PEANUTS(upstream-candidate): with the per-word decode (patch_nso.py spin_word, spin_rw_at) and its tables
+FUNCS = {'spin_ins', 'spin_norm', 'spin_rw', 'spin_kind', 'spin_rmw', 'spin_lock', 'spin_store', 'spin_quick', 'spin_region', 'spin_region1',
+         'spin_bt', 'spin_cached', 'spin_word_make', 'spin_word', 'spin_rw_at', 'spin_word_lite', 'spin_rn', 'spin_quick_class'}
+CONSTS = {'SPIN_PATHS', 'SPIN_STEPS', 'SPIN_STORES', 'SPIN_LSE', 'SPIN_BAD', 'SPIN_STOP', 'SPIN_LOCK0', 'SPIN_STR', 'SPIN_MEM', 'spin_rns', 'SPIN_QK', 'spin_wix', 'spin_wtab'}
 body = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name in FUNCS) or (isinstance(n, ast.ClassDef) and n.name == 'SpinNo')
         or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Tuple) and any(getattr(e, 'id', None) in CONSTS for e in t.elts) or getattr(t, 'id', None) in CONSTS for t in n.targets))]
 
@@ -33,12 +36,13 @@ POLL = [0xb4000434, 0xb901028b, 0xb940012e, 0x710005df, 0x54ffffc0, 0x885ffd2e, 
         0x1a9f37ed, 0x14000002, 0xd5033f5f, 0x885f7d2f, 0x710005ff, 0x54ffffa1, 0x880ffd3f, 0x35ffff8f, 0x34fffc0e, 0xd65f03c0]
 
 
-def region(words, T, bes):
+def region(words, T, bes, scope_only=False):
     md = Cs(CS_ARCH_ARM64, CS_MODE_ARM); md.detail = True
-    scope = {'re': re, 'struct': struct, 'ARM64_OP_IMM': ARM64_OP_IMM, 'ARM64_OP_MEM': ARM64_OP_MEM, 'ARM64_OP_REG': ARM64_OP_REG,
-             'IMG': struct.pack('<' + 'I' * len(words), *words) + bytes(64), 'md': md, 'spin_dec': {}, 'DATA_BLOCKS': [], 'spin_touched': set()}
+    img = struct.pack('<' + 'I' * len(words), *words) + bytes(64)   # PEANUTS(upstream-candidate): TEXT_END, array and md_lite for spin_word
+    scope = {'re': re, 'struct': struct, 'array': array, 'TEXT_END': len(img), 'ARM64_OP_IMM': ARM64_OP_IMM, 'ARM64_OP_MEM': ARM64_OP_MEM, 'ARM64_OP_REG': ARM64_OP_REG,
+             'IMG': img, 'md': md, 'md_lite': Cs(CS_ARCH_ARM64, CS_MODE_ARM), 'spin_dec': {}, 'DATA_BLOCKS': [], 'spin_touched': set()}
     exec(compile(ast.Module(body=body, type_ignores=[]), str(TOOLS / 'patch_nso.py'), 'exec'), scope)
-    return scope['spin_region'](T, bes)
+    return scope if scope_only else scope['spin_region'](T, bes)
 
 
 def patched(**at):
@@ -68,6 +72,22 @@ class SpinWaits(unittest.TestCase):
         g = region([0xb9400008, 0x34ffffe8], 0, [4])
         self.assertIsNotNone(g)
         self.assertEqual(g['valid'], {4})
+
+
+class WordValues(unittest.TestCase):   # PEANUTS(upstream-candidate): spin_word's values without details are the detailed decode's
+    def test_lite_is_the_detailed_value(self):
+        # the poll's words; a lane index (mov x8, v19.d[1]), an SVE vector base (ld1b {z7.s}, p7/z, [z13.s, #0x1f]) and a MOPS set ([x3]!), which need the details
+        words = POLL + [0x4e183e68, 0x843fdda7, 0x19d7b403, 0xf9400008, 0x18000040]
+        sc = region(words, 0, [0], scope_only=True)
+        lite = {a: (m, op) for a, _, m, op in sc['md_lite'].disasm_lite(sc['IMG'][:4 * len(words)], 0)}
+        need = 0
+        for a, w in enumerate(words):
+            v = sc['spin_word_lite'](*lite[4 * a], w, 4 * a)
+            if v is None: need += 1; continue
+            self.assertEqual(v, sc['spin_word_make'](next(sc['md'].disasm(struct.pack('<I', w), 4 * a)), 4 * a), hex(w))
+        self.assertGreaterEqual(need, 2)   # the SVE and MOPS words at least
+        for a, w in enumerate(words):   # and spin_word gives the same through either path
+            self.assertEqual(sc['spin_word'](4 * a), sc['spin_word_make'](next(sc['md'].disasm(struct.pack('<I', w), 4 * a)), 4 * a))
 
 
 if __name__ == '__main__':

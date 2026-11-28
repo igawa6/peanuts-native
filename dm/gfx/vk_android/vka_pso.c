@@ -119,7 +119,10 @@ static int layout_slow(vka_shader *const sh[VKA_NSTAGE], int compute, vka_layout
     vka_layout *L = km_get(&g_layouts, &k, h);
     if (L) { *out = *L; pthread_mutex_unlock(&g_mu); return out->layout != VK_NULL_HANDLE; }
     L = calloc(1, sizeof *L);
-    L->ndesc = ndesc; L->push = V.push_desc && ndesc <= V.max_push;
+    // PEANUTS: DM_VK_PUSH_DESC=0 makes draw / compute layouts allocate and bind descriptor sets instead of pushing them. Unset: off only with the profile's
+    // push_desc_qcom_old off on Qualcomm's driver before 512.800 (its push updates of deferred uniform ranges inside a render pass, #888); on everywhere else,
+    // as before the switch: off cost Breath of the Wild about 45 % more replay CPU on 512.676 (docs/reference/rendering.md)
+    L->ndesc = ndesc; L->push = V.push_desc && VKA_ENV("DM_VK_PUSH_DESC", !(DM_GAME_PUSH_DESC_QCOM_OLD_OFF && V.qcom_old)) && ndesc <= V.max_push;   // PEANUTS
     VkDescriptorSetLayoutBinding *lb = calloc(k.n ? k.n : 1, sizeof *lb);
     for (uint32_t i = 0; i < k.n; i++) lb[i] = (VkDescriptorSetLayoutBinding){k.b[i].binding, (VkDescriptorType)k.b[i].desc, k.b[i].count, k.b[i].stages, NULL};
     VkDescriptorSetLayoutCreateInfo li = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .flags = L->push ? VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR : 0, .bindingCount = k.n, .pBindings = lb};

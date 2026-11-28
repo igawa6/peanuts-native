@@ -35,3 +35,5 @@ The Peanuts Android profile targets update 1.0.6.1267 (`v3080192`). Its main bui
 **Untested.** Game settings › Display offers **Fill the screen** on 1.0.6.1267 through 14 `aspect_plan` rows that nobody has seen on a device (`aspect_plan_untested 1`, and the Fill choice says so). They are every place this build's main has the width,height pairs in data, from a scan of the code on 2026-11-21 with each expected word read on the pack; no community patch stands behind them. With Fill the 3D view may follow the screen, the HUD and menus may not, or the game may draw wrongly or not start. Fit and Stretch are unchanged. Open: every screen, at any shape.
 
 <!-- PEANUTS end -->
+
+- <!-- PEANUTS --> The [targeted shader split](../../../android/SHADERS.md#targeted-split) uses [88 observed RomFS files](shader_files.tsv) out of 4,004 on 1.0.6.1267. A full split took 8.4 s and the targeted one 4.2 s on a PC; the targeted tables match the full scan's and the profile's byte for byte.

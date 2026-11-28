@@ -138,8 +138,8 @@ class Wiring(unittest.TestCase):
 
     def test_the_build_settings_that_make_its_bytes(self):
         up = method(read(PACK), '    private void upgrade(Message m) {')
-        self.assertIn('PackEngine.setenv("DMSH_VK_ZSTD_LEVEL", "6");', up)   # as the shaders step: the result must be a full build's byte for byte
-        self.assertRegex(read(PACK), r'PackEngine\.setenv\("DMSH_VK_ZSTD_LEVEL", "6"\);   // PEANUTS: the library')
+        self.assertIn('PackEngine.setenv("DMSH_VK_ZSTD_LEVEL", "3");', up)   # as the shaders step: the result must be a full build's byte for byte
+        self.assertRegex(read(PACK), r'PackEngine\.setenv\("DMSH_VK_ZSTD_LEVEL", "3"\);   // PEANUTS: the library')
         self.assertIn('BuildConfig.NX_DMSH_VK_CHAIN, BuildConfig.NX_DMSH_VK_ABI', up)
         self.assertIn('PackEngine.setenv("DM_VK_UPGRADE_VALIDATE", "1");', up)   # review m1: spirv-val on the rewritten modules, the APK's SPIRV-Tools by ctypes
         self.assertIn('PackEngine.setenv("SPIRV_VAL", "libSPIRV-Tools-shared.so");', up)

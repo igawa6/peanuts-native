@@ -1,0 +1,10 @@
+# PEANUTS: Untitled Goose Game (010082400BCC6000) Android readiness requirements.
+# Playable on OnePlus 13R (Snapdragon 8 Gen 3, 11.0 GiB totalMem) on both Qualcomm 512.762.41 (with push descriptors off for draw and compute layouts on Qualcomm < 512.800: game.tsv push_desc_qcom_old off) and Turnip Mr. Purple T30 at ~60 fps.
+status	playable
+
+# Memory: tested on a 12 GB phone (11.0 GiB totalMem); smaller phones are untested.
+degraded	ram_gib	10	Memory: tested on a 12 GB phone (11.0 GiB totalMem); smaller phones are untested
+
+# Shader library capabilities (dm/tools/library_caps.py on v458752 Android library, 4511 modules: 50 cs, 2162 ps, 2299 vs):
+required	feature.shaderDrawParameters	1	Shader draw parameters: 2299 shader module(s) use them
+degraded	feature.shaderStorageImageWriteWithoutFormat	1	Storage image writes without a format: 27 shader module(s) use them

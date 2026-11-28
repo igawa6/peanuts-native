@@ -7,7 +7,7 @@
 # the alpha test constant and the integer-output / dual-source modules of pixel shaders, the viewport mask of emulated passthrough kept in the shader,
 # reflection from the SPIR-V, every module checked by spirv-val --target-env vulkan1.3, and one library file the replay (dm/gfx/vk_android) maps.
 # This tool is not one of DMSH_CHAIN's files: the Apple libraries do not change with it. Its own version DMSH_VK_CHAIN (dm/gfx/nvn/dmsh_chain_vk.h) covers this file,
-# vk_android_spv.py, dmsh_abi_vk.h and DMSH_CHAIN itself: it is their hash (the tools digest), or, when vk_android_same.tsv has a row for that digest, the earlier version
+# vk_android_spv.py, dmsh_abi_vk.h and DMSH_CHAIN itself (PEANUTS: and the native post-passes, vk_android_spvn.py and vk_android_spv_native/spvn.c): it is their hash (the tools digest), or, when vk_android_same.tsv has a row for that digest, the earlier version
 # whose libraries a full build with these tools reproduced byte for byte (a change that cannot change the output, such as the result cache below, then keeps every library
 # already made valid). A row is added only after that comparison (android/SHADERS.md#versions); a change of output gets no row and moves the version.
 # Usage: vk_android_build.py --target vulkan <Switch package dir> <output cache dir> [key...]   (no keys = all; output in <output cache dir>/v-<DMSH_VK_CHAIN>/)
@@ -41,13 +41,15 @@ from typing import Any   # PEANUTS(upstream-candidate): borrowed functions join 
 HERE = os.path.dirname(os.path.abspath(__file__)); GFX = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import dmsh_chain, dmsh_abi as abi, dmsh_ampere, split_pool, tool_lock, vk_android_spv as spv, vk_android_delta as delta
+import vk_android_spvn as spvn   # PEANUTS: the post-passes in C (libdmsh_spvn), the same modules; vk_android_spv.py when the library is absent (finish)
 
 try: from compression import zstd   # Python 3.14; before it, pip install backports.zstd (shader_split.py needs it too)
 except ImportError:
     try: from backports import zstd   # pyright: ignore[reportMissingImports]
     except ImportError: zstd = None
 ABI_VK = os.path.join(GFX, 'nvn', 'dmsh_abi_vk.h'); HEADER_VK = os.path.join(GFX, 'nvn', 'dmsh_chain_vk.h')
-VK_FILES = ['tools/vk_android_build.py', 'tools/vk_android_spv.py', 'tools/vk_android_delta.py', 'nvn/dmsh_abi_vk.h']
+VK_FILES = ['tools/vk_android_build.py', 'tools/vk_android_spv.py', 'tools/vk_android_delta.py', 'nvn/dmsh_abi_vk.h',
+            'tools/vk_android_spvn.py', 'tools/vk_android_spv_native/spvn.c']   # PEANUTS: the native post-passes make the modules too
 SAME_TSV = os.path.join(HERE, 'vk_android_same.tsv')
 vk_values = delta.vk_values
 
@@ -81,7 +83,8 @@ def vk_version():
 
 def header_text(v, a):
     return ('// Generated file (dm/gfx/tools/vk_android_build.py --header): the Android Vulkan shader library version this source tree expects. It covers DMSH_CHAIN\n'
-            '// (the translator front half), vk_android_build.py, vk_android_spv.py, vk_android_delta.py and dmsh_abi_vk.h; the replay loads <library dir>/v-<V>/dmsh_vk.lib.\n'
+            '// (the translator front half), vk_android_build.py, vk_android_spv.py, vk_android_delta.py, dmsh_abi_vk.h and the native post-passes (vk_android_spvn.py,\n'
+            '// vk_android_spv_native/spvn.c); the replay loads <library dir>/v-<V>/dmsh_vk.lib.\n'   # PEANUTS: the native post-passes
             '// DMSH_VK_ABI: what the replay reads of a library (vk_android_delta.py abi_digest); a library of another version with this ABI is played while its update runs\n'
             f'#define DMSH_VK_CHAIN "{v}"\n'
             f'#define DMSH_VK_ABI "{a}"\n')
@@ -558,11 +561,13 @@ def place(stage, binds, m):
 
 
 def m_atomic(m, vid):   # an image texel pointer on this image: its atomics
+    if not hasattr(m, 'ins'): return m.image_atomic(vid)   # PEANUTS: the library's module (vk_android_spvn.Module)
     return any(x[0] & 0xffff == spv.OP_IMAGE_TEXEL_POINTER and x[3] == vid for x in m.ins) or \
         any(x[0] & 0xffff == spv.OP_IMAGE_TEXEL_POINTER and x[3] in {y[2] for y in m.ins if y[0] & 0xffff in (spv.OP_ACCESS_CHAIN, spv.OP_IN_BOUNDS_ACCESS_CHAIN) and y[3] == vid} for x in m.ins)
 
 
 def m_writes(m, vid):   # an OpImageWrite (99) of an image loaded from this variable, or an atomic on it
+    if not hasattr(m, 'ins'): return m.image_writes(vid)   # PEANUTS: the library's module (vk_android_spvn.Module)
     loads = {x[2] for x in m.ins if x[0] & 0xffff == spv.OP_LOAD and x[3] == vid}
     return any(x[0] & 0xffff == 99 and x[1] in loads for x in m.ins) or m_atomic(m, vid)
 
@@ -572,15 +577,16 @@ CAP_FLAGS = {'Float64': None, 'GeometryShaderPassthroughNV': 'F_NV_PASSTHROUGH',
 
 
 def facts_of(key, stage, m, job, res):
+    S = spv_of(m)   # PEANUTS
     caps = sorted(spv.CAPS.get(c, str(c)) for c in set(m.caps))
     f = 0
     if job.get('early_fragment_tests'): f |= VK['F_EARLY_Z']
     if any('FP64 lowered' in n for n in res['notes']): f |= VK['F_SOFTFLOAT64']
-    if spv.subgroup_used(m): f |= VK['F_SUBGROUP']
+    if S.subgroup_used(m): f |= VK['F_SUBGROUP']   # PEANUTS: S
     if job.get('tf'): f |= VK['F_TF']
     for c in caps:
         if CAP_FLAGS.get(c): f |= VK[CAP_FLAGS[c]]
-    fn = spv.functions_named(m)
+    fn = S.functions_named(m)   # PEANUTS: S
     if 'dmsh_hmma16816_f16' in fn: f |= VK['F_HMMA']
     if job.get('no_facts'): f |= VK['F_NO_FACTS']
     vin = {loc: t for loc, (_, t) in m.io(spv.SC_INPUT).items()} if stage == 'vs' else {}
@@ -588,7 +594,7 @@ def facts_of(key, stage, m, job, res):
     def ty(t):
         it = m.int_type(m.scalar_of(t))
         return VK['TYPE_FLOAT'] if not it else VK['TYPE_SINT'] if it[1] else VK['TYPE_UINT']
-    iout = spv.int_outputs(m) if stage == 'ps' else set()
+    iout = S.int_outputs(m) if stage == 'ps' else set()   # PEANUTS: S
     if iout - {l for l, t in fout.items() if ty(t) != VK['TYPE_FLOAT']}: f |= VK['F_INT_OUT']
     return {'flags': f, 'caps': caps, 'exts': sorted(set(m.exts)), 'vin': {l: ty(t) for l, t in vin.items()}, 'fout': {l: ty(t) for l, t in fout.items()},
             'hmma_fns': sorted(n for n in fn if 'mma' in n.lower())}
@@ -599,7 +605,7 @@ def drv_reads(binds, m):
     out = {}
     for e in binds:
         if e['kind'] == abi.KIND_DRVCB:
-            rows, dyn = spv.block_rows(m, e['id'])
+            rows, dyn = spv_of(m).block_rows(m, e['id'])   # PEANUTS: spv_of
             out[str(e['reg'])] = {'offsets': rows, 'dynamic': dyn}
     return out
 
@@ -645,6 +651,7 @@ def tess_mode_read(key, rec):
 
 def tess_modes_set(m, modes):
     """→ how many execution modes of the domain module were changed to the control section's (Triangles/Quads/Isolines, the spacing, the vertex order)"""
+    if not hasattr(m, 'ins'): return m.tess_modes_set(modes)   # PEANUTS: the library's module (vk_android_spvn.Module)
     groups = ({22, 24, 25}, {1, 2, 3}, {4, 5}); n = 0
     for x in m.ins:
         if x[0] & 0xffff == 16 and m.entry and x[1] == m.entry[2] and len(x) == 3:   # OpExecutionMode <entry> <mode> (no literals)
@@ -655,53 +662,78 @@ def tess_modes_set(m, modes):
 # PEANUTS(upstream-candidate) end
 
 
-def finish(key, w, job, c1):
+# PEANUTS begin: the post-passes in C. finish runs the steps below with the library's module (vk_android_spvn.py, every pass in libdmsh_spvn, the module parsed once and
+# written once a variant); a step the library does not make (Fallback: the HMMA lowering, the raw global memory helpers' rewrites, the viewport mask, a sample offset,
+# per-primitive inputs, any shape the Python raises on) makes the shader again with vk_android_spv.py from its translated module. Both write the same bytes
+# (android/SHADERS.md, Native post-passes; DMSH_VK_SPVN=0 runs the Python alone)
+NATIVE = collections.Counter()   # this interpreter's shaders by the passes that made them: native, python (a Fallback, by its reason in fallback:<step>)
+
+
+def spv_of(m): return spvn if isinstance(m, spvn.Module) else spv
+
+
+def finish(key, w, job, c1):   # PEANUTS: the library's passes, else (or on Fallback) the Python's
+    t0 = time.perf_counter()
+    try:
+        data = open(os.path.join(w, key + '.spv'), 'rb').read()
+        if spvn.available:
+            try:
+                r = finish_with(spvn, key, w, job, c1, data); NATIVE['native'] += 1
+                return r
+            except spvn.Fallback as e: NATIVE['python'] += 1; NATIVE['fallback:' + str(e).split(':')[0]] += 1
+        return finish_with(spv, key, w, job, c1, data)
+    finally: NATIVE['ms'] += round(1000 * (time.perf_counter() - t0))
+
+
+def finish_with(S, key, w, job, c1, data):
+    """finish with the passes of S (vk_android_spv or vk_android_spvn) on the translated module data"""
     stage = job['stage']; sp = os.path.join(w, key + '.spv')
     res = json.load(open(os.path.join(w, key + '.res.json')))
-    m = spv.Module(open(sp, 'rb').read())
+    m = S.Module(data)
+# PEANUTS end
     if stage == 'ds' and key in TESS_MODES: tess_modes_set(m, TESS_MODES[key])   # PEANUTS(upstream-candidate): the domain's own mode (above)
     if stage == 'vs':   # inputs used only as integer bits: translated again with uint inputs (dmsh_build.py int_inputs), as the vertex input format's class must match
-        extra = {l: t for l, t in spv.integer_only_inputs(m).items() if l not in job['attr']}
+        extra = {l: t for l, t in S.integer_only_inputs(m).items() if l not in job['attr']}   # PEANUTS: S (vk_android_spv or vk_android_spvn, here and below)
         if extra:
             job = dict(job, attr={**job['attr'], **extra})
             rx = translate([job], w, 'int_' + key)
             if rx.returncode or not os.path.exists(sp): return 'translation failed', ('integer-input retranslation: ' + rx.stderr.strip())[:160], None
-            res = json.load(open(os.path.join(w, key + '.res.json'))); m = spv.Module(open(sp, 'rb').read())
-    vcull = stage == 'gs' and spv.private_viewport_mask(m)   # before strip_unused_caps: the capability goes with the output
-    dropped = spv.strip_unused_caps(m)
-    added = spv.formatless_storage_caps(m)
-    added += spv.extended_format_caps(m)   # PEANUTS: the capability of an image format outside the base set (vk_android_spv.py)
-    spv.workgroup_plain_arrays(m)   # PEANUTS: no ArrayStride on a workgroup variable's type (vk_android_spv.py)
-    n_precise = spv.precise_minmax(m)
-    spv.txq_extra_components(m)   # a size query's component past the image's dimensions (vk_android_spv.py txq_extra_components)
-    hmma = stage == 'cs' and spv.hmma_lds(m)   # the HMMA helper's calls lowered at their sites, gathers shared (vk_android_spv.py hmma_lds)
-    if not hmma: spv.promote_locals(m)   # simplify GlobalToStorage helpers (binary search, CAS, branchless inPool) and promote single-store locals
-    if not hmma: spv.loop_pool_search(m)   # the raw helpers' pool table search one loop of one step (vk_android_spv.py loop_pool_search)
-    spv.buffer_textures_split(m)   # a buffer texture's combined image and sampler of Dim Buffer → a texel buffer (vk_android_spv.py)
-    spv.nonuniform_arrays(m)   # PEANUTS: a descriptor array read at a computed index marked NonUniform (vk_android_spv.py nonuniform_arrays)
+            res = json.load(open(os.path.join(w, key + '.res.json'))); m = S.Module(open(sp, 'rb').read())
+    vcull = stage == 'gs' and S.private_viewport_mask(m)   # before strip_unused_caps: the capability goes with the output
+    dropped = S.strip_unused_caps(m)
+    added = S.formatless_storage_caps(m)
+    added += S.extended_format_caps(m)   # PEANUTS: the capability of an image format outside the base set (vk_android_spv.py)
+    S.workgroup_plain_arrays(m)   # PEANUTS: no ArrayStride on a workgroup variable's type (vk_android_spv.py)
+    n_precise = S.precise_minmax(m)
+    S.txq_extra_components(m)   # a size query's component past the image's dimensions (vk_android_spv.py txq_extra_components)
+    hmma = stage == 'cs' and S.hmma_lds(m)   # the HMMA helper's calls lowered at their sites, gathers shared (vk_android_spv.py hmma_lds)
+    if not hmma: S.promote_locals(m)   # simplify GlobalToStorage helpers (binary search, CAS, branchless inPool) and promote single-store locals
+    if not hmma: S.loop_pool_search(m)   # the raw helpers' pool table search one loop of one step (vk_android_spv.py loop_pool_search)
+    S.buffer_textures_split(m)   # a buffer texture's combined image and sampler of Dim Buffer → a texel buffer (vk_android_spv.py)
+    S.nonuniform_arrays(m)   # PEANUTS: a descriptor array read at a computed index marked NonUniform (vk_android_spv.py nonuniform_arrays)
     binds = [classify(stage, r, res, m) for r in m.resources()]
     storage_slots(stage, binds, res)
     try: place(stage, binds, m)
     except ValueError as e: return 'reflection failed', str(e)[:160], None
-    if not hmma: spv.cache_raw_loads(m, {e['id'] for e in binds if e['kind'] == abi.KIND_GMEM_MAP})   # the raw load helpers' runs read at once from the pool entry kept last (vk_android_spv.py cache_raw_loads)
+    if not hmma: S.cache_raw_loads(m, {e['id'] for e in binds if e['kind'] == abi.KIND_GMEM_MAP})   # the raw load helpers' runs read at once from the pool entry kept last (vk_android_spv.py cache_raw_loads)   # PEANUTS: S
     pad = []
     if stage == 'vs':
         want_in = set().union(*[PS_INPUTS.get(p, set()) for p in PAIRS.get(key, ())]) if PAIRS.get(key) else set()
-        pad = spv.init_outputs(m, want_in)
+        pad = S.init_outputs(m, want_in)   # PEANUTS: S
     elif stage == 'ps': PS_INPUTS[key] = set(m.io(spv.SC_INPUT))
-    prim = spv.per_primitive_inputs(m, MESH_PRIM[key]) if stage == 'ps' and key in MESH_PRIM else []
-    gl = stage in ('vs', 'ds', 'gs') and spv.gl_depth(m, VK['SPEC_GL_DEPTH'])
+    prim = S.per_primitive_inputs(m, MESH_PRIM[key]) if stage == 'ps' and key in MESH_PRIM else []   # PEANUTS: S
+    gl = stage in ('vs', 'ds', 'gs') and S.gl_depth(m, VK['SPEC_GL_DEPTH'])
     if stage == 'ms':   # the translator adds the constant itself (job gl_depth_spec: a mesh program may not read its outputs back)
-        gl = any(d.get(spv.DEC_SPEC_ID) == [VK['SPEC_GL_DEPTH']] for d in m.decos.values())
-    alpha = stage == 'ps' and spv.alpha_test(m, VK['SPEC_ALPHA_FUNC'])
+        gl = S.has_spec_id(m, VK['SPEC_GL_DEPTH'])   # PEANUTS: S (vk_android_spv.py has_spec_id)
+    alpha = stage == 'ps' and S.alpha_test(m, VK['SPEC_ALPHA_FUNC'])
     mods = [(VK['MOD_BASE'], m.data())]
     uint_mask = 0
     if stage == 'ps':   # the variants of the same module (dmsh_abi_vk.h DMSH_VK_MOD_*)
         mods_, uint_mask = ps_variants(key, m)
         mods += mods_
     if stage == 'cs':   # its subgroup shuffles through workgroup memory, for drivers without an arbitrary-index shuffle instruction (vk_android_spv.py shuffle_lds)
-        x = spv.Module(m.data())
-        if spv.shuffle_lds(x, VK['SHARED_MAX']): mods.append((VK['MOD_SHUFFLE_LDS'], x.data()))
+        x = S.Module(m.data())   # PEANUTS: S
+        if S.shuffle_lds(x, VK['SHARED_MAX']): mods.append((VK['MOD_SHUFFLE_LDS'], x.data()))
     for variant, data in mods:
         err = validate(data, w, f'{key}_{variant}')
         if err: return 'spirv-val failed', err, None
@@ -730,18 +762,19 @@ def ps_variants(key, m):
     """A pixel shader's extra modules (dmsh_build.py fs_uint / fs_dual on SPIR-V): MOD_UINT when it writes an output from integer bits or only constants (a clear into an
     integer target), MOD_UINT_MIXED when it also writes float outputs (uint_mask: the integer ones), MOD_DUAL for the profile's dual_want.tsv shaders writing exactly
     colours 0 and 1. → ([(variant, SPIR-V)], uint_mask)"""
+    S = spv_of(m)   # PEANUTS
     out, mask = [], 0
     fl = {l for l, (_, t) in m.io(spv.SC_OUTPUT).items() if not m.int_type(m.scalar_of(t))}
-    from_int = spv.int_outputs(m) & fl
-    if from_int or spv.const_written_outputs(m):
-        u = spv.Module(m.data())
-        if spv.retype_outputs(u, fl): out.append((VK['MOD_UINT'], u.data()))
+    from_int = S.int_outputs(m) & fl   # PEANUTS: S (and below)
+    if from_int or S.const_written_outputs(m):
+        u = S.Module(m.data())
+        if S.retype_outputs(u, fl): out.append((VK['MOD_UINT'], u.data()))
         if from_int and fl - from_int:
-            u = spv.Module(m.data()); done = spv.retype_outputs(u, from_int)
+            u = S.Module(m.data()); done = S.retype_outputs(u, from_int)   # PEANUTS: S
             if done: out.append((VK['MOD_UINT_MIXED'], u.data())); mask = sum(1 << l for l in done if l < 8)
     if key in DUAL_WANT:
-        d = spv.Module(m.data())
-        if spv.dual_source(d): out.append((VK['MOD_DUAL'], d.data()))
+        d = S.Module(m.data())   # PEANUTS: S
+        if S.dual_source(d): out.append((VK['MOD_DUAL'], d.data()))
     return out, mask
 
 
@@ -1555,4 +1588,7 @@ hm = collections.Counter(n for x in okr for n in x['hmma_fns'])
 if hm: print('matrix helpers (cooperative matrix candidates): ' + ', '.join(f'{n} in {c} shaders' for n, c in hm.items()))
 if hm: print(f"HMMA helper calls lowered at their sites (hmma_lds): {sum(x.get('hmma_lds') or 0 for x in okr)} in {sum(1 for x in okr if x.get('hmma_lds'))} shaders")
 print(f"compute modules with their shuffles through workgroup memory (MOD_SHUFFLE_LDS): {sum(1 for x in okr if VK['MOD_SHUFFLE_LDS'] in x['variants'])}")
+# PEANUTS: which passes made the shaders this process finished (worker interpreters count their own)
+print('post-passes: ' + (f"native (libdmsh_spvn) {NATIVE['native']}, redone in Python {NATIVE['python']}" + ''.join(f'; {k[9:]} {n}' for k, n in sorted(NATIVE.items()) if k.startswith('fallback:'))
+                         if spvn.available else f'Python ({spvn.WHY})') + f"; finish {NATIVE['ms'] / 1000:.1f} s of thread time")
 print(f'library: game {GAME.id}, inputs {INPUTS}, chain {CHAIN}, vk chain {VKV}' + (f' (tools {TOOLS}, vk_android_same.tsv)' if TOOLS != VKV else ''))

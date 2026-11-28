@@ -18,6 +18,7 @@ set(NXIMPORT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_lz4.c
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_nca.c
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_ncz.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/nx_verify.c
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_icon.c
     ${CMAKE_CURRENT_SOURCE_DIR}/nx_zip.c
     ${CMAKE_CURRENT_SOURCE_DIR}/nximport.c
@@ -80,6 +81,13 @@ else()
     target_link_libraries(ncz_test PRIVATE Threads::Threads ZLIB::ZLIB ${CMAKE_DL_LIBS})
     target_compile_options(ncz_test PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation)
     add_test(NAME ncz_test COMMAND ncz_test)
+    # A plain NCA checked against its own hash layers (nx_verify.c, GitHub issue #561): the fixture's dumps with IVFC and PFS0 hash layers import, every block
+    # of the patched RomFS is checked, and damaged copies (cut short, a byte flipped in the base, the update, a hash level, an fs header) are refused; no game data
+    add_executable(verify_test ${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_test.c ${NXIMPORT_SOURCES})
+    target_include_directories(verify_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(verify_test PRIVATE Threads::Threads ZLIB::ZLIB ${CMAKE_DL_LIBS})
+    target_compile_options(verify_test PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-misleading-indentation)
+    add_test(NAME verify_test COMMAND verify_test)
     # A game card's XCI with update, normal, secure and logo partitions (GitHub issue #280): the game is taken from secure only; no game data
     add_executable(xci_test ${CMAKE_CURRENT_SOURCE_DIR}/tests/xci_test.c ${NXIMPORT_SOURCES})
     target_include_directories(xci_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

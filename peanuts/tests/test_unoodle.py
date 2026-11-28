@@ -39,7 +39,7 @@ class Unoodle(unittest.TestCase):
     def tearDownClass(cls):
         cls.dir.cleanup()
 
-    def send(self, data):
+    def send(self, data, env=None):
         """The worker with data on its input, started as uepak.OodleHost starts it (two arguments, which it ignores) → (exit code, output, messages)"""
         p = subprocess.run([self.exe, 'host', '-'], input=data, capture_output=True, env=dict(os.environ, DM_OODLE_SERVE='1'))
         return p.returncode, p.stdout, p.stderr.decode(errors='replace')
@@ -100,6 +100,57 @@ class Unoodle(unittest.TestCase):
             p = subprocess.run([self.exe], input=struct.pack('<QQ', 12, 10) + stored(b'0123456789'), capture_output=True, env=dict(os.environ, UNOODLE_STATS=f))
             self.assertEqual(p.returncode, 0)
             self.assertIn('streams=1 | type=6(kraken) ok=1 failed=0 in=12 out=10', Path(f).read_text())
+
+    def test_source_digest(self):
+        """The program carries the SHA-256 of its sources in build.sh's order (build.gradle checks the phone's library by it)"""
+        import hashlib, re
+        order = re.search(r'^SOURCES="([^"]+)"', (OOZ / 'build.sh').read_text(), re.M).group(1).split()
+        sha = hashlib.sha256(b''.join((OOZ / f).read_bytes() for f in order)).hexdigest()
+        self.assertIn(b'unoodle_source=' + sha.encode(), Path(self.exe).read_bytes())
+
+
+class UnoodleLibrary(Unoodle):
+    """PEANUTS (issue #120): the same worker as the phone runs it, libunoodle.so (build.sh <output>.so) loaded by ctypes in a Python worker process
+    (dm/gfx/tools/ooz_split.py CODE; on the phone the process is nxpack_worker under the linker), every protocol and fail-closed test again"""
+    @classmethod
+    def setUpClass(cls):
+        if sys.platform == 'win32' or platform.machine().lower() not in ('x86_64', 'amd64', 'arm64', 'aarch64'): raise unittest.SkipTest('unoodle is built on x86-64 and arm64 Linux and macOS only')
+        if not cxx() or not shutil.which('patch') or not shutil.which('sh'): raise unittest.SkipTest('no C++ compiler or no patch program')
+        sys.path.insert(0, str(REPO / 'dm' / 'gfx' / 'tools'))
+        import ooz_split
+        cls.code = ooz_split.CODE
+        cls.dir = tempfile.TemporaryDirectory()
+        cls.exe = os.path.join(cls.dir.name, 'libunoodle.so')
+        r = subprocess.run(['sh', str(OOZ / 'build.sh'), cls.exe, cxx()], capture_output=True, text=True)
+        if r.returncode: cls.dir.cleanup(); raise AssertionError(f'build.sh failed ({r.returncode}): {r.stdout}{r.stderr}')
+
+    def send(self, data, env=None):
+        p = subprocess.run([sys.executable, '-I', '-c', self.code, self.exe], input=data, capture_output=True, env=dict(env or os.environ, DM_OODLE_SERVE='1'))
+        return p.returncode, p.stdout, p.stderr.decode(errors='replace')
+
+    def test_stats(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, 'stats.txt')
+            rc, _, err = self.send(struct.pack('<QQ', 12, 10) + stored(b'0123456789'), dict(os.environ, UNOODLE_STATS=f))
+            self.assertEqual(rc, 0, err)
+            self.assertIn('streams=1 | type=6(kraken) ok=1 failed=0 in=12 out=10', Path(f).read_text())
+
+    def test_the_split_starts_it(self):
+        """shader_split.py's oodle_ask with DM_OODLE_OOZ_LIB and DM_UE_HOST, as PackService sets them: Kraken, Mermaid and Leviathan block headers"""
+        keep = {k: os.environ.get(k) for k in ('DM_OODLE_OOZ', 'DM_OODLE_OOZ_LIB', 'DM_UE_HOST', 'DM_GAME', 'DM_SPLIT_DECODER_OFF')}
+        try:
+            os.environ.pop('DM_OODLE_OOZ', None); os.environ.pop('DM_SPLIT_DECODER_OFF', None)
+            os.environ.update(DM_OODLE_OOZ_LIB=self.exe, DM_UE_HOST=sys.executable, DM_GAME='01005270232F2000')
+            sys.path.insert(0, str(REPO / 'dm' / 'tools'))
+            import shader_split
+            body = bytes(range(256)) * 5
+            for kind in (6, 10, 12): self.assertEqual(shader_split.oodle_ask(stored(body, kind), len(body)), (body, False))
+            self.assertEqual(shader_split._OODLE[0].args[-1], self.exe)
+            shader_split.oodle_close()
+        finally:
+            for k, v in keep.items():
+                if v is None: os.environ.pop(k, None)
+                else: os.environ[k] = v
 
 
 # Each intrinsic of ooz_neon.h against SSE2's definition written out byte by byte, on random registers (the arm64 build's decoder runs on them; the stream tests

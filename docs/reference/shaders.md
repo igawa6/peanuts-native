@@ -264,6 +264,14 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Note:** `CustomShaderPackage.mfx` (`MFX\0`, the effect descriptions) holds no shader code, and neither `main` nor any other ARC entry does.
 - **Found on:** [The Great Ace Attorney Chronicles](../../dm/games/010036E00FB20000/README.md) (Capcom's MT Framework): all 460 build, with Mario's binding layout; every binding decodes.
 
+<!-- PEANUTS(upstream-candidate): ARC v7 entry widths -->
+### ARC v7 archives with short paths
+
+- **Symptom:** Shader extraction fails on ARC v7 archives with 64-byte path fields.
+- **Cause:** The reader assumed the 128-byte path field and read the length and offset fields at the wrong positions.
+- **Fix:** A 0x90 table that is consistent (printable paths, entries in order and inside the file), or that decodes the way the reader always read it, stays 0x90, so The Great Ace Attorney Chronicles reads as before; only an archive the 0x90 reading cannot decode is read as 0x50, and only if that table is consistent. SPK records are yielded one at a time.
+- **Found on:** Resident Evil 6 2.0.0 (v131072).
+
 ### PKZ version 1 archives
 
 - **Symptom:** `[RED] ... PKZ version 0x10000: only 0x20000 is known` stops the shader split.

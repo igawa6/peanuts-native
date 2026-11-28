@@ -560,6 +560,59 @@ public final class PackService extends Service {
      * so no other game's split can resume from them before a job of that game starts again (after Forget, or a job whose folder went: a few hundred MB).
      * Decided from the job that runs, read from its job.json, never from the remembered path: shared storage that is briefly unreadable deletes nothing.
      */
+    // PEANUTS begin: the rewrite beside the split and the shaders (RewriteBeside, issue #120)
+    /** The pid file of a job's rewrite beside, in its ondevice folder */
+    private static File besidePid(Job j) { return new File(j.dir(), "rewrite-beside.pid"); }
+
+    /** Job.next(), but while the rewrite runs beside: the next step after it that is to do, the pack excepted (it needs the rewritten modules); none: the rewrite (joinBeside) */
+    private int nextStep(Job j) {
+        int i = j.next();
+        if (beside == null || i < 0 || !Job.STEPS[i].equals("rewrite")) return i;
+        for (int k = i + 1; k < Job.STEPS.length; k++) if (!Job.STEPS[k].equals("pack") && !"done".equals(j.stepState(Job.STEPS[k]))) return k;
+        return i;
+    }
+
+    /** Waits for the rewrite beside: null when it ended well (the loop marks it done), its failure as step() gives one, or "interrupted" on a stop or pause */
+    private String joinBeside(Job j) throws IOException {
+        RewriteBeside b = beside;
+        stepLog(j, "rewrite: the split and the shaders are done, waiting for the rewrite beside them");
+        int code;
+        try {
+            code = b.waitFor(() -> stopReason != null || autoReason != null);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            code = -1;
+        }
+        if (code < 0) return "interrupted";   // still running: the loop waits for the policy, or breaks (stopBeside)
+        beside = null;
+        if (besideTail != null) besideTail.finish();
+        Tail tail = besideTail;
+        besideTail = null;
+        long end = b.ended > 0 ? b.ended : SystemClock.elapsedRealtime(), sec = (end - b.began) / 1000, waited = (SystemClock.elapsedRealtime() - end) / 1000;
+        stepLog(j, "rewrite: the tool ended with code " + code + " after " + sec / 60 + " min " + sec % 60 + " s, beside the split and the shaders" + (waited > 1 ? " (" + waited / 60 + " min " + waited % 60 + " s before they were done)" : ""));
+        try { Files.deleteIfExists(b.pidFile.toPath()); } catch (IOException ignored) { }
+        if (code == 0) return null;
+        String why = tail != null ? tail.reason() : null;
+        failure = PrepareText.toolStopped(Job.STEP_TEXT[1], code, why, b.log.getPath());
+        return "rewrite stopped with code " + code + (why != null ? ": " + why.replaceFirst("^\\[RED\\] ", "") : "") + " (log: " + b.log + ")";
+    }
+
+    /** Ends a rewrite beside that is still running (the job stopped, paused or failed first): it runs again at the next start */
+    private void stopBeside(Job j) {
+        RewriteBeside b = beside;
+        if (b == null) return;
+        beside = null;
+        b.stop();
+        if (besideTail != null) besideTail.finish();
+        besideTail = null;
+        if (!"done".equals(j.stepState("rewrite"))) {
+            j.stepState("rewrite", "pending");
+            try { save(j, true); } catch (Exception e) { Log.w(TAG, "save: " + e); }
+        }
+        stepLog(j, "rewrite: the rewrite beside was ended; it runs again at the next start");
+    }
+    // PEANUTS end
+
     private void dropOtherSplitScans(Job j) {
         String keep = j.titleId();
         if (keep.isEmpty()) return;
@@ -595,10 +648,13 @@ public final class PackService extends Service {
             dropMissing(j, "before it goes on");
             j.state("running", null, null);
             save(j, true);
+            RewriteBeside.stopLeftover(besidePid(j));   // PEANUTS: a rewrite an earlier packer process left running
             int i;
-            while ((i = j.next()) >= 0) {
+            while ((i = nextStep(j)) >= 0) {   // PEANUTS: nextStep (the rewrite beside)
                 if (!waitWhileAuto(j)) break;
                 String s = Job.STEPS[i];
+                boolean joining = beside != null && s.equals("rewrite");   // PEANUTS: the rewrite ran beside the split and the shaders: wait for it here, before the pack
+                if (!joining) {   // PEANUTS
                 j.stepState(s, "running");
                 int starts = j.start(s);
                 save(j, true);
@@ -610,8 +666,10 @@ public final class PackService extends Service {
                     save(j, true);
                     break;
                 }
+                }   // PEANUTS: !joining
                 failure = null;
-                String fail = step(j, i);
+                String fail = joining ? joinBeside(j) : step(j, i);   // PEANUTS: joinBeside
+                if (fail == BESIDE) { save(j, true); continue; }   // PEANUTS: the rewrite runs beside; the split goes on (nextStep)
                 j.ended(s);
                 if (stopReason != null) { j.stepState(s, "pending"); break; }
                 // interrupted by the policy (which may have cleared since): wait if it still holds, then run the step again
@@ -653,6 +711,7 @@ public final class PackService extends Service {
             j.fail(PrepareText.crashed(Job.STEP_TEXT[j.current()], String.valueOf(e)));
             save(j, true);
         } finally {
+            stopBeside(j);   // PEANUTS: a job that stopped, paused or failed before the pack does not leave the rewrite running
             if (caches != null) caches.close();   // PEANUTS
             if (wake.isHeld()) wake.release();
             Thread self = Thread.currentThread();   // PEANUTS: the post names the worker that ended (finished)
@@ -785,7 +844,7 @@ public final class PackService extends Service {
                 if (dir != null) dir.mkdirs();
                 Files.write(log.toPath(), new byte[0]);   // a new log for each upgrade; the tool appends to it
                 // the build's settings that make its bytes (the zstd level of a rewritten module: the result must be a full build's byte for byte) and its threads
-                PackEngine.setenv("DMSH_VK_ZSTD_LEVEL", "6");   // as the shaders step (step below)
+                PackEngine.setenv("DMSH_VK_ZSTD_LEVEL", "3");   // as the shaders step (step below)
                 PackEngine.setenv("J", String.valueOf(Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors()))));
                 PackEngine.setenv("XLATE", "libdmsh_xlate.so");
                 PackEngine.setenv("SPIRV_VAL", "libSPIRV-Tools-shared.so");
@@ -1104,6 +1163,14 @@ public final class PackService extends Service {
             int eq = kv.indexOf('='); PackEngine.setenv(kv.substring(0, eq), kv.substring(eq + 1));
         }
         PackEngine.setenv("DM_UE_MODULES", pack.getPath());
+        PackEngine.setenv("PN_REWRITE_BESIDE_DONE", beside != null ? RewriteBeside.doneFile(besidePid(j)).getPath() : "");   // PEANUTS: the split waits on it before the game's own decoder needs the rewritten modules (rewrite_wait.py, #120)
+        // PEANUTS begin: the split decodes Oodle streams with the open-source ooz decoder (libunoodle.so from dm/third_party/ooz, GPL-3.0-or-later, in a worker process of
+        // DM_UE_HOST's command, as the game's decoder is), which needs no rewritten modules, so it does not wait for the rewrite beside it. Its output counts only when the
+        // split's tables are the profile's; otherwise the split runs again with the game's own decoder, waiting for the rewrite as before (dm/gfx/tools/ooz_split.py, #120).
+        // Empty without the library in the APK or without the worker; env.txt DM_OODLE_OOZ_LIB= (empty) forces the game's own decoder
+        String ooz = pyLib == null ? null : ((dalvik.system.BaseDexClassLoader) getClassLoader()).findLibrary("unoodle");
+        PackEngine.setenv("DM_OODLE_OOZ_LIB", ooz == null ? "" : "libunoodle.so");
+        // PEANUTS end
         PackEngine.setenv("DM_SPLIT_DIRECT", "1");   // a targeted file whose map sources name their containers (#BNSH@ / #BAHS@ / #IDRK@ offsets) is read at those containers only, not whole // PEANUTS
         PackEngine.setenv("DM_PACKER_COMMIT", BuildConfig.NX_COMMIT);   // pack.tsv's packer: no repository on the phone to ask
         PackEngine.setenv("NX_PACK_WORK", od.getPath());
@@ -1132,7 +1199,7 @@ public final class PackService extends Service {
         PackEngine.setenv("SPIRV_VAL", "libSPIRV-Tools-shared.so");
         // a library without every shader is a failed step, never a finished one; with Try anyway (the player's choice, warned that parts may not show) it is written
         PackEngine.setenv("DMSH_VK_REQUIRE_ALL", j.tryAnyway() ? "0" : "1");
-        PackEngine.setenv("DMSH_VK_ZSTD_LEVEL", "6");   // PEANUTS: the library's modules at zstd 6, not 19: 23x faster for a library 19 % larger (vk_android_build.py ZSTD_LEVEL); level 19 was half of the shaders step
+        PackEngine.setenv("DMSH_VK_ZSTD_LEVEL", "3");   // PEANUTS: the library's modules at zstd 3 (level 19 was half of the shaders step; level 6 was still 24 % of the shader workers' CPU on an AYN Thor, 2026-11-28 profile: the phone's _zstd is far slower than a PC's); about 3x faster than 6 for a library about 5 % larger, the same SPIR-V (vk_android_build.py ZSTD_LEVEL)
         PackEngine.setenv("DMSH_VK_XLATE_J", String.valueOf(Math.min(mem.xlate, 4)));   // PEANUTS: BuildMemory (was 2, then Prepare's env.txt line 4)
         //       // two translator calls at once: more threads of one process add little on the phone (android/ONDEVICE.md, The translator on the phone); the env file below can change it
         // worker interpreters (sub-interpreters of this process, each with its own GIL: the Python half no longer runs on one core), one a big or mid core, at most 4
@@ -1152,6 +1219,20 @@ public final class PackService extends Service {
         if (s.equals("shaders") && !checking) { j.shadersMissing(0, 0); j.shadersFailed(0, 0); }   // the step's own count (Tail), not an earlier run's // PEANUTS: shadersFailed; !checking
         Tail tail = new Tail(j, checking ? "check" : s, log);   // PEANUTS: the check's progress goes to a step of its own, not the done shaders step's
         tail.start();
+        // PEANUTS begin: the rewrite beside the split and the shaders (RewriteBesidePlan); a start that fails runs it here as before
+        if (s.equals("rewrite") && RewriteBesidePlan.allowed(checking, engine.simulated(), pyLib, mem.workers, j.memLevel(), j.stepState("split"), j.stepState("shaders"),
+                PackEngine.ENV.get("PN_REWRITE_BESIDE"))) {
+            try {
+                beside = RewriteBeside.start(PackNative.repo(), tool, argv, log, besidePid(j));
+                besideTail = tail;
+                stepLog(j, "rewrite: beside the split and the shaders, in a process of its own (pid " + beside.pid + ")");
+                return BESIDE;
+            } catch (IOException e) {
+                beside = null;
+                stepLog(j, "rewrite: not beside (" + e.getMessage() + "): it runs first");
+            }
+        }
+        // PEANUTS end
         int code;
         unhold();   // PEANUTS: no hold left from a step or a process before (#803)
         inTool = true;
@@ -1192,6 +1273,11 @@ public final class PackService extends Service {
 
     /** The steps that finished in this run of the job (work()): a step whose outputs are already gone again is not run a third time */
     private final java.util.Set<String> ranNow = new java.util.HashSet<>();
+    // PEANUTS begin: the rewrite beside the split and the shaders (RewriteBeside, issue #120): the running process and its log's Tail, or null
+    private static final String BESIDE = new String("beside");   // step()'s answer for a rewrite that went to run beside (compared by identity)
+    private RewriteBeside beside;
+    private Tail besideTail;
+    // PEANUTS end
 
     /** Job.dropMissing with a line in the step's log for each step that runs again; → those steps */
     private List<String> dropMissing(Job j, String when) {

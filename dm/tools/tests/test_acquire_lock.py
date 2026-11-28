@@ -1,13 +1,15 @@
 """patch_nso.py's search for test-and-set lock acquires without acquire ordering (acquire_lock_sites), on hand-assembled words, without game files."""
 import ast
 from pathlib import Path
+import re   # PEANUTS(upstream-candidate): for LDXR_B (#120)
 import struct
 from typing import Any
 import unittest
 
 tree = ast.parse((Path(__file__).resolve().parents[1] / 'patch_nso.py').read_text())   # the program loads and rewrites an image: compile only the search
-ns: dict[str, Any] = {'struct': struct}
-exec(compile(ast.Module([n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'acquire_lock_sites'], []), 'patch_nso.py', 'exec'), ns)
+ns: dict[str, Any] = {'struct': struct, 're': re}   # PEANUTS(upstream-candidate): re and LDXR_B for the byte search
+exec(compile(ast.Module([n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'acquire_lock_sites'
+                         or isinstance(n, ast.Assign) and any(getattr(t, 'id', None) == 'LDXR_B' for t in n.targets)], []), 'patch_nso.py', 'exec'), ns)
 find = ns['acquire_lock_sites']
 
 def cbnz(rt, back, x=0): return 0x35000000 | x << 31 | (0x80000 - back) << 5 | rt

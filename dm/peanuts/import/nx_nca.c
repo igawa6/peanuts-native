@@ -432,10 +432,17 @@ static int bktr_read(NxNca *n, int s, uint64_t off, uint8_t *buf, size_t len) {
     return 0;
 }
 
-int nx_sec_read_raw(NxNca *n, int s, uint64_t off, void *buf, size_t len) {
+int nx_sec_read_unchecked(NxNca *n, int s, uint64_t off, void *buf, size_t len) {
     if (s < 0 || s > 3 || !n->sec[s].present) { nx_err("%s: no section %d", n->id, s); return -1; }
     if (n->sec[s].crypt_type == 4) return bktr_read(n, s, off, buf, len);
     return sec_read_plain(n, s, off, buf, len);
+}
+// The section's raw bytes, checked against its hash layers when the importer set that up (nx_sec_verify). A patch reads its base's bytes through the base's
+// own nx_sec_read_raw (bktr_read), so a damaged base is named as the base, not as the update that reads it
+int nx_sec_read_raw(NxNca *n, int s, uint64_t off, void *buf, size_t len) {
+    if (nx_sec_read_unchecked(n, s, off, buf, len)) return -1;
+    NxCheck *k = n->sec[s].check;
+    return k ? k->read(k, n, s, off, buf, len) : 0;
 }
 
 // ---------------------------------------------------------------- compression
@@ -708,7 +715,7 @@ int nx_nca_open_store(NxNca *n, const NxContainer *c, const NxEntry *e, NxStore 
     return 0;
 }
 
-void nx_nca_close(NxNca *n) { for (int i = 0; i < 4; i++) { if (n->sec[i].bktr) { free(n->sec[i].bktr->r); free(n->sec[i].bktr->s); free(n->sec[i].bktr); n->sec[i].bktr = NULL; } comp_free(n->sec[i].comp); n->sec[i].comp = NULL; if (n->sec[i].sparse) { free(n->sec[i].sparse->r); free(n->sec[i].sparse); n->sec[i].sparse = NULL; } } }
+void nx_nca_close(NxNca *n) { for (int i = 0; i < 4; i++) { if (n->sec[i].check) { n->sec[i].check->free(n->sec[i].check); n->sec[i].check = NULL; } if (n->sec[i].bktr) { free(n->sec[i].bktr->r); free(n->sec[i].bktr->s); free(n->sec[i].bktr); n->sec[i].bktr = NULL; } comp_free(n->sec[i].comp); n->sec[i].comp = NULL; if (n->sec[i].sparse) { free(n->sec[i].sparse->r); free(n->sec[i].sparse); n->sec[i].sparse = NULL; } } }
 
 // PEANUTS: a sparse section with no entries holds no data (Castlevania: Belmont's Curse's base: its ExeFS is in the update only) and counts as absent
 int nx_nca_find_section(const NxNca *n, int fs_type) { for (int i = 0; i < 4; i++) if (n->sec[i].present && n->sec[i].fs_type == fs_type && !(n->sec[i].sparse && !n->sec[i].sparse->nr)) return i; return -1; }

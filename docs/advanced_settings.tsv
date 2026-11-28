@@ -11,6 +11,8 @@ DMSH_VK_PROGRESS	developer	Diagnostics			text			both
 DMSH_VK_RAW	developer	Diagnostics			text			both						
 DMSH_VK_REQUIRE_ALL	developer	Packing			text			both						
 DMSH_VK_RESULTS	developer	Diagnostics			text			both						
+DMSH_VK_SPVN	developer	Packing			text			both						
+DMSH_VK_SPVN_CACHE	internal	Packing			text			both						PC-only compile cache of the post-pass library [PEANUTS]
 DMSH_VK_WORKER	developer	Diagnostics			text			both						
 DMSH_VK_WORKERS	developer	Packing			text			both						
 DMSH_VK_XLATE_J	developer	Packing			text			both						
@@ -50,6 +52,9 @@ DM_COOP_INTERNET	developer	Game			text			both
 DM_COOP_ROOM	developer	Game			text			both						
 DM_COPY_GAME_RESOURCES	developer	Game			text			both						
 DM_COPY_ROMFS	developer	Packing			text			both						
+DM_CORE_LOCK	developer	Performance			text			both						
+DM_CORE_LOCK_SECS	developer	Performance			text			both						
+DM_CORE_SLICE_US	developer	Performance			text			both						
 DM_CRA_LIB	developer	Diagnostics			text			both						
 DM_CTL	internal	Diagnostics			text			both						Mac or iOS only
 DM_DAV1D_FRAME_DELAY	developer	Diagnostics			text			both						
@@ -254,6 +259,7 @@ DM_NVN_TBDR	developer	Graphics			text			both
 DM_NVN_TEXCPU	developer	Diagnostics			text			both						
 DM_NVN_TEXDUMP	developer	Diagnostics			text			both						
 DM_NVN_TEXINFO	developer	Diagnostics			text			both						
+DM_NVN_TEXPOOL_RANGE	developer	Memory			text			both						
 DM_NVN_TEXRAW	developer	Diagnostics			text			both						
 DM_NVN_TEXSNAP	developer	Diagnostics			text			both						
 DM_NVN_TREG_ID	developer	Diagnostics			text			both						
@@ -288,6 +294,8 @@ DM_OODLE_HOST	internal	Diagnostics			text			both						Mac or iOS only
 DM_OODLE_JOB	developer	Diagnostics			text			both						
 DM_OODLE_MODULES	internal	Diagnostics			text			both						Mac or iOS only
 DM_OODLE_OOZ	internal	Diagnostics			text			both						Mac or iOS only
+DM_OODLE_OOZ_LIB	developer	Diagnostics			text			both						
+DM_OODLE_OOZ_USED	internal	Diagnostics			text			both						set by the shader split for its own workers
 DM_OODLE_SERVE	developer	Game			text			both						
 DM_OOT_FPS_UNLOCK	developer	Performance			text			both						
 DM_OOT_MAX_RESOLUTION	developer	Game			text			both						
@@ -375,6 +383,8 @@ DM_RES_CHECK	developer	Diagnostics			text			both
 DM_RES_SCALE	developer	Game			text			both						
 DM_RES_SCALE_POT	developer	Diagnostics			text			both						
 DM_REWRITE_J	developer	Game			text			both						
+DM_REWRITE_NATIVE	developer	Game			text			both						
+DM_REWRITE_NATIVE_CACHE	internal	Game			text			both						PC-only compile cache of the rewriter library [PEANUTS]
 DM_ROMFS	internal	Diagnostics			text			both						Mac or iOS only
 DM_ROMFS_OVERLAY	developer	Diagnostics			text			both						
 DM_ROMFS_PROGRAM_<n>	internal	Diagnostics			text			both						numbered family
@@ -403,6 +413,8 @@ DM_SLOWFRAME	developer	Diagnostics			text			both
 DM_SPIN	developer	Performance			text			both						
 DM_SPIN_LIST	developer	Diagnostics			text			both						
 DM_SPIN_POLL	developer	Performance			text			both						
+DM_SPLIT_DECODER	internal	Diagnostics			text			both						set by the shader split for its own workers
+DM_SPLIT_DECODER_OFF	internal	Diagnostics			text			both						set by the shader split for its own rerun
 DM_SPLIT_DIFF_DIR	developer	Diagnostics			text			both						
 DM_SPLIT_DIRECT	developer	Packing			text			both						
 DM_SPLIT_FILES	developer	Diagnostics			text			both						
@@ -693,6 +705,7 @@ DM_VK_PSO_PREP_THREADS	developer	Performance			text			both
 DM_VK_PSO_SLOTS	developer	Performance			text		1 with Turnip, 4 with other drivers	both						
 DM_VK_PUSH_DEDUP	developer	Graphics			text			both						
 DM_VK_PUSH_DELTA	developer	Diagnostics			text		1 on Turnip and Qualcomm, 0 on other drivers	both						
+DM_VK_PUSH_DESC	developer	Diagnostics			text		Per profile: 0 (off) with Qualcomm's driver before 512.800 when the game profile asks for it, 1 (on) otherwise	both						
 DM_VK_QS_TRACE	developer	Diagnostics			text			both						
 DM_VK_QUAD_SHFL	developer	Graphics			text		1 with Turnip, 0 with other drivers	both						
 DM_VK_RANGE_WATCH	developer	Diagnostics			text			both						

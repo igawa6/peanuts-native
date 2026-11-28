@@ -67,6 +67,10 @@ General host changes first needed here; each applies to every game:
 - **Function-matched patches of several functions, and the pack-time report of what an unregistered build kept** (`nso_match.py` `match_patch`, `<module>.match.tsv`, `report_fix_coverage`): [Function-matched cuts for unregistered builds](../../../docs/reference/rewriter.md#function-matched-cuts-for-unregistered-builds).
 - **The address region table and the NSP script's region check** (`patch_nso.py` "Address regions", `hle_svc.c`, `DM_REGIONS`): its engine region, 4 GB through `nn::os::AllocateAddressRegion`, returning to `main+0x37c9a64` (its constructor's call), opened up to 14 MB below its end: [Measuring address regions and commits](../../../docs/reference/memory.md#measuring-address-regions-and-commits).
 
+## Android
+
+On the release list from 0.1.10 (`peanuts/release-titles.txt`, so in the default APK), with no readiness row. <!-- PEANUTS: on the 0.1.10 release list -->
+
 ## Open
 
 - Android (AYN Thor, Adreno 740, a Turnip build: PurpleVK, Mesa 26.3.0-devel, git `62ac221a33`): the first launch ran about 227 s through the first launch's DLC unlocks and Challenges board (21 save commits), then crashed reading NULL + 0x50 at `main+0x385201c` (lr `main+0x3852038`; bt `main+0x3851b1c` `main+0x384fdc0` `main+0x38168cc` `main+0x35a4418`). The next launch played about 80 s at 60 fps with no red line. Not reproduced and not investigated: the cause is open. The system driver is not tried yet. <!-- PEANUTS -->

@@ -7,6 +7,9 @@
 # Usage: build.sh <work dir> [all|python|tools|zbic]   (default all; zbic adds only libzbicdec.so and libcra.so to an existing stage; downloads and intermediate files go into the work dir: put it on the dump drive, not in the home folder)
 # → <work dir>/stage/
 #     lib/libpython3.14.so, libnxpack.so, libzbicdec.so, libcra.so, libdmsh_xlate.so, libSPIRV-Tools-shared.so   the app's jniLibs (arm64-v8a)
+#     lib/libdmsh_spvn.so                      PEANUTS: the shader build's SPIR-V post-passes in C (dm/gfx/tools/vk_android_spv_native; made by zbic, as libcra.so)
+#     lib/libdmsh_rwspin.so                    PEANUTS: the rewriter's spin wait search in C (dm/tools/rwspin_native; made by zbic, as libcra.so)
+#     lib/libunoodle.so                        PEANUTS: the split's Oodle decoder, ooz (dm/third_party/ooz, GPL-3.0-or-later; made by zbic, as libcra.so)
 #     python/lib/python3.14/                   the Python home: the standard library with lib-dynload/, site-packages/capstone (+ lib/libcapstone.so), site-packages/lz4
 #     bin/dm_pack_cli                          the adb shell test runner (dm_pack_cli.c)
 # The sources are pinned by version and SHA-256 (below; SPIRV-Tools by its Vulkan SDK tag); a mismatch stops the build. "python" makes the stage afresh, so run
@@ -77,6 +80,25 @@ if [[ $WHAT == all || $WHAT == python || $WHAT == zbic ]]; then
   $=CC -shared -fPIC -O2 -Wall -Werror -ffile-prefix-map=$HERE/../..=. -Wl,-soname,libcra.so -Wl,-z,max-page-size=16384 -o $S/lib/libcra.so $HERE/../../dm/gfx/tools/cra_unscramble.c
   $BIN/llvm-strip --strip-debug $S/lib/libcra.so
   if grep -qaF "$HOME" $S/lib/libcra.so; then echo "[RED] $S/lib/libcra.so names this machine's home folder"; exit 1; fi
+  # PEANUTS begin: libdmsh_spvn.so (dm/gfx/tools/vk_android_spv_native/spvn.c): the shader build's SPIR-V post-passes in C, which vk_android_spvn.py loads through
+  # ctypes by its bare name; without it the phone runs the same passes in Python (android/SHADERS.md, Native post-passes)
+  sh $HERE/../../dm/gfx/tools/vk_android_spv_native/build.sh $S/lib/libdmsh_spvn.so $=CC
+  $BIN/llvm-strip --strip-debug $S/lib/libdmsh_spvn.so
+  if grep -qaF "$HOME" $S/lib/libdmsh_spvn.so; then echo "[RED] $S/lib/libdmsh_spvn.so names this machine's home folder"; exit 1; fi
+  # PEANUTS end
+  # PEANUTS begin: libdmsh_rwspin.so (dm/tools/rwspin_native/rwspin.c): the rewriter's spin wait search in C, which patch_nso.py loads through ctypes by its bare
+  # name; without it the phone runs the same search in Python (docs/reference/rewriter.md, "The spin wait search in C")
+  sh $HERE/../../dm/tools/rwspin_native/build.sh $S/lib/libdmsh_rwspin.so $=CC
+  $BIN/llvm-strip --strip-debug $S/lib/libdmsh_rwspin.so
+  if grep -qaF "$HOME" $S/lib/libdmsh_rwspin.so; then echo "[RED] $S/lib/libdmsh_rwspin.so names this machine's home folder"; exit 1; fi
+  # PEANUTS end
+  # PEANUTS begin: libunoodle.so (dm/third_party/ooz: ooz's Oodle decoder, GPL-3.0-or-later, the worker the PC builder runs, as a library): the split loads it in a
+  # worker process (dm/gfx/tools/ooz_split.py) and decodes Oodle streams without the game's own decoder, so it does not wait for the rewrite beside it. It carries
+  # the SHA-256 of its sources (unoodle_source), which build.gradle checks
+  sh $HERE/../../dm/third_party/ooz/build.sh $S/lib/libunoodle.so $BIN/clang++ --target=aarch64-linux-android33
+  $BIN/llvm-strip --strip-debug $S/lib/libunoodle.so
+  if grep -qaF "$HOME" $S/lib/libunoodle.so; then echo "[RED] $S/lib/libunoodle.so names this machine's home folder"; exit 1; fi
+  # PEANUTS end
 fi
 if [[ $WHAT == all || $WHAT == tools ]]; then
   [ -d $S/lib ] || { echo "[RED] $S has no lib/: run build.sh $W python first"; exit 1; }

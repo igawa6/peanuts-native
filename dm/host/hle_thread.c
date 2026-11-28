@@ -62,6 +62,8 @@ typedef struct thr {
     struct { struct thr *by; uint64_t epoch; } hand[4]; int nhand;   // the handoffs this thread was made runnable for (its waker's, then those the waker belonged to), until it blocks (note_runnable / hand_leave)
     _Atomic int *host_work;    // points at the thread's dm_host_work (registered when the thread starts)
     int native_wait;          // nesting depth of a blocking native HLE wait (G held)
+    _Atomic int preempt_req;   // PEANUTS: DM_CORE_LOCK: a higher-priority thread of its core waits (on_preempt_sig)
+    int clk;                   // PEANUTS: DM_CORE_LOCK: the core whose lock this thread holds while it runs guest code (core_lock_take), -1 none
     int host_owned;            // a guest thread the host created itself (dm_guest_thread_spawn): it waits in host code and is not one of the game's threads
     uint64_t wseq;             // Sequence number of wait registration: at equal priority first come, first woken (same order as the Horizon kernel's KThread wait tree)
     struct thr *next;          // Wait chain
@@ -103,6 +105,23 @@ static thr_t *g_all;
 extern __thread _Atomic int dm_host_work;   // declared in hle.h too; defined in hle_nvn.c
 static _Atomic uint64_t g_preempt_n, g_preempt_ns;   // same-core handoffs: count and total wait (svc_thread)
 static int g_core_preempt;   // also check already-runnable peers after every thread SVC (profile / DM_PREEMPT)
+// PEANUTS: DM_CORE_LOCK=1 (restart; experiment): the threads of one core take turns as on Horizon, where two threads of a core never run at the same moment and a running
+// thread gives its core up only where it blocks. A guest thread whose affinity is one core holds that core's lock while it runs guest code: taken when it enters guest code and
+// when an SVC returns, given up when an SVC is entered (the gate: where a thread blocks, sleeps or yields). Threads whose mask allows several cores run free. A native HLE wait
+// gives it up too; the lock is taken again at the thread's next SVC exit (taking it at the wait's end would order it after the HLE's own mutex)
+// A ticket lock (first come, first served): a thread that gives its core up at an SVC and takes it again on the way out queues behind the threads already waiting, as a
+// yield hands the core to the others on Horizon. A plain mutex let the giver take it straight back: Xenoblade's resource_creater ran 100 ms on core 0 while the main thread waited
+static int g_core_lock = -1;
+// A thread of higher priority (a lower number) that waits for its core preempts the holder, as on Horizon: it signals the holder (SIGURG), whose handler, when the holder is
+// in guest code, gives the core up and queues for it again. In host code (an HLE function, which may hold host locks) the holder is not stopped; the waiter signals again
+static struct { pthread_mutex_t m; pthread_cond_t c; uint64_t next, serving; struct thr *owner; } g_core_lk[4] = {
+    {PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, 0, 0}, {PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, 0, 0},
+    {PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, 0, 0}, {PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0, 0, 0}};
+static uint64_t g_core_lock_end;   // the lock applies until then (DM_CORE_LOCK_SECS from the main thread's start, default 20; 0 = for good): Xenoblade's heap race is at boot, and the lock's waits cost 2-3 hitches of 70-100 ms in 5 min of play
+static uint64_t g_core_slice_ns = 0;   // (off by default: a 4 ms slice gave Xenoblade 7 hitches in 5 min instead of 3)
+static int core_lock_on(void) { if (g_core_lock < 0) { const char *e = getenv("DM_CORE_LOCK"); g_core_lock = e ? atoi(e) != 0 : DM_GAME_CORE_PREEMPT == 2; } return g_core_lock; }   // the profile's core_preempt lock, DM_CORE_LOCK overrides
+static void core_lock_take(struct thr *t);
+static void core_lock_give(struct thr *t);
 
 static pthread_mutex_t G = PTHREAD_MUTEX_INITIALIZER;
 #define MAX_H 4096
@@ -142,7 +161,7 @@ uint64_t dm_thread_id_self(void) { thr_t *t = pthread_getspecific(g_keythr); ret
 // the caller's core runs until it blocks before the signalling thread continues.
 // See docs/reference/threads.md, "Same-core wake handoffs", for the movie lifetime failure this prevents.
 // svc_thread calls it after waking such a thread. Wait for guest blocking, not a host dispatch snapshot or a wall-clock deadline: neither establishes that the work has finished.
-void dm_thread_mark_host(void) { thr_t *t = pthread_getspecific(g_keythr); if (t) t->host_owned = 1; }
+void dm_thread_mark_host(void) { thr_t *t = pthread_getspecific(g_keythr); if (t) { t->host_owned = 1; core_lock_give(t); } }   // PEANUTS: DM_CORE_LOCK
 // Holding G. wake() clears wkind before the pthread resumes; it must already count as runnable in that window, even if Mach still reports WAITING / STOPPED.
 // Explicit host GPU work and contended native codec locks do not occupy a guest core. Ordinary host dispatch delays and HLE calls do, until a guest wait / sleep / exit or a service request (dm_thread_service_request) says otherwise.
 static int thr_runnable(const thr_t *t) {
@@ -211,6 +230,7 @@ void dm_thread_native_wait(int entering) {
     thr_t *t = pthread_getspecific(g_keythr);
     if (!t) return;
     if (entering && dm_core_excl_held && dm_core_excl_release) dm_core_excl_release();   // PEANUTS: it blocks (dm_core_excl_held above); before G, which the release does not take
+    if (entering) core_lock_give(t);   // PEANUTS: DM_CORE_LOCK (taken again at the next SVC exit)
     pthread_mutex_lock(&G);
     // PEANUTS: where this thread's stack is while it waits (dm_guest_stopped_in), noted inside the entering branch. As a statement of its own between the two branches it
     // took the else below for itself: a wait entered inside another counted down instead of up, and the outer wait's end died on "unbalanced native HLE wait"
@@ -389,6 +409,35 @@ static void qos_apply(thr_t *t) {   // on the thread itself, holding G (prio and
 // A host helper thread (audio notify / silent sink, vsync, movie decode) created from a guest thread inherits that thread's class; under DM_QOS_MAP it sets its own instead
 void dm_host_helper_qos(plat_qos_t q) { if (g_qos_map) plat_qos_set_self(q); }
 static const char *thr_name(thr_t *t, char *buf, size_t n);
+// PEANUTS: DM_CORE_LOCK (#641): the core lock, its preemption signal installed on first use
+static pthread_once_t g_preempt_once = PTHREAD_ONCE_INIT;
+static void preempt_install(void);
+static void core_lock_take(thr_t *t) {
+    if (!core_lock_on() || t->clk >= 0 || t->host_owned) return;   // (a host-owned guest thread waits in host code: never)
+    if (g_core_lock_end && now_ns() > g_core_lock_end) return;   // past the boot window: the threads run free
+    uint64_t m = t->mask; if (!m || (m & (m - 1))) return;   // several cores: runs free
+    int c = __builtin_ctzll(m); if (c > 3) return;
+    pthread_once(&g_preempt_once, preempt_install);
+    pthread_mutex_lock(&g_core_lk[c].m); uint64_t my = g_core_lk[c].next++;
+    uint64_t w0 = now_ns();
+    // Limits: a holder that blocks in host code without dm_thread_native_wait keeps this core's waiters waiting until it reaches an SVC (no known path does; documented
+    // limit). And after a native wait the thread runs without the lock until its next SVC exit, so the lock is weaker than Horizon's in that window
+    while (g_core_lk[c].serving != my) {
+        thr_t *o = g_core_lk[c].owner;
+        // a higher priority preempts the holder at once; any waiter after a time slice (DM_CORE_SLICE_US, default 0: never): the core's threads stay exclusive, and a holder
+        // that runs long in guest code (Xenoblade's resource_creater, 100 ms beside the waiting main thread) no longer holds the others back
+        if (o && o != t && (t->prio < o->prio || (g_core_slice_ns && now_ns() - w0 > g_core_slice_ns))) { atomic_store(&o->preempt_req, 1); pthread_kill(o->pt, SIGURG); }
+        struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_nsec += 1000000; if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
+        pthread_cond_timedwait(&g_core_lk[c].c, &g_core_lk[c].m, &ts);   // (1 ms: the holder may have been in host code at the signal)
+    }
+    g_core_lk[c].owner = t;
+    pthread_mutex_unlock(&g_core_lk[c].m); t->clk = c;
+}
+static void core_lock_give(thr_t *t) {
+    if (t->clk < 0) return;
+    int c = t->clk; t->clk = -1;
+    pthread_mutex_lock(&g_core_lk[c].m); g_core_lk[c].owner = NULL; g_core_lk[c].serving++; pthread_cond_broadcast(&g_core_lk[c].c); pthread_mutex_unlock(&g_core_lk[c].m);
+}
 static void *thread_main(void *p) {
     thr_t *t = p;
     pthread_setspecific(g_keythr, t);
@@ -400,9 +449,11 @@ static void *thread_main(void *p) {
     pthread_mutex_unlock(&G);
     crash_thread_init();
     guest_thread_init(); guest_thread_set_id(t->id);
+    t->clk = -1;   // PEANUTS: DM_CORE_LOCK, no core lock held yet
     guest_gate_stack(1);   // the guest runs on its own stack from dm_thread_enter on: this pthread's stack below this frame is where its SVCs run
     pthread_mutex_lock(&G); while (!t->started) pthread_cond_wait(&t->cv, &G); t->entered = 1; pthread_mutex_unlock(&G);
     { char nb[48], hn[64]; snprintf(hn, sizeof hn, "%#x %s", t->handle, thr_name(t, nb, sizeof nb)); plat_thread_set_name(hn); }   // the guest's name (set before StartThread) for sample / Instruments
+    core_lock_take(t);   // PEANUTS: DM_CORE_LOCK
     dm_thread_enter(t->entry, t->arg, t->stack_top);   // Does not return: the guest must exit through ExitThread
     die("guest thread entry returned");
 }
@@ -465,10 +516,24 @@ static void on_pause_sig(int sig, siginfo_t *si, void *uc_) {
     }
     pthread_mutex_unlock(&G);
 }
+// PEANUTS: DM_CORE_LOCK preemption (core_lock_take): in guest code, the holder gives its core up and queues again behind the higher-priority waiter
+static void on_preempt_sig(int sig, siginfo_t *si, void *uc_) {
+    (void)sig; (void)si;
+    thr_t *t = pthread_getspecific(g_keythr);
+    if (!t || !atomic_exchange(&t->preempt_req, 0) || t->clk < 0 || atomic_load(&t->svc_regs)) return;
+    ucontext_t *uc = uc_;
+    if (!module_of((void *)PLAT_UC_PC(uc)) && !guest_code_extra(PLAT_UC_PC(uc))) return;   // in host code: not stopped there (the waiter signals again)
+    int e = errno; core_lock_give(t); core_lock_take(t); errno = e;
+}
+static void preempt_install(void) {
+    struct sigaction sa = {.sa_sigaction = on_preempt_sig, .sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESTART};
+    sigemptyset(&sa.sa_mask); sigaction(SIGURG, &sa, NULL);
+}
 // called by the gate on SVC entry / exit (gate_dispatch in hle.c)
 void thr_svc_enter(uint64_t *regs, uint64_t pc) {
     thr_t *t = pthread_getspecific(g_keythr); if (!t) return;
     if (dm_core_excl_held && dm_core_excl_release) dm_core_excl_release();   // PEANUTS: an SVC is where a thread blocks (dm_core_excl_held above)
+    core_lock_give(t);   // PEANUTS: DM_CORE_LOCK
     t->svc_pc = pc; t->svc_x18 = (uint64_t)(uintptr_t)dm_slot_get(18); atomic_store(&t->svc_regs, regs); atomic_fetch_or(&t->svc_state, 1);
     if (atomic_load_explicit(&t->qos_pending, memory_order_relaxed) && atomic_exchange(&t->qos_pending, 0)) {
         pthread_mutex_lock(&G); qos_apply(t); pthread_mutex_unlock(&G);
@@ -477,6 +542,7 @@ void thr_svc_enter(uint64_t *regs, uint64_t pc) {
 }
 void thr_svc_leave(void) {
     thr_t *t = pthread_getspecific(g_keythr); if (!t) return;
+    core_lock_take(t);   // PEANUTS: DM_CORE_LOCK
     int in = 1; if (atomic_compare_exchange_strong(&t->svc_state, &in, 0)) { atomic_store(&t->svc_regs, NULL); return; }   // no pause requested: G is not needed (every other thread's SVC takes it)
     pthread_mutex_lock(&G);
     while (t->pause_req) { t->paused = 1; pthread_cond_broadcast(&t->pcv); pthread_cond_wait(&t->pcv, &G); }
@@ -674,7 +740,7 @@ static void hitch_init(void) {
 uint32_t svc_thread_main_init(void) {
     pthread_key_create(&g_keythr, NULL);
     qos_map_init();
-    { const char *e = getenv("DM_PREEMPT"); g_core_preempt = e ? atoi(e) != 0 : DM_GAME_CORE_PREEMPT; }
+    { const char *e = getenv("DM_PREEMPT"); g_core_preempt = e ? atoi(e) != 0 : DM_GAME_CORE_PREEMPT == 1; }   // PEANUTS: 2 (core_preempt lock) is DM_CORE_LOCK, not core_preempt
     pause_install();
     hitch_init();
     thr_t *t = calloc(1, sizeof *t);
@@ -687,6 +753,10 @@ uint32_t svc_thread_main_init(void) {
     t->qos = (uint32_t)plat_qos_of(pthread_self());
     pthread_mutex_lock(&G); t->handle = h_new(O_THREAD, t); t->id = g_next_id++; t->all = g_all; g_all = t; pthread_mutex_unlock(&G);
     pthread_setspecific(g_keythr, t);
+    t->clk = -1; core_lock_take(t);   // PEANUTS: DM_CORE_LOCK
+    if (core_lock_on()) { const char *e = getenv("DM_CORE_SLICE_US"); if (e) g_core_slice_ns = (uint64_t)atoll(e) * 1000;
+        const char *w = getenv("DM_CORE_LOCK_SECS"); long secs = w ? atol(w) : 20; g_core_lock_end = secs > 0 ? now_ns() + (uint64_t)secs * 1000000000ull : 0;
+        LOG("DM_CORE_LOCK: the guest threads of one core take turns, as on Horizon (a core's lock held in guest code, given up at SVCs; preempted by a higher priority, or after %llu us)", (unsigned long long)(g_core_slice_ns / 1000)); }
     guest_thread_set_id(t->id);   // main.c ran guest_thread_init before this, and no guest code has run yet
     plat_thread_set_name("0x1001 main thread");
     LOG("main guest thread QoS %#x (priority %d)", t->qos, t->prio);
