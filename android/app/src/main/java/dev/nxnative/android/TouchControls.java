@@ -47,6 +47,11 @@ final class TouchControls extends View {
     private int mode = MODE_AUTO;   // the "On-screen controls" setting (setMode)
     private float opacity, scale;
     private boolean haptics;
+    // PEANUTS begin：所有游戏共用这个开关，默认保留固定右摇杆。
+    private boolean floatRight, floatRightActive;
+    private static final int FLOAT_STICK = 3; // input_map.h NXT_FLOAT_STICK
+    private static final String FLOAT_RIGHT_KEY = "float_right_stick";
+    // PEANUTS end
 
     // The layout in pixels, as the host has it
     private int n;
@@ -86,7 +91,7 @@ final class TouchControls extends View {
     private static final String[] TOOL = {"Top", "Centre", "Bottom", "Reset", "Done"};
 
     private final long[] pressed = new long[MAX], prev = new long[MAX];
-    private final float[] sticks = new float[4];
+    private final float[] sticks = {0, 0, 0, 0, -1, -1}; // PEANUTS：末两项为 Host 返回的浮动摇杆圆心。
     private int toggleId = -1;
     private boolean toggleLong;
     private final Runnable longPress = () -> { toggleLong = true; performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); settings(); };
@@ -101,6 +106,7 @@ final class TouchControls extends View {
         opacity = prefs().getFloat("opacity", 0.6f);
         scale = prefs().getFloat("scale", 1f);
         haptics = prefs().getBoolean("haptics", true);
+        floatRight = prefs().getBoolean(FLOAT_RIGHT_KEY, false); // PEANUTS
         shown = prefs().getBoolean("shown", true);
         line.setStyle(Paint.Style.STROKE);
         text.setTextAlign(Paint.Align.CENTER);
@@ -152,6 +158,7 @@ final class TouchControls extends View {
     private void apply() {
         if (input) Native.touchControlsEnable(active() && !editing);   // off: every touch in the picture is the game's touchscreen
         Arrays.fill(pressed, 0); Arrays.fill(prev, 0); Arrays.fill(sticks, 0);
+        sticks[4] = sticks[5] = -1; // PEANUTS：切换模式或重排时清掉画面上旧的圆心。
         invalidate();
     }
 
@@ -241,11 +248,13 @@ final class TouchControls extends View {
         float[] f = new float[n * 6];
         for (int i = 0; i < n; i++) {
             f[6 * i] = kind[i]; f[6 * i + 1] = buttons[i]; f[6 * i + 2] = stick[i];
+            if (floatRight && kind[i] == STICK && stick[i] == 1) f[6 * i] = FLOAT_STICK; // PEANUTS
             f[6 * i + 3] = cx[i] / w; f[6 * i + 4] = cy[i] / h; f[6 * i + 5] = r[i] / h;
         }
         int kept = input ? Native.touchControlsSet(f) : -1;
         boolean was = available;
-        available = kept == n;
+        floatRightActive = floatRight && kept == n; // PEANUTS
+        available = kept == n || floatRight && kept == -2 - n; // PEANUTS：旧 Host 仍可绘制和使用固定摇杆。
         if (!available && was != available) Native.note("on-screen controls: this host takes no layout (" + kept + "): not drawn");
         if (!editing) Native.note(String.format(java.util.Locale.ROOT, "on-screen controls: %d in a %dx%d view (%.1f dp high, %.2f px a unit, band from y %.0f, screen %s%s), picture x %.3f y %.3f, size %.2f, opacity %.2f, %s",
                 n, w, h, h / dp, u, y0, prof, custom() ? ", the user's layout" : "", picX, picY, scale, opacity, active() ? "shown" : "hidden")
@@ -486,8 +495,10 @@ final class TouchControls extends View {
     private void poll() {
         if (!active()) return;
         float s0 = sticks[0], s1 = sticks[1], s2 = sticks[2], s3 = sticks[3];
+        float x = sticks[4], y = sticks[5]; // PEANUTS
         Native.touchControlsState(pressed, sticks);
         boolean changed = s0 != sticks[0] || s1 != sticks[1] || s2 != sticks[2] || s3 != sticks[3], tick = false;
+        changed |= x != sticks[4] || y != sticks[5]; // PEANUTS：即使摇杆轴值是零，落下或抬起时也要重绘。
         for (int i = 0; i < n; i++) {
             if (pressed[i] != prev[i]) changed = true;
             if ((pressed[i] & ~prev[i]) != 0) tick = true;
@@ -580,12 +591,20 @@ final class TouchControls extends View {
     }
 
     private void drawStick(Canvas c, int i) {
+        // PEANUTS begin：布局编辑器仍用固定位置调整摇杆组，游戏里则只在手指按住时显示。
+        float x = cx[i], y = cy[i];
+        if (floatRightActive && stick[i] == 1 && !editing) {
+            if (sticks[4] < 0) return;
+            x = sticks[4] * getWidth();
+            y = sticks[5] * getHeight();
+        }
+        // PEANUTS end
         float sx = sticks[2 * stick[i]], sy = sticks[2 * stick[i] + 1];
         boolean held = sx != 0 || sy != 0;
         fill.setColor(Color.argb(alpha(0.25f), 0, 0, 0));
-        c.drawCircle(cx[i], cy[i], r[i], fill);
-        c.drawCircle(cx[i], cy[i], r[i], line);
-        float k = r[i] * 0.55f, kx = cx[i] + sx * k, ky = cy[i] - sy * k;
+        c.drawCircle(x, y, r[i], fill); // PEANUTS
+        c.drawCircle(x, y, r[i], line); // PEANUTS
+        float k = r[i] * 0.55f, kx = x + sx * k, ky = y - sy * k; // PEANUTS
         fill.setColor(held ? Color.argb(alpha(0.6f), 255, 255, 255) : Color.argb(alpha(0.4f), 90, 90, 90));
         c.drawCircle(kx, ky, r[i] * 0.45f, fill);
         c.drawCircle(kx, ky, r[i] * 0.45f, line);
@@ -658,6 +677,17 @@ final class TouchControls extends View {
         reset.setText("Reset the controls");
         reset.setOnClickListener(v -> { os.setProgress(50); ss.setProgress(40); hb.setChecked(true); });   // 60 % opacity, 100 % size, the tick on
         box.addView(ol); box.addView(os); box.addView(sl); box.addView(ss); box.addView(hb); box.addView(lb); box.addView(tb); box.addView(reset);
+        // PEANUTS begin：开关立即替换送给 Host 的布局，并保存给下一次启动。
+        CheckBox floating = new CheckBox(ctx);
+        floating.setText("Floating right stick");
+        floating.setChecked(floatRight);
+        floating.setOnCheckedChangeListener((b, on) -> {
+            floatRight = on;
+            prefs().edit().putBoolean(FLOAT_RIGHT_KEY, on).commit();
+            relayout();
+        });
+        box.addView(floating, box.indexOfChild(reset));
+        // PEANUTS end
         android.widget.Button ed = new android.widget.Button(ctx);   // the layout editor (runs onEditStart); the picture's position is in the panel's Picture rows (positionRows)
         ed.setText("Edit the controls layout…");
         ed.setOnClickListener(v -> startEditLayout());

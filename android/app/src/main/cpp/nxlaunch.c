@@ -46,6 +46,7 @@ void nxhost_prewarm_skip(void);
 #pragma weak nxhost_touch_controls_enable
 #pragma weak nxhost_touch_controls_set
 #pragma weak nxhost_touch_controls_state
+#pragma weak nxhost_touch_controls_snapshot // PEANUTS
 #pragma weak nxhost_motion_start
 #pragma weak nxhost_motion_stop
 #pragma weak nxhost_motion_rotation
@@ -400,15 +401,23 @@ JNIEXPORT jint JNICALL Java_dev_nxnative_android_Native_touchControlsSet(JNIEnv 
     jfloat f[NXT_MAX * 6]; nxhost_touch_control t[NXT_MAX]; memset(t, 0, sizeof t);
     if (n > 0) (*env)->GetFloatArrayRegion(env, a, 0, n * 6, f);
     for (int i = 0; i < n; i++) { const jfloat *o = f + 6 * i; t[i].kind = (int)o[0]; t[i].buttons = (uint64_t)o[1]; t[i].stick = (int)o[2]; t[i].x = o[3]; t[i].y = o[4]; t[i].r = o[5]; }
+    // PEANUTS：旧 Host 只接受固定摇杆，返回值区分布局成功和浮动功能可用。
+    int fixed = 0;
+    if (!nxhost_touch_controls_snapshot) {
+        for (int i = 0; i < n; i++) if (t[i].kind == NXT_FLOAT_STICK) { t[i].kind = NXT_STICK; fixed = 1; }
+    }
+    if (fixed) return -2 - nxhost_touch_controls_set(t, n);
     return nxhost_touch_controls_set(n > 0 ? t : NULL, n);
 }
 // What each control holds now (pressed[i]) and the sticks' deflection (lx, ly, rx, ry; -1..1, y up), for drawing and the haptic tick
 JNIEXPORT void JNICALL Java_dev_nxnative_android_Native_touchControlsState(JNIEnv *env, jclass cls, jlongArray pressed, jfloatArray stick) {
     (void)cls; if (!nxhost_touch_controls_state) return;
-    uint64_t p[NXT_MAX] = {0}; float s[4] = {0};
-    nxhost_touch_controls_state(p, NXT_MAX, s);
+    uint64_t p[NXT_MAX] = {0}; float s[6] = {0, 0, 0, 0, -1, -1}; // PEANUTS
+    if (nxhost_touch_controls_snapshot) nxhost_touch_controls_snapshot(p, NXT_MAX, s, s + 4); // PEANUTS
+    else nxhost_touch_controls_state(p, NXT_MAX, s); // PEANUTS
     if (pressed) { int n = (*env)->GetArrayLength(env, pressed); if (n > NXT_MAX) n = NXT_MAX; (*env)->SetLongArrayRegion(env, pressed, 0, n, (const jlong *)p); }
-    if (stick && (*env)->GetArrayLength(env, stick) >= 4) (*env)->SetFloatArrayRegion(env, stick, 0, 4, s);
+    int n = stick ? (*env)->GetArrayLength(env, stick) : 0; // PEANUTS
+    if (n >= 4) (*env)->SetFloatArrayRegion(env, stick, 0, n >= 6 ? 6 : 4, s); // PEANUTS
 }
 // A gamepad's own accelerometer (m/s²) and gyroscope (rad/s), PadMotion.java. False: the host takes no controller motion (switched off, or an older host): the launcher stops reading
 JNIEXPORT jboolean JNICALL Java_dev_nxnative_android_Native_padMotion(JNIEnv *env, jclass cls, jint device, jfloat ax, jfloat ay, jfloat az, jfloat gx, jfloat gy, jfloat gz) {

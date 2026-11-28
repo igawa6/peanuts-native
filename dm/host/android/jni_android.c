@@ -65,10 +65,11 @@ static jobjectArray j_touch_labels(JNIEnv *env, jclass c) {
     return a;
 }
 static void j_touch_state(JNIEnv *env, jclass c, jlongArray pressed, jfloatArray stick) {
-    (void)c; uint64_t p[NXT_MAX] = {0}; float s[4];
-    nxhost_touch_controls_state(p, NXT_MAX, s);
+    (void)c; uint64_t p[NXT_MAX] = {0}; float s[6]; // PEANUTS
+    nxhost_touch_controls_snapshot(p, NXT_MAX, s, s + 4); // PEANUTS
     if (pressed) { int n = (*env)->GetArrayLength(env, pressed); if (n > NXT_MAX) n = NXT_MAX; (*env)->SetLongArrayRegion(env, pressed, 0, n, (const jlong *)p); }
-    if (stick && (*env)->GetArrayLength(env, stick) >= 4) (*env)->SetFloatArrayRegion(env, stick, 0, 4, s);
+    int n = stick ? (*env)->GetArrayLength(env, stick) : 0; // PEANUTS
+    if (n >= 4) (*env)->SetFloatArrayRegion(env, stick, 0, n >= 6 ? 6 : 4, s); // PEANUTS
 }
 static jboolean j_motion_start(JNIEnv *env, jclass c) { (void)env; (void)c; return nxhost_motion_start(); }
 static void j_motion_stop(JNIEnv *env, jclass c) { (void)env; (void)c; nxhost_motion_stop(); }
