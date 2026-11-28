@@ -50,6 +50,9 @@ DM_COOP_INTERNET	developer	Game			text			both
 DM_COOP_ROOM	developer	Game			text			both						
 DM_COPY_GAME_RESOURCES	developer	Game			text			both						
 DM_COPY_ROMFS	developer	Packing			text			both						
+DM_CORE_LOCK	developer	Performance			text			both						
+DM_CORE_LOCK_SECS	developer	Performance			text			both						
+DM_CORE_SLICE_US	developer	Performance			text			both						
 DM_CRA_LIB	developer	Diagnostics			text			both						
 DM_CTL	internal	Diagnostics			text			both						Mac or iOS only
 DM_DAV1D_FRAME_DELAY	developer	Diagnostics			text			both						
