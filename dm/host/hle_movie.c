@@ -90,6 +90,7 @@ typedef struct {
     mavc *avc; int avc_drain; int64_t drain_pts; // H.264 (hle_movie_avc.c); avc_drain: the end-of-stream packet's output had a picture; the pictures still queued leave one per free slot, then an empty output with the
                                                  // end-of-stream flag and the packet's time (drain_pts)
     vpx_codec_ctx_t vpx; int vpx_on, red_dec, red_img;
+    int cs709, csfull, cs_known;                 // PEANUTS: the last picture's colour space and range as its decoder declares them (md_colorspace); cs_known 0: none declared yet
     uint8_t *bgra; size_t bgra_cap;              // native-texture mode: the picture with red and blue swapped, for a BGRA8 / BGRX8 client texture (md_out_tex)
     // Vorbis: the identification and setup headers from Configure's MediaData ("csd-0", "csd-1", as with Android's MediaCodec), the decoder (opened at the first packet), channels / rate, Ogg page sequence
     uint8_t *vhdr[2]; int vhdr_n[2]; stb_vorbis *vb; int ch, rate; uint32_t ogg_seq; int64_t ogg_gran; int red_vb;
@@ -367,6 +368,7 @@ static int md_vpx(mdec_t *d, const uint8_t *p, int n, int slot) {
     size_t need = (size_t)d->w * d->h * (rgba ? 4 : 3) / (rgba ? 1 : 2);
     if (d->out[slot].cap < need) { free(d->out[slot].frm); d->out[slot].frm = malloc(need); d->out[slot].cap = need; }   // a Configure after Reset may change the size
     if (rgba) md_rgba(last, d->out[slot].frm, d->w, d->h); else md_nv12(last, d->out[slot].frm, d->w, d->h);
+    if (last->cs != VPX_CS_UNKNOWN) { d->cs709 = last->cs == VPX_CS_BT_709; d->csfull = last->range == VPX_CR_FULL_RANGE; d->cs_known = 1; }   // PEANUTS: for nv12-colorspace (md_colorspace)
     return 1;
 }
 // ---------- Vorbis ----------
@@ -515,7 +517,11 @@ static int md_avc(mdec_t *d, const uint8_t *p, int n, int slot, int take_only) {
     if (d->w <= 0 || d->h <= 0) return 0;
     size_t need = (size_t)d->w * d->h * (d->fmt == MD_FMT_ABGR ? 4 : 3) / (d->fmt == MD_FMT_ABGR ? 1 : 2);
     if (d->out[slot].cap < need) { free(d->out[slot].frm); d->out[slot].frm = malloc(need); d->out[slot].cap = need; }
-    return mavc_take(d->avc, d->jflush, d->out[slot].frm, d->w, d->h, &d->jpts_out);
+    int got = mavc_take(d->avc, d->jflush, d->out[slot].frm, d->w, d->h, &d->jpts_out);
+#if !PLAT_APPLE
+    if (got) d->cs_known = mavc_colour(d->avc, &d->cs709, &d->csfull);   // PEANUTS: for nv12-colorspace (md_colorspace); VideoToolbox reports none here
+#endif
+    return got;
 }
 static void md_close(mdec_t *d) { if (d->vpx_on) { vpx_codec_destroy(&d->vpx); d->vpx_on = 0; } if (d->vb) { stb_vorbis_close(d->vb); d->vb = NULL; } if (d->aac) md_aac_close(d); if (d->avc) { mavc_free(d->avc); d->avc = NULL; } }
 void dm_host_helper_qos(plat_qos_t q);   // hle_thread.c
@@ -720,6 +726,7 @@ HLE_FORCE("_ZN5movie7Decoder9ConfigureEPNS_9MediaDataE", "movie decoder configur
         MD_TRACE(d, 0, "Configure (%s): %d channels %d Hz, headers %d + %d bytes", d->type == MD_TYPE_AAC ? "AAC" : "Vorbis", ch, rate, d->vhdr_n[0], d->vhdr_n[1]);
         return 0;
     }
+    d->cs_known = 0;   // PEANUTS(upstream-candidate): a new stream declares its own colour space (md_colorspace)
     if (d->type == MD_TYPE_AVC && md) {   // SPS / PPS: csd-0 / csd-1 (Annex B, as Android's MediaCodec takes them) or, from this SDK's MP4 demuxer (Super Mario Odyssey), "avcc" = the avcC box
         md_avc_open(d);
         void *b = NULL;
@@ -874,6 +881,14 @@ HLE_FORCE("_ZN5movie7Decoder24AcquireOutputBufferIndexEPiPlPjS1_", "movie decode
     if (!r) MD_TRACE(d, 8, "AcquireOutputBufferIndex → index %d time %lld flags %#x left %d", *idx, (long long)*pts, *flags, *left);
     return r;
 }
+// PEANUTS(upstream-candidate): nv12-colorspace, the YUV → RGB matrix of an NV12 output: 1 BT.601 limited range, 2 BT.601 full, 3 BT.709 limited, 4 BT.709 full (the four matrices
+// of Kirby Star Allies' movie player, main+0x1529d8 on 4.0.0a, which indexes them by the key minus 1). Without the key FindInt32 leaves 0, and that player takes its default
+// matrix, all zeros: every movie drew black, its sound playing. The decoder's declared colour space and range; when none is declared, the host's own rule for its RGBA
+// conversion (md_rgba, nx_nv12_to_rgba): BT.709 from 720 lines up, else BT.601, limited range
+static int md_colorspace(const mdec_t *d, int h) {
+    int b709 = d->cs_known ? d->cs709 : h >= 720, full = d->cs_known && d->csfull;
+    return (b709 ? 3 : 1) + full;
+}
 static void md_format(mdec_t *d, void *md) {
     if (MD_AUDIO(d)) { G.set_i32(md, "channel-count", d->ch > 0 ? d->ch : 2); G.set_i32(md, "sample-rate", d->rate > 0 ? d->rate : 48000); return; }
     int w, h, stride, slice; md_dims(d, &w, &h, &stride, &slice);
@@ -886,6 +901,7 @@ static void md_format(mdec_t *d, void *md) {
     // every chroma row was read from the first one (a grey movie with vertical bands). The picture size again, as the SDK's DecoderImpl::GetOutputBufferFormatFromDecoder
     // (SDK 19 subsdk0+0x121f50) also sets it
     G.set_i32(md, "nv12-uv-stride", stride); G.set_i32(md, "nv12-width", w); G.set_i32(md, "nv12-height", h);
+    G.set_i32(md, "nv12-colorspace", md_colorspace(d, h));   // PEANUTS(upstream-candidate): md_colorspace
 }
 HLE_FORCE("_ZN5movie7Decoder15GetOutputFormatEPNS_9MediaDataE", "movie decoder: output format (NV12)", int, h_movie_OutFmt, void **self, void *md) {
     mdec_t *d = md_of(self); if (!d) return 0x1000;

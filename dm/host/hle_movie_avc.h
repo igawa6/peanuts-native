@@ -15,3 +15,6 @@ int mavc_take(mavc *a, int flush, uint8_t *nv12, int w, int h, int64_t *pts_us);
 int mavc_queued(const mavc *a);
 void mavc_set_rgba(mavc *a);   // pictures come out as 4-byte RGBA (stride w * 4) instead of NV12: the native texture mode
 void mavc_drop(mavc *a);   // a flush / seek: queued pictures are discarded
+// PEANUTS(upstream-candidate): the colour space of the pictures as the decoder declares them (Android's MediaCodec output format; BT.709 from 720 lines up and limited range
+// until it says): 1 with *bt709 and *full set, 0 when the decoder declares none. Not on VideoToolbox (hle_movie_avc.c), whose callers use their own default
+int mavc_colour(const mavc *a, int *bt709, int *full);
