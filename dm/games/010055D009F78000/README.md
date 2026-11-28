@@ -89,6 +89,7 @@ General host changes first needed here; each applies to every game:
 - **Row wrap** and **shadow vertex inputs**: [Buffer textures read by 1D integer fetches (row wrap)](../../../docs/reference/rendering.md#buffer-textures-read-by-1d-integer-fetches-row-wrap), [Shadow vertex inputs](../../../docs/reference/rendering.md#shadow-vertex-inputs).
 - **Lighting that alternated between lit and unlit frames on an iPhone** (one of the light list's two copies sits at a pool offset the phone's linear-texture alignment rejects, read as zeros; `tbuf_rows_copy`): [Buffer texture rows at a pool offset the device will not view](../../../docs/reference/rendering.md#buffer-texture-rows-at-a-pool-offset-the-device-will-not-view).
 - **GLSLC 0x848 / 0x850 controls and headerless compute code** (`glslc_shaders`) and the **SPKG / LINKDATA reader** (`kt_shaders`): [SPKG packages in KTGL LINKDATA](../../../docs/reference/shaders.md#spkg-packages-in-ktgl-linkdata).
+- **Lighting black in screen tiles while the camera moved** (the clustered light lists, stored by a compute dispatch through a storage buffer, were read through the CPU's earlier copy; `vka_tex_gw_sb`, Peanuts issue #281): [Buffer textures over a storage buffer the GPU writes (Android)](../../../docs/reference/rendering.md#buffer-textures-over-a-storage-buffer-the-gpu-writes-android). <!-- PEANUTS -->
 - **Yield back-off** and the **yield-progress rule** (`thr_yield`; this game's limiter is a poll that keeps its registers): [development.md, Power](../../../docs/development.md#power).
 
 ## Open

@@ -80,6 +80,19 @@ int main(void) {
     commit(10); done_ = 10;
     CHECK(!pending(X, XN), "and done");
 
+    // PEANUTS: which flagged writes count (vka_tbuf_gw_counts): a storage texel buffer's stores always, a sized storage buffer's (Three Houses' light lists, issue #281)
+    // while DM_VK_TBUF_GW_SB is on, an unflagged opaque write (a storage buffer without a size, a texture's copy) never
+    CHECK(vka_tbuf_gw_counts(VKTB_W_TBUF, 0) && vka_tbuf_gw_counts(VKTB_W_TBUF, 1), "a storage texel buffer's stores count, the switch on or off");
+    CHECK(vka_tbuf_gw_counts(VKTB_W_SB, 1) && !vka_tbuf_gw_counts(VKTB_W_SB, 0), "a sized storage buffer's stores count only with DM_VK_TBUF_GW_SB");
+    CHECK(vka_tbuf_gw_counts(VKTB_W_TBUF | VKTB_W_SB, 0), "a range stored through both keeps the texel buffer's flag");
+    CHECK(!vka_tbuf_gw_counts(0, 1), "an unflagged opaque write never counts");
+    { uint64_t L = 0x80000, LN = 4210560; nw = 0; done_ = 30;   // the light culling's dispatch stores the lists, the lighting draw then reads them, in one submission
+      W[nw++] = (wr){L, L + LN, 0, vka_tbuf_gw_counts(VKTB_W_SB, 1)};
+      CHECK(pending(L, LN) && pending(L + 4096, 4096), "the lists stored by this submission's dispatch: the GPU's copy, not the CPU's earlier frame");
+      W[0].tb = vka_tbuf_gw_counts(VKTB_W_SB, 0);
+      CHECK(!pending(L, LN), "DM_VK_TBUF_GW_SB=0: the CPU's copy, as before");
+      nw = 0; }
+
     // ---- A buffer texture read through an image binding (vka_draw.c tbuf_img_gpu): the row image of the CPU's bytes, or the copy the GPU makes
     int nc = 0;
     for (int m = 0; m < 128; m++) {

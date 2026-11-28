@@ -861,7 +861,10 @@ void vka_tex_gw_opaque(uint64_t dst, uint64_t n) { gw_add(GW_OPAQUE, dst, n, 0, 
 // PEANUTS begin: stores through a storage texel buffer (vka_draw.c tbuf_view): an opaque write like any other (the textures over it are uploaded again once it is done),
 // with value 1 so that a read-only texel buffer over the range is not read through the CPU's copy while the write is not done (vka_tbuf.h; Final Fantasy Resonance's
 // particle instance counts, read from leftover memory in a scene's first frame: a GPU timeout)
-void vka_tex_gw_tbuf(uint64_t dst, uint64_t n) { gw_add(GW_OPAQUE, dst, n, 0, 1, NULL); }
+void vka_tex_gw_tbuf(uint64_t dst, uint64_t n) { gw_add(GW_OPAQUE, dst, n, 0, VKTB_W_TBUF, NULL); }
+// PEANUTS: stores through a storage buffer bound with its size (vka_draw.c stage_writes): flagged VKTB_W_SB, counted as a storage texel buffer's while DM_VK_TBUF_GW_SB is on
+// (vka_tbuf.h: Three Houses' light lists, Peanuts issue #281)
+void vka_tex_gw_sb(uint64_t dst, uint64_t n) { gw_add(GW_OPAQUE, dst, n, 0, VKTB_W_SB, NULL); }
 int vka_tex_gw_tbuf_pending(uint64_t addr, uint64_t n) {
     int r = 0;
     // (none kept: nothing to look for. Most games never store through a texel buffer, and this is asked for every read-only texel buffer of every draw. The stores
@@ -871,8 +874,8 @@ int vka_tex_gw_tbuf_pending(uint64_t addr, uint64_t n) {
     // The newest completed fence as this submission's prepare read it (g_gw_done), not as it is now: the fence watcher raises it at any moment, and an answer that
     // went from 1 to 0 while a submission was recorded sent a draw to bytes that are uploaded again only at the next prepare (where the write is dropped and the
     // textures over it are re-uploaded). So the answer changes at a prepare, or by a store this thread records
-    uint64_t done = g_gw_done;
-    for (int i = g_ngw - 1; i >= 0 && !r; i--) r = vka_tbuf_gw_pending(g_gw[i].lo, g_gw[i].hi, g_gw[i].fence, g_gw[i].kind == GW_OPAQUE && g_gw[i].value, addr, addr + n, done);
+    uint64_t done = g_gw_done; int sb = VKA_ENV("DM_VK_TBUF_GW_SB", 1) != 0;   // PEANUTS: a sized storage buffer's stores too (vka_tex_gw_sb)
+    for (int i = g_ngw - 1; i >= 0 && !r; i--) r = vka_tbuf_gw_pending(g_gw[i].lo, g_gw[i].hi, g_gw[i].fence, g_gw[i].kind == GW_OPAQUE && vka_tbuf_gw_counts(g_gw[i].value, sb), addr, addr + n, done);
     pthread_mutex_unlock(&g_tmu);
     return r;
 }
