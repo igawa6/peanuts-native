@@ -1541,18 +1541,40 @@ def pg_sized_shader(d, label):
     return [(f'{label}#PGSO', st, ctl, code)]
 
 MTARC, MTSPK = b'ARC\0', b'SPK\0'
+# PEANUTS(upstream-candidate) begin: detect both ARC v7 entry widths and stream SPK records.
 def mtarc_members(d, label):
-    """Capcom's MT Framework archive (The Great Ace Attorney Chronicles: 447 '.arc' files under nativeNXx64): 'ARC\\0', u16 version 7, u16 entry count, then one 0x90-byte entry per file
-    {char path[128] ('\\\\'-separated, no extension), u32 type hash, u32 stored length, u32 length in the low 29 bits (flags above), u32 offset}; the data is a zlib stream, or stored when the
-    stored length equals the length. → (path, data) of each entry"""
+    """Capcom MT Framework ARC v7: magic, u16 version, u16 count, then a table.
+    Entries are 0x90 bytes in The Great Ace Attorney Chronicles (128-byte path)
+    and 0x50 bytes in Resident Evil 6 (64-byte path). Four little-endian u32s
+    follow the path: type hash, stored size, size (low 29 bits) with flags, offset.
+    A member is stored if its sizes match, and zlib-compressed otherwise.
+    """
     import zlib
+    if len(d) < 8: red(f'{label}: truncated ARC header')
     ver, n = struct.unpack_from('<HH', d, 4)
     if ver != 7: red(f'{label}: ARC version {ver}: only version 7 is known')
-    for i in range(n):
-        o = 8 + 0x90 * i
-        path = d[o:o + 0x80].split(b'\0')[0].decode('latin-1')
-        csz, usz, off = struct.unpack_from('<3I', d, o + 0x84); usz &= 0x1fffffff
-        data = d[off:off + csz] if csz == usz else zlib.decompress(d[off:off + csz])
+    if not n: return
+
+    def entries(path_size):
+        stride = path_size + 16
+        end = 8 + stride * n
+        if end > len(d): return None
+        rows = []
+        for i in range(n):
+            o = 8 + stride * i
+            path = d[o:o + path_size].split(b'\0', 1)[0].decode('latin-1')
+            csz, usz, off = struct.unpack_from('<3I', d, o + path_size + 4)
+            if not path or not path.isprintable() or off < end or off + csz > len(d):
+                return None
+            rows.append((path, csz, usz & 0x1fffffff, off))
+            end = off + csz
+        return rows
+
+    # Prefer the original wide layout if both tables are consistent.
+    rows = entries(128) or entries(64)
+    if rows is None: red(f'{label}: no consistent ARC v7 entry layout (0x90 or 0x50)')
+    for path, csz, usz, off in rows:
+        data = d[off:off + csz] if csz == usz else zlib.decompress(memoryview(d)[off:off + csz])
         if len(data) != usz: red(f'{label}#{path}: {len(data):#x} bytes, the entry says {usz:#x}')
         yield path.replace('\\', '/'), data
 
@@ -1560,8 +1582,12 @@ def mtspk_shaders(d, label):
     """MT Framework's shader package ('SPK\\0'; The Great Ace Attorney Chronicles keeps its only one, sc\\NX_64\\root, in sa/NX_64/root.arc): after the package's tables every shader is a
     code area followed directly by its control section, back to back to the end of the file (230 vertex shaders, then 230 pixel shaders). Each control section names its code length (+0x704),
     so the code area is the bytes right before it, and every block must start where the previous one ended. The tables that say which vertex and pixel shaders the engine combines are not
-    read, so the shaders are paired as single-stage programs (separable_pairs)"""
-    out, end, c = [], None, d.find(CTL_MAGIC)
+    read, so the shaders are paired as single-stage programs (separable_pairs).
+    Resident Evil 6 (SDK 6.5.0) uses the same control and code layout in its four
+    packages. Yield records one at a time so the caller can deduplicate them
+    without keeping a second copy of the entire package (GameStage is 424 MB).
+    """
+    end, c = None, d.find(CTL_MAGIC)
     while c >= 0:
         nctl, ncode = struct.unpack_from('<I', d, c + 0x20)[0], struct.unpack_from('<I', d, c + 0x704)[0]
         a = c - ncode
@@ -1570,11 +1596,11 @@ def mtspk_shaders(d, label):
         st = sph_stage(code)
         why = check(label, st, ctl, code) if st else 'no stage in the SPH'
         if why: red(f'{label} SPK @{a:#x}: {why}')
-        out.append((f'{label}#MTSPK@{a:#x}', st, ctl, code))
+        yield f'{label}#MTSPK@{a:#x}', st, ctl, code
         end = c + nctl; c = d.find(CTL_MAGIC, end)
     if end != len(d): red(f'{label} SPK: the last shader ends at {end}, not at the end of the package ({len(d):#x})')
-    return out
 
+# PEANUTS(upstream-candidate) end
 def mtarc_shaders(d, label, out):
     for path, m in mtarc_members(d, label):
         if m[:4] == MTSPK: out.extend(mtspk_shaders(m, f'{label}#{path}'))

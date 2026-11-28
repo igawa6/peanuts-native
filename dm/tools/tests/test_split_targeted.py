@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zlib  # PEANUTS(upstream-candidate): compressed ARC fixture
 from pathlib import Path
 from unittest import mock
 
@@ -61,6 +62,50 @@ def bnsh(v, p):
         struct.pack_into('<QQII', d, desc + 8, at, at + len(ctl), len(code), len(ctl))
     struct.pack_into('<I', d, 0x1c, len(d))
     return bytes(d)
+
+
+# PEANUTS(upstream-candidate): ARC v7 layout coverage.
+class MtFramework(unittest.TestCase):
+    @staticmethod
+    def arc(path_size, members):
+        table = bytearray(ss.MTARC + struct.pack('<HH', 7, len(members)))
+        offset = len(table) + len(members) * (path_size + 16)
+        payload = bytearray()
+        for path, data, compress in members:
+            stored = zlib.compress(data) if compress else data
+            table += path.ljust(path_size, b'\0')
+            table += struct.pack('<4I', 0x12345678, len(stored), 0x40000000 | len(data), offset)
+            offset += len(stored)
+            payload += stored
+        return bytes(table + payload)
+
+    def test_arc_v7_both_layouts(self):
+        vctl, vcode = vs(1)
+        pctl, pcode = ps(2)
+        head = ss.MTSPK + bytes(28)
+        spk = head + vcode + vctl + pcode + pctl
+        members = [(b'other\\plain', b'stored member', False), (b'sc\\NX_64\\root', spk, True)]
+        for path_size in (128, 64):
+            with self.subTest(path_size=path_size):
+                arc = self.arc(path_size, members)
+                self.assertEqual(list(ss.mtarc_members(arc, 'test.arc')),
+                                 [('other/plain', b'stored member'), ('sc/NX_64/root', spk)])
+                found = []
+                ss.mtarc_shaders(arc, 'test.arc', found)
+                label = 'test.arc#sc/NX_64/root#MTSPK'
+                self.assertEqual(found, [
+                    (f'{label}@{len(head):#x}', 'vs', vctl, vcode),
+                    (f'{label}@{len(head) + len(vcode) + len(vctl):#x}', 'ps', pctl, pcode),
+                ])
+
+    def test_arc_v7_rejects_invalid_tables(self):
+        arc = self.arc(64, [(b'first', b'one', False), (b'second', b'two', False)])
+        for field, value in ((8 + 76, 8), (8 + 80 + 76, 8 + 160 + 1), (8 + 80 + 76, len(arc))):
+            with self.subTest(field=field, value=value):
+                malformed = bytearray(arc)
+                struct.pack_into('<I', malformed, field, value)
+                with self.assertRaisesRegex(SystemExit, r'\[RED\] test.arc: no consistent ARC v7 entry layout'):
+                    list(ss.mtarc_members(malformed, 'test.arc'))
 
 
 class Targeted(unittest.TestCase):

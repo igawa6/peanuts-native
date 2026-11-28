@@ -200,6 +200,8 @@ Also gated, but not `#ifdef`-paired with upstream code (new Peanuts-owned files/
 
 ## Summary of good upstream-contribution candidates (general fixes, not Peanuts-specific)
 
+- MT Framework ARC v7 short-path layout and streamed SPK records ([shader reader](../docs/reference/shaders.md#arc-v7-archives-with-short-paths)).
+
 1. `dm/host/plat/plat_android.c` — stack guard-page exclusion (IL2CPP GC crash fix)
 2. `dm/host/crash.c` — stripped-library lib+offset in crash output
 3. `dm/host/loader.c` — module arena (fixes an Android-only OOB read vs the console's layout)
