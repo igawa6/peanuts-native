@@ -80,6 +80,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Catherine: Full Body](0100BF00112C0000/README.md) | `0100BF00112C0000` | 1.0.1a | 8.2.1 | Atlus GFD (CRI middleware) | NVN |
 | [Celeste](01002B30028F6000/README.md) | `01002B30028F6000` | 1.4.1.1 | 15.3.2 | MonoGame (C# → C++ by BRUTE) | NVN |
 | [Chained Echoes](0100C510166F0000/README.md) | `0100C510166F0000` | v1310720 | 14.3.0 | Unity 2020.3.36f1 IL2CPP | NVN |
+| [Crash Bandicoot N. Sane Trilogy](0100D1B006744000/README.md) | `0100D1B006744000` | 1.0.0 | 3.5.3 | Vicarious Visions' Alchemy engine (GLSLC), Havok, FMOD, Bink 2 | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Crash Team Racing Nitro-Fueled](0100F9F00C696000/README.md) | `0100F9F00C696000` | 1.0.15 | 8.2.0 | Vicarious Visions' Alchemy | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [CRISIS CORE –FINAL FANTASY VII– REUNION](01004BC0166CC000/README.md) | `01004BC0166CC000` | 1.0.0 | 13.3.0 | Unreal Engine 4.27 | NVN <!-- PEANUTS: Android bring-up --> |
 | [Cult of the Lamb](01002E7016C46000/README.md) | `01002E7016C46000` | 1.5.28 | 19.3.14 | Unity 2022.3.62f3 IL2CPP, FMOD | NVN |

@@ -1,0 +1,57 @@
+# Game profile of Crash Bandicoot N. Sane Trilogy (Switch, base game 1.0.0 = v0)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# Vicarious Visions' Alchemy engine (build codename MACK), SDK 3.5.3, NVN, Havok, FMOD, Bink 2; subsdk0 is the game's own GLSLC.
+# The shaders are whole GLSLC outputs in the 84 shader .igz files of archives/shaders_nx.pak, an igArchive version 12 with LZMA blocks (shader_split.py iga_shaders, requires ver in (12, 13)),
+# and 10 more in main. The game embeds 5 GLSL sources in main and imports glslcCompile from subsdk0 for runtime shaders (captured on device with DM_GLSLC_CAPTURE, the /glslc_capture/ group).
+# Status: plays on Android (Samsung Galaxy Tab S8+, SM-X800, Snapdragon 8 Gen 1 / Adreno 730, Mesa Turnip T30); see README.md.
+
+# ---- Identity ----
+title_id	0100D1B006744000
+program_id	0100D1B006744000
+
+# ---- App ----
+name	Crash Bandicoot N. Sane Trilogy
+ipa	CrashBandicootNSaneTrilogy.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v0	1.0.0	main=29e1a37d84227147a50a18d055fbb032	subsdk0=a82aa14c5d5a359ad04dc4eab9f5d590	sdk=c871c614793a419581104bec9379efa3
+package	v0
+shader_versions	v0
+
+# ---- Files ----
+# every module main imports from (subsdk0 is GLSLC, called by main at runtime)
+modules	main subsdk0 sdk
+romfs_marker	archives/shaders_nx.pak
+zip_store	.bk2:.pak
+
+# ---- Memory ----
+# main (nninitStartup at +0x1169b98) queries QueryMemoryInfo and calls SetMemoryHeapSize((total - used) & ~0x1FFFFF), falling back to a fatal 32 MB heap on OOM.
+# With sys_resource = 0 (IsVirtualAddressMemoryEnabled = false), keep the 4 GB guest block (256 MB alias + 256 MB stack + 3328 MB heap region) and standard 3285 MiB Switch 1 app pool.
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource (META +0x14 = 0): IsVirtualAddressMemoryEnabled is false, as on Horizon
+sys_resource	0x0
+# raw modules take 85.0 MiB (main 61.44, subsdk0 13.50, sdk 10.07) and ~90 MiB after patch_nso.py rewrite, well above the default 64 MB (0x4000000):
+# 100 MiB (0x6400000) ensures SetMemoryHeapSize(pool - used) succeeds on first call (~3184 MiB heap) instead of hitting OOM and falling back to 32 MiB
+mem_used	0x6400000
+
+# ---- Graphics / Vulkan / Turnip ----
+# igNxGraphicsDevice::activate (+0x9edd08) calls nvnDeviceSetDepthMode(device, 1) (NVN_DEPTH_MODE_NEAR_IS_ZERO); render_cond, tex_flush_upload and tex_dirty_upload stay off (0 SetRenderEnableConditional callers, textures uploaded via nvnTextureWriteTexels)
+depth_mode	zero
+# PEANUTS: Alchemy engine is delta-time driven (verified on SM-X800 at 30 and 60 fps). Override game's present interval 2 so Peanuts' FPS cap offers the measured 30 and 60 fps caps.
+present_interval	display
+fps_limit	30
+fps_modes	30,60
+# PEANUTS: see Tested on in README.md (plays on Mesa Turnip T30 on SM-X800 / Adreno 730; Qualcomm system driver not tested).
+recommend	driver.id=8	driver=18
+
+# ---- Shader split ----
+# PEANUTS: main embeds 5 GLSL sources (Bink 2 / Alchemy blit) and calls glslcCompile in subsdk0; on an empty save the game opens through Activision bumper / legal / language select (languagestartup.pak),
+# so the capture boot presses A every 3 s from 8 s on (matching Crash Team Racing Nitro-Fueled 0100F9F00C696000) to capture runtime GLSLC outputs.
+capture_keys	8:A*45/3
+shader_groups	/archives/=archives /glslc_capture/=runtime
+shader_note	Crash Bandicoot N. Sane Trilogy shaders
