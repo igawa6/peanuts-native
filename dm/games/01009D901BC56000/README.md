@@ -4,6 +4,32 @@ Update 1.1.0 (v65536) over the base game, SDK 18.3.5. Unity 6000.0.28f1 IL2CPP w
 
 Plays on the Mac at 60 fps: the title, a new save, the opening movie, the island and Jungle maps, and the opening of 1-1 Jungle Hijinxs (running, jumping, damage, losing a life and restarting). An unsigned IPA is built; iOS is untested.
 
+<!-- PEANUTS: the Android sections below (Status, Tested on, Builds) and the Android items under Open -->
+## Status
+
+Plays on Android at the game's own 60 fps. The profile offers no frame-rate cap: the game paces itself (Game owned), and that pacing was measured.
+
+| Cap | Frame time (median of 300-frame windows' p50) | p95 (median / worst window) | Slowest frame | Game speed |
+|---|---|---|---|---|
+| Game owned (60 fps) | 16.70 ms (16.58–16.80) | 18.91 / 26.55 ms | 535 ms, at scene changes | not measured against a clock in the game (no slowdown seen in play) |
+
+- The slow frames come at scene and level changes (frames 2308, 14266, 14282, 14688 of the run): the game's own main thread and its `BatchDel` thread are busy, with no new pipeline in those frames. 21 of the 141 gameplay windows had a frame over 33.4 ms.
+- First launch from an empty pipeline cache: 294 graphics and 117 compute pipelines made, none failed, 170 of them on the frame path.
+- Memory: footprint 2,302 MiB at the start, 2,763 MiB at its peak (frame 35400), 2,724 MiB at the end.
+- The opening movie `GI.mp4` needs the H.264 low-latency fix for streams in decode order (its 1920×1080 Main profile stream has `pic_order_cnt_type` 2): without it the decoder keeps the last two pictures and the game waits on the last frame. The fix is its own pull request.
+
+## Tested on
+
+AYN Thor (Qualcomm QCS8550 / Snapdragon 8 Gen 2, Adreno 740, 16 GB, Android 13), PurpleVK public driver (Turnip, `26.3.0-devel`, `git-62ac221a33`, driver version `0x6802063`), the Peanuts test app at `00ebfe300df5` with the movie fix, on 2026-11-28. From an empty pipeline cache: the startup, the opening movie (skipped after a few seconds), the menus and two levels, about 12.7 minutes (47,100 frames). The log reports the main build `991eccf3339153e469f15936fac59c52` (1.1.0, `v65536`). Not run on Qualcomm's own driver.
+
+## Builds
+
+| Version | Package | Main build | Evidence |
+|---|---|---|---|
+| 1.1.0 | `v65536` | `991eccf3339153e469f15936fac59c52` | Full and targeted shader splits match; the run above |
+
+The shader split of the 1.1.0 `.nup` on a Windows PC: the full split (`DM_SPLIT_FILES`, which wrote `shader_files.tsv`) took 35 s over the 362 RomFS files, the targeted split (`DM_SPLIT_TARGETED=1`) 11 s over 39 of them. Both found 19,314 shaders and 9,602 pairs, and the targeted split's `shader_map.tsv`, `shader_facts.tsv`, `shader_pairs.tsv` and `pso_pairs.tsv` match the full split's byte for byte. Against the earlier tables only their header comments changed.
+
 ## What it needs
 
 | Setting | Where | Why |
@@ -43,6 +69,9 @@ The work folder is `<NSP folder>/01009D901BC56000-work`. `run/boot.py <log name>
 - iOS has not been tested on a device.
 - Only the opening portion of the first level was played; finishing it, later levels, bosses and multiplayer remain untested.
 - The other thirteen MP4 movies and non-English languages are untested.
+<!-- PEANUTS: Android -->
+- Android: the game speed against a clock in the game (10 game seconds in 10 s) was not measured.
+- Android: Qualcomm's own driver was not run; the opening movie was skipped after a few seconds on this run, not watched to its end; later worlds, bosses and multiplayer were not played.
 
 ## Found on this game
 

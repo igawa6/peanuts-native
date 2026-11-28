@@ -1,5 +1,6 @@
 # Game profile of Donkey Kong Country Returns HD (Switch, update 1.1.0 = v65536). Plays on the Mac at 60 fps.
 # Unity 6000.0.28f1 IL2CPP with FMOD, SDK 18.3.5, NVN. See README.md for testing and the shared shader-reader fix.
+# PEANUTS: plays on Android (AYN Thor, Turnip) at the game's own 60 fps; the shader tables and shader_files.tsv are the current shader_split.py's (README.md, Shaders)
 
 # ---- Identity ----
 title_id	01009D901BC56000
@@ -19,7 +20,8 @@ shader_versions	v65536
 # every module main imports from
 modules	main subsdk0 sdk
 romfs_marker	Data/sharedassets5.assets
-zip_store	.assets:.dat:.mp4:.resource:.ress:.metallib
+# PEANUTS: no .metallib (an Apple shader library; Android packs none)
+zip_store	.assets:.dat:.mp4:.resource:.ress
 
 # ---- Memory ----
 # the NPDM declares 16 MB of system resource (virtual address memory) and main never sets a heap: a 5 GB block with a 4.375 GB alias region, where the game maps its memory itself
