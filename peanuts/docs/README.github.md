@@ -51,7 +51,7 @@ Peanuts Native 0.1.9 includes 87 games, and 8 more are coming in 0.1.10 (marked 
 | The Legend of Zelda: Tears of the Kingdom | `0100F2C0115B6000` | 1.4.3 | Yes |  |
 | FINAL FANTASY RESONANCE | `0100606026F12000` | 1.0.1 | Yes |  |
 | The Legend of Zelda: Skyward Sword HD | `01002DA013484000` | 1.0.1 | Yes |  |
-| Pokémon Legends: Arceus | `01001F5010DFA000` | 1.1.1 | No |  |
+| Pokémon Legends: Arceus | `01001F5010DFA000` | 1.1.1 | Yes |  |
 | Resident Evil 4 | `010099A00BC1E000` | 131072 | Yes |  |
 | Kirby and the Forgotten Land | `01004D300C5AE000` | 1.1.0 | No | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
 | Kirby's Return to Dream Land Deluxe | `01006B601380E000` | 1.0.0 | Yes | ⭐<br><a href="https://github.com/intermission88"><img src="https://img.shields.io/badge/intermission88-181717?style=flat-square&logo=github&logoColor=white" style="vertical-align: middle;" alt="intermission88"></a> |
@@ -64,7 +64,7 @@ Peanuts Native 0.1.9 includes 87 games, and 8 more are coming in 0.1.10 (marked 
 | Captain Tsubasa 2: World Fighters | `01009720213B0000` | 1.0.6 | No |  |
 | DAVE THE DIVER | `010097F018538000` | 1.0.6.1267 | Yes |  |
 | Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2 | `0100AD80208A8000` | 1.80 | No |  |
-| Xenoblade Chronicles X: Definitive Edition | `0100453019AA8000` | 1.0.2 | No |  |
+| Xenoblade Chronicles X: Definitive Edition | `0100453019AA8000` | 1.0.2 | Yes |  |
 | My Time at Sandrock | `0100B63016916000` | 1.4.2.0 | Yes |  |
 | Monster Sanctuary | `0100A0F00DA68000` | 2.1.0 | Yes |  |
 | Astral Chain | `01007300020FA000` | 1.0.1 | No |  |
