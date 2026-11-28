@@ -1,9 +1,14 @@
 # PEANUTS: the Android loader advertises and consumes Android WSI, never Switch VI.
+import hashlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
+import pack_android   # noqa: E402
 
 
 class GuestVulkan(unittest.TestCase):
@@ -68,6 +73,22 @@ int main(void) {
             subprocess.run(['cc', '-std=c11', '-Wall', '-Werror', '-I', str(root / 'dm/gfx/vk_android'),
                             '-I', str(root / 'dm/third_party/vulkan-headers/include'), str(src), '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
+
+    def test_packer_bank(self):
+        # pack_android.verified_guest_bank: a profile without guest_spirv keeps the NVN path; a wrong build, range or digest stops the pack.
+        class G:
+            def __init__(self, rows): self.rows = rows
+            def values(self, key): return self.rows if key == 'guest_spirv' else []
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / 'main.patched.bin').write_bytes(b'head' + b'bank' + b'tail')
+            want = hashlib.sha256(b'bank').hexdigest()
+            self.assertFalse(pack_android.verified_guest_bank(G([]), out, 'aa'))
+            self.assertTrue(pack_android.verified_guest_bank(G([['aa', '4', '4', want]]), out, 'aa'))
+            for rows, main in (([['aa', '4', '4', want]], 'bb'), ([['aa', '5', '4', want]], 'aa'), ([['aa', '8', '8', want]], 'aa'),
+                               ([['aa', 'x', '4', want]], 'aa'), ([['aa', '4', '4', want]] * 2, 'aa'), ([['aa', '4', '0', want]], 'aa')):
+                with self.assertRaises(pack_android.Error):
+                    pack_android.verified_guest_bank(G(rows), out, main)
 
 
 if __name__ == '__main__':
