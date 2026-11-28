@@ -118,6 +118,11 @@ ICONS = {
                       ("s", "M3.77 16.75A9.5 9.5 0 0 1 5.28 5.28M2.68 5.28H5.28V7.88"),
                       ("s", "M20.23 7.25A9.5 9.5 0 0 1 18.72 18.72M21.32 18.72H18.72V16.12")],
 
+    # Audio: a speaker and its sound, the kernel in its box (Settings › App › Extras › Play with other apps' sound, #819)
+    "audio": [("s", "M3.5 10.5A1.5 1.5 0 0 1 5 9H7.5L12 5V19L7.5 15H5A1.5 1.5 0 0 1 3.5 13.5Z"),
+              ("s", "M15.5 9.2c.9.8 1.4 1.7 1.4 2.8s-.5 2-1.4 2.8M18.3 6.6c1.6 1.5 2.4 3.3 2.4 5.4s-.8 3.9-2.4 5.4"),
+              ("k", rrect(5.25, 10.75, 2.5, 2.5, 0.7))],
+
     # Status: the kernel takes the status colour instead of the accent
     "info": [("s", circle(12, 12, 8.5)), ("s", "M12 11v5.5"), ("k", circle(12, 7.9, 1.3))],
 

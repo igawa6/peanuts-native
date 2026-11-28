@@ -59,6 +59,8 @@ public final class SettingsSectionsJvmTest {
         eq("app/Updates", SettingsSections.place("Check for updates", "Updates"));
         eq("app/Extras", SettingsSections.place("Smooth Experience", "Library"));   // PEANUTS: Smooth Experience (dev.peanuts.smooth), built with Library's rows
         eq("app/Extras", SettingsSections.place("Start screen", "Library"));   // its parts right under it
+        eq("app/Extras", SettingsSections.place("Play with other apps' sound", "Library"));   // PEANUTS: #819, built with Library's rows
+        eq("audio", SettingsSections.place("Play with other apps' sound", null).icon);
         eq("developer/Testing", SettingsSections.place("Developer view", "Library"));
         eq("help/Questions and logs", SettingsSections.place("Questions and answers", "Updates"));
         eq("help/Questions and logs", SettingsSections.place("Share log", "Help"));

@@ -52,7 +52,7 @@ class Names(unittest.TestCase):
         titles = re.findall(r'new Item\((?:START_LOG|WARM|SKIP), "([^"]+)"', read(SMOOTH / 'SmoothItems.java'))
         self.assertEqual(titles, ['Start screen', 'Preparing graphics notice', 'Graphics driver notice'])
         extras = re.search(r'new Group\("Extras", (.*?)\)\)\),', table, re.S).group(1)
-        self.assertEqual(re.findall(r'r\("([^"]+)"', extras), ['Smooth Experience'] + titles)
+        self.assertEqual(re.findall(r'r\("([^"]+)"', extras), ['Smooth Experience'] + titles + ["Play with other apps' sound"])   # #819's row after the parts
         for t in titles:
             self.assertIn(f'put(m, "{t}", "Part of Smooth Experience: ', help_)
             self.assertIn(f'smoothPart(a, smoothBox, new PUi.Setting(a, "", "{t}", null)', lib)

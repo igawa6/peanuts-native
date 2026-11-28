@@ -155,6 +155,12 @@ public final class LibrarySettings {
         smoothPart(a, smoothBox, new PUi.Setting(a, "", "Start screen", null), dev.peanuts.smooth.SmoothItems.START_LOG);
         smoothPart(a, smoothBox, new PUi.Setting(a, "", "Preparing graphics notice", null), dev.peanuts.smooth.SmoothItems.WARM);
         smoothPart(a, smoothBox, new PUi.Setting(a, "", "Graphics driver notice", null), dev.peanuts.smooth.SmoothItems.SKIP);
+        // Play with other apps' sound (#819; SettingsSections puts the row under App › Extras): off, a game asks for the audio focus as before; on, it plays beside
+        // a video in picture-in-picture or music, and only a phone call interrupts its sound (GameActivity.hostSetup, AudioFocus). From the next game start
+        PUi.Setting mixAudio = new PUi.Setting(a, "", "Play with other apps' sound", null).value("Music or a video keeps playing beside the game")
+                .toggle(a, PeanutsPrefs.mixAudio(a), (b, on) -> { Feel.toggled(b, on); PeanutsPrefs.mixAudio(a, on); });
+        mixAudio.view.setOnClickListener(v -> mixAudio.toggle.toggle());
+        card.addView(mixAudio.view);
         // Developer view (dev.peanuts.smooth.DevView; under Developer › Testing): the testers' toasts and the in-game menu's tool words, or neither
         devRow = new PUi.Setting(a, "", "Developer view", null)
                 .toggle(a, dev.peanuts.smooth.DevView.on(a), (b, on) -> { Feel.toggled(b, on); dev.peanuts.smooth.DevView.on(a, on); refreshRows(); });

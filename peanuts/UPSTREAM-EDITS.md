@@ -3751,3 +3751,25 @@ Two profiles of the game that the OpenGL UI and no-colour draw sections above we
 | `dm/games/01005A20190A6000/shader_map.tsv`, `shader_facts.tsv`, `shader_pairs.tsv`, `shader_files.tsv`, and the same four in `dm/games/0100D2D0190A4000/` | new | the generated tables (the US ones copies of the EU ones) | allow-listed in `peanuts/upstream-unmarked.txt` |
 | `dm/games/README.md` | 2 | the two table rows | `<!-- PEANUTS: ... -->` in the row's last cell |
 | `docs/reference/rendering.md` | 3 | the Found on lines of the BGR5A1, no-colour draw and OpenGL UI entries link the EU profile | `<!-- PEANUTS -->` at the line's end |
+
+### Play with other apps' sound (2026-11-27, PR #819)
+
+With a game running, other apps' sound stopped: a video in picture-in-picture or music paused when the game started (its `AUDIOFOCUS_GAIN` request), and
+when that app played again it took the focus back and the game's focus listener silenced the game (`Native.audioInterrupt`). Settings › App › Extras ›
+**Play with other apps' sound** (`PeanutsPrefs.mixAudio`, off by default, read at the game's start) asks for no focus, so the game plays beside them; no
+focus loss reaches it for a phone call then either, so the audio mode stands in (`AudioManager.OnModeChangedListener`, API 31): ringing, in call, call
+screening and call redirect interrupt the sound, normal mode ends it, and the return to the game follows the mode as it is then. A voice chat
+(`MODE_IN_COMMUNICATION`) plays beside the game, as media does. Off, the focus request and its handling are upstream's, unchanged (the request asked for
+again on the return after a permanent loss).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `android/app/src/main/java/dev/nxnative/android/GameActivity.java` | 4 | the `audioMode` field; `onDestroy` removes the mode listener; `hostSetup`: the mode listener with the setting on, upstream's focus request in the `else`; `onStart`: the sound follows the mode on the return | `// PEANUTS:`, `PEANUTS begin`/`end` |
+| `android/app/src/main/java/dev/nxnative/android/AudioFocus.java` | 3 | the class comment's last lines; the `MODE_*` values; `interrupts(mode)` | `PEANUTS:`, `PEANUTS begin`/`end` |
+| `android/app/src/jvmtest/java/dev/nxnative/android/AudioFocusJvmTest.java` | 1 | which audio modes interrupt | `PEANUTS begin`/`end` |
+| `dm/tools/tests/test_android_audiofocus.py` | 3 | the setting's wiring both ways and its default; the `MODE_*` values against `android.jar` | `# PEANUTS`, `# PEANUTS begin`/`end` |
+| `android/README.md` | 1 | `nxhost_audio_interrupt` with the setting on | `<!-- PEANUTS: #819 -->` |
+
+Peanuts' own files, no marker: `android/app/src/main/java/dev/peanuts/PeanutsPrefs.java` (`mixAudio`), `ui/LibrarySettings.java` (the row),
+`ui/SettingsSections.java` (its place under Extras, the App section's line), `ui/SettingsHelp.java` (its explanation), `jvmtest/.../SettingsSectionsJvmTest.java`,
+`peanuts/scripts/icons.py` and `android/app/src/peanuts/res/drawable/pi_audio.xml` (its icon), `peanuts/tests/test_smooth_experience.py` (Extras' rows).

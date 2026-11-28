@@ -79,6 +79,7 @@ public final class SettingsHelp {
         put(m, "Start screen", "Part of Smooth Experience: the game's cover and a peanut instead of log lines, until the game shows.", "On");
         put(m, "Preparing graphics notice", "Part of Smooth Experience: no notice while a game makes graphics in the background. On a first run parts of the picture may be missing for a moment.", "On");
         put(m, "Graphics driver notice", "Part of Smooth Experience: no notice when the graphics driver left out parts of the picture.", "On");
+        put(m, "Play with other apps' sound", "Off, starting a game pauses music or a video, as most games do. On, they keep playing beside the game, a video in picture-in-picture too, and a phone call still pauses the game's sound. From the next game start.", "Off");
         // Help
         put(m, "Readiness check", "Checks whether this device can run your games: Android, memory, file access, the GPU and its driver, and each game's needs.", null);
         put(m, "Graphics self-test", "Draws a test picture for a few seconds, with no game, and says whether the GPU and its driver passed.", null);

@@ -210,6 +210,11 @@ public final class PeanutsPrefs {
     public static void smooth(Context c, boolean on) { of(c).edit().putBoolean("smooth", on).commit(); }
     public static boolean smoothItem(Context c, String key) { return of(c).getBoolean("smooth_" + key, true); }
     public static void smoothItem(Context c, String key, boolean on) { of(c).edit().putBoolean("smooth_" + key, on).commit(); }
+    /** Settings > App > Extras > Play with other apps' sound (GameActivity.hostSetup, dev.nxnative.android.AudioFocus; #819): false (default) = a game asks for the
+     *  audio focus as before, so starting it pauses music or a video; true = no focus, the game plays beside them and only a phone call interrupts its sound.
+     *  commit, not apply: the game's process reads it at its start */
+    public static boolean mixAudio(Context c) { return of(c).getBoolean("mix_audio", false); }
+    public static void mixAudio(Context c, boolean on) { of(c).edit().putBoolean("mix_audio", on).commit(); }
     /** Settings > Library > Swap screens: false (default) = the game on the built-in screen and the companion on the other display, true = the other way round
      *  (a clip-on top screen that Android lists as the external display, GitHub issue #131). dev.peanuts.Screens applies it */
     public static boolean swapScreens(Context c) { return of(c).getBoolean("swap_screens", false); }
