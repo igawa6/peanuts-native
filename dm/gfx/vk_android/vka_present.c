@@ -41,6 +41,75 @@ static int g_thread_up;
 static _Atomic uint64_t g_presentation_deadline;
 void nxhost_presentation_deadline_set(uint64_t ns) { atomic_store_explicit(&g_presentation_deadline, ns, memory_order_relaxed); }
 static void *selftest_main(void *arg);
+
+// PEANUTS: the window belongs to the front that shows frames. A title that renders through OpenGL
+// (dm/gfx/gl/hle_gl_android.c) makes no NVN calls, so nothing ever reaches the present queue and a swapchain on
+// its window would only sit there holding the buffer queue: when that front asks for the window, this lets it go —
+// surface and swapchain destroyed, the ANativeWindow reference handed over — and shows nothing after. g_gl_takes
+// is set once, by the ask; a window that arrives later (rotation, the launcher resuming) is handed over too.
+static int g_gl_takes;                 // the GL front asked for the window: window_take() hands it over
+static ANativeWindow *g_win_gl;        // the window the GL front presents to, with one reference (g_pmu)
+static uint64_t g_gl_ack;              // the window generation the handover completed for
+static int g_window_set;               // a window was given to this process at some point
+struct ANativeWindow *nxhost_window_take_for_gl(void) {   // vk_android.h
+    pthread_mutex_lock(&g_pmu);
+    if (!g_gl_takes) { g_gl_takes = 1; g_gl_ack = g_win_ack; }
+    if (!g_win_gl && !g_thread_up && g_win_new) {   // no present thread: the window never left here, take it directly
+        g_win_gl = g_win_new; g_win_new = NULL; g_win_ack = g_win_gen;
+    }
+    if (!g_win_gl && g_thread_up && g_window_set) {   // make the present thread let go of the window it holds
+        uint64_t want = ++g_win_gen;
+        pthread_cond_broadcast(&g_pcv);
+        struct timespec dl; clock_gettime(CLOCK_REALTIME, &dl); dl.tv_sec += 2;
+        while (g_gl_ack < want && g_win_ack < want)
+            if (pthread_cond_timedwait(&g_pcv, &g_pmu, &dl)) { VRED("the present thread did not let the window go within 2 s"); break; }
+    }
+    ANativeWindow *w = g_win_gl;
+    if (w) ANativeWindow_acquire(w);   // the caller holds a reference of its own; this file keeps its handover reference too
+    pthread_mutex_unlock(&g_pmu);
+    VLOG("window for the GL front: %p%s", (void *)w, w ? "" : " (none: no window in this process)");
+    return w;
+}
+// What a front that presents itself has to know about this window: the size its buffer queue will use and the turn
+// the compositor wants. The window itself cannot say (ANativeWindow has no read of the transform hint, and
+// ANativeWindow_setBuffersTransform is not exported on every device — measured on the AYN Thor's Android 13), but
+// the Vulkan surface of the same window does: currentExtent is in the panel's orientation and currentTransform is
+// the turn, which is what the swapchain below is sized and turned by. Making and destroying a surface connects
+// nothing, so the GL front keeps its window and its EGL surface untouched.
+int nxhost_window_form_for_gl(ANativeWindow *w, int *buf_w, int *buf_h, int *turn) {   // vk_android.h
+    if (buf_w) *buf_w = 0;
+    if (buf_h) *buf_h = 0;
+    if (turn) *turn = 0;
+    if (!w || !V.inst || !V.pd || !vk.vkCreateAndroidSurfaceKHR || !vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR) {
+        VRED("no Vulkan to ask about the GL front's window: it will size its buffer by itself");
+        return 0;
+    }
+    VkAndroidSurfaceCreateInfoKHR si = { .sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR, .window = w };
+    VkSurfaceKHR s = VK_NULL_HANDLE;
+    if (vk.vkCreateAndroidSurfaceKHR(V.inst, &si, NULL, &s) || !s) {
+        VRED("no surface on the GL front's window %p: it will size its buffer by itself", (void *)w);
+        return 0;
+    }
+    VkSurfaceCapabilitiesKHR caps;
+    int r = vk.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(V.pd, s, &caps), ok = !r;
+    uint32_t ww = (uint32_t)ANativeWindow_getWidth(w), wh = (uint32_t)ANativeWindow_getHeight(w);
+    if (ok) {
+        if (turn) *turn = caps.currentTransform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ? 90
+                       : caps.currentTransform == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR ? 180
+                       : caps.currentTransform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR ? 270 : 0;
+        // The size that goes in the queue, in the orientation the queue keeps its buffers: the window's own size
+        // turned, which is also the extent the swapchain above takes — currentExtent is the panel's on a phone and
+        // the window's on the emulator, so the window's size is the answer that holds on both.
+        uint32_t bw = ww, bh = wh;
+        if (*turn == 90 || *turn == 270) { bw = wh; bh = ww; }
+        if (buf_w && bw) *buf_w = (int)bw;
+        if (buf_h && bh) *buf_h = (int)bh;
+    } else VRED("surface capabilities for the GL front's window: %d", r);
+    vk.vkDestroySurfaceKHR(V.inst, s, NULL);
+    VLOG("the GL front's window %p: its queue's buffers %dx%d, the picture turned %d degrees", (void *)w, *buf_w, *buf_h, *turn);
+    return ok;
+}
+
 void nxhost_set_window(ANativeWindow *w) {
     static int first = 1;
     if (w) ANativeWindow_acquire(w);
@@ -50,6 +119,7 @@ void nxhost_set_window(ANativeWindow *w) {
     pthread_mutex_lock(&g_pmu);
     if (g_win_new) ANativeWindow_release(g_win_new);   // never taken by the present thread
     g_win_new = w; uint64_t gen = ++g_win_gen;
+    if (w) g_window_set = 1;
     pthread_cond_broadcast(&g_pcv);
     if (!w && g_thread_up) {   // surfaceDestroyed: the swapchain must be gone before the launcher returns
         struct timespec dl; clock_gettime(CLOCK_REALTIME, &dl); dl.tv_sec += 2;
@@ -521,7 +591,9 @@ int nxhost_overlay_set(int slot, const void *px, int w, int h, int stride) {
     pthread_mutex_unlock(&g_omu);
     return ok && nxhost_overlay_state() >= 0;
 }
-int nxhost_overlay_state(void) { return !ovl_wanted() ? -1 : atomic_load(&g_ostate); }
+// -1 also once the window belongs to another front (the GL front): no present of ours draws images any more, so the
+// launcher's own views show the overlay instead of handing bitmaps to a present that is gone
+int nxhost_overlay_state(void) { return !ovl_wanted() || g_gl_takes ? -1 : atomic_load(&g_ostate); }
 
 static void ovl_fail(const char *what, VkResult r) { VRED("overlay: %s: %d; the launcher draws it", what, r); atomic_store(&g_ostate, -1); }
 static void ovl_free_image(void) {
@@ -726,6 +798,20 @@ static void window_take(void) {   // g_pmu held
     ANativeWindow *w = g_win_new; uint64_t gen = g_win_gen; g_win_new = NULL;
     pthread_mutex_unlock(&g_pmu);
     swap_destroy(1);
+    if (g_gl_takes) {   // PEANUTS: this window is presented by the GL front (dm/gfx/gl/hle_gl_android.c): no
+                        // Vulkan surface and no swapchain on it, and its reference moves there instead of being released
+        ANativeWindow *hand = w ? w : g_win;   // the new window, or the one this thread holds and gives up
+        if (w && g_win && g_win != w) ANativeWindow_release(g_win);
+        g_win = NULL;
+        VLOG("window %p to the GL front: no Vulkan surface on it", (void *)hand);
+        pthread_mutex_lock(&g_pmu);
+        if (g_win_gl && g_win_gl != hand) ANativeWindow_release(g_win_gl);
+        g_win_gl = hand;
+        g_win_ack = gen; g_gl_ack = gen;
+        pthread_cond_broadcast(&g_pcv);
+        pthread_mutex_unlock(&g_pmu);
+        return;
+    }
     if (g_win) ANativeWindow_release(g_win);
     g_win = w; g_fps_set = 0;
     if (w && V.has_android_surface) {

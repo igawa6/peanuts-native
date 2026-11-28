@@ -38,6 +38,11 @@ void vka_fps_note(int shown, int generated) {
     g_win_t0 = t; g_base_n = g_out_n = g_base_ns_sum = 0;
 }
 
+// A front that presents its own frames (the GL front, hle_gl_android.c) reports them here: the same counting as
+// the Vulkan present's own, so the launcher's numbers and the frame-time graph do not depend on which front drew
+// the picture. vk_android.h.
+void nxhost_present_note(int shown) { vka_fps_note(shown, 0); }
+
 // The GPU's busy time a frame, averaged over up to 32 recent frames whose time is in (vka_exec.c reads two timestamps per submission; a frame's time is in 8 frames
 // later): only when the overlay asks (twice a second), a few atomic loads a frame. -1 without GPU timestamps
 uint64_t vka_frame(void); double mtl_gpu_ms(uint64_t f);
