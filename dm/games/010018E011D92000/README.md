@@ -17,7 +17,7 @@ No `patches.py`.
 
 ## Open
 
-- Luminescent Platinum for Shining Pearl and the other code mods have not been tried on this build: a mod's hooks are keyed to `main`'s build.
+- Luminescent Platinum 2.2F SP: a build with it crashed on a loading screen (AYN Thor, 0.1.9: a null read at `sdk+0x39db4`) with this profile's 2 GB pool. Its build with mods now takes Brilliant Diamond's numbers for the same mod (`dm/peanuts/profile/mod_memory.tsv`: 3 GB pool, larger alias region and reservation); with them it was tested on someone else's device. The other code mods have not been tried on this build: a mod's hooks are keyed to `main`'s build.
 
 ## Android community FPS timing corrections
 

@@ -7,3 +7,10 @@
 0100000011D90000	app_pool	0xC0000000
 0100000011D90000	mem_alias	0x198000000
 0100000011D90000	mem_reserve	0x1C0000000
+#
+# Pokemon Shining Pearl: Brilliant Diamond's twin, with the same profile memory and the same Luminescent Platinum (its SP release), so the same numbers. Without them
+# a build with Luminescent Platinum 2.2F SP kept the profile's 2 GB pool and 5 GB reservation and crashed on a loading screen with a null read in sdk (AYN
+# Thor, 0.1.9: CRASH addr=0 pc=sdk+0x39db4); Brilliant Diamond's own failure without its rows was a null read too. Tested with these rows on someone else's device
+010018E011D92000	app_pool	0xC0000000
+010018E011D92000	mem_alias	0x198000000
+010018E011D92000	mem_reserve	0x1C0000000
