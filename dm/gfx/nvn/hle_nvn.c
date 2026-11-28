@@ -21,6 +21,7 @@
 #include "nvn_timestamp.h"
 #include "../../host/front.h"
 #include "nvn_dirty.h"
+#include "nvn_progkeys.h"
 #if PLAT_APPLE
 #include <mach/mach.h>
 #include <mach/thread_policy.h>
@@ -1007,28 +1008,32 @@ NVN(nvnSamplerFinalize, void, NVNsampler *s) { ((samp_t *)s)->magic = 0; }
 NVN(nvnProgramInitialize, NVNboolean, NVNprogram *p, NVNdevice *d) {
     (void)d; memset(p, 0, sizeof(prog_t)); ((prog_t *)p)->magic = MAGIC('P', 'R', 'O', 'G'); return 1;
 }
-static void pk_drop(const void *p);
+static void pk_drop(const prog_t *p);
 // A backend without per-queue bindings has nothing to drop at a program's finalize (the Vulkan replay's is vka_worker.c; upstream nxnative's Metal one, nvn_mtl.m, is not ported here)
 __attribute__((weak)) void mtl_prog_forget(const prog_t *p) { (void)p; }
 NVN(nvnProgramFinalize, void, NVNprogram *p) {
     pthread_mutex_lock(&g_sub_mu); mtl_prog_forget((const prog_t *)p); pthread_mutex_unlock(&g_sub_mu);
-    mtl_prog_release((prog_t *)p); ((prog_t *)p)->magic = 0; pk_drop(p);
+    mtl_prog_release((prog_t *)p); ((prog_t *)p)->magic = 0; pk_drop((const prog_t *)p);
 }
-// a program's per-stage keys (side table: guest NVNprogram address → host object; bit i of ok = stage i computed)
-typedef struct { uint8_t key[6][8]; uint8_t ok; } prog_keys_t;
+// a program's per-stage keys (side table: the program's serial → host object; bit i of ok = stage i computed). Kept by serial, as the replay keeps the program's resolved
+// shaders (vka_shader.c pr_find), not by the NVNprogram's address (nvn_progkeys.h): keyed by address, a copy of the object had no keys and made them at its first draw
+// from the control section, which NVN guarantees only during SetShaders: Ori and the Will of the Wisps (Unity 2018.4) drew with copies whose sections it had reused, and
+// 32 vertex shaders got keys no split has. owner: the object SetShaders ran on (nvn_pk_may_drop)
+typedef struct { uint8_t key[6][8]; uint8_t ok; const prog_t *owner; } prog_keys_t;
 static pthread_mutex_t g_pk_mu = PTHREAD_MUTEX_INITIALIZER; static plat_ptrmap_t *g_pk;   // a dedicated table (keys not shared with other side tables)
-static prog_keys_t *pk_get(const void *p, int make) {
+static const void *pk_id(const prog_t *p) { return nvn_pk_id(p->serial); }
+static prog_keys_t *pk_get(const prog_t *p, int make) {
     pthread_mutex_lock(&g_pk_mu);
     if (!g_pk) g_pk = plat_ptrmap_create();
-    prog_keys_t *k = (prog_keys_t *)plat_ptrmap_get(g_pk, p);
-    if (!k && make) { k = calloc(1, sizeof *k); plat_ptrmap_set(g_pk, p, k); }
+    prog_keys_t *k = (prog_keys_t *)plat_ptrmap_get(g_pk, pk_id(p));
+    if (!k && make) { k = calloc(1, sizeof *k); plat_ptrmap_set(g_pk, pk_id(p), k); }
     pthread_mutex_unlock(&g_pk_mu);
     return k;
 }
-static void pk_drop(const void *p) {
+static void pk_drop(const prog_t *p) {
     pthread_mutex_lock(&g_pk_mu);
-    prog_keys_t *k = g_pk ? (prog_keys_t *)plat_ptrmap_get(g_pk, p) : NULL;
-    if (k) { plat_ptrmap_remove(g_pk, p); free(k); }
+    prog_keys_t *k = g_pk ? (prog_keys_t *)plat_ptrmap_get(g_pk, pk_id(p)) : NULL;
+    if (k && nvn_pk_may_drop(k->owner, p)) { plat_ptrmap_remove(g_pk, pk_id(p)); free(k); }
     pthread_mutex_unlock(&g_pk_mu);
 }
 // mapped = 1: computed only when the code area is in a registered memory pool (at SetShaders: Mario sets some programs with an unmapped address first and fills it in before the first draw)
@@ -1083,13 +1088,13 @@ void nvn_prog_keys_set(const prog_t *p, const uint8_t key[6][8], uint8_t ok) { p
 NVN(nvnProgramSetShaders, NVNboolean, NVNprogram *p, int n, const NVNshaderData *sd) {
     prog_t *o = (prog_t *)p;
     if (n < 0 || n > 6) { LOG("[RED] ProgramSetShaders stage count %d", n); return 0; }
-    mtl_prog_release(o); o->nstage = n; memcpy(o->sd, sd, n * sizeof *sd); o->serial = nvn_new_serial();
+    mtl_prog_release(o); pk_drop(o); o->nstage = n; memcpy(o->sd, sd, n * sizeof *sd); o->serial = nvn_new_serial();   // (the old serial's keys go as the replay's entry does)
     // The keys are computed here (see prog_key in nvn_obj.h): the control section is only guaranteed valid during this call; the code area lives in a memory pool and stays valid while the program is in use
     static int dump = -1; if (dump < 0) dump = getenv("DM_NVN_SHDUMP") != NULL;
     static const char *trace; static int trace_init;
     if (!trace_init) { trace = getenv("DM_NVN_PROGTRACE"); trace_init = 1; }
-    prog_keys_t *k = pk_get(p, 1);
-    k->ok = 0;
+    prog_keys_t *k = pk_get(o, 1);
+    k->ok = 0; k->owner = o;
     for (int i = 0; i < n; i++) {
         if (keys_hash(&sd[i], 1, k->key[i])) { k->ok |= (uint8_t)(1u << i); nvn_tf_ctl_note(k->key[i], sd[i].control); /* PEANUTS: transform feedback layout (above) */ }
         // Diagnostic: trace the loader of selected shader keys (comma-separated hex).

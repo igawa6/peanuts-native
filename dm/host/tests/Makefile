@@ -92,6 +92,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_nvn_dpool
 # PEANUTS: #807, empty-pool command memory grants
 	$(B)/t_nvn_cmdarena
+	$(B)/t_nvn_progkeys
 	$(B)/t_android_t2tpath
 	$(B)/t_android_wbfollow
 	$(B)/t_nvn_levelof
@@ -486,6 +487,10 @@ run: $(B)/t_nvn_dpool
 $(B)/t_nvn_cmdarena: t_nvn_cmdarena.c ../../gfx/nvn/nvn_cmdarena.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -I.. -o $@ t_nvn_cmdarena.c
 run: $(B)/t_nvn_cmdarena
+# A program's stage keys found by its serial, so a copy of the program object finds them (nvn_progkeys.h; hle_nvn.c "Programs")
+$(B)/t_nvn_progkeys: t_nvn_progkeys.c ../../gfx/nvn/nvn_progkeys.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -fsanitize=address,undefined -I.. -o $@ t_nvn_progkeys.c
+run: $(B)/t_nvn_progkeys
 # A scaled texture copy is a blit only into a blit destination; a depth one into a format that is none is a draw (vka_t2tpath.h; vka_exec.c copy_t2t)
 $(B)/t_android_t2tpath: t_android_t2tpath.c $(VKA)/vka_t2tpath.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_t2tpath.c

@@ -197,6 +197,14 @@ The game may also write into an NVN object directly, without an NVN call, throug
 - **Check:** `make -C dm/host/tests GAME=<id> run` (`t_android_texown`: a copy finalized before and after its original, a re-Initialize of a copy, a moved original, many owners).
 - **Found on:** [The Legend of Zelda: Ocarina of Time](../../dm/games/0400486024DEC000/README.md#found-on-this-game) (upstream on the Mac: about 15,000 first uploads a frame in Kokiri Forest); on the phone pending a check.
 
+### Drawing with a copy of a program object
+
+- **Symptom:** Android: a black picture with the game's frame loop running; `[RED] vk: shader … (program stage 0) is not in the shader library` for the same keys every run, none of them in the profile's `shader_map.tsv`, and `[RED] vk: 51 % of draws skipped … (causes: shaders refused …)`. With `DM_NVN_SHDUMP` set no shader is missing and nothing is dumped. `DM_NVN_PROGTRACE` with the missing keys logs none of them at `nvnProgramSetShaders`.
+- **Cause:** `NVNprogram` is plain data: the engine copies a program object by value after `nvnProgramSetShaders` and draws with the copy. The host kept a program's stage keys by the object's address (`hle_nvn.c` `pk_get`), so the copy had none, and `prog_key` made them at its first draw from the copy's `sd[i].control`, a section NVN guarantees only during `SetShaders`, which the game had reused by then: the key named a shader no split has. `DM_NVN_SHDUMP` hid it by handing every stage a host copy of its section at `SetShaders` (about 450 MB more on Ori and the Will of the Wisps).
+- **Fix:** every game (`hle_nvn.c` `pk_get` / `pk_drop`). The keys are kept by the program's serial, which the copy carries, as the replay keeps the program's resolved shaders (`vka_shader.c` `pr_find`). As with [texture objects](#finalizing-a-copy-of-a-texture-object-vulkan-replay), the record holds the object `SetShaders` ran on, and a `Finalize` or a new `SetShaders` of another object leaves the keys to it. The rules are in `nvn_progkeys.h`.
+- **Check:** `make -C dm/host/tests GAME=<id> run` (`t_nvn_progkeys`: a copy finds the original's keys; finalizing or setting shaders on a copy leaves them; the owner's new `SetShaders` and `Finalize` drop them; the table key is never the pointer map's empty slot or tombstone).
+- **Found on:** Ori and the Will of the Wisps (`01008DD013200000`, 1.2.1, Unity 2018.4.24f1, SDK 9.4.0; no profile in this repository yet): 32 vertex shaders, half the draws, on Turnip.
+
 ### Dead texture serials kept in a ghost table
 
 - **Symptom:** the serial table grows by about 10 entries a frame (276,000 after 25,000 frames).
