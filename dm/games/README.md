@@ -229,6 +229,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [The Hundred Line -Last Defense Academy-](010093C0215B4000/README.md) | `010093C0215B4000` | 1.2.1 (plays: title, story and the first battle on a Retroid Pocket Nova, Turnip T30) | 18.3.2 | Media.Vision's engine (MVGL archives), CRIWARE | NVN <!-- PEANUTS: a profile of this fork, packed on a PC, checked on one device only --> |
 | [THE HOUSE OF THE DEAD: Remake](010088401495E000/README.md) | `010088401495E000` | 1.1.0 | 13.3.2 | Unity 2020.3.25f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [THE HOUSE OF THE DEAD 2: Remake](01007A3024D10000/README.md) | `01007A3024D10000` | 1.0.2 | 19.3.5 | Unity 2022.3.55f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
+| [The Legend of Heroes: Trails beyond the Horizon](01007B102141A000/README.md) | `01007B102141A000` | 1.0.6 (update over base 1.0.0; bring-up) | 20.5.21 | Nihon Falcom | NVN <!-- PEANUTS --> |
 | [The Legend of Heroes: Trails through Daybreak II](0100F6701FED4000/README.md) | `0100F6701FED4000` | 1.0.0 (base; bring-up) | 17.5.6 | Nihon Falcom | NVN <!-- PEANUTS --> |
 | [The Legend of Zelda: Breath of the Wild](01007EF00011E000/README.md) | `01007EF00011E000` | 1.9.0 | 20.5.22 | Nintendo EPD (sead / agl / gsys / ksys, Havok) | NVN |
 | [The Legend of Zelda: Echoes of Wisdom](01008CF01BAAC000/README.md) | `01008CF01BAAC000` | 1.1.0 | 20.5.1 | NintendoWare (G3d / Ui2d / Vfx) | NVN |

@@ -1,0 +1,26 @@
+# PEANUTS: The Legend of Heroes: Trails beyond the Horizon, Switch update 1.0.6.
+title_id	01007B102141A000
+program_id	01007B102141A000
+name	The Legend of Heroes: Trails beyond the Horizon
+ipa	TrailsBeyondTheHorizon.ipa
+app_category	public.app-category.role-playing-games
+
+build	v131072	1.0.6	main=11d7f970861dfa66722e6e5c4725f4f7	subsdk0=a870a783a09f57256d3630b73485398e	sdk=c668ae02ea221e429677aa61d3dab7c6
+package	v131072
+shader_versions	v131072
+modules	main subsdk0 sdk
+romfs_marker	asset_shader.p3a
+zip_store	.mp4:.p3a
+
+# nninitStartup (main+0x80ec40): floor2MiB(total-used) - 0x53400000.
+# At this pool and the default 64 MiB used floor the heap request is at most
+# 0x76000000. Keep 0x78000000 for the heap independently of the virtual arena.
+# main+0xa2ec0 reserves 10 * 0x53400000 in the alias region after SDK metadata.
+mem_reserve	0x498000000
+mem_alias	0x400000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x1000000
+
+shader_groups	/asset_shader.p3a/=game
+shader_note	The Legend of Heroes: Trails beyond the Horizon 1.0.6 shaders
