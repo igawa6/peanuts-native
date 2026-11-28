@@ -450,9 +450,42 @@ HLE_FORCE("_ZN2nn2vi20GetDisplayVsyncEventEPNS_2os15SystemEventTypeEPNS0_7Displa
 }
 
 // ---------- diag ----------
-// The text after LogMetaData (NN_LOG) goes straight into the host log; an abort prints the call site and exits with a failure
+// The text after LogMetaData (NN_LOG) goes straight into the host log, collapsing identical consecutive lines; an abort prints the call site and exits with a failure
+static pthread_mutex_t g_diag_mu = PTHREAD_MUTEX_INITIALIZER;
+static char g_diag_last[512];
+static size_t g_diag_last_n;
+static uint64_t g_diag_rep;
+static uint64_t g_diag_last_flush_ns;
+
 HLE_FORCE("_ZN2nn4diag6detail7PutImplERKNS0_11LogMetaDataEPKcm", "game log → host log", void, h_diag_Put, const void *meta, const char *s, size_t n) {
-    (void)meta; while (n && (s[n - 1] == '\n' || s[n - 1] == '\0')) n--; if (n) LOG("[game] %.*s", (int)n, s);
+    (void)meta;
+    if (!s) return;
+    while (n && (s[n - 1] == '\n' || s[n - 1] == '\0')) n--;
+    if (!n) return;
+    pthread_mutex_lock(&g_diag_mu);
+    uint64_t now = now_ns();
+    if (n <= sizeof(g_diag_last) && n == g_diag_last_n && memcmp(g_diag_last, s, n) == 0) {
+        g_diag_rep++;
+        if (now >= g_diag_last_flush_ns && now - g_diag_last_flush_ns >= 10000000000ULL) {
+            LOG("[game] (last message repeated %llu times)", (unsigned long long)g_diag_rep);
+            g_diag_rep = 0;
+            g_diag_last_flush_ns = now;
+        }
+    } else {
+        if (g_diag_rep) {
+            LOG("[game] (last message repeated %llu times)", (unsigned long long)g_diag_rep);
+            g_diag_rep = 0;
+        }
+        if (n <= sizeof(g_diag_last)) {
+            memcpy(g_diag_last, s, n);
+            g_diag_last_n = n;
+        } else {
+            g_diag_last_n = 0;
+        }
+        g_diag_last_flush_ns = now;
+        LOG("[game] %.*s", (int)n, s);
+    }
+    pthread_mutex_unlock(&g_diag_mu);
 }
 // Abort: report the call site (module + offset) and the guest backtrace, then exit
 static void diag_abort(uint32_t res, void *lr) {
