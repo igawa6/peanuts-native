@@ -424,3 +424,8 @@ dm/games/01004BC0166CC000/shader_pairs.tsv	Generated vertex and pixel key pairs.
 dm/games/01004BC0166CC000/pso_pairs.tsv	Generated supplemental pipeline key pairs.
 dm/games/01004BC0166CC000/pso_manifest.tsv	Generated pipeline seed list.
 dm/games/01004BC0166CC000/bf_want.tsv	Generated shader auxiliary table.
+dm/games/0100F3400332C000/shader_map.tsv	Generated shader key map for Xenoblade Chronicles 2 (Japan) 3.0.1.
+dm/games/0100F3400332C000/shader_facts.tsv	Generated compute shader facts for Xenoblade Chronicles 2 (Japan) 3.0.1.
+dm/games/0100F3400332C000/shader_pairs.tsv	Generated vertex and pixel key pairs for Xenoblade Chronicles 2 (Japan) 3.0.1.
+dm/games/0100F3400332C000/pso_pairs.tsv	Generated supplemental pipeline key pairs for Xenoblade Chronicles 2 (Japan) 3.0.1.
+dm/games/0100F3400332C000/LICENSE.xc2-recomp	Original MIT license for xc2-recomp timing patches.
