@@ -65,6 +65,9 @@ public final class ModRuntime {
         return ModStore.contributing(mods, ModStore.playsVariant(titleId, ModStore.enabledCodeMods(mods), packDir));
     }
 
+    /** The enabled mods' romfs folders for a start of packDir, first wins: what a frame rate variant's own files are merged with (VariantMerge) */
+    public static List<File> romfsDirs(File gameHome, String titleId, File packDir) { return ModStore.enabledRomfsDirs(forStart(gameHome, titleId, packDir)); }
+
     /** As above for a start of packDir (GameActivity.start's pack folder): see {@link #forStart} */
     public static String romfsOverlayEnv(Context c, File gameHome, String titleId, File sceneOverlayDirOrNull, File packDir) {
         List<File> dirs = ModStore.enabledRomfsDirs(forStart(gameHome, titleId, packDir));

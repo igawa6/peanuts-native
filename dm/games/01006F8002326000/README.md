@@ -28,6 +28,9 @@ per-frame speeds halved and its frame counts doubled, so it plays at normal spee
   `Pack/StaticParam.pack`). [speedfix60/romfs.tsv](speedfix60/romfs.tsv) holds only the changed bytes, with each original file's size and SHA-256
   (`dm/tools/romfs_rows.py`); the pack step applies them to the player's own 3.0.3 files into `<pack>/60/romfs/` and lists the variant in `pack.tsv` only when
   every file matched. The start passes that folder first in `DM_ROMFS_OVERLAY`.
+- **Mods**: a mod that ships one of those files (ACNH Combined's River Hopping ships `Pack/StaticParam.pack`) has its changes merged into the variant's copy at
+  each start, except the values the variant changes too; before, the variant's copy hid the mod's whole file at 60 fps
+  ([A frame rate variant's game data hides a mod's copy of the same file](../../../docs/reference/packing.md#a-frame-rate-variants-game-data-hides-a-mods-copy-of-the-same-file-android)).
 - **Pacing**: one frame a display tick (`DM_PRESENT_INTERVAL=display`), which does what the mod's `sdk` patch does on the console (swap interval 2 to 1 inside NVN
   code the host replaces); that patch is not used.
 - Measured on an AYN Thor with the mod imported (before the built-in choice): 60 fps, 16.7 ms frames.
@@ -78,6 +81,7 @@ General host changes first needed here; each applies to every game:
 - **The game's own HIPC clients answered by host sessions** (`hle_sf.c`, `DM_SF_TRACE`), **device save data and shared transactions** (`mount_ex`), **`fs::Commit` with a mount list or a `CommitOption`**, and the adjustable user clock, region code and SDK 20 album and steady-clock calls: [Game-linked HIPC clients of system services](../../../docs/reference/services.md#game-linked-hipc-clients-of-system-services), [Device save data on the account save's directory](../../../docs/reference/services.md#device-save-data-on-the-account-saves-directory), [`fs::Commit` with a list of mounts](../../../docs/reference/services.md#fscommit-with-a-list-of-mounts), [Steady clock, clock snapshots and user clocks](../../../docs/reference/services.md#steady-clock-clock-snapshots-and-user-clocks), [Region code from the language](../../../docs/reference/services.md#region-code-from-the-language), [Album calls fail with no album](../../../docs/reference/services.md#album-calls-fail-with-no-album).
 - **16 output slots for video movie decoders** (`MD_NOUT_VIDEO` in `hle_movie.c`): [Video output slots: how far the extractor gets ahead](../../../docs/reference/movies.md#video-output-slots-how-far-the-extractor-gets-ahead).
 - **Functions with function constants specialized by the pipeline** (`fn_spec`): the HUD's `Compiled 2 shaders … Consider adopting MTL4Compiler` during play on the iPhone with Metal 4 pipelines on: [Functions with function constants specialized by the pipeline, not the library](../../../docs/reference/shaders.md#functions-with-function-constants-specialized-by-the-pipeline-not-the-library).
+- **A mod's copy of a frame rate variant's file merged into the variant's** (`VariantMerge`): ACNH Combined's River Hopping did nothing at 60 fps; [A frame rate variant's game data hides a mod's copy of the same file](../../../docs/reference/packing.md#a-frame-rate-variants-game-data-hides-a-mods-copy-of-the-same-file-android).
 - [The alpha test through a library of its own](../../../docs/reference/rendering.md#the-alpha-test-through-a-library-of-its-own): the island map's corruption (issue #73) improved with an alpha test in a downstream runtime (PR #430).
 
 ## Open

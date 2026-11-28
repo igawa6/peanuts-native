@@ -140,19 +140,23 @@ def read_original(root, path):
     except OSError as e: raise Error(f'{path}: cannot be read from the game files ({e.strerror or e})') from None
 
 
-def make(rows_path, root, out):
+def make(rows_path, root, out, orig_out=None):
     """Every file of the rows applied to its original in root, written to out/<RomFS path>: [RomFS path]. All or nothing: a file that does not apply stops
-    it before anything is written (Error), and out is emptied first so that a file of an earlier run cannot stay beside new ones"""
+    it before anything is written (Error), and out is emptied first so that a file of an earlier run cannot stay beside new ones. With orig_out, each
+    original is written to orig_out/<RomFS path> as well (emptied first too): what the launcher merges a mod's copy of the same file against
+    (dev.peanuts.mods.VariantMerge)"""
     frs = load(rows_path)
-    made = [(fr.path, apply(fr, read_original(root, fr.path))) for fr in frs]
+    origs = [(fr.path, read_original(root, fr.path)) for fr in frs]
+    made = [(fr.path, apply(fr, data)) for fr, (_, data) in zip(frs, origs)]
     import shutil
-    shutil.rmtree(out, ignore_errors=True)
-    for path, data in made:
-        dst = os.path.join(out, *path.split('/'))
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        tmp = dst + '.partial'
-        with open(tmp, 'wb') as f: f.write(data)
-        os.replace(tmp, dst)
+    for folder, files in ((out, made),) + (((orig_out, origs),) if orig_out is not None else ()):
+        shutil.rmtree(folder, ignore_errors=True)
+        for path, data in files:
+            dst = os.path.join(folder, *path.split('/'))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            tmp = dst + '.partial'
+            with open(tmp, 'wb') as f: f.write(data)
+            os.replace(tmp, dst)
     return [p for p, _ in made]
 
 

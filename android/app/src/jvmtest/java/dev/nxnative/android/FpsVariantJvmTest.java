@@ -44,6 +44,8 @@ public final class FpsVariantJvmTest {
         check(pk.variantReady("60") && new File(pack, "60/romfs").equals(pk.variantRomfs("60")), "ready, with its overlay: " + pk.variantRomfs("60"));
         check(pk.variantRomfs("evil") == null && pk.variantRomfs("none") == null && pk.variantRomfs("gone") == null, "never outside the pack, '-' is none");
         check(!pk.variantReady("43") && !pk.variantReady(null), "no row: not ready");
+        check(pk.variantOriginals("60") == null && pk.variantOriginals("none") == null, "an older pack: no originals to merge a mod's copy against");
+        check(new File(pack, "60/romfs-orig").mkdirs() && new File(pack, "60/romfs-orig").equals(pk.variantOriginals("60")), "the originals beside the overlay: " + pk.variantOriginals("60"));
         Files.write(new File(pack, "pack.tsv").toPath(), head.getBytes(StandardCharsets.UTF_8));
         check(!Pack.read(pack).variantReady("60"), "a pack without the row (another version, an older pack) is not ready though its 60/main is there");
         System.out.println("ok");

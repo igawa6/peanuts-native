@@ -1198,7 +1198,8 @@ def variant_cut_builds(g):
 def variant_overlays(g, romfs, out, ids):
     """The variants the pack holds complete, [(variant, its RomFS overlay folder in the pack or '-')]: each module of the variant row rewritten into out/<variant>/
     with its key, every one of them a build the variant has cuts for (variant_cut_builds), and its game.tsv variant_romfs rows (dm/tools/romfs_rows.py) applied to
-    this RomFS into out/<variant>/romfs/. Anything else (another game version, a build with code mods, rows that do not apply) is a line in the log and no row: the
+    this RomFS into out/<variant>/romfs/, the files they were applied to into out/<variant>/romfs-orig/ (Pack.variantOriginals: the launcher merges a mod's copy
+    of one of those files into the variant's, dev.peanuts.mods.VariantMerge). Anything else (another game version, a build with code mods, rows that do not apply) is a line in the log and no row: the
     launcher then does not start the variant (Pack.variantReady). The pack is made all the same"""
     rows = {r[0]: r[1] for r in g.values('variant_romfs') if len(r) > 1}
     out_rows = []
@@ -1209,16 +1210,16 @@ def variant_overlays(g, romfs, out, ids):
         if lacking or uncut:
             print(f'[YELLOW] variant {v} not offered: ' + '; '.join(([f'no rewritten {", ".join(lacking)}'] if lacking else [])
                   + ([f'no cuts for build {", ".join(ids[m] for m in uncut)} of {", ".join(uncut)}'] if uncut else [])), flush=True)
-            shutil.rmtree(vout / 'romfs', ignore_errors=True); continue
+            shutil.rmtree(vout / 'romfs', ignore_errors=True); shutil.rmtree(vout / 'romfs-orig', ignore_errors=True); continue
         if v not in rows: out_rows.append((v, '-')); continue
         label = next((r[2] for r in g.values('variant') if r and r[0] == v and len(r) > 2), v)
         stage(f'making the {label.replace("fps", " fps")} game data from your game files')
         sys.path.insert(0, str(REPO / 'dm/tools'))
         import romfs_rows
-        try: made = romfs_rows.make(g.dir / rows[v], str(romfs), vout / 'romfs')
+        try: made = romfs_rows.make(g.dir / rows[v], str(romfs), vout / 'romfs', vout / 'romfs-orig')   # the originals: what a mod's copy of a file is merged against at a start
         except (romfs_rows.Error, OSError) as e:
             print(f'[YELLOW] variant {v} not offered: its game data rows do not apply to these game files: {e}', flush=True)
-            shutil.rmtree(vout / 'romfs', ignore_errors=True); continue
+            shutil.rmtree(vout / 'romfs', ignore_errors=True); shutil.rmtree(vout / 'romfs-orig', ignore_errors=True); continue
         print(f'  variant {v}: {len(made)} game files made from yours ({", ".join(made)})', flush=True)
         out_rows.append((v, f'{v}/romfs'))
     return out_rows

@@ -156,6 +156,7 @@ class Overlays(unittest.TestCase):
         r, _ = self.run_({'main': 'aa' * 16})
         self.assertEqual(r, [('60', '60/romfs')])
         self.assertEqual((self.out / '60/romfs/Bcsv/A.bcsv').read_bytes(), self.modded)
+        self.assertEqual((self.out / '60/romfs-orig/Bcsv/A.bcsv').read_bytes(), (self.romfs / 'Bcsv/A.bcsv').read_bytes(), "the original beside it: what a mod's copy is merged against")
 
     def test_another_main_build_or_other_files_are_not_listed(self):
         r, log = self.run_({'main': 'bb' * 16})
@@ -164,6 +165,7 @@ class Overlays(unittest.TestCase):
         r, log = self.run_({'main': 'aa' * 16})
         self.assertEqual(r, []); self.assertIn('do not apply to these game files', log)
         self.assertFalse((self.out / '60/romfs').exists(), 'no game data of an earlier run stays')
+        self.assertFalse((self.out / '60/romfs-orig').exists(), 'nor its originals')
 
     def test_an_unfinished_rewrite_is_not_listed(self):
         (self.out / '60/main.android.key').unlink()
@@ -287,9 +289,25 @@ class AnimalCrossing(unittest.TestCase):
         self.assertIn('pack.variantReady(fv)', act)
         self.assertLess(act.index('pack.variantRomfs(fpsVariantAtStart)'), act.index('env.addAll(user);'), "the player's own DM_ROMFS_OVERLAY line comes later and wins")
         self.assertLess(act.index('if (modOverlay != null) env.add(modOverlay);'), act.index('pack.variantRomfs(fpsVariantAtStart)'), "the variant's data goes first, before the mods' chain")
+        start = act[act.index('pack.variantRomfs(fpsVariantAtStart)'):act.index('env.addAll(user);')]
+        self.assertIn('VariantMerge.merge(fpsRomfs, pack.variantOriginals(fpsVariantAtStart)', start, "the mods' copies of the variant's files are merged into it")
+        self.assertIn('(merged.root != null ? merged.root.getPath() + ":" : "") + fpsRomfs.getPath()', start, 'the merged files first, then the variant, then the chain')
         prefs = (SRC / 'Prefs.java').read_text(encoding='utf-8')
         self.assertIn('applies at the next start', prefs.split('FPS_VARIANT_NOTE = ')[1].split(';')[0])
         self.assertIn("('variant', f'{v}\\t{p}')", (REPO / 'scripts/pack_android.py').read_text(encoding='utf-8'))
+
+
+@unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')
+class VariantMergeJvm(unittest.TestCase):
+    def test_jvm(self):   # VariantMerge: a variant's files merged with the enabled mods' copies (made-up SARC and BYML files)
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d); (d / 'run').mkdir()
+            srcs = [REPO / 'android/app/src/main/java/dev/peanuts/mods/VariantMerge.java', REPO / 'android/app/src/jvmtest/java/dev/peanuts/mods/VariantMergeJvmTest.java']
+            r = subprocess.run(['javac', '-Xlint:all', '-Werror', '-encoding', 'UTF-8', '-d', str(d / 'classes'), *map(str, srcs)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            r = subprocess.run(['java', '-cp', str(d / 'classes'), 'dev.peanuts.mods.VariantMergeJvmTest', str(d / 'run')], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(r.stdout.strip(), 'ok')
 
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'no JDK')

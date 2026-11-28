@@ -38,6 +38,13 @@ final class Pack {
         File f = new File(dir, rel);
         return f.isDirectory() ? f : null;
     }
+    /** The files the variant's RomFS overlay was made from (pack_android.py variant_overlays: <its folder>-orig), null for none (a pack from before they were kept):
+     *  what an enabled mod's copy of one of its files is merged against at a start (dev.peanuts.mods.VariantMerge) */
+    File variantOriginals(String name) {
+        File r = variantRomfs(name);
+        File f = r == null ? null : new File(r.getParentFile(), r.getName() + "-orig");
+        return f != null && f.isDirectory() ? f : null;
+    }
     // PEANUTS end
     // A pack of program n > 0 of a dump folder (pack_android.py --program; a Switch 2 Edition's program 1, updates/<v>/program/1/): which program, its application (the save and the add-ons
     // are the application's) and each program index's RomFS (the host's DM_ROMFS_PROGRAM_<i>: 0 is the game's, the edition mounts it as "conorig"). 0 / "" / empty otherwise

@@ -1085,7 +1085,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (fpsRomfs != null) {
                 String chain = null;
                 for (String kv : env) if (kv.startsWith(SceneRes.ENV + "=")) chain = kv.substring(SceneRes.ENV.length() + 1);   // the line in force so far (the mods' or the scene's): kept after it
-                env.add(SceneRes.ENV + "=" + fpsRomfs.getPath() + (chain != null && !chain.isEmpty() ? ":" + chain : ""));
+                // PEANUTS: the enabled mods' copies of the variant's files, merged into the variant's (VariantMerge), ahead of it: else the variant's copy hid the mod's whole file
+                dev.peanuts.mods.VariantMerge.Result merged = dev.peanuts.mods.VariantMerge.merge(fpsRomfs, pack.variantOriginals(fpsVariantAtStart),
+                        dev.peanuts.mods.ModRuntime.romfsDirs(game.isDirectory() ? game : game.getParentFile(), id, packDir),
+                        new File(getFilesDir(), "mods_stage/" + id.toUpperCase(java.util.Locale.ROOT) + "/variant-romfs"), fpsVariantAtStart);
+                for (String n : merged.notes) if (!quietNotes.contains(n)) quietNotes.add(n);
+                env.add(SceneRes.ENV + "=" + (merged.root != null ? merged.root.getPath() + ":" : "") + fpsRomfs.getPath() + (chain != null && !chain.isEmpty() ? ":" + chain : ""));
             }
             String modCheats = dev.peanuts.mods.ModRuntime.cheatsEnv(this, game.isDirectory() ? game : game.getParentFile(), id, packDir);   // PEANUTS: mods beside the game; a code mod's cheats only with its build
             if (modCheats != null && !cheatsMerged) env.add(modCheats);   // PEANUTS: not beside upstream's own DM_CHEATS, which holds the mods' cheats then (cheatsEnv, ModCheats): the later line won, and the panel listed cheats the host did not run
