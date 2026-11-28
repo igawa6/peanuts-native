@@ -743,8 +743,25 @@ final class GameSettings {
     // fills the screen with nothing stretched and no bars. It is Aspect ratio's Screen shape under another name (the same stored choice, ScreenShape.CHOICE), read at the
     // game's start; Fit and Stretch leave that choice, and a fixed Aspect ratio shape stays what it was.
     static final String FILL_NAME = "Fill the screen (the game draws for this screen's shape; from the next start)";
-    static boolean fillable(Profile p) { return p != null && (!p.cameraAspects.isEmpty() || !p.aspectPlan.isEmpty()); }
-    static boolean filling(android.content.Context a, String id) { return fillable(Profile.of(id)) && ScreenShape.CHOICE.equals(Prefs.aspect(a, id)); }
+    // Fill only for the pack's own main build (Profile.fillable, issue #362): a profile whose aspect_plan rows are for another version (Breath of the Wild's are
+    // 1.6.0's) offered it, and the game then started at 16:9
+    static boolean fillable(Profile p, String mainBuild) { return p != null && p.fillable(mainBuild); }
+    static boolean fillable(android.content.Context a, String id) { return fillable(Profile.of(id), mainBuild(a, id)); }
+    static boolean filling(android.content.Context a, String id) { return fillable(a, id) && ScreenShape.CHOICE.equals(Prefs.aspect(a, id)); }
+    /** The main build of the title's pack (BuildCheck.builds; its list entry played last), null when there is none or it cannot be read */
+    static String mainBuild(android.content.Context a, String id) {
+        Game hit = null;
+        for (Game g : Game.load(a)) if (g.titleId.equalsIgnoreCase(id) && (hit == null || g.used > hit.used)) hit = g;
+        return hit == null ? null : mainBuild(hit);
+    }
+    static String mainBuild(Game g) {
+        if (g == null || g.packDir == null || g.packDir.isEmpty()) return null;
+        try {
+            return BuildCheck.builds(Pack.read(new File(g.packDir))).get("main");
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;   // no pack yet, or not readable: Fill is offered as the profile has it
+        }
+    }
     static String displayLabel(android.content.Context a, String id) { return filling(a, id) ? "Fill the screen" : Prefs.DISPLAY_NAMES[Prefs.stretch(a, id) ? 1 : 0]; }
     /** Display's choice w: 0 Fit, 1 Stretch, 2 Fill (a fillable game only). The dialog below and the adb control's set display (dev.peanuts.ctl.Up) both store it here */
     static void setDisplay(android.content.Context a, String id, int w) {
@@ -754,7 +771,7 @@ final class GameSettings {
     }
     // PEANUTS end
     private static void display(MainActivity a, Game g, Runnable done) {
-        boolean fill = fillable(Profile.of(g.titleId));   // PEANUTS: a third choice for a game that can fill
+        boolean fill = fillable(Profile.of(g.titleId), mainBuild(g));   // PEANUTS: a third choice for a game that can fill (this pack's build, #362)
         boolean guess = fill && Profile.of(g.titleId).aspectUntested;   // PEANUTS: rows nobody has seen on a device (game.tsv aspect_plan_untested)
         String[] names = fill ? new String[] {Prefs.DISPLAY_NAMES[0], Prefs.DISPLAY_NAMES[1], FILL_NAME + (guess ? ". Untested on this game: it may look wrong or not start; pick Fit to go back" : "")} : Prefs.DISPLAY_NAMES;   // PEANUTS
         new PadFocus.Builder(a).setTitle("Display · " + g.name).setSingleChoiceItems(names, filling(a, g.titleId) ? 2 : Prefs.stretch(a, g.titleId) ? 1 : 0, (x, w) -> {   // PEANUTS: names, Fill

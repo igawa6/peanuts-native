@@ -730,7 +730,7 @@ final class SidePanel extends FrameLayout {
         int sz = live ? ga.runPictureSize() : Prefs.pictureSize(act, game());
         RadioGroup fit = new RadioGroup(act);
         fit.setOrientation(RadioGroup.HORIZONTAL);
-        boolean canFill = GameSettings.fillable(Profile.of(game()));   // PEANUTS: Display > Fill for a game whose view follows the screen's shape (GameSettings.fillable)
+        boolean canFill = GameSettings.fillable(act, game());   // PEANUTS: Display > Fill for a game whose view follows the screen's shape (GameSettings.fillable)
         boolean fillRun = ga != null && ga.runFill();   // PEANUTS: whether this run started with Fill
         String[] names = canFill ? new String[] {"Fit", "Stretch", "Fill"} : new String[] {"Fit", "Stretch"};   // PEANUTS: Fill
         for (int i = 0; i < names.length; i++) { RadioButton b = new RadioButton(act); b.setId(ID_FIT + i); b.setText(names[i]); fit.addView(b); }

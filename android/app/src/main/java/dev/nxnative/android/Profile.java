@@ -78,6 +78,9 @@ final class Profile {
     // The host's loader makes the game's own 16:9 number the picture's shape (dm/host/aspect_plan.h); exact main build only.
     String aspectPlan = "";
     boolean aspectUntested;   // game.tsv aspect_plan_untested 1: the rows are candidates from a scan of the game's code, not seen on a device; Fill says so
+    // PEANUTS: Display › Fill for a pack whose main build is mainBuild (null: not known): the host's camera patch (aspect rows) holds for every build, aspect_plan
+    // rows only for the builds they name, as the game's start passes them (GameActivity). Rows for another build offered Fill that then kept 16:9 (issue #362)
+    boolean fillable(String mainBuild) { return !cameraAspects.isEmpty() || (!aspectPlan.isEmpty() && aspectPlanMatches(mainBuild)); }
     boolean aspectPlanMatches(String mainBuild) {
         if (aspectPlan.isEmpty() || mainBuild == null) return true;
         for (String row : aspectPlan.split(";"))
