@@ -1,7 +1,8 @@
 """PEANUTS: tex_pool_range (hle_nvn.c texpool_range) on the production descriptor pool code, without NVN or a GPU.
 
 Compiles hle_nvn.c from its descriptor pool table up to nvnSamplerPoolInitialize with a stub prelude and runs scenarios:
-without the key registrations take base + ID and no line is added; with it each pool's IDs are limited to its own range,
+without the key registrations take the descriptor pools' host ID (base + ID; nvn_dpool.h's small pools skip their reserved IDs) and no
+line is added (PEANUTS: the small pools' table); with it each pool's IDs are limited to its own range on top of that host ID,
 also in a reused finalized range; the frame replayer's pools (nvn_dpool_base_set) are not limited; DM_NVN_TEXPOOL_RANGE=0
 turns the profile's value off.
 """
@@ -27,7 +28,8 @@ PRELUDE = r'''
 #define OLOG(...) ((void)0)
 #define NVN(name, ret, ...) ret h_##name(__VA_ARGS__)
 typedef int NVNboolean; typedef struct { char b[64]; } NVNtexturePool, NVNsamplerPool, NVNmemoryPool, NVNtexture, NVNtextureView;
-typedef struct { int x; } pool_t, tex_t, view_t;
+typedef struct { char *mem; } pool_t;   // PEANUTS: hle_nvn.c dpool_store reads the memory pool's memory
+typedef struct { int x; } tex_t, view_t;
 typedef struct { const pool_t *pool; int64_t off; int32_t n; } dpool_t;
 static void mtl_set_tex_pool_n(int n) { (void)n; }
 static void mtl_reg_tex(int id, const tex_t *t, const view_t *v) { (void)t; (void)v; printf("REG %d\n", id); }
@@ -96,7 +98,8 @@ class TexPoolRange(unittest.TestCase):
                                 'LOG [nvn] pool #3 (texture, 1048576 entries): numbered from 2097152 in the host table, separate from the earlier pools'])
         self.assertIn('REG 1068576', out)          # pool #2's 20000: base + ID, kept
         self.assertIn('IMG 2097452', out)          # pool #3's image 300
-        self.assertEqual(out[-2:], ['REG 1048875', 'REG 1049176'])   # the reused range: base + ID for 299 and 600, not limited
+        # PEANUTS: the reused range: base + ID for 299 and 600, not limited. A 300-entry pool is small (nvn_dpool.h): its base is the range's start - 256
+        self.assertEqual(out[-2:], ['REG %d' % (1048576 - 256 + 299), 'REG %d' % (1048576 - 256 + 600)])
 
     def test_env_zero_turns_profile_off(self):
         out = self.run_case('profile', 'pools', {'DM_NVN_TEXPOOL_RANGE': '0'})
@@ -116,10 +119,10 @@ class TexPoolRange(unittest.TestCase):
 
     def test_reused_range_takes_the_new_pools_limit(self):
         out = self.run_case('profile', 'pools')
-        self.assertIn('LOG [nvn] texture pool #2: 300 entries, IDs 0-511 from host ID 16384 (tex_pool_range)', out)
-        self.assertEqual(out[-2:], ['REG %d' % (16384 + 299),
+        self.assertIn('LOG [nvn] texture pool #2: 300 entries, IDs 0-511 from host ID 16128 (tex_pool_range)', out)   # PEANUTS: a small pool, base = range start - 256
+        self.assertEqual(out[-2:], ['REG %d' % (16384 - 256 + 299),
                                     'LOG [RED] texture pool #2: ID 600 is past its host range of 512 (tex_pool_range / DM_NVN_TEXPOOL_RANGE): the registration is dropped'])
-        self.assertNotIn('REG %d' % (16384 + 600), out)
+        self.assertNotIn('REG %d' % (16384 - 256 + 600), out)   # PEANUTS
 
     def test_replayer_pool_not_limited(self):
         for exe in ('none', 'profile'):

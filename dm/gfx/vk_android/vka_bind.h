@@ -17,6 +17,7 @@ typedef struct {
     uint64_t tex[VKA_NSTAGE][VKA_NTEX], samp[VKA_NSTAGE][128], img[VKA_NSTAGE][32];   // PEANUTS(upstream-candidate): raw guest handles, including patched and deferred binds
     uint8_t push[2][DMSH_PUSH_SIZE];   // NVN2 pushed constants: graphics, compute
     int tex_base, samp_base;           // the executing queue's selected pools
+    int tex_first, samp_first;         // PEANUTS(upstream-candidate): their lowest ID with host entries: 256 for a small pool (nvn_dpool.h), else 0; IDs below it read as none
     uint32_t base_instance;            // the draw's base instance (c0 + DMSH_C0_BASE_INSTANCE)
     uint32_t dispatch[3];              // the dispatch's group counts (c0 + DMSH_C0_DISPATCH, and with nvn2 also c0 + DMSH_C0_DISPATCH_NVN2)
     uint32_t nvn2;                     // a Switch 2 game (NVN2): its compute reads the group counts at c0 + DMSH_C0_DISPATCH_NVN2. Set by the replay (vka_nvn2), not here: this file stays host-free

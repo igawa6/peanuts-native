@@ -177,7 +177,7 @@ static int init_once(void) {
 
     uint32_t nde = 0; vk.vkEnumerateDeviceExtensionProperties(V.pd, NULL, &nde, NULL);
     VkExtensionProperties *de = calloc(nde ? nde : 1, sizeof *de); vk.vkEnumerateDeviceExtensionProperties(V.pd, NULL, &nde, de);
-    const char *dext[24]; uint32_t ndext = 0;
+    const char *dext[28]; uint32_t ndext = 0;   // PEANUTS: 28 (the AHardwareBuffer import below)
     { char q[700]; size_t qn = 0; q[0] = 0;   // the vendor's own extensions (tile properties, render pass transforms ...): what a tiler-specific path could use
       for (uint32_t i = 0; i < nde && qn < sizeof q; i++) if (strstr(de[i].extensionName, "_QCOM_")) qn += (size_t)snprintf(q + qn, sizeof q - qn, " %s", de[i].extensionName + 3);
       if (qn) VLOG("device extensions of the vendor:%s", q); }
@@ -189,6 +189,10 @@ static int init_once(void) {
     int x_fd = has_ext(de, nde, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
     if (x_fd) dext[ndext++] = VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME;
     if (V.display_timing) dext[ndext++] = VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME;
+    // PEANUTS: a game that imports EGL may share GL textures with NVN (hle_nvn.c GL interop, vka_gl.c): their AHardwareBuffers are imported as images. Other games leave it off
+    V.gl_ahb = dm_game_imports("eglGetDisplay") && has_ext(de, nde, VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME) && has_ext(de, nde, VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);
+    if (V.gl_ahb) { dext[ndext++] = VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME; dext[ndext++] = VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME; }
+    if (dm_game_imports("eglGetDisplay")) VLOG("the game imports EGL: GL textures shared with NVN through AHardwareBuffers %s", V.gl_ahb ? "on" : "off (the driver lacks VK_ANDROID_external_memory_android_hardware_buffer or VK_EXT_queue_family_foreign)");
     // The draw path (vka_draw.c): each one optional, with a fallback when absent
     int x_push = has_ext(de, nde, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME), x_vin = has_ext(de, nde, VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
     int core_m5 = ai.apiVersion >= VK_API_VERSION_1_4 && V.props.apiVersion >= VK_API_VERSION_1_4;   // PEANUTS: bounded draw ranges

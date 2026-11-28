@@ -26,8 +26,10 @@ static uint64_t ubo_word(const vka_bstate *s, int st, int reg, unsigned off, uns
 int vka_texu_elem = 1;
 // Element k's byte offset past an array's base: a uniform buffer's array of 64-bit NVN handles that the shader indexes (BindlessToArray: the host fills element k from base + 8k)
 static unsigned ubo_elem(const dmsh_vk_bind *b, unsigned k) { return b->count > 1 && vka_texu_elem ? (b->step ? b->step : 8u) * k : 0; }   // PEANUTS: step (an array read by record, dmsh_abi_vk.h)
-static int ubo_tex_id(const vka_bstate *s, uint32_t h) { int t = (int)(h & 0xfffff); return t ? t + s->tex_base : 0; }
-static int ubo_samp_id(const vka_bstate *s, uint32_t h) { int x = (int)(h >> 20); return x ? x + s->samp_base : 0; }
+// PEANUTS(upstream-candidate): a small pool's reserved IDs (below tex_first / samp_first) have no host entries: base + ID would land in the previous pool's range (nvn_dpool.h)
+static int samp_host(const vka_bstate *s, int x) { return x && x >= s->samp_first ? x + s->samp_base : 0; }
+static int ubo_tex_id(const vka_bstate *s, uint32_t h) { int t = (int)(h & 0xfffff); return t && t >= s->tex_first ? t + s->tex_base : 0; }
+static int ubo_samp_id(const vka_bstate *s, uint32_t h) { return samp_host(s, (int)(h >> 20)); }
 
 // PEANUTS(upstream-candidate): Texture and sampler fields are pool-local. Add the queue's base only after extracting a field.
 // The sampler half of a combined image sampler (skind, sreg, soff); element k of an array
@@ -38,7 +40,7 @@ static int samp_of(const vka_bstate *s, int st, const dmsh_vk_bind *b, unsigned 
     case DMSH_VK_KIND_SAMP_ID: return b->sreg > 0 ? b->sreg : 0;   // a constant of the shader (nvn_mtl.m NVN_RB_SAMPI): taken as it is
     case DMSH_VK_KIND_SAMP_UBO: {
         uint32_t w = (uint32_t)ubo_word(s, st, b->sreg, b->soff + ubo_elem(b, k), 4, rd, ctx);
-        if (b->flags & DMSH_VK_BF_SAMP_RAW) { int x = (int)(w & 0xfff); return x ? x + s->samp_base : 0; }   // PEANUTS(upstream-candidate): handle type 2, the word is the sampler ID (nvn_mtl.m sampu_id)
+        if (b->flags & DMSH_VK_BF_SAMP_RAW) return samp_host(s, (int)(w & 0xfff));   // PEANUTS(upstream-candidate): handle type 2, the word is the sampler ID (nvn_mtl.m sampu_id)
         return ubo_samp_id(s, w); }
     case DMSH_VK_KIND_SAMP_C2A: {   // the handle at c2 byte off + 8 k, ORed with the separate sampler word at soff (nvn_mtl.m NVN_RB_SAMPA)
         uint64_t sw = b->soff != 0xFFFF ? vka_c2_handle(s, st, b->soff) : 0;

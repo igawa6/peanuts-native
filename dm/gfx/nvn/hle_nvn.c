@@ -617,24 +617,62 @@ NVN(nvnMemoryPoolGetBufferAddress, NVNbufferAddress, const NVNmemoryPool *p) {
 // default 8×8 white texture overwrote the UI's textures, and the title menu's labels, the name entry and other menus drew as plain bars or not at all. The scene also registers each draw's
 // textures into fresh IDs of a ring in its large pool (8,729 and up a few seconds in); with the table's capacity taken from the last pool alone, those all read as empty slots and the screen was black
 // The ranges: nvn_dpool.h
-static nvn_dpool_tab g_tpt, g_spt;
+// PEANUTS(upstream-candidate): small pools, table limits and least-recently-used slots (nvn_dpool.h). The tables' limits, which hold for small pools only: the texture IDs
+// the host's texture registry holds (NVN_DPOOL_TEX_IDS = vka_treg.h TREG_PAGES * TREG_PAGE), the sampler IDs the sampler table holds (vka_tex.c mtl_reg_samp)
+static nvn_dpool_tab g_tpt = {.limit = NVN_DPOOL_TEX_IDS}, g_spt = {.limit = 4096 * 4};
 static pthread_mutex_t g_dpool_mu = PTHREAD_MUTEX_INITIALIZER;
-static int dpool_add(nvn_dpool_tab *t, const void *pool, int n, const char *kind) {   // → the pool's base (assigned at its first Initialize)
+static int pow10_hit(int k) { int p = 1; while (p < k && p < 1000000000 / 10) p *= 10; return k == p; }   // said at 1, 10, 100, ... times: a line per call buries the log
+static const void *dpool_store(const NVNmemoryPool *p, ptrdiff_t off) { const pool_t *o = (const pool_t *)p; return o && o->mem ? (const void *)(o->mem + off) : 0; }
+static int dpool_add(nvn_dpool_tab *t, const void *pool, int n, const void *store, const char *kind) {   // → the pool's base (assigned at its first Initialize)
+    static int full_said, ev_said;
     pthread_mutex_lock(&g_dpool_mu);
-    int had = t->n, b = nvn_dpool_add(t, pool, n);
+    unsigned ev0 = t->evicted;
+    int had = t->n, b = nvn_dpool_add2(t, pool, n, store), live = nvn_dpool_live(t), next = t->next, slots = t->n;
+    unsigned ev = t->evicted;
     pthread_mutex_unlock(&g_dpool_mu);
-    if (b < 0) { LOG("[RED] %s pools exceed %d: later ones share the first pool's numbering", kind, NVN_NDPOOL); return 0; }
-    if (t->n > had && had) LOG("[nvn] pool #%d (%s, %d entries): numbered from %d in the host table, separate from the earlier pools", t->n, kind, n, b);
+    if (b < 0) {
+        int k = __atomic_add_fetch(&full_said, 1, __ATOMIC_RELAXED);
+        if (pow10_hit(k)) LOG("[RED] %s pools: no slot left (%d live, table %d of %d, %d times so far): later ones share the first pool's numbering", kind, live, next, t->limit, k);
+        return 0;
+    }
+    if (slots > had && had && slots <= 64) LOG("[nvn] pool #%d (%s, %d entries): numbered from %d in the host table, separate from the earlier pools", slots, kind, n, b);
+    if (slots > had && (slots == 128 || slots == 256 || slots == 512 || slots == NVN_NDPOOL)) LOG("[nvn] %s pools: %d slots, %d live, table %d of %d", kind, slots, live, next, t->limit);
+    if (ev > ev0 && pow10_hit(__atomic_add_fetch(&ev_said, 1, __ATOMIC_RELAXED)))
+        LOG("[nvn] %s pools: %u older ones given up for newer ones (%d live, %d slots, table %d of %d: the game makes new pools without finalizing the old)", kind, ev, live, slots, next, t->limit);
     return b;
 }
-static int dpool_base(nvn_dpool_tab *t, const void *pool) { pthread_mutex_lock(&g_dpool_mu); int b = nvn_dpool_find(t, pool); pthread_mutex_unlock(&g_dpool_mu); return b; }
+// The host ID of a pool's ID; -1 to skip it: a reserved ID (below 256) of a small pool, or a pool given up for a newer one (nvn_dpool.h nvn_dpool_id: its IDs would
+// overwrite the first pool's). A pool never placed (no pool given up yet) reads the first pool's numbering. *small (may be NULL): whether the pool is small
+static int dpool_lookup(nvn_dpool_tab *t, const void *pool, int id, int *small) {
+    static int lost_said, res_said;
+    pthread_mutex_lock(&g_dpool_mu);
+    int why = 0, h = nvn_dpool_id(t, pool, id, &why, small); unsigned ev = t->evicted;
+    pthread_mutex_unlock(&g_dpool_mu);
+    const char *kind = t == &g_tpt ? "texture" : "sampler";
+    if (why == 2 && pow10_hit(__atomic_add_fetch(&lost_said, 1, __ATOMIC_RELAXED)))
+        LOG("[RED] a %s pool given up for a newer one is used again (%d times so far, %u given up): its registrations are skipped, binds read the first pool's numbering", kind, lost_said, ev);
+    if (why == 1 && pow10_hit(__atomic_add_fetch(&res_said, 1, __ATOMIC_RELAXED))) LOG("[RED] the game uses reserved %s ID %d of a small pool (%d times so far): skipped", kind, id, res_said);
+    return h;
+}
+static int dpool_id(nvn_dpool_tab *t, const void *pool, int id) { return dpool_lookup(t, pool, id, 0); }
+// What a bound pool's IDs are added to: 0 (the first pool's numbering) for a pool with no slot. *first (may be NULL): its lowest ID with host entries, 256 for a small
+// pool (whose reserved IDs below it would land in the previous pool's range through base + ID), else 0. Both from one look under the lock
+static int dpool_base_first(nvn_dpool_tab *t, const void *pool, int *first) {
+    int small = 0, h = dpool_lookup(t, pool, NVN_DPOOL_RESERVED, &small);
+    if (first) *first = h >= 0 && small ? NVN_DPOOL_RESERVED : 0;
+    return h < 0 ? 0 : h - NVN_DPOOL_RESERVED;
+}
+static int dpool_base(nvn_dpool_tab *t, const void *pool) { return dpool_base_first(t, pool, 0); }
 static void dpool_release(nvn_dpool_tab *t, const void *pool) { pthread_mutex_lock(&g_dpool_mu); nvn_dpool_release(t, pool); pthread_mutex_unlock(&g_dpool_mu); }
 int nvn_dpool_base(const void *pool, int tex) { return dpool_base(tex ? &g_tpt : &g_spt, pool); }   // the replay's bound pools (nvn_mtl.m state_op)
+// PEANUTS(upstream-candidate): the bound pool's base and its first ID with host entries, read together (the Android replay, vka_draw.c: vka_bind.c ubo_tex_id / ubo_samp_id
+// read a handle's ID below it as no descriptor)
+int nvn_dpool_base_first(const void *pool, int tex, int *first) { return dpool_base_first(tex ? &g_tpt : &g_spt, pool, first); }
 // The Android frame replayer (dm/gfx/vk_android/vka_replay.c), which runs in the host library without the game: a captured descriptor pool's bases, as its Initialize gave them
 void nvn_dpool_base_set(const void *pool, int tex_base, int samp_base) {
     pthread_mutex_lock(&g_dpool_mu);
-    if (g_tpt.n < NVN_NDPOOL) g_tpt.e[g_tpt.n++] = (nvn_dpool_ent){pool, tex_base, 0};
-    if (g_spt.n < NVN_NDPOOL) g_spt.e[g_spt.n++] = (nvn_dpool_ent){pool, samp_base, 0};
+    if (g_tpt.n < NVN_NDPOOL) g_tpt.e[g_tpt.n++] = (nvn_dpool_ent){pool, tex_base, tex_base, 0, 0, 0, 0};   // PEANUTS(upstream-candidate)
+    if (g_spt.n < NVN_NDPOOL) g_spt.e[g_spt.n++] = (nvn_dpool_ent){pool, samp_base, samp_base, 0, 0, 0, 0};
     pthread_mutex_unlock(&g_dpool_mu);
 }
 // The pools each command buffer last bound are kept in its own host state (cmd_t tex_base / samp_base). They used to be a 64-entry list of command buffers that was never cleared:
@@ -645,7 +683,8 @@ void nvn_dpool_base_set(const void *pool, int tex_base, int samp_base) {
 // replay resolved handles against the executing pool and kept IDs from 2^20 on for direct binds). DM_NVN_TEXPOOL_RANGE=<entries> (restart; the profile's tex_pool_range when
 // not set, 0 off) gives each texture pool at most that many IDs (a multiple of 256), so several large pools fit below 2^20; its IDs from there (or from its own size,
 // rounded up to 256) are dropped with a red line. A reused finalized range may be larger than the pool: the limit is the pool's own (texpool_lim), not its range's cap.
-// Without the key nothing here runs: registrations take base + ID as before, with no new lines. Ys X: Nordics: 16384 (its IDs stay below 500)
+// Without the key nothing here runs: registrations take the descriptor pools' host ID (PEANUTS(upstream-candidate) dpool_id) as before, with no new lines; with it, the limit applies on top of that ID.
+// Ys X: Nordics: 16384 (its IDs stay below 500). PEANUTS
 #define TEXPOOL_TABLE (1 << 20)
 #ifndef DM_GAME_TEX_POOL_RANGE   // a hand-written test profile
 #define DM_GAME_TEX_POOL_RANGE 0
@@ -669,8 +708,9 @@ static void texpool_init(const NVNtexturePool *tp, int n, int r) {   // tex_pool
     if (i >= 0) LOG("[nvn] texture pool #%d: %d entries, IDs 0-%d from host ID %d (tex_pool_range)%s", i + 1, n, lim - 1, base, base + lim > TEXPOOL_TABLE ? ": past the 2^20 IDs Vulkan's set 1 addresses" : "");
 }
 static int texpool_reg_id(const NVNtexturePool *tp, int id) {   // the host table ID of a registration, -1: dropped
-    if (!texpool_range()) return dpool_base(&g_tpt, tp) + id;   // without the key: as before
-    pthread_mutex_lock(&g_dpool_mu); int i = texpool_slot(tp), base = i >= 0 ? g_tpt.e[i].base : 0, lim = i >= 0 ? g_texpool_lim[i] : 0; pthread_mutex_unlock(&g_dpool_mu);
+    int h = dpool_id(&g_tpt, tp, id);   // PEANUTS(upstream-candidate): the descriptor pools' own answer (dpool_lookup): -1 skips a reserved ID of a small pool or a pool given up
+    if (!texpool_range() || h < 0) return h;   // PEANUTS: without the key that answer, with no line of tex_pool_range's
+    pthread_mutex_lock(&g_dpool_mu); int i = texpool_slot(tp), base = i >= 0 ? g_tpt.e[i].base : 0, lim = i >= 0 && i < NVN_NDPOOL ? g_texpool_lim[i] : 0; pthread_mutex_unlock(&g_dpool_mu);   // PEANUTS
     if (i >= 0) {   // usage (diagnostic, with the key only): a line at each power of two of a pool's registrations from 64, with its highest ID so far
         int m = atomic_load(&g_texpool_maxid[i]); while (id > m && !atomic_compare_exchange_weak(&g_texpool_maxid[i], &m, id)) {}
         uint64_t k = atomic_fetch_add(&g_texpool_nreg[i], 1) + 1;
@@ -680,11 +720,11 @@ static int texpool_reg_id(const NVNtexturePool *tp, int id) {   // the host tabl
         static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) LOG("[RED] texture pool #%d: ID %d is past its host range of %d (tex_pool_range / DM_NVN_TEXPOOL_RANGE): the registration is dropped", i + 1, id, lim);
         return -1;
     }
-    return base + id;
+    return h;   // PEANUTS: the pool table's host ID, within the limit
 }
 NVN(nvnTexturePoolInitialize, NVNboolean, NVNtexturePool *tp, const NVNmemoryPool *p, ptrdiff_t off, int n) {
     *(dpool_t *)tp = (dpool_t){(const pool_t *)p, off, n}; OLOG("TexturePool n=%d", n);
-    int r = texpool_range(); dpool_add(&g_tpt, tp, r && n > r ? r : n, "texture"); mtl_set_tex_pool_n(g_tpt.next);   // PEANUTS: tex_pool_range (above)
+    int r = texpool_range(); dpool_add(&g_tpt, tp, r && n > r ? r : n, dpool_store(p, off), "texture"); mtl_set_tex_pool_n(g_tpt.next);   // PEANUTS: tex_pool_range (above); PEANUTS(upstream-candidate): the pool's storage (nvn_dpool.h)
     if (r) texpool_init(tp, n, r);   // PEANUTS
     return 1;
 }
@@ -698,12 +738,12 @@ NVN(nvnTexturePoolRegisterImage, void, const NVNtexturePool *tp, int id, const N
     int hid = texpool_reg_id(tp, id); if (hid >= 0) mtl_reg_image(hid, (const tex_t *)t, (const view_t *)v);   // PEANUTS: texpool_reg_id
 }
 NVN(nvnSamplerPoolInitialize, NVNboolean, NVNsamplerPool *sp, const NVNmemoryPool *p, ptrdiff_t off, int n) {
-    *(dpool_t *)sp = (dpool_t){(const pool_t *)p, off, n}; OLOG("SamplerPool n=%d", n); dpool_add(&g_spt, sp, n, "sampler"); return 1;
+    *(dpool_t *)sp = (dpool_t){(const pool_t *)p, off, n}; OLOG("SamplerPool n=%d", n); dpool_add(&g_spt, sp, n, dpool_store(p, off), "sampler"); return 1;   // PEANUTS(upstream-candidate)
 }
 NVN(nvnSamplerPoolFinalize, void, NVNsamplerPool *sp) { dpool_release(&g_spt, sp); }   // (nvn_dpool.h)
-NVN(nvnSamplerPoolRegisterSampler, void, const NVNsamplerPool *sp, int id, const NVNsampler *s) { mtl_reg_samp(dpool_base(&g_spt, sp) + id, &((const samp_t *)s)->p); }
+NVN(nvnSamplerPoolRegisterSampler, void, const NVNsamplerPool *sp, int id, const NVNsampler *s) { int h = dpool_id(&g_spt, sp, id); if (h >= 0) mtl_reg_samp(h, &((const samp_t *)s)->p); }   // PEANUTS(upstream-candidate)
 // straight from a builder, without a sampler object (FINAL FANTASY TACTICS - The Ivalice Chronicles registers its samplers this way)
-NVN(nvnSamplerPoolRegisterSamplerBuilder, void, const NVNsamplerPool *sp, int id, const NVNsamplerBuilder *b) { mtl_reg_samp(dpool_base(&g_spt, sp) + id, &((const samp_builder_t *)b)->p); }
+NVN(nvnSamplerPoolRegisterSamplerBuilder, void, const NVNsamplerPool *sp, int id, const NVNsamplerBuilder *b) { int h = dpool_id(&g_spt, sp, id); if (h >= 0) mtl_reg_samp(h, &((const samp_builder_t *)b)->p); }   // PEANUTS(upstream-candidate)
 // Unreal Engine reads a descriptor pool's size back at device setup (Octopath Traveler 0)
 NVN(nvnTexturePoolGetMemoryPool, const NVNmemoryPool *, const NVNtexturePool *tp) { return (const NVNmemoryPool *)((const dpool_t *)tp)->pool; }
 NVN(nvnTexturePoolGetMemoryOffset, ptrdiff_t, const NVNtexturePool *tp) { return (ptrdiff_t)((const dpool_t *)tp)->off; }
@@ -730,6 +770,28 @@ NVN(nvnTextureBuilderSetFormat, void, NVNtextureBuilder *b, NVNformat f) { TB(b)
 NVN(nvnTextureBuilderSetSamples, void, NVNtextureBuilder *b, int s) { TB(b)->d.samples = s; }
 NVN(nvnTextureBuilderSetStride, void, NVNtextureBuilder *b, ptrdiff_t s) { TB(b)->d.stride = (uint32_t)s; }
 NVN(nvnTextureBuilderSetStorage, void, NVNtextureBuilder *b, NVNmemoryPool *p, ptrdiff_t off) { TB(b)->pool = (pool_t *)p; TB(b)->off = off; }
+// PEANUTS begin: GL interop. An NVN game that draws part of its frame with OpenGL through EGL (NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS: Scaleform's UI) names a GL texture
+// for an NVN texture (TextureBuilderSetGLTextureName) and passes fences between the two APIs (SyncInitializeFromFencedGLSync, SyncCreateGLSync). On the console both are one
+// driver. Here the platform's GL layer answers through the functions below; without one their weak defaults refuse with a red line.
+//   nvn_gl_tex_desc: the GL texture's size, levels and format as an NVN description (0: no such texture, or one the layer cannot share), with its context current on this thread
+//   nvn_gl_tex_bind / nvn_gl_tex_release: the NVN texture of that serial shows the GL texture's image (the replay imports it) / no longer
+//   nvn_gl_sync_from_gl: a handle for "the GL commands so far have completed", made at the point of the game's glFenceSync (0: none); nvn_gl_sync_wait / nvn_gl_sync_free
+//   nvn_gl_sync_to_gl: a GLsync the game waits on with glWaitSync / glClientWaitSync, signalled when the NVN fence (fenced as in sync_t) has completed
+__attribute__((weak)) int nvn_gl_tex_desc(uint32_t name, nvn_texdesc *d) { (void)name; (void)d; static int once; if (!once++) LOG("[RED] [nvn] TextureBuilderSetGLTextureName: no OpenGL layer on this platform shares its textures with NVN"); return 0; }
+__attribute__((weak)) void nvn_gl_tex_bind(uint64_t serial, uint32_t name) { (void)serial; (void)name; }
+__attribute__((weak)) void nvn_gl_tex_release(uint64_t serial) { (void)serial; }
+__attribute__((weak)) uint64_t nvn_gl_sync_from_gl(const void *glsync) { (void)glsync; static int once; if (!once++) LOG("[RED] [nvn] SyncInitializeFromFencedGLSync: no OpenGL layer on this platform: the sync is never signalled"); return 0; }
+__attribute__((weak)) int nvn_gl_sync_wait(uint64_t h, uint64_t timeout_ns) { (void)h; (void)timeout_ns; return 0; }
+__attribute__((weak)) void nvn_gl_sync_free(uint64_t h) { (void)h; }
+__attribute__((weak)) uint64_t nvn_gl_sync_to_gl(uint64_t fence, uint32_t fenced) { (void)fence; (void)fenced; static int once; if (!once++) LOG("[RED] [nvn] SyncCreateGLSync: no OpenGL layer on this platform"); return 0; }
+// The texture's attributes are the GL texture's (the console's driver takes them from it, and the game sets none): kept in the builder, which TextureInitialize copies
+NVN(nvnTextureBuilderSetGLTextureName, void, NVNtextureBuilder *b, uint32_t name) {
+    TB(b)->gl_name = 0;
+    nvn_texdesc d = TB(b)->d;
+    if (name && nvn_gl_tex_desc(name, &d)) { TB(b)->d = d; TB(b)->gl_name = name; }
+}
+NVN(nvnTextureBuilderGetGLTextureName, uint32_t, const NVNtextureBuilder *b) { return ((const tex_builder_t *)b)->gl_name; }
+// PEANUTS end
 NVN(nvnTextureBuilderSetPackagedTextureLayout, void, NVNtextureBuilder *b, const NVNpackagedTextureLayout *l) {
     TB(b)->has_layout = l != NULL; if (l) memcpy(TB(b)->layout, l->layout, 8);
     TB(b)->d.pkg_block_h = l ? l->layout[0] + 1 : 0;
@@ -899,7 +961,7 @@ NVN(nvnTextureInitialize, NVNboolean, NVNtexture *t, const NVNtextureBuilder *b)
     const tex_builder_t *s = (const tex_builder_t *)b; tex_t *o = TX(t);
     // Re-initializing a texture object that is still live (without a Finalize first): release the host texture of the old serial first. SMBW re-initializes its transient render targets on the same object every frame and never Finalizes them;
     //   previously every init created a new private MTLTexture and the old one stayed in the serial table forever, so GPU memory grew about 13 MB per frame (killed by the memory watchdog at 24 GB)
-    if (o->magic == MAGIC('T', 'E', 'X', 0) && o->serial) { static uint64_t n; if (!n++) LOG("[nvn] TextureInitialize on a texture object that is still live (no Finalize): releasing the old host texture (first case ser=%llu)", (unsigned long long)o->serial); mtl_tex_release(o); }
+    if (o->magic == MAGIC('T', 'E', 'X', 0) && o->serial) { static uint64_t n; if (!n++) LOG("[nvn] TextureInitialize on a texture object that is still live (no Finalize): releasing the old host texture (first case ser=%llu)", (unsigned long long)o->serial); nvn_gl_tex_release(o->serial); mtl_tex_release(o); }   // PEANUTS: nvn_gl_tex_release (GL interop)
     memset(o, 0, sizeof *o);
     o->magic = MAGIC('T', 'E', 'X', 0); o->d = s->d; o->pool = s->pool; o->off = s->off;
     o->has_layout = s->has_layout; memcpy(o->layout, s->layout, 8); o->set_swz = s->set_swz; o->stencil = s->stencil; o->swz = s->swz;
@@ -913,6 +975,7 @@ NVN(nvnTextureInitialize, NVNboolean, NVNtexture *t, const NVNtextureBuilder *b)
         nvn_tex_layout(&o->d, &o->L);
     }
     o->serial = nvn_new_serial(); mtl_tex_init(o);
+    if (s->gl_name) nvn_gl_tex_bind(o->serial, s->gl_name);   // PEANUTS: GL interop: no storage, the image is the GL texture's
     if (o->mem) pc_use(o->pool, 't', o->off, o->L.size);
     if (o->mem && shp_use(SHK_TEX, (uint64_t)(uintptr_t)o->mem, o->L.size, NULL, NULL) == 2 && !g_shp_place) mtl_pool_place(o->mem, o->L.size, "a texture in a shader-code pool");   // (Shader-code pools: a texture is a data use) PEANUTS(upstream-candidate): placed, never joined (vka_mem.c mtl_pool_place)
     if (o->mem && o->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET)) mtl_pool_need(o->mem, o->L.size, "a linear texture");   // its GPU content is copied back into the storage (vka_tex_writeback)
@@ -938,7 +1001,7 @@ NVN(nvnTextureInitialize, NVNboolean, NVNtexture *t, const NVNtextureBuilder *b)
     ft_add(o);
     return 1;
 }
-NVN(nvnTextureFinalize, void, NVNtexture *t) { ft_del(TX(t)->serial); mtl_tex_release(TX(t)); TX(t)->magic = 0; }
+NVN(nvnTextureFinalize, void, NVNtexture *t) { ft_del(TX(t)->serial); nvn_gl_tex_release(TX(t)->serial); mtl_tex_release(TX(t)); TX(t)->magic = 0; }   // PEANUTS: nvn_gl_tex_release (GL interop)
 NVN(nvnTextureGetFlags, NVNtextureFlags, const NVNtexture *t) { return (NVNtextureFlags)CTX(t)->d.flags; }
 NVN(nvnTextureGetWidth, int, const NVNtexture *t) { return (int)CTX(t)->d.width; }
 NVN(nvnTextureGetHeight, int, const NVNtexture *t) { return (int)CTX(t)->d.height; }
@@ -1155,7 +1218,27 @@ NVN(nvnProgramSetShaders, NVNboolean, NVNprogram *p, int n, const NVNshaderData 
 
 // ---------- Sync / events ----------
 NVN(nvnSyncInitialize, NVNboolean, NVNsync *s, NVNdevice *d) { (void)d; *(sync_t *)s = (sync_t){MAGIC('S', 'Y', 'N', 'C'), 0, 0}; return 1; }
-NVN(nvnSyncFinalize, void, NVNsync *s) { ((sync_t *)s)->magic = 0; }
+NVN(nvnSyncFinalize, void, NVNsync *s) { sync_t *o = (sync_t *)s; if (o->magic == MAGIC('S', 'Y', 'N', 'C') && o->fenced == 3) nvn_gl_sync_free(o->fence); o->magic = 0; }   // PEANUTS: a GL fence's handle
+// PEANUTS begin: GL interop (see TextureBuilderSetGLTextureName). main+0x972d40 (NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS 1.70) calls it on the GL thread right after its
+// glFenceSync and glFlush, with a pointer to a 32-bit status it does not read, then waits on the sync with QueueWaitSync before the NVN pass that draws the GL texture
+NVN_NOPROTO(nvnSyncInitializeFromFencedGLSync, NVNboolean, NVNsync *s, NVNdevice *d, const void *glsync, int32_t *status) {
+    (void)d; sync_t *o = (sync_t *)s;
+    if (o->magic == MAGIC('S', 'Y', 'N', 'C') && o->fenced == 3) nvn_gl_sync_free(o->fence);   // (the game initializes its two syncs again every frame)
+    uint64_t h = glsync ? nvn_gl_sync_from_gl(glsync) : 0;
+    *o = (sync_t){MAGIC('S', 'Y', 'N', 'C'), h ? 3u : 0u, h};
+    if (status) *status = 0;
+    return h != 0;
+}
+// A GLsync handle for the GL layer (glWaitSync / glClientWaitSync / glDeleteSync take it) that is signalled when the sync's NVN fence has completed. main+0x973984 calls it
+// after QueueFenceSync on the pass that read the GL texture, then glWaitSync on the result: the next GL frame does not draw into the texture before NVN has read it
+NVN_NOPROTO(nvnSyncCreateGLSync, int32_t, const NVNsync *s, uint64_t *glsync) {
+    const sync_t *o = (const sync_t *)s;
+    if (!glsync) return 1;
+    *glsync = o->magic == MAGIC('S', 'Y', 'N', 'C') && (o->fenced == 1 || o->fenced == 2) ? nvn_gl_sync_to_gl(o->fence, o->fenced) : 0;
+    if (!*glsync) { static int once; if (!once++) LOG("[RED] [nvn] SyncCreateGLSync on a sync with no NVN fence (fenced %u): no GL sync", o->fenced); }
+    return *glsync ? 0 : 1;
+}
+// PEANUTS end
 NVN(nvnSyncSetDebugLabel, void, NVNsync *s, const char *l) { (void)s; (void)l; }
 // Fence = "all commands previously submitted to the queue have completed": record the fence value of the most recent submit
 NVN(nvnQueueFenceSync, void, NVNqueue *q, NVNsync *s, NVNsyncCondition c, int f) { (void)q; (void)c; (void)f; ((sync_t *)s)->fenced = 1; ((sync_t *)s)->fence = mtl_last_fence(); }
@@ -1168,6 +1251,9 @@ __attribute__((weak)) void mtl_event_cpu_signal(void) {}
 NVN(nvnQueueWaitSync, NVNboolean, NVNqueue *q, const NVNsync *s) {
     const sync_t *o = (const sync_t *)s; static int once;
     if (!o->fenced) { if (!once++) LOG("[nvn] QueueWaitSync: the sync object has no fence yet: the wait passes"); return 1; }
+    // PEANUTS: a GL fence (SyncInitializeFromFencedGLSync): the commands recorded after this wait read what GL drew, so this thread records them only once GL has finished
+    // (a CPU wait; the console waits on the GPU)
+    if (o->fenced == 3) { if (!nvn_gl_sync_wait(o->fence, UINT64_MAX)) { static int r; if (!r++) LOG("[RED] [nvn] QueueWaitSync: waiting for a GL fence failed: the queue goes on"); } return 1; }
     pthread_mutex_lock(&g_sub_mu); mtl_queue_wait_fence(((const queue_t *)q)->serial, o->fence); pthread_mutex_unlock(&g_sub_mu);
     return 1;
 }
@@ -1188,6 +1274,7 @@ _Atomic uint64_t nvn_sync_wait_n[5];
 NVN(nvnSyncWait, NVNsyncWaitResult, const NVNsync *s, uint64_t timeout) {
     const sync_t *o = (const sync_t *)s;
     if (!o->fenced) { atomic_fetch_add_explicit(&nvn_sync_wait_n[3], 1, memory_order_relaxed); return NVN_SYNC_WAIT_RESULT_TIMEOUT_EXPIRED; }
+    if (o->fenced == 3) return nvn_gl_sync_wait(o->fence, timeout) ? NVN_SYNC_WAIT_RESULT_CONDITION_SATISFIED : NVN_SYNC_WAIT_RESULT_TIMEOUT_EXPIRED;   // PEANUTS: a GL fence (GL interop)
     int (*w)(uint64_t, uint64_t) = o->fenced == 2 ? mtl_wait_acq : mtl_wait;
     if (w(o->fence, 0)) { atomic_fetch_add_explicit(&nvn_sync_wait_n[0], 1, memory_order_relaxed); return NVN_SYNC_WAIT_RESULT_ALREADY_SIGNALED; }
     uint64_t t0 = now_ns(); int ok = w(o->fence, timeout); atomic_fetch_add(&g_sync_ns, now_ns() - t0);   // the frame's blocked SyncWait time (@sync_ms)
