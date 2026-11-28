@@ -181,7 +181,11 @@ static void release_pages(range_t *r, uintptr_t p, uintptr_t q, _Atomic uint64_t
                     stamp_page(r, k); atomic_store(&r->state[k], PG_NONE); if (count) atomic_fetch_add(count, 1);   // PEANUTS(upstream-candidate)
                 }
             } else {
-                for (uintptr_t k = run; k < i; k++) { stamp_page(r, k); atomic_store(&r->state[k], PG_NONE); }
+                // PEANUTS(upstream-candidate): publish once after stamping the whole writable run.
+                uint64_t gen = atomic_fetch_add(&g_now, 1) + 1;
+                for (uintptr_t k = run; k < i; k++) atomic_store(&r->gen[k], gen);
+                atomic_fetch_add(&g_now, 1);
+                for (uintptr_t k = run; k < i; k++) atomic_store(&r->state[k], PG_NONE);
                 if (count) atomic_fetch_add(count, i - run);
             }
             open = 0;
@@ -299,8 +303,8 @@ void nvn_dirty_protect(const void *addr, size_t len) {
     // other). The failure is logged once per range, after the mutex is let go (a log line takes stderr's lock)
     uintptr_t run = 0, fa = 0; size_t fn = 0; int open = 0, fresh = 0, nfail = 0, ferr = 0, nstuck = 0;
     for (uintptr_t i = p; i <= q + 1; i++) {
-        uint8_t st = PG_NONE;
-        int took = i <= q && atomic_compare_exchange_strong(&r->state[i], &st, PG_BUSY);
+        uint8_t st = i <= q ? atomic_load_explicit(&r->state[i], memory_order_relaxed) : PG_PROT;
+        int took = st == PG_NONE && atomic_compare_exchange_strong(&r->state[i], &st, PG_BUSY);   // PEANUTS(upstream-candidate): Only claim an unprotected page.
         if (took && !r->ever[i]) { r->ever[i] = 1; if (!fresh) { fresh = 1; if (++g_ever == g_block_at && g_bwant && g_bmask != g_bwant) { g_bmask = g_bwant; LOG("dirty-page tracking: %llu regions protected so far, from now on in blocks of %zu KiB", (unsigned long long)g_ever, (size_t)((g_bwant + 1) >> 10)); } } }
         else fresh = 0;
         if (took && !open) { run = i; open = 1; }

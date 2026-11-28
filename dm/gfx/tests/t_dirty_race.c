@@ -104,7 +104,10 @@ static void generation_publish(size_t pg, int batch) {
     g_publish_gen = &r->gen[((uintptr_t)g_publish_page - r->base) >> g_shift];
     nvn_dirty_protect(page, len);
     g_observed_clean = 0; g_publish_armed = 1;
+    uint64_t before_release = nvn_dirty_now();   // PEANUTS(upstream-candidate): Verify one publication per writable run.
     if (batch) prep_write(page, len); else on_fault(page, 1, NULL);
+    EXPECT("one reservation and one publication per release", 2, nvn_dirty_now() - before_release);
+    if (batch) EXPECT("the first page of the run is dirty too", 1, nvn_dirty_since(page, pg, g_publish_stamp));
     page[0] = 3;
     if (batch) page[pg] = 4;
     printf("generation publication (%s):\n", batch ? "host pre-write, batched pages" : "page fault");

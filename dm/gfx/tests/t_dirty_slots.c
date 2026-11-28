@@ -74,6 +74,8 @@ int main(void) {
 
     // Adjacent pools sharing a host page (pools are 4 KB aligned, host pages 16 KB): the first page of SMBW's ASTC texture pool is shared with a small preceding pool, and was judged untracked and re-uploaded on every use
     size_t pg = (size_t)getpagesize();
+    // PEANUTS(upstream-candidate): two 4 KiB-aligned pools share a host page only above 4 KiB.
+    if (pg <= 4096) return g_fail != 0;
     uint8_t *blk = mmap(NULL, 4 * pg, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
     if (blk == MAP_FAILED) { perror("mmap"); exit(2); }
     uint8_t *pa = blk, *pb = blk + pg - 0x1000;           // pool A covers the start of page 0, pool B starts in the last 4 KB of page 0

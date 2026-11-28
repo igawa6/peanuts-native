@@ -176,6 +176,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - GPU memory grows with repeated `nvnTextureReadTexels` calls on a long-lived game thread, even after each readback completes. → [GPU readback without an autorelease pool](../reference/memory.md#gpu-readback-without-an-autorelease-pool)
 - process footprint and Metal allocation grow during stationary gameplay even after readback fences complete; the deferred-release queue and command allocator sizes remain bounded. → [Completion readbacks survive a guest waiter's pool](../reference/memory.md#completion-readbacks-survive-a-guest-waiters-pool)
 - readiness passes, then a black picture with audio; `pool memory ... placed map -5`, missing placed RAM and skipped index-buffer draws. Issue #47's Pokémon Sword 1.3.2 log on Mali-G57/PanVK `58f2c55854` contains 375 placement failures. `-5` is `VK_ERROR_MEMORY_MAP_FAILED`; it does not establish why that driver rejected the map. <!-- PEANUTS: guest-memory probe --> → [Advertised placed maps reject guest-buffer remaps (Android)](../reference/memory.md#advertised-placed-maps-reject-guest-buffer-remaps-android)
+- Texture preparation takes much longer than pixel uploads, and the memory maps thread can take a large slice of CPU while compacting placed memory and releasing tracking protections. → [Dirty tracking repeatedly updates a shared clock for each released page](../reference/memory.md#dirty-tracking-repeatedly-updates-a-shared-clock-for-each-released-page)
 
 ## Threads
 
