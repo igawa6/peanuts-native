@@ -403,22 +403,36 @@ public final class SettingsPage {
         col.addView(top(a, s));
         if (!wide) PUi.add(col, line(a, s.line, 13), 4);
         if (s.key.equals("about")) { AboutPage.fill(a, col, wide || tablet, buildTag, () -> press("Check for updates"), () -> press("Questions and answers")); return col; }   // a tablet: About in two columns, as on a wide screen
-        if (s.key.equals("users")) { dev.peanuts.users.UsersPage.fill(a, col, wide || tablet); return col; }   // the users as cards, Who's playing? and the Miis (dev.peanuts.users); a tablet: four a row
-        boolean first = true;
+        if (s.key.equals("users")) {   // the users as cards, Who's playing? and the Miis (dev.peanuts.users); a tablet: four a row
+            LinearLayout more = new LinearLayout(a);   // then the section's other groups (amiibo): UsersPage puts them back at its end each time it draws anew
+            more.setOrientation(LinearLayout.VERTICAL);
+            cards(a, s, groups, more, false, USERS_OWN);
+            dev.peanuts.users.UsersPage.fill(a, col, wide || tablet, more.getChildCount() == 0 ? null : more);
+            return col;
+        }
+        boolean first = cards(a, s, groups, col, true, java.util.Collections.emptyList());
+        for (Item it : loose) PUi.add(col, it.view, first ? 14 : 18);
+        return col;
+    }
+
+    /** The groups of Settings › Users that the users' part draws itself (its Users cards, Who's playing? and the Miis) */
+    private static final java.util.List<String> USERS_OWN = java.util.Arrays.asList("Users", "Miis");
+
+    /** The section's groups in the table's order, each a heading over a card of its rows, into into, but those in skip; first: nothing above yet. Still first */
+    private static boolean cards(Activity a, SettingsSections.Section s, Map<String, List<Item>> groups, LinearLayout into, boolean first, java.util.Collection<String> skip) {
         for (String label : SettingsSections.groupOrder(s)) {
             List<Item> items = groups.get(label);
-            if (items == null || items.isEmpty()) continue;
+            if (items == null || items.isEmpty() || skip.contains(label)) continue;
             items.sort((x, y) -> Integer.compare(SettingsSections.order(s, label, x.title), SettingsSections.order(s, label, y.title)));   // stable: unknown rows keep their order
-            PUi.add(col, PUi.section(a, label), first ? 14 : 18);
-            LinearLayout card = PUi.add(col, PUi.listCard(a), 6);
+            PUi.add(into, PUi.section(a, label), first ? 14 : 18);
+            LinearLayout card = PUi.add(into, PUi.listCard(a), 6);
             for (Item it : items) {
                 card.addView(it.view);
                 for (View v : it.after) card.addView(v);
             }
             first = false;
         }
-        for (Item it : loose) PUi.add(col, it.view, first ? 14 : 18);
-        return col;
+        return first;
     }
 
     /** The top of a section's page: wide, its title over its line; a phone, the menu button, the title over "Settings" */

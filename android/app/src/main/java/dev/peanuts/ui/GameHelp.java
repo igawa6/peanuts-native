@@ -47,6 +47,7 @@ public final class GameHelp {
         m.put("Rumble", "Lets this game rumble the controller, or the phone when no controller is connected.");
         m.put("Button mapping", "Which button of your controller presses which Switch button, for this game. Default follows Settings.");
         m.put("Motion sensitivity", "How far the phone's gyro turns the aim. From the next start.");
+        m.put("amiibo", "Lets this game find your amiibo on Peanuts' own stand. Off, it finds none, as before. Default follows Settings › Users › amiibo. From the next start.");
         // Companion
         m.put("Companion", "The second screen's page made for this game: install it, update it or remove it.");
         m.put("Second screen", "Whether the companion shows on the second screen while the game runs.");

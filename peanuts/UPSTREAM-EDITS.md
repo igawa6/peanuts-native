@@ -3751,3 +3751,41 @@ Two profiles of the game that the OpenGL UI and no-colour draw sections above we
 | `dm/games/01005A20190A6000/shader_map.tsv`, `shader_facts.tsv`, `shader_pairs.tsv`, `shader_files.tsv`, and the same four in `dm/games/0100D2D0190A4000/` | new | the generated tables (the US ones copies of the EU ones) | allow-listed in `peanuts/upstream-unmarked.txt` |
 | `dm/games/README.md` | 2 | the two table rows | `<!-- PEANUTS: ... -->` in the row's last cell |
 | `docs/reference/rendering.md` | 3 | the Found on lines of the BGR5A1, no-colour draw and OpenGL UI entries link the EU profile | `<!-- PEANUTS -->` at the line's end |
+
+### amiibo: a virtual stand the app places amiibo on (2026-11-24, GitHub issue #582, Part A: engine and store; opt-in since 2026-11-26)
+
+Games read amiibo through `nn::nfp`, which upstream's `hle_sdk16.c` takes over with one NFC device that never finds a tag. The take-over sits above
+the SDK's NFC service and above the figures' encryption, so a game asks for plain TagInfo, ModelInfo, CommonInfo, RegisterInfo and application area
+bytes: a virtual tag needs no amiibo keys. `dm/peanuts/peanuts_amiibo.c` takes over the same nfc and nfp symbols, only in a game the player turned
+amiibo on for (2026-11-26, igawa6's review of #711: an opt-in, not a replacement for every game). Settings › Users › amiibo (off by default) and the
+game's own amiibo switch in its Game options (`dev.peanuts.amiibo.AmiiboSwitch`) start the game with `PN_AMIIBO=1`; the loader's `force_lookup` asks
+`peanuts_amiibo_force` before its own table, which answers only then. Its take-overs sit in a table of their own (the section `pnamiibo`, as
+`HLE_FORCE` builds `swforce`), so `hle_sdk16.c`'s block stays unchanged and every other game gets it as before. With amiibo on:
+the app places an amiibo (`Bridge.amiiboPlace`, the amiibo's ID, the tag's UID, the nickname, the player's Mii as owner, the dates and the games' data it
+keeps), the activate event is signalled, the game mounts and reads it, its writes (Flush, Create and Recreate of its area) go to the amiibo's folder from a
+helper thread, and a second after the game unmounted it the tag leaves the stand on its own (the deactivate event), as Breath of the Wild expects. An
+amiibo placed in advance is found 0.3 s after the game's next search. Areas are kept per access ID, so one amiibo serves every game. `nn::nfc::IsNfcEnabled`
+answers on now (upstream's open note: nfp and nfc agree). The amiibo settings applets end at once (already registered, nothing to erase or restore).
+`Bridge.amiiboStatus` tells the app whether the game searches and what lies on the stand. The app's side, `dev.peanuts.amiibo`: AmiiboAPI's table
+(MIT) offline (`peanuts/scripts/amiibo-db.py` makes `android/app/src/peanuts/res/raw/amiibo_db.tsv`), the player's own amiibo (`files/amiibo/own`), imports
+of .bin files, folders and ZIP packs (ID and UID only, no keys), pictures loaded on demand, and the adb control's `game do=amiibo`. The pictures are
+downloaded from AmiiboAPI's images on GitHub only once the player turns them on, and only while amiibo is on in Settings or for a game
+(`AmiiboSwitch.picturesOn`; the pictures off by default, 2026-11-26 and 2026-11-28: igawa6's review of #711, strictly opt-in; Part B has the row);
+otherwise nothing is downloaded and Peanuts' own card stands in. See `peanuts/docs/AMIIBO.md`.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/loader.c` | 1 | `force_lookup`: `peanuts_amiibo_force(name)` first, under `#ifdef PN_AMIIBO` (NULL unless the game started with `PN_AMIIBO=1`) | `// PEANUTS:` |
+| `android/host/CMakeLists.txt` | 3 | `dm/peanuts/peanuts_amiibo.c` in `HOST_C`; `PN_AMIIBO` in both kinds of host's definitions (on the marked lines of `DM_NSP_DIRECT`) | `# PEANUTS:` |
+| `android/app/src/main/java/dev/nxnative/android/GameActivity.java` | 1 | `settingsEnv`: `AmiiboSwitch.env` after `Companion.env` | `// PEANUTS:` |
+| `android/app/src/main/java/dev/nxnative/android/GameSettings.java` | 1 | Game options: the game's amiibo switch after Time of day, above Mods & Cheats, for a game that uses amiibo (`AmiiboSwitch.offered`) | `// PEANUTS:` |
+| `android/NOTICE.md` | 1 | AmiiboAPI's table (MIT) and its pictures (once turned on) | `<!-- PEANUTS -->` |
+
+Peanuts-owned: `dm/peanuts/peanuts_amiibo.c`, `dev.peanuts.amiibo` (`AmiiboDb`, `AmiiboBin`, `AmiiboStore`, `AmiiboTag`, `AmiiboImport`, `AmiiboFiles`,
+`AmiiboStand`, `AmiiboSwitch`, `AmiiboPictures`), `Bridge.amiibo*`, AmiiboAPI's line in `AboutData`, Settings' amiibo row (`LibrarySettings`, `SettingsSections`,
+`SettingsHelp`; `SettingsPage` hands Users' amiibo group to `UsersPage`, which draws it under the users) and the game's (`GameAreas`, `GameHelp`), the `amiibo` action of `dev.peanuts.ctl.GameLive` and `GameLink`, `peanuts/scripts/amiibo-db.py`,
+`amiibo_db.tsv`. Tests: `peanuts/tests/test_amiibo_host.py` (the stand in C with made-up IDs, off without `PN_AMIIBO=1`, and that its symbols are
+the upstream block's, which stays whole),
+`peanuts/tests/test_amiibo.py` (`AmiiboJvmTest`: the table, dumps made in the test, imports, the store, the host's description; no keys or dumps in the
+repository; `AmiiboPicturesJvmTest`: no connection and no cache folder while the pictures or amiibo are off), `peanuts/tests/test_ctl.py`. `upstream-update.sh --check` counts `android/app/src/jvmtest/java/dev/peanuts/` (the JVM tests of
+Peanuts' own classes) as Peanuts-owned.

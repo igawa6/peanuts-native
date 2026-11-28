@@ -8,7 +8,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * game, do=fps_cap | console_mode | second_screen | controls: the running game's live controls (peanuts/docs/CONTROL.md). The game runs in the ":game" process
+ * game, do=fps_cap | console_mode | second_screen | controls | amiibo: the running game's live controls (peanuts/docs/CONTROL.md). The game runs in the ":game" process
  * and the control commands in the launcher's, so {@link Ctl} sends the request as an ordered broadcast to this package only ({@link #ACTION}); GameLink's
  * receiver, registered by GameActivity while its screen is there, runs {@link #run} on the game's main thread against the game's own controls (the calls the
  * second screen's stats page makes, dev.peanuts.ui.GameControls) and hands the answer back as the broadcast's result ({@link #EXTRA_ANSWER}, JSON), which
@@ -25,7 +25,7 @@ public final class GameLive {
     public static final String EXTRA_ANSWER = "answer";
     /** How long the launcher waits for the game's answer */
     public static final long ANSWER_MS = 4000;
-    public static final List<String> ACTIONS = Arrays.asList("fps_cap", "console_mode", "second_screen", "controls");
+    public static final List<String> ACTIONS = Arrays.asList("fps_cap", "console_mode", "second_screen", "controls", "amiibo");
     static final List<String> MODES = Arrays.asList("docked", "handheld"), SCREEN = Arrays.asList("toggle", "on", "off");
 
     /** The running game's controls, as the game's process has them */
@@ -53,6 +53,12 @@ public final class GameLive {
         Boolean screenShown();
         /** Hides or shows it (the four-finger tap); the state after it, null when nothing can be done */
         Boolean toggleScreen();
+        /** The amiibo stand as the host has it ("key=value" lines, dev.peanuts.amiibo.AmiiboStand); empty without amiibo in the host */
+        default String amiiboStatus() { return ""; }
+        /** Places an amiibo: an ID (16 hex digits) of the app's list, or own:&lt;key&gt; of the player's own. 1 found, 2 ready, 0 refused or unknown */
+        default int amiiboPlace(String what) { return 0; }
+        /** Takes the amiibo off the stand */
+        default void amiiboOff() {}
     }
 
     /** What Request.check refuses of these actions before anything is sent */
@@ -66,6 +72,12 @@ public final class GameLive {
             }
             case "console_mode": r.need("value"); r.word("value", MODES); break;
             case "second_screen": r.need("value"); r.word("value", SCREEN); break;
+            case "amiibo": {
+                String v = r.need("value").toLowerCase(Locale.ROOT);
+                if (!v.equals("status") && !v.equals("off") && !v.matches("[0-9a-f]{16}") && !v.matches("own:[0-9a-f]{16}-[0-9a-f]{14}"))
+                    throw new Request.Bad("bad_args", "value is status, off, an amiibo ID of 16 hex digits or own:<key>, not " + v);
+                break;
+            }
             default: break;   // controls: nothing to give
         }
     }
@@ -104,6 +116,7 @@ public final class GameLive {
             case "console_mode": consoleMode(r.word("value", MODES), live, res); break;
             case "second_screen": secondScreen(r.word("value", SCREEN), live, res); break;
             case "controls": controls(live, res); break;
+            case "amiibo": amiibo(r.need("value").toLowerCase(Locale.ROOT), live, res); break;
             default: throw new Request.Bad("bad_args", "do is " + String.join(", ", ACTIONS) + " here, not " + act);
         }
     }
@@ -208,6 +221,26 @@ public final class GameLive {
                 + ". Second screen " + (shown == null ? "not there" : shown ? "shown" : "hidden") + ".");
         res.put("console_mode", modeWord(mode)).put("cap", capWord(pl)).put("cap_label", pl).put("running", capWord(rl)).put("running_label", rl)
                 .put("caps", capList(live, false)).put("second_screen", shown == null ? null : shown ? "on" : "off");
+    }
+
+    // ---- amiibo ----
+
+    /** status: the stand; off: the amiibo taken off; an ID or own:&lt;key&gt;: placed (data.placed found or ready), then the stand. Refused in a game amiibo is off for */
+    static void amiibo(String v, Live live, Result res) throws Request.Bad {
+        String before = live.amiiboStatus();
+        if (before == null || before.isEmpty()) throw new Request.Bad("not_for_this_game", "This game's host has no amiibo stand.");
+        if (!("\n" + before).contains("\nenabled=1\n"))
+            throw new Request.Bad("not_for_this_game", "amiibo is off for this game: turn it on in the game's Game options or in Settings › Users › amiibo, then start the game again.");
+        if (v.equals("off")) { live.amiiboOff(); res.put("placed", "off"); }
+        else if (!v.equals("status")) {
+            int got = live.amiiboPlace(v);
+            if (got == 0) throw new Request.Bad("not_offered", "No amiibo " + v + " here, or the game has no amiibo stand.");
+            res.put("placed", got == 1 ? "found" : "ready");
+        }
+        String text = live.amiiboStatus();
+        if (text == null || text.isEmpty()) throw new Request.Bad("not_for_this_game", "This game's host has no amiibo stand.");
+        for (String line : text.split("\n")) { int i = line.indexOf('='); if (i > 0) res.put("amiibo_" + line.substring(0, i), line.substring(i + 1)); }
+        res.ok(v.equals("status") ? "The amiibo stand as the game has it." : v.equals("off") ? "The amiibo is off the stand." : "The amiibo is on the stand.");
     }
 
     // ---- back in the launcher ----

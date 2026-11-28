@@ -160,6 +160,12 @@ public final class LibrarySettings {
                 .toggle(a, dev.peanuts.smooth.DevView.on(a), (b, on) -> { Feel.toggled(b, on); dev.peanuts.smooth.DevView.on(a, on); refreshRows(); });
         devRow.view.setOnClickListener(v -> devRow.toggle.toggle());
         card.addView(devRow.view);
+        // amiibo for every game (dev.peanuts.amiibo.AmiiboSwitch; SettingsSections puts the row under Users › amiibo): off by default, a game's own switch
+        // in its Game options comes first
+        PUi.Setting amiibo = new PUi.Setting(a, "", "amiibo", null).value("Games find your amiibo on Peanuts' stand, from their next start. Off: they find none, as before.")
+                .toggle(a, dev.peanuts.amiibo.AmiiboSwitch.all(a), (b, on) -> { Feel.toggled(b, on); dev.peanuts.amiibo.AmiiboSwitch.all(a, on); });
+        amiibo.view.setOnClickListener(v -> amiibo.toggle.toggle());
+        card.addView(amiibo.view);
         refreshRows();
     }
 

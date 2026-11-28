@@ -74,9 +74,10 @@ public final class SettingsSections {
                             r("Dual-screen companions", "companion")),
                     new Group("TV", r("TV and monitors", "tv")),
                     new Group("Display", r("Screen rotation", "screen-landscape"), r("Keep the screen on while preparing", "awake"))),
-            new Section("users", "Users", "user", "Who plays, and the Miis games can use.",
+            new Section("users", "Users", "user", "Who plays, and the Miis and amiibo games can use.",
                     new Group("Users", r("Users", "user")),
-                    new Group("Miis", r("Miis", "user"))),
+                    new Group("Miis", r("Miis", "user")),
+                    new Group("amiibo", r("amiibo", "game"))),
             new Section("app", "App", "settings", "How the app feels, its in-game panel, and its updates.",
                     new Group("Feel", r("Haptics", "controller"), r("Motion", "play")),
                     new Group("In-game panel", r("Mods tab", "mods")),
@@ -94,7 +95,7 @@ public final class SettingsSections {
     private static final String[][] SUMMARY = {
             {"library", "Game, update and DLC folders, builds, space and play time"}, {"console", "Keys, firmware and the clock"},
             {"graphics", "GPU driver, picture and speed"}, {"controls", "Buttons, touch controls and the controller"},
-            {"screens", "Both screens, a TV, rotation, keeping the screen on"}, {"users", "Users and Miis"},
+            {"screens", "Both screens, a TV, rotation, keeping the screen on"}, {"users", "Users, Miis and amiibo"},
             {"app", "Haptics, motion, the in-game panel, updates and Smooth Experience"},
             {"help", "Readiness check, self-test, log and answers"}, {"developer", "Advanced, tester settings, adb and Developer view"},
             {"about", "The app, its games, credits, licenses and Peanuts cracked"}};
