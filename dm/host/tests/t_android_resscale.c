@@ -94,6 +94,10 @@ static void t_deny(void) {
     for (uint32_t i = 1; i < VKRS_DENY_MAX; i++) CHECK(vkrs_deny_add(t, i, 1, 1, 0, 0) == 1, "add %u", i);
     CHECK(t->n == VKRS_DENY_MAX && vkrs_deny_add(t, 9999, 9, 9, 9, 0) == -1 && t->n == VKRS_DENY_MAX, "a full table takes nothing more");
     CHECK(vkrs_deny_add(t, 1280, 720, 37, 8, 0) == 0 && vkrs_deny_find(t, 255, 1, 1, 0) == 255, "a full table still finds what it holds");
+    CHECK(vkrs_deny_del(t, 1280, 720, 37, 8) == 1 && t->n == VKRS_DENY_MAX - 1 && vkrs_deny_find(t, 1280, 720, 37, 8) < 0, "a shape taken out is no longer denied");   // PEANUTS: reductions
+    CHECK(vkrs_deny_find(t, 255, 1, 1, 0) == 0 && vkrs_deny_find(t, 1, 1, 1, 0) == 1, "the last entry takes the place of the one taken out; the others stay");
+    CHECK(vkrs_deny_del(t, 1280, 720, 37, 8) == 0 && t->n == VKRS_DENY_MAX - 1, "a shape that is not there is not taken out");
+    CHECK(vkrs_deny_add(t, 1280, 720, 37, 8, 9) == 1 && t->n == VKRS_DENY_MAX, "a freed place takes a shape again");
     free(t);
 }
 
@@ -187,8 +191,20 @@ static void t_fetch_bindings(void) {
     m.w[3] = 400; vkrs_spv_scan(m.w, m.n, 130, &fb); CHECK(fb.all && fb.n == VKRS_FB_MAX, "more bindings than the list holds: every texture counts (n %u)", fb.n);
 }
 
+// PEANUTS: a pass reduces a render target into targets of at most half its size (Aeterna Noctis' URP bloom pyramid from its 1728x972 scene)
+static void t_reduces(void) {
+    CHECK(vkrs_reduces(864, 486, 1728, 972) && vkrs_reduces(432, 243, 864, 486) && vkrs_reduces(216, 121, 432, 243) && vkrs_reduces(108, 60, 216, 121) && vkrs_reduces(54, 30, 108, 60),
+          "each level of the bloom pyramid reduces the one above it (odd sides rounded down)");
+    CHECK(vkrs_reduces(480, 270, 1920, 1080), "a quarter-size target reduces");
+    CHECK(!vkrs_reduces(1728, 972, 1728, 972) && !vkrs_reduces(1920, 1080, 1728, 972), "a same-size or larger target does not (a blur pass at one level, the final blit)");
+    CHECK(!vkrs_reduces(1280, 720, 1920, 1080), "a scene drawn smaller than the screen is no reduction (2/3 a side)");
+    CHECK(!vkrs_reduces(960, 1080, 1920, 1080) && !vkrs_reduces(1920, 540, 1920, 1080), "half in one side only is no reduction");
+    CHECK(vkrs_reduces(1, 1, 2, 2) && !vkrs_reduces(1, 1, 1, 2) && !vkrs_reduces(0, 30, 108, 60) && !vkrs_reduces(54, 0, 108, 60), "the smallest reduction; an empty side");
+    CHECK(vkrs_reduces(32768, 32768, 65536, 65536) && !vkrs_reduces(0x80000001u, 1, 0xFFFFFFFFu, 2), "no overflow at the largest sides");
+}
 int main(void) {
     t_parse(); t_dim(); t_px(); t_tile(); t_region(); t_deny(); t_scan(); t_fetch_bindings();   // PEANUTS: #734
+    t_reduces();   // PEANUTS: reductions
     if (fails) { printf("t_android_resscale: %d FAILED\n", fails); return 1; }
     printf("t_android_resscale: ok\n");
     return 0;

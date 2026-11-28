@@ -1,0 +1,45 @@
+# Aeterna Noctis (Switch, update 3.2.000 = v458752). Provisional: from the survey (dm/games/profile_guess.py), memory keys as SPY×ANYA's Android profile.
+# Format: see dm/games/README.md
+# Unity 2022.2.5f1 IL2CPP, FMOD, SDK 15.3.2, NVN. subsdk0 is NintendoSDK_movie (the sdk and subsdk0 builds of Blasphemous 2).
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+
+# ---- Identity ----
+title_id	0100EB60159E4000
+program_id	0100EB60159E4000
+
+# ---- App ----
+name	Aeterna Noctis
+ipa	AeternaNoctis.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v458752	3.2.000	main=7b0a450883ba23210000000000000000	subsdk0=368f01d5cb42f06cd125dc739d036719	sdk=8618895246b420329b77746b960a66ab
+package	v458752
+shader_versions	v458752
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	Data/data.unity3d
+zip_store	.bundle:.dat:.png:.resource:.unity3d:.metallib
+
+# ---- Memory ----
+# the NPDM declares 16 MB of system resource (virtual address memory) and main sets a heap. The heap check did not run (no Mac host: the Android path only).
+# alias region 16 GB (SPY×ANYA's and Splatoon Raiders' size; address space only on Android) beside the Switch's 3285 MB pool: a smaller pool can refuse the
+# game's maps on Android, and a 4.375 GB alias region can fill with StandardAllocator's region and Unity's own (docs/reference/memory.md)
+mem_reserve	0x428000000
+mem_alias	0x400000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+
+# ---- Frame rate ----
+# PEANUTS: the game presents at interval 1 with no engine limit the host writes. Display-paced caps from 20 to 120 are offered as experimental; the app starts it at
+# 60 (the default since Peanuts Native 0.1.8: DM_FPS_LIMIT=60, DM_PRESENT_INTERVAL=display), and Game owned is the game's own pacing at its own 60 fps
+fps_limit_present	1
+fps_limit_max	120
+
+# ---- Shader split ----
+shader_groups	/Data/=data
+shader_note	Aeterna Noctis shaders (provisional profile)

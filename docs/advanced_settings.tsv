@@ -374,6 +374,7 @@ DM_RESOURCE_VERSION	developer	Game			text			both
 DM_RES_CHECK	developer	Diagnostics			text			both						
 DM_RES_SCALE	developer	Game			text			both						
 DM_RES_SCALE_POT	developer	Diagnostics			text			both						
+DM_RES_SCALE_REDUCE	developer	Diagnostics			text			both						
 DM_REWRITE_J	developer	Game			text			both						
 DM_ROMFS	internal	Diagnostics			text			both						Mac or iOS only
 DM_ROMFS_OVERLAY	developer	Diagnostics			text			both						

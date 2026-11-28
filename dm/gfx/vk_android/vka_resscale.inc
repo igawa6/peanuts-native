@@ -33,8 +33,10 @@ pthread_mutex_t vka_rs_mu = PTHREAD_MUTEX_INITIALIZER;
 static vkrs_deny g_rs_deny;   // (under g_tmu)
 static const char *const g_rs_why[RS_WHY_N] = {"its pass has a target that cannot be scaled", "a buffer is copied into it", "it is copied into a buffer", "a shader writes it as an image",
                                                "a copy with an unscaled image that a blit cannot convert", "a multisample resolve into it", "a shader fetches from it by pixel beside unscaled textures",
-                                               "an upscaler stand-in reads or writes it", "its storage is uploaded into it"};
-static const char *const g_rs_short[RS_WHY_N] = {"pass mix", "B2T", "T2B", "storage", "copy kind", "resolve", "fetch mix", "stand-in", "upload"};
+                                               "an upscaler stand-in reads or writes it", "its storage is uploaded into it",
+                                               "a pass reduces a render target of at least twice its size into it (a bloom, blur or average chain, whose taps the game steps by its 1x texel sizes)"};
+static const char *const g_rs_short[RS_WHY_N] = {"pass mix", "B2T", "T2B", "storage", "copy kind", "resolve", "fetch mix", "stand-in", "upload", "reduce"};
+static vkrs_deny g_rs_redok;   // shapes a fetch beside scaled images took out of the reduction rule (vka_tex_rs_unkeep): reductions leave them as they are (under g_tmu)
 
 static int rs_blit_ok(VkFormat f) { VkFormatFeatureFlags ff = feats(f); return (ff & VK_FORMAT_FEATURE_BLIT_SRC_BIT) && (ff & VK_FORMAT_FEATURE_BLIT_DST_BIT); }
 // The device's start (vka_dev.c vka_init_once, once V.pd is there): the factor, and which depth formats can be blitted, said in every run so the first log of a device
@@ -68,7 +70,8 @@ static int rs_can_locked(vka_img *im) {
     else if (!pot && d->width == d->height && !(d->width & (d->width - 1))) no = 1;                      // a power-of-two square
     else if (vkrs_dim((uint32_t)d->width, vka_rs_q) > lim || vkrs_dim((uint32_t)d->height, vka_rs_q) > lim) no = 1;
     else if (im->f.kind <= 2 && !rs_blit_ok(im->f.vk)) no = 1;                                           // a colour format without blits: no scaled copy into or out of it (an integer one blits nearest, #703)   // PEANUTS: #734
-    else if (vkrs_deny_find(&g_rs_deny, (uint32_t)d->width, (uint32_t)d->height, (uint32_t)im->f.vk, (uint32_t)d->flags) >= 0) no = 1;
+    else { int di = vkrs_deny_find(&g_rs_deny, (uint32_t)d->width, (uint32_t)d->height, (uint32_t)im->f.vk, (uint32_t)d->flags);   // PEANUTS: a shape a reduction denied: rs_red
+           if (di >= 0) { no = 1; if (g_rs_deny.e[di].why == RS_WHY_REDUCE) im->rs_red = 1; } }
     if (!no && (im->usage & VK_IMAGE_USAGE_STORAGE_BIT)) no = 1;   // (remade with storage use since: a shader writes it in the texture's pixels; every swap keeps the use, so it is not asked again either)
     if (no) { im->rs_no = 1; return 0; }   // (none of these changes for an image; a shape denied later is found at the next question)
     return 1;
@@ -76,7 +79,7 @@ static int rs_can_locked(vka_img *im) {
 static void rs_event(const vka_img *im, int up, int why, uint32_t ow, uint32_t oh, const char *content) {
     uint64_t *n = up ? &vka_rs_st.up : &vka_rs_st.down[why];
     if ((*n)++ >= 16) return;
-    char key[40] = ""; if (!up && why == RS_WHY_FETCH_MIX && vka_rs_st.ctx_key) snprintf(key, sizeof key, ", shader %016llx", (unsigned long long)vka_rs_st.ctx_key);
+    char key[40] = ""; if (!up && (why == RS_WHY_FETCH_MIX || why == RS_WHY_REDUCE) && vka_rs_st.ctx_key) snprintf(key, sizeof key, ", shader %016llx", (unsigned long long)vka_rs_st.ctx_key);
     if (up) VLOG("res scale: up: texture serial %llu %ux%u NVN format %#x (VkFormat %d) flags %#x: image %ux%u -> %ux%u, %.1f MiB, %s (frame %llu)", (unsigned long long)im->serial, im->d.width, im->d.height,
                  im->d.format, im->f.vk, im->d.flags, ow, oh, im->w, im->h, im->bytes / 1048576.0, content, (unsigned long long)vka_frame());
     else VLOG("res scale: down (%s): texture serial %llu %ux%u NVN format %#x (VkFormat %d) flags %#x: %s%s; image %ux%u -> %ux%u, %s; its shape stays at 1x from now on (frame %llu)", g_rs_short[why],
@@ -153,6 +156,79 @@ int vka_tex_rs_down(vka_img *im, VkCommandBuffer cb, int why) {
     if (!im || !im->rsc) return 1;
     pthread_mutex_lock(&g_tmu); int r = rs_set_locked(im, cb, 0, why, 0); pthread_mutex_unlock(&g_tmu); return r > 0;
 }
+// PEANUTS begin: reductions (vka_draw.c rs_reduce_fix). im is a target of a pass that reduces a render target of at least twice its size: at 1x for good, its shape
+// denied with RS_WHY_REDUCE so that the next image of that shape (and so the rest of a pyramid, each level reduced from the one above) starts at 1x. One that is
+// scaled already goes back to 1x as for any other reason; one not scaled yet is kept from it before its first use as a target. A shape a fetch took out of the rule
+// (g_rs_redok) and one not to be scaled for another reason are left as they are
+int vka_tex_rs_keep(vka_img *im, VkCommandBuffer cb) {
+    if (!im || im->rs_red || (im->rs_no && !im->rsc)) return 1;
+    pthread_mutex_lock(&g_tmu);
+    const nvn_texdesc *d = &im->d; int r = 1;
+    if (vkrs_deny_find(&g_rs_redok, (uint32_t)d->width, (uint32_t)d->height, (uint32_t)im->f.vk, (uint32_t)d->flags) >= 0) { pthread_mutex_unlock(&g_tmu); return 1; }
+    if (im->rsc) r = rs_set_locked(im, cb, 0, RS_WHY_REDUCE, 0) > 0;
+    else if (im->inited && !rs_can_locked(im)) { pthread_mutex_unlock(&g_tmu); return 1; }   // not to be scaled for another reason: its shape is not denied for this one
+    else {
+        int a = vkrs_deny_add(&g_rs_deny, (uint32_t)d->width, (uint32_t)d->height, (uint32_t)im->f.vk, (uint32_t)d->flags, RS_WHY_REDUCE); im->rs_no = 1;
+        if (a < 0 && !vka_rs_st.deny_full++) VRED("res scale: the table of shapes kept at 1x is full (%d): further shapes may change scale again and again", VKRS_DENY_MAX);
+        rs_event(im, 0, RS_WHY_REDUCE, im->w, im->h, "kept at 1x before its first use as a target");
+    }
+    if (r) im->rs_red = 1;
+    pthread_mutex_unlock(&g_tmu);
+    return r;
+}
+// im is at 1x only because a reduction drew it, and a shader fetches from it by pixel beside scaled images (vka_draw.c rs_fetch_fix), which would otherwise take the
+// scaled ones back to 1x (a half-size occlusion target upsampled beside the scaled depth, for one): its shape leaves the rule for the run, every live image of that
+// shape may be scaled again, and im is scaled now. 1 = scaled
+int vka_tex_rs_unkeep(vka_img *im, VkCommandBuffer cb) {
+    if (!im || !im->rs_red || im->rsc) return im && im->rsc;
+    pthread_mutex_lock(&g_tmu);
+    uint32_t w = (uint32_t)im->d.width, h = (uint32_t)im->d.height, f = (uint32_t)im->f.vk, fl = (uint32_t)im->d.flags;
+    int di = vkrs_deny_find(&g_rs_deny, w, h, f, fl);
+    if (di >= 0 && g_rs_deny.e[di].why == RS_WHY_REDUCE) vkrs_deny_del(&g_rs_deny, w, h, f, fl);
+    vkrs_deny_add(&g_rs_redok, w, h, f, fl, RS_WHY_REDUCE);
+    for (int i = 0; i < g_nlive; i++) { vka_img *x = g_live[i];
+        if (x->rs_red && (uint32_t)x->d.width == w && (uint32_t)x->d.height == h && (uint32_t)x->f.vk == f && (uint32_t)x->d.flags == fl) x->rs_red = x->rs_no = 0; }
+    im->rs_red = im->rs_no = 0;
+    int r = rs_set_locked(im, cb, 1, 0, 0);
+    if (r < 0) im->rs_red = 1;   // (a holder reads it: asked again at the next such fetch; its shape is out of the rule already)
+    if (vka_rs_st.red_back++ < 16) VLOG("res scale: texture serial %llu %ux%u format %#x, kept at 1x by a reduction, is fetched by pixel beside scaled images: its shape is scaled after all (%s)",
+                                        (unsigned long long)im->serial, im->d.width, im->d.height, im->d.format, r > 0 ? "scaled now" : r < 0 ? "not this time" : "it cannot be scaled");
+    pthread_mutex_unlock(&g_tmu);
+    return r > 0;
+}
+// A pass that reduces a scaled image into targets at 1x reads it through a 1x copy, as the game drew it: the engine's first step down (Unity URP's bloom prefilter, one
+// bilinear tap per target texel) reads 2x2 texels of a 1x source, its box, but only the middle 2x2 of the 4x4 a texel covers at 2x, and a thin bright line that moves
+// slips in and out between the taps: the glow flickers from frame to frame. The copy is a linear blit (at 2x each texel the average of its 2x2), made again for each pass
+// that reduces the image (rp: the render pass number it is for, vka_draw.c rs_reduce_fix). Made at first use as the texture at 1x, in no table, and kept out of the image
+// cache's bytes (it is small beside its scaled image); destroyed with the image (img_destroy). Caller: no render pass open in cb
+int vka_tex_rs_lo_fill(vka_img *im, VkCommandBuffer cb, uint64_t rp) {
+    if (!im || !im->rsc || !cb) return 0;
+    pthread_mutex_lock(&g_tmu);
+    vka_img *lo = im->rs_lo;
+    if (!lo) {
+        tex_t t = {0}; t.serial = im->serial; t.mem = (uint8_t *)im->mem; t.d = im->d; t.L = im->L;
+        g_rswant = 0; lo = img_create(&t, &im->f, 0);
+        if (!lo) { pthread_mutex_unlock(&g_tmu); VRED_ONCE("res scale: no 1x copy of texture serial %llu %ux%u format %#x could be made: a pass that reduces it reads the scaled image (its glow may flicker)",
+                                                           (unsigned long long)im->serial, im->d.width, im->d.height, im->d.format); return 0; }
+        vka_img_barrier(cb, lo->img, lo->aspect, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+        lo->inited = 1; lo->gpu_owned = 1; lo->refs = INT32_MAX / 2;   // (only im reaches it: no release may destroy it, as rs_set_locked's holder)
+        g_img_bytes -= lo->bytes; lo->bytes = 0;
+        im->rs_lo = lo;
+        static _Atomic int k; if (atomic_fetch_add(&k, 1) < 16) VLOG("res scale: texture serial %llu %ux%u format %#x (image %ux%u) gets a 1x copy for the passes that reduce it", (unsigned long long)im->serial,
+                                                                     im->d.width, im->d.height, im->d.format, im->w, im->h);
+    }
+    vka_barrier(cb);   // what drew im, before the blit reads it
+    VkImageSubresourceLayers sr = {im->aspect, 0, 0, 1};
+    VkImageBlit b = {sr, {{0, 0, 0}, {(int32_t)im->w, (int32_t)im->h, 1}}, sr, {{0, 0, 0}, {(int32_t)lo->w, (int32_t)lo->h, 1}}};
+    int lin = im->f.kind == 0 && (feats(im->f.vk) & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+    vk.vkCmdBlitImage(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, lo->img, VK_IMAGE_LAYOUT_GENERAL, 1, &b, lin ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+    vka_barrier(cb);   // the blit, before the pass reads the copy
+    lo->rs_lo_rp = rp; lo->last_frame = im->last_frame = vka_frame(); lo->last_fence = im->last_fence = vka_fence_last();
+    im->rs_lo_rp = rp; vka_rs_st.lo_fill++;
+    pthread_mutex_unlock(&g_tmu);
+    return 1;
+}
+// PEANUTS end
 // The `res scale:` line of the replay statistics (vka_exec.c mtl_set_frame, every 300 frames): empty while the scale is off
 void vka_rs_stats(char *b, size_t n, double frames) {
     if (n) b[0] = 0;
@@ -169,9 +245,9 @@ void vka_rs_stats(char *b, size_t n, double frames) {
                                 vka_rs_q / 4.0, ni, by / 1048576.0, by * 16.0 / (vka_rs_q * vka_rs_q) / 1048576.0, (s->pass_s - p.pass_s) / frames, (s->pass_1 - p.pass_1) / frames, (s->pass_forced - p.pass_forced) / frames,
                                 (unsigned long long)s->up, (unsigned long long)s->up_no_mem, (unsigned long long)s->busy, (unsigned long long)downs);
     for (int i = 0; i < RS_WHY_N && k < n; i++) k += (size_t)snprintf(b + k, n - k, "%s%s %llu", i ? ", " : "", g_rs_short[i], (unsigned long long)s->down[i]);
-    if (k < n) snprintf(b + k, n - k, "]; work left out %llu; shapes kept at 1x %u; converting copies per frame %.1f; draws and dispatches that fetch by pixel, per frame: all scaled %.1f / none %.1f / mixed %.1f; "
+    if (k < n) snprintf(b + k, n - k, "]; work left out %llu; shapes kept at 1x %u; reductions a fetch scaled after all %llu; 1x copies for reducing passes per frame %.1f, read %.1f; converting copies per frame %.1f; draws and dispatches that fetch by pixel, per frame: all scaled %.1f / none %.1f / mixed %.1f; "   // PEANUTS: reductions
                         "shaders made %u: %u with the fetch helper, %u with a fetch or size query and no helper",
-                        (unsigned long long)s->skip, nd, (s->conv - p.conv) / frames, (s->fd_all - p.fd_all) / frames, (s->fd_none - p.fd_none) / frames, (s->fd_mixed - p.fd_mixed) / frames,
+                        (unsigned long long)s->skip, nd, (unsigned long long)s->red_back, (s->lo_fill - p.lo_fill) / frames, (s->lo_read - p.lo_read) / frames, (s->conv - p.conv) / frames, (s->fd_all - p.fd_all) / frames, (s->fd_none - p.fd_none) / frames, (s->fd_mixed - p.fd_mixed) / frames,
                         (unsigned)atomic_load(&vka_rs_sh[0]), (unsigned)atomic_load(&vka_rs_sh[1]), (unsigned)atomic_load(&vka_rs_sh[2]));
     p = *s;
 }

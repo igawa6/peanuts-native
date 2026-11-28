@@ -325,8 +325,12 @@ typedef struct vka_img {
     // and the video pool registrations count (dm_codec_video_epoch) at which it was last checked for lying in a video pool
     int live_ix; struct vka_img *mnext; uint64_t vep;
     // PEANUTS: resolution scale (vka_resscale.inc): rsc: its VkImage is DM_RES_SCALE times the texture's size (w, h are the image's, d.width / d.height the texture's);
-    // rs_no: it is not to be scaled (what it is, or its shape was denied): not asked again
-    uint8_t rsc, rs_no;
+    // rs_no: it is not to be scaled (what it is, or its shape was denied): not asked again; rs_red: at 1x only because a pass reduces a larger render target into it
+    // (RS_WHY_REDUCE, vka_draw.c rs_reduce_fix), which a fetch beside scaled images undoes (vka_tex_rs_unkeep)
+    uint8_t rsc, rs_no, rs_red;
+    // PEANUTS: a scaled image a pass reduces (vka_draw.c rs_reduce_fix) is read there through rs_lo, a 1x copy of it (made as the texture, in no table, destroyed with
+    // it: img_destroy), filled for render pass number rs_lo_rp (vka_tex_rs_lo_fill)
+    struct vka_img *rs_lo; uint64_t rs_lo_rp;
     // PEANUTS: region writes queued for it and not yet copied (vka_tex.c mtl_tex_write_region; each holds a reference): it is not evicted meanwhile, and a pool drop
     // takes them back (rw_cancel_locked), since both give the image up whatever its reference count says
     uint32_t rw_pend;
@@ -342,7 +346,9 @@ typedef struct vka_img {
 extern uint32_t vka_rs_q;   // the factor in quarters (VKRS_ONE = 1x: off), set once by vka_rs_init before anything is replayed
 static inline int vka_rs_on(void) { return vka_rs_q != VKRS_ONE; }
 // Why a scaled image went back to 1x (counted; the first 16 of each logged)
-enum { RS_WHY_PASS_MIX, RS_WHY_B2T, RS_WHY_T2B, RS_WHY_STORAGE, RS_WHY_COPY_KIND, RS_WHY_RESOLVE, RS_WHY_FETCH_MIX, RS_WHY_STANDIN, RS_WHY_UPLOAD, RS_WHY_N };
+enum { RS_WHY_PASS_MIX, RS_WHY_B2T, RS_WHY_T2B, RS_WHY_STORAGE, RS_WHY_COPY_KIND, RS_WHY_RESOLVE, RS_WHY_FETCH_MIX, RS_WHY_STANDIN, RS_WHY_UPLOAD,
+       RS_WHY_REDUCE,   // PEANUTS: a pass reduces a larger render target into it (vka_draw.c rs_reduce_fix); also kept at 1x before its first use as a target
+       RS_WHY_N };
 // The counts of the `res scale:` statistics line (written by the recording thread, or under the texture cache's lock; read for the line without either)
 typedef struct {
     uint64_t up, up_no_mem, busy, down[RS_WHY_N];   // images scaled; not scaled for their size; a change put off because a holder read the image; scaled down, by reason
@@ -350,6 +356,8 @@ typedef struct {
     uint64_t conv;                                   // texture copies between a scaled and an unscaled image, done as a converting blit
     uint64_t pass_s, pass_1, pass_forced;            // passes over scaled targets; over targets at 1x; of those, ones with a target that could have been scaled
     uint64_t fd_all, fd_none, fd_mixed;              // draws and dispatches of a shader that fetches by pixel: all its 2D textures scaled, none, some
+    uint64_t red_back;                               // PEANUTS: images a reduction kept at 1x that a fetch beside scaled images scaled after all (vka_tex_rs_unkeep)
+    uint64_t lo_fill, lo_read;                       // PEANUTS: 1x copies of scaled images filled for a reducing pass (vka_tex_rs_lo_fill); bindings read through one
     uint64_t deny_full;
     uint64_t ctx_key;                                // the shader of the draw being recorded, for a scale-down's log line
 } vka_rs_stat;
@@ -360,6 +368,10 @@ void vka_rs_init(void);
 int vka_tex_rs_can(vka_img *im);                                  // im could be scaled now
 int vka_tex_rs_up(vka_img *im, VkCommandBuffer cb);               // 1 = scaled (now or already), 0 = not and not later, -1 = not this time; no render pass open in cb
 int vka_tex_rs_down(vka_img *im, VkCommandBuffer cb, int why);    // 1 = at 1x (now or already), 0 = it could not be made 1x now; no render pass open in cb
+int vka_tex_rs_keep(vka_img *im, VkCommandBuffer cb);             // PEANUTS: a reduction draws into it: at 1x for good (RS_WHY_REDUCE); 1 = at 1x, 0 = not now; no render pass open in cb
+int vka_tex_rs_unkeep(vka_img *im, VkCommandBuffer cb);           // PEANUTS: at 1x only by a reduction and fetched beside scaled images: scaled after all; 1 = scaled; no render pass open in cb
+int vka_tex_rs_lo_fill(vka_img *im, VkCommandBuffer cb, uint64_t rp);   // PEANUTS: im's 1x copy filled from it for render pass number rp; 1 = done; no render pass open in cb
+VkImageView vka_tex_id_view_lo(int id, VkCommandBuffer cb, uint8_t dim, uint64_t rp, VkFormat *actual);   // PEANUTS: texture ID id read through its image's 1x copy filled for pass rp, else VK_NULL_HANDLE
 void vka_rs_stats(char *b, size_t n, double frames);
 int vka_rp_rs(const p_set_rt *rt, int has_rt);                    // vka_draw.c: the targets brought to one scale: 1 scaled, 0 at 1x, -1 not possible this time
 // A rectangle of the texture's level 0 as im's pixels (unchanged for an unscaled image); 0 = nothing of it lies inside

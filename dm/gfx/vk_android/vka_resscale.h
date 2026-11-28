@@ -62,6 +62,20 @@ static inline int vkrs_deny_add(vkrs_deny *t, uint32_t w, uint32_t h, uint32_t f
     t->e[t->n++] = (vkrs_shape){w, h, fmt, flags, why};
     return 1;
 }
+// A shape taken out of the table (the last entry takes its place): 1 = it was there
+static inline int vkrs_deny_del(vkrs_deny *t, uint32_t w, uint32_t h, uint32_t fmt, uint32_t flags) {
+    int i = vkrs_deny_find(t, w, h, fmt, flags);
+    if (i < 0) return 0;
+    t->e[i] = t->e[--t->n];
+    return 1;
+}
+
+// A pass reduces a render target when its targets (tw x th, the game's sizes) are at most half the sampled target's (sw x sh) in both sides: a bloom, blur or
+// average chain, which steps its taps by texel sizes the game passes in its own uniforms (the 1x sizes), so over scaled images its taps land 1 / scale texels
+// apart in the image and a thin bright line leaves ripples beside it; such targets are kept at 1x (vka_draw.c rs_reduce_fix). 0 for an empty side
+static inline int vkrs_reduces(uint32_t tw, uint32_t th, uint32_t sw, uint32_t sh) {
+    return tw && th && (uint64_t)tw * 2 <= sw && (uint64_t)th * 2 <= sh;
+}
 
 // What a translated module does with the resolution scale (the Ryujinx translator's own scale code, read from its support buffer: SupportBuffer.cs, member 5
 // render_scale; InstEmitAttribute.cs, TexturePass.cs, HelperFunctionManager.cs): VKRS_SPV_RT: it divides gl_FragCoord by render_scale[0]; VKRS_SPV_TEX: it reads
