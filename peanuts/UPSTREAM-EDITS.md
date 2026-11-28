@@ -138,6 +138,7 @@ not edited (see table above).
 | `dm/games/010003F003A34000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Pokémon: Let's Go, Pikachu! |
 | `dm/games/0100187003A36000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Pokémon: Let's Go, Eevee! |
 | `dm/games/010089B01AB44000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for SPY×ANYA: Operation Memories |
+| `dm/games/0100EB60159E4000/` (new: `game.tsv`, `README.md`, the shader tables) + its row in `dm/games/README.md` | marked (`game.tsv`, the note, the row); tables allow-listed in `peanuts/upstream-unmarked.txt` | could be: Banana Native has no profile for Aeterna Noctis |
 | `dm/gfx/tools/shader_split.py` | **fixed this pass** (header note + 6 def-site tags covering DM_SPLIT_DIRECT/WORKER, DM_UE_DECODE) | **yes** — the on-device process-pool split and the comment-insensitive table comparison (`table_rows`) are general infra, not game-specific |
 | `dm/gfx/tools/uepak.py` | marked (`_nxaes` off-Mac AES path) | **yes** — lets the packer run without CommonCrypto/OpenSSL, general portability fix |
 | `dm/gfx/vk_android/vka_draw.c` | **fixed this pass** | **yes** — indirect quad/line-loop draws read on CPU instead of being skipped (Three Houses) |
@@ -362,6 +363,23 @@ included by `vka_tex.c`, since it works on the texture cache's tables under its 
 
 Upstream candidate: the host side as a whole is general (nothing in it names a game or Peanuts), but it is a first slice (see the header of
 `vka_resscale.inc` for what scales and what falls back) and has not run on a device yet; not proposed upstream until it has.
+
+### Resolution scale: passes that reduce a render target (2026-11-28)
+
+A bloom, blur or average chain kept at 1x, its scaled sources read through 1x copies (docs/reference/rendering.md, "A blur chain over scaled images"; found on
+Aeterna Noctis). The logic is in the Peanuts-owned `vka_resscale.h` (`vkrs_reduces`, `vkrs_deny_del`, tested in `t_android_resscale.c`) and `vka_resscale.inc`
+(`vka_tex_rs_keep`, `vka_tex_rs_unkeep`, `vka_tex_rs_lo_fill`, the reason `reduce`, the statistics). The hooks in upstream files, all reached only through
+`vka_rs_on()` (false at 1x):
+
+| File | Hunks | Hook | Marker |
+|---|---|---|---|
+| `dm/gfx/vk_android/vka.h` | 4 | `vka_img.rs_red`, `rs_lo`, `rs_lo_rp`; `RS_WHY_REDUCE`; `vka_rs_stat.red_back`, `lo_fill`, `lo_read`; the declarations of `vka_tex_rs_keep`, `vka_tex_rs_unkeep`, `vka_tex_rs_lo_fill`, `vka_tex_id_view_lo` | inside the resolution scale's `PEANUTS begin`/`PEANUTS end` span; trailing `// PEANUTS: ...` |
+| `dm/gfx/vk_android/vka_tex.c` | 2 | `img_destroy` destroys an image's 1x copy; `vka_tex_id_view_lo` (a texture ID through its image's copy, the texture's registered view) | trailing `// PEANUTS: ...`; a `PEANUTS begin`/`PEANUTS end` span |
+| `dm/gfx/vk_android/vka_draw.c` | 7 | `g_rs_lo` / `g_rs_lo_rp`; `stage_writes` binds the copy; `rs_fetched` and `rs_fetch_rescue` (a fetch mix with images the rule kept at 1x scales those instead); `rs_reduce_fix` and its call in `draw_body` | trailing `// PEANUTS: ...`; inside the `PEANUTS begin`/`PEANUTS end` span of `rs_fetch_fix` |
+| `dm/gfx/vk_android/vka_ctl.c` | 1 | `DM_RES_SCALE_REDUCE` in the restart-only names | `/* PEANUTS: ... */` |
+| `docs/env_switches.tsv` | 1 row | `DM_RES_SCALE_REDUCE` | `(PEANUTS; ...)` in the row |
+
+Upstream candidate: general (nothing names a game), with the resolution scale itself.
 
 ### Round 8, after the first device run (2026-11-15): queued region writes and forced image drops
 

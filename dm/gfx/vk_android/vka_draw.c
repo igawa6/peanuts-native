@@ -1620,6 +1620,8 @@ static VkBufferView tbuf_view(const vka_shader *sh, int tid, const vka_res *r, i
 // stage's plain 2D textures it fetches from or sizes are scaled images (the entries of textures it only samples are not read) and stays 1 when none is (rs_fetch_fix makes it one or the other); negative in a pixel shader whose pass and textures are
 // one size, which makes the helper fetch the pixel's own texel instead of every other one. Only shaders that read those entries are looked at (vka_shader.rs_fetch)
 static struct { uint8_t tx; uint32_t w, h; } g_rsx[VKA_NSTAGE];   // per stage, from rs_fetch_fix: its fetched 2D textures are scaled images, and their size when they have one size
+static uint8_t g_rs_lo;      // PEANUTS: this draw reduces into targets at 1x: its fragment stage reads its scaled 2D textures through their 1x copies (rs_reduce_fix, below)
+static uint64_t g_rs_lo_rp;  // PEANUTS: the render pass number those copies are for (only that pass's draws read them)
 static int rs_support(const vka_dstate *d, int st, const vka_shader *sh, VkDescriptorBufferInfo *bi) {   // 1 = *bi is a support buffer with the scale in it
     float f = vka_rs_q / 4.0f, rs0 = st == 1 && R.on && R.rsc ? f : 1.0f, v = 0;
     if (g_rsx[st].tx) v = st == 1 && rs0 != 1.0f && g_rsx[st].w == R.full_w && g_rsx[st].h == R.full_h ? -f : f;
@@ -1692,6 +1694,7 @@ static int stage_writes(const vka_dstate *d, int st, const vka_shader *sh, const
                     VRED("shader %016llx binding %u: buffer texture ID %d bound as a storage image: its stores go into its image of rows, not into the texture's memory (a read of that memory, or through a texel buffer, does not see them)", (unsigned long long)sh->key, r[i].binding, tid); }
                 if (tid && !storage && vka_tex_id_is_buffer(tid) && tbuf_img_gpu(tid, r[i].dim) && vktb_memo_bind_gpu(&g_tig, tid, r[i].dim) && (v = vka_tbuf_image_view(tid, r[i].dim, &fmt))) tid = 0;   // PEANUTS: sampler chosen by the view format
                 // PEANUTS end
+                else if (tid && g_rs_lo && st == 1 && !storage && R.on && g_rs_lo_rp == vka_n_rp && (v = vka_tex_id_view_lo(tid, g_cb, r[i].dim, g_rs_lo_rp, &fmt))) { /* PEANUTS: a reducing pass reads its scaled sources through their 1x copies (rs_reduce_fix) */ }
                 else if (tid) v = vka_tex_id_view_samp_rec(tid, storage ? 0 : r[i].sid, g_cb, r[i].dim, wbf_view_of_binding(storage, r[i].flags, DMSH_VK_BF_RW), &fmt);   // (a shader image only read: not a GPU write)   // PEANUTS(upstream-candidate): with the binding's sampler (vka_tex.c fb_view_levels); PEANUTS: report the final view format
                 if (tid && v) class_note(sh, st, &r[i], tid, storage);
                 if (tid) tex_peek(sh->key, st, &r[i], v, storage);
@@ -1904,17 +1907,31 @@ static int bind_sets(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], cons
 // multisampled) that it fetches from or sizes by pixel (vka_shader.rs_fb; one it only samples reads right at any scale, #703) are all scaled images or none is, for
 // rs_support's one factor. A mix scales the scaled ones down for good (RS_WHY_FETCH_MIX), outside any pass.
 // After make_images (every image exists), from the walk
+// PEANUTS: the image of entry i when the stage fetches from it or sizes it by pixel through the helpers (a plain 2D texture, no array of textures), else NULL
+static vka_img *rs_fetched(const vka_shader *s, const vka_res *r, int n, int i) {
+    if (r[i].what != VKA_R_TEX || !r[i].tid || (r[i].dim & (DMSH_VK_DIM_MASK | DMSH_VK_DIM_ARRAY | DMSH_VK_DIM_MS)) != 1) return NULL;   // (SPIR-V Dim 2D)
+    if ((i && r[i - 1].binding == r[i].binding) || (i + 1 < n && r[i + 1].binding == r[i].binding)) return NULL;                       // an array of textures: read without the helper
+    if (!vkrs_fb_has(&s->rs_fb, r[i].binding)) return NULL;                                                                             // only sampled by normalized coordinates: right at any scale (#703)
+    return vka_tex_id_img(r[i].tid, g_cb);
+}
+// PEANUTS: a mix whose unscaled images are all at 1x only because a reduction drew them (rs_reduce_fix): those are scaled after all (vka_tex_rs_unkeep), so the
+// scaled ones keep their scale (a half-size occlusion or blur target upsampled by pixel beside the scaled depth would otherwise take the scene back to 1x)
+static void rs_fetch_rescue(const vka_shader *s, const vka_res *r, int n) {
+    int ns = 0, nu = 0, nred = 0;
+    for (int i = 0; i < n; i++) { vka_img *im = rs_fetched(s, r, n, i); if (!im) continue; if (im->rsc) ns++; else { nu++; if (im->rs_red) nred++; } }
+    if (!ns || !nu || nu != nred) return;
+    vka_rp_end();   // (a change of scale: no pass open)
+    for (int i = 0; i < n; i++) { vka_img *im = rs_fetched(s, r, n, i); if (im && !im->rsc && im->rs_red && !vka_tex_rs_unkeep(im, g_cb)) vka_rs_st.skip++; }
+}
 static void rs_fetch_fix(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) {
     for (int st = 0; st < VKA_NSTAGE; st++) {
         const vka_shader *s = sh[st]; if (!s || !s->rs_fetch || (st == 1 && d->rast_discard)) continue;
         const vka_res *r = g_wk.r[st]; int n = g_wk.n[st], ns = 0, nu = 0, same = 1, mixed = 0; uint32_t w = 0, h = 0;
+        rs_fetch_rescue(s, r, n);   // PEANUTS: reductions
         for (int pass = 0; pass < 2; pass++) {
             ns = nu = 0; same = 1; w = h = 0;
             for (int i = 0; i < n; i++) {
-                if (r[i].what != VKA_R_TEX || !r[i].tid || (r[i].dim & (DMSH_VK_DIM_MASK | DMSH_VK_DIM_ARRAY | DMSH_VK_DIM_MS)) != 1) continue;   // (SPIR-V Dim 2D)
-                if ((i && r[i - 1].binding == r[i].binding) || (i + 1 < n && r[i + 1].binding == r[i].binding)) continue;                       // an array of textures: read without the helper
-                if (!vkrs_fb_has(&s->rs_fb, r[i].binding)) continue;                                                                                // only sampled by normalized coordinates: right at any scale (#703)
-                vka_img *im = vka_tex_id_img(r[i].tid, g_cb); if (!im) continue;
+                vka_img *im = rs_fetched(s, r, n, i); if (!im) continue;   // PEANUTS: (the checks moved to rs_fetched, shared with rs_fetch_rescue)
                 if (pass && im->rsc) { vka_rs_st.ctx_key = s->key; if (!vka_tex_rs_down(im, g_cb, RS_WHY_FETCH_MIX)) vka_rs_st.skip++; vka_rs_st.ctx_key = 0; }
                 if (im->rsc) { ns++; if (w && (w != im->w || h != im->h)) same = 0; w = im->w; h = im->h; } else nu++;
             }
@@ -1924,6 +1941,58 @@ static void rs_fetch_fix(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) 
         if (ns && !nu) { g_rsx[st].tx = 1; if (same) { g_rsx[st].w = w; g_rsx[st].h = h; } vka_rs_st.fd_all++; }
         else if (!ns && !mixed) vka_rs_st.fd_none++;
     }
+}
+// A pass that reduces (vka_resscale.h vkrs_reduces): this draw's fragment shader samples a plain 2D texture the GPU drew, at least twice the size of the pass's
+// targets in both sides: a bloom, blur or average chain (Unity URP's bloom pyramid: Aeterna Noctis). Such passes step their taps by texel sizes the game passes in
+// its own uniforms, the 1x sizes, which no scale helper sees: over scaled images each tap lands two texels (at 2x) from the last, half of a thin line's texels are
+// never read, and the blurred glow shows ripples beside the line and a cross-hatch where the upsample's bicubic taps meet them. So:
+// - the targets are kept at 1x for good (vka_tex_rs_keep, RS_WHY_REDUCE), as the game drew them; the full-size passes before and after keep their scale, and a pass
+//   that reads the reduced targets by normalized coordinates reads them right at any scale;
+// - a scaled source is read through a 1x copy of it, filled for this pass (vka_tex_rs_lo_fill; bound in stage_writes through g_rs_lo): the first step down reads
+//   what it reads at 1x, not a quarter of the texels of a scaled source, whose thin moving lines would make the glow flicker.
+// Not a pass with a depth or stencil target: that one draws geometry (a layer drawn at half size and composited: Aeterna Noctis' 921x518 pass). Asked at every draw
+// (it sets g_rs_lo for stage_writes), before its pass opens: a pass over other targets that is still open ends here or at rp_begin. DM_RES_SCALE_REDUCE=0: off (read once)
+static void rs_reduce_fix(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d, const p_set_rt *rt, int has_rt) {
+    static int on = -1; if (on < 0) { const char *e = getenv("DM_RES_SCALE_REDUCE"); on = !e || !*e || atoi(e) != 0; }
+    g_rs_lo = 0;
+    if (!on || !sh[1] || d->rast_discard || g_wk.n[1] <= 0 || !rt || !has_rt) return;
+    int same = R.on && rt_same(rt, has_rt, &R.rt, R.has_rt);   // (a pass over other targets ends before this draw's opens)
+    if (same && R.rsc) same = 0;                               // (an open pass over scaled targets ends here when the draw reduces)
+    if (rt->depth) return;   // a pass with a depth or stencil target draws geometry, no blur chain
+    vka_img *im[8]; int n = 0, nc = rt->n < 8 ? rt->n : 8, any = 0; uint32_t tw = 0, th = 0;
+    for (int i = 0; i < nc; i++) {
+        vka_img *m = rt->color[i] ? vka_tex_get(rt->color[i], g_cb) : NULL;
+        if (!m) continue;
+        im[n++] = m; if (m->rsc || (!m->rs_no && !m->rs_red)) any = 1;
+        if ((uint32_t)m->d.width > tw) tw = (uint32_t)m->d.width;
+        if ((uint32_t)m->d.height > th) th = (uint32_t)m->d.height;
+    }
+    if (!n) return;
+    const vka_res *r = g_wk.r[1]; int red = 0, src = 0;
+    vka_img *sc[8]; int ns = 0;   // the scaled sources it reduces
+    for (int i = 0; i < g_wk.n[1]; i++) {
+        if (r[i].what != VKA_R_TEX || !r[i].tid || (r[i].dim & (DMSH_VK_DIM_MASK | DMSH_VK_DIM_ARRAY | DMSH_VK_DIM_MS)) != 1) continue;   // (SPIR-V Dim 2D)
+        vka_img *s = vka_tex_id_img(r[i].tid, g_cb);
+        if (!s || !s->gpu_owned || s->from_mem || !vkrs_reduces(tw, th, (uint32_t)s->d.width, (uint32_t)s->d.height)) continue;   // (an uploaded texture, an asset or a table, reduces no render target)
+        red = 1;
+        if (s->rsc && ns < 8) { int k = 0; while (k < ns && sc[k] != s) k++; if (k == ns) { sc[ns++] = s; src = 1; } }
+    }
+    if (!red) return;
+    if (any) {   // targets that are or could be scaled: at 1x for good
+        vka_rp_end(); same = 0;   // (a change of scale: no pass open; it also does the clears waiting for these targets, at the scale they had)
+        vka_rs_st.ctx_key = sh[1]->key;   // (named in the log line)
+        for (int i = 0; i < n; i++) if (!vka_tex_rs_keep(im[i], g_cb)) vka_rs_st.skip++;
+        vka_rs_st.ctx_key = 0;
+    }
+    for (int i = 0; i < n; i++) if (im[i]->rsc) return;   // a target is still scaled (it could not be made 1x now): the draw reads its sources as they are
+    if (!src) return;
+    uint64_t rp = same ? vka_n_rp : vka_n_rp + 1;   // the open pass, else the one this draw opens (rp_begin counts it)
+    int fresh = 1; for (int k = 0; k < ns; k++) if (!(sc[k]->rs_lo && sc[k]->rs_lo_rp == rp)) fresh = 0;
+    if (!fresh) {
+        vka_rp_end(); rp = vka_n_rp + 1;   // (the copies are filled outside a pass; a pass of these targets opens again after)
+        for (int k = 0; k < ns; k++) if (!vka_tex_rs_lo_fill(sc[k], g_cb, rp)) vka_rs_st.skip++;
+    }
+    g_rs_lo = 1; g_rs_lo_rp = rp;
 }
 // PEANUTS end
 // Images first used by a draw (from the walk, walk_all), or remade with storage use (vka_tex.c img_storage_upgrade): dry = only whether there is one
@@ -2826,6 +2895,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     vktb_memo_reset(&g_tig);   // PEANUTS: this draw's answers (tbuf_img_gpu)
     if (make_images(d, sh, 1)) { vka_rp_end(); make_images(d, sh, 0); }
     if (vka_rs_on()) rs_fetch_fix(sh, d);   // PEANUTS: DM_RES_SCALE: a shader that fetches by pixel sees its 2D textures at one scale
+    if (vka_rs_on()) rs_reduce_fix(sh, d, rt, has_rt);   // PEANUTS: DM_RES_SCALE: a pass that reduces a render target keeps its targets at 1x
     if (R.on && R.bar_pending && bar_hazard(sh, d)) { g_bar_late++; vka_rp_end(); }   // the game barrier taken inside the pass is needed here: the pass ends (its full barrier) first
     if (R.on && UB.n && ub_hazard(d, sh, mesh, dw, di, mdi_n, mdi_st)) vka_rp_end();   // PEANUTS: bounded draw ranges
     if (R.on && (R.df || R.sf) && rt_same(rt, has_rt, &R.rt, R.has_rt)) {   // SetRenderTargets of the same targets between a depth write and sampling depth (or sampling depth then writing it)

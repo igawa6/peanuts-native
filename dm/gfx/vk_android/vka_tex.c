@@ -263,6 +263,7 @@ static void img_destroy(void *arg) {
         for (view_ent *v = im->views, *n; v; v = n) { n = v->next; vk.vkDestroyImageView(V.dev, v->v, NULL); free(v); }
         free(im->snap); free(im); return; }
     if (im->zold) { img_destroy(im->zold); im->zold = NULL; }   // (the zero-shared image it left: no holder is left either)
+    if (im->rs_lo) { img_destroy(im->rs_lo); im->rs_lo = NULL; }   // PEANUTS: its 1x copy for reducing passes (vka_resscale.inc vka_tex_rs_lo_fill), read in the submissions im's retirement covers
     for (view_ent *v = im->views, *n; v; v = n) { n = v->next; vk.vkDestroyImageView(V.dev, v->v, NULL); free(v); }
     if (im->rs) { vks_free(im->rs); vks_va_give(im->va); }   // (its binds dropped or run first)
     if (im->img) vk.vkDestroyImage(V.dev, im->img, NULL);
@@ -3672,6 +3673,32 @@ VkImageView vka_tex_id_view_samp_rec(int id, int sid, VkCommandBuffer cb, uint8_
     t_view_sid = sid; VkImageView v = vka_tex_id_view_rec(id, cb, dim, storage, actual); t_view_sid = 0;
     return v;
 }
+// PEANUTS begin: resolution scale, reductions (vka_draw.c rs_reduce_fix): texture ID id sampled through its image's 1x copy, filled for render pass number rp
+// (vka_resscale.inc vka_tex_rs_lo_fill), as id_view makes the texture's own view (the registered view's format, levels and swizzle) but over the copy; not memoized
+// (the memo holds the image's own view). VK_NULL_HANDLE: the image is not scaled, has no copy for this pass, or the binding reads another class (the caller then
+// takes the usual view)
+VkImageView vka_tex_id_view_lo(int id, VkCommandBuffer cb, uint8_t dim, uint64_t rp, VkFormat *actual) {
+    int vt = dim_view_type(dim);
+    if (id <= 0 || vt < 0 || (dim & DMSH_VK_DIM_MS)) return VK_NULL_HANDLE;
+    pthread_mutex_lock(&g_tmu);
+    const treg_ent *te = treg_lookup(id);
+    if (!te->t.serial) { pthread_mutex_unlock(&g_tmu); return VK_NULL_HANDLE; }
+    treg_ent e = *te;
+    pthread_mutex_unlock(&g_tmu);
+    vka_img *im = treg_dead(id, &e) ? NULL : vka_tex_get(&e.t, cb);
+    if (!im) return VK_NULL_HANDLE;
+    pthread_mutex_lock(&g_tmu);
+    vka_img *lo = im->rsc && im->rs_lo && im->rs_lo_rp == rp ? im->rs_lo : NULL;
+    if (lo) { im->holds++; lo->last_frame = im->last_frame = vka_frame(); lo->last_fence = im->last_fence = vka_fence_last(); }
+    pthread_mutex_unlock(&g_tmu);
+    if (!lo) return VK_NULL_HANDLE;
+    vka_fmt vf = view_fmt(&e, im);
+    int want = dim & DMSH_VK_DIM_SINT ? 2 : dim & DMSH_VK_DIM_UINT ? 1 : 0, have = vf.kind == 1 ? 1 : vf.kind == 2 ? 2 : 0;
+    VkImageView v = want == have || (vf.kind >= 3 && want == 0) ? view_of(&e, lo, vt, 0, VK_FORMAT_UNDEFINED, 0, actual) : VK_NULL_HANDLE;
+    pthread_mutex_lock(&g_tmu); im_unhold_locked(im); if (v) vka_rs_st.lo_read++; pthread_mutex_unlock(&g_tmu);
+    return v;
+}
+// PEANUTS end
 int vka_tex_id_pending_rec(int id, uint8_t dim) {   // 0 at once when the memo holds the ID (its image was made)
     if (id > 0 && id < (1 << 20) && VKA_ENV("DM_VK_TEX_MEMO", 1) && vm_hit(vm_slot(id, dim), id, dim)) return 0;
     return vka_tex_id_pending(id);
