@@ -10,6 +10,7 @@
 #include "vka_memu_abi.h"
 #include "vka_pwlist.h"
 #include "vka_psogate.h"
+#include "vka_zonly.h"   // PEANUTS: DM_VK_DEPTH_ONLY_BLEND
 #include "vka_psosync.h"   // PEANUTS: the draws that are not skipped while their pipeline is made in the background (vka_gfx_pipeline_now, below)
 #include "vk_prewarm_seed.h"   // the profile's seed list (dm/games/<id>/vk_prewarm.bin; dm/games/game.py seed): dm_vk_prewarm_seed, dm_vk_prewarm_seed_len (0: none)
 #include "../nvn/nvn_mtl.h"
@@ -511,6 +512,28 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     for (int i = 0; i < k->ncolor; i++)
         P->cb[i] = (VkPipelineColorBlendAttachmentState){k->att[i].en, (VkBlendFactor)k->att[i].src, (VkBlendFactor)k->att[i].dst, (VkBlendOp)k->att[i].op,
                                                           (VkBlendFactor)k->att[i].srca, (VkBlendFactor)k->att[i].dsta, (VkBlendOp)k->att[i].opa, k->att[i].mask};
+    // PEANUTS: DM_VK_DEPTH_ONLY_BLEND (vka_zonly.h): on Qualcomm's own driver before 512.800 (V.qcom_old) a draw that writes no colour channel gets wrong pixel shader
+    // inputs, so its fixed-point targets the pixel shader writes are written through blend ZERO, ONE (unchanged; not with a logic op, which would replace them). Read at
+    // pipeline creation: restart. The edited P->cb is what gpl_link keys the fragment output library on (fokey), so pipelines that differ only in it do not share one
+    if (sh[1] && k->ncolor && !k->logic_en && VKA_ENV("DM_VK_DEPTH_ONLY_BLEND", V.qcom_old)) {
+        uint8_t m[8]; int written = 0;
+        for (int i = 0; i < k->ncolor && i < 8; i++) { m[i] = k->att[i].mask; written |= m[i]; }
+        if (!written) {   // (the format query only for a pipeline that writes no colour, and only for the targets the rule could take)
+            const dmsh_vk_entry *fe = sh[1]->e;   // the outputs it writes, of the float class only (vka_zonly_float_outs: the draw masks the others to 0)
+            uint32_t bl = 0, fo = fe->fout_mask & vka_zonly_float_outs(fe->fout_types, k->fs_variant == DMSH_VK_MOD_UINT_MIXED ? fe->uint_mask : 0, k->fs_variant == DMSH_VK_MOD_UINT);
+            for (int i = 0; i < k->ncolor && i < 8; i++) {
+                if (!k->cfmt[i] || !(fo >> i & 1) || !vka_zonly_fixed(k->cfmt[i])) continue;
+                VkFormatProperties fp = {0}; vk.vkGetPhysicalDeviceFormatProperties(V.pd, (VkFormat)k->cfmt[i], &fp);
+                if (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT) bl |= 1u << i;
+            }
+            uint32_t w = vka_zonly_targets(k->ncolor, k->cfmt, m, fo, bl);
+            for (int i = 0; i < k->ncolor && i < 8; i++) if (w >> i & 1)
+                P->cb[i] = (VkPipelineColorBlendAttachmentState){VK_TRUE, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_ONE, VK_BLEND_OP_ADD, 0xf};
+            static _Atomic int nw, nn;
+            if (w && atomic_fetch_add(&nw, 1) < 4) VLOG("depth-only blend: pixel shader %016llx writes no colour: targets %#x written through blend ZERO, ONE (DM_VK_DEPTH_ONLY_BLEND)", (unsigned long long)sh[1]->key, w);
+            else if (!w && atomic_fetch_add(&nn, 1) < 4) VLOG("depth-only blend: pixel shader %016llx writes no colour and has no fixed-point target it writes: drawn as asked", (unsigned long long)sh[1]->key);
+        }
+    }
     P->bs = (VkPipelineColorBlendStateCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, .logicOpEnable = k->logic_en, .logicOp = (VkLogicOp)k->logic_op, .attachmentCount = k->ncolor, .pAttachments = P->cb};
     static const VkDynamicState base[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_CULL_MODE, VK_DYNAMIC_STATE_FRONT_FACE,
         VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY, VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE, VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE, VK_DYNAMIC_STATE_DEPTH_COMPARE_OP, VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE,
@@ -895,7 +918,11 @@ static VkPipeline gpl_link(pstate *P, const vka_gkey *k, int mode) {   // PEANUT
     if (mode == GPL_SHADERS) return GPL_YES;   // PEANUTS
     {   fokey key; memset(&key, 0, sizeof key);
         memcpy(key.cfmt, k->cfmt, sizeof key.cfmt); key.dfmt = k->dfmt; key.sfmt = k->sfmt; key.ncolor = k->ncolor; key.samples = (uint8_t)P->ms.rasterizationSamples; key.a2c = k->a2c;
-        key.logic_en = k->logic_en; key.logic_op = k->logic_op; key.vin_static = (uint8_t)k->vin_static; memcpy(key.att, k->att, sizeof key.att);
+        key.logic_en = k->logic_en; key.logic_op = k->logic_op; key.vin_static = (uint8_t)k->vin_static;
+        // PEANUTS: the blend state as P->cb has it, not k->att: DM_VK_DEPTH_ONLY_BLEND (pstate_fill) edits it by the pixel shader, which this key does not hold
+        for (int i = 0; i < k->ncolor && i < 8; i++) { const VkPipelineColorBlendAttachmentState *c = &P->cb[i];
+            key.att[i][0] = (uint8_t)c->blendEnable; key.att[i][1] = (uint8_t)c->srcColorBlendFactor; key.att[i][2] = (uint8_t)c->dstColorBlendFactor; key.att[i][3] = (uint8_t)c->colorBlendOp;
+            key.att[i][4] = (uint8_t)c->srcAlphaBlendFactor; key.att[i][5] = (uint8_t)c->dstAlphaBlendFactor; key.att[i][6] = (uint8_t)c->alphaBlendOp; key.att[i][7] = (uint8_t)c->colorWriteMask; }
         VkGraphicsPipelineCreateInfo ci = {VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &P->ri, .pMultisampleState = &P->ms, .pColorBlendState = &P->bs, .pDynamicState = &dy[L_FO],
                                            .renderPass = rp};   // (with a render pass the formats come from it; P->ri is then ignored)
         if (!(part[nparts++] = lib_make(L_FO, &key, sizeof key, &ci, VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT, NULL, 0, 0, LM_MAKE))) return VK_NULL_HANDLE; }   // PEANUTS: LM_MAKE
