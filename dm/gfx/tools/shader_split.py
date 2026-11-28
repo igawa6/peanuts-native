@@ -917,7 +917,10 @@ def kt_shaders(d, label, out):
 def linkdata_index(path):
     """The index beside a LINKDATA archive, or None: Three Houses' DATA0.bin beside DATA1.bin, Pokemon Pokopia's LI_C0_R.IDX beside LD_C0_R.BIN (247 MB, 12,298 records, 700 GLSLC outputs: the same records and chunks)"""
     name = os.path.basename(path)
-    idx = 'DATA0.bin' if name == 'DATA1.bin' else 'LI_' + name[3:-4] + '.IDX' if name.startswith('LD_') and name.endswith('.BIN') else None
+    idx = ('DATA0.bin' if name == 'DATA1.bin'
+           else 'LI_' + name[3:-4] + '.IDX' if name.startswith('LD_') and name.endswith('.BIN')
+           else 'LINKDATA.IDX' if name == 'LINKDATA.BIN'
+           else None)
     idx = idx and os.path.join(os.path.dirname(path), idx)
     return idx if idx and os.path.exists(idx) else None
 
@@ -4637,6 +4640,8 @@ def profile_files(files, main_v, version=None):
     fl = GAME.table('shader_files.tsv')
     if os.path.isfile(fl):
         with open(fl, encoding='utf-8') as f: want |= {r for ln in f if not ln.startswith('#') and (r := source_for_version('/' + ln.rstrip('\n'), version)[1:]) in rels}   # PEANUTS: the full split's file list uses the map's version prefixes
+    if not want:
+        return None, 'the profile\'s shader_map.tsv names no shaders (a provisional profile: the full scan finds them)'
     return want, None
 
 def profile_differs(t, pairsout, psopairsout, version=None):
