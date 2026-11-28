@@ -41,3 +41,57 @@ The work folder's `run/route.sh <run> [secs]` boots on a fresh save and presses 
 
 - Not checked: 13 Sentinels and Catherine: Full Body's CPKs with the new reader (no files on the drives), and the clear fix in other games beyond the unit tests.
 - AGENTS.md still calls Mario Kart 8 Deluxe's SDK 4.4.0 "the oldest SDK so far"; this game's SDK 3.6.0 is older.
+
+## Android
+
+### Status
+
+Playable on TurnipZ 0.3.0 with the existing game profile.
+No additional renderer or memory overrides were required
+for the tested gameplay.
+
+### Tested on
+
+- POCO Pad X1
+- Snapdragon 7+ Gen 3, 8 GB RAM
+- Android 16
+- TurnipZ 0.3.0
+- Game-owned frame pacing
+
+Performance from a 100-frame gameplay capture:
+
+| Metric | Result |
+| --- | ---: |
+| Average FPS | 60.11 |
+| Median frame time | 16.62 ms |
+| Slowest frame | 24.26 ms |
+| Median GPU time | 2.06 ms |
+
+Gameplay was reported smooth by the tester.
+
+### Builds
+
+- Switch update v131072 (1.2).
+- Main build: `f19b2e01e1794f933a9720c1404bb6f6`.
+- Android validation build: codetz7/peanuts-native,
+  Actions run 46156452921.
+
+### Fast Prepare
+
+Native Termux targeted shader split completed in 5.446 seconds.
+
+- RomFS files scanned: 1 of 1,643.
+- CPK entries selected: 3 of 1,580.
+- Shaders: 1,856 (1,547 pixel, 309 vertex).
+- Profile table comparison passed.
+- No fallback to a full scan.
+- No additional shader file list was required for this test.
+
+### Open
+
+- The Qualcomm system Vulkan driver encountered a SIGSEGV
+  in the vk-enc thread. The root cause remains unconfirmed.
+- Quantitative game-speed measurement is pending.
+- Fresh-cache validation and a new full-versus-targeted
+  timing comparison remain unverified.
+- Extended gameplay and memory measurements are pending.
