@@ -242,6 +242,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [Viewfinder](0100F9D023176000/README.md) | `0100F9D023176000` | 1.0.0 (base) | 19.3.9 | Unity 2022.3.61f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Xenoblade Chronicles: Definitive Edition](0100FF500E34A000/README.md) | `0100FF500E34A000` | 1.1.2 | 9.3.1 | Monolith's engine | NVN |
 | [Xenoblade Chronicles 2](0100E95004038000/README.md) | `0100E95004038000` | 2.1.0 | 3.5.0 | Monolith's engine | NVN |
+| [Xenoblade Chronicles 2 (Japan)](0100F3400332C000/README.md) | `0100F3400332C000` | 3.0.1 (Android tested with Turnip) | 3.5.0 | Monolith's engine | NVN <!-- PEANUTS: Japanese release --> |
 | [Xenoblade Chronicles 3](010074F013262000/README.md) | `010074F013262000` | 2.2.1 | 12.3.9 | Monolith's engine | NVN |
 | [Xenoblade Chronicles X: Definitive Edition](0100453019AA8000/README.md) | `0100453019AA8000` | 1.0.2 (experimental) | 19.3.2 | Monolith's engine | NVN <!-- PEANUTS: nxnative-derived profile; experimental Android title/movie tests --> |
 | [Yoru, Tomosu](0100C2901153C000/README.md) | `0100C2901153C000` | v0 (base, Japanese release) | 9.5.0 | Nippon Ichi Software's engine on nn::gfx (NintendoWare Atk / Font) | NVN |

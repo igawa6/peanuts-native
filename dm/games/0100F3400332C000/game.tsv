@@ -1,0 +1,185 @@
+# PEANUTS: Xenoblade Chronicles 2 (Japan), update 3.0.1.
+
+title_id	0100F3400332C000
+program_id	0100F3400332C000
+name	Xenoblade Chronicles 2 (Japan)
+ipa	XenobladeChronicles2JP.ipa
+app_category	public.app-category.role-playing-games
+pad_layout	full
+
+build	v1048576	3.0.1	main=a1b349c65f6ec42d252e16a25e36e507	subsdk0=2201bb705408ef610e9aac23195011d1	sdk=867b345248124ef3d70e3202e221e978
+package	v1048576
+shader_versions	v1048576
+
+modules	main subsdk0 sdk
+romfs_marker	bf2.ard
+zip_store	.ard:.arh:.webm:.metallib
+
+# The survey reports the same memory layout as 0100E95004038000; the NPDM declares no system resource.
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+sys_resource	0x0
+
+shader_groups	/stream/=stream
+shader_note	Xenoblade Chronicles 2 shaders
+
+# Native rates for Japan 3.0.1. The game's event flag returns scripted scenes to 30 FPS.
+fps_limit	30
+fps_limit_min	20
+fps_limit_max	120
+fps_modes	20,30,40,45,60,90,120
+android_thread_tuning	TB323FU	a1b349c65f6ec42d252e16a25e36e507
+
+# Game and UI steps follow measured frame time up to 1/15 s. The game's event byte controls the 30 FPS cap.
+fps_memory	a1b349c65f6ec42d252e16a25e36e507	flag_cap_u8	@0xbd8f40	1	1:30
+fps_memory	a1b349c65f6ec42d252e16a25e36e507	time_ratio_f32	@0xea538c	1	1:0.0666666667
+fps_memory	a1b349c65f6ec42d252e16a25e36e507	time_ratio_f32	0xb900d0/0x78	2	1:0.0666666667
+fps_memory	a1b349c65f6ec42d252e16a25e36e507	time_ratio_f32	0xc232c8/0x80	1	1:0.0666666667
+fps_memory	a1b349c65f6ec42d252e16a25e36e507	vsync_floor_u32	@0xb75c40	1	0
+fps_memory	a1b349c65f6ec42d252e16a25e36e507	time_ratio_f32	%0x0	1	1:0.0666666667
+fps_memory	a1b349c65f6ec42d252e16a25e36e507	inverse_f32	%0x4	1	1:0.9
+fps_memory	a1b349c65f6ec42d252e16a25e36e507	time_ratio_f32	%0x8	1	30:2
+fps_memory	a1b349c65f6ec42d252e16a25e36e507	vsync_floor_u32	%0xc	1	0
+fps_memory	a1b349c65f6ec42d252e16a25e36e507	time_ratio_f32	%0x10	1	30:1
+
+# The data page holds simulation step, limiter wait, 30 FPS scale, swap interval and cloth scale.
+# Use the game's 30 FPS initial values until the first frame.
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	d0x0	-	8988083d
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	d0x4	-	8988083d
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	d0x8	-	0000803f
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	d0xc	-	02000000
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	d0x10	-	0000803f
+
+# Install the plan only when the main Build ID and the original instructions match.
+# Patch sites and particle, renderer, camera and cloth corrections were cross-checked with xc2-recomp. See LICENSE.xc2-recomp.
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x6bdc54	009545bd	b0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x6ab168	00082a1e	b0x190
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x858750	0028281e	b0x24
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x71b838	0008211e	b0x34
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x71ce78	0008211e	b0x48
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x1d12c8	006969bc	b0x5c
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x1d1314	006969bc	b0x70
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x888aec	619a41bd	b0x84
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x888cd4	680e40f9	b0x98
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x888cd8	190940b9	1f2003d5
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x888cdc	d9030034	1f2003d5
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	m0x88d7a4	2639261e	b0x100
+
+# The helpers cover synchronization, particles, rendering, camera, cloth, damping and engine pacing.
+
+# Divide the simulation step by the swap interval to retain the game's step calculation.
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x0	-	p8:0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x4	-	000140bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x8	-	080d40b9
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xc	-	0101231e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x10	-	0018211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x14	-	c0035fd6
+
+
+# Scale particles, render animation and camera timing from the 30 FPS baseline.
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x24	-	p9:0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x28	-	210940bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x2c	-	0028211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x30	-	t0x858754
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x34	-	0008211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x38	-	p9:0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x3c	-	210940bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x40	-	0008211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x44	-	t0x71b83c
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x48	-	0008211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x4c	-	p8:0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x50	-	010940bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x54	-	0008211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x58	-	t0x71ce7c
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x5c	-	006969bc
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x60	-	p8:0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x64	-	010940bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x68	-	0008211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x6c	-	t0x1d12cc
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x70	-	006969bc
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x74	-	p8:0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x78	-	010940bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x7c	-	0008211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x80	-	t0x1d1318
+
+# Scale cloth and hair displacement and rotation by the step, preserving the quaternion direction.
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x84	-	p8:0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x88	-	021140bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x8c	-	619a41bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x90	-	2108221e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x94	-	t0x888af0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x98	-	p8:0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x9c	-	001140bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xa0	-	e103c03d
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xa4	-	2190804f
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xa8	-	e103803d
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xac	-	e207c03d
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xb0	-	4390804f
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xb4	-	680e40f9
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xb8	-	64dc236e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xbc	-	e41f1c4e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xc0	-	84d4246e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xc4	-	84d8307e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xc8	-	05102e1e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xcc	-	a438241e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xd0	-	84c0201e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xd4	-	190940b9
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xd8	-	84c0211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xdc	-	493c1c0e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xe0	-	29010112
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xe4	-	8a00261e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xe8	-	4a01092a
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xec	-	431d1c4e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xf0	-	e307803d
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xf4	-	59000035
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xf8	-	t0x888d54
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0xfc	-	t0x888ce0
+
+# Interpolate damping from the exact retention values at 30, 60 and 120 FPS.
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x100	-	2639261e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x104	-	ca00261e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x108	-	p11:0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x10c	-	671140bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x110	-	06102c1e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x114	-	e6e4267e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x118	-	cb00261e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x11c	-	8b010034
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x120	-	06102c1e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x124	-	e738261e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x128	-	e728271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x12c	-	eb00261e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x130	-	4601271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x134	-	e703271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x138	-	c748271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x13c	-	e7c0211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x140	-	c638271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x144	-	ea00261e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x148	-	0d000014
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x14c	-	06102a1e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x150	-	e738261e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x154	-	e728271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x158	-	e728271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x15c	-	eb00261e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x160	-	4601271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x164	-	e703271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x168	-	c648271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x16c	-	c6c0211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x170	-	c7c0211e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x174	-	c638271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x178	-	ea00261e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x17c	-	6701271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x180	-	c608271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x184	-	4701271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x188	-	c628271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x18c	-	t0x88d7a8
+
+# At interval one the host limiter paces frames. The engine wait remains at 30 and 20 FPS and during events.
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x190	-	p8:0x0
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x194	-	000540bd
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x198	-	080d40b9
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x19c	-	08050051
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x1a0	-	48000035
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x1a4	-	e003271e
+fps_plan	a1b349c65f6ec42d252e16a25e36e507	c0x1a8	-	t0x6ab16c

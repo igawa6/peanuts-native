@@ -1120,6 +1120,10 @@ Run: the FINAL FANTASY RESONANCE build onto that drive went through both places 
 shader-chain file is changed. Upstream candidate: the `shader_split.py` hunks, yes (the Mac's NSP script writes `ue_shaders` beside the dump, often on such a
 drive).
 
+### Xenoblade Chronicles 2 (Japan) 3.0.1
+
+The profile at `dm/games/0100F3400332C000/` records the Japanese program ID, module Build IDs, and the generated base/update shader tables. The generated tables are listed in `upstream-unmarked.txt`. The Android 30/60 FPS modes use a Build-ID-checked timing plan with a 30 FPS event cap. See the game README for the device results and the xc2-recomp attribution. Follow-up measures port traversal drops on the Y700 Gen 5, lets the host pace 60 FPS without the guest wait, and splits the two fast cores for the guest main and Vulkan replay when Use fast cores is enabled for this title and device. The 20/40/45/90/120 modes use the host frame limiter and a bounded integer guest sync interval. The Y700 title profile also uses main-thread handoff notifications, retaining the same guest runnable checks. The game README records the A/B and high-cap results.
+
 ### Xenoblade Chronicles X: Definitive Edition PC bring-up
 
 The Switch 1 profile `0100453019AA8000` starts from nxnative `b32d0bf3b5fa` and registers the locally checked 1.0.2 modules. Its allocator uses the existing atomic function matcher. Android gameplay remains untested; this is not a supported-games claim.
