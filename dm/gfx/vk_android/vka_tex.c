@@ -3240,9 +3240,10 @@ static void bindless_init_once(void) {
     g_ntex_slots = MIN(1u << 20, HEAD(MIN(p12.maxDescriptorSetUpdateAfterBindSampledImages, p12.maxPerStageDescriptorUpdateAfterBindSampledImages)));
     // PEANUTS(upstream-candidate): sampler descriptor table sized for every pool's span, not just one; general fix (Three Houses), not Peanuts-specific. DM_VK_SAMP_SLOTS is a comparison switch.
     // 4096 was one pool's worth; a game whose command buffers bind more than one sampler pool gets each later pool its own base above the first (hle_nvn.c dpool_add), so the
-    // table has to hold every pool's span, not just one. 16384 matches the sampler registration arrays' own size (mtl_reg_samp, vka_tex.c: "id >= 4096 * 4"), still capped by
-    // the device's own reported limit through HEAD(MIN(...)) below (Fire Emblem: Three Houses: a 3,856-entry scene pool plus a 4,096-entry UI pool overflowed the old 4096 cap at ID 4352)
-    g_nsamp_slots = MIN((uint32_t)VKA_ENV("DM_VK_SAMP_SLOTS", 4096 * 4), HEAD(MIN(p12.maxDescriptorSetUpdateAfterBindSamplers, p12.maxPerStageDescriptorUpdateAfterBindSamplers)));   // (DM_VK_SAMP_SLOTS=4096: the one-pool table, for comparison)
+    // table has to hold every pool's span, not just one. 32768 covers the sampler registration arrays' own size (mtl_reg_samp, vka_tex.c: "id >= 4096 * 8"), still capped by
+    // the device's own reported limit through HEAD(MIN(...)) below (Fire Emblem: Three Houses: a 3,856-entry scene pool plus a 4,096-entry UI pool overflowed the old 4096 cap at ID 4352;
+    // Dark Souls Remastered: 12 sampler pools of 2,304 entries, IDs to 27,647, overflowed the 16,384 cap at pool 8, and every sampler above it sampled through the default clamp sampler)
+    g_nsamp_slots = MIN((uint32_t)VKA_ENV("DM_VK_SAMP_SLOTS", 4096 * 8), HEAD(MIN(p12.maxDescriptorSetUpdateAfterBindSamplers, p12.maxPerStageDescriptorUpdateAfterBindSamplers)));   // (DM_VK_SAMP_SLOTS=4096: the one-pool table, for comparison)
     g_nimg_slots = MIN(1u << 16, HEAD(MIN(p12.maxDescriptorSetUpdateAfterBindStorageImages, p12.maxPerStageDescriptorUpdateAfterBindStorageImages)));
 #undef HEAD
 #undef MIN
@@ -3312,14 +3313,14 @@ int vka_tex_id_is_buffer(int id) {   // PEANUTS(upstream-candidate): The lock-fr
 void mtl_reg_tex(int id, const tex_t *t, const view_t *v) { treg(id, t, v, 0); }
 void mtl_reg_image(int id, const tex_t *t, const view_t *v) { treg(id, t, v, 1); }
 void mtl_reg_samp(int id, const samp_par *p) {
-    if (id < 0 || id >= 4096 * 4) return;
+    if (id < 0 || id >= 4096 * 8) return;
     pthread_mutex_lock(&g_tmu);
     if (id >= g_nsreg) { int n = g_nsreg ? g_nsreg : 256; while (n <= id) n *= 2; g_sreg = realloc(g_sreg, (size_t)n * sizeof *g_sreg); memset(g_sreg + g_nsreg, 0, (size_t)(n - g_nsreg) * sizeof *g_sreg); g_nsreg = n; }
     if (id < g_nsres) memset(g_sres[id], 0, sizeof g_sres[id]);   // PEANUTS: invalidate both variants
-    g_sreg[id] = *p; dirty(&g_sdirty, &g_nsd, &g_sdcap, &g_sdflag, 4096 * 4, id);
+    g_sreg[id] = *p; dirty(&g_sdirty, &g_nsd, &g_sdcap, &g_sdflag, 4096 * 8, id);
     // PEANUTS: DM_VK_SAMP_LOG=1 (diagnostic, live): every sampler registration (ID with its pool's base, NVN wrap modes, filters, lod range), to tell a slot the game registers again from one it never changes
     if (VKA_ENV("DM_VK_SAMP_LOG", 0)) VLOG("sampler registered: ID %d wrap %d,%d,%d filter min %d mag %d lod %g..%g aniso %g compare %d", id, p->ws, p->wt, p->wr, p->minf, p->magf, p->lod_min, p->lod_max, p->aniso, p->cmp_mode);
-    if (!g_sver) g_sver = calloc(4096 * 4, sizeof *g_sver);
+    if (!g_sver) g_sver = calloc(4096 * 8, sizeof *g_sver);
     if (g_sver) atomic_fetch_add_explicit(&g_sver[id], 1, memory_order_release);
     pthread_mutex_unlock(&g_tmu);
 }
@@ -3939,7 +3940,7 @@ int vka_tex_id_pending(int id) {
 // Unpaired samplers, including the separate bindless pool, retain their guest state. One sampler ID can still filter other views in the very same draw.
 _Static_assert(VKSF_LINEAR == VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT && VKSF_MINMAX == VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_MINMAX_BIT, "vka_sampfilter.h feature bits");
 VkSampler vka_samp_id_rec(int id, VkFormat fmt) {
-    if (id <= 0 || id >= 4096 * 4) return VK_NULL_HANDLE;
+    if (id <= 0 || id >= 4096 * 8) return VK_NULL_HANDLE;
     static struct { int id; uint32_t ver; VkFormat fmt; VkSampler s; } memo[512];
     typeof(memo[0]) *m = &memo[((unsigned)id + 31u * (unsigned)fmt) & 511];
     int use_memo = g_sver && VKA_ENV("DM_VK_TEX_MEMO", 1);
@@ -4261,7 +4262,7 @@ void vka_tex_prepare(VkCommandBuffer cb, uint64_t fence) {   // PEANUTS: image r
         }
     }
     nvn_pool_use(0);   // (write_tex takes it again for each ID, after letting g_tmu go: never twice on one thread)
-    if (!g_set) { g_ntd = g_nsd = 0; if (g_tdflag) memset(g_tdflag, 0, 1 << 20); if (g_sdflag) memset(g_sdflag, 0, 4096 * 4); pthread_mutex_unlock(&g_tmu); return; }
+    if (!g_set) { g_ntd = g_nsd = 0; if (g_tdflag) memset(g_tdflag, 0, 1 << 20); if (g_sdflag) memset(g_sdflag, 0, 4096 * 8); pthread_mutex_unlock(&g_tmu); return; }
     enum { BATCH = 64 }; VkWriteDescriptorSet w[BATCH]; VkDescriptorImageInfo ii[BATCH]; int nw = 0;
     for (int k = 0; k < g_ntd; k++) {
         int id = g_tdirty[k]; g_tdflag[id] = 0;
