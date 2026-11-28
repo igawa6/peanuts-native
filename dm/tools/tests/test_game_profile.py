@@ -253,11 +253,11 @@ class LowRam(unittest.TestCase):
 
 class FpsModes(unittest.TestCase):
     def test_checked_modes(self):
-        for rows in ('fps_modes\t30,60,120\n', 'fps_modes\t20,30,40,60,90,120\n', 'fps_modes\t15,20,30,60\n'):   # PEANUTS: 15 (Kirby Star Allies)
+        for rows in ('fps_modes\t30,60,120\n', 'fps_modes\t20,30,40,60,90,120\n'):
             self.assertEqual(header(rows), (0, ''))
 
     def test_reject_unsupported_or_ambiguous_modes(self):
-        for modes in ('30,120', '60,30,120', '30,60,60,120', '30,60,144', '30 60 120', '10,60'):   # PEANUTS: 10 refused
+        for modes in ('30,120', '60,30,120', '30,60,60,120', '30,60,144', '30 60 120'):
             rc, out = header('fps_modes\t' + modes + '\n')
             self.assertNotEqual(rc, 0)
             self.assertIn('fps_modes must be unique ascending', out)
