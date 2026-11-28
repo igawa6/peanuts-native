@@ -260,6 +260,46 @@ static const uint32_t QSHFL_FRAG[] = {
     0x00000048, 0x0004007c, 0x00000008, 0x00000060, 0x0000005e, 0x00060159, 0x00000009, 0x00000061, 0x0000001c, 0x0000005f, 0x00000060, 0x0004007c,
     0x00000007, 0x00000062, 0x00000061, 0x000600a9, 0x00000007, 0x00000063, 0x0000005b, 0x00000062, 0x00000048, 0x000200fe, 0x00000063, 0x00010038};
 // PEANUTS end
+// PEANUTS begin: vka_spv_img_floatize: glslangValidator -V --target-env vulkan1.1 of a compute shader with the two integer storage images the translator declares
+// for a raw 64-bit and an unformatted surface access (FINAL FANTASY RESONANCE's translucency lighting volume, bdb8115dd17093e7, binds RGBA16F volumes there):
+//   layout(local_size_x = 1) in;  layout(set = 0, binding = 7, rg32ui) uniform uimage3D raw;  layout(set = 0, binding = 9, rgba32ui) uniform uimage3D fmt;
+//   void main() { ivec3 p = ivec3(gl_GlobalInvocationID); uvec4 a = imageLoad(raw, p); uvec4 b = imageLoad(fmt, p); imageStore(raw, p, a + b); imageStore(fmt, p, b ^ a ^ floatBitsToUint(vec4(p, 1.0))); }
+static const uint32_t FLOATIZE_CS[] = {   // glslang 16.6.0, vulkan1.1, of the GLSL in the comment above
+    0x07230203, 0x00010300, 0x0008000b, 0x00000038, 0x00000000, 0x00020011, 0x00000001, 0x00020011, 0x00000031, 0x0006000b, 0x00000001, 0x4c534c47,
+    0x6474732e, 0x3035342e, 0x00000000, 0x0003000e, 0x00000000, 0x00000001, 0x0006000f, 0x00000005, 0x00000004, 0x6e69616d, 0x00000000, 0x0000000d,
+    0x00060010, 0x00000004, 0x00000011, 0x00000001, 0x00000001, 0x00000001, 0x00030003, 0x00000002, 0x000001c2, 0x00040005, 0x00000004, 0x6e69616d,
+    0x00000000, 0x00030005, 0x00000009, 0x00000070, 0x00080005, 0x0000000d, 0x475f6c67, 0x61626f6c, 0x766e496c, 0x7461636f, 0x496e6f69, 0x00000044,
+    0x00030005, 0x00000012, 0x00000061, 0x00030005, 0x00000015, 0x00776172, 0x00030005, 0x00000019, 0x00000062, 0x00030005, 0x0000001c, 0x00746d66,
+    0x00040047, 0x0000000d, 0x0000000b, 0x0000001c, 0x00040047, 0x00000015, 0x00000021, 0x00000007, 0x00040047, 0x00000015, 0x00000022, 0x00000000,
+    0x00040047, 0x0000001c, 0x00000021, 0x00000009, 0x00040047, 0x0000001c, 0x00000022, 0x00000000, 0x00040047, 0x00000037, 0x0000000b, 0x00000019,
+    0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00040015, 0x00000006, 0x00000020, 0x00000001, 0x00040017, 0x00000007, 0x00000006,
+    0x00000003, 0x00040020, 0x00000008, 0x00000007, 0x00000007, 0x00040015, 0x0000000a, 0x00000020, 0x00000000, 0x00040017, 0x0000000b, 0x0000000a,
+    0x00000003, 0x00040020, 0x0000000c, 0x00000001, 0x0000000b, 0x0004003b, 0x0000000c, 0x0000000d, 0x00000001, 0x00040017, 0x00000010, 0x0000000a,
+    0x00000004, 0x00040020, 0x00000011, 0x00000007, 0x00000010, 0x00090019, 0x00000013, 0x0000000a, 0x00000002, 0x00000000, 0x00000000, 0x00000000,
+    0x00000002, 0x00000023, 0x00040020, 0x00000014, 0x00000000, 0x00000013, 0x0004003b, 0x00000014, 0x00000015, 0x00000000, 0x00090019, 0x0000001a,
+    0x0000000a, 0x00000002, 0x00000000, 0x00000000, 0x00000000, 0x00000002, 0x0000001e, 0x00040020, 0x0000001b, 0x00000000, 0x0000001a, 0x0004003b,
+    0x0000001b, 0x0000001c, 0x00000000, 0x00030016, 0x0000002b, 0x00000020, 0x00040017, 0x0000002c, 0x0000002b, 0x00000003, 0x0004002b, 0x0000002b,
+    0x0000002e, 0x3f800000, 0x00040017, 0x0000002f, 0x0000002b, 0x00000004, 0x0004002b, 0x0000000a, 0x00000036, 0x00000001, 0x0006002c, 0x0000000b,
+    0x00000037, 0x00000036, 0x00000036, 0x00000036, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 0x000200f8, 0x00000005, 0x0004003b,
+    0x00000008, 0x00000009, 0x00000007, 0x0004003b, 0x00000011, 0x00000012, 0x00000007, 0x0004003b, 0x00000011, 0x00000019, 0x00000007, 0x0004003d,
+    0x0000000b, 0x0000000e, 0x0000000d, 0x0004007c, 0x00000007, 0x0000000f, 0x0000000e, 0x0003003e, 0x00000009, 0x0000000f, 0x0004003d, 0x00000013,
+    0x00000016, 0x00000015, 0x0004003d, 0x00000007, 0x00000017, 0x00000009, 0x00050062, 0x00000010, 0x00000018, 0x00000016, 0x00000017, 0x0003003e,
+    0x00000012, 0x00000018, 0x0004003d, 0x0000001a, 0x0000001d, 0x0000001c, 0x0004003d, 0x00000007, 0x0000001e, 0x00000009, 0x00050062, 0x00000010,
+    0x0000001f, 0x0000001d, 0x0000001e, 0x0003003e, 0x00000019, 0x0000001f, 0x0004003d, 0x00000013, 0x00000020, 0x00000015, 0x0004003d, 0x00000007,
+    0x00000021, 0x00000009, 0x0004003d, 0x00000010, 0x00000022, 0x00000012, 0x0004003d, 0x00000010, 0x00000023, 0x00000019, 0x00050080, 0x00000010,
+    0x00000024, 0x00000022, 0x00000023, 0x00040063, 0x00000020, 0x00000021, 0x00000024, 0x0004003d, 0x0000001a, 0x00000025, 0x0000001c, 0x0004003d,
+    0x00000007, 0x00000026, 0x00000009, 0x0004003d, 0x00000010, 0x00000027, 0x00000019, 0x0004003d, 0x00000010, 0x00000028, 0x00000012, 0x000500c6,
+    0x00000010, 0x00000029, 0x00000027, 0x00000028, 0x0004003d, 0x00000007, 0x0000002a, 0x00000009, 0x0004006f, 0x0000002c, 0x0000002d, 0x0000002a,
+    0x00050051, 0x0000002b, 0x00000030, 0x0000002d, 0x00000000, 0x00050051, 0x0000002b, 0x00000031, 0x0000002d, 0x00000001, 0x00050051, 0x0000002b,
+    0x00000032, 0x0000002d, 0x00000002, 0x00070050, 0x0000002f, 0x00000033, 0x00000030, 0x00000031, 0x00000032, 0x0000002e, 0x0004007c, 0x00000010,
+    0x00000034, 0x00000033, 0x000500c6, 0x00000010, 0x00000035, 0x00000029, 0x00000034, 0x00040063, 0x00000025, 0x00000026, 0x00000035, 0x000100fd,
+    0x00010038};
+static int float_images(const uint32_t *w, size_t n) {   // OpTypeImage of a 32-bit float sampled type, unknown format
+    uint32_t f32 = 0; int k = 0;
+    for (size_t i = 5; i < n && (w[i] >> 16); i += w[i] >> 16) { uint32_t op = w[i] & 0xffff; if (op == 22 && w[i + 2] == 32) f32 = w[i + 1]; if (op == 25 && w[i + 2] == f32 && w[i + 8] == 0) k++; }
+    return k;
+}
+// PEANUTS end
 static int loc_of(const uint32_t *w, size_t n, uint32_t loc, uint32_t *var) {
     for (size_t i = 5; i < n && (w[i] >> 16); i += w[i] >> 16) if ((w[i] & 0xffff) == 71 && (w[i] >> 16) >= 4 && w[i + 2] == 30 && w[i + 3] == loc) { if (var) *var = w[i + 1]; return 1; }
     return 0;
@@ -619,6 +659,26 @@ int main(void) {
         if (dir) closedir(dir);
         printf("t_android_spvpatch: %d of %d modules in %s read the pool and were rewritten\n", nrw, nmod, pd);
     }
+    // PEANUTS begin: vka_spv_img_floatize: binding 7 raw over RGBA16F (the halves packed on read, unpacked on write), binding 9 formatted (bit-cast); refusals
+    {
+        size_t nw = sizeof FLOATIZE_CS / 4, on = 0; char err[256] = "";
+        uint32_t *x = vka_spv_img_floatize(FLOATIZE_CS, nw, 0, 1ull << 7 | 1ull << 9, 1ull << 7, 0, &on, err, sizeof err);
+        CHECK(x, "floatize: %s", err);
+        if (x) {
+            CHECK(float_images(x, on) == 1 && float_images(FLOATIZE_CS, nw) == 0, "floatize: one float image type of unknown format (3D, storage) for both bindings");
+            CHECK(count_op(x, on, 12) == count_op(FLOATIZE_CS, nw, 12) + 4, "floatize: two PackHalf2x16 for the raw read, two UnpackHalf2x16 for the raw write");
+            CHECK(count_op(x, on, 124) >= count_op(FLOATIZE_CS, nw, 124) + 3, "floatize: the formatted read and write bit-cast, the raw write's words bit-cast");
+            if (val) CHECK(validate(x, on, "floatize"), "floatized module valid");
+            free(x);
+        }
+        x = vka_spv_img_floatize(FLOATIZE_CS, nw, 0, 1ull << 7 | 1ull << 9, 0, 0, &on, err, sizeof err);
+        CHECK(x && count_op(x, on, 12) == count_op(FLOATIZE_CS, nw, 12), "floatize without h4mask: no half packing (%s)", err);
+        if (x && val) CHECK(validate(x, on, "floatize, bit-cast only"), "bit-cast only module valid");
+        free(x);
+        CHECK(!vka_spv_img_floatize(FLOATIZE_CS, nw, 0, 1ull << 8, 0, 0, &on, err, sizeof err), "floatize: binding 8 (no image) refused");
+        CHECK(!vka_spv_img_floatize(FLOATIZE_CS, nw, 0, 0, 0, 0, &on, err, sizeof err), "floatize: an empty mask refused");
+    }
+    // PEANUTS end
     printf("t_android_spvpatch: %s%s\n", g_fail ? "FAILED" : "ok", val ? "" : " (no spirv-val: structure only)");
     return g_fail != 0;
 }

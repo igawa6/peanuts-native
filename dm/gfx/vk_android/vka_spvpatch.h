@@ -22,6 +22,10 @@ uint32_t *vka_spv_spec_freeze(const uint32_t *w, size_t nw, uint32_t spec_id, ui
 // The module's float storage images of unknown format at set 0 bindings base + n (n in umask / smask) as images of uint / int sampled type, each read and written texel
 // bit-cast, for integer textures bound to them (a formatted surface access moves register bits the texture's format reads): malloc'd (*out_nw words), NULL with the reason in err
 uint32_t *vka_spv_img_retype(const uint32_t *w, size_t nw, uint32_t base, uint64_t umask, uint64_t smask, size_t *out_nw, char *err, size_t errn);
+// PEANUTS: the module's integer storage images at set 0 bindings base + n (n in fmask) as float images of unknown format, for float textures bound to them: each read gives the
+// shader the bits a Switch surface access does (raw R32G32 on RGBA16F, h4mask, or R32 on RG16F, h2mask: the texel's halves packed; else the floats bit-cast), writes the
+// other way: malloc'd (*out_nw words), NULL with the reason in err (vka_spvpatch.c)
+uint32_t *vka_spv_img_floatize(const uint32_t *w, size_t nw, uint32_t base, uint64_t fmask, uint64_t h4mask, uint64_t h2mask, size_t *out_nw, char *err, size_t errn);
 // An instanced variant of a vertex or pixel shader: reads of the uniform block at `binding` moved by a per-instance offset (a uint vertex input at `loc`, passed flat to
 // the pixel shader), malloc'd (*out_nw words), NULL with the reason in err (vka_spvpatch.c)
 uint32_t *vka_spv_instance(const uint32_t *w, size_t nw, uint32_t binding, uint32_t loc, size_t *out_nw, char *err, size_t errn);

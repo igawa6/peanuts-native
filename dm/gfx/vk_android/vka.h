@@ -559,7 +559,7 @@ VkShaderModule vka_shader_pfb_pick(VkShaderModule m, int a2c, int alpha_func);  
 uint32_t vka_shader_sg_pin(int stage);              // DMSH_VK_STAGE_*: the subgroup size its subgroup shaders' pipelines require (vka_shader.c sg_plan), 0 = none
 VkShaderModule vka_shader_cs_module(vka_shader *s);  // a compute shader's module: its DMSH_VK_MOD_SHUFFLE_LDS one where the device takes it (vka_shader.c shuffle_plan) and the shader does not run as one-invocation subgroups, else the base
 VkShaderModule vka_shader_spec_module(vka_shader *s, int gl);   // a task / mesh module with its specialization constants folded (GL depth = gl), VK_NULL_HANDLE = not needed
-VkShaderModule vka_shader_img_module(vka_shader *s, uint64_t umask, uint64_t smask);   // a compute module with the float storage images at bindings umask / smask as uint / int (vka_spv_img_retype); VK_NULL_HANDLE = cannot
+VkShaderModule vka_shader_img_module(vka_shader *s, uint64_t umask, uint64_t smask, uint64_t fmask, uint64_t h4mask, uint64_t h2mask);   // a compute module with the float storage images at bindings umask / smask as uint / int (vka_spv_img_retype); VK_NULL_HANDLE = cannot   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
 VkShaderModule vka_shader_inst_module(vka_shader *s, uint32_t binding, uint32_t loc);   // an instanced variant of the base module (vka_spv_instance), made each call
 VkShaderModule vka_shader_gs_module(vka_shader *s);   // a geometry shader's module with its memory writes made once per primitive (vka_spv_gs_claim)
 VkShaderModule vka_shader_gs_link_module(vka_shader *gs, vka_shader *vs, vka_shader *fs, int claim);   // with the pixel inputs it does not write added (VK_NULL_HANDLE: none to add)
@@ -584,7 +584,7 @@ VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay);
 int vka_pso_last_pending(void);   // PEANUTS: the frame path's last lookup returned no pipeline because a background thread is to make it (DM_VK_PSO_ASYNC), not a refusal
 int vka_pso_waiting(void);        // PEANUTS: pipelines the asynchronous threads have queued or are making
 VkPipeline vka_cs_pipeline_frame(vka_shader *cs, const vka_layout *lay);   // a dispatch's: VK_NULL_HANDLE while the asynchronous threads make it (DM_VK_CS_ASYNC), the dispatch then skipped
-VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask);   // with vka_shader_img_module's module; VK_NULL_HANDLE = none (then the base one)
+VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask, uint64_t fmask, uint64_t h4mask, uint64_t h2mask);   // with vka_shader_img_module's module; VK_NULL_HANDLE = none (then the base one)   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
 void vka_pso_save(int force);         // the VkPipelineCache and the prewarm list to the app's files (DM_TEMP): due DM_VK_PCACHE_SAVE_S after the last save, on the saver thread; force 1 = now, on the caller's; 2 = after a slow pipeline (due DM_VK_PCACHE_SAVE_SLOW_S)
 void vka_pso_waits(uint64_t *save_ns, uint64_t *pw_wait_ns);   // cumulative: time saving the cache (saver thread), the frame path's waits for a prewarm thread making the same pipeline
 double vka_gpu_span_ms(uint64_t f);   // frame f's submissions from first part's start to last part's end (vka_exec.c); -1 = not in yet

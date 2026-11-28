@@ -1201,7 +1201,7 @@ static void pw_explain(int kind, vka_shader *const sh[5], const vka_gkey *k, uin
               ms, linked ? ", linked" : "", same_sh, d[0] ? d : "nothing: the same key (the prewarm threads had not reached it yet)");
 }
 static gval *gfx_obtain(const gkey_full *fk, uint64_t h, size_t len, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k, int prewarm, int *made);
-static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, int *made, uint64_t umask, uint64_t smask, int frame);
+static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, int *made, uint64_t umask, uint64_t smask, uint64_t fmask, uint64_t h4mask, uint64_t h2mask, int frame);   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
 // MemAvailable in MiB (/proc/meminfo; 0 = not known)
 static uint64_t mem_avail_mb(void) {
     FILE *f = fopen("/proc/meminfo", "r"); char line[128]; uint64_t kb = 0;
@@ -1271,7 +1271,7 @@ static void *pw_main(void *a) {
         }
         int made = 0;
         if (bad) { atomic_fetch_add(&g_pw_bad, 1); pw_mark_bad(offs[i]); }
-        else if (r.kind == VKA_PW_CS) { uint64_t m2[2] = {0, 0}; if (r.klen == 16) memcpy(m2, kb, 16); cs_obtain(sh[5], &lay, 1, &made, m2[0], m2[1], 0); }   // PEANUTS: the retyped variant's masks
+        else if (r.kind == VKA_PW_CS) { uint64_t m2[2] = {0, 0}; if (r.klen == 16) memcpy(m2, kb, 16); cs_obtain(sh[5], &lay, 1, &made, m2[0], m2[1], 0, 0, 0, 0); }   // PEANUTS: the retyped variant's masks
         else {
             vka_gkey k; memset(&k, 0, sizeof k); memcpy(&k, kb, r.klen < sizeof k ? r.klen : sizeof k);
             if (k.vin_static != (uint32_t)!V.vin_dyn) {
@@ -1393,7 +1393,7 @@ static uint64_t as_cost(vka_shader *const sh[VKA_NSTAGE]) {
     return c;
 }
 static void gfx_build(gval *g, size_t len, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k, int prewarm, int async, uint64_t t_make);
-static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderModule csm, uint64_t umask, uint64_t smask, int prewarm, int async);
+static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderModule csm, uint64_t umask, uint64_t smask, uint64_t fmask, int prewarm, int async);   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
 // PEANUTS begin: the compute warm-up (2026-11-21, after nx2androidX's compute_warm, gfx_vk_exec_xfb.inc). A compute pipeline depends only on its shader and the layout
 // its bindings give, so every compute shader of the game's library can be made before the game first dispatches it, with no recording: a first dispatch otherwise made
 // it on the frame path (45-105 ms each on Adreno by nx2androidX's count, Ocarina of Time's 3d0d6d61bb9076e7 3.1 s) or, asynchronous, skipped the dispatch until it was
@@ -1430,7 +1430,7 @@ static void *cw_main(void *a) {
         vka_shader *s7[VKA_NSTAGE] = {0}; s7[5] = it[i].sh; vka_layout lay;
         if (!vka_layout_of(s7, 1, &lay)) { bad++; continue; }
         int tok = gate_enter(0, 0); gate_hold(tok, it[i].sh->key);
-        int mk = 0; uint64_t tb = now_ns(); cs_obtain(it[i].sh, &lay, 1, &mk, 0, 0, 0);
+        int mk = 0; uint64_t tb = now_ns(); cs_obtain(it[i].sh, &lay, 1, &mk, 0, 0, 0, 0, 0, 0);   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
         gate_leave(tok);
         if (mk) made++; else had++;
         // Cheapest first, so one build past DM_VK_CS_WARM_STOP_MS (default 1000; 0 never) means the rest cost as much or more: stopped there. Hyrule Warriors: Age of
@@ -1471,7 +1471,7 @@ static void *as_main(void *a) {
         int tok = gate_enter(1, gate_heavy(pre, j->cs ? NULL : j->sh[1]));   // the frame's: its draws (dispatches) are skipped until it is made, so it goes before the speculative ones
         gate_hold(tok, key);
         uint64_t t0 = now_ns();
-        if (j->cs) cs_build(j->g, j->sh[5], &j->lay, j->um | j->sm ? vka_shader_img_module(j->sh[5], j->um, j->sm) : vka_shader_cs_module(j->sh[5]), j->um, j->sm, 0, 1);   // PEANUTS: a retyped variant's module
+        if (j->cs) cs_build(j->g, j->sh[5], &j->lay, j->um | j->sm ? vka_shader_img_module(j->sh[5], j->um, j->sm, 0, 0, 0) : vka_shader_cs_module(j->sh[5]), j->um, j->sm, 0, 0, 1);   // PEANUTS: a retyped variant's module
         else gfx_build(j->g, j->len, j->sh, &j->lay, &j->k, 0, 1, j->t0);
         gate_leave(tok);
         setpriority(PRIO_PROCESS, 0, 10);   // PEANUTS: back under the game's threads if a waiting draw raised it (vka_gfx_pipeline_now)
@@ -2078,7 +2078,7 @@ VkPipeline vka_gfx_pipeline_now(vka_shader *const sh[VKA_NSTAGE], int why, long 
 // PEANUTS end
 
 // ---------- Compute pipelines ----------
-typedef struct { vka_shader *cs; VkPipelineLayout layout; uint64_t umask, smask; } ckey;   // masks: storage images retyped for integer textures (vka_shader_img_module)
+typedef struct { vka_shader *cs; VkPipelineLayout layout; uint64_t umask, smask, fmask, h4mask, h2mask; } ckey;   // masks: storage images retyped for integer textures (vka_shader_img_module)   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
 static kmap g_cs = {.klen = sizeof(ckey)};
 // DM_VK_CS_ASYNC (live; default 1, effective only with DM_VK_PSO_ASYNC threads; 0 = the frame waits): a compute pipeline a dispatch needs and the map lacks is made on the
 // asynchronous threads (as_main, the graphics misses' queue and its order: least predicted cost first, a .heavy shader last, DM_VK_PSO_ORDER), its dispatches skipped until
@@ -2107,7 +2107,7 @@ static void *cq_main(void *a) {
         uint64_t av; while (mem_mb && (av = mem_avail_mb()) && av < mem_mb) { usleep(100000); pause_point(); }
         pthread_mutex_lock(&g_mu); j->g->tid = gettid(); pthread_mutex_unlock(&g_mu);
         uint64_t t0 = now_ns();
-        cs_build(j->g, j->sh[5], &j->lay, j->um | j->sm ? vka_shader_img_module(j->sh[5], j->um, j->sm) : vka_shader_cs_module(j->sh[5]), j->um, j->sm, 0, 1);
+        cs_build(j->g, j->sh[5], &j->lay, j->um | j->sm ? vka_shader_img_module(j->sh[5], j->um, j->sm, 0, 0, 0) : vka_shader_cs_module(j->sh[5]), j->um, j->sm, 0, 0, 1);   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
         setpriority(PRIO_PROCESS, 0, 10);
         uint64_t t1 = now_ns(), lat = t1 - j->t0, cur = atomic_load(&g_as_lat_max_ns);
         while (lat > cur && !atomic_compare_exchange_weak(&g_as_lat_max_ns, &cur, lat)) {}
@@ -2128,7 +2128,7 @@ static int cq_on(void) { static int on = -1; if (on < 0) on = VKA_ENV("DM_VK_CS_
 static int cs_async_on(void) { return VKA_ENV("DM_VK_CS_ASYNC", 1) && as_threads() > 0; }
 static void cs_queue(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderModule csm, uint64_t um, uint64_t sm) {   // PEANUTS: csm, um, sm
     as_job *j = calloc(1, sizeof *j);
-    if (!j) { cs_build(g, cs, lay, csm, um, sm, 0, 0); return; }
+    if (!j) { cs_build(g, cs, lay, csm, um, sm, 0, 0, 0); return; }   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     j->g = g; j->sh[5] = cs; j->lay = *lay; j->t0 = now_ns(); j->cost = as_cost(j->sh); j->cs = 1; j->um = um; j->sm = sm;
     int d = atomic_fetch_add(&g_as_depth, 1) + 1, m = atomic_load(&g_as_depth_max);
     while (d > m && !atomic_compare_exchange_weak(&g_as_depth_max, &m, d)) {}
@@ -2142,17 +2142,17 @@ static void cs_queue(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderMod
     }
     pthread_mutex_lock(&g_as_mu); *g_as_tail = j; g_as_tail = &j->next; pthread_cond_signal(&g_as_cv); pthread_mutex_unlock(&g_as_mu);
 }
-static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, int *made, uint64_t umask, uint64_t smask, int frame) {
+static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, int *made, uint64_t umask, uint64_t smask, uint64_t fmask, uint64_t h4mask, uint64_t h2mask, int frame) {   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     *made = 0;
     if (VKA_ENV("DM_VK_SKIP_NDVE", 1) && vka_is_ndve_key(cs->key)) return VK_NULL_HANDLE;
-    VkShaderModule csm = umask | smask ? vka_shader_img_module(cs, umask, smask) : vka_shader_cs_module(cs);
+    VkShaderModule csm = umask | smask | fmask ? vka_shader_img_module(cs, umask, smask, fmask, h4mask, h2mask) : vka_shader_cs_module(cs);   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     if (!csm) return VK_NULL_HANDLE;   // (a retyped module that cannot be made: the caller takes the base pipeline)
-    ckey k; memset(&k, 0, sizeof k); k.cs = cs; k.layout = lay->layout; k.umask = umask; k.smask = smask;
+    ckey k; memset(&k, 0, sizeof k); k.cs = cs; k.layout = lay->layout; k.umask = umask; k.smask = smask; k.fmask = fmask; k.h4mask = h4mask; k.h2mask = h2mask;   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     uint64_t h = fnv(&k, sizeof k, 1469598103934665603ull);
     // PEANUTS: a retyped variant too (DM_VK_CS_ASYNC_RETYPE, default 1): its dispatch is skipped while it is made (vka_draw.c img_retype answers no pipeline then, not the
     // base one, which would read the integer texels as floats). Before 2026-11-21 it was made on the frame path: Hyrule Warriors: Age of Calamity's seven heavy compute
     // shaders froze its first battle for 1.3-2.4 s each on a first launch without a seed
-    int async = frame && !prewarm && (!(umask | smask) || VKA_ENV("DM_VK_CS_ASYNC_RETYPE", 1)) && cs_async_on();
+    int async = frame && !prewarm && !fmask && (!(umask | smask) || VKA_ENV("DM_VK_CS_ASYNC_RETYPE", 1)) && cs_async_on();   // PEANUTS: a floatized variant (vka_spv_img_floatize) on the frame path: no job or prewarm record carries its masks
     pthread_mutex_lock(&g_mu);
     gval *g = km_get(&g_cs, &k, h);
     if (g) {
@@ -2191,11 +2191,11 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, int prewarm, 
         atomic_fetch_add_explicit(&g_as_skips, 1, memory_order_relaxed);
         return VK_NULL_HANDLE;
     }
-    cs_build(g, cs, lay, csm, umask, smask, prewarm, 0);
+    cs_build(g, cs, lay, csm, umask, smask, fmask, prewarm, 0);   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     return __atomic_load_n(&g->p, __ATOMIC_ACQUIRE);
 }
 // A new compute entry g (busy) made and published. async: a frame-path miss made on an asynchronous thread (cs_queue), its time not the frame's
-static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderModule csm, uint64_t umask, uint64_t smask, int prewarm, int async) {
+static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderModule csm, uint64_t umask, uint64_t smask, uint64_t fmask, int prewarm, int async) {   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     pc_open();
     uint64_t t0 = now_ns();
     uint32_t pin = (cs->e->flags & DMSH_VK_F_SUBGROUP) ? vka_shader_sg_pin(DMSH_VK_STAGE_CS) : 0;
@@ -2223,22 +2223,22 @@ static void cs_build(gval *g, vka_shader *cs, const vka_layout *lay, VkShaderMod
     if (r && !over) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("compute pipeline %016llx: %d; its dispatches are skipped", (unsigned long long)cs->key, r); }
     { double ms_ = (now_ns() - t0) / 1e6; static _Atomic int n; if (!r && ms_ > 50 && atomic_fetch_add(&n, 1) < 200) VLOG("compute pipeline %016llx took %.0f ms%s", (unsigned long long)cs->key, ms_, prewarm ? " (prewarm)" : async ? " in the background (asynchronous)" : "");
       // (noted before the save, so the save that follows a long one has its key: until 2026-11-15 the save came first and the key waited for the next one)
-      if (!prewarm && !over && !(umask | smask)) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(VKA_PW_CS, s5, "", 0); }   // (one not made stays out of the prewarm list)
+      if (!prewarm && !over && !(umask | smask | fmask)) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(VKA_PW_CS, s5, "", 0); }   // (one not made stays out of the prewarm list)   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
       // PEANUTS: a retyped variant (integer images bound) as a record with its masks: before, it never reached the list, so no seed made it ahead and every first start built it
       // on the frame path (Hyrule Warriors: Age of Calamity: 7 programs, 0.8-3.9 s each, ~15 s of frozen frames at its first battle) while the prewarm made the base variant no draw used
-      if (!prewarm && !over && (umask | smask) && !r) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; uint64_t m2[2] = {umask, smask}; pw_note(VKA_PW_CS, s5, m2, 16); }
+      if (!prewarm && !over && (umask | smask) && !fmask && !r) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; uint64_t m2[2] = {umask, smask}; pw_note(VKA_PW_CS, s5, m2, 16); }   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
       if (!prewarm && !r && ms_ > 1000) vka_pso_save(2); }
 }
-VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 0); }
+VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, 0, &made, 0, 0, 0, 0, 0, 0); }   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
 VkPipeline vka_cs_pipeline_frame(vka_shader *cs, const vka_layout *lay) {   // PEANUTS: g_last_pending, from the skips cs_obtain counted for this dispatch
     int made; uint64_t s0 = atomic_load_explicit(&g_as_skips, memory_order_relaxed);
-    VkPipeline p = cs_obtain(cs, lay, 0, &made, 0, 0, 1);
+    VkPipeline p = cs_obtain(cs, lay, 0, &made, 0, 0, 0, 0, 0, 1);   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     g_last_pending = !p && atomic_load_explicit(&g_as_skips, memory_order_relaxed) != s0;
     return p;
 }
-VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask) {   // PEANUTS: a dispatch's (frame 1): g_last_pending as vka_cs_pipeline_frame
+VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, uint64_t umask, uint64_t smask, uint64_t fmask, uint64_t h4mask, uint64_t h2mask) {   // PEANUTS: a dispatch's (frame 1): g_last_pending as vka_cs_pipeline_frame
     int made; uint64_t s0 = atomic_load_explicit(&g_as_skips, memory_order_relaxed);
-    VkPipeline p = cs_obtain(cs, lay, 0, &made, umask, smask, 1);
+    VkPipeline p = cs_obtain(cs, lay, 0, &made, umask, smask, fmask, h4mask, h2mask, 1);   // PEANUTS: fmask / h4mask / h2mask (vka_spv_img_floatize)
     g_last_pending = !p && atomic_load_explicit(&g_as_skips, memory_order_relaxed) != s0;
     return p;
 }

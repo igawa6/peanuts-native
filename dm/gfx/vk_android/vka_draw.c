@@ -3242,9 +3242,22 @@ static VkPipeline img_retype(vka_shader *cs, const vka_layout *lay, VkPipeline p
         if (c == 1) um |= bit; else if (c == 2) sm |= bit; else fm |= bit;
     }
     uint64_t mixed = (um & sm) | ((um | sm) & fm); um &= ~mixed; sm &= ~mixed;   // (an array binding with elements of more than one class keeps its float type)
-    if (!(um | sm)) return p;
-    VkPipeline q = vka_cs_pipeline_img(cs, lay, um, sm);
+    // PEANUTS begin: the other direction (vka_spvpatch.c vka_spv_img_floatize): integer storage images the translator declared for a raw or unformatted surface access, bound
+    // to float textures, read and write as float images in the texture's own format, the bits handed over as the Switch does (FINAL FANTASY RESONANCE's translucency lighting
+    // volume, #489). DM_VK_IMG_FLOAT=0: never (the class twin views, as before)
+    uint64_t flm = 0, h4 = 0, h2 = 0;
+    if (VKA_ENV("DM_VK_IMG_FLOAT", 1))
+        for (int i = 0; i < g_wk.n[5]; i++) {
+            if (r[i].what != VKA_R_IMG || r[i].desc != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE || r[i].binding >= 64 || r[i].elem || !r[i].tid || !(r[i].dim & (DMSH_VK_DIM_SINT | DMSH_VK_DIM_UINT))) continue;
+            if (vka_tex_id_class_rec(r[i].tid) != 0) continue;   // (an integer texture: the declared class is its own)
+            VkFormat tf = vka_tex_id_vkfmt(r[i].tid); uint64_t bit = 1ull << r[i].binding;
+            flm |= bit; if (tf == VK_FORMAT_R16G16B16A16_SFLOAT) h4 |= bit; else if (tf == VK_FORMAT_R16G16_SFLOAT) h2 |= bit;
+        }
+    if (!(um | sm | flm)) return p;
+    VkPipeline q = vka_cs_pipeline_img(cs, lay, um, sm, flm, h4, h2);
     if (!q) return vka_pso_last_pending() ? VK_NULL_HANDLE : p;   // PEANUTS: being made in the background (DM_VK_CS_ASYNC_RETYPE): no pipeline, the dispatch skipped
+    for (int i = 0; i < g_wk.n[5]; i++) if (r[i].what == VKA_R_IMG && r[i].binding < 64 && (flm >> r[i].binding & 1)) r[i].dim &= ~(DMSH_VK_DIM_UINT | DMSH_VK_DIM_SINT);   // (a view in the texture's format)
+    // PEANUTS end
     for (int i = 0; i < g_wk.n[5]; i++) if ((r[i].what == VKA_R_IMG || r[i].what == VKA_R_TEX || r[i].what == VKA_R_TBUF) && r[i].binding < 64 && ((um | sm) >> r[i].binding & 1)) r[i].dim |= um >> r[i].binding & 1 ? DMSH_VK_DIM_UINT : DMSH_VK_DIM_SINT;   // PEANUTS: + texel buffers
     return q;
 }
