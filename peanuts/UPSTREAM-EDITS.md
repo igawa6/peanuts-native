@@ -3481,3 +3481,33 @@ NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS draws its UI with OpenGL throug
 | `dm/host/hle.h` | 1 | `HLE_FORCE_BIG`'s comment: two stack slots carried over | `PEANUTS` |
 | `dm/host/tests/t_bigstack.c` | 4 | a ten-argument take-over through the switch and on the direct path; the call helpers use `PLAT_ASM_SYM` (ELF too) | `PEANUTS` |
 | `docs/reference/memory.md` | 1 | "Host calls on small guest stacks": the two stack slots | `PEANUTS` |
+
+### Hyrule Warriors: Age of Calamity: updates step by the time they take (2026-11-25)
+
+At the 60 cap the Thor ran 54 to 59 updates a second, and the frame step's fixed 1/60 s a step put the game behind real time (0.94 to 0.99), with real-time cutscenes behind their voice lines. The two KIDS frame task stubs step by the measured time of each update instead, at most the Switch's 1/30 s.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/01002B00111A2000/patches.py` | 1 | `frame_step`: the clock stub measures the update's ticks (vsyncs capped at 2, state +8 / +0xc); the task stub sets the block's float fps and the device frame rate from them | `PEANUTS` |
+| `dm/games/01002B00111A2000/README.md` | 1 | the note's Android section | `PEANUTS` |
+| `dm/tools/tests/test_aoc_fps.py` | new file | both stubs run on ARM64 (unicorn) | `PEANUTS` |
+
+### Hyrule Warriors: Age of Calamity: the cutscene timeline steps once a 1/30 s tick (2026-11-26)
+
+Real-time cutscenes ran at twice their speed at the 60 cap: the scene's timeline update advances the timeline's frame once a call, once an update. The clock stub counts 1/30 s ticks of game time, the frame task decides once an update whether the frame steps, and the advance (`main+0x857d7c`) adds that flag; the scripts still run every update.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/01002B00111A2000/patches.py` | 3 | `frame_step`: the clock stub's tick count (state +0x18 / +0x1c); the frame task's step flag (+0x14 / +0x15); the frame advance and frames-left stubs at `main+0x857d7c` and `main+0x857da0` | `PEANUTS` |
+| `dm/games/01002B00111A2000/README.md` | 1 | the note's Android section | `PEANUTS` |
+| `dm/tools/tests/test_aoc_fps.py` | 1 | the tick count, the step flag and the frame advance run on ARM64 | `PEANUTS` |
+
+### Hyrule Warriors: Age of Calamity: the interface frame counter counts the update's 1/60 s frames (2026-11-26)
+
+The map's and the HUD's blinking icons ran at twice their speed at the 60 cap: their animations' frames come from an interface counter that added 2 an update. It adds the update's 1/60 s frames (`main+0xf87894`).
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/games/01002B00111A2000/patches.py` | 1 | `frame_step`: the interface frame counter stub at `main+0xf87894` | `PEANUTS` |
+| `dm/games/01002B00111A2000/README.md` | 1 | the note's Android section | `PEANUTS` |
+| `dm/tools/tests/test_aoc_fps.py` | 1 | the interface frame counter runs on ARM64 | `PEANUTS` |
