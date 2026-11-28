@@ -1,7 +1,7 @@
 # NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS (`01005A20190A6000`)
 
 <!-- PEANUTS -->
-Update **1.70 (`v655360`)**, SDK 14.3.0. CyberConnect2's NUCC engine on NVN, Scaleform GFx for every screen of UI (drawn with OpenGL ES through EGL), CRI ADX2 sound, CRI Sofdec movies through the SDK's `nn::movie` VP9 decoder. It needs the EGL and GL forwarding of #847 on Android: without it the game stops at `UNIMPL eglGetDisplay`.
+Update **1.70 (`v655360`)**, SDK 14.3.0. CyberConnect2's NUCC engine on NVN, Scaleform GFx for every screen of UI (drawn with OpenGL ES through EGL), CRI ADX2 sound, CRI Sofdec movies through the SDK's `nn::movie` VP9 decoder. It needs the EGL and GL forwarding of #847 on Android (on `dev` since 0.1.10): without it the game stops at `UNIMPL eglGetDisplay`.
 
 ## Status
 
@@ -19,10 +19,10 @@ Update **1.70 (`v655360`)**, SDK 14.3.0. CyberConnect2's NUCC engine on NVN, Sca
   These are the fresh-cache runs whose `vk_pipelines.keys` are attached to the pull request (115 keys on Turnip, 130 on the Qualcomm driver), from a new save, each with two Tailed Beast Bomb Rasen Shuriken jutsus. The log shows `[vk] fps: 30.0 game frames a second, 30.0 presented`. Game speed is from the idle animation of the player character (body and orbiting Truth-Seeking Balls), whose loop took 2.655 s on both drivers (2.66 to 2.76 s in earlier runs), with no input. Practice has no round timer and refills chakra at once, so neither can be used. Earlier runs gave the same medians and p95 (Turnip 5,161 presents over 172 s, slowest 33.33 ms; Qualcomm 6,290 over 210 s, slowest 33.36 ms).
 - **Memory** (`dumpsys meminfo` of the game process, during the jutsus of the fresh-cache runs): PSS 4.41 to 4.44 GB on Turnip (Graphics 1.69 GB, GL 637 MB), 4.02 to 4.03 GB on the Qualcomm driver (Graphics 1.13 GB, EGL 975 MB). Another app's game process held about 2.3 GB in the background during both runs. The heap region and `mem_used` in [game.tsv](game.tsv) are `profile_guess.py heap_signals`' answers to the phone's log (`SetHeapSize OOM: req 0xc9200000 > cap 0x8000000`, then `SetHeapSize 0xc9200000 + modules 0x5c00000 > app pool`). The 1.25 GB alias region beside it is the survey's guess, not measured.
 - **Fixed on the way, each in its own pull request:**
-  - The UI covering the 3D frame in black, ghost copies of earlier UI frames and a white opening movie: the UI image reached NVN unordered. Fixed by sharing the GL texture with NVN through an AHardwareBuffer with both syncs (#847).
+  - The UI covering the 3D frame in black, ghost copies of earlier UI frames and a white opening movie: the UI image reached NVN unordered. Fixed by sharing the GL texture with NVN through an AHardwareBuffer with both syncs ([rendering.md](../../../docs/reference/rendering.md#an-nvn-game-whose-ui-draws-with-opengl-through-egl-android), #847).
   - `glTexImage2D` and `glTexSubImage2D` reading garbage for their 9th and 10th arguments through the big host stack (#843).
   - Sage of the Six Paths Naruto's costume flat black at the character select and invisible in fights: its diffuse is the game's one BGR5A1 (0x97) texture ([rendering.md](../../../docs/reference/rendering.md#a-materials-body-invisible-or-black-nvn_format_bgr5a1-had-no-vulkan-format), #844).
-  - Qualcomm driver: jutsu and chakra effects in square cells. The effects pass's first draw writes a depth and no colour, and that driver gives such a draw wrong pixel shader inputs (#850).
+  - Qualcomm driver: jutsu and chakra effects in square cells. The effects pass's first draw writes a depth and no colour, and that driver gives such a draw wrong pixel shader inputs ([rendering.md](../../../docs/reference/rendering.md#effects-in-32x32-cells-on-qualcomms-driver-a-draw-that-writes-no-colour-gets-wrong-pixel-shader-inputs), #850).
   - Qualcomm driver: the characters' bodies black. On `dev` this is covered by `DM_VK_DYN_FILTER` defaulting to 0 on drivers before 512.800 and by `ds_forget` at each pass begin (#845, closed).
 - **No program missing:** `DM_NVN_SHDUMP` runs on both drivers found no shader outside the map.
 - **Docked and handheld:** switching mid-fight on Turnip makes the UI texture again at 1120x630 and 1600x900 and shares it each time.
@@ -61,7 +61,9 @@ The US release (`0100FA10190A0000`) 1.70 has the same three build IDs, so it nee
 ## Found on this game
 
 - [A material's body invisible or black: NVN_FORMAT_BGR5A1 had no Vulkan format](../../../docs/reference/rendering.md#a-materials-body-invisible-or-black-nvn_format_bgr5a1-had-no-vulkan-format)
-- The EGL and GL forwarding with the shared UI texture (#847), the depth-only blend on Qualcomm's driver (#850) and the two stack-passed arguments of the big host stack (#843) have their entries in those pull requests.
+- [An NVN game whose UI draws with OpenGL through EGL (Android)](../../../docs/reference/rendering.md#an-nvn-game-whose-ui-draws-with-opengl-through-egl-android)
+- [Effects in 32x32 cells on Qualcomm's driver: a draw that writes no colour gets wrong pixel shader inputs](../../../docs/reference/rendering.md#effects-in-32x32-cells-on-qualcomms-driver-a-draw-that-writes-no-colour-gets-wrong-pixel-shader-inputs)
+- The two stack-passed arguments of the big host stack: `glTexImage2D` and `glTexSubImage2D` have nine arguments (#843, `t_bigstack`).
 
 ## Open
 
