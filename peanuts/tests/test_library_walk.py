@@ -141,6 +141,25 @@ class Walk(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
+    def test_nested_sources_and_depth_limit(self):
+        root = Path(self.tmp.name) / 'nested'
+        deep = 'Games/Publisher/Series/Title'
+        cap = '/'.join(['nested'] * 12)
+        files = [f'{deep}/Updates/game.nup', 'Games/Android/game.nsp', f'{cap}/game.xci']
+        dump = f'{deep}/Dump'
+        for rel in [*files, f'{dump}/base/exefs/main', f'{dump}/romfs/ignored.nsp',
+                    'Android/ignored.nsp', 'DCIM/ignored.nsp', f'{cap}/extra/ignored.nsp']:
+            f = root / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.touch()
+        try:
+            (root / 'Games/back').symlink_to(root, target_is_directory=True)
+        except (NotImplementedError, OSError):
+            pass
+        out = subprocess.check_output(['java', '-cp', str(self.classes), 'dev.peanuts.ui.LibraryWalkTest', str(root)],
+                                      text=True, timeout=10)
+        self.assertCountEqual(out.splitlines(), [f'dump -1 {dump}', *(f'file {f}' for f in files)])
+
     def test_mods_are_no_dumps(self):
         self.assertEqual(sorted(self.dumps), DUMPS, 'only the real dump folders, each once, as the dump and not one of its versions')
 

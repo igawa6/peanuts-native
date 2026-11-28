@@ -30,7 +30,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The library: every game in the roots (the game folder, then the update and DLC folders; each walked two levels deep) as *.nsp, *.xci, *.nsz, *.xcz, *.nup or a dump folder
+ * The library: every game in the roots (the game folder, then the update and DLC folders; including nested folders) as *.nsp, *.xci, *.nsz, *.xcz, *.nup or a dump folder
  * (a version with exefs/main in a layout upstream's DumpLayout reads; mods left out: LibraryWalk), grouped by the base game's title ID, with a status per title.
  * <p>
  * An NSP/XCI's titles come from the importer's probe (ImporterPort.probe: title id, application id, kind, version, name), kept in files/library-cache.json by
@@ -300,7 +300,7 @@ final class LibraryScanner {
 
     // ---- The walk ----
 
-    /** A root's dump folders and game files (LibraryWalk: two levels deep, mods left out); seen: the paths a root before took, which this one leaves */
+    /** A root's dump folders and game files (LibraryWalk: recursive, mods left out); seen: the paths a root before took, which this one leaves */
     private void walk(File root, List<Source> out, java.util.Set<String> seen) {
         LibraryWalk.walk(root, 0, new LibraryWalk.Sink() {
             @Override public void dump(File d) { if (seen.add(d.getAbsolutePath())) out.addAll(LibraryScanner.this.dump(d)); }
