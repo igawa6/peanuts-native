@@ -1,5 +1,7 @@
 # Upstream edits — marker status and contribution candidates
 
+- Upstream candidate: an Android H.264 movie whose output order is its decode order (pic_order_cnt_type 2 or Baseline) is decoded by MediaCodec in low latency, and each packet waits for its picture, so the last picture reaches a player that sends no end of stream (`avc_sps_in_order`, `dm/host/plat/movie_avc_android.c`). Donkey Kong Country Returns HD only (`LOW_LATENCY_GAME`) until other games' movies are checked.
+
 - Upstream candidate: Vulkan direct texture and sampler bindings resolve against the executing queue’s descriptor pools. The CPU registry retains sparse texture IDs beyond one full pool without enlarging GPU tables. Trails through Daybreak II rotates three such pools.
 
 - Scarlet and Violet 4.0.0 and Kakarot 1.70 add game profiles and generated shader tables. The PC splitter accepts build-specific regular variation pairs, and the packer loads optional shader keys once per split. The host adds elapsed integer timing rows and offline Bluetooth replies.

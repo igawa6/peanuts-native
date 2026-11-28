@@ -65,6 +65,20 @@ static void t_sps(void) {
     uint8_t pps[4] = {0x68, 0xee, 0x3c, 0x80}; int w, h;
     CHECK(!avc_sps_size(pps, 4, &w, &h), "a PPS is not an SPS");
     CHECK(!avc_sps_size((const uint8_t *)"\x67\x64", 2, &w, &h), "a truncated SPS");
+    // PEANUTS(upstream-candidate): decode order = output order (avc_sps_in_order): the libx264 High and Main streams use POC type 0 (B-frames possible), the Baseline one is in order;
+    // Donkey Kong Country Returns HD's GI.mp4 is Main profile with POC type 2
+    static const struct { const char *hex; int in_order; } o[] = {
+        {"67640028acd940780227e5c044000003000400000300f03c60c658", 0},
+        {"674d401feca02802dd8088000003000800000301e078c18cb0", 0},
+        {"6742c00dd90150878888c044000003000400000300f03c50a920", 1},
+        {"6764001eacd940b47b6022000003000200000300783e28532c", 0},
+        {"674d402995900780227e5c04400000fa00003a9821", 1},
+    };
+    for (size_t i = 0; i < sizeof o / sizeof *o; i++) {
+        uint8_t b[64]; size_t n = unhex(o[i].hex, b);
+        CHECK(avc_sps_in_order(b, n) == o[i].in_order, "SPS %zu: in order %d, want %d", i, avc_sps_in_order(b, n), o[i].in_order);
+    }
+    CHECK(!avc_sps_in_order(pps, 4), "a PPS is not an SPS (in order)");
 }
 static void t_yuv(void) {
     CHECK(nx_yuv_kind(21) == NXYUV_NV12 && nx_yuv_kind(19) == NXYUV_I420 && nx_yuv_kind(0x7fa30c04) == NXYUV_NV12 && nx_yuv_kind(0x7f000789) == NXYUV_NONE, "colour formats");

@@ -20,7 +20,10 @@ struct mavc {
     int pending, eos_sent, eos_done;
     uint8_t *au; size_t aucap;
     int red, red_fmt, rgba;
+    int in_order, wait_misses;   // PEANUTS(upstream-candidate): in_order: the SPS allows no reordering (avc_sps_in_order): the decoder runs in low latency and each packet waits for its picture; wait_misses: waits that ended without it
 };
+#define LOW_LATENCY_GAME 0x01009D901BC56000ull   // PEANUTS: Donkey Kong Country Returns HD: the one game whose movies get low latency (GI.mp4 waited on its last frame)
+#define WAIT_MISSES_MAX 3   // PEANUTS(upstream-candidate): a decoder that ignores low latency keeps a picture back however long a packet waits: after this many, packets stop waiting
 
 mavc *mavc_new(void) { mavc *a = calloc(1, sizeof *a); if (!a) die("movie: AVC decoder allocation failed"); return a; }
 static void close_codec(mavc *a) { if (a->c) { AMediaCodec_stop(a->c); AMediaCodec_delete(a->c); a->c = NULL; } a->pending = a->eos_sent = a->eos_done = 0; }
@@ -82,6 +85,11 @@ static int open_codec(mavc *a) {
     AMediaFormat_setInt32(f, AMEDIAFORMAT_KEY_COLOR_FORMAT, 21);   // COLOR_FormatYUV420SemiPlanar: NV12 in the ByteBuffer, which Codec2 converts to when asked
     AMediaFormat_setInt32(f, AMEDIAFORMAT_KEY_MAX_INPUT_SIZE, w * h * 3 / 2 > (1 << 20) ? w * h * 3 / 2 : 1 << 20);
     AMediaFormat_setBuffer(f, "csd-0", csd[0], 4 + (size_t)a->nsps); AMediaFormat_setBuffer(f, "csd-1", csd[1], 4 + (size_t)a->npps);
+    // PEANUTS(upstream-candidate): a stream whose output order is its decode order: MediaCodec's low latency (KEY_LOW_LATENCY, Android 11) hands each picture out as soon as it is decoded,
+    // as the Switch's decoder and VideoToolbox (depth 0) do; without it c2.qti.avc.decoder kept the last 2 pictures until end of stream (avc_sps_in_order)
+    // Only Donkey Kong Country Returns HD for now (LOW_LATENCY_GAME): every other game keeps the decoder as it was until this is checked on its movies
+    a->in_order = DM_GAME_PROGRAM_ID == LOW_LATENCY_GAME && avc_sps_in_order(a->sps, (size_t)a->nsps); a->wait_misses = 0;
+    if (a->in_order) AMediaFormat_setInt32(f, "low-latency", 1);
     media_status_t st = AMediaCodec_configure(a->c, f, NULL, NULL, 0);
     AMediaFormat_delete(f);
     if (st == AMEDIA_OK) st = AMediaCodec_start(a->c);
@@ -89,7 +97,7 @@ static int open_codec(mavc *a) {
     char *name = NULL; AMediaCodec_getName(a->c, &name); snprintf(a->name, sizeof a->name, "%s", name ? name : "AMediaCodec"); if (name) AMediaCodec_releaseName(a->c, name);
     a->cw = w; a->chh = h;
     a->L = (nx_yuv_layout){NXYUV_NV12, w, h, 0, 0, w, h}; a->bt709 = h >= 720; a->full = 0;
-    LOG("[movie] AVC: %s decoding %d×%d, profile %d", a->name, w, h, a->nsps > 1 ? a->sps[1] : 0);
+    LOG("[movie] AVC: %s decoding %d×%d, profile %d%s", a->name, w, h, a->nsps > 1 ? a->sps[1] : 0, a->in_order ? ", output order = decode order: low latency" : "");   // PEANUTS(upstream-candidate)
     a->dirty = 0; return 1;
 }
 static void out_format(mavc *a) {
@@ -166,6 +174,11 @@ int mavc_decode(mavc *a, const uint8_t *p, int n, int64_t pts_us) {
     if (c.picture) a->pending++;
     drain(a, a->nq ? 0 : 8000);
     for (int k = 0; k < 10 && a->pending > PENDING_MAX && !a->nq; k++) drain(a, 20000);
+    if (a->in_order && a->wait_misses < WAIT_MISSES_MAX && c.picture) {   // PEANUTS(upstream-candidate): this packet's picture before returning: the last packet's picture reaches the player too
+        for (int k = 0; k < 4 && a->pending > 0; k++) drain(a, 10000);
+        if (a->pending > 0 && ++a->wait_misses == WAIT_MISSES_MAX) LOG("[movie] AVC: %s keeps pictures back in low latency too: packets no longer wait for theirs", a->name);
+        else if (!a->pending) a->wait_misses = 0;
+    }
     return 0;
 }
 static void end_of_stream(mavc *a) {   // flush: every picture still inside the decoder comes out

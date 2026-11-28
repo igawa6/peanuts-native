@@ -105,6 +105,38 @@ static inline int avc_sps_size(const uint8_t *nal, size_t n, int *w, int *h) {
     *w = cw; *h = chh; return 1;
 }
 
+// ---------- H.264 SPS: decode order equal to output order ----------   // PEANUTS(upstream-candidate)
+// 1 when no picture of the stream can be reordered: pic_order_cnt_type 2 (H.264 8.2.1.3: output order is decode order, in any profile) or Baseline profile, as
+// hle_movie_avc.c's avc_reorder_depth gives depth 0 on the Mac; 0 otherwise or for an SPS it cannot read. MediaCodec keeps a stream's last pictures until end of
+// stream unless it is told the stream has no reordering (low latency), and a player that waits for every picture without sending end of stream (Donkey Kong
+// Country Returns HD's Unity player, its 119 s GI.mp4: Main profile, POC type 2) then waits for good on the movie's last frame
+static inline int avc_sps_in_order(const uint8_t *nal, size_t n) {
+    if (n < 4 || (nal[0] & 31) != 7 || n > 1024) return 0;
+    if (nal[1] == 66) return 1;
+    uint8_t rbsp[1024]; size_t m = 0;
+    for (size_t i = 1; i < n; i++) { if (i >= 3 && nal[i] == 3 && !nal[i - 1] && !nal[i - 2]) continue; rbsp[m++] = nal[i]; }
+    nx_bits b = {rbsp, m, 0, 0};
+    unsigned profile = nxb_u(&b, 8); nxb_u(&b, 16); nxb_ue(&b);
+    switch (profile) {
+    case 44: case 83: case 86: case 100: case 110: case 118: case 122: case 128: case 134: case 135: case 138: case 139: case 144: case 244: {
+        unsigned chroma = nxb_ue(&b); if (chroma > 3) return 0;
+        if (chroma == 3) nxb_u(&b, 1);
+        nxb_ue(&b); nxb_ue(&b); nxb_u(&b, 1);
+        if (nxb_u(&b, 1)) for (unsigned i = 0; i < (chroma == 3 ? 12u : 8u) && !b.bad; i++) {
+            if (!nxb_u(&b, 1)) continue;
+            int last = 8, next = 8;
+            for (unsigned j = 0; j < (i < 6 ? 16u : 64u) && !b.bad; j++) { if (next) next = (last + nxb_se(&b)) & 255; if (next) last = next; }
+        }
+        break;
+    }
+    case 77: case 88: break;
+    default: return 0;
+    }
+    if (nxb_ue(&b) > 12) return 0;   // log2_max_frame_num_minus4
+    unsigned poc = nxb_ue(&b);
+    return !b.bad && poc == 2;
+}
+
 // ---------- MediaCodec output layouts ----------
 // A ByteBuffer output picture: planar I420 (COLOR_FormatYUV420Planar 19 and PackedPlanar 20), semi-planar NV12 (21, PackedSemiPlanar 39, Flexible 0x7f420888 when 21 was asked for,
 // Qualcomm's 32m 0x7fa30c04) or NV21 (Qualcomm 0x7fa30c00). stride / slice are the format's "stride" / "slice-height"; the crop rectangle is inclusive of its left / top edge
