@@ -88,6 +88,7 @@ One row per profile; the notes are each profile's `README.md`.
 | [DAVE THE DIVER](010097F018538000/README.md) | `010097F018538000` | 1.0.6.1267 | 20.5.29 | Unity 6000.0.52f1 IL2CPP, FMOD | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Dead Cells](0100646009FBE000/README.md) | `0100646009FBE000` | 1.25.0 | 13.3.5 | Heaps / HashLink (HL/C) | NVN |
 | [Demon Slayer -Kimetsu no Yaiba- The Hinokami Chronicles 2](0100AD80208A8000/README.md) | `0100AD80208A8000` | 1.80 | 16.2.3 | Unreal Engine 5.3.2 | NVN <!-- PEANUTS: Peanuts-only profile --> |
+| [Demon Throttle](01001DA015650000/README.md) | `01001DA015650000` | v0 | 13.3.0 | GameMaker Studio 2 (its runner) | OpenGL <!-- PEANUTS: Peanuts-only profile --> |
 | [Diablo III: Eternal Collection](01001B300B9BE000/README.md) | `01001B300B9BE000` | 2.7.7.92380 | 8.2.0 | Blizzard's engine, FMOD | NVN |
 | [Digimon Story Time Stranger](010062E01FE0C000/README.md) | `010062E01FE0C000` | 1.2.2 | 20.5.21 | Media.Vision's engine (MVGL archives), CRIWARE | NVN <!-- PEANUTS: Peanuts-only profile --> |
 | [Digimon Story Cyber Sleuth: Complete Edition](010014E00DB56000/README.md) | `010014E00DB56000` | 1.0.3 | 6.4.0 | Media.Vision MVGL | OpenGL |
