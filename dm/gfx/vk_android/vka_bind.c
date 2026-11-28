@@ -82,10 +82,26 @@ int vka_walk(const vka_bstate *s, int st, const dmsh_vk_entry *e, const dmsh_vk_
                 if (a) { r.what = VKA_R_BUF; r.addr = a; r.size = 0; }   // the size is not known: to the end of the chunk
                 break; }
             case DMSH_VK_KIND_TEX: case DMSH_VK_KIND_TEX_UBO: case DMSH_VK_KIND_TEX_C2A: {
-                int tid = b->kind == DMSH_VK_KIND_TEX_UBO ? (noslot ? 0 : ubo_tex_id(s, (uint32_t)ubo_word(s, st, reg, b->off + ubo_elem(b, k), 4, rd, ctx)))
-                        : b->kind == DMSH_VK_KIND_TEX_C2A ? ubo_tex_id(s, (uint32_t)vka_c2_handle(s, st, b->off + 8u * k))   // PEANUTS(upstream-candidate)
+                int tid, sid;
+                if (b->kind == DMSH_VK_KIND_TEX_UBO) {
+                    if (noslot) break;
+                    unsigned elem = ubo_elem(b, k);
+                    uint32_t handle = (uint32_t)ubo_word(s, st, reg, b->off + elem, 4, rd, ctx);
+                    if (b->skind == DMSH_VK_KIND_SAMP_UBO && !(b->flags & DMSH_VK_BF_SAMP_RAW)) {
+                        // TextureHandle.ReadPackedId ORs the two words before decoding either ID.
+                        // An unmasked shader OR can put the sampler operand first (World War Z).
+                        if (reg != b->sreg || b->off != b->soff)
+                            handle |= (uint32_t)ubo_word(s, st, b->sreg, b->soff + elem, 4, rd, ctx);
+                        sid = ubo_samp_id(s, handle);
+                    } else {
+                        sid = samp_of(s, st, b, k, rd, ctx);
+                    }
+                    tid = ubo_tex_id(s, handle);
+                } else {
+                    tid = b->kind == DMSH_VK_KIND_TEX_C2A ? ubo_tex_id(s, (uint32_t)vka_c2_handle(s, st, b->off + 8u * k))
                         : noslot ? 0 : ubo_tex_id(s, (uint32_t)vka_tex_slot(s, st, (unsigned)reg));
-                int sid = b->skind ? samp_of(s, st, b, k, rd, ctx) : 0;
+                    sid = samp_of(s, st, b, k, rd, ctx);
+                }
                 if (tid) { r.what = VKA_R_TEX; r.tid = tid; r.sid = sid; }
                 break; }
             case DMSH_VK_KIND_TBUF: {

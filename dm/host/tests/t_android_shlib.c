@@ -138,6 +138,35 @@ static void test_entry_hash(void) {
 static uint8_t g_mem[4096];   // "guest memory" at address 0x10000 for the read callback
 static int rd(void *ctx, uint64_t a, void *out, size_t n) { (void)ctx; if (a < 0x10000 || a + n > 0x10000 + sizeof g_mem) return 0; memcpy(out, g_mem + (a - 0x10000), n); return 1; }
 
+static void test_walk_split_ubo_handle(void) {   // PEANUTS(upstream-candidate): Cover both orders of the packed handle words.
+    static vka_bstate s;
+    s.ubo[1][13] = (vka_range){0x10000, 1024};
+    s.tex_base = 100;
+    s.samp_base = 200;
+    const uint32_t sampler = 0x10400000;
+    const uint32_t textures[] = {0x2398, 0x1ee, 0x335, 0x133, 0x3e5, 0x3e1, 0};
+    const uint16_t offsets[] = {24, 8, 0, 16, 40, 48, 56};
+    memcpy(g_mem + 992, &sampler, sizeof sampler);
+    for (unsigned i = 0; i < sizeof textures / sizeof *textures; i++) {
+        memcpy(g_mem + offsets[i], &textures[i], sizeof textures[i]);
+        dmsh_vk_bind b = {.kind = DMSH_VK_KIND_TEX_UBO, .desc = 1, .binding = 257 + i, .count = 1,
+                         .reg = 13, .off = 992, .skind = DMSH_VK_KIND_SAMP_UBO, .sreg = 13, .soff = offsets[i]};
+        dmsh_vk_entry e = {.stage = DMSH_VK_STAGE_FS, .bind_count = 1};
+        for (unsigned order = 0; order < 2; order++) {
+            vka_res r = {0};
+            CHECK(vka_walk(&s, 1, &e, &b, 0, 64, rd, NULL, &r, 1, NULL, NULL, 0) == 1, "split UBO handle walks");
+            if (textures[i])
+                CHECK(r.what == VKA_R_TEX && r.tid == (int)textures[i] + 100 && r.sid == 260 + 200,
+                      "binding %u order %u: decoded %d/%d", b.binding, order, r.tid, r.sid);
+            else
+                CHECK(r.what == VKA_R_NULL, "a sampler word alone does not bind a texture");
+            uint16_t off = b.off;
+            b.off = b.soff;
+            b.soff = off;
+        }
+    }
+}
+
 static void test_walk(void) {
     static vka_bstate s; memset(&s, 0, sizeof s);
     s.ubo[1][0] = (vka_range){0x10000, 256}; s.ubo[1][2] = (vka_range){0x10100, 64};
@@ -470,6 +499,7 @@ int main(void) {
     test_compat();
     test_gml();
     test_walk();
+    test_walk_split_ubo_handle();   // PEANUTS(upstream-candidate): Cover both orders of the packed handle words.
     test_real();
     if (g_fail) { printf("t_android_shlib: %d failures\n", g_fail); return 1; }
     printf("t_android_shlib: ok\n");
