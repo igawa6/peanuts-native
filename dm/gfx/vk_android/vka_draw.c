@@ -1989,6 +1989,11 @@ static int depth_sampled(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) 
     }
     return 0;
 }
+// Draw writes the active depth or stencil attachment (for R.dread hazard tracking).
+static int depth_writes(const vka_dstate *d) {
+    int hd = R.df != VK_FORMAT_UNDEFINED, hs = R.sf != VK_FORMAT_UNDEFINED;
+    return !d->rast_discard && ((hd && d->ds.dt && d->ds.dw) || (hs && d->ds.st && (d->st_wmask[0] || d->st_wmask[1])));
+}
 // When inline updates are deferred in UB: a draw with raw global memory access, or whose storage, vertex, index or indirect buffer overlaps UB, or whose overlapping UBO has an uncompleted opaque GPU write, ends the pass first
 static int ub_hazard(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], int mesh, const p_draw *dw, const p_draw_idx *di, uint32_t mdi_n, uint32_t mdi_st) {   // PEANUTS: bounded draw ranges
     for (int st = 0; st < VKA_NSTAGE; st++) {
@@ -2830,10 +2835,11 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
     if (R.on && UB.n && ub_hazard(d, sh, mesh, dw, di, mdi_n, mdi_st)) vka_rp_end();   // PEANUTS: bounded draw ranges
     if (R.on && (R.df || R.sf) && rt_same(rt, has_rt, &R.rt, R.has_rt)) {   // SetRenderTargets of the same targets between a depth write and sampling depth (or sampling depth then writing it)
         int ds = (R.rt_cont || !R.dread) ? depth_sampled(sh, d) : 0;
-        int hd_ = R.df != VK_FORMAT_UNDEFINED, hs_ = R.sf != VK_FORMAT_UNDEFINED;
-        int dw_ = !d->rast_discard && ((hd_ && d->ds.dt && d->ds.dw) || (hs_ && d->ds.st && (d->st_wmask[0] || d->st_wmask[1])));
+        int dw_ = depth_writes(d);
         if ((ds && R.rt_cont) || (dw_ && R.dread)) vka_rp_end();
-        else if (ds) R.dread = 1;
+        // R.dread guards a read-only depth sampler (ds && !dw_) against a later depth write; a draw that already samples and writes depth (ds && dw_)
+        // without SetRenderTargets or OP_BARRIER already runs under a same-pass feedback dependency and should not split consecutive draws into 1-draw passes.
+        else if (ds && !dw_) R.dread = 1;
     }
     uint64_t tstats = 0;   // DM_VK_TEX_STATS: this draw's fragment shader, its inputs' level 0 scanned and logged
     if (sh[1] && !d->rast_discard && ((vka_nan_on() >= 2 && vka_nan_probe(sh[1]->key)) || (vka_texstats_probe(sh[1]->key) && (tstats = sh[1]->key)))) {   // DM_VK_NANSCAN_FS: this draw's sampled textures, scanned before it
@@ -2849,7 +2855,7 @@ static void draw_body(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_sci
         vka_nan_inputs(g_cb, ims, bs, ts, m, tstats);
     }
     if (!rp_begin(rt, has_rt, sc, has_sc, d)) { g_skipped++; return; }
-    if ((R.df || R.sf) && !R.dread && depth_sampled(sh, d)) R.dread = 1;
+    if ((R.df || R.sf) && !R.dread && !depth_writes(d) && depth_sampled(sh, d)) R.dread = 1;
     if (!R.swrite && draw_writes(sh, d)) R.swrite = 1;   // (a game barrier in this pass from now on ends it: vka_rp_game_barrier)
     d->b.samples = R.samples;
     k.ncolor = (uint8_t)R.ncolor; k.samples = (uint8_t)R.samples; k.dfmt = R.df; k.sfmt = R.sf;   // PEANUTS: buffer-texture classes resolved before make_images (k and tex_masks moved above)

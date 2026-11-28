@@ -611,6 +611,16 @@ The replay on Metal (`dm/gfx/nvn/nvn_mtl.m`) and the Vulkan and OpenGL layers. E
 - **Open:** the exact missing flush, to replace a flush after every draw. The GPU cost of `flushall` is not measured at the same spot. Not run on Turnip 27.0.0-R2 or Qualcomm's driver.
 - **Found on:** [Batman: Arkham Knight](../../dm/games/0100ACD0163D0000/README.md) (the road decals, pixel shader `103569496bd29d04` and five more).
 
+### Simultaneous depth-read and depth-write draws splitting Pre-Z into 1-draw passes (Android)
+
+- **Symptom:** (PEANUTS, Android) DOOM's `1280x720` Pre-Z depth pass splits into ~194–220 consecutive 1-draw render passes (306 passes/frame total) with no game barriers (`OP_BARRIER`) or `SetRenderTargets` between them, inflating both GPU time and CPU recording/encoder overhead.
+- **Cause:** id Tech 6's Pre-Z geometry shaders (`38d8127afde928b3`, `ffdce93f088cbe5c`, `e174c6bd26026776`) sample the active `1280x720` depth attachment (`stage 2 binding 193`) for per-triangle occlusion culling while the fragment stage writes depth (`dw_ = 1`) in the same pass without emitting barriers between draws. `vka_draw.c` set `R.dread = 1` on any draw with `depth_sampled(sh, d)` inside a depth pass, so the very next draw saw `dw_ && R.dread` and called `vka_rp_end()`, breaking every draw into its own `LOAD`/`STORE` pass and full barrier.
+- **Fix:** general, every game (`vka_draw.c`, `depth_writes` + `R.dread`). `R.dread` only needs to guard read-only depth-sampling draws (`ds && !dw_`) against a subsequent depth write (`dw_`). A draw that already simultaneously samples and writes depth (`ds && dw_`) without `SetRenderTargets` or `OP_BARRIER` already runs under a same-pass feedback dependency and no longer sets `R.dread = 1`, keeping consecutive Pre-Z draws in one pass across both feedback-loop (`V.fb_loop`) and non-feedback-loop drivers.
+- **Measured (AYN Odin 3, Adreno 830, 2026-11-28):**
+  - **Turnip (`v27.0.0-20261119-r3-A8xx`):** DOOM (`0100416004C00000`) *The UAC* indoor frame (`uac.nvncap`, `924` draws): `nxreplay` render passes `305 → 89`, GPU `12.85 → 11.31 ms` (`323–325 px` differ vs. live, matching baseline `324–326`). Live *The UAC* indoors (`dev.nxnative.android.peanutsdev`): `306 → 89` passes, barriers `326 → 108`, GPU p50/p90 `13.1/14.1 → 11.5/12.5 ms`, CPU replay recording `3.4–3.5 → 2.3–2.5 ms`, max 300-frame time `16.85 → 16.53 ms`; Mars outdoors: `62` passes (`1,098` draws), `60.7 fps`, GPU p50/p90 `13.2/13.4 ms`.
+  - **Qualcomm system driver (`driverID` 8, `V@0800.72`):** live Mars outdoors `467 → 63` passes (`1,236` / `1,123` draws), barriers `506 → 102`, `40.4 → 60.7 fps`, GPU p50/p90 `18.8/19.0 → 15.7/16.9 ms`, CPU recording `24.4 → 11.0 ms`; `nxreplay` `uac.nvncap` `89` passes, `14.56 ms` GPU.
+- **Found on:** DOOM (`0100416004C00000`, bring-up in progress).
+
 ### Lower-left window origin
 
 - **Symptom:** text a game renders into textures for the title and the menus comes out upside down, while the scene looks right.
