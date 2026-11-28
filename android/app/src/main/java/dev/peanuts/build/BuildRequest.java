@@ -31,6 +31,23 @@ public final class BuildRequest {
         this.gameDir = gameDir; this.companionPackage = companionPackage;
     }
 
+    /** The DLC formats accepted by the game sheet. */
+    public static boolean isDlcFile(File f) {
+        if (f == null || !f.isFile()) return false;
+        String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+        return n.endsWith(".nsp") || n.endsWith(".nsz") || n.endsWith(".xci") || n.endsWith(".xcz");
+    }
+
+    /** Reject invalid DLC inputs before starting the importer. */
+    String dlcInputError() {
+        for (File f : dlcs) {
+            if (f != null && !isDlcFile(f))
+                return "Invalid DLC file: " + f.getName()
+                        + ". Remove it from the added DLC list and choose an NSP, NSZ, XCI or XCZ file.";
+        }
+        return null;
+    }
+
     /** base/update/dlcs as the importer takes them, base first */
     List<File> inputs() {
         List<File> l = new ArrayList<>();

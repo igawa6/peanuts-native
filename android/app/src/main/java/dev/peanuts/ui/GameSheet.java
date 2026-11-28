@@ -162,7 +162,7 @@ public final class GameSheet {
         for (LibraryScanner.Source d : title.dlcs) names.add(d.name.isEmpty() ? d.file.getName() : d.name);
         for (File f : extraDlc) { boolean known = false; for (LibraryScanner.Source d : title.dlcs) if (d.file.equals(f)) known = true; if (!known) names.add(f.getName()); }
         CharSequence dl = PUi.joined(names.isEmpty() ? "None found" : names.size() + " found: " + String.join(", ", names), "Add…");
-        PUi.add(box, new PUi.Setting(a, "➕", "DLC", v -> { if (!building) { Haptics.play(v, Haptics.Word.TICK); LibrarySettings.pickFile(a, REQ_DLC, "Pick a DLC (.nsp or .nsz)"); } }).value(dl).chevron(a).view, 0);
+        PUi.add(box, new PUi.Setting(a, "➕", "DLC", v -> { if (!building) { Haptics.play(v, Haptics.Word.TICK); LibrarySettings.pickFile(a, REQ_DLC, "Pick a DLC (.nsp, .nsz, .xci or .xcz)"); } }).value(dl).chevron(a).view, 0);
         if (!extraDlc.isEmpty()) PUi.add(box, PUi.button(a, "Forget the DLC you added", PUi.Kind.QUIET, v -> { Haptics.play(v, Haptics.Word.CLICK); extraDlc.clear(); saveDlc(); render(); }), 0, PUi.wrap());
         // Companion
         File root = title.companionRoot();
@@ -591,6 +591,10 @@ public final class GameSheet {
             }
             chosenUpdate = hit;
         } else if (request == REQ_DLC) {
+            if (!dev.peanuts.build.BuildRequest.isDlcFile(f)) {
+                Toast.makeText(a, "Choose a DLC file (.nsp, .nsz, .xci or .xcz). Unsupported file: " + f.getName(), Toast.LENGTH_LONG).show();
+                return;
+            }
             if (!extraDlc.contains(f)) extraDlc.add(f);
             saveDlc();
         }

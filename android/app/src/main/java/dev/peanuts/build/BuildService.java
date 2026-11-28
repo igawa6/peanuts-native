@@ -680,6 +680,8 @@ public final class BuildService extends Service {
         File replace = r.replaceNup;   // Import again: the .nup to make anew, where it is
         boolean again = replace != null;
         if (!again && buildGameDir == null && r.gameDir == null) throw new IOException("The app has no game folder to save the imported game in. Add a game folder in Settings › Library, then tap Retry.");
+        String dlcError = r.dlcInputError();
+        if (dlcError != null) throw new IOException(dlcError);
         List<File> inputs = r.inputs();
         // PEANUTS: both volumes move to the build folder when it is set (the .nup and the pack land under the same <title ID> folder there)
         File importDest = again ? replace.getAbsoluteFile().getParentFile() : buildGameDir != null ? buildGameDir : r.gameDir;
