@@ -52,18 +52,18 @@ public final class PeanutsPrefs {
     public static List<String> gameDirs(Context c) {
         return dev.peanuts.folders.FolderList.read(java.util.Collections.singletonList(of(c).getString("game_dir", null)), extra(c, "game_dirs_extra"));
     }
-    public static void gameDirs(Context c, List<String> dirs) { list(c, "game_dir", null, "game_dirs_extra", dirs); }
+    public static void gameDirs(Context c, List<String> dirs) { list(c, new String[] {"game_dir"}, "game_dirs_extra", dirs); }
 
     /**
      * The folders with updates and DLC (one kind since issue #546: the scan tells an update from a DLC by what the file holds, never by its folder). The update
      * folder and the DLC folder an older version kept ("update_dir", "dlc_dir") are the first two; added ones follow in "addon_dirs_extra". A change keeps the
-     * first in "update_dir" and moves the DLC folder into the list
+     * first in "update_dir" and the second in "dlc_dir", where 0.1.8 and older read them, so going back to one finds both folders again
      */
     public static List<String> addonDirs(Context c) {
         SharedPreferences p = of(c);
         return dev.peanuts.folders.FolderList.read(java.util.Arrays.asList(p.getString("update_dir", null), p.getString("dlc_dir", null)), extra(c, "addon_dirs_extra"));
     }
-    public static void addonDirs(Context c, List<String> dirs) { list(c, "update_dir", "dlc_dir", "addon_dirs_extra", dirs); }
+    public static void addonDirs(Context c, List<String> dirs) { list(c, new String[] {"update_dir", "dlc_dir"}, "addon_dirs_extra", dirs); }
 
     /** A JSON list of paths in key ("[]" when none or unreadable) */
     private static List<String> extra(Context c, String key) {
@@ -75,13 +75,17 @@ public final class PeanutsPrefs {
         return out;
     }
 
-    /** A folder list kept as its first in firstKey and the others in extraKey; oldKey (a second single folder of an older version) is folded into the list */
-    private static void list(Context c, String firstKey, String oldKey, String extraKey, List<String> dirs) {
+    /**
+     * A folder list kept as its first folders in singles (the keys an older version kept one folder each in, in their order: an older version going back
+     * still finds them) and the others in extraKey. A key with no folder left for it is removed
+     */
+    private static void list(Context c, String[] singles, String extraKey, List<String> dirs) {
         SharedPreferences.Editor e = of(c).edit();
-        if (dirs.isEmpty()) e.remove(firstKey); else e.putString(firstKey, dirs.get(0));
-        if (oldKey != null) e.remove(oldKey);
+        for (int i = 0; i < singles.length; i++) {
+            if (i < dirs.size()) e.putString(singles[i], dirs.get(i)); else e.remove(singles[i]);
+        }
         JSONArray extra = new JSONArray();
-        for (int i = 1; i < dirs.size(); i++) extra.put(dirs.get(i));
+        for (int i = singles.length; i < dirs.size(); i++) extra.put(dirs.get(i));
         if (extra.length() == 0) e.remove(extraKey); else e.putString(extraKey, extra.toString());
         e.apply();
     }

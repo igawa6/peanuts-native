@@ -42,8 +42,12 @@ class Keep(unittest.TestCase):
         self.assertIn('getString("game_dir", null)', games)
         addons = between(prefs, 'public static List<String> addonDirs(Context c) {', '\n    }\n')
         self.assertIn('p.getString("update_dir", null), p.getString("dlc_dir", null)', addons)
-        self.assertIn('list(c, "game_dir", null, "game_dirs_extra", dirs)', prefs)
-        self.assertIn('list(c, "update_dir", "dlc_dir", "addon_dirs_extra", dirs)', prefs)
+        self.assertIn('list(c, new String[] {"game_dir"}, "game_dirs_extra", dirs)', prefs)
+        self.assertIn('list(c, new String[] {"update_dir", "dlc_dir"}, "addon_dirs_extra", dirs)', prefs)
+        lst = between(prefs, 'private static void list(Context c, String[] singles, String extraKey, List<String> dirs) {', '\n    }\n')
+        self.assertIn('if (i < dirs.size()) e.putString(singles[i], dirs.get(i)); else e.remove(singles[i]);', lst,
+                      'the second update and DLC folder stays in dlc_dir, so 0.1.8 still finds its DLC folder (igawa6, #696)')
+        self.assertIn('for (int i = singles.length; i < dirs.size(); i++) extra.put(dirs.get(i));', lst, 'the extra list starts after them')
         roots = between(prefs, 'public static List<File> roots(Context c) {', '\n    }\n')
         for f in ('gameDirs(c)', 'addonDirs(c)', 'buildDirs(c)'):
             self.assertIn(f, roots, f'the scan reads {f}')
