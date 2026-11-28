@@ -73,6 +73,7 @@ General changes first needed here; each applies to every game on the same path:
 - **Resolved: a shader with an array of c2 handles and a separate sampler word** (its lights) → [Arrays of c2 handles cover the whole table, with a separate sampler word](../../../docs/reference/shaders.md#arrays-of-c2-handles-cover-the-whole-table-with-a-separate-sampler-word).
 - **Resolved: `[RED] sampler ID 4096 not registered`** at the title, separate textures bound with bit 32 set → [Bound handles are the driver's 32-bit words](../../../docs/reference/nvn-objects.md#bound-handles-are-the-drivers-32-bit-words).
 - **Resolved: a copy to address 0 at the match load**, `nvnBufferMap` of a GPU-only buffer → [`Map` of a pool without CPU access returns NULL](../../../docs/reference/nvn-objects.md#map-of-a-pool-without-cpu-access-returns-null).
+- **Open: stutter at 60 fps in a match (Android, GitHub issue #392)** <!-- PEANUTS --> → [Lock handoffs to a sleeping waiter queue up threads that share a lock](../../../docs/reference/threads.md#lock-handoffs-to-a-sleeping-waiter-queue-up-threads-that-share-a-lock-android): `PN_LOCK_SPIN=50` in the game's Extra environment.
 
 ## Open
 

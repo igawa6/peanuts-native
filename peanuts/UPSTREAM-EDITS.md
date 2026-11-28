@@ -3335,3 +3335,11 @@ view (Settings › Developer) shows the testers' toasts and the in-game menu's t
 | `android/app/src/main/java/dev/nxnative/android/MainActivity.java` | 1 | the ignored adb command's toast with Developer view only | `// PEANUTS:` |
 | `android/app/src/main/java/dev/nxnative/android/SidePanel.java` | 4 | the two "DM_CTL is off" notes, the cap line and the frame generation state (`DevView.panel`, `DevView.frameGen`) | `// PEANUTS:` |
 | `android/app/src/main/java/dev/nxnative/android/Lsfg.java` | 2 | "Not in this build" and the mode line through `DevView.panel` | `// PEANUTS:` / `/* PEANUTS */` |
+
+### ArbitrateLock's spin before its wait (2026-11-28, GitHub issue #392)
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/hle_thread.c` | 2 | `lock_spin` and `peanuts_lock_spin_ns` (weak, `PN_LOCK_SPIN`, off by default) before `svc_thread_impl`, and its call at the top of ArbitrateLock | `PEANUTS begin` / `end`, `PEANUTS` |
+| `dm/host/tests/t_lockspin.c`, `dm/host/tests/Makefile` | new file, 1 | the spin's test | `PEANUTS` |
+| `docs/reference/threads.md`, `dm/games/0100C49025D3E000/README.md`, `android/TESTING.md` | 1 each | the entry, FC 27's open stutter, the switch | `PEANUTS` |

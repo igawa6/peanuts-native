@@ -361,6 +361,40 @@ static void lock_acquire_for(thr_t *t, uint64_t addr, uint32_t tag) {
     { thr_t *self = pthread_getspecific(g_keythr); if (self) self->nmade++; }   // PEANUTS: a waiter moved to the mutex's queue counts for the signaller's SVC history too
 }
 
+// PEANUTS begin: ArbitrateLock's short spin (PN_LOCK_SPIN=<µs>, off by default, at most 1000; GitHub issue #392). On Horizon an unlock hands the lock to a waiter and
+// the kernel switches to it at once; here the waiter sleeps on its condition variable, and every handoff costs a host wake-up. Threads that pass one lock back and
+// forth queue up behind that: EA SPORTS FC 27's Job threads make 1,500-2,500 ArbitrateLock calls a second in a match, about 90 % of them sleep, with stalls of
+// 200-340 ms. While the owner is on a core (in guest code or in a host call such as NVN), the caller watches the lock word; when it changes, the SVC returns 0
+// without the lock and the SDK's lock loop reads the word again and retries (checked by disassembly in FC 27's and Kirby and the Forgotten Land's sdk). The owner
+// word holds the owner's thread ID from SDK 22 on (thread.c guest_thread_set_id) and its handle before. Returns 1 when the word changed during the spin
+__attribute__((weak)) uint64_t peanuts_lock_spin_ns(void) {   // (t_lockspin overrides it)
+    static int us = -1;
+    if (us < 0) { const char *e = getenv("PN_LOCK_SPIN"); int v = e && *e ? atoi(e) : 0; us = v < 0 ? 0 : v > 1000 ? 1000 : v;
+                  if (us) LOG("ArbitrateLock spin: up to %d µs while the owner runs (PN_LOCK_SPIN)", us); }
+    return (uint64_t)us * 1000;
+}
+static int lock_spin(thr_t *t, uint32_t tag, uint64_t addr) {
+    uint64_t spin = peanuts_lock_spin_ns(); uint32_t want = tag | WAITERS_BIT;
+    if (!spin || ld32(addr) != want) return 0;
+    thr_t *o = NULL;
+    pthread_mutex_lock(&G);
+    for (thr_t *x = g_all; x; x = x->all) if (!x->exited && (uint32_t)x->id == tag) { o = x; break; }
+    if (!o) o = h_peek(tag, O_THREAD);
+    pthread_mutex_unlock(&G);
+    if (!o || o == t) return 0;
+    uint64_t t0 = now_ns(), now = t0;
+    for (unsigned i = 0; now - t0 < spin; i++) {
+        if (ld32(addr) != want) return 1;   // the word first: an owner that unlocked may exit (one that holds a lock has not; thr_free waits for exit and CloseHandle)
+        if (o->wkind || o->sleeping || o->native_wait || (o->pause_req && !o->world)) return 0;   // the owner blocked: wait as before
+#if defined(__aarch64__)
+        __asm__ volatile("yield");
+#endif
+        if ((i & 15) == 15) now = now_ns();
+    }
+    return 0;
+}
+// PEANUTS end
+
 // ---------- Threads ----------
 extern void dm_thread_enter(uint64_t entry, uint64_t arg, uint64_t sp);   // entry.S
 uint32_t (*dm_thread_tick_fn)(void);   // Gets the current game tick; registered when diag.c initializes (unit tests do not register it, the tick number is recorded as 0)
@@ -1276,6 +1310,7 @@ static int svc_thread_impl(int num, uint64_t *regs) {
 
     case 0x1A: {  // ArbitrateLock(w0 owner handle, x1 address, w2 this thread's tag)
         thr_t *t = cur(); uint64_t addr = regs[1];
+        if (lock_spin(t, (uint32_t)regs[0], addr)) { regs[0] = 0; return 1; }   // PEANUTS: PN_LOCK_SPIN's spin ended with the word changed: the SDK retries (issue #392)
         pthread_mutex_lock(&G);
         int64_t r = 0;
         if (ld32(addr) == ((uint32_t)regs[0] | WAITERS_BIT)) { t->waddr = addr; t->wtag = (uint32_t)regs[2];
