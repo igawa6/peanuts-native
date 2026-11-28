@@ -1798,7 +1798,8 @@ void vka_tex_soft_copy(vka_img *im, int dst_level, VkCommandBuffer cb) {
 // The content a new image of t starts with (storage_mode), decided before the image is made (vka_tex_get: a zero-shared image is made only for ST_ZERO)
 
 static vka_img *g_bc_sync[64];
-static int g_nbc_sync;
+static _Atomic int g_nbc_sync;
+static int treg_dead(int id, const treg_ent *e);
 static void bc_cancel_locked(vka_img *im) {   // PEANUTS: caller holds g_tmu: the forced free in vka_tex_drop_pool drops the queue's reference
     for (int i = 0; i < g_nbc_sync; i++) if (g_bc_sync[i] == im) g_bc_sync[i] = NULL;   // PEANUTS
 }
@@ -1809,6 +1810,17 @@ static int bc_alias_match(const vka_img *src, const vka_img *dst) {
     uint32_t bw = (dst->w + dst->f.bw - 1) / dst->f.bw, bh = (dst->h + dst->f.bh - 1) / dst->f.bh;
     return src->w == bw && src->h == bh;
 }
+static int bc_sync_src_matches_read_locked(vka_img *src, int id) {
+    const treg_ent *te = treg_lookup(id);
+    if (id <= 0 || !te->t.serial || te->t.mem != src->mem || treg_dead(id, te)) return 0;
+    smap_ent *e = map_get(te->t.serial);
+    return e && e->im && e->im->inited && !img_pool_dead(e->im) && bc_alias_match(src, e->im);
+}
+static int bc_sync_src_matches_reads_locked(vka_img *src, const int *ids, int n) {
+    for (int i = 0; i < n; i++) if (bc_sync_src_matches_read_locked(src, ids[i])) return 1;
+    return 0;
+}
+int vka_tex_bc_sync_any_pending(void) { return atomic_load_explicit(&g_nbc_sync, memory_order_relaxed) != 0; }
 static void bc_sync_queue_locked(vka_img *src) {
     if (!src || compressed(&src->f) || !src->mem) return;
     if (g_nbc_sync >= 64) { static _Atomic int full; if (!atomic_exchange(&full, 1)) VRED("bc alias sync: more than 64 images wait for a copy into their block-compressed alias; the rest are skipped until the queue drains"); return; }   // PEANUTS
@@ -1819,6 +1831,57 @@ static void bc_sync_queue_locked(vka_img *src) {
     for (int i = 0; i < g_nbc_sync; i++) if (g_bc_sync[i] == src) return;
     src->refs++;
     g_bc_sync[g_nbc_sync++] = src;
+}
+static void bc_sync_flush_locked(VkCommandBuffer cb, const int *ids, int nids, const char *where) {
+    if (!g_nbc_sync || !cb) return;
+    int any_bc = 0, keep = 0;
+    for (int i = 0; i < g_nbc_sync; i++) {
+        vka_img *src = g_bc_sync[i];
+        if (!src) continue;   // cancelled by bc_cancel_locked (its pool was dropped)
+        if (nids && !bc_sync_src_matches_reads_locked(src, ids, nids)) { g_bc_sync[keep++] = src; continue; }
+        if (src->inited && !img_pool_dead(src) && src->mem) {
+            int lk_bc; for (vka_img *dst = live_first(src->mem, &lk_bc); dst; dst = live_next(dst, src->mem, &lk_bc)) {
+                if (!dst->inited || img_pool_dead(dst) || !bc_alias_match(src, dst)) continue;
+                if (!any_bc) { vka_barrier(cb); any_bc = 1; }
+                VkImageCopy reg[16]; uint32_t nreg = 0;
+                for (uint32_t l = 0; l < src->levels && nreg < 16; l++) {
+                    uint32_t sw = src->w >> l ? src->w >> l : 1, sh = src->h >> l ? src->h >> l : 1;
+                    uint32_t dw = dst->w >> l ? dst->w >> l : 1, dh = dst->h >> l ? dst->h >> l : 1;
+                    if (sw != (dw + dst->f.bw - 1) / dst->f.bw || sh != (dh + dst->f.bh - 1) / dst->f.bh) break;
+                    reg[nreg++] = (VkImageCopy){ {src->aspect, l, 0, src->layers}, {0, 0, 0}, {dst->aspect, l, 0, dst->layers}, {0, 0, 0}, {sw, sh, 1} };
+                }
+                if (nreg) vk.vkCmdCopyImage(cb, src->img, VK_IMAGE_LAYOUT_GENERAL, dst->img, VK_IMAGE_LAYOUT_GENERAL, nreg, reg);
+                dst->gpu_owned = 1;
+                static _Atomic int n_bc;
+                if (atomic_fetch_add(&n_bc, 1) < 8)
+                    VLOG("bc alias sync: %s src serial=%llu (%ux%u fmt=%d) -> dst serial=%llu (%ux%u fmt=%d) mem=%p",
+                         where ? where : "ordered", (unsigned long long)src->serial, src->w, src->h, src->f.vk,
+                         (unsigned long long)dst->serial, dst->w, dst->h, dst->f.vk, (const void *)src->mem);
+            }
+        }
+        unref_locked(src);   // copied, or its alias is gone
+    }
+    if (any_bc) vka_barrier(cb);
+    g_nbc_sync = keep;
+}
+int vka_tex_bc_sync_reads_pending(const int *ids, int n) {
+    if (!vka_tex_bc_sync_any_pending() || !ids || n <= 0) return 0;
+    nvn_pool_use(1);
+    pthread_mutex_lock(&g_tmu);
+    int pending = 0;
+    for (int i = 0; i < g_nbc_sync && !pending; i++)
+        pending = g_bc_sync[i] && bc_sync_src_matches_reads_locked(g_bc_sync[i], ids, n);
+    pthread_mutex_unlock(&g_tmu);
+    nvn_pool_use(0);
+    return pending;
+}
+void vka_tex_bc_sync_flush_reads(VkCommandBuffer cb, const int *ids, int n, const char *where) {
+    if (!cb || !ids || n <= 0 || !vka_tex_bc_sync_any_pending()) return;
+    nvn_pool_use(1);
+    pthread_mutex_lock(&g_tmu);
+    bc_sync_flush_locked(cb, ids, n, where);
+    pthread_mutex_unlock(&g_tmu);
+    nvn_pool_use(0);
 }
 static int first_mode(const tex_t *t, const vka_fmt *f, int cpu) {
     int samples = t->d.samples > 1 ? t->d.samples : 1, vpool = t->pool && pool_sparse(t->pool);
@@ -4077,37 +4140,10 @@ void vka_tex_prepare(VkCommandBuffer cb, uint64_t fence) {   // PEANUTS: image r
     g_recorded_fence = vto_retire_fence(g_recorded_fence, fence);   // PEANUTS: before draining writes or releasing the table lock; never move back on another queue
     pfb_consume_locked();   // the texture IDs read through the pool in submissions done: their images stamped used, null slots written again with their images ("Texture pool reads")
     vka_tex_prune_locked();   // (the limit measured again every 60 frames; nothing to do under it)
-    if (g_nbc_sync) {
-        // PEANUTS: each queued image is copied once and leaves the queue; its next GPU write queues it again (vka_img_written_at), so an unchanged pool is not copied every frame
-        int any_bc = 0;
-        for (int i = 0; i < g_nbc_sync; i++) {
-            vka_img *src = g_bc_sync[i];
-            if (!src) continue;   // PEANUTS: cancelled by bc_cancel_locked (its pool was dropped)
-            if (src->inited && !img_pool_dead(src) && src->mem) {
-                int lk_bc; for (vka_img *dst = live_first(src->mem, &lk_bc); dst; dst = live_next(dst, src->mem, &lk_bc)) {
-                    if (!dst->inited || img_pool_dead(dst) || !bc_alias_match(src, dst)) continue;
-                    if (!any_bc) { vka_barrier(cb); any_bc = 1; }
-                    // PEANUTS: every mip (bc_alias_match requires the same count): level l of the uncompressed image holds one texel per block of the alias's level l
-                    VkImageCopy reg[16]; uint32_t nreg = 0;
-                    for (uint32_t l = 0; l < src->levels && nreg < 16; l++) {
-                        uint32_t sw = src->w >> l ? src->w >> l : 1, sh = src->h >> l ? src->h >> l : 1, dw = dst->w >> l ? dst->w >> l : 1, dh = dst->h >> l ? dst->h >> l : 1;
-                        if (sw != (dw + dst->f.bw - 1) / dst->f.bw || sh != (dh + dst->f.bh - 1) / dst->f.bh) break;   // the block grid stops lining up: copy no further level
-                        reg[nreg++] = (VkImageCopy){ {src->aspect, l, 0, src->layers}, {0, 0, 0}, {dst->aspect, l, 0, dst->layers}, {0, 0, 0}, {sw, sh, 1} };
-                    }
-                    if (nreg) vk.vkCmdCopyImage(cb, src->img, VK_IMAGE_LAYOUT_GENERAL, dst->img, VK_IMAGE_LAYOUT_GENERAL, nreg, reg);
-                    dst->gpu_owned = 1;
-                    static _Atomic int n_bc;
-                    if (atomic_fetch_add(&n_bc, 1) < 8)
-                        VLOG("bc alias sync: src serial=%llu (%ux%u fmt=%d) -> dst serial=%llu (%ux%u fmt=%d) mem=%p",
-                             (unsigned long long)src->serial, src->w, src->h, src->f.vk,
-                             (unsigned long long)dst->serial, dst->w, dst->h, dst->f.vk, (const void *)src->mem);
-                }
-            }
-            unref_locked(src);   // PEANUTS: copied (or its alias is gone): out of the queue
-        }
-        if (any_bc) vka_barrier(cb);
-        g_nbc_sync = 0;
-    }
+    // Fallback for reads the draw/dispatch hook cannot see: a bindless texture-pool handle is read with
+    // r[i].tid == 0, so no sampled ID names its BC alias. Drain only what is still queued from earlier
+    // submissions, before this submission's commands are recorded; intra-submission ordering is unchanged.
+    bc_sync_flush_locked(cb, NULL, 0, "submit (previous)");
     int n_up = 0;
     for (int i = 0; i < g_nredo; i++) {   // CPU writes to textures that already have an image (WriteTexels): from now on they follow their storage
         vka_img *im = g_redo[i];   // PEANUTS(upstream-candidate): (NULL: freed while queued, redo_forget_locked)
