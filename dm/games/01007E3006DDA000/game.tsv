@@ -1,0 +1,51 @@
+# Game profile of Kirby Star Allies (Switch, update 4.0.0a = v393216)
+# Format: see dm/games/README.md
+# PEANUTS: a Peanuts Native profile (Banana Native has none for this title); whole file Peanuts' own
+# HAL Laboratory's own engine on NintendoWare (G3d, Font, Ui2d, Vfx, Atk), SDK 4.4.1, NVN; subsdk0 is the movie module (MP4 cinematics).
+# The shaders are BNSH archives inside HAL's .cmp containers under gfx/, ptcl/ and lyt/, in the loose shader/ files and embedded in main (shader_split.py).
+# Status: plays (README.md); the memory rows are the survey's guess (dm/games/profile_guess.py), the peaks measured in play are in the note
+
+# ---- Identity ----
+title_id	01007E3006DDA000
+program_id	01007E3006DDA000
+
+# ---- App ----
+name	Kirby Star Allies
+ipa	KirbyStarAllies.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v393216	4.0.0a	main=d55608916fa56c184f2a8fe80da0427c	subsdk0=a4604a0a8b8af7ae0eac1add42a8b978	sdk=af7348498c7759b0f3f0396a8a36014c
+package	v393216
+shader_versions	v393216
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	mov/Product/Opening.mp4
+zip_store	.bfsar:.bfstm:.mp4:.metallib
+
+# ---- Memory ----
+# main sets a heap of at most the pool − 64 MB: a 3328 MB heap region
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 0 MB of system resource: IsVirtualAddressMemoryEnabled is false, as on Horizon (Big Brain Academy: Brain vs. Brain sets a heap only then)
+sys_resource	0x0
+
+# ---- Frame rate ----
+# PEANUTS: the game paces itself in whole vsyncs: an interval index at [main+0x54c5b0]+0 picks the vsyncs a frame from the table at main+0x3b5ac8 (1, 2, 3, 4, 5, 6),
+# so 60, 30, 20 (and 15, not offered) fps; no index gives half a vsync, so nothing above 60. Reviewed from the FPSLocker Warehouse config for this build (01007E3006DDA000/D55608916FA56C18.yaml,
+# v4; interval offsets found by Kirby567Fan): the index is 60 / fps - 1 (vsync_index_u32), and the game's own setter (main+0x5a4c, str w1, [x0]) is a NOP so it cannot put
+# it back. The config's "remove double buffer" writes are not taken: the host presents the game's frames itself. Game owned (the default) is the game's own 60
+# PEANUTS: the default cap is 60, measured on Turnip 27.0.0-R2 (README.md, Status); 30 and 20 are experimental (Open)
+fps_limit	60
+fps_limit_present	1
+fps_modes	20,30,60
+fpslocker	d55608916fa56c184f2a8fe80da0427c	vsync_index_u32	0x54c5b0/0x0	1	0
+fpslocker_plan	d55608916fa56c184f2a8fe80da0427c	m0x5a4c	010000b9	1f2003d5
+
+# ---- Shader split ----
+shader_groups	/gfx/=gfx /msg/=msg /map/=map /lyt/=lyt /snd/=snd /ptcl/=ptcl /yaml/=yaml /hidvib/=hidvib /font/=font /shader/=shader /param/=param /map3d/=map3d /mint/=mint /mov/=mov /fdg/=fdg
+shader_note	Kirby Star Allies shaders
