@@ -139,10 +139,10 @@ def header(g):
     if ft not in ('0', '30', '60'): sys.exit(f'{g.id}: fps_target must be 0, 30 or 60: {ft}')
     fl = g.get('fps_limit', '0')   # Android: the host's frame limiter's default (hle_fpslock.c fps_limit_wait, a wait before each present): 0 = none, else at most that many frames a second; DM_FPS_LIMIT and the launcher's choice override it
     if not fl.isdigit() or int(fl) and not 10 <= int(fl) <= 60: sys.exit(f'{g.id}: fps_limit must be 0 (none) or 10 to 60 frames a second: {fl}')
-    modes = g.get('fps_modes', '')
+    modes = g.get('fps_modes', '')   # PEANUTS: 15 too, a whole-vsync game's quarter rate (Kirby Star Allies' vsync_index_u32)
     if modes:
         rates = modes.split(',')
-        if len(g.values('fps_modes')) != 1 or '60' not in rates or any(v not in ('20','30','40','45','60','90','120') for v in rates) or len(set(rates)) != len(rates) or rates != sorted(rates, key=int):
+        if len(g.values('fps_modes')) != 1 or '60' not in rates or any(v not in ('15','20','30','40','45','60','90','120') for v in rates) or len(set(rates)) != len(rates) or rates != sorted(rates, key=int):   # PEANUTS: 15 accepted
             sys.exit(f'{g.id}: fps_modes must be unique ascending supported rates including 60')
     for row in g.values('fps_plan_120'):
         if len(row) != 4 or not re.fullmatch(r'[0-9a-f]{32}', row[0]):

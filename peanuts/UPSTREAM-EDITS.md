@@ -3411,3 +3411,19 @@ NCA through the check too), `CMakeLists.txt`, `HOOKS.md`, `tests/nsp_fixture.h` 
 `test_compressed.py` (the damaged cases beside #697's cut-off ones), `test_nup_icon.py` (its build of `nup_meta_test` takes `nx_verify.c`).
 The host's copy of `nx_nca.c` never sets a check (`nx_verify.c` is not in `android/host/CMakeLists.txt`'s `NSP_C`). Upstream candidate: the split's bounds
 checks (general: any FlatBuffers index); the rest is Peanuts' importer.
+
+### `fpslocker` row kind `vsync_index_u32`, and a 15 fps mode (2026-11-28)
+
+Kirby Star Allies paces itself by an index of whole vsyncs (`[main+0x54c5b0]+0`, a table at `main+0x3b5ac8` of 1 to 6 vsyncs a frame). Its FPSLocker Warehouse config
+for build `D55608916FA56C18` writes 60 / fps - 1 there, which no existing row kind expresses. The new kind `vsync_index_u32` writes that index for 60, 30, 20 and 15
+(the whole divisors of 60 it reaches; no factors, parameters 0), and `fps_modes` accepts 15 (`game.py`). The profile that uses it comes in a pull request of its own.
+
+| File | Hunks | Change | Marker |
+|---|---|---|---|
+| `dm/host/fpslocker_rows.h` | 4 | row kind `vsync_index_u32` (60 / fps - 1, whole vsync divisors only, no factors) | `PEANUTS` |
+| `dm/games/game.py` | 2 | `fps_modes` accepts 15 | `PEANUTS` |
+| `dm/games/README.md` | 1 | the kind in the `fpslocker` key's text | `PEANUTS` |
+| `dm/tools/tests/test_fpslocker_rows.py`, `dm/tools/tests/test_game_profile.py` | 1, 2 | the kind's values and refused parameters; `fps_modes` with 15, and 10 refused | `PEANUTS` |
+
+Not in this change: the launcher's own checks in `android/app/build.gradle` (`fpsLimitMaxOf`'s row kinds, `fpsModesOf`'s rates) still refuse the kind and 15, so
+an APK with a profile that uses them does not build until those lists take them.

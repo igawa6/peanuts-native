@@ -88,7 +88,8 @@ static inline int fpw_parse(const char *spec, const char *build,
                            "time_ratio_f32",   "flag_cap_u8", "target_i32", "zero_u16",
                            "time_step_pair_f32", "constant_i32",
                            "elapsed_fps_f32", "flag_cap_u32_gt", "step_ticks_u32", // PEANUTS: integer fixed step
-                           "target_offset_f32", "frame_offset_ms_f32"}; // PEANUTS: (fps + a) * b and b * 1000 / (fps + a)
+                           "target_offset_f32", "frame_offset_ms_f32", // PEANUTS: (fps + a) * b and b * 1000 / (fps + a)
+                           "vsync_index_u32"}; // PEANUTS: 60 / fps - 1, a vsync count's index (Kirby Star Allies: 0 for 60, 1 for 30, 3 for 15)
     for (unsigned i = 0; i < sizeof kinds / sizeof *kinds; i++)
       if (!strcmp(f[1], kinds[i]))
         r.kind = i + 1;
@@ -136,7 +137,7 @@ static inline int fpw_parse(const char *spec, const char *build,
         return -1;
       r.ticks = (uint32_t)ticks;
       r.ticks_max = (uint32_t)ceiling;
-    } else if ((r.kind >= 6 && r.kind <= 10) || r.kind >= 13) {
+    } else if ((r.kind >= 6 && r.kind <= 10) || (r.kind >= 13 && r.kind != 20)) { // PEANUTS: vsync_index_u32 (20) takes no factors
       if (!fpw_factors(f[4], &r.a, &r.b) ||
           (r.kind != 10 && r.kind != 14 && r.kind != 16 && r.a == 0))
         return -1;
@@ -214,7 +215,7 @@ static inline int fpw_rate_ok(const struct fpw_rows *rows, int fps) {
   if (fps < 15 || fps > 120)
     return 0;
   for (unsigned i = 0; i < rows->n; i++)
-    if (rows->row[i].kind == 5 && 60 % fps)
+    if ((rows->row[i].kind == 5 || rows->row[i].kind == 20) && 60 % fps) // PEANUTS: vsync_index_u32
       return 0;
   return 1;
 }
@@ -306,6 +307,8 @@ static inline unsigned fpw_apply_context_storage(const struct fpw_rows *rows,
       value = (uint32_t)fps;
     else if (r->kind == 5)
       value = 60 / (unsigned)fps;
+    else if (r->kind == 20) // PEANUTS: vsync_index_u32
+      value = 60 / (unsigned)fps - 1;
     else if (r->kind != 1) {
       float f = r->kind == 2 ? (float)fps : 1000.f / (float)fps;
       if (r->kind == 4)
