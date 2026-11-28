@@ -1,0 +1,36 @@
+# MY HERO ONE'S JUSTICE 2 - Android-tested profile
+# Title 01007E700DBF6000, SDK 6.4.0
+
+# ---- Identity ----
+title_id	01007E700DBF6000
+program_id	01007E700DBF6000
+
+# ---- App ----
+name	MY HERO ONE'S JUSTICE 2
+ipa	MyHeroOnesJustice2.ipa
+app_category	public.app-category.games
+
+# ---- Versions ----
+build	v983040	?	main=29e1cd0fbb24697e379da855ca5c367b	subsdk0=31ed558beb51f9e273a569dab4f7db82	sdk=e29be8ad6778527aa248310d0c71a8a5
+package	v983040
+shader_versions	v983040
+
+# ---- Files ----
+# every module main imports from
+modules	main subsdk0 sdk
+romfs_marker	HeroGame/Content/Paks/HeroGame-Switch.pak
+zip_store	.pak:.png:.usm:.metallib
+
+# ---- Memory ----
+# Unreal: nninitStartup reserves a 62 GB address region and its FMallocBinned3 takes 37 GB of it, so a 64 GB alias region for the bring-up on the Mac. The rewriter cuts the allocator in any Unreal 4 / 5 main (dm/tools/ue_malloc.py) and gives the region what the alias region has room for (dm/tools/ue_region.py), so an iPhone takes a smaller guest block, as Octopath Traveler 0's profile (docs/reference/memory.md)
+mem_reserve	0x1028000000
+mem_alias	0x1000000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+# the NPDM declares 16 MB of system resource
+sys_resource	0x1000000
+
+# ---- Shader split ----
+# the decoded shader code archives: the engine's global shaders and the game's material shaders
+shader_groups	ShaderArchive-Global-=global ShaderArchive-=game
+shader_note	Unreal Engine legacy PAK v7, 9686 shaders
